@@ -628,6 +628,25 @@ const FR_FUNCTIONS: &[(&str, &str)] = &[
     ("BITXOR", "BITOUEXCLUSIF"),
     ("BITLSHIFT", "BITDECALG"),
     ("BITRSHIFT", "BITDECALD"),
+    ("BIN2HEX", "BINHEX"),
+    ("BIN2OCT", "BINOCT"),
+    ("HEX2BIN", "HEXBIN"),
+    ("HEX2OCT", "HEXOCT"),
+    ("OCT2BIN", "OCTBIN"),
+    ("OCT2HEX", "OCTHEX"),
+    ("GESTEP", "SUP.SEUIL"),
+    // Later additions
+    ("ISO.CEILING", "ISO.PLAFOND"),
+    ("MULTINOMIAL", "MULTINOMIALE"),
+    ("SERIESSUM", "SOMME.SERIES"),
+    ("STEYX", "ERREUR.TYPE.XY"),
+    ("FISHERINV", "FISHER.INVERSE"),
+    ("GAMMALN", "LNGAMMA"),
+    ("LEFTB", "GAUCHEB"),
+    ("RIGHTB", "DROITEB"),
+    ("REPLACEB", "REMPLACERB"),
+    ("FINDB", "TROUVERB"),
+    ("SEARCHB", "CHERCHERB"),
 ];
 
 #[cfg(test)]

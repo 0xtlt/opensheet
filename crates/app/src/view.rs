@@ -610,6 +610,7 @@ impl ExcelApp {
             MenuEntry::separator(),
             MenuEntry::new(t("Tab Color…", "Couleur d'onglet…"), move |a, _, cx| {
                 a.popup = Some(Popup {
+                    anchor: None,
                     pos,
                     kind: PopupKind::Palette(ColorTarget::Tab),
                     width: 214.0,
@@ -620,6 +621,7 @@ impl ExcelApp {
             .icon("fill"),
         ];
         self.popup = Some(Popup {
+            anchor: None,
             pos,
             kind: PopupKind::Menu(entries),
             width: 230.0,
@@ -1012,7 +1014,9 @@ impl ExcelApp {
                             .shadow_lg()
                             .text_color(c(theme::TEXT))
                             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                                this.popup = None;
+                                // Remember what was closed so the click that
+                                // follows on the same control does not reopen it.
+                                this.popup_dismissed = this.popup.take().and_then(|p| p.anchor);
                                 cx.notify();
                             }))
                             .child(body),
@@ -1101,6 +1105,7 @@ impl ExcelApp {
 
 impl Render for ExcelApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_window_title(&format!("{} — OpenSheet", self.title));
         let titlebar = self.render_titlebar(window, cx).into_any_element();
         let tabs = self.render_ribbon_tabs(cx).into_any_element();
         let ribbon = self.render_ribbon(window, cx).into_any_element();
@@ -1124,6 +1129,11 @@ impl Render for ExcelApp {
             .text_color(c(theme::TEXT))
             .text_size(px(12.))
             .key_context("Workbook")
+            // Runs after the clicked control's own handler (bubble order).
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, _| this.popup_dismissed = None),
+            )
             .on_action(cx.listener(Self::on_undo))
             .on_action(cx.listener(Self::on_redo))
             .on_action(cx.listener(Self::on_bold))
@@ -1140,6 +1150,7 @@ impl Render for ExcelApp {
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, window, cx)))
             .on_action(cx.listener(|this, _: &Open, window, cx| this.open(window, cx)))
             .on_action(cx.listener(|this, _: &NewWorkbook, window, cx| this.new_workbook(window, cx)))
+            .on_action(cx.listener(|this, _: &Quit, window, cx| this.request_quit(window, cx)))
             .child(titlebar)
             .child(tabs)
             .child(ribbon)

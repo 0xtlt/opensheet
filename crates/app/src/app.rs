@@ -248,6 +248,8 @@ pub enum PopupKind {
 }
 
 pub struct Popup {
+    /// The ribbon control it hangs from (None for context menus).
+    pub anchor: Option<&'static str>,
     pub pos: Point<Pixels>,
     pub kind: PopupKind,
     pub width: f32,
@@ -281,6 +283,9 @@ pub struct ExcelApp {
     /// How much the ribbon is compacted to fit the window (0 = full).
     pub ribbon_level: u8,
     pub popup: Option<Popup>,
+    /// Anchor of the pop-up the current mouse press just closed: clicking a
+    /// control again while its menu is open closes it instead of reopening.
+    pub popup_dismissed: Option<&'static str>,
     pub dialog: Option<Dialog>,
     /// Bounds of ribbon controls, used to anchor their drop-downs.
     pub anchors: Rc<RefCell<HashMap<&'static str, Bounds<Pixels>>>>,
@@ -351,6 +356,20 @@ impl ExcelApp {
         ];
         let grid_focus = cx.focus_handle();
         window.focus(&grid_focus);
+        // Closing the window asks before throwing away unsaved changes.
+        let weak = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            let Some(app) = weak.upgrade() else {
+                return true;
+            };
+            if !app.read(cx).wb.modified {
+                return true;
+            }
+            app.update(cx, |app, cx| {
+                app.confirm_discard(window, cx, |_, window, _| window.remove_window());
+            });
+            false
+        });
         let mut app = ExcelApp {
             title: format!("{}1", t("Book", "Classeur")),
             wb,
@@ -372,6 +391,7 @@ impl ExcelApp {
             ribbon_tab: 1,
             ribbon_level: 0,
             popup: None,
+            popup_dismissed: None,
             dialog: None,
             anchors: Rc::new(RefCell::new(HashMap::new())),
             hover: Hit::None,
@@ -2238,6 +2258,7 @@ impl ExcelApp {
             _ => return,
         }
         self.popup = Some(Popup {
+            anchor: None,
             pos,
             kind: PopupKind::Menu(entries),
             width: 250.0,
@@ -2248,8 +2269,13 @@ impl ExcelApp {
 
     /// Open a drop-down below the ribbon control registered under `anchor`.
     pub fn open_menu(&mut self, anchor: &'static str, entries: Vec<MenuEntry>, width: f32, window: &mut Window, cx: &mut Context<Self>) {
+        if self.popup_dismissed.take() == Some(anchor) {
+            cx.notify();
+            return;
+        }
         let pos = self.anchor_pos(anchor, window);
         self.popup = Some(Popup {
+            anchor: Some(anchor),
             pos,
             kind: PopupKind::Menu(entries),
             width,
@@ -2259,8 +2285,13 @@ impl ExcelApp {
     }
 
     pub fn open_palette(&mut self, anchor: &'static str, target: ColorTarget, window: &mut Window, cx: &mut Context<Self>) {
+        if self.popup_dismissed.take() == Some(anchor) {
+            cx.notify();
+            return;
+        }
         let pos = self.anchor_pos(anchor, window);
         self.popup = Some(Popup {
+            anchor: Some(anchor),
             pos,
             kind: PopupKind::Palette(target),
             width: 214.0,

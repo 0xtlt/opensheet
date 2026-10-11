@@ -75,7 +75,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 
 Graphiques, tableaux croisés dynamiques, mise en forme conditionnelle, tableaux structurés, filtres automatiques, validation des données, commentaires, images et formes, impression et mise en page, boîte de dialogue Format de cellule, gestionnaire de noms, protection, macros (hors périmètre pour l'instant). Les boutons correspondants sont présents dans le ruban mais affichent « pas encore disponible ».
 
-Le recalcul est complet à chaque modification (pas encore de graphe de dépendances), ce qui suffit jusqu'à quelques dizaines de milliers de formules.
+Le recalcul est complet à chaque modification (pas encore de graphe de dépendances) : environ 0,15 s pour 200 000 formules en mode release, ce qui deviendra sensible sur de très gros classeurs.
 
 ## Architecture
 
