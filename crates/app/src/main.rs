@@ -141,12 +141,44 @@ fn set_menus(cx: &mut App) {
     ]);
 }
 
+/// Opt-in (`OPENSHEET_OFFICE_FONTS=1`): use the Aptos / Calibri fonts of a
+/// Microsoft Office installation on this machine so cells render exactly as
+/// in Excel. Nothing is copied or redistributed; without it, cells fall back
+/// to a system font of similar proportions.
+fn load_office_fonts(cx: &mut App) {
+    if std::env::var("OPENSHEET_OFFICE_FONTS").map(|v| v != "1").unwrap_or(true) {
+        return;
+    }
+    let mut fonts: Vec<std::borrow::Cow<'static, [u8]>> = Vec::new();
+    for app in ["Microsoft Excel", "Microsoft Word", "Microsoft PowerPoint"] {
+        let dir = format!("/Applications/{app}.app/Contents/Resources/DFonts");
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if (name.starts_with("aptos") || name.starts_with("calibri")) && name.ends_with(".ttf") {
+                if let Ok(bytes) = std::fs::read(entry.path()) {
+                    fonts.push(bytes.into());
+                }
+            }
+        }
+        if !fonts.is_empty() {
+            break;
+        }
+    }
+    if !fonts.is_empty() {
+        let _ = cx.text_system().add_fonts(fonts);
+    }
+}
+
 fn main() {
     let demo = std::env::args().any(|a| a == "--demo");
     let file_arg = std::env::args().skip(1).find(|a| !a.starts_with("--"));
 
     Application::new().with_assets(icons::Assets).run(move |cx: &mut App| {
         i18n::set_french(i18n::system_prefers_french());
+        load_office_fonts(cx);
         bind_keys(cx);
         set_menus(cx);
         cx.on_action(|_: &Quit, cx| cx.quit());

@@ -416,19 +416,33 @@ impl GridLayout {
 pub struct FontResolver {
     available: HashSet<String>,
     cache: RefCell<HashMap<Arc<str>, SharedString>>,
+    text_system: Arc<gpui::TextSystem>,
     pub names: Vec<String>,
 }
 
 impl FontResolver {
-    pub fn new(mut names: Vec<String>) -> FontResolver {
+    pub fn new(text_system: Arc<gpui::TextSystem>) -> FontResolver {
+        let mut names = text_system.all_font_names();
         names.sort();
         names.dedup();
         names.retain(|n| !n.starts_with('.'));
         FontResolver {
             available: names.iter().map(|n| n.to_lowercase()).collect(),
             cache: RefCell::new(HashMap::new()),
+            text_system,
             names,
         }
+    }
+
+    /// True when the family can actually be loaded. Some system fonts are
+    /// not enumerated (macOS activates them on demand), so probe by name.
+    fn usable(&self, family: &str) -> bool {
+        if self.available.contains(&family.to_lowercase()) {
+            return true;
+        }
+        // An unknown family resolves to the fallback stack's font.
+        let fallback = self.text_system.resolve_font(&gpui::font("opensheet-missing-font"));
+        self.text_system.resolve_font(&gpui::font(family.to_string())) != fallback
     }
 
     pub fn resolve(&self, name: &Arc<str>) -> SharedString {
@@ -437,26 +451,32 @@ impl FontResolver {
         }
         let lower = name.to_lowercase();
         let candidates: &[&str] = match lower.as_str() {
-            "aptos narrow" => &["Aptos Narrow", "Arial Narrow", "Helvetica Neue", "Arial"],
-            "aptos" | "aptos display" => &["Aptos", "Helvetica Neue", "Arial"],
-            "calibri" | "calibri light" => &["Calibri", "Carlito", "Helvetica Neue", "Arial"],
-            "cambria" => &["Cambria", "Georgia", "Times New Roman"],
-            "segoe ui" => &["Segoe UI", "Helvetica Neue", "Arial"],
-            "consolas" => &["Consolas", "Menlo", "Courier New"],
+            // Seravek ships with macOS and is the closest match in digit
+            // width and overall colour to Aptos Narrow / Calibri. Condensed
+            // faces (Arial Narrow) look squashed next to the real thing.
+            "aptos narrow" => &["Aptos", "Calibri", "Carlito", "Seravek", "Helvetica Neue", "Arial"],
+            "aptos" | "aptos display" => &["Calibri", "Carlito", "Seravek", "Helvetica Neue", "Arial"],
+            "calibri" | "calibri light" => &["Carlito", "Seravek", "Helvetica Neue", "Arial"],
+            "cambria" => &["Georgia", "Times New Roman"],
+            "segoe ui" => &["Helvetica Neue", "Arial"],
+            "consolas" => &["Menlo", "Courier New"],
             _ => &[],
         };
         let mut chosen: Option<String> = None;
-        if self.available.contains(&lower) {
+        if self.usable(name) {
             chosen = Some(name.to_string());
         } else {
             for cand in candidates {
-                if self.available.contains(&cand.to_lowercase()) {
+                if self.usable(cand) {
                     chosen = Some(cand.to_string());
                     break;
                 }
             }
         }
         let family: SharedString = chosen.unwrap_or_else(|| "Helvetica Neue".to_string()).into();
+        if std::env::var("OPENSHEET_DEBUG").is_ok() {
+            eprintln!("font {name:?} -> {family:?}");
+        }
         self.cache.borrow_mut().insert(name.clone(), family.clone());
         family
     }

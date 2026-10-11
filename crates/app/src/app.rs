@@ -324,7 +324,7 @@ impl ExcelApp {
             Locale::en()
         };
         let wb = Workbook::new(locale);
-        let fonts = Rc::new(FontResolver::new(cx.text_system().all_font_names()));
+        let fonts = Rc::new(FontResolver::new(cx.text_system().clone()));
         let cell_editor = cx.new(TextInput::new);
         let formula_input = cx.new(TextInput::new);
         let name_box = cx.new(|cx| {

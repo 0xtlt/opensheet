@@ -60,13 +60,11 @@ pub struct Calc<'a> {
 impl<'a> Calc<'a> {
     fn new(wb: &'a Workbook, hints: Vec<Vec<SpillRect>>, now: f64) -> Calc<'a> {
         let mut extents = Vec::with_capacity(wb.sheets.len());
-        for (i, sheet) in wb.sheets.iter().enumerate() {
-            let (mut r, mut c) = sheet.content_extent();
-            for h in hints.get(i).map(|v| v.as_slice()).unwrap_or(&[]) {
-                r = r.max(h.rect.r1);
-                c = c.max(h.rect.c1);
-            }
-            extents.push((r, c));
+        for sheet in wb.sheets.iter() {
+            // Typed cells only: spilled arrays extend the extent as they are
+            // registered during the pass. Counting last pass's spills here
+            // would let `=A:A` grow a little on every recalculation.
+            extents.push(sheet.cell_extent());
         }
         Calc {
             wb,
@@ -208,6 +206,19 @@ impl<'a> Calc<'a> {
         self.depth.set(self.depth.get() - 1);
 
         if let Value::Array(a) = &v {
+            // Blank elements of an array result read as 0, like a formula
+            // returning a blank cell.
+            if a.len() > 1 && a.iter().any(|x| x.is_empty()) {
+                let mut filled = (**a).clone();
+                for x in &mut filled.data {
+                    if x.is_empty() {
+                        *x = Value::Number(0.0);
+                    }
+                }
+                v = Value::array(filled);
+            }
+        }
+        if let Value::Array(a) = &v {
             if a.len() == 0 {
                 v = Value::Error(ErrorKind::Calc);
             } else if a.len() == 1 {
@@ -308,6 +319,22 @@ impl<'a> Calc<'a> {
         }
     }
 
+    /// The part of a range that is materialised: large ranges (whole
+    /// columns / rows above all) are clamped to the part of the sheet
+    /// holding data; ordinary ranges keep their shape.
+    fn clamp_rect(&self, reference: &Reference) -> Rect {
+        let rect = reference.rect;
+        if reference.sheet >= self.wb.sheets.len() {
+            return rect;
+        }
+        self.ensure_hinted(reference.sheet, &rect);
+        if rect.rows() as u64 * rect.cols() as u64 <= 200_000 {
+            return rect;
+        }
+        let (er, ec) = self.extents.borrow()[reference.sheet];
+        Rect::new(rect.r0, rect.c0, rect.r1.min(er.max(rect.r0)), rect.c1.min(ec.max(rect.c0)))
+    }
+
     /// Materialise a range, clamped to the part of the sheet holding data.
     fn range_array(&self, reference: &Reference) -> Arc<Array> {
         if let Some(a) = self.range_cache.borrow().get(reference) {
@@ -317,15 +344,8 @@ impl<'a> Calc<'a> {
             return Arc::new(Array::row(vec![Value::Error(ErrorKind::Ref)]));
         };
         let rect = reference.rect;
-        self.ensure_hinted(reference.sheet, &rect);
-        // Large ranges (whole columns / rows above all) are clamped to the
-        // part of the sheet holding data; ordinary ranges keep their shape.
-        let (er, ec) = self.extents.borrow()[reference.sheet];
-        let (r1, c1) = if rect.rows() as u64 * rect.cols() as u64 > 200_000 {
-            (rect.r1.min(er.max(rect.r0)), rect.c1.min(ec.max(rect.c0)))
-        } else {
-            (rect.r1, rect.c1)
-        };
+        let clamped = self.clamp_rect(reference);
+        let (r1, c1) = (clamped.r1, clamped.c1);
         let rows = (r1 - rect.r0 + 1) as usize;
         let cols = (c1 - rect.c0 + 1) as usize;
         let mut arr = Array::new(rows, cols);
@@ -355,7 +375,6 @@ impl<'a> Calc<'a> {
             }
         }
         // Overlay spilled arrays.
-        let clamped = Rect::new(rect.r0, rect.c0, r1, c1);
         let spills: Vec<SpillRect> = self.spills.borrow()[reference.sheet]
             .iter()
             .filter(|s| s.rect.intersects(&clamped))
@@ -539,6 +558,12 @@ impl<'a> EvalCtx<'a> {
     /// Values of a resolved reference as an array (clamped to used cells).
     pub fn range_values(&self, reference: &Reference) -> Arc<Array> {
         self.calc.range_array(reference)
+    }
+
+    /// The rectangle `range_values` / `eval` actually deliver for a
+    /// reference (whole columns and rows are clamped to the used sheet).
+    pub fn clamped(&self, reference: &Reference) -> Rect {
+        self.calc.clamp_rect(reference)
     }
 
     /// Scalar value of one cell.
@@ -880,6 +905,8 @@ pub fn is_reference(e: &Expr) -> bool {
     match e {
         Expr::Ref(_) | Expr::Name(_) => true,
         Expr::Paren(inner) => is_reference(inner),
+        // OFFSET, INDIRECT, INDEX... hand back cells too.
+        Expr::Func(name, _) => functions::lookup(name).is_some_and(|def| def.ref_func.is_some()),
         _ => false,
     }
 }

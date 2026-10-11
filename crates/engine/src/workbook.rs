@@ -105,6 +105,20 @@ impl Sheet {
         self.row_heights.get(&row).copied().unwrap_or(DEFAULT_ROW_HEIGHT)
     }
 
+    /// (max row, max col) of cells holding a constant or a formula, ignoring
+    /// spilled results; (0, 0) for an empty sheet.
+    pub fn cell_extent(&self) -> (u32, u32) {
+        let mut r = 0;
+        let mut c = 0;
+        for ((row, col), cell) in self.cells.iter() {
+            if !matches!(cell.content, Content::Empty) {
+                r = r.max(*row);
+                c = c.max(*col);
+            }
+        }
+        (r, c)
+    }
+
     /// (max row, max col) of cells with content; (0, 0) for an empty sheet.
     pub fn content_extent(&self) -> (u32, u32) {
         let mut r = 0;

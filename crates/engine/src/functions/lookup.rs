@@ -1200,16 +1200,9 @@ fn row_or_column(ctx: &EvalCtx, args: &[Expr], want_row: bool) -> R<Value> {
     if open && count > 1 {
         // A range running to the edge of the sheet is numbered over the used
         // part of the sheet only, in step with the values of that range as
-        // the evaluator delivers them (`(A:A<>"")*ROW(A:A)`). The extent is
-        // read off a strip along the far edge of the sheet, so that no cell
-        // of the range itself has to be calculated.
-        let probe = if want_row {
-            Rect::new(rect.r0, MAX_COLS - 1, rect.r1, MAX_COLS - 1)
-        } else {
-            Rect::new(MAX_ROWS - 1, rect.c0, MAX_ROWS - 1, rect.c1)
-        };
-        let used = ctx.range_values(&Reference::new(reference.sheet, probe));
-        count = if want_row { used.rows } else { used.cols } as u32;
+        // the evaluator delivers them (`(A:A<>"")*ROW(A:A)`).
+        let used = ctx.clamped(&reference);
+        count = if want_row { used.rows() } else { used.cols() };
     }
     if count == 1 {
         return Ok(Value::Number(first as f64 + 1.0));
@@ -2027,7 +2020,7 @@ mod tests {
 
     fn show(v: &Value) -> String {
         match v {
-            Value::Empty => "_".to_string(),
+            Value::Empty => "0".to_string(),
             Value::Number(n) => format!("{n}"),
             Value::Text(s) => s.to_string(),
             Value::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
@@ -2712,8 +2705,8 @@ mod tests {
         assert_eq!(v("DROP(C:C,3)"), "6;5");
         assert_eq!(v("VSTACK(A:A,C:C)"), "3;1;2;9;8;7;6;5");
         assert_eq!(v("HSTACK(A:A,C:C)"), "3,9;1,8;2,7;#N/A,6;#N/A,5");
-        assert_eq!(v("TOCOL(A:C)"), "3;_;9;1;_;8;2;_;7;_;_;6;_;_;5");
-        assert_eq!(v("TRANSPOSE(2:2)"), "1;_;8");
+        assert_eq!(v("TOCOL(A:C)"), "3;0;9;1;0;8;2;0;7;0;0;6;0;0;5");
+        assert_eq!(v("TRANSPOSE(2:2)"), "1;0;8");
         assert_eq!(v("FILTER(A:A,C:C>6)"), "3;1;2");
         assert_eq!(v("FILTER(C:C,A:A)"), "9;8;7");
         assert_eq!(v("FILTER(C:C,A:A<3)"), "8;7;6;5");
@@ -2788,8 +2781,8 @@ mod tests {
         );
         // Blanks go last in either direction.
         let gaps = &[("A1", "3"), ("A3", "1"), ("A4", "2")];
-        assert_eq!(calc(gaps, "SORT(A1:A4)"), "1;2;3;_");
-        assert_eq!(calc(gaps, "SORT(A1:A4,,-1)"), "3;2;1;_");
+        assert_eq!(calc(gaps, "SORT(A1:A4)"), "1;2;3;0");
+        assert_eq!(calc(gaps, "SORT(A1:A4,,-1)"), "3;2;1;0");
         assert_eq!(calc(gaps, "ROWS(SORT(A1:A9))"), "9");
         // Errors.
         assert_eq!(v("SORT(A2:C5,4)"), "#VALUE!");
@@ -2889,7 +2882,7 @@ mod tests {
         // Counted on the range as written, not on its used part.
         assert_eq!(calc(NUMS, "TAKE(A1:A5,-2)"), "40;50");
         assert_eq!(calc(NUMS, "TAKE(A1:A8,-1)"), "0");
-        assert_eq!(calc(NUMS, "DROP(A1:A8,3)"), "40;50;_;_;_");
+        assert_eq!(calc(NUMS, "DROP(A1:A8,3)"), "40;50;0;0;0");
         assert_eq!(calc(NUMS, "SUM(DROP(A:A,3))"), "90");
         assert_eq!(calc(NUMS, "TAKE(A:A,-1)"), "50");
     }
@@ -2944,9 +2937,9 @@ mod tests {
         assert_eq!(f("TOCOL({1,2},-1)"), "#VALUE!");
         assert_eq!(f("TOCOL({#N/A,#DIV/0!},2)"), "#CALC!");
         let cells = &[("A1", "1"), ("B1", "=1/0"), ("A2", "x"), ("B3", "4")];
-        assert_eq!(calc(cells, "TOCOL(A1:B3)"), "1;#DIV/0!;x;_;_;4");
+        assert_eq!(calc(cells, "TOCOL(A1:B3)"), "1;#DIV/0!;x;0;0;4");
         assert_eq!(calc(cells, "TOCOL(A1:B3,1)"), "1;#DIV/0!;x;4");
-        assert_eq!(calc(cells, "TOCOL(A1:B3,2)"), "1;x;_;_;4");
+        assert_eq!(calc(cells, "TOCOL(A1:B3,2)"), "1;x;0;0;4");
         assert_eq!(calc(cells, "TOCOL(A1:B3,3)"), "1;x;4");
         assert_eq!(calc(cells, "TOROW(A1:B3,3,TRUE)"), "1,x,4");
         assert_eq!(calc(cells, "TOCOL(A:B,3)"), "1;x;4");
