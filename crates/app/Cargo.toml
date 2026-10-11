@@ -1,0 +1,11 @@
+[package]
+name = "opensheet"
+description = "An open-source spreadsheet with a familiar ribbon interface, built with Rust and GPUI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+opensheet_engine = { path = "../engine" }
+gpui = "0.2.2"
+unicode-segmentation = "1"

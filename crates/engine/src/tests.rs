@@ -1,0 +1,194 @@
+//! End-to-end engine tests.
+
+use crate::locale::Locale;
+use crate::refs::Rect;
+use crate::value::{ErrorKind, Value};
+use crate::workbook::Workbook;
+
+/// Build a workbook (English locale) from (cell, input) pairs on sheet 0.
+pub fn wb(cells: &[(&str, &str)]) -> Workbook {
+    let mut wb = Workbook::new(Locale::en());
+    for (name, text) in cells {
+        let (r, c) = crate::refs::parse_cell_name(name).unwrap();
+        wb.set_cell_text(0, r, c, text).unwrap();
+    }
+    wb.commit("setup");
+    wb
+}
+
+/// Value of a cell by name on sheet 0.
+pub fn val(wb: &Workbook, name: &str) -> Value {
+    let (r, c) = crate::refs::parse_cell_name(name).unwrap();
+    wb.value_at(0, r, c)
+}
+
+/// Evaluate a formula (English syntax, no leading `=`) on an empty workbook.
+pub fn eval(formula: &str) -> Value {
+    let w = wb(&[("Z100", &format!("={formula}"))]);
+    val(&w, "Z100")
+}
+
+pub fn num(formula: &str) -> f64 {
+    match eval(formula) {
+        Value::Number(n) => n,
+        other => panic!("{formula} gave {other:?}, expected a number"),
+    }
+}
+
+#[test]
+fn arithmetic() {
+    assert_eq!(num("1+2*3"), 7.0);
+    assert_eq!(num("(1+2)*3"), 9.0);
+    assert_eq!(num("2^3^2"), 64.0);
+    assert_eq!(num("-2^2"), 4.0);
+    assert_eq!(num("10%"), 0.1);
+    assert_eq!(num("\"3\"+1"), 4.0);
+    assert_eq!(eval("1/0"), Value::Error(ErrorKind::Div0));
+    assert_eq!(eval("\"a\"+1"), Value::Error(ErrorKind::Value));
+    assert_eq!(eval("\"a\"&1&TRUE"), Value::text("a1TRUE"));
+    assert_eq!(eval("1=1"), Value::Bool(true));
+    assert_eq!(eval("\"A\"=\"a\""), Value::Bool(true));
+    assert_eq!(eval("1<\"a\""), Value::Bool(true));
+    assert_eq!(eval("NOSUCHFN(1)"), Value::Error(ErrorKind::Name));
+    assert_eq!(num("0.1+0.2-0.3"), 0.0);
+}
+
+#[test]
+fn references_and_recalc() {
+    let mut w = wb(&[("A1", "1"), ("A2", "2"), ("A3", "=A1+A2"), ("B1", "=SUM(A1:A3)")]);
+    assert_eq!(val(&w, "A3"), Value::Number(3.0));
+    assert_eq!(val(&w, "B1"), Value::Number(6.0));
+    w.set_cell_text(0, 0, 0, "10").unwrap();
+    w.commit("edit");
+    assert_eq!(val(&w, "B1"), Value::Number(24.0));
+    assert!(w.undo());
+    assert_eq!(val(&w, "B1"), Value::Number(6.0));
+    assert!(w.redo());
+    assert_eq!(val(&w, "B1"), Value::Number(24.0));
+}
+
+#[test]
+fn forward_references_and_cycles() {
+    let w = wb(&[("A1", "=A2+1"), ("A2", "=A3+1"), ("A3", "5")]);
+    assert_eq!(val(&w, "A1"), Value::Number(7.0));
+    let w = wb(&[("A1", "=B1"), ("B1", "=A1")]);
+    assert!(w.circular);
+}
+
+#[test]
+fn deep_chain() {
+    // A forward-pointing chain forces deep recursion.
+    let mut w = Workbook::new(Locale::en());
+    let n = 20_000u32;
+    for r in 0..n {
+        w.set_cell_text(0, r, 0, &format!("=A{}+1", r + 2)).unwrap();
+    }
+    w.set_cell_text(0, n, 0, "0").unwrap();
+    w.commit("chain");
+    assert_eq!(w.value_at(0, 0, 0), Value::Number(n as f64));
+}
+
+#[test]
+fn spills() {
+    let w = wb(&[("A1", "={1,2;3,4}"), ("D1", "=A2+B2"), ("E1", "=SUM(A1:B2)")]);
+    assert_eq!(val(&w, "A1"), Value::Number(1.0));
+    assert_eq!(val(&w, "B2"), Value::Number(4.0));
+    assert_eq!(val(&w, "D1"), Value::Number(7.0));
+    assert_eq!(val(&w, "E1"), Value::Number(10.0));
+    // Blocked spill.
+    let w = wb(&[("A1", "={1,2;3,4}"), ("B2", "x")]);
+    assert_eq!(val(&w, "A1"), Value::Error(ErrorKind::Spill));
+    // Array arithmetic.
+    let w = wb(&[("A1", "1"), ("A2", "2"), ("A3", "3"), ("C1", "=A1:A3*10")]);
+    assert_eq!(val(&w, "C3"), Value::Number(30.0));
+    // Scalar function lifted over a range.
+    let w = wb(&[("A1", "-1"), ("A2", "2"), ("C1", "=ABS(A1:A2)")]);
+    assert_eq!(val(&w, "C1"), Value::Number(1.0));
+    assert_eq!(val(&w, "C2"), Value::Number(2.0));
+}
+
+#[test]
+fn if_is_lazy() {
+    assert_eq!(num("IF(TRUE,1,1/0)"), 1.0);
+    assert_eq!(eval("IF(FALSE,1)"), Value::Bool(false));
+}
+
+#[test]
+fn copy_paste_shifts_references() {
+    let mut w = wb(&[("A1", "1"), ("A2", "2"), ("B1", "=A1*2"), ("C1", "=$A$1+A1")]);
+    let clip = w.copy(0, Rect::parse("B1:C1").unwrap());
+    w.paste(0, Rect::parse("B2").unwrap(), &clip, crate::ops::PasteMode::All);
+    w.commit("paste");
+    assert_eq!(w.formula_text(0, 1, 1).unwrap(), "=A2*2");
+    assert_eq!(w.formula_text(0, 1, 2).unwrap(), "=$A$1+A2");
+    assert_eq!(val(&w, "C2"), Value::Number(3.0));
+}
+
+#[test]
+fn insert_delete_rows() {
+    let mut w = wb(&[("A1", "1"), ("A2", "2"), ("A3", "=SUM(A1:A2)"), ("B1", "=A2")]);
+    w.insert_rows(0, 1, 1);
+    w.commit("insert");
+    assert_eq!(w.formula_text(0, 3, 0).unwrap(), "=SUM(A1:A3)");
+    assert_eq!(w.formula_text(0, 0, 1).unwrap(), "=A3");
+    assert_eq!(w.value_at(0, 3, 0), Value::Number(3.0));
+    w.delete_rows(0, 2, 1);
+    w.commit("delete");
+    assert_eq!(w.formula_text(0, 0, 1).unwrap(), "=#REF!");
+    assert_eq!(w.formula_text(0, 2, 0).unwrap(), "=SUM(A1:A2)");
+    w.undo();
+    w.undo();
+    assert_eq!(w.formula_text(0, 2, 0).unwrap(), "=SUM(A1:A2)");
+    assert_eq!(val(&w, "A3"), Value::Number(3.0));
+}
+
+#[test]
+fn autofill_series() {
+    let mut w = wb(&[("A1", "1"), ("A2", "3"), ("B1", "Item 1"), ("C1", "=A1*2"), ("D1", "Monday")]);
+    w.autofill(0, Rect::parse("A1:A2").unwrap(), Rect::parse("A1:A5").unwrap());
+    w.autofill(0, Rect::parse("B1").unwrap(), Rect::parse("B1:B3").unwrap());
+    w.autofill(0, Rect::parse("C1").unwrap(), Rect::parse("C1:C3").unwrap());
+    w.autofill(0, Rect::parse("D1").unwrap(), Rect::parse("D1:D3").unwrap());
+    w.commit("fill");
+    assert_eq!(val(&w, "A5"), Value::Number(9.0));
+    assert_eq!(val(&w, "B3"), Value::text("Item 3"));
+    assert_eq!(w.formula_text(0, 2, 2).unwrap(), "=A3*2");
+    assert_eq!(val(&w, "D3"), Value::text("Wednesday"));
+}
+
+#[test]
+fn sort() {
+    let mut w = wb(&[("A1", "n"), ("A2", "3"), ("A3", "1"), ("A4", "2"), ("B2", "c"), ("B3", "a"), ("B4", "b")]);
+    w.sort_rows(0, Rect::parse("A1:B4").unwrap(), 0, true, true);
+    w.commit("sort");
+    assert_eq!(val(&w, "A2"), Value::Number(1.0));
+    assert_eq!(val(&w, "B2"), Value::text("a"));
+    assert_eq!(val(&w, "B4"), Value::text("c"));
+}
+
+#[test]
+fn french_locale() {
+    let mut w = Workbook::new(Locale::fr());
+    w.set_cell_text(0, 0, 0, "1,5").unwrap();
+    w.set_cell_text(0, 1, 0, "=SOMME(A1;2,5)").unwrap();
+    w.set_cell_text(0, 2, 0, "=SI(A2>3;\"oui\";\"non\")").unwrap();
+    w.commit("fr");
+    assert_eq!(w.value_at(0, 1, 0), Value::Number(4.0));
+    assert_eq!(w.value_at(0, 2, 0), Value::text("oui"));
+    assert_eq!(w.edit_text(0, 1, 0), "=SOMME(A1;2,5)");
+    assert_eq!(w.edit_text(0, 0, 0), "1,5");
+    assert_eq!(w.sheets[0].name, "Feuil1");
+}
+
+#[test]
+fn sheets() {
+    let mut w = wb(&[("A1", "5")]);
+    let i = w.add_sheet(1);
+    w.set_cell_text(i, 0, 0, "=Sheet1!A1*2").unwrap();
+    w.commit("sheet");
+    assert_eq!(w.value_at(1, 0, 0), Value::Number(10.0));
+    assert!(w.rename_sheet(0, "Data 2024"));
+    w.commit("rename");
+    assert_eq!(w.formula_text(1, 0, 0).unwrap(), "='Data 2024'!A1*2");
+    assert_eq!(w.value_at(1, 0, 0), Value::Number(10.0));
+}
