@@ -576,8 +576,9 @@ static IT: Locale = Locale {
     decimal_sep: ',',
     thousands_sep: '.',
     arg_sep: ';',
+    // Italian Excel writes `{1\2\3.4\5\6}`: `\` between columns, `.` between rows.
     array_col_sep: '\\',
-    array_row_sep: ';',
+    array_row_sep: '.',
     true_name: "VERO",
     false_name: "FALSO",
     errors: [

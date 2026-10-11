@@ -1,5 +1,15 @@
-//! French function names: (canonical English name, French name).
-//! Functions spelled identically in both languages are omitted.
+//! French function names: (canonical English name, French name), as spelled by
+//! Microsoft Excel for Microsoft 365 (fr-FR). One name per function: where Excel
+//! renamed a function between versions, the current name is listed.
+//! Checked against Microsoft's function reference (support.microsoft.com) and the
+//! Excel-Translator, PhpSpreadsheet and ONLYOFFICE translation tables.
+//!
+//! Functions spelled identically in both languages are left out of `FUNCTIONS`
+//! and listed in `SAME_AS_ENGLISH` instead, so that every registered function is
+//! accounted for (`names_tests.rs` checks it).
+//!
+//! Quirks that are Excel's own, not typos: `MIRR` is `TRIM` (the English `TRIM` is
+//! `SUPPRESPACE`) and `VARP` is `VAR.P` (the English `VAR.P` is `VAR.P.N`).
 
 pub const FUNCTIONS: &[(&str, &str)] = &[
     // Math
@@ -276,4 +286,81 @@ pub const FUNCTIONS: &[(&str, &str)] = &[
     ("REPLACEB", "REMPLACERB"),
     ("FINDB", "TROUVERB"),
     ("SEARCHB", "CHERCHERB"),
+];
+
+/// Registered functions that keep their English name in French.
+#[cfg(test)]
+pub const SAME_AS_ENGLISH: &[&str] = &[
+    "ABS",
+    "ACOS",
+    "ACOSH",
+    "ACOT",
+    "ASIN",
+    "ASINH",
+    "ATAN",
+    "ATAN2",
+    "ATANH",
+    "AVERAGEA",
+    "BASE",
+    "CODE",
+    "COMBIN",
+    "COMBINA",
+    "CONCAT",
+    "CONVERT",
+    "COS",
+    "COSH",
+    "COT",
+    "CSC",
+    "DATE",
+    "DATEDIF",
+    "DB",
+    "DDB",
+    "DECIMAL",
+    "DELTA",
+    "EXACT",
+    "EXP",
+    "FACT",
+    "FACTDOUBLE",
+    "FISHER",
+    "GAMMA",
+    "INDEX",
+    "INDIRECT",
+    "LENB",
+    "LN",
+    "LOG",
+    "LOG10",
+    "MAX",
+    "MAXA",
+    "MIDB",
+    "MIN",
+    "MINA",
+    "MINUTE",
+    "MOD",
+    "MODE",
+    "N",
+    "NA",
+    "PEARSON",
+    "PI",
+    "QUARTILE",
+    "QUOTIENT",
+    "RADIANS",
+    "REPT",
+    "SEC",
+    "SEQUENCE",
+    "SIN",
+    "SINH",
+    "STDEVA",
+    "STDEVPA",
+    "SYD",
+    "T",
+    "TAN",
+    "TANH",
+    "TRANSPOSE",
+    "TYPE",
+    "UNICODE",
+    "UNIQUE",
+    "VAR",
+    "VAR.S",
+    "VARA",
+    "VARPA",
 ];
