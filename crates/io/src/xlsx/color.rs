@@ -1,0 +1,450 @@
+//! Colour resolution: SpreadsheetML colours are RGB, theme (+ tint),
+//! indexed (legacy palette) or automatic; the engine only stores RGB.
+
+use super::xml::{Event, Reader, Tag};
+use opensheet_engine::Color;
+
+/// The default Office theme, in the order the colours appear in a theme
+/// part: dk1, lt1, dk2, lt2, accent1..6, hlink, folHlink.
+pub(crate) const OFFICE_THEME: [u32; 12] = [
+    0x000000, 0xFFFFFF, 0x44546A, 0xE7E6E6, 0x4472C4, 0xED7D31, 0xA5A5A5, 0xFFC000, 0x5B9BD5,
+    0x70AD47, 0x0563C1, 0x954F72,
+];
+
+/// The legacy 56-colour palette (indices 0..=63; 64 and 65 are the system
+/// foreground / background, i.e. "automatic").
+const INDEXED: [u32; 64] = [
+    0x000000, 0xFFFFFF, 0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00, 0xFF00FF, 0x00FFFF, 0x000000,
+    0xFFFFFF, 0xFF0000, 0x00FF00, 0x0000FF, 0xFFFF00, 0xFF00FF, 0x00FFFF, 0x800000, 0x008000,
+    0x000080, 0x808000, 0x800080, 0x008080, 0xC0C0C0, 0x808080, 0x9999FF, 0x993366, 0xFFFFCC,
+    0xCCFFFF, 0x660066, 0xFF8080, 0x0066CC, 0xCCCCFF, 0x000080, 0xFF00FF, 0xFFFF00, 0x00FFFF,
+    0x800080, 0x800000, 0x008080, 0x0000FF, 0x00CCFF, 0xCCFFFF, 0xCCFFCC, 0xFFFF99, 0x99CCFF,
+    0xFF99CC, 0xCC99FF, 0xFFCC99, 0x3366FF, 0x33CCCC, 0x99CC00, 0xFFCC00, 0xFF9900, 0xFF6600,
+    0x666699, 0x969696, 0x003366, 0x339966, 0x003300, 0x333300, 0x993300, 0x993366, 0x333399,
+    0x333333,
+];
+
+/// Everything needed to turn a colour element into RGB.
+pub(crate) struct Palette {
+    /// Theme colours in theme-part order (see [`OFFICE_THEME`]).
+    pub theme: [u32; 12],
+    pub indexed: Vec<u32>,
+}
+
+impl Default for Palette {
+    fn default() -> Palette {
+        Palette {
+            theme: OFFICE_THEME,
+            indexed: INDEXED.to_vec(),
+        }
+    }
+}
+
+/// A colour element as written (`<color theme="4" tint="0.4"/>`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct RawColor {
+    rgb: Option<u32>,
+    theme: Option<u32>,
+    indexed: Option<u32>,
+    tint: f64,
+    auto: bool,
+}
+
+/// Parse "RRGGBB" or "AARRGGBB" (alpha ignored).
+pub(crate) fn parse_rgb(s: &str) -> Option<u32> {
+    let s = s.trim().trim_start_matches('#');
+    if !(s.len() == 6 || s.len() == 8) || !s.is_ascii() {
+        return None;
+    }
+    u32::from_str_radix(&s[s.len() - 6..], 16).ok()
+}
+
+impl RawColor {
+    pub fn from_tag(tag: &Tag) -> RawColor {
+        let mut c = RawColor::default();
+        for (k, v) in tag.attrs() {
+            match k {
+                "rgb" => c.rgb = parse_rgb(v),
+                "theme" => c.theme = v.trim().parse().ok(),
+                "indexed" => c.indexed = v.trim().parse().ok(),
+                "tint" => {
+                    c.tint = v
+                        .trim()
+                        .parse()
+                        .ok()
+                        .filter(|t: &f64| t.is_finite())
+                        .unwrap_or(0.0)
+                }
+                "auto" => c.auto = super::xml::parse_bool(v),
+                _ => {}
+            }
+        }
+        c
+    }
+
+    /// RGB value; `None` means automatic.
+    pub fn resolve(&self, palette: &Palette) -> Option<Color> {
+        if self.auto {
+            return None;
+        }
+        let base = if let Some(rgb) = self.rgb {
+            rgb
+        } else if let Some(t) = self.theme {
+            // SpreadsheetML swaps the first two pairs: 0 = lt1, 1 = dk1,
+            // 2 = lt2, 3 = dk2.
+            let slot = match t {
+                0 => 1,
+                1 => 0,
+                2 => 3,
+                3 => 2,
+                n => n as usize,
+            };
+            *palette.theme.get(slot)?
+        } else {
+            *palette.indexed.get(self.indexed? as usize)?
+        };
+        Some(Color(apply_tint(base & 0xFF_FFFF, self.tint)))
+    }
+
+    /// True for the plain "text 1" theme colour, which is what applications
+    /// write for ordinary black text.
+    pub fn is_default_text(&self) -> bool {
+        self.rgb.is_none() && self.theme == Some(1) && self.tint == 0.0
+    }
+}
+
+/// Lighten (`tint > 0`) or darken (`tint < 0`) a colour the way Excel does.
+///
+/// Excel scales the luminance in the integer HLS space of the Windows colour
+/// dialog (every component 0..=240), which is why its theme shades differ
+/// by a unit or two from a floating point HSL computation (accent 1 of the
+/// Office theme, 80 % lighter, is D9E1F2 in Excel and D9E2F3 in Word). This
+/// reproduces the palette Excel shows for the Office themes exactly.
+pub(crate) fn apply_tint(rgb: u32, tint: f64) -> u32 {
+    const HLS_MAX: i32 = 240;
+    const RGB_MAX: i32 = 255;
+    if tint == 0.0 || !tint.is_finite() {
+        return rgb;
+    }
+    let r = ((rgb >> 16) & 0xFF) as i32;
+    let g = ((rgb >> 8) & 0xFF) as i32;
+    let b = (rgb & 0xFF) as i32;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let sum = max + min;
+    let lum = (sum * HLS_MAX + RGB_MAX) / (2 * RGB_MAX);
+    let (hue, sat) = if max == min {
+        (0, 0)
+    } else {
+        let d = max - min;
+        let sat = if lum <= HLS_MAX / 2 {
+            (d * HLS_MAX + sum / 2) / sum
+        } else {
+            (d * HLS_MAX + (2 * RGB_MAX - sum) / 2) / (2 * RGB_MAX - sum)
+        };
+        let delta = |c: i32| ((max - c) * (HLS_MAX / 6) + d / 2) / d;
+        let mut hue = if r == max {
+            delta(b) - delta(g)
+        } else if g == max {
+            HLS_MAX / 3 + delta(r) - delta(b)
+        } else {
+            2 * HLS_MAX / 3 + delta(g) - delta(r)
+        };
+        if hue < 0 {
+            hue += HLS_MAX;
+        }
+        if hue > HLS_MAX {
+            hue -= HLS_MAX;
+        }
+        (hue, sat)
+    };
+
+    let tint = tint.clamp(-1.0, 1.0);
+    let scaled = if tint < 0.0 {
+        lum as f64 * (1.0 + tint)
+    } else {
+        lum as f64 * (1.0 - tint) + HLS_MAX as f64 * tint
+    };
+    // Files store the nominal percentage cut to 1/32767 (80 % is written as
+    // 0.79998...); the bias keeps that from dropping a unit of luminance.
+    let lum = ((scaled + 0.01) as i32).clamp(0, HLS_MAX);
+
+    let byte = |v: i32| ((v * RGB_MAX + HLS_MAX / 2) / HLS_MAX).clamp(0, 255) as u32;
+    if sat == 0 {
+        let v = byte(lum);
+        return (v << 16) | (v << 8) | v;
+    }
+    let m2 = if lum <= HLS_MAX / 2 {
+        (lum * (HLS_MAX + sat) + HLS_MAX / 2) / HLS_MAX
+    } else {
+        lum + sat - (lum * sat + HLS_MAX / 2) / HLS_MAX
+    };
+    let m1 = 2 * lum - m2;
+    let channel = |mut h: i32| {
+        if h < 0 {
+            h += HLS_MAX;
+        }
+        if h > HLS_MAX {
+            h -= HLS_MAX;
+        }
+        if h < HLS_MAX / 6 {
+            m1 + ((m2 - m1) * h + HLS_MAX / 12) / (HLS_MAX / 6)
+        } else if h < HLS_MAX / 2 {
+            m2
+        } else if h < HLS_MAX * 2 / 3 {
+            m1 + ((m2 - m1) * (HLS_MAX * 2 / 3 - h) + HLS_MAX / 12) / (HLS_MAX / 6)
+        } else {
+            m1
+        }
+    };
+    (byte(channel(hue + HLS_MAX / 3)) << 16)
+        | (byte(channel(hue)) << 8)
+        | byte(channel(hue - HLS_MAX / 3))
+}
+
+/// Mix two colours: `amount` of `fg` over `bg`.
+pub(crate) fn blend(fg: u32, bg: u32, amount: f64) -> u32 {
+    let mix = |shift: u32| {
+        let f = ((fg >> shift) & 0xFF) as f64;
+        let b = ((bg >> shift) & 0xFF) as f64;
+        ((f * amount + b * (1.0 - amount)).round() as u32).min(255) << shift
+    };
+    mix(16) | mix(8) | mix(0)
+}
+
+/// Read the colour scheme of a theme part.
+pub(crate) fn parse_theme(xml: &str) -> [u32; 12] {
+    const SLOTS: [&str; 12] = [
+        "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5",
+        "accent6", "hlink", "folHlink",
+    ];
+    let mut colors = OFFICE_THEME;
+    let mut r = Reader::new(xml);
+    let mut slot: Option<usize> = None;
+    let mut in_scheme = false;
+    loop {
+        match r.next() {
+            Event::Open(t) => match t.name {
+                "clrScheme" => in_scheme = !t.empty,
+                "srgbClr" if in_scheme => {
+                    if let (Some(i), Some(rgb)) = (slot, t.attr("val").and_then(|v| parse_rgb(&v)))
+                    {
+                        colors[i] = rgb;
+                    }
+                }
+                "sysClr" if in_scheme => {
+                    if let Some(i) = slot {
+                        let rgb = t
+                            .attr("lastClr")
+                            .and_then(|v| parse_rgb(&v))
+                            .or_else(|| match t.attr("val").as_deref() {
+                                Some("windowText") => Some(0x000000),
+                                Some("window") => Some(0xFFFFFF),
+                                _ => None,
+                            });
+                        if let Some(rgb) = rgb {
+                            colors[i] = rgb;
+                        }
+                    }
+                }
+                name if in_scheme => {
+                    if let Some(i) = SLOTS.iter().position(|s| *s == name) {
+                        slot = Some(i);
+                    }
+                }
+                _ => {}
+            },
+            Event::Close("clrScheme") | Event::Eof => break,
+            _ => {}
+        }
+    }
+    colors
+}
+
+#[cfg(test)]
+#[allow(clippy::excessive_precision)]
+mod tests {
+    use super::*;
+
+    // The tints Excel writes for the five shades of a palette column,
+    // digit for digit as they appear in files.
+    const LIGHTER_80: f64 = 0.79998168889431442;
+    const LIGHTER_60: f64 = 0.59999389629810485;
+    const LIGHTER_40: f64 = 0.39997558519241921;
+    const DARKER_25: f64 = -0.249977111117893;
+    const DARKER_50: f64 = -0.499984740745262;
+    const ACCENT: [f64; 5] = [LIGHTER_80, LIGHTER_60, LIGHTER_40, DARKER_25, DARKER_50];
+    const WHITE: [f64; 5] = [
+        -4.9989318521683403E-2,
+        -0.14999847407452621,
+        DARKER_25,
+        -0.34998626667073579,
+        DARKER_50,
+    ];
+    const BLACK: [f64; 5] = [
+        0.499984740745262,
+        0.34998626667073579,
+        0.249977111117893,
+        0.14999847407452621,
+        4.9989318521683403E-2,
+    ];
+    const BACKGROUND_2: [f64; 5] = [
+        -9.9978637043366805E-2,
+        DARKER_25,
+        DARKER_50,
+        -0.749992370372631,
+        -0.89999084444715716,
+    ];
+
+    fn assert_palette(columns: &[(u32, [f64; 5], [u32; 5])]) {
+        for (base, tints, shades) in columns {
+            for (tint, expected) in tints.iter().zip(shades) {
+                let got = apply_tint(*base, *tint);
+                assert_eq!(
+                    got, *expected,
+                    "{base:06X} tint {tint}: got {got:06X}, Excel shows {expected:06X}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tints_match_the_excel_palette() {
+        // The "Theme Colors" grid of the colour picker, Office 2013-2022 theme.
+        assert_palette(&[
+            (
+                0xFFFFFF,
+                WHITE,
+                [0xF2F2F2, 0xD9D9D9, 0xBFBFBF, 0xA6A6A6, 0x808080],
+            ),
+            (
+                0x000000,
+                BLACK,
+                [0x808080, 0x595959, 0x404040, 0x262626, 0x0D0D0D],
+            ),
+            (
+                0xE7E6E6,
+                BACKGROUND_2,
+                [0xD0CECE, 0xAEAAAA, 0x757171, 0x3A3838, 0x161616],
+            ),
+            (
+                0x44546A,
+                ACCENT,
+                [0xD6DCE4, 0xACB9CA, 0x8497B0, 0x333F4F, 0x222B35],
+            ),
+            (
+                0x4472C4,
+                ACCENT,
+                [0xD9E1F2, 0xB4C6E7, 0x8EA9DB, 0x305496, 0x203764],
+            ),
+            (
+                0xED7D31,
+                ACCENT,
+                [0xFCE4D6, 0xF8CBAD, 0xF4B084, 0xC65911, 0x833C0C],
+            ),
+            (
+                0xA5A5A5,
+                ACCENT,
+                [0xEDEDED, 0xDBDBDB, 0xC9C9C9, 0x7B7B7B, 0x525252],
+            ),
+            (
+                0xFFC000,
+                ACCENT,
+                [0xFFF2CC, 0xFFE699, 0xFFD966, 0xBF8F00, 0x806000],
+            ),
+            (
+                0x5B9BD5,
+                ACCENT,
+                [0xDDEBF7, 0xBDD7EE, 0x9BC2E6, 0x2F75B5, 0x1F4E78],
+            ),
+            (
+                0x70AD47,
+                ACCENT,
+                [0xE2EFDA, 0xC6E0B4, 0xA9D08E, 0x548235, 0x375623],
+            ),
+        ]);
+        // The same grid for the Office 2007-2010 theme.
+        assert_palette(&[
+            (
+                0xEEECE1,
+                BACKGROUND_2,
+                [0xDDD9C4, 0xC4BD97, 0x948A54, 0x494529, 0x1D1B10],
+            ),
+            (
+                0x1F497D,
+                ACCENT,
+                [0xC5D9F1, 0x8DB4E2, 0x538DD5, 0x16365C, 0x0F243E],
+            ),
+            (
+                0x4F81BD,
+                ACCENT,
+                [0xDCE6F1, 0xB8CCE4, 0x95B3D7, 0x366092, 0x244062],
+            ),
+            (
+                0xC0504D,
+                ACCENT,
+                [0xF2DCDB, 0xE6B8B7, 0xDA9694, 0x963634, 0x632523],
+            ),
+            (
+                0x9BBB59,
+                ACCENT,
+                [0xEBF1DE, 0xD8E4BC, 0xC4D79B, 0x76933C, 0x4F6228],
+            ),
+            (
+                0x8064A2,
+                ACCENT,
+                [0xE4DFEC, 0xCCC0DA, 0xB1A0C7, 0x60497A, 0x403151],
+            ),
+            (
+                0x4BACC6,
+                ACCENT,
+                [0xDAEEF3, 0xB7DEE8, 0x92CDDC, 0x31869B, 0x215967],
+            ),
+            (
+                0xF79646,
+                ACCENT,
+                [0xFDE9D9, 0xFCD5B4, 0xFABF8F, 0xE26B0A, 0x974706],
+            ),
+        ]);
+        assert_eq!(apply_tint(0x123456, 0.0), 0x123456);
+        assert_eq!(apply_tint(0x123456, f64::NAN), 0x123456);
+        assert_eq!(apply_tint(0x4472C4, 1.0), 0xFFFFFF);
+        assert_eq!(apply_tint(0x4472C4, -1.0), 0x000000);
+        assert_eq!(apply_tint(0x4472C4, 7.0), 0xFFFFFF);
+    }
+
+    #[test]
+    fn theme_part() {
+        let xml = r#"<a:theme xmlns:a="x"><a:themeElements><a:clrScheme name="T">
+            <a:dk1><a:sysClr val="windowText" lastClr="111111"/></a:dk1>
+            <a:lt1><a:sysClr val="window"/></a:lt1>
+            <a:dk2><a:srgbClr val="0E2841"/></a:dk2><a:lt2><a:srgbClr val="E8E8E8"/></a:lt2>
+            <a:accent1><a:srgbClr val="156082"/></a:accent1>
+            </a:clrScheme><a:fontScheme><a:srgbClr val="FF0000"/></a:fontScheme></a:themeElements></a:theme>"#;
+        let theme = parse_theme(xml);
+        assert_eq!(
+            &theme[..5],
+            &[0x111111, 0xFFFFFF, 0x0E2841, 0xE8E8E8, 0x156082]
+        );
+        assert_eq!(theme[5], OFFICE_THEME[5]);
+        let palette = Palette {
+            theme,
+            ..Palette::default()
+        };
+        let color = |s: &str| {
+            let xml = format!("<color {s}/>");
+            let mut r = Reader::new(&xml);
+            let Event::Open(t) = r.next() else { panic!() };
+            RawColor::from_tag(&t).resolve(&palette)
+        };
+        assert_eq!(color("theme=\"0\""), Some(Color(0xFFFFFF)));
+        assert_eq!(color("theme=\"1\""), Some(Color(0x111111)));
+        assert_eq!(color("theme=\"3\""), Some(Color(0x0E2841)));
+        assert_eq!(color("theme=\"4\""), Some(Color(0x156082)));
+        assert_eq!(color("rgb=\"FF00B050\""), Some(Color(0x00B050)));
+        assert_eq!(color("indexed=\"10\""), Some(Color(0xFF0000)));
+        assert_eq!(color("indexed=\"64\""), None);
+        assert_eq!(color("auto=\"1\""), None);
+        assert_eq!(color("theme=\"99\""), None);
+    }
+}

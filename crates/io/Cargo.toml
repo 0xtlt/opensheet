@@ -1,0 +1,14 @@
+[package]
+name = "opensheet_io"
+description = "Reading and writing .xlsx and .csv files for the OpenSheet workbook model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+opensheet_engine = { path = "../engine" }
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+quick-xml = "0.41"
+tempfile = "3"
