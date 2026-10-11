@@ -292,6 +292,10 @@ pub struct ExcelApp {
     pub last_border: BorderPreset,
     pub show_formula_bar: bool,
     pub show_find: bool,
+    /// Column where a run of Tab entries started (Enter returns below it).
+    tab_origin: Option<u32>,
+    /// Formats waiting to be applied by the format painter.
+    pub painter: Option<Clip>,
     /// Coloured ranges of the formula being edited, on the visible sheet.
     pub ref_highlights: Vec<(Rect, u32)>,
     _subscriptions: Vec<Subscription>,
@@ -378,6 +382,8 @@ impl ExcelApp {
             last_border: BorderPreset::Bottom,
             show_formula_bar: true,
             show_find: false,
+            tab_origin: None,
+            painter: None,
             ref_highlights: Vec::new(),
             _subscriptions: subscriptions,
         };
@@ -616,6 +622,9 @@ impl ExcelApp {
     }
 
     pub fn move_selection(&mut self, dir: Direction, extend: bool, cx: &mut Context<Self>) {
+        if dir == Direction::Up || dir == Direction::Left {
+            self.tab_origin = None;
+        }
         if extend {
             let lead = self.lead();
             let (r, c) = self.step(lead, dir);
@@ -876,11 +885,23 @@ impl ExcelApp {
             }
             InputEvent::Enter { shift } => {
                 let dir = if *shift { Direction::Up } else { Direction::Down };
-                self.commit_edit(Some(dir), window, cx);
+                let origin = self.tab_origin.take();
+                if self.commit_edit(Some(dir), window, cx) {
+                    // After a run of Tab entries, Enter goes back under the
+                    // first one.
+                    if let (Some(col), false, true) = (origin, *shift, self.sel().is_single_cell()) {
+                        let (r, _) = self.active();
+                        self.select_cell(r, col, cx);
+                    }
+                }
             }
             InputEvent::Tab { shift } => {
                 let dir = if *shift { Direction::Left } else { Direction::Right };
-                self.commit_edit(Some(dir), window, cx);
+                let col = self.editing.as_ref().map(|e| e.col);
+                let origin = self.tab_origin.or(col);
+                if self.commit_edit(Some(dir), window, cx) {
+                    self.tab_origin = origin;
+                }
             }
             InputEvent::Escape => self.cancel_edit(window, cx),
             InputEvent::Navigate { key, shift } => {
@@ -1684,6 +1705,7 @@ impl ExcelApp {
         }
         self.popup = None;
         self.status_message = None;
+        self.tab_origin = None;
         let (lx, ly) = layout.local(ev.position);
         let shift = ev.modifiers.shift;
         let add = ev.modifiers.platform || ev.modifiers.control;
@@ -1816,7 +1838,11 @@ impl ExcelApp {
             }
             Hit::FillHandle => {
                 let src = self.sel().current();
-                self.drag = Some(Drag::Fill { src, dest: src });
+                if ev.click_count >= 2 {
+                    self.fill_down_to_neighbour(src, cx);
+                } else {
+                    self.drag = Some(Drag::Fill { src, dest: src });
+                }
             }
             Hit::Cell(row, col) => {
                 if self.editing.is_some() {
@@ -1987,9 +2013,54 @@ impl ExcelApp {
                 self.wb.commit(t("Row Height", "Hauteur de ligne"));
                 self.status_message = None;
             }
+            Drag::Select(_) => {
+                // The format painter applies to the range just selected.
+                if let Some(clip) = self.painter.take() {
+                    let dest = self.sel().current();
+                    self.wb.paste(self.sheet, dest, &clip, PasteMode::Formats);
+                    self.wb.commit(t("Format Painter", "Reproduire la mise en forme"));
+                    self.status_message = None;
+                }
+            }
             _ => {}
         }
         self.refresh(cx);
+    }
+
+    /// Double-click on the fill handle: fill down as far as the column next
+    /// to the selection has data.
+    fn fill_down_to_neighbour(&mut self, src: Rect, cx: &mut Context<Self>) {
+        let sheet = &self.wb.sheets[self.sheet];
+        let mut last = src.r1;
+        for col in [src.c0.checked_sub(1), (src.c1 + 1 < MAX_COLS).then_some(src.c1 + 1)]
+            .into_iter()
+            .flatten()
+        {
+            let mut r = src.r1;
+            while r + 1 < MAX_ROWS && !sheet.is_blank(r + 1, col) {
+                r += 1;
+            }
+            last = last.max(r);
+        }
+        if last > src.r1 {
+            let dest = Rect::new(src.r0, src.c0, last, src.c1);
+            self.wb.autofill(self.sheet, src, dest);
+            self.wb.commit(t("Auto Fill", "Recopie incrémentée"));
+            self.sel_mut().ranges = vec![dest];
+            self.refresh(cx);
+        }
+    }
+
+    pub fn start_format_painter(&mut self, cx: &mut Context<Self>) {
+        let clip = self.wb.copy(self.sheet, self.sel().current());
+        self.painter = Some(clip);
+        self.set_status(
+            t(
+                "Select the cells to format.",
+                "Sélectionnez les cellules à mettre en forme.",
+            ),
+            cx,
+        );
     }
 
     pub fn grid_mouse_up(&mut self, _ev: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
@@ -2021,6 +2092,7 @@ impl ExcelApp {
             (Some(Drag::ColResize { .. }), _) | (None, Hit::ColResize(_)) => CursorStyle::ResizeLeftRight,
             (Some(Drag::RowResize { .. }), _) | (None, Hit::RowResize(_)) => CursorStyle::ResizeUpDown,
             (Some(Drag::Fill { .. }), _) | (None, Hit::FillHandle) => CursorStyle::Crosshair,
+            _ if self.painter.is_some() => CursorStyle::Crosshair,
             _ => CursorStyle::Arrow,
         }
     }
@@ -2341,6 +2413,9 @@ impl ExcelApp {
         self.jump_selection(Direction::Right, true, cx);
     }
     pub fn on_next_cell(&mut self, _: &NextCell, _: &mut Window, cx: &mut Context<Self>) {
+        if self.tab_origin.is_none() {
+            self.tab_origin = Some(self.active().1);
+        }
         self.advance(Direction::Right, cx);
     }
     pub fn on_prev_cell(&mut self, _: &PrevCell, _: &mut Window, cx: &mut Context<Self>) {
@@ -2354,7 +2429,12 @@ impl ExcelApp {
             cx.notify();
             return;
         }
+        let origin = self.tab_origin.take();
         self.advance(Direction::Down, cx);
+        if let (Some(col), true) = (origin, self.sel().is_single_cell()) {
+            let (r, _) = self.active();
+            self.select_cell(r, col, cx);
+        }
     }
     pub fn on_enter_up(&mut self, _: &EnterUp, _: &mut Window, cx: &mut Context<Self>) {
         self.advance(Direction::Up, cx);
@@ -2485,6 +2565,7 @@ impl ExcelApp {
     }
     pub fn on_cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
         self.clip = None;
+        self.painter = None;
         self.popup = None;
         self.dialog = None;
         self.status_message = None;

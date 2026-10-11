@@ -534,15 +534,7 @@ impl ExcelApp {
                         false,
                         cx,
                         |this, _, cx| {
-                            // Copy now; the next paste applies formats only.
-                            this.copy(false, cx);
-                            this.set_status(
-                                t(
-                                    "Select the destination, then use Paste Formatting from the context menu.",
-                                    "Sélectionnez la destination puis « Coller la mise en forme » (clic droit).",
-                                ),
-                                cx,
-                            );
+                            this.start_format_painter(cx);
                         },
                     ),
                 ])),

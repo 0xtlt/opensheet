@@ -48,20 +48,23 @@ pub fn days_in_month(y: i64, m: u32) -> u32 {
 
 /// Serial number for a calendar date. Month and day may be out of range and
 /// roll over like the `DATE` function (month 13 = January next year, day 0 =
-/// last day of previous month). Returns `None` outside 1900-01-01..9999-12-31.
+/// last day of previous month). The day offset is applied in serial space,
+/// so the fictitious 1900-02-29 (serial 60) is reachable by rollover exactly
+/// as in Excel. Returns `None` outside 1900-01-00..9999-12-31.
 pub fn date_to_serial(year: i64, month: i64, day: i64) -> Option<f64> {
     // Normalise the month.
     let months = year * 12 + (month - 1);
     let y = months.div_euclid(12);
     let m = months.rem_euclid(12) + 1;
-    let days = days_from_civil(y, m, 1) + (day - 1);
-    let mut serial = days + EPOCH_OFFSET;
-    // Serial 60 is the non-existent 1900-02-29; real dates before
-    // 1900-03-01 are one lower than the naive count.
-    if serial < 61 {
-        serial -= 1;
+    // Serial of the first day of that month.
+    let mut first = days_from_civil(y, m, 1) + EPOCH_OFFSET;
+    // Real dates before 1900-03-01 are one lower than the naive count
+    // because serial 60 is the non-existent 1900-02-29.
+    if first < 61 {
+        first -= 1;
     }
-    if !(1..=2_958_465).contains(&serial) {
+    let serial = first + (day - 1);
+    if !(0..=2_958_465).contains(&serial) {
         return None;
     }
     Some(serial as f64)
@@ -85,10 +88,8 @@ pub fn serial_to_ymd(serial: f64) -> (i64, u32, u32) {
 /// nearest second.
 pub fn serial_to_hms(serial: f64) -> (u32, u32, u32) {
     let frac = serial - serial.floor();
-    let mut secs = (frac * 86400.0).round() as i64;
-    if secs >= 86400 {
-        secs = 86399;
-    }
+    // A time that rounds up to 24:00:00 wraps to midnight.
+    let secs = ((frac * 86400.0).round() as i64).rem_euclid(86400);
     (
         (secs / 3600) as u32,
         ((secs % 3600) / 60) as u32,
@@ -129,6 +130,11 @@ mod tests {
         assert_eq!(date_to_serial(2024, 2, 29), Some(45351.0));
         assert_eq!(date_to_serial(2025, 13, 1), date_to_serial(2026, 1, 1));
         assert_eq!(date_to_serial(2025, 3, 0), date_to_serial(2025, 2, 28));
+        assert_eq!(date_to_serial(1900, 2, 29), Some(60.0));
+        assert_eq!(date_to_serial(1900, 3, 0), Some(60.0));
+        assert_eq!(date_to_serial(1900, 1, 0), Some(0.0));
+        assert_eq!(date_to_serial(1899, 12, 31), Some(0.0));
+        assert_eq!(date_to_serial(1899, 12, 30), None);
         assert_eq!(serial_to_ymd(1.0), (1900, 1, 1));
         assert_eq!(serial_to_ymd(59.0), (1900, 2, 28));
         assert_eq!(serial_to_ymd(60.0), (1900, 2, 29));

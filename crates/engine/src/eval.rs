@@ -318,9 +318,14 @@ impl<'a> Calc<'a> {
         };
         let rect = reference.rect;
         self.ensure_hinted(reference.sheet, &rect);
+        // Large ranges (whole columns / rows above all) are clamped to the
+        // part of the sheet holding data; ordinary ranges keep their shape.
         let (er, ec) = self.extents.borrow()[reference.sheet];
-        let r1 = rect.r1.min(er.max(rect.r0));
-        let c1 = rect.c1.min(ec.max(rect.c0));
+        let (r1, c1) = if rect.rows() as u64 * rect.cols() as u64 > 200_000 {
+            (rect.r1.min(er.max(rect.r0)), rect.c1.min(ec.max(rect.c0)))
+        } else {
+            (rect.r1, rect.c1)
+        };
         let rows = (r1 - rect.r0 + 1) as usize;
         let cols = (c1 - rect.c0 + 1) as usize;
         let mut arr = Array::new(rows, cols);
