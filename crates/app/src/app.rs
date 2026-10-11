@@ -1745,6 +1745,17 @@ impl ExcelApp {
     }
 
     pub fn grid_mouse_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.grid_mouse_down_inner(ev, window, cx);
+        if self.editing.is_some() && self.dialog.is_none() {
+            // Whatever the click did (double-click to edit, pointing at a
+            // cell, scrolling), an edit in progress keeps the keyboard: the
+            // grid must not take the focus back for itself.
+            self.focus_editor(window, cx);
+            window.prevent_default();
+        }
+    }
+
+    fn grid_mouse_down_inner(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(layout) = self.current_layout() else {
             return;
         };
