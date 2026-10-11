@@ -1,5 +1,7 @@
 //! Reading `.xlsx` packages into a [`Workbook`].
 
+use super::chart::Track;
+use super::chart::read::{parse_chart, parse_drawing};
 use super::color::{Palette, RawColor, blend, parse_rgb, parse_theme};
 use super::formula::from_file_text;
 use super::numfmt::{builtin_code, shows_date};
@@ -7,6 +9,7 @@ use super::xml::{Event, Reader, Tag, decode_cell_text, parse_bool};
 use super::{col_width_to_px, points_to_px};
 use crate::{IoError, Result, decode_utf16};
 use opensheet_engine::ast::Expr;
+use opensheet_engine::chart::Chart;
 use opensheet_engine::datetime::date_to_serial;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
@@ -778,10 +781,27 @@ struct SheetReader<'c> {
     /// engine's.
     default_col_width: Option<f32>,
     max_col: Option<u32>,
+    /// Sizes the file gives to columns and rows without one of their own.
+    file_col_width: f32,
+    file_row_height: f32,
+    /// Relationship id of the drawing part.
+    drawing: Option<String>,
+}
+
+/// A worksheet part: the sheet, and what is needed to place its charts.
+struct LoadedSheet {
+    sheet: Sheet,
+    /// Relationship id of the drawing part (charts, pictures, shapes).
+    drawing: Option<String>,
+    /// Size, in pixels, of the columns and rows the file gives no size.
+    /// The engine has defaults of its own; drawings are laid out against
+    /// those of the file.
+    col_width: f32,
+    row_height: f32,
 }
 
 impl<'c> SheetReader<'c> {
-    fn read(xml: &str, name: String, ctx: &'c Ctx<'c>) -> Sheet {
+    fn read(xml: &str, name: String, ctx: &'c Ctx<'c>) -> LoadedSheet {
         let mut this = SheetReader {
             ctx,
             sheet: Sheet::new(name),
@@ -789,6 +809,9 @@ impl<'c> SheetReader<'c> {
             arrays: Vec::new(),
             default_col_width: None,
             max_col: None,
+            file_col_width: DEFAULT_COL_WIDTH,
+            file_row_height: DEFAULT_ROW_HEIGHT,
+            drawing: None,
         };
         let mut r = Reader::new(xml);
         loop {
@@ -804,6 +827,10 @@ impl<'c> SheetReader<'c> {
                     "cols" => this.cols(&mut r, &t),
                     "sheetData" => this.sheet_data(&mut r, &t),
                     "mergeCells" => this.merges(&mut r, &t),
+                    "drawing" => {
+                        this.drawing = t.attr_local("id").map(Cow::into_owned);
+                        r.skip(&t);
+                    }
                     _ => r.skip(&t),
                 },
                 Event::Eof => break,
@@ -892,6 +919,16 @@ impl<'c> SheetReader<'c> {
             (None, None) => None,
         };
         self.default_col_width = px.filter(|px| (px - DEFAULT_COL_WIDTH).abs() > 1.0 && *px > 0.0);
+        if let Some(px) = px.filter(|px| *px > 0.0) {
+            self.file_col_width = px;
+        }
+        if let Some(px) = tag
+            .attr_f64("defaultRowHeight")
+            .map(points_to_px)
+            .filter(|px| *px > 0.0)
+        {
+            self.file_row_height = px;
+        }
     }
 
     fn cols<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
@@ -1166,7 +1203,7 @@ impl<'c> SheetReader<'c> {
         }
     }
 
-    fn finish(mut self) -> Sheet {
+    fn finish(mut self) -> LoadedSheet {
         // The cells an array formula spills into are stored in the file with
         // their cached values. As constants they would block the spill, so
         // they are dropped: the engine recomputes them.
@@ -1205,8 +1242,97 @@ impl<'c> SheetReader<'c> {
                 }
             }
         }
-        self.sheet
+        LoadedSheet {
+            sheet: self.sheet,
+            drawing: self.drawing,
+            col_width: self.file_col_width,
+            row_height: self.file_row_height,
+        }
     }
+}
+
+// ---- charts ------------------------------------------------------------------------
+
+/// The charts of a sheet: its drawing part says where they sit, a part per
+/// chart says what they plot. A part that is missing or makes no sense
+/// costs the charts it describes, never the workbook.
+fn read_charts<R: Read + Seek>(
+    pkg: &mut Package<R>,
+    sheet_part: &str,
+    loaded: &LoadedSheet,
+    palette: &Palette,
+    next_id: &mut u32,
+) -> Vec<Chart> {
+    fn relationships<R: Read + Seek>(pkg: &mut Package<R>, part: &str) -> Vec<Rel> {
+        match pkg.read(&rels_part(part)) {
+            Ok(Some(xml)) => parse_rels(&xml, dir_of(part)),
+            _ => Vec::new(),
+        }
+    }
+    let Some(drawing_id) = &loaded.drawing else {
+        return Vec::new();
+    };
+    let Some(drawing_part) = relationships(pkg, sheet_part)
+        .into_iter()
+        .find(|rel| rel.id == *drawing_id && rel.kind == "drawing")
+        .map(|rel| rel.target)
+    else {
+        return Vec::new();
+    };
+    let Ok(Some(drawing_xml)) = pkg.read(&drawing_part) else {
+        return Vec::new();
+    };
+    let frames = parse_drawing(&drawing_xml);
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let rels = relationships(pkg, &drawing_part);
+
+    let sheet = &loaded.sheet;
+    let cols = Track {
+        default: loaded.col_width,
+        sizes: &sheet.col_widths,
+        hidden: &sheet.hidden_cols,
+        max: f32::INFINITY,
+        count: MAX_COLS,
+    };
+    let rows = Track {
+        default: loaded.row_height,
+        sizes: &sheet.row_heights,
+        hidden: &sheet.hidden_rows,
+        max: f32::INFINITY,
+        count: MAX_ROWS,
+    };
+    let mut charts = Vec::new();
+    for frame in &frames {
+        for id in &frame.charts {
+            // Charts of the newer kinds (waterfall, sunburst, ...) live in
+            // parts of another type; the engine has nothing like them.
+            let Some(rel) = rels.iter().find(|rel| rel.id == *id && rel.kind == "chart") else {
+                continue;
+            };
+            let Ok(Some(xml)) = pkg.read(&rel.target) else {
+                continue;
+            };
+            let Some(content) = parse_chart(&xml, palette) else {
+                continue;
+            };
+            let place = frame.placement(&cols, &rows);
+            charts.push(Chart {
+                id: *next_id,
+                kind: content.kind,
+                title: content.title,
+                legend: content.legend,
+                series: content.series,
+                data_labels: content.data_labels,
+                anchor: place.anchor,
+                offset: place.offset,
+                size: place.size,
+            });
+            *next_id += 1;
+        }
+    }
+    charts
 }
 
 // ---- entry point -----------------------------------------------------------------
@@ -1308,6 +1434,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     };
 
     let mut sheets: Vec<Sheet> = Vec::new();
+    // Chart ids are unique in the workbook; files have no such thing.
+    let mut next_chart_id = 1;
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),
@@ -1319,7 +1447,16 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             continue;
         };
         let name = unique_sheet_name(name, &sheets, i);
-        sheets.push(SheetReader::read(&xml, name, &ctx));
+        let mut loaded = SheetReader::read(&xml, name, &ctx);
+        drop(xml);
+        loaded.sheet.charts = read_charts(
+            &mut pkg,
+            &part,
+            &loaded,
+            &styles.palette,
+            &mut next_chart_id,
+        );
+        sheets.push(loaded.sheet);
     }
     if !sheets.is_empty() {
         wb.sheets = sheets;

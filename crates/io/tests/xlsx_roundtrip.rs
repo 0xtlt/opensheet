@@ -486,7 +486,9 @@ fn package_is_a_valid_zip_of_well_formed_parts() {
     assert!(sheet.contains("<row r=\"1\" ht=\"22.5\" customHeight=\"1\">"));
     assert!(sheet.contains("<row r=\"8\" hidden=\"1\">"));
     assert!(sheet.contains("<col min=\"1\" max=\"1\" width=\"17.14285714\" customWidth=\"1\"/>"));
-    assert!(sheet.contains("<dimension ref=\"A1:G12\"/>"), "{sheet}");
+    // The used range reaches the cells where the formatted row 15 crosses
+    // the formatted columns G:H.
+    assert!(sheet.contains("<dimension ref=\"A1:H15\"/>"), "{sheet}");
     let sheet2 = part(&bytes, "xl/worksheets/sheet2.xml");
     assert!(sheet2.contains("showGridLines=\"0\""));
     assert!(sheet2.contains(
