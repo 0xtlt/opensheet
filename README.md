@@ -32,9 +32,15 @@ cargo build -p opensheet --release && scripts/bundle.sh release
 
 Prérequis : Rust stable récent et Xcode (GPUI compile ses shaders Metal). Développé et testé sur macOS.
 
-### Langue
+### Langues
 
-L'interface et les formules suivent la langue du système : en français, `=SOMME(A1:A3;1,5)`, `VRAI`, `#VALEUR!`, dates `jj/mm/aaaa` ; en anglais, `=SUM(A1:A3,1.5)`. Forcer une langue : `OPENSHEET_LANG=fr` ou `OPENSHEET_LANG=en`.
+Cinq langues : français, anglais, espagnol, allemand, italien. L'interface **et** les formules suivent la langue choisie : `=SOMME(A1:A3;1,5)` en français, `=SUM(A1:A3,1.5)` en anglais, `=SUMME(A1:A3;1,5)` en allemand, `=SUMA(…)` en espagnol, `=SOMMA(…)` en italien — avec les séparateurs, les valeurs `VRAI` / `WAHR` / `VERDADERO`, les erreurs (`#VALEUR!`, `#WERT!`, `#¡VALOR!`) et les formats de date de chaque langue.
+
+- Au démarrage, la langue du système est utilisée.
+- Pour en changer : menu **Fichier**, en bas. Le choix est mémorisé.
+- Pour forcer une langue au lancement : `OPENSHEET_LANG=de` (ou `fr`, `en`, `es`, `it`).
+
+Les formules sont enregistrées sous forme canonique : un classeur saisi en français s'affiche en allemand sans rien perdre.
 
 ### Polices
 
@@ -58,7 +64,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Annuler / rétablir sur toutes les opérations.
 
 **Calcul**
-- Environ 400 fonctions : maths, statistiques, logique, texte, date et heure, recherche (RECHERCHEV, RECHERCHEX, INDEX, EQUIV…), finance, ingénierie.
+- 336 fonctions : maths, statistiques, logique, texte, date et heure, recherche (RECHERCHEV, RECHERCHEX, INDEX, EQUIV…), finance, ingénierie.
 - Tableaux dynamiques avec propagation (`=A1:A3*2`, FILTRE, TRIER, UNIQUE, SEQUENCE…) et erreur `#PROPAGATION!`.
 - Détection des références circulaires.
 
@@ -82,7 +88,7 @@ Le recalcul est complet à chaque modification (pas encore de graphe de dépenda
 ```
 crates/
   engine/   moteur de calcul, sans dépendance d'interface
-            valeurs, analyseur de formules (localisé), évaluateur, ~400 fonctions,
+            valeurs, analyseur de formules (localisé), évaluateur, 336 fonctions,
             formats de nombre, modèle de classeur, annuler/rétablir, opérations d'édition
   io/       lecture / écriture .xlsx et .csv
   app/      l'application GPUI : ruban, grille peinte directement, éditeur de cellule

@@ -1129,6 +1129,10 @@ impl Render for ExcelApp {
             .text_color(c(theme::TEXT))
             .text_size(px(12.))
             .key_context("Workbook")
+            // A new press starts with a clean slate: this capture listener runs
+            // before the pop-up's own "mouse down outside" handler, so the
+            // flag only ever describes the press in progress.
+            .capture_any_mouse_down(cx.listener(|this, _, _, _| this.popup_dismissed = None))
             // Runs after the clicked control's own handler (bubble order).
             .on_mouse_up(
                 MouseButton::Left,
