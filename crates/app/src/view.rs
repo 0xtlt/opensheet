@@ -298,14 +298,39 @@ impl ExcelApp {
                 .width,
         );
         let pad = (3.0 * self.zoom).round().max(1.0);
-        // Grow over the following columns as the text gets longer.
-        let mut right = x1;
-        let mut col = rect.c1;
-        while right - x0 < text_w + 2.0 * pad + 8.0 && col + 1 < MAX_COLS && right < layout.width() {
-            col += 1;
-            right += layout.col_w(col);
+        // The editor is as wide as its cell, and wider when the text needs it.
+        let cell_w = (x1 - x0 - 1.0).max(8.0);
+        let available = (layout.width() - 2.0 - x0).max(cell_w);
+        let needed = text_w + 2.0 * pad + 4.0;
+        let mut width = needed.max(cell_w).min(available);
+        // Does the overflow run over cells that show something?
+        let mut covers_content = false;
+        if width > cell_w {
+            let mut col = rect.c1 + 1;
+            let mut edge = x1;
+            while edge < x0 + width && col < MAX_COLS {
+                if !sheet.is_blank(edit.row, col) || sheet.merge_at(edit.row, col).is_some() {
+                    covers_content = true;
+                    break;
+                }
+                edge += layout.col_w(col);
+                col += 1;
+            }
         }
-        let right = right.min(layout.width() - 2.0);
+        if covers_content {
+            // Like Excel, hide whole neighbouring cells rather than cut
+            // their content in half: grow to the next column boundary.
+            let mut right = x1;
+            let mut col = rect.c1;
+            while right - x0 < needed && col + 1 < MAX_COLS && right < layout.width() {
+                col += 1;
+                right += layout.col_w(col);
+            }
+            width = (right - x0 - 1.0).max(cell_w).min(available);
+        }
+        // Over blank neighbours the editor stays see-through, so a cell the
+        // formula refers to keeps its coloured highlight under the text.
+        let backdrop_w = if covers_content { width } else { cell_w };
         let h = (y1 - y0 - 1.0).max(line_h + 1.0);
         let bg = style.fill.map(theme::engine_color).unwrap_or(c(0xFFFFFF));
         let color = style.font.color.map(theme::engine_color).unwrap_or(c(0x000000));
@@ -314,10 +339,18 @@ impl ExcelApp {
                 .absolute()
                 .left(px(x0))
                 .top(px(y0))
-                .w(px((right - x0 - 1.0).max(8.0)))
+                .w(px(width))
                 .h(px(h))
-                .bg(bg)
                 .occlude()
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .w(px(backdrop_w))
+                        .h_full()
+                        .bg(bg),
+                )
                 .flex()
                 .items_end()
                 .px(px(pad))
