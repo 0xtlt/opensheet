@@ -435,7 +435,7 @@ impl ExcelApp {
             3 => self.simple_tab(
                 cx,
                 &[
-                    ("brush", t("Draw", "Dessiner")),
+                    ("brush", crate::i18n::t_ctx("button", "Draw", "Dessiner")),
                     ("clear", t("Eraser", "Gomme")),
                     ("shapes", t("Ink to Shape", "Entrée manuscrite en forme")),
                 ],
@@ -596,7 +596,7 @@ impl ExcelApp {
                     .into_any_element(),
                     self.small(
                         "rb-italic",
-                        Self::glyph("I", false, true, false),
+                        Self::glyph(t("I", "I"), false, true, false),
                         t("Italic (⌘I)", "Italique (⌘I)"),
                         style.font.italic,
                         cx,
@@ -1113,7 +1113,7 @@ impl ExcelApp {
         let current = self.active_style().num_fmt.to_string();
         let items: Vec<(&'static str, String)> = vec![
             (t("General", "Standard"), "General".to_string()),
-            (t("Number", "Nombre"), "0.00".to_string()),
+            (crate::i18n::t_ctx("format", "Number", "Nombre"), "0.00".to_string()),
             (t("Currency", "Monétaire"), locale.currency_format.to_string()),
             (t("Accounting", "Comptabilité"), locale.accounting_format.to_string()),
             (t("Short Date", "Date courte"), locale.short_date_format.to_string()),
@@ -1495,7 +1495,7 @@ impl ExcelApp {
 fn number_format_label(code: &str) -> &'static str {
     match format::format_kind(code) {
         FormatKind::General => t("General", "Standard"),
-        FormatKind::Number => t("Number", "Nombre"),
+        FormatKind::Number => crate::i18n::t_ctx("format", "Number", "Nombre"),
         FormatKind::Currency => t("Currency", "Monétaire"),
         FormatKind::Accounting => t("Accounting", "Comptabilité"),
         FormatKind::Date | FormatKind::DateTime => t("Date", "Date"),

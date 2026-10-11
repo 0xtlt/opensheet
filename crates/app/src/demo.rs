@@ -51,7 +51,7 @@ pub fn fill_workbook(wb: &mut Workbook) {
         let _ = wb.set_cell_text(0, row, 5, date);
     }
     let total_row = rows.len() as u32 + 1;
-    let _ = wb.set_cell_text(0, total_row, 0, "Total");
+    let _ = wb.set_cell_text(0, total_row, 0, t("Total", "Total"));
     let _ = wb.set_cell_text(0, total_row, 2, &format!("={}(C2:C{})", f("SUM", "SOMME"), total_row));
     let _ = wb.set_cell_text(0, total_row, 4, &format!("={}(E2:E{})", f("SUM", "SOMME"), total_row));
     let _ = wb.set_cell_text(0, total_row + 2, 0, t("Average basket", "Panier moyen"));

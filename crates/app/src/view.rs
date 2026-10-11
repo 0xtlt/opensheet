@@ -667,8 +667,8 @@ impl ExcelApp {
         let mode = match &self.editing {
             None => t("Ready", "Prêt"),
             Some(e) if e.point.is_some() => t("Point", "Pointer"),
-            Some(e) if e.mode == EditMode::Enter => t("Enter", "Saisie"),
-            Some(_) => t("Edit", "Modifier"),
+            Some(e) if e.mode == EditMode::Enter => crate::i18n::t_ctx("mode", "Enter", "Saisie"),
+            Some(_) => crate::i18n::t_ctx("mode", "Edit", "Modifier"),
         };
         let stats = self.selection_stats();
         let locale = self.wb.locale;
@@ -678,19 +678,19 @@ impl ExcelApp {
             if let Some(avg) = stats.average() {
                 stat_items.push(
                     div()
-                        .child(format!("{} : {}", t("Average", "Moyenne"), fmt(avg)))
+                        .child(crate::i18n::labelled(t("Average", "Moyenne"), fmt(avg)))
                         .into_any_element(),
                 );
             }
             stat_items.push(
                 div()
-                    .child(format!("{} : {}", t("Count", "Nb (non vides)"), stats.count))
+                    .child(crate::i18n::labelled(t("Count", "Nb (non vides)"), stats.count))
                     .into_any_element(),
             );
             if stats.numeric_count > 0 {
                 stat_items.push(
                     div()
-                        .child(format!("{} : {}", t("Sum", "Somme"), fmt(stats.sum)))
+                        .child(crate::i18n::labelled(t("Sum", "Somme"), fmt(stats.sum)))
                         .into_any_element(),
                 );
             }
@@ -1112,7 +1112,7 @@ impl ExcelApp {
                                         .bg(c(theme::ACCENT))
                                         .text_color(c(0xFFFFFF))
                                         .text_size(px(12.5))
-                                        .child("OK")
+                                        .child(t("OK", "OK"))
                                         .on_click(cx.listener(|this, _, window, cx| this.close_dialog(window, cx))),
                                 ),
                             ),

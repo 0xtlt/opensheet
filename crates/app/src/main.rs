@@ -132,7 +132,7 @@ pub(crate) fn set_menus(cx: &mut App) {
             ],
         },
         Menu {
-            name: t("View", "Affichage").into(),
+            name: i18n::t_ctx("menu", "View", "Affichage").into(),
             items: vec![
                 MenuItem::action(t("Zoom In", "Zoom avant"), ZoomIn),
                 MenuItem::action(t("Zoom Out", "Zoom arrière"), ZoomOut),

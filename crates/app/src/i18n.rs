@@ -81,6 +81,30 @@ pub fn t(en: &'static str, fr: &'static str) -> &'static str {
     }
 }
 
+/// Like `t`, for an English word that needs different translations in
+/// different places ("Edit" the menu vs. "Edit" the cell mode). The tables
+/// may hold a `"context|English"` entry; without one the plain entry is used.
+pub fn t_ctx(context: &'static str, en: &'static str, fr: &'static str) -> &'static str {
+    match lang() {
+        Lang::En => en,
+        Lang::Fr => fr,
+        other => {
+            let key = format!("{context}|{en}");
+            let table = table(other);
+            table.get(key.as_str()).or_else(|| table.get(en)).copied().unwrap_or(en)
+        }
+    }
+}
+
+/// "Label: value", with the spacing of the current language (French puts a
+/// space before the colon).
+pub fn labelled(label: &str, value: impl std::fmt::Display) -> String {
+    match lang() {
+        Lang::Fr => format!("{label} : {value}"),
+        _ => format!("{label}: {value}"),
+    }
+}
+
 fn preference_file() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     Some(PathBuf::from(home).join("Library/Application Support/OpenSheet/language"))

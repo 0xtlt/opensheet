@@ -481,7 +481,7 @@ impl ExcelApp {
                 let cur = sel.current();
                 let rows = if cur.is_whole_cols() { MAX_ROWS } else { cur.rows() };
                 let cols = if cur.is_whole_rows() { MAX_COLS } else { cur.cols() };
-                format!("{}{} x {}{}", rows, t("R", "L"), cols, "C")
+                format!("{}{} x {}{}", rows, t("R", "L"), cols, crate::i18n::t_ctx("column", "C", "C"))
             }
             _ => cell_name(sel.active.0, sel.active.1),
         };
@@ -1210,7 +1210,7 @@ impl ExcelApp {
         match self.wb.find_next(self.sheet, from, &needle, &Default::default()) {
             Some((r, c)) => self.select_cell(r, c, cx),
             None => self.set_status(
-                format!("{} « {} »", t("No match for", "Aucune occurrence de"), needle),
+                t("No match for “{}”", "Aucune occurrence de « {} »").replace("{}", &needle),
                 cx,
             ),
         }
@@ -2029,12 +2029,12 @@ impl ExcelApp {
             Drag::ColResize { col, start_x, start_w } => {
                 let w = (start_w + (lx - start_x) / self.zoom).round().max(0.0);
                 self.wb.set_col_width(self.sheet, col, Some(w));
-                self.set_status(format!("{} : {:.0} px", t("Width", "Largeur"), w), cx);
+                self.set_status(crate::i18n::labelled(t("Width", "Largeur"), format!("{w:.0} px")), cx);
             }
             Drag::RowResize { row, start_y, start_h } => {
                 let h = (start_h + (ly - start_y) / self.zoom).round().max(0.0);
                 self.wb.set_row_height(self.sheet, row, Some(h));
-                self.set_status(format!("{} : {:.0} px", t("Height", "Hauteur"), h), cx);
+                self.set_status(crate::i18n::labelled(t("Height", "Hauteur"), format!("{h:.0} px")), cx);
             }
             Drag::VScroll { grab } => {
                 let content = self.content_size(&layout).1;

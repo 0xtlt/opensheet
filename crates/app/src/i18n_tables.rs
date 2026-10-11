@@ -260,7 +260,6 @@ pub static ES: &[(&str, &str)] = &[
     ("Find", "Buscar"),
     ("Next", "Siguiente"),
     // Followed by the searched text.
-    ("No match for", "No hay coincidencias para"),
     ("New sheet", "Hoja nueva"),
     ("Rename", "Cambiar nombre"),
     ("Duplicate", "Duplicar"),
@@ -303,10 +302,6 @@ pub static ES: &[(&str, &str)] = &[
     ("Can't save this file", "No se puede guardar este archivo"),
     // Followed by the workbook name and a question mark.
     (
-        "Do you want to discard the changes made to",
-        "¿Desea descartar los cambios realizados en",
-    ),
-    (
         "Your changes will be lost if you don't save them first.",
         "Los cambios se perderán si no los guarda antes.",
     ),
@@ -321,6 +316,17 @@ pub static ES: &[(&str, &str)] = &[
     ("Average basket", "Cesta media"),
     ("Best seller", "Más vendido"),
     ("Orders over 500", "Pedidos de más de 500"),
+    // ---- Added after the first pass: glyphs, contexts, sentences with a placeholder ----
+    ("I", "K"),
+    ("column|C", "C"),
+    ("OK", "Aceptar"),
+    ("mode|Edit", "Modificar"),
+    ("mode|Enter", "Introducir"),
+    ("format|Number", "Número"),
+    ("button|Draw", "Dibujar"),
+    ("menu|View", "Ver"),
+    ("No match for “{}”", "No hay coincidencias para «{}»"),
+    ("Do you want to discard the changes made to “{}”?", "¿Desea descartar los cambios realizados en «{}»?"),
 ];
 
 pub static DE: &[(&str, &str)] = &[
@@ -571,7 +577,6 @@ pub static DE: &[(&str, &str)] = &[
     ("Find", "Suchen"),
     ("Next", "Weitersuchen"),
     // Followed by the searched text.
-    ("No match for", "Keine Übereinstimmung für"),
     ("New sheet", "Neues Blatt"),
     ("Rename", "Umbenennen"),
     ("Duplicate", "Duplizieren"),
@@ -616,7 +621,6 @@ pub static DE: &[(&str, &str)] = &[
     ("Can't open this file", "Diese Datei kann nicht geöffnet werden"),
     ("Can't save this file", "Diese Datei kann nicht gespeichert werden"),
     // Followed by the workbook name and a question mark.
-    ("Do you want to discard the changes made to", "Änderungen verwerfen in"),
     (
         "Your changes will be lost if you don't save them first.",
         "Ihre Änderungen gehen verloren, wenn Sie sie nicht zuerst speichern.",
@@ -632,6 +636,17 @@ pub static DE: &[(&str, &str)] = &[
     ("Average basket", "Durchschnittlicher Warenkorb"),
     ("Best seller", "Bestseller"),
     ("Orders over 500", "Bestellungen über 500"),
+    // ---- Added after the first pass: glyphs, contexts, sentences with a placeholder ----
+    ("I", "K"),
+    ("column|C", "S"),
+    ("OK", "OK"),
+    ("mode|Edit", "Bearbeiten"),
+    ("mode|Enter", "Eingeben"),
+    ("format|Number", "Zahl"),
+    ("button|Draw", "Zeichnen"),
+    ("menu|View", "Ansicht"),
+    ("No match for “{}”", "Keine Übereinstimmung für „{}“"),
+    ("Do you want to discard the changes made to “{}”?", "Möchten Sie die Änderungen an „{}“ verwerfen?"),
 ];
 
 pub static IT: &[(&str, &str)] = &[
@@ -881,11 +896,10 @@ pub static IT: &[(&str, &str)] = &[
     // ---- Formula bar, find bar and sheet tabs ----
     ("Cancel (Esc)", "Annulla (Esc)"),
     // Status-bar cell mode; the formula bar button of the same English text is "Invio" in Excel.
-    ("Enter", "Immissione"),
+    ("Enter", "Invio"),
     ("Find", "Trova"),
     ("Next", "Successivo"),
     // Followed by the searched text.
-    ("No match for", "Nessuna corrispondenza per"),
     ("New sheet", "Nuovo foglio"),
     ("Rename", "Rinomina"),
     ("Duplicate", "Duplica"),
@@ -928,10 +942,6 @@ pub static IT: &[(&str, &str)] = &[
     ("Can't save this file", "Impossibile salvare il file"),
     // Followed by the workbook name and a question mark.
     (
-        "Do you want to discard the changes made to",
-        "Ignorare le modifiche apportate a",
-    ),
-    (
         "Your changes will be lost if you don't save them first.",
         "Le modifiche andranno perse se non vengono prima salvate.",
     ),
@@ -946,4 +956,15 @@ pub static IT: &[(&str, &str)] = &[
     ("Average basket", "Scontrino medio"),
     ("Best seller", "Più venduto"),
     ("Orders over 500", "Ordini oltre 500"),
+    // ---- Added after the first pass: glyphs, contexts, sentences with a placeholder ----
+    ("I", "C"),
+    ("column|C", "C"),
+    ("OK", "OK"),
+    ("mode|Edit", "Modifica"),
+    ("mode|Enter", "Immissione"),
+    ("format|Number", "Numero"),
+    ("button|Draw", "Disegna"),
+    ("menu|View", "Visualizza"),
+    ("No match for “{}”", "Nessuna corrispondenza per «{}»"),
+    ("Do you want to discard the changes made to “{}”?", "Vuoi annullare le modifiche apportate a «{}»?"),
 ];

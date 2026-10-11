@@ -26,14 +26,11 @@ impl ExcelApp {
         }
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!(
-                "{} « {} » ?",
-                t(
-                    "Do you want to discard the changes made to",
-                    "Voulez-vous abandonner les modifications apportées à"
-                ),
-                self.title
-            ),
+            &t(
+                "Do you want to discard the changes made to “{}”?",
+                "Voulez-vous abandonner les modifications apportées à « {} » ?",
+            )
+            .replace("{}", &self.title),
             Some(t(
                 "Your changes will be lost if you don't save them first.",
                 "Vos modifications seront perdues si vous ne les enregistrez pas d'abord.",
