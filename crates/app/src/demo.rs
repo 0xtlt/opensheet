@@ -3,13 +3,18 @@
 use crate::app::ExcelApp;
 use crate::i18n::t;
 use gpui::Context;
-use opensheet_engine::Rect;
+use opensheet_engine::{Rect, Workbook};
 use opensheet_engine::ops::BorderPreset;
 use opensheet_engine::style::{Border, Color, HAlign};
 use std::sync::Arc;
 
 pub fn fill(app: &mut ExcelApp, cx: &mut Context<ExcelApp>) {
-    let wb = &mut app.wb;
+    fill_workbook(&mut app.wb);
+    app.refresh(cx);
+}
+
+/// Write the sample sheet into a workbook (in the workbook's language).
+pub fn fill_workbook(wb: &mut Workbook) {
     let sep = wb.locale.arg_sep;
     let locale = wb.locale;
     // Formulas are typed in the workbook's language.
@@ -105,5 +110,4 @@ pub fn fill(app: &mut ExcelApp, cx: &mut Context<ExcelApp>) {
     wb.commit("Demo");
     wb.clear_history();
     wb.modified = false;
-    app.refresh(cx);
 }

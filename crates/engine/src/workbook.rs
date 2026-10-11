@@ -835,6 +835,21 @@ impl Workbook {
                 }
             }
             if whole_rows && !whole_cols {
+                // Where a formatted column crosses these rows, the cell must
+                // keep the column's formatting plus the change: give it a
+                // real cell before the row style takes precedence.
+                let cols: Vec<(u32, StyleId)> = self.sheets[sheet].col_styles.iter().map(|(c, s)| (*c, *s)).collect();
+                for row in rect.r0..=rect.r1 {
+                    if self.sheets[sheet].row_styles.contains_key(&row) {
+                        continue;
+                    }
+                    for (col, col_style) in &cols {
+                        if !self.sheets[sheet].cells.contains_key(&(row, *col)) {
+                            let new = map(self, *col_style);
+                            self.set_style_id(sheet, row, *col, new);
+                        }
+                    }
+                }
                 for row in rect.r0..=rect.r1 {
                     let cur = self.sheets[sheet].row_styles.get(&row).copied().unwrap_or_default();
                     let new = map(self, cur);

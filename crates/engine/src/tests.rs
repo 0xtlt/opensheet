@@ -276,3 +276,15 @@ fn formulas_survive_a_locale_change() {
     assert_eq!(w.edit_text(0, 1, 0), "=SUMME(A1;2,5)");
     assert_eq!(w.value_at(0, 1, 0), Value::Number(4.0));
 }
+
+#[test]
+fn row_format_keeps_column_format() {
+    let mut w = wb(&[("A1", "x")]);
+    w.update_style(0, Rect::parse("B:B").unwrap(), &|s| s.font.bold = true);
+    w.update_style(0, Rect::parse("3:3").unwrap(), &|s| s.fill = Some(crate::style::Color(0xFFFF00)));
+    w.commit("format");
+    let s = w.style_at(0, 2, 1);
+    assert!(s.font.bold && s.fill.is_some());
+    assert!(w.style_at(0, 2, 5).fill.is_some() && !w.style_at(0, 2, 5).font.bold);
+    assert!(w.style_at(0, 7, 1).font.bold && w.style_at(0, 7, 1).fill.is_none());
+}

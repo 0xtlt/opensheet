@@ -173,9 +173,42 @@ fn load_office_fonts(cx: &mut App) {
     }
 }
 
+/// `--export <path>`: write the workbook (a file given on the command line,
+/// or the `--demo` sheet) to `path` without opening a window. The format
+/// follows the extension (.xlsx, .csv, .tsv).
+fn export(input: Option<&str>, demo: bool, output: &str) -> Result<(), String> {
+    let locale = i18n::lang().locale();
+    let mut wb = match input {
+        Some(path) => opensheet_io::load(std::path::Path::new(path), locale).map_err(|e| e.to_string())?,
+        None => opensheet_engine::Workbook::new(locale),
+    };
+    if demo {
+        demo::fill_workbook(&mut wb);
+    }
+    opensheet_io::save(&wb, 0, std::path::Path::new(output)).map_err(|e| e.to_string())
+}
+
 fn main() {
-    let demo = std::env::args().any(|a| a == "--demo");
-    let file_arg = std::env::args().skip(1).find(|a| !a.starts_with("--"));
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let demo = args.iter().any(|a| a == "--demo");
+    let export_to = args.iter().position(|a| a == "--export").and_then(|i| args.get(i + 1)).cloned();
+    let file_arg = args
+        .iter()
+        .enumerate()
+        .find(|(i, a)| !a.starts_with("--") && (*i == 0 || args[i - 1] != "--export"))
+        .map(|(_, a)| a.clone());
+
+    if let Some(output) = export_to {
+        i18n::set_lang(i18n::detect());
+        match export(file_arg.as_deref(), demo, &output) {
+            Ok(()) => println!("{output}"),
+            Err(err) => {
+                eprintln!("opensheet: {err}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     Application::new().with_assets(icons::Assets).run(move |cx: &mut App| {
         i18n::set_lang(i18n::detect());

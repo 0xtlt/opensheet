@@ -2,7 +2,7 @@
 
 Un tableur open source qui reprend l'interface et le comportement d'Excel, écrit en Rust avec [GPUI](https://gpui.rs/).
 
-![OpenSheet](docs/screenshot.png)
+![OpenSheet](docs/screenshot.jpg)
 
 > État : **v0.1, prototype fonctionnel**. Le cœur (grille, formules, mise en forme, fichiers) marche ; une grande partie d'Excel reste à faire — voir [Ce qui manque](#ce-qui-manque).
 
@@ -22,6 +22,12 @@ Ouvrir un fichier :
 
 ```bash
 cargo run -p opensheet --release -- chemin/vers/classeur.xlsx
+```
+
+Convertir sans ouvrir de fenêtre (le format suit l'extension : `.xlsx`, `.csv`, `.tsv`) :
+
+```bash
+cargo run -p opensheet --release -- classeur.xlsx --export classeur.csv
 ```
 
 Créer une vraie application macOS (`target/release/OpenSheet.app`) :

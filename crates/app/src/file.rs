@@ -5,20 +5,6 @@ use crate::i18n::t;
 use gpui::{Context, PathPromptOptions, PromptLevel, Window};
 use std::path::PathBuf;
 
-// SHIM: replaced by the real `opensheet_io` crate once it is merged.
-mod opensheet_io {
-    use opensheet_engine::{Locale, Workbook};
-    use std::path::Path;
-
-    pub fn load(_: &Path, _: &'static Locale) -> Result<Workbook, String> {
-        Err("file support is not built into this binary yet".into())
-    }
-
-    pub fn save(_: &Workbook, _: usize, _: &Path) -> Result<(), String> {
-        Err("file support is not built into this binary yet".into())
-    }
-}
-
 fn file_title(path: &std::path::Path) -> String {
     path.file_stem()
         .map(|s| s.to_string_lossy().to_string())
