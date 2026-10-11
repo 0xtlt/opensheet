@@ -703,15 +703,28 @@ impl ExcelApp {
         } else {
             slider_w / 2.0 + (zoom - 1.0) / 3.0 * (slider_w / 2.0)
         };
-        let view_btn = |name: &'static str, on: bool| {
+        // Only the Normal view exists so far; the two page views say so
+        // instead of silently doing nothing.
+        let view_btn = |name: &'static str, label: &'static str, on: bool, cx: &mut Context<Self>| {
             div()
+                .id(name)
                 .size(px(20.))
                 .flex()
                 .items_center()
                 .justify_center()
                 .rounded(px(3.))
                 .when(on, |d| d.bg(c(theme::TOGGLED)))
+                .when(!on, |d| d.hover(|s| s.bg(c(theme::HOVER))))
                 .child(icon(name, 14.0, theme::TEXT_MUTED))
+                .tooltip(tooltip(label))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if on {
+                        this.status_message = None;
+                        cx.notify();
+                    } else {
+                        this.not_implemented(label, cx);
+                    }
+                }))
         };
         let zoom_btn = |id: &'static str, icon_name: &'static str| {
             div()
@@ -749,9 +762,19 @@ impl ExcelApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(view_btn("view-normal", true))
-                    .child(view_btn("view-layout", false))
-                    .child(view_btn("view-break", false)),
+                    .child(view_btn("view-normal", t("Normal", "Normal"), true, cx))
+                    .child(view_btn(
+                        "view-layout",
+                        crate::i18n::t_ctx("view", "Page Layout", "Mise en page"),
+                        false,
+                        cx,
+                    ))
+                    .child(view_btn(
+                        "view-break",
+                        t("Page Break Preview", "Aperçu des sauts de page"),
+                        false,
+                        cx,
+                    )),
             )
             .child(
                 div()

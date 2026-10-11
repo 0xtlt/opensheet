@@ -327,6 +327,8 @@ pub static ES: &[(&str, &str)] = &[
     ("menu|View", "Ver"),
     ("No match for “{}”", "No hay coincidencias para «{}»"),
     ("Do you want to discard the changes made to “{}”?", "¿Desea descartar los cambios realizados en «{}»?"),
+    ("Page Break Preview", "Vista previa de salto de página"),
+    ("view|Page Layout", "Diseño de página"),
 ];
 
 pub static DE: &[(&str, &str)] = &[
@@ -647,6 +649,7 @@ pub static DE: &[(&str, &str)] = &[
     ("menu|View", "Ansicht"),
     ("No match for “{}”", "Keine Übereinstimmung für „{}“"),
     ("Do you want to discard the changes made to “{}”?", "Möchten Sie die Änderungen an „{}“ verwerfen?"),
+    ("Page Break Preview", "Umbruchvorschau"),
 ];
 
 pub static IT: &[(&str, &str)] = &[
@@ -967,4 +970,5 @@ pub static IT: &[(&str, &str)] = &[
     ("menu|View", "Visualizza"),
     ("No match for “{}”", "Nessuna corrispondenza per «{}»"),
     ("Do you want to discard the changes made to “{}”?", "Vuoi annullare le modifiche apportate a «{}»?"),
+    ("Page Break Preview", "Anteprima interruzioni di pagina"),
 ];
