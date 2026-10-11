@@ -84,16 +84,25 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Création depuis la sélection (onglet Insertion) : en-têtes, catégories et sens des séries détectés automatiquement.
 - Déplacement et redimensionnement à la souris, titre modifiable par double-clic, légende, étiquettes de données, changement de type, inversion lignes/colonnes (onglet contextuel « Création de graphique »).
 - Les graphiques suivent les données en direct, les insertions de lignes et les renommages de feuilles.
+- Ils sont enregistrés dans les `.xlsx` et relus, y compris ceux créés dans Excel (les types qu'OpenSheet ne connaît pas sont ramenés au plus proche : 3D → 2D, radar → courbes, bulles → nuage de points).
+
+![Les neuf types de graphiques](docs/captures/types-de-graphiques.jpg)
+
+Ce classeur d'exemple se génère avec :
+
+```bash
+cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
+```
 
 **Structure et fichiers**
 - Insérer / supprimer lignes et colonnes (formules réécrites), trier, feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
-- Ouvrir et enregistrer en `.xlsx` (valeurs, formules, styles, largeurs, fusions, volets figés) et `.csv`.
+- Ouvrir et enregistrer en `.xlsx` (valeurs, formules, styles, largeurs, fusions, volets figés, graphiques) et `.csv`.
 
 ## Ce qui manque
 
 Tableaux croisés dynamiques, mise en forme conditionnelle, tableaux structurés, filtres automatiques, validation des données, commentaires, images et formes, impression et mise en page, boîte de dialogue Format de cellule, gestionnaire de noms, protection, macros (hors périmètre pour l'instant). Les boutons correspondants sont présents dans le ruban mais affichent « pas encore disponible ».
 
-Côté graphiques : pas encore de mise en forme fine (couleurs par série, titres d'axes, échelles manuelles), ni de courbes de tendance, de graphiques combinés ou 3D.
+Côté graphiques : pas encore de mise en forme fine (couleurs par point, titres d'axes, échelles manuelles, axes secondaires), ni de courbes de tendance, de graphiques combinés ou 3D. Ces éléments sont perdus quand on ouvre puis réenregistre un fichier Excel qui en contient.
 
 Le recalcul est complet à chaque modification (pas encore de graphe de dépendances) : environ 0,15 s pour 200 000 formules en mode release, ce qui deviendra sensible sur de très gros classeurs.
 

@@ -576,7 +576,7 @@ impl Workbook {
     /// categories, 2 = series names.
     pub fn chart_ranges(&self, sheet: usize, chart: &Chart) -> Vec<(Rect, u8)> {
         let mut out: Vec<(Rect, u8)> = Vec::new();
-        let mut push = |r: &RefExpr, role: u8, out: &mut Vec<(Rect, u8)>| {
+        let push = |r: &RefExpr, role: u8, out: &mut Vec<(Rect, u8)>| {
             if let Some((si, rect)) = self.resolve_chart_ref(r, sheet) {
                 if si == sheet && !out.iter().any(|(x, _)| *x == rect) {
                     out.push((rect, role));

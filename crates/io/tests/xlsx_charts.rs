@@ -444,8 +444,8 @@ fn chart_parts_say_what_the_model_says() {
     );
     assert!(column.contains("<c:valAx><c:axId val=\"50000012\"/><c:scaling><c:orientation val=\"minMax\"/></c:scaling><c:delete val=\"0\"/><c:axPos val=\"l\"/><c:majorGridlines>"));
     assert!(column.contains("<c:crossAx val=\"50000011\"/><c:crosses val=\"autoZero\"/><c:crossBetween val=\"between\"/></c:valAx></c:plotArea><c:legend><c:legendPos val=\"b\"/><c:overlay val=\"0\"/></c:legend><c:plotVisOnly val=\"1\"/>"));
-    // An automatic title: no title element, and not deleted.
-    assert!(column.contains("<c:chart><c:autoTitleDeleted val=\"0\"/><c:plotArea>"));
+    // An automatic title: a title element without text, and not deleted.
+    assert!(column.contains("<c:chart><c:title><c:overlay val=\"0\"/></c:title><c:autoTitleDeleted val=\"0\"/><c:plotArea>"));
     assert!(!column.contains("<c:dLbls>") && !column.contains("srgbClr val=\"C00000\""));
 
     let stacked = chart(2);
@@ -1732,7 +1732,8 @@ fn charts_from_other_applications() {
     // The minimal scatter chart.
     let scatter = &charts[3];
     assert_eq!(scatter.kind, ChartKind::Scatter);
-    assert_eq!(scatter.title, ChartTitle::Auto);
+    // No title element and more than one series: Excel shows no title.
+    assert_eq!(scatter.title, ChartTitle::None);
     assert_eq!(scatter.legend, LegendPos::None);
     assert!(!scatter.data_labels);
     // Typed-in numbers and the range of another workbook are no series.

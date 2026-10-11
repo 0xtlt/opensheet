@@ -517,14 +517,16 @@ impl ChartWriter<'_> {
             "<c:chartSpace xmlns:c=\"{NS_CHART}\" xmlns:a=\"{NS_DRAWING}\" xmlns:r=\"{NS_DOC_REL}\">"
         );
         x.push_str("<c:date1904 val=\"0\"/><c:roundedCorners val=\"0\"/><c:chart>");
-        // Without a title element, Excel titles a chart of a single series
-        // with the name of that series unless told the title was deleted.
+        // A title element without text is the title Excel makes up: the name
+        // of the series when there is one series, a placeholder otherwise.
         match &chart.title {
             ChartTitle::Text(text) => {
                 push_title(&mut x, text);
                 x.push_str("<c:autoTitleDeleted val=\"0\"/>");
             }
-            ChartTitle::Auto => x.push_str("<c:autoTitleDeleted val=\"0\"/>"),
+            ChartTitle::Auto => x.push_str(
+                "<c:title><c:overlay val=\"0\"/></c:title><c:autoTitleDeleted val=\"0\"/>",
+            ),
             ChartTitle::None => x.push_str("<c:autoTitleDeleted val=\"1\"/>"),
         }
         x.push_str("<c:plotArea><c:layout/>");

@@ -621,6 +621,8 @@ pub(crate) fn parse_chart(xml: &str, palette: &Palette) -> Option<ChartContent> 
         s.order.get_or_insert(i as u32);
     }
     plotted.sort_by_key(|s| s.order);
+    // What Excel counts, including the series there is no range to read.
+    let series_in_file = plotted.len();
     let series = plotted
         .into_iter()
         .filter_map(|s| {
@@ -640,10 +642,10 @@ pub(crate) fn parse_chart(xml: &str, palette: &Palette) -> Option<ChartContent> 
         kind,
         // Without a title element, Excel still titles a chart of a single
         // series with the name of that series, unless the title was
-        // deleted.
+        // deleted. A chart of several series has no title then.
         title: match title {
             Some(title) => title,
-            None if title_deleted => ChartTitle::None,
+            None if title_deleted || series_in_file != 1 => ChartTitle::None,
             None => ChartTitle::Auto,
         },
         legend,
