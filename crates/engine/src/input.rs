@@ -37,7 +37,7 @@ pub fn parse_input(text: &str, locale: &Locale) -> Result<ParsedInput, ParseErro
         return plain(Content::Value(Value::text(rest)));
     }
     let trimmed = text.trim();
-    if let Some((n, fmt)) = parse_number_input(trimmed, locale) {
+    if let Some((n, fmt)) = parse_number_input(trimmed, locale, true) {
         return Ok(ParsedInput {
             content: Content::Value(Value::Number(n)),
             num_fmt: fmt,
@@ -53,6 +53,14 @@ pub fn parse_input(text: &str, locale: &Locale) -> Result<ParsedInput, ParseErro
         return Ok(ParsedInput {
             content: Content::Value(Value::Number(n)),
             num_fmt: Some(fmt),
+        });
+    }
+    // Neither a well-formed number nor a date: accept loosely grouped
+    // digits ("1,5" is 15 in English) before giving up on a number.
+    if let Some((n, fmt)) = parse_number_input(trimmed, locale, false) {
+        return Ok(ParsedInput {
+            content: Content::Value(Value::Number(n)),
+            num_fmt: fmt,
         });
     }
     // "+A1" / "-A1*2" are formulas too.
@@ -79,7 +87,8 @@ const CURRENCY_SYMBOLS: [&str; 5] = ["€", "$", "£", "¥", "CHF"];
 
 /// Numbers as typed by a user: plain, with thousands separators, percent,
 /// currency, or in parentheses for negatives. Returns the implied format.
-fn parse_number_input(s: &str, locale: &Locale) -> Option<(f64, Option<String>)> {
+fn parse_number_input(s: &str, locale: &Locale, strict: bool) -> Option<(f64, Option<String>)> {
+    let plain_number = |s: &str, locale: &Locale| plain_number(s, locale, strict);
     if let Some(n) = plain_number(s, locale) {
         let has_group = s.chars().any(|c| is_group_sep(c, locale)) && !s.contains(['e', 'E']);
         let has_dec = s.contains(locale.decimal_sep);
@@ -131,13 +140,17 @@ fn is_group_sep(c: char, locale: &Locale) -> bool {
         || (locale.thousands_sep.is_whitespace() && (c == ' ' || c == '\u{a0}' || c == '\u{202f}'))
 }
 
-fn plain_number(s: &str, locale: &Locale) -> Option<f64> {
+fn plain_number(s: &str, locale: &Locale, strict: bool) -> Option<f64> {
     // Reject things `parse_number` would accept but a user would not mean
     // as a number.
     if s.is_empty() || s.starts_with(|c: char| c.is_whitespace()) {
         return None;
     }
-    locale.parse_number(s)
+    if strict {
+        locale.parse_number(s)
+    } else {
+        locale.parse_number_lenient(s)
+    }
 }
 
 /// Text → number for implicit coercion (`"3"+1`, `VALUE`): plain numbers,
@@ -147,14 +160,21 @@ pub fn parse_numeric_text(s: &str, locale: &Locale) -> Option<f64> {
     if t.is_empty() {
         return None;
     }
-    if let Some((n, _)) = parse_number_input(t, locale) {
+    if let Some((n, _)) = parse_number_input(t, locale, true) {
         return Some(n);
     }
-    parse_date_time(t, locale).map(|(n, _)| n)
+    if let Some((n, _)) = parse_date_time(t, locale) {
+        return Some(n);
+    }
+    parse_number_input(t, locale, false).map(|(n, _)| n)
 }
 
 fn month_from_name(token: &str, locale: &Locale) -> Option<u32> {
     let t = token.trim_end_matches('.').to_lowercase();
+    // "de" links the parts of Spanish dates ("12 de marzo de 2025").
+    if t == "de" {
+        return None;
+    }
     if t.chars().count() < 3 {
         return None;
     }
@@ -257,16 +277,17 @@ fn parse_time(s: &str) -> Option<(f64, &'static str)> {
 /// Parse a date without time. Returns the serial and a number format.
 fn parse_date(s: &str, locale: &Locale) -> Option<(f64, String)> {
     let s = s.trim();
-    // Split into tokens on / - . , and whitespace.
+    // Split into tokens on the date separators, commas and whitespace.
+    let is_sep = |c: char| c == '/' || c == '-' || c == locale.date_sep;
     let tokens: Vec<&str> = s
-        .split(|c: char| c == '/' || c == '-' || c == ',' || c.is_whitespace())
+        .split(|c: char| is_sep(c) || c == ',' || c.is_whitespace())
         .filter(|t| !t.is_empty())
         .collect();
     if tokens.len() < 2 || tokens.len() > 3 {
         return None;
     }
     let numeric = tokens.iter().all(|t| t.chars().all(|c| c.is_ascii_digit()));
-    let seps = s.chars().filter(|c| *c == '/' || *c == '-').count();
+    let seps = s.chars().filter(|c| is_sep(*c)).count();
     if numeric {
         // Purely numeric dates need / or - separators.
         if seps != tokens.len() - 1 {
@@ -293,10 +314,9 @@ fn parse_date(s: &str, locale: &Locale) -> Option<(f64, String)> {
         if let Some(v) = valid_date(current_year(), m, d) {
             return Some((v, "d-mmm".to_string()));
         }
-        if tokens[1].len() == 4 || b > 31 {
-            if let Some(v) = valid_date(expand_year(b, tokens[1].len()), a, 1) {
-                return Some((v, "mmm-yy".to_string()));
-            }
+        // Otherwise month and year ("3/2014", and "3.14" in German).
+        if let Some(v) = valid_date(expand_year(b, tokens[1].len()), a, 1) {
+            return Some((v, "mmm-yy".to_string()));
         }
         return None;
     }

@@ -323,12 +323,7 @@ fn dir_delta(dir: Direction) -> (i64, i64) {
 
 impl ExcelApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let locale = if crate::i18n::is_french() {
-            Locale::fr()
-        } else {
-            Locale::en()
-        };
-        let wb = Workbook::new(locale);
+        let wb = Workbook::new(crate::i18n::lang().locale());
         let fonts = Rc::new(FontResolver::new(cx.text_system().clone()));
         let cell_editor = cx.new(TextInput::new);
         let formula_input = cx.new(TextInput::new);
@@ -495,6 +490,22 @@ impl ExcelApp {
                 input.set_text(text, cx);
             }
         });
+    }
+
+    /// Switch the interface and formula language.
+    pub fn set_language(&mut self, lang: crate::i18n::Lang, cx: &mut Context<Self>) {
+        if self.editing.is_some() {
+            return;
+        }
+        crate::i18n::set_lang(lang);
+        crate::i18n::save_preference(lang);
+        // Formulas are stored canonically, so only their spelling changes.
+        self.wb.locale = lang.locale();
+        self.wb.recalc();
+        self.find_input
+            .update(cx, |input, _| input.placeholder = t("Find", "Rechercher").into());
+        crate::set_menus(cx);
+        self.refresh(cx);
     }
 
     pub fn set_status(&mut self, msg: impl Into<SharedString>, cx: &mut Context<Self>) {

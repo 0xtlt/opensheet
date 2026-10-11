@@ -1,7 +1,7 @@
 //! Sample content (`--demo`), handy for trying the app and for screenshots.
 
 use crate::app::ExcelApp;
-use crate::i18n::is_french;
+use crate::i18n::t;
 use gpui::Context;
 use opensheet_engine::Rect;
 use opensheet_engine::ops::BorderPreset;
@@ -9,15 +9,19 @@ use opensheet_engine::style::{Border, Color, HAlign};
 use std::sync::Arc;
 
 pub fn fill(app: &mut ExcelApp, cx: &mut Context<ExcelApp>) {
-    let fr = is_french();
     let wb = &mut app.wb;
     let sep = wb.locale.arg_sep;
-    let f = |en: &str, fr_name: &str| if fr { fr_name.to_string() } else { en.to_string() };
-    let headers = if fr {
-        ["Produit", "Région", "Quantité", "Prix unitaire", "Total", "Date"]
-    } else {
-        ["Product", "Region", "Quantity", "Unit price", "Total", "Date"]
-    };
+    let locale = wb.locale;
+    // Formulas are typed in the workbook's language.
+    let f = |canonical: &str, _: &str| locale.fn_to_local(canonical).to_string();
+    let headers = [
+        t("Product", "Produit"),
+        t("Region", "Région"),
+        t("Quantity", "Quantité"),
+        t("Unit price", "Prix unitaire"),
+        t("Total", "Total"),
+        t("Date", "Date"),
+    ];
     for (c, h) in headers.iter().enumerate() {
         let _ = wb.set_cell_text(0, 0, c as u32, h);
     }
@@ -45,14 +49,14 @@ pub fn fill(app: &mut ExcelApp, cx: &mut Context<ExcelApp>) {
     let _ = wb.set_cell_text(0, total_row, 0, "Total");
     let _ = wb.set_cell_text(0, total_row, 2, &format!("={}(C2:C{})", f("SUM", "SOMME"), total_row));
     let _ = wb.set_cell_text(0, total_row, 4, &format!("={}(E2:E{})", f("SUM", "SOMME"), total_row));
-    let _ = wb.set_cell_text(0, total_row + 2, 0, &f("Average basket", "Panier moyen"));
+    let _ = wb.set_cell_text(0, total_row + 2, 0, t("Average basket", "Panier moyen"));
     let _ = wb.set_cell_text(
         0,
         total_row + 2,
         4,
         &format!("={}(E2:E{})", f("AVERAGE", "MOYENNE"), total_row),
     );
-    let _ = wb.set_cell_text(0, total_row + 3, 0, &f("Best seller", "Meilleure vente"));
+    let _ = wb.set_cell_text(0, total_row + 3, 0, t("Best seller", "Meilleure vente"));
     let _ = wb.set_cell_text(
         0,
         total_row + 3,
@@ -62,10 +66,10 @@ pub fn fill(app: &mut ExcelApp, cx: &mut Context<ExcelApp>) {
             n = total_row,
             s = sep,
             m = f("MATCH", "EQUIV"),
-            x = "MAX"
+            x = f("MAX", "MAX")
         ),
     );
-    let _ = wb.set_cell_text(0, total_row + 4, 0, &f("Orders over 500", "Commandes > 500"));
+    let _ = wb.set_cell_text(0, total_row + 4, 0, t("Orders over 500", "Commandes > 500"));
     let _ = wb.set_cell_text(
         0,
         total_row + 4,

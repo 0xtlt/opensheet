@@ -5,6 +5,7 @@ mod demo;
 mod file;
 mod grid;
 mod i18n;
+mod i18n_tables;
 mod icons;
 mod ribbon;
 mod text_input;
@@ -99,7 +100,7 @@ fn bind_keys(cx: &mut App) {
     ]);
 }
 
-fn set_menus(cx: &mut App) {
+pub(crate) fn set_menus(cx: &mut App) {
     cx.set_menus(vec![
         Menu {
             name: "OpenSheet".into(),
@@ -177,7 +178,7 @@ fn main() {
     let file_arg = std::env::args().skip(1).find(|a| !a.starts_with("--"));
 
     Application::new().with_assets(icons::Assets).run(move |cx: &mut App| {
-        i18n::set_french(i18n::system_prefers_french());
+        i18n::set_lang(i18n::detect());
         load_office_fonts(cx);
         bind_keys(cx);
         set_menus(cx);

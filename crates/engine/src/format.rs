@@ -230,15 +230,15 @@ pub fn adjust_decimals(code: &str, delta: i32) -> String {
 /// to canonical syntax. Canonical codes are recognised and left untouched,
 /// so both spellings work; in an English locale this is the identity.
 pub fn code_from_locale(code: &str, locale: &Locale) -> String {
-    let french = locale.id == "fr";
-    if locale.decimal_sep == '.' && !french {
+    let (day, year) = (locale.fmt_day, locale.fmt_year);
+    if locale.decimal_sep == '.' && day == 'd' && year == 'y' {
         return code.to_string();
     }
     let tokens = lex(code);
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let date_alias = |t: &Token| match t.lex {
-        Lex::Char('j' | 'J') if french => Some("d"),
-        Lex::Char('a' | 'A') if french => Some("y"),
+        Lex::Char(ch) if day != 'd' && ch.to_ascii_lowercase() == day => Some("d"),
+        Lex::Char(ch) if year != 'y' && ch.to_ascii_lowercase() == year => Some("y"),
         _ => None,
     };
     let is_digit = |t: Option<&Token>| t.is_some_and(|t| matches!(t.lex, Lex::Digit(_)));
@@ -295,6 +295,46 @@ pub fn code_from_locale(code: &str, locale: &Locale) -> String {
                 after == 3 && !before.is_empty() && before.iter().all(|t| t.lex == Lex::Digit('#'));
             after > 0 && !canonical_grouping
         };
+        if locale.thousands_sep == '.' {
+            // Spanish / German / Italian: "#.##0,00" is "#,##0.00".
+            let dots: Vec<usize> = sec
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.lex == Lex::Dot)
+                .map(|(i, _)| i)
+                .collect();
+            let localized = match (commas.last(), dots.is_empty()) {
+                (Some(c), false) => dots.iter().all(|d| d < c),
+                (Some(_), true) => decimal_comma,
+                (None, false) => {
+                    // A lone dot is grouping only in the `#.##0` shape.
+                    dots.len() == 1 && {
+                        let i = dots[0];
+                        let after = sec[i + 1..]
+                            .iter()
+                            .take_while(|t| matches!(t.lex, Lex::Digit(_)))
+                            .count();
+                        let before: Vec<&Token> = sec[..i]
+                            .iter()
+                            .rev()
+                            .take_while(|t| matches!(t.lex, Lex::Digit(_)))
+                            .collect();
+                        after == 3 && !before.is_empty() && before.iter().all(|t| t.lex == Lex::Digit('#'))
+                    }
+                }
+                (None, true) => false,
+            };
+            if localized {
+                for t in sec.iter() {
+                    match t.lex {
+                        Lex::Comma => edits.push((t.start, t.end, ".".to_string())),
+                        Lex::Dot => edits.push((t.start, t.end, ",".to_string())),
+                        _ => {}
+                    }
+                }
+            }
+            continue;
+        }
         if !(space_grouping || decimal_comma) {
             continue;
         }

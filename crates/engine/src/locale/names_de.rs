@@ -1,0 +1,33 @@
+//! German function names: (canonical English name, German name).
+//! Functions spelled identically in both languages are omitted.
+
+pub const FUNCTIONS: &[(&str, &str)] = &[
+    ("SUM", "SUMME"),
+    ("IF", "WENN"),
+    ("AVERAGE", "MITTELWERT"),
+    ("COUNT", "ANZAHL"),
+    ("COUNTA", "ANZAHL2"),
+    ("COUNTIF", "ZÄHLENWENN"),
+    ("SUMIF", "SUMMEWENN"),
+    ("VLOOKUP", "SVERWEIS"),
+    ("HLOOKUP", "WVERWEIS"),
+    ("XLOOKUP", "XVERWEIS"),
+    ("MATCH", "VERGLEICH"),
+    ("AND", "UND"),
+    ("OR", "ODER"),
+    ("NOT", "NICHT"),
+    ("IFERROR", "WENNFEHLER"),
+    ("TRUE", "WAHR"),
+    ("FALSE", "FALSCH"),
+    ("TODAY", "HEUTE"),
+    ("NOW", "JETZT"),
+    ("ROUND", "RUNDEN"),
+    ("LEFT", "LINKS"),
+    ("RIGHT", "RECHTS"),
+    ("LEN", "LÄNGE"),
+    ("VALUE", "WERT"),
+    ("DATE", "DATUM"),
+    ("YEAR", "JAHR"),
+    ("MONTH", "MONAT"),
+    ("DAY", "TAG"),
+];

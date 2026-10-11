@@ -192,3 +192,87 @@ fn sheets() {
     assert_eq!(w.formula_text(1, 0, 0).unwrap(), "='Data 2024'!A1*2");
     assert_eq!(w.value_at(1, 0, 0), Value::Number(10.0));
 }
+
+fn wb_in(locale: &'static Locale, cells: &[(&str, &str)]) -> Workbook {
+    let mut wb = Workbook::new(locale);
+    for (name, text) in cells {
+        let (r, c) = crate::refs::parse_cell_name(name).unwrap();
+        wb.set_cell_text(0, r, c, text).unwrap();
+    }
+    wb.commit("setup");
+    wb
+}
+
+#[test]
+fn german_locale() {
+    let w = wb_in(
+        Locale::de(),
+        &[
+            ("A1", "1,5"),
+            ("A2", "=SUMME(A1;2,5)"),
+            ("A3", "=WENN(A2>3;WAHR;FALSCH)"),
+            ("A4", "12.03.2025"),
+            ("A5", "1.000"),
+            ("A6", "=1/0"),
+            ("A7", "=TEXT(1234,5;\"#.##0,00\")"),
+            ("A8", "=TEXT(A4;\"TT.MM.JJJJ\")"),
+            ("A9", "1.5"),
+        ],
+    );
+    assert_eq!(val(&w, "A2"), Value::Number(4.0));
+    assert_eq!(val(&w, "A3"), Value::Bool(true));
+    assert_eq!(val(&w, "A4"), Value::Number(crate::datetime::date_to_serial(2025, 3, 12).unwrap()));
+    assert_eq!(w.display_text(0, 3, 0).text, "12.03.2025");
+    assert_eq!(val(&w, "A5"), Value::Number(1000.0));
+    assert_eq!(w.display_text(0, 5, 0).text, "#DIV/0!");
+    assert_eq!(val(&w, "A7"), Value::text("1.234,50"));
+    assert_eq!(val(&w, "A8"), Value::text("12.03.2025"));
+    // "1.5" is the first of May, not a number.
+    assert!(matches!(val(&w, "A9"), Value::Number(n) if n > 40000.0));
+    assert_eq!(w.edit_text(0, 1, 0), "=SUMME(A1;2,5)");
+    assert_eq!(w.edit_text(0, 2, 0), "=WENN(A2>3;WAHR;FALSCH)");
+    assert_eq!(w.sheets[0].name, "Tabelle1");
+}
+
+#[test]
+fn spanish_and_italian_locales() {
+    let w = wb_in(
+        Locale::es(),
+        &[
+            ("A1", "2,5"),
+            ("A2", "=SUMA(A1;1)"),
+            ("A3", "=SI(A2>3;VERDADERO;FALSO)"),
+            ("A4", "=\"x\"+1"),
+            ("A5", "12/03/2025"),
+            ("C1", "={1\\2;3\\4}"),
+        ],
+    );
+    assert_eq!(val(&w, "A2"), Value::Number(3.5));
+    assert_eq!(val(&w, "A3"), Value::Bool(true));
+    assert_eq!(w.display_text(0, 3, 0).text, "#¡VALOR!");
+    assert_eq!(w.display_text(0, 4, 0).text, "12/03/2025");
+    assert_eq!(val(&w, "D2"), Value::Number(4.0));
+    assert_eq!(w.edit_text(0, 1, 0), "=SUMA(A1;1)");
+    assert_eq!(w.sheets[0].name, "Hoja1");
+
+    let w = wb_in(
+        Locale::it(),
+        &[("A1", "2,5"), ("A2", "=SOMMA(A1;1)"), ("A3", "=SE(A2>3;VERO;FALSO)"), ("A4", "=NOPE()")],
+    );
+    assert_eq!(val(&w, "A2"), Value::Number(3.5));
+    assert_eq!(val(&w, "A3"), Value::Bool(true));
+    assert_eq!(w.display_text(0, 3, 0).text, "#NOME?");
+    assert_eq!(w.edit_text(0, 2, 0), "=SE(A2>3;VERO;FALSO)");
+    assert_eq!(w.sheets[0].name, "Foglio1");
+}
+
+#[test]
+fn formulas_survive_a_locale_change() {
+    let mut w = wb_in(Locale::fr(), &[("A1", "1,5"), ("A2", "=SOMME(A1;2,5)")]);
+    w.locale = Locale::en();
+    w.recalc();
+    assert_eq!(w.edit_text(0, 1, 0), "=SUM(A1,2.5)");
+    w.locale = Locale::de();
+    assert_eq!(w.edit_text(0, 1, 0), "=SUMME(A1;2,5)");
+    assert_eq!(w.value_at(0, 1, 0), Value::Number(4.0));
+}
