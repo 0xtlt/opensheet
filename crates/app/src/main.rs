@@ -1,6 +1,7 @@
 //! OpenSheet — an open-source spreadsheet built with Rust and GPUI.
 
 mod app;
+mod chart_view;
 mod demo;
 mod file;
 mod grid;

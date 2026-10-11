@@ -153,7 +153,14 @@ pub enum Hit {
     VTrack,
     HThumb,
     HTrack,
+    /// The body of a chart (by id).
+    Chart(u32),
+    /// A resize handle of the selected chart: 0 = top-left, then clockwise.
+    ChartHandle(u32, u8),
 }
+
+/// Index of the contextual "Chart Design" ribbon tab.
+pub const CHART_TAB: usize = 11;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum SelectKind {
@@ -171,6 +178,10 @@ enum Drag {
     RowResize { row: u32, start_y: f32, start_h: f32 },
     VScroll { grab: f32 },
     HScroll { grab: f32 },
+    /// `origin`: the chart's top-left corner in sheet pixels at 100 %.
+    ChartMove { id: u32, start: (f32, f32), origin: (f64, f64) },
+    /// `origin`: x, y, width, height in sheet pixels at 100 %.
+    ChartResize { id: u32, handle: u8, start: (f32, f32), origin: (f64, f64, f64, f64) },
 }
 
 pub type MenuAction = Rc<dyn Fn(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>)>;
@@ -276,6 +287,8 @@ pub struct ExcelApp {
     pub rename_input: Entity<TextInput>,
     pub find_input: Entity<TextInput>,
     pub editing: Option<Editing>,
+    /// Id of the selected chart on the current sheet.
+    pub chart_sel: Option<u32>,
     pub clip: Option<ClipState>,
     drag: Option<Drag>,
     pub layout: Option<GridLayout>,
@@ -380,6 +393,7 @@ impl ExcelApp {
             rename_input,
             find_input,
             editing: None,
+            chart_sel: None,
             clip: None,
             drag: None,
             layout: None,
@@ -414,6 +428,7 @@ impl ExcelApp {
         self.title = title;
         self.sheet = 0;
         self.editing = None;
+        self.chart_sel = None;
         self.clip = None;
         self.drag = None;
         self.popup = None;
@@ -575,6 +590,7 @@ impl ExcelApp {
     }
 
     pub fn select_cell(&mut self, row: u32, col: u32, cx: &mut Context<Self>) {
+        self.deselect_chart();
         let row = row.min(MAX_ROWS - 1);
         let col = col.min(MAX_COLS - 1);
         let rect = self.expand_merges(Rect::cell(row, col));
@@ -587,6 +603,7 @@ impl ExcelApp {
     }
 
     pub fn select_rect(&mut self, rect: Rect, cx: &mut Context<Self>) {
+        self.deselect_chart();
         let rect = self.expand_merges(rect);
         let sel = self.sel_mut();
         sel.active = (rect.r0, rect.c0);
@@ -745,6 +762,7 @@ impl ExcelApp {
         }
         self.sheet = index;
         self.popup = None;
+        self.deselect_chart();
         self.refresh(cx);
     }
 
@@ -1646,6 +1664,129 @@ impl ExcelApp {
         self.commit(t("AutoFit Column", "Ajuster la largeur"), cx);
     }
 
+    // ---- charts ---------------------------------------------------------------
+
+    pub fn deselect_chart(&mut self) {
+        self.chart_sel = None;
+        if self.ribbon_tab == CHART_TAB {
+            self.ribbon_tab = 1;
+        }
+    }
+
+    /// A chart's top-left corner in sheet pixels at 100 %.
+    fn chart_abs(layout: &GridLayout, chart: &opensheet_engine::chart::Chart) -> (f64, f64) {
+        let z = layout.zoom as f64;
+        (
+            layout.cols.start(chart.anchor.1) / z + chart.offset.0 as f64,
+            layout.rows.start(chart.anchor.0) / z + chart.offset.1 as f64,
+        )
+    }
+
+    /// The cell anchor and in-cell offset for a position in sheet pixels.
+    fn chart_anchor(layout: &GridLayout, x: f64, y: f64) -> ((u32, u32), (f32, f32)) {
+        let z = layout.zoom as f64;
+        let (x, y) = (x.max(0.0), y.max(0.0));
+        let col = layout.cols.index_at(x * z);
+        let row = layout.rows.index_at(y * z);
+        (
+            (row, col),
+            (
+                (x - layout.cols.start(col) / z) as f32,
+                (y - layout.rows.start(row) / z) as f32,
+            ),
+        )
+    }
+
+    /// Insert a chart of the selected data, centred in the window.
+    pub fn insert_chart(&mut self, kind: opensheet_engine::chart::ChartKind, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing.is_some() && !self.commit_edit(None, window, cx) {
+            return;
+        }
+        let mut chart = self.wb.chart_from_range(self.sheet, self.sel().current(), kind);
+        if chart.series.is_empty() {
+            self.set_status(
+                t(
+                    "Select the data to chart first.",
+                    "Sélectionnez d'abord les données à représenter.",
+                ),
+                cx,
+            );
+            return;
+        }
+        if let Some(layout) = self.current_layout() {
+            let z = layout.zoom;
+            let lx = layout.header_w + layout.frozen_w + ((layout.view_w() - layout.frozen_w - chart.size.0 * z) / 2.0).max(8.0);
+            let ly = layout.header_h + layout.frozen_h + ((layout.view_h() - layout.frozen_h - chart.size.1 * z) / 2.0).max(8.0);
+            let (col, row) = (layout.col_at(lx), layout.row_at(ly));
+            chart.anchor = (row, col);
+            chart.offset = (
+                ((lx - layout.col_x(col)) / z).max(0.0),
+                ((ly - layout.row_y(row)) / z).max(0.0),
+            );
+        }
+        let id = self.wb.add_chart(self.sheet, chart);
+        self.wb.commit(t("Insert Chart", "Insérer un graphique"));
+        self.chart_sel = id;
+        self.ribbon_tab = CHART_TAB;
+        self.popup = None;
+        self.refresh(cx);
+    }
+
+    pub fn delete_chart(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.chart_sel {
+            self.wb.remove_chart(self.sheet, id);
+            self.wb.commit(t("Delete Chart", "Supprimer le graphique"));
+            self.deselect_chart();
+            self.refresh(cx);
+        }
+    }
+
+    /// Apply a change to the selected chart.
+    pub fn edit_chart(&mut self, label: &str, cx: &mut Context<Self>, f: impl FnOnce(&mut opensheet_engine::chart::Chart)) {
+        if let Some(id) = self.chart_sel {
+            self.wb.update_chart(self.sheet, id, f);
+            self.commit(label, cx);
+        }
+    }
+
+    pub fn selected_chart(&self) -> Option<&opensheet_engine::chart::Chart> {
+        self.wb.chart(self.sheet, self.chart_sel?)
+    }
+
+    pub fn switch_chart_rows_columns(&mut self, cx: &mut Context<Self>) {
+        let Some(mut chart) = self.selected_chart().cloned() else {
+            return;
+        };
+        if chart.switch_row_column(&self.wb, self.sheet) {
+            let series = chart.series;
+            self.edit_chart(t("Switch Row/Column", "Intervertir les lignes/colonnes"), cx, move |c| {
+                c.series = series
+            });
+        }
+    }
+
+    /// Ranges plotted by the selected chart, coloured by role like Excel:
+    /// values blue, categories purple, series names red.
+    pub fn chart_highlights(&self) -> Vec<(Rect, u32)> {
+        let Some(chart) = self.selected_chart() else {
+            return Vec::new();
+        };
+        self.wb
+            .chart_ranges(self.sheet, chart)
+            .into_iter()
+            .map(|(rect, role)| {
+                (
+                    rect,
+                    match role {
+                        0 => 0x4472C4,
+                        1 => 0x8064A2,
+                        _ => 0xC0504D,
+                    },
+                )
+            })
+            .collect()
+    }
+
     // ---- mouse ----------------------------------------------------------------
 
     pub fn hit_test(&self, layout: &GridLayout, pos: Point<Pixels>) -> Hit {
@@ -1710,7 +1851,21 @@ impl ExcelApp {
             }
             return Hit::RowHeader(row);
         }
-        if self.editing.is_none() && self.sel().ranges.len() == 1 {
+        // Charts lie on top of the cells; the last one is drawn on top.
+        for chart in self.wb.sheets[self.sheet].charts.iter().rev() {
+            let rect = crate::chart_view::chart_rect(layout, chart);
+            if self.chart_sel == Some(chart.id) {
+                for (i, (hx, hy)) in crate::chart_view::handle_points(rect).iter().enumerate() {
+                    if (x - hx).abs() <= 6.0 && (y - hy).abs() <= 6.0 {
+                        return Hit::ChartHandle(chart.id, i as u8);
+                    }
+                }
+            }
+            if x >= rect.0 && x <= rect.2 && y >= rect.1 && y <= rect.3 {
+                return Hit::Chart(chart.id);
+            }
+        }
+        if self.editing.is_none() && self.chart_sel.is_none() && self.sel().ranges.len() == 1 {
             let (_, _, x1, y1) = layout.rect_px(self.sel().current());
             if (x - x1).abs() <= 5.0 && (y - y1).abs() <= 5.0 {
                 return Hit::FillHandle;
@@ -1786,6 +1941,30 @@ impl ExcelApp {
 
         match hit {
             Hit::None => {}
+            Hit::Chart(id) | Hit::ChartHandle(id, _) => {
+                if self.editing.is_some() && !self.commit_edit(None, window, cx) {
+                    return;
+                }
+                window.focus(&self.grid_focus);
+                self.chart_sel = Some(id);
+                if let Some(chart) = self.wb.chart(self.sheet, id) {
+                    let (ax, ay) = Self::chart_abs(&layout, chart);
+                    self.drag = Some(match hit {
+                        Hit::ChartHandle(_, handle) => Drag::ChartResize {
+                            id,
+                            handle,
+                            start: (lx, ly),
+                            origin: (ax, ay, chart.size.0 as f64, chart.size.1 as f64),
+                        },
+                        _ => Drag::ChartMove {
+                            id,
+                            start: (lx, ly),
+                            origin: (ax, ay),
+                        },
+                    });
+                }
+                self.refresh(cx);
+            }
             Hit::VThumb => {
                 let (_, ty, _, pos, _) = layout.v_scrollbar(self.content_size(&layout).1);
                 self.drag = Some(Drag::VScroll { grab: ly - (ty + pos) });
@@ -2047,6 +2226,52 @@ impl ExcelApp {
                 self.wb.set_row_height(self.sheet, row, Some(h));
                 self.set_status(crate::i18n::labelled(t("Height", "Hauteur"), format!("{h:.0} px")), cx);
             }
+            Drag::ChartMove { id, start, origin } => {
+                let z = self.zoom as f64;
+                let x = origin.0 + (lx - start.0) as f64 / z;
+                let y = origin.1 + (ly - start.1) as f64 / z;
+                let (anchor, offset) = Self::chart_anchor(&layout, x, y);
+                self.wb.update_chart(self.sheet, id, |c| {
+                    c.anchor = anchor;
+                    c.offset = offset;
+                });
+            }
+            Drag::ChartResize {
+                id,
+                handle,
+                start,
+                origin,
+            } => {
+                let z = self.zoom as f64;
+                let dx = (lx - start.0) as f64 / z;
+                let dy = (ly - start.1) as f64 / z;
+                let (mut x, mut y, mut w, mut h) = origin;
+                let (min_w, min_h) = (120.0, 80.0);
+                // Handles: 0 top-left, 1 top, 2 top-right, 3 right,
+                // 4 bottom-right, 5 bottom, 6 bottom-left, 7 left.
+                if matches!(handle, 0 | 6 | 7) {
+                    let d = dx.min(w - min_w);
+                    x += d;
+                    w -= d;
+                }
+                if matches!(handle, 2 | 3 | 4) {
+                    w = (w + dx).max(min_w);
+                }
+                if matches!(handle, 0 | 1 | 2) {
+                    let d = dy.min(h - min_h);
+                    y += d;
+                    h -= d;
+                }
+                if matches!(handle, 4 | 5 | 6) {
+                    h = (h + dy).max(min_h);
+                }
+                let (anchor, offset) = Self::chart_anchor(&layout, x, y);
+                self.wb.update_chart(self.sheet, id, |c| {
+                    c.anchor = anchor;
+                    c.offset = offset;
+                    c.size = (w as f32, h as f32);
+                });
+            }
             Drag::VScroll { grab } => {
                 let content = self.content_size(&layout).1;
                 let (_, ty, len, _, tl) = layout.v_scrollbar(content);
@@ -2094,6 +2319,12 @@ impl ExcelApp {
             Drag::RowResize { .. } => {
                 self.wb.commit(t("Row Height", "Hauteur de ligne"));
                 self.status_message = None;
+            }
+            Drag::ChartMove { .. } => {
+                self.wb.commit(t("Move Chart", "Déplacer le graphique"));
+            }
+            Drag::ChartResize { .. } => {
+                self.wb.commit(t("Resize Chart", "Redimensionner le graphique"));
             }
             Drag::Select(_) => {
                 // The format painter applies to the range just selected.
@@ -2170,6 +2401,20 @@ impl ExcelApp {
 
     pub fn cursor_style(&self) -> gpui::CursorStyle {
         use gpui::CursorStyle;
+        // The chart handle being dragged or hovered, if any.
+        let chart_handle = match (&self.drag, self.hover) {
+            (Some(Drag::ChartResize { handle, .. }), _) => Some(*handle),
+            (None, Hit::ChartHandle(_, handle)) => Some(handle),
+            _ => None,
+        };
+        if let Some(handle) = chart_handle {
+            return match handle {
+                0 | 4 => CursorStyle::ResizeUpLeftDownRight,
+                2 | 6 => CursorStyle::ResizeUpRightDownLeft,
+                1 | 5 => CursorStyle::ResizeUpDown,
+                _ => CursorStyle::ResizeLeftRight,
+            };
+        }
         match (&self.drag, self.hover) {
             (Some(Drag::ColResize { .. }), _) | (None, Hit::ColResize(_)) => CursorStyle::ResizeLeftRight,
             (Some(Drag::RowResize { .. }), _) | (None, Hit::RowResize(_)) => CursorStyle::ResizeUpDown,
@@ -2245,6 +2490,31 @@ impl ExcelApp {
             entries.push(MenuEntry::separator());
         };
         match hit {
+            Hit::Chart(id) | Hit::ChartHandle(id, _) => {
+                self.chart_sel = Some(id);
+                entries.push(
+                    MenuEntry::new(t("Switch Row/Column", "Intervertir les lignes/colonnes"), |a, _, cx| {
+                        a.switch_chart_rows_columns(cx)
+                    })
+                    .icon("table"),
+                );
+                entries.push(MenuEntry::separator());
+                let current = self.selected_chart().map(|c| c.kind);
+                for kind in opensheet_engine::chart::ChartKind::ALL {
+                    entries.push(
+                        MenuEntry::new(crate::ribbon::chart_kind_name(kind), move |a, _, cx| {
+                            a.edit_chart(t("Change Chart Type", "Modifier le type de graphique"), cx, move |c| {
+                                c.kind = kind
+                            })
+                        })
+                        .checked(current == Some(kind)),
+                    );
+                }
+                entries.push(MenuEntry::separator());
+                entries.push(
+                    MenuEntry::new(t("Delete Chart", "Supprimer le graphique"), |a, _, cx| a.delete_chart(cx)).icon("trash"),
+                );
+            }
             Hit::ColHeader(col) | Hit::ColResize(col) => {
                 let cur = self.sel().current();
                 if !(cur.is_whole_cols() && col >= cur.c0 && col <= cur.c1) {
@@ -2412,6 +2682,10 @@ impl EntityInputHandler for ExcelApp {
             return;
         }
         if text.chars().all(|c| c.is_control()) {
+            return;
+        }
+        if self.chart_sel.is_some() && self.editing.is_none() {
+            // Typing with a chart selected does not go into a cell.
             return;
         }
         if self.editing.is_some() {
@@ -2585,6 +2859,10 @@ impl ExcelApp {
             self.focus_editor(window, cx);
             return;
         }
+        if self.chart_sel.is_some() {
+            self.delete_chart(cx);
+            return;
+        }
         self.clear(ClearMode::Contents, cx);
     }
     pub fn on_copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
@@ -2708,6 +2986,11 @@ impl ExcelApp {
     pub fn on_cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
         if self.editing.is_some() {
             self.cancel_edit(window, cx);
+            return;
+        }
+        if self.chart_sel.is_some() {
+            self.deselect_chart();
+            cx.notify();
             return;
         }
         self.clip = None;

@@ -509,6 +509,7 @@ pub fn cell_font(style: &Style, fonts: &FontResolver) -> Font {
 
 pub enum Draw {
     Quad(PaintQuad),
+    Path(gpui::Path<Pixels>, Hsla),
     Text {
         line: ShapedLine,
         origin: Point<Pixels>,
@@ -550,6 +551,12 @@ pub struct SceneInput<'a> {
     pub hot_scrollbar: u8,
     /// Device pixels per logical pixel.
     pub scale: f32,
+    /// Chart drawn with its selection frame and handles.
+    pub selected_chart: Option<u32>,
+    /// Title shown on charts that have none of their own yet.
+    pub chart_placeholder: &'a str,
+    /// Prefix of unnamed series in chart legends.
+    pub series_prefix: &'a str,
 }
 
 struct PaneCtx<'a> {
@@ -1170,6 +1177,36 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         items: chrome,
     });
 
+    // Charts float over the cells and scroll with them.
+    if !sheet.charts.is_empty() {
+        let style = crate::chart_view::ChartStyle {
+            font: input.fonts.resolve(&Arc::from(opensheet_engine::style::DEFAULT_FONT)),
+            placeholder_title: input.chart_placeholder,
+            series_prefix: input.series_prefix,
+            locale: input.wb.locale,
+        };
+        let mut items: Vec<Draw> = Vec::new();
+        for chart in &sheet.charts {
+            let (x0, y0, x1, y1) = crate::chart_view::chart_rect(layout, chart);
+            if x1 < hw || y1 < hh || x0 > w || y0 > h {
+                continue;
+            }
+            let data = input.wb.chart_data(input.sheet, chart);
+            items.extend(crate::chart_view::build_chart(
+                chart,
+                &data,
+                layout,
+                ts,
+                &style,
+                input.selected_chart == Some(chart.id),
+            ));
+        }
+        layers.push(Layer {
+            clip: layout.bounds_px(hw, hh, w, h),
+            items,
+        });
+    }
+
     // Headers.
     if hh > 0.0 {
         let sel = input.selection;
@@ -1319,6 +1356,7 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
             for item in layer.items {
                 match item {
                     Draw::Quad(q) => window.paint_quad(q),
+                    Draw::Path(path, color) => window.paint_path(path, color),
                     Draw::Text {
                         line,
                         origin,

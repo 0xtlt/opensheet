@@ -5,6 +5,7 @@ use crate::i18n::t;
 use crate::theme::{self, c};
 use crate::view::{icon, tooltip};
 use gpui::{AnyElement, Context, FontWeight, SharedString, Stateful, Window, div, prelude::*, px};
+use opensheet_engine::chart::{ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::format::{self, FormatKind};
 use opensheet_engine::functions::{self, Category};
 use opensheet_engine::ops::{BorderPreset, PasteMode};
@@ -301,7 +302,13 @@ impl ExcelApp {
     }
 
     pub fn render_ribbon_tabs(&mut self, cx: &mut Cx) -> impl IntoElement {
-        let names = tab_names();
+        let mut names: Vec<&'static str> = tab_names().to_vec();
+        if self.chart_sel.is_some() {
+            // Contextual tab, shown while a chart is selected.
+            names.push(t("Chart Design", "Création de graphique"));
+        } else if self.ribbon_tab == CHART_TAB {
+            self.ribbon_tab = 1;
+        }
         let mut tabs: Vec<AnyElement> = Vec::new();
         for (i, name) in names.iter().enumerate() {
             let active = i == self.ribbon_tab;
@@ -317,6 +324,7 @@ impl ExcelApp {
                     .text_size(px(13.))
                     .when(active, |d| d.font_weight(FontWeight::SEMIBOLD).text_color(c(theme::ACCENT_DARK)))
                     .when(!active, |d| d.hover(|s| s.bg(c(theme::HOVER))))
+                    .when(i == CHART_TAB && !active, |d| d.text_color(c(theme::ACCENT)))
                     .rounded(px(4.))
                     .child(*name)
                     .when(active, |d| {
@@ -466,6 +474,7 @@ impl ExcelApp {
                 &[("book", t("Help", "Aide")), ("comment", t("Feedback", "Commentaires"))],
                 t("Help", "Aide"),
             ),
+            CHART_TAB if self.chart_sel.is_some() => self.chart_tab(cx),
             _ => self.home_tab(cx),
         };
         div().w_full().flex_none().px_2().pb(px(4.)).bg(c(theme::CHROME_BG)).child(
@@ -1175,10 +1184,37 @@ impl ExcelApp {
             group(
                 t("Charts", "Graphiques"),
                 row(vec![
-                    ni(self, "in-chart-rec", "chart-bar", t("Recommended Charts", "Graphiques recommandés"), cx),
-                    ni(self, "in-chart-bar", "chart-bar", t("Column", "Histogramme"), cx),
-                    ni(self, "in-chart-line", "chart-line", t("Line", "Courbes"), cx),
-                    ni(self, "in-chart-pie", "chart-pie", t("Pie", "Secteurs"), cx),
+                    self.large(
+                        "in-chart-rec",
+                        "chart-bar",
+                        t("Recommended Charts", "Graphiques recommandés"),
+                        false,
+                        cx,
+                        |this, window, cx| this.insert_chart(ChartKind::Column, window, cx),
+                    ),
+                    self.large("in-chart-col", "chart-bar", t("Column", "Histogramme"), true, cx, |this, window, cx| {
+                        this.open_chart_menu("in-chart-col", &[ChartKind::Column, ChartKind::StackedColumn], window, cx)
+                    }),
+                    self.large("in-chart-barh", "chart-bar-h", t("Bar", "Barres"), true, cx, |this, window, cx| {
+                        this.open_chart_menu("in-chart-barh", &[ChartKind::Bar, ChartKind::StackedBar], window, cx)
+                    }),
+                    self.large("in-chart-line", "chart-line", t("Line", "Courbes"), false, cx, |this, window, cx| {
+                        this.insert_chart(ChartKind::Line, window, cx)
+                    }),
+                    self.large("in-chart-area", "chart-area", t("Area", "Aires"), false, cx, |this, window, cx| {
+                        this.insert_chart(ChartKind::Area, window, cx)
+                    }),
+                    self.large("in-chart-pie", "chart-pie", t("Pie", "Secteurs"), true, cx, |this, window, cx| {
+                        this.open_chart_menu("in-chart-pie", &[ChartKind::Pie, ChartKind::Doughnut], window, cx)
+                    }),
+                    self.large(
+                        "in-chart-scatter",
+                        "chart-scatter",
+                        t("Scatter", "Nuage de points"),
+                        false,
+                        cx,
+                        |this, window, cx| this.insert_chart(ChartKind::Scatter, window, cx),
+                    ),
                 ]),
             )
             .into_any_element(),
@@ -1195,6 +1231,125 @@ impl ExcelApp {
             group(
                 t("Text", "Texte"),
                 row(vec![ni(self, "in-textbox", "textbox", t("Text Box", "Zone de texte"), cx)]),
+            )
+            .border_r_0()
+            .into_any_element(),
+        ]
+    }
+
+    /// Drop-down offering the given chart types for insertion.
+    fn open_chart_menu(&mut self, anchor: &'static str, kinds: &[ChartKind], window: &mut Window, cx: &mut Cx) {
+        let entries = kinds
+            .iter()
+            .map(|kind| {
+                let kind = *kind;
+                MenuEntry::new(chart_kind_name(kind), move |a, window, cx| a.insert_chart(kind, window, cx))
+            })
+            .collect();
+        self.open_menu(anchor, entries, 220.0, window, cx);
+    }
+
+    /// The contextual "Chart Design" tab.
+    fn chart_tab(&mut self, cx: &mut Cx) -> Vec<AnyElement> {
+        vec![
+            group(
+                t("Chart Layouts", "Dispositions du graphique"),
+                row(vec![self.large(
+                    "ch-elements",
+                    "chart-bar",
+                    t("Add Chart Element", "Ajouter un élément de graphique"),
+                    true,
+                    cx,
+                    |this, window, cx| {
+                        let Some(chart) = this.selected_chart() else {
+                            return;
+                        };
+                        let has_title = chart.title != ChartTitle::None;
+                        let labels = chart.data_labels;
+                        let legend = chart.legend;
+                        let mut entries = vec![
+                            MenuEntry::new(t("Chart Title", "Titre du graphique"), move |a, _, cx| {
+                                a.edit_chart(t("Chart Title", "Titre du graphique"), cx, move |c| {
+                                    c.title = if has_title { ChartTitle::None } else { ChartTitle::Auto }
+                                })
+                            })
+                            .checked(has_title),
+                            MenuEntry::new(t("Data Labels", "Étiquettes de données"), move |a, _, cx| {
+                                a.edit_chart(t("Data Labels", "Étiquettes de données"), cx, move |c| {
+                                    c.data_labels = !labels
+                                })
+                            })
+                            .checked(labels),
+                            MenuEntry::separator(),
+                        ];
+                        for (pos, name) in [
+                            (LegendPos::None, t("No Legend", "Aucune légende")),
+                            (LegendPos::Right, t("Legend at Right", "Légende à droite")),
+                            (LegendPos::Top, t("Legend at Top", "Légende en haut")),
+                            (LegendPos::Left, t("Legend at Left", "Légende à gauche")),
+                            (LegendPos::Bottom, t("Legend at Bottom", "Légende en bas")),
+                        ] {
+                            entries.push(
+                                MenuEntry::new(name, move |a, _, cx| {
+                                    a.edit_chart(t("Legend", "Légende"), cx, move |c| c.legend = pos)
+                                })
+                                .checked(legend == pos),
+                            );
+                        }
+                        this.open_menu("ch-elements", entries, 240.0, window, cx);
+                    },
+                )]),
+            )
+            .into_any_element(),
+            group(
+                t("Data", "Données"),
+                row(vec![self.large(
+                    "ch-switch",
+                    "table",
+                    t("Switch Row/Column", "Intervertir les lignes/colonnes"),
+                    false,
+                    cx,
+                    |this, _, cx| this.switch_chart_rows_columns(cx),
+                )]),
+            )
+            .into_any_element(),
+            group(
+                t("Type", "Type"),
+                row(vec![self.large(
+                    "ch-type",
+                    "chart-pie",
+                    t("Change Chart Type", "Modifier le type de graphique"),
+                    true,
+                    cx,
+                    |this, window, cx| {
+                        let current = this.selected_chart().map(|c| c.kind);
+                        let entries = ChartKind::ALL
+                            .iter()
+                            .map(|kind| {
+                                let kind = *kind;
+                                MenuEntry::new(chart_kind_name(kind), move |a, _, cx| {
+                                    a.edit_chart(t("Change Chart Type", "Modifier le type de graphique"), cx, move |c| {
+                                        c.kind = kind
+                                    })
+                                })
+                                .checked(current == Some(kind))
+                            })
+                            .collect();
+                        this.open_menu("ch-type", entries, 220.0, window, cx);
+                    },
+                )]),
+            )
+            .into_any_element(),
+            group(
+                t("Chart", "Graphique"),
+                row(vec![self.large(
+                    "ch-delete",
+                    "trash",
+                    t("Delete Chart", "Supprimer le graphique"),
+                    false,
+                    cx,
+                    |this, _, cx| this.delete_chart(cx),
+                )]),
             )
             .border_r_0()
             .into_any_element(),
@@ -1488,6 +1643,21 @@ impl ExcelApp {
             .border_r_0()
             .into_any_element(),
         ]
+    }
+}
+
+/// Name of a chart type as shown in menus.
+pub fn chart_kind_name(kind: ChartKind) -> &'static str {
+    match kind {
+        ChartKind::Column => t("Clustered Column", "Histogramme groupé"),
+        ChartKind::StackedColumn => t("Stacked Column", "Histogramme empilé"),
+        ChartKind::Bar => t("Clustered Bar", "Barres groupées"),
+        ChartKind::StackedBar => t("Stacked Bar", "Barres empilées"),
+        ChartKind::Line => t("Line", "Courbes"),
+        ChartKind::Area => t("Area", "Aires"),
+        ChartKind::Pie => t("Pie", "Secteurs"),
+        ChartKind::Doughnut => t("Doughnut", "Anneau"),
+        ChartKind::Scatter => t("Scatter", "Nuage de points"),
     }
 }
 

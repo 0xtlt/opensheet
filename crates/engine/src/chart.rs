@@ -561,8 +561,10 @@ impl Workbook {
         data.title = match &chart.title {
             ChartTitle::None => None,
             ChartTitle::Text(t) => Some(t.clone()),
+            // A pie only shows its first series, so that is its title too.
             ChartTitle::Auto => match data.series.as_slice() {
                 [only] if !only.name.is_empty() => Some(only.name.clone()),
+                [first, ..] if chart.kind.is_round() && !first.name.is_empty() => Some(first.name.clone()),
                 _ => None,
             },
         };

@@ -432,6 +432,12 @@ impl ExcelApp {
                             .as_ref()
                             .filter(|s| s.clip.sheet == app.sheet)
                             .map(|s| s.clip.rect);
+                        // A selected chart shows which cells it plots.
+                        let chart_ranges = if app.is_editing() {
+                            Vec::new()
+                        } else {
+                            app.chart_highlights()
+                        };
                         let input = SceneInput {
                             wb: &app.wb,
                             sheet: app.sheet,
@@ -439,8 +445,15 @@ impl ExcelApp {
                             fonts: &app.fonts,
                             marquee,
                             fill_preview: app.fill_preview(),
-                            ref_highlights: &app.ref_highlights,
-                            show_fill_handle: !app.is_editing(),
+                            ref_highlights: if app.is_editing() {
+                                &app.ref_highlights
+                            } else {
+                                &chart_ranges
+                            },
+                            show_fill_handle: !app.is_editing() && app.chart_sel.is_none(),
+                            selected_chart: app.chart_sel,
+                            chart_placeholder: t("Chart Title", "Titre du graphique"),
+                            series_prefix: t("Series", "Série"),
                             content_w,
                             content_h,
                             hot_scrollbar: app.hot_scrollbar(),
