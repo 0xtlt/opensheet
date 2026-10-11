@@ -66,6 +66,8 @@ pub struct Sheet {
     pub tab_color: Option<Color>,
     /// Dynamic array results of the last recalculation.
     pub spills: Vec<Spill>,
+    /// Charts floating over the cells, in drawing order (last on top).
+    pub charts: Vec<crate::chart::Chart>,
 }
 
 impl Sheet {
@@ -86,6 +88,7 @@ impl Sheet {
             show_headers: true,
             tab_color: None,
             spills: Vec::new(),
+            charts: Vec::new(),
         }
     }
 
@@ -1053,6 +1056,11 @@ impl Workbook {
         for def in self.names.values_mut() {
             def.expr = Arc::new(def.expr.with_sheet_renamed(&old, new_name));
         }
+        for sh in &mut self.sheets {
+            for chart in &mut sh.charts {
+                chart.rename_sheet(&old, new_name);
+            }
+        }
         true
     }
 
@@ -1072,6 +1080,14 @@ impl Workbook {
                 break;
             }
             n += 1;
+        }
+        // Charts on the copy plot the copy's own cells, with fresh ids.
+        let mut next_id = self.sheets.iter().flat_map(|s| s.charts.iter().map(|c| c.id)).max().unwrap_or(0);
+        let new_name = copy.name.clone();
+        for chart in &mut copy.charts {
+            next_id += 1;
+            chart.id = next_id;
+            chart.rename_sheet(&base, &new_name);
         }
         self.sheets.insert(index + 1, copy);
         Some(index + 1)

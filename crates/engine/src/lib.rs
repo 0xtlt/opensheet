@@ -4,6 +4,7 @@
 //! evaluator, function library, number formats and editing operations.
 
 pub mod ast;
+pub mod chart;
 pub mod datetime;
 pub mod eval;
 pub mod format;

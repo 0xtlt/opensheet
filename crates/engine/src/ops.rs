@@ -762,6 +762,12 @@ impl Workbook {
         for def in self.names.values_mut() {
             def.expr = Arc::new(def.expr.adjusted(edit, &edited_name, &edited_name));
         }
+        for sh in &mut self.sheets {
+            let own = sh.name.clone();
+            for chart in &mut sh.charts {
+                chart.adjust(edit, &edited_name, &own);
+            }
+        }
     }
 
     pub fn insert_rows(&mut self, sheet: usize, at: u32, count: u32) {
