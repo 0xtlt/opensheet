@@ -286,6 +286,9 @@ pub struct ExcelApp {
     pub name_box: Entity<TextInput>,
     pub rename_input: Entity<TextInput>,
     pub find_input: Entity<TextInput>,
+    pub chart_title_input: Entity<TextInput>,
+    /// Chart whose title is being typed.
+    pub editing_chart_title: Option<u32>,
     pub editing: Option<Editing>,
     /// Id of the selected chart on the current sheet.
     pub chart_sel: Option<u32>,
@@ -351,7 +354,9 @@ impl ExcelApp {
             input.placeholder = t("Find", "Rechercher").into();
             input
         });
+        let chart_title_input = cx.new(TextInput::new);
         let subscriptions = vec![
+            cx.subscribe_in(&chart_title_input, window, Self::on_chart_title_event),
             cx.subscribe_in(&cell_editor, window, |this, _, ev, window, cx| {
                 this.on_editor_event(EditSource::Cell, ev, window, cx)
             }),
@@ -392,6 +397,8 @@ impl ExcelApp {
             name_box,
             rename_input,
             find_input,
+            chart_title_input,
+            editing_chart_title: None,
             editing: None,
             chart_sel: None,
             clip: None,
@@ -1666,6 +1673,58 @@ impl ExcelApp {
 
     // ---- charts ---------------------------------------------------------------
 
+    /// Edit the title of a chart in place (double-click on the chart).
+    pub fn begin_chart_title_edit(&mut self, id: u32, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(chart) = self.wb.chart(self.sheet, id) else {
+            return;
+        };
+        let current = self
+            .wb
+            .chart_data(self.sheet, chart)
+            .title
+            .unwrap_or_else(|| t("Chart Title", "Titre du graphique").to_string());
+        self.chart_sel = Some(id);
+        self.editing_chart_title = Some(id);
+        self.chart_title_input.update(cx, |input, cx| {
+            input.set_text(current, cx);
+            input.select_all_text(cx);
+        });
+        let handle = self.chart_title_input.read(cx).focus_handle(cx);
+        window.focus(&handle);
+        cx.notify();
+    }
+
+    fn on_chart_title_event(&mut self, _: &Entity<TextInput>, ev: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.editing_chart_title else {
+            return;
+        };
+        match ev {
+            InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => {
+                let text = self.chart_title_input.read(cx).text().trim().to_string();
+                self.editing_chart_title = None;
+                let title = if text.is_empty() {
+                    opensheet_engine::chart::ChartTitle::None
+                } else {
+                    opensheet_engine::chart::ChartTitle::Text(text)
+                };
+                if self.wb.chart(self.sheet, id).is_some_and(|c| c.title != title) {
+                    self.wb.update_chart(self.sheet, id, |c| c.title = title);
+                    self.wb.commit(t("Chart Title", "Titre du graphique"));
+                }
+                if !matches!(ev, InputEvent::Blurred) {
+                    window.focus(&self.grid_focus);
+                }
+                self.refresh(cx);
+            }
+            InputEvent::Escape => {
+                self.editing_chart_title = None;
+                window.focus(&self.grid_focus);
+                cx.notify();
+            }
+            _ => {}
+        }
+    }
+
     pub fn deselect_chart(&mut self) {
         self.chart_sel = None;
         if self.ribbon_tab == CHART_TAB {
@@ -1943,6 +2002,12 @@ impl ExcelApp {
             Hit::None => {}
             Hit::Chart(id) | Hit::ChartHandle(id, _) => {
                 if self.editing.is_some() && !self.commit_edit(None, window, cx) {
+                    return;
+                }
+                if ev.click_count >= 2 && matches!(hit, Hit::Chart(_)) {
+                    self.begin_chart_title_edit(id, window, cx);
+                    // Keep the keyboard in the title field.
+                    window.prevent_default();
                     return;
                 }
                 window.focus(&self.grid_focus);

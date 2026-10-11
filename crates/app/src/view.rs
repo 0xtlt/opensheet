@@ -364,10 +364,47 @@ impl ExcelApp {
         )
     }
 
+    /// The field shown over a chart while its title is being typed.
+    fn render_chart_title_editor(&mut self) -> Option<AnyElement> {
+        let id = self.editing_chart_title?;
+        let chart = self.wb.chart(self.sheet, id)?;
+        let layout = self.layout.as_ref().map(|l| self.make_layout(l.bounds))?;
+        let (x0, y0, x1, _) = crate::chart_view::chart_rect(&layout, chart);
+        let z = self.zoom;
+        let size = (18.67 * z).max(8.0);
+        let line_h = (size * 1.25).round();
+        let pad = (10.0 * z).round();
+        let font = self
+            .fonts
+            .resolve(&std::sync::Arc::from(opensheet_engine::style::DEFAULT_FONT));
+        Some(
+            div()
+                .absolute()
+                .left(px(x0 + pad))
+                .top(px(y0 + pad - 4.0 * z))
+                .w(px((x1 - x0 - 2.0 * pad).max(40.0)))
+                .h(px(line_h + 4.0))
+                .occlude()
+                .bg(c(0xFFFFFF))
+                .border_1()
+                .border_color(c(theme::ACCENT))
+                .px(px(4.0))
+                .flex()
+                .items_center()
+                .font_family(font)
+                .text_size(px(size))
+                .line_height(px(line_h))
+                .text_color(c(0x595959))
+                .child(self.chart_title_input.clone())
+                .into_any_element(),
+        )
+    }
+
     fn render_grid(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entity = cx.entity();
         let grid_focus = self.grid_focus.clone();
         let editor = self.render_cell_editor(window, cx);
+        let chart_title_editor = self.render_chart_title_editor();
         let prepaint_entity = entity.clone();
         div()
             .id("grid")
@@ -519,6 +556,7 @@ impl ExcelApp {
                 .size_full(),
             )
             .children(editor)
+            .children(chart_title_editor)
     }
 
     fn render_sheet_tabs(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

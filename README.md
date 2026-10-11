@@ -79,13 +79,21 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Formats de nombre Excel complets (codes personnalisés, sections, couleurs, dates, fractions, scientifique, comptabilité).
 - Largeur / hauteur par glisser, ajustement automatique, masquer / afficher.
 
+**Graphiques**
+- Histogrammes groupés et empilés, barres, courbes, aires, secteurs, anneau, nuage de points.
+- Création depuis la sélection (onglet Insertion) : en-têtes, catégories et sens des séries détectés automatiquement.
+- Déplacement et redimensionnement à la souris, titre modifiable par double-clic, légende, étiquettes de données, changement de type, inversion lignes/colonnes (onglet contextuel « Création de graphique »).
+- Les graphiques suivent les données en direct, les insertions de lignes et les renommages de feuilles.
+
 **Structure et fichiers**
 - Insérer / supprimer lignes et colonnes (formules réécrites), trier, feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
 - Ouvrir et enregistrer en `.xlsx` (valeurs, formules, styles, largeurs, fusions, volets figés) et `.csv`.
 
 ## Ce qui manque
 
-Graphiques, tableaux croisés dynamiques, mise en forme conditionnelle, tableaux structurés, filtres automatiques, validation des données, commentaires, images et formes, impression et mise en page, boîte de dialogue Format de cellule, gestionnaire de noms, protection, macros (hors périmètre pour l'instant). Les boutons correspondants sont présents dans le ruban mais affichent « pas encore disponible ».
+Tableaux croisés dynamiques, mise en forme conditionnelle, tableaux structurés, filtres automatiques, validation des données, commentaires, images et formes, impression et mise en page, boîte de dialogue Format de cellule, gestionnaire de noms, protection, macros (hors périmètre pour l'instant). Les boutons correspondants sont présents dans le ruban mais affichent « pas encore disponible ».
+
+Côté graphiques : pas encore de mise en forme fine (couleurs par série, titres d'axes, échelles manuelles), ni de courbes de tendance, de graphiques combinés ou 3D.
 
 Le recalcul est complet à chaque modification (pas encore de graphe de dépendances) : environ 0,15 s pour 200 000 formules en mode release, ce qui deviendra sensible sur de très gros classeurs.
 
