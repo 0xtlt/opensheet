@@ -202,6 +202,52 @@ pub(crate) fn apply_tint(rgb: u32, tint: f64) -> u32 {
         | byte(channel(hue - HLS_MAX / 3))
 }
 
+/// Scale, then shift, the lightness of a colour (both as fractions of 1):
+/// the `lumMod` and `lumOff` adjustments of colours in charts and shapes.
+///
+/// Unlike the tints of cell colours ([`apply_tint`]), these are computed in
+/// plain HSL by every Office application: accent 1 of the Office theme,
+/// 80 % lighter, is DAE3F3 in a chart.
+pub(crate) fn adjust_luminance(rgb: u32, scale: f64, shift: f64) -> u32 {
+    let [r, g, b] = [16, 8, 0].map(|shift| ((rgb >> shift) & 0xFF) as f64 / 255.0);
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let range = max - min;
+    let lightness = (max + min) / 2.0;
+    // Hue in sixths of a turn.
+    let (hue, saturation) = if range == 0.0 {
+        (0.0, 0.0)
+    } else {
+        let hue = if max == r {
+            ((g - b) / range).rem_euclid(6.0)
+        } else if max == g {
+            (b - r) / range + 2.0
+        } else {
+            (r - g) / range + 4.0
+        };
+        (hue, range / (1.0 - (2.0 * lightness - 1.0).abs()))
+    };
+
+    let lightness = lightness * scale + shift;
+    if !lightness.is_finite() {
+        return rgb;
+    }
+    let lightness = lightness.clamp(0.0, 1.0);
+    let chroma = (1.0 - (2.0 * lightness - 1.0).abs()) * saturation;
+    let second = chroma * (1.0 - (hue % 2.0 - 1.0).abs());
+    let (r, g, b) = match hue as u32 {
+        0 => (chroma, second, 0.0),
+        1 => (second, chroma, 0.0),
+        2 => (0.0, chroma, second),
+        3 => (0.0, second, chroma),
+        4 => (second, 0.0, chroma),
+        _ => (chroma, 0.0, second),
+    };
+    let floor = lightness - chroma / 2.0;
+    let byte = |v: f64| ((v + floor) * 255.0).round().clamp(0.0, 255.0) as u32;
+    (byte(r) << 16) | (byte(g) << 8) | byte(b)
+}
+
 /// Mix two colours: `amount` of `fg` over `bg`.
 pub(crate) fn blend(fg: u32, bg: u32, amount: f64) -> u32 {
     let mix = |shift: u32| {
@@ -411,6 +457,27 @@ mod tests {
         assert_eq!(apply_tint(0x4472C4, 1.0), 0xFFFFFF);
         assert_eq!(apply_tint(0x4472C4, -1.0), 0x000000);
         assert_eq!(apply_tint(0x4472C4, 7.0), 0xFFFFFF);
+    }
+
+    #[test]
+    fn luminance_of_drawing_colours() {
+        // The "Theme Colors" grid of the shape fill picker, Office
+        // 2013-2022 theme, accent 1: lighter 80 / 60 / 40 %, darker 25 / 50 %.
+        assert_eq!(adjust_luminance(0x4472C4, 0.2, 0.8), 0xDAE3F3);
+        assert_eq!(adjust_luminance(0x4472C4, 0.4, 0.6), 0xB4C7E7);
+        assert_eq!(adjust_luminance(0x4472C4, 0.6, 0.4), 0x8FAADC);
+        assert_eq!(adjust_luminance(0x4472C4, 0.75, 0.0), 0x2F5597);
+        assert_eq!(adjust_luminance(0x4472C4, 0.5, 0.0), 0x203864);
+        // Greys have no hue to keep.
+        assert_eq!(adjust_luminance(0x000000, 0.65, 0.35), 0x595959);
+        assert_eq!(adjust_luminance(0x000000, 0.15, 0.85), 0xD9D9D9);
+        assert_eq!(adjust_luminance(0xFFFFFF, 0.85, 0.0), 0xD9D9D9);
+        assert_eq!(adjust_luminance(0x123456, 1.0, 0.0), 0x123456);
+        assert_eq!(adjust_luminance(0xED7D31, 1.0, 0.0), 0xED7D31);
+        assert_eq!(adjust_luminance(0x4472C4, 0.0, 1.0), 0xFFFFFF);
+        assert_eq!(adjust_luminance(0x4472C4, 0.0, 0.0), 0x000000);
+        assert_eq!(adjust_luminance(0x4472C4, 9.0, 9.0), 0xFFFFFF);
+        assert_eq!(adjust_luminance(0x4472C4, f64::NAN, 0.0), 0x4472C4);
     }
 
     #[test]

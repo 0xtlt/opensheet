@@ -2,12 +2,20 @@
 //!
 //! The reader and writer work directly on the package (a zip archive of XML
 //! parts) and map it to and from the engine's [`Workbook`] model. Parts the
-//! engine has no model for (charts, images, conditional formatting, data
-//! validation, comments, pivot tables, ...) are ignored on load and therefore
-//! not written back.
+//! engine has no model for (images, conditional formatting, data validation,
+//! comments, pivot tables, ...) are ignored on load and therefore not written
+//! back.
 //!
 //! [`Workbook`]: opensheet_engine::Workbook
 
+/// `write!` into a `String` cannot fail.
+macro_rules! w {
+    ($dst:expr, $($arg:tt)*) => {
+        let _ = write!($dst, $($arg)*);
+    };
+}
+
+mod chart;
 mod color;
 mod formula;
 mod numfmt;

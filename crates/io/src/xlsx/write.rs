@@ -1,5 +1,6 @@
 //! Writing a [`Workbook`] as an `.xlsx` package.
 
+use super::chart::write::{CT_CHART, CT_DRAWING, drawings};
 use super::formula::{is_valid_name, needs_array_evaluation, to_file_text};
 use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
@@ -18,21 +19,15 @@ use std::io::{Seek, Write};
 use std::sync::Arc;
 
 const NS_MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-const NS_DOC_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-const NS_PKG_REL: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+pub(crate) const NS_DOC_REL: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+pub(crate) const NS_PKG_REL: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CT_SHEET: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml";
 
 /// Widest column Excel accepts: 255 characters.
-const MAX_COL_WIDTH_PX: f32 = 255.0 * 7.0 + 5.0;
+pub(crate) const MAX_COL_WIDTH_PX: f32 = 255.0 * 7.0 + 5.0;
 /// Tallest row Excel accepts, in points.
-const MAX_ROW_HEIGHT_PT: f64 = 409.5;
-
-/// `write!` into a `String` cannot fail.
-macro_rules! w {
-    ($dst:expr, $($arg:tt)*) => {
-        let _ = write!($dst, $($arg)*);
-    };
-}
+pub(crate) const MAX_ROW_HEIGHT_PT: f64 = 409.5;
 
 fn push_rgb(x: &mut String, element: &str, color: Color) {
     w!(x, "<{element} rgb=\"FF{:06X}\"/>", color.0 & 0xFF_FFFF);
@@ -64,7 +59,7 @@ fn push_range(x: &mut String, rect: Rect) {
 }
 
 /// Append a number in the shortest form that reads back identically.
-fn push_number(x: &mut String, n: f64) {
+pub(crate) fn push_number(x: &mut String, n: f64) {
     if n == n.trunc() && n.abs() < 1e15 {
         w!(x, "{}", n as i64);
     } else {
@@ -758,6 +753,10 @@ impl SheetWriter<'_> {
             x.push_str("</mergeCells>");
         }
         x.push_str("<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/>");
+        if !sheet.charts.is_empty() {
+            // The drawing part is the only relationship of a sheet.
+            x.push_str("<drawing r:id=\"rId1\"/>");
+        }
         x.push_str("</worksheet>");
         x
     }
@@ -835,6 +834,7 @@ pub(crate) fn write_workbook<W: Write + Seek>(
         .collect();
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
+    let drawings = drawings(wb);
 
     let mut content_types = String::from(XML_DECL);
     content_types
@@ -868,6 +868,15 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     );
     if dynamic_arrays {
         override_part("/xl/metadata.xml", &format!("{CT_SHEET}.sheetMetadata+xml"));
+    }
+    for drawing in &drawings {
+        override_part(
+            &format!("/xl/drawings/drawing{}.xml", drawing.number),
+            CT_DRAWING,
+        );
+        for (number, _) in &drawing.charts {
+            override_part(&format!("/xl/charts/chart{number}.xml"), CT_CHART);
+        }
     }
     override_part(
         "/docProps/core.xml",
@@ -944,6 +953,23 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     put("xl/sharedStrings.xml", &strings.xml())?;
     if dynamic_arrays {
         put("xl/metadata.xml", &format!("{XML_DECL}{METADATA_XML}"))?;
+    }
+    for drawing in &drawings {
+        let n = drawing.number;
+        put(
+            &format!("xl/worksheets/_rels/sheet{}.xml.rels", drawing.sheet + 1),
+            &format!(
+                "{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{NS_DOC_REL}/drawing\" Target=\"../drawings/drawing{n}.xml\"/></Relationships>"
+            ),
+        )?;
+        put(&format!("xl/drawings/drawing{n}.xml"), &drawing.xml)?;
+        put(
+            &format!("xl/drawings/_rels/drawing{n}.xml.rels"),
+            &drawing.rels,
+        )?;
+        for (number, xml) in &drawing.charts {
+            put(&format!("xl/charts/chart{number}.xml"), xml)?;
+        }
     }
     Ok(zip.finish()?)
 }
