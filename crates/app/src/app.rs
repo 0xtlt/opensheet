@@ -777,6 +777,28 @@ impl ExcelApp {
         }
     }
 
+    /// Put the keyboard focus (back) into the field being edited.
+    fn focus_editor(&self, window: &mut Window, cx: &App) {
+        let handle = self.editor().read(cx).focus_handle(cx);
+        window.focus(&handle);
+    }
+
+    /// While a cell is being edited, a key that reached the grid (the
+    /// editor lost focus) is handled as if typed in the editor. Returns
+    /// true when the key was consumed.
+    fn editing_key(&mut self, dir: Direction, extend: bool, commit: bool, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.editing.is_none() {
+            return false;
+        }
+        if !commit && self.can_point(cx) {
+            self.point_step(dir, extend, window, cx);
+            self.focus_editor(window, cx);
+        } else {
+            self.commit_edit(Some(dir), window, cx);
+        }
+        true
+    }
+
     pub fn edit_text(&self, cx: &App) -> String {
         self.editor().read(cx).text().to_string()
     }
@@ -1737,6 +1759,16 @@ impl ExcelApp {
         self.popup = None;
         self.status_message = None;
         self.tab_origin = None;
+        if self.editing.is_some()
+            && matches!(
+                hit,
+                Hit::None | Hit::VThumb | Hit::HThumb | Hit::VTrack | Hit::HTrack | Hit::FillHandle
+            )
+        {
+            // Scrolling while typing must not take the keyboard away from
+            // the editor (the grid would otherwise grab focus on click).
+            window.prevent_default();
+        }
         let (lx, ly) = layout.local(ev.position);
         let shift = ev.modifiers.shift;
         let add = ev.modifiers.platform || ev.modifiers.control;
@@ -1812,6 +1844,8 @@ impl ExcelApp {
                     if self.can_point(cx) {
                         self.point_at((0, col), (0, col), SelectKind::Cols, cx);
                         self.drag = Some(Drag::Point(SelectKind::Cols));
+                        self.focus_editor(window, cx);
+                        window.prevent_default();
                         return;
                     }
                     if !self.commit_edit(None, window, cx) {
@@ -1842,6 +1876,8 @@ impl ExcelApp {
                     if self.can_point(cx) {
                         self.point_at((row, 0), (row, 0), SelectKind::Rows, cx);
                         self.drag = Some(Drag::Point(SelectKind::Rows));
+                        self.focus_editor(window, cx);
+                        window.prevent_default();
                         return;
                     }
                     if !self.commit_edit(None, window, cx) {
@@ -1885,6 +1921,10 @@ impl ExcelApp {
                             self.point_at((row, col), (row, col), SelectKind::Cells, cx);
                         }
                         self.drag = Some(Drag::Point(SelectKind::Cells));
+                        // The click inserted a reference: typing goes on in
+                        // the formula, so the editor keeps the keyboard.
+                        self.focus_editor(window, cx);
+                        window.prevent_default();
                         return;
                     }
                     if !self.commit_edit(None, window, cx) {
@@ -2357,10 +2397,18 @@ impl EntityInputHandler for ExcelApp {
     fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {}
 
     fn replace_text_in_range(&mut self, _range: Option<Range<usize>>, text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if text.is_empty() || self.editing.is_some() || self.dialog.is_some() {
+        if text.is_empty() || self.dialog.is_some() {
             return;
         }
         if text.chars().all(|c| c.is_control()) {
+            return;
+        }
+        if self.editing.is_some() {
+            // The editor lost the keyboard (a click on the grid): hand the
+            // text over and give it the focus back.
+            let editor = self.editor().clone();
+            self.focus_editor(window, cx);
+            editor.update(cx, |input, cx| input.insert(text, window, cx));
             return;
         }
         self.start_edit(Some(text), EditMode::Enter, EditSource::Cell, window, cx);
@@ -2406,28 +2454,52 @@ impl EntityInputHandler for ExcelApp {
 
 // Keyboard actions.
 impl ExcelApp {
-    pub fn on_move_up(&mut self, _: &MoveUp, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_move_up(&mut self, _: &MoveUp, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Up, false, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Up, false, cx);
     }
-    pub fn on_move_down(&mut self, _: &MoveDown, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_move_down(&mut self, _: &MoveDown, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Down, false, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Down, false, cx);
     }
-    pub fn on_move_left(&mut self, _: &MoveLeft, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_move_left(&mut self, _: &MoveLeft, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Left, false, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Left, false, cx);
     }
-    pub fn on_move_right(&mut self, _: &MoveRight, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_move_right(&mut self, _: &MoveRight, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Right, false, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Right, false, cx);
     }
-    pub fn on_extend_up(&mut self, _: &ExtendUp, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_up(&mut self, _: &ExtendUp, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Up, true, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Up, true, cx);
     }
-    pub fn on_extend_down(&mut self, _: &ExtendDown, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_down(&mut self, _: &ExtendDown, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Down, true, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Down, true, cx);
     }
-    pub fn on_extend_left(&mut self, _: &ExtendLeft, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_left(&mut self, _: &ExtendLeft, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Left, true, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Left, true, cx);
     }
-    pub fn on_extend_right(&mut self, _: &ExtendRight, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_right(&mut self, _: &ExtendRight, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Right, true, false, window, cx) {
+            return;
+        }
         self.move_selection(Direction::Right, true, cx);
     }
     pub fn on_jump_up(&mut self, _: &JumpUp, _: &mut Window, cx: &mut Context<Self>) {
@@ -2454,16 +2526,25 @@ impl ExcelApp {
     pub fn on_extend_jump_right(&mut self, _: &ExtendJumpRight, _: &mut Window, cx: &mut Context<Self>) {
         self.jump_selection(Direction::Right, true, cx);
     }
-    pub fn on_next_cell(&mut self, _: &NextCell, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_next_cell(&mut self, _: &NextCell, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Right, false, true, window, cx) {
+            return;
+        }
         if self.tab_origin.is_none() {
             self.tab_origin = Some(self.active().1);
         }
         self.advance(Direction::Right, cx);
     }
-    pub fn on_prev_cell(&mut self, _: &PrevCell, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_prev_cell(&mut self, _: &PrevCell, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Left, false, true, window, cx) {
+            return;
+        }
         self.advance(Direction::Left, cx);
     }
-    pub fn on_enter_down(&mut self, _: &EnterDown, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_enter_down(&mut self, _: &EnterDown, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Down, false, true, window, cx) {
+            return;
+        }
         // Enter with a copy marquee pastes, like Excel.
         if self.clip.is_some() {
             self.paste(PasteMode::All, cx);
@@ -2478,13 +2559,21 @@ impl ExcelApp {
             self.select_cell(r, col, cx);
         }
     }
-    pub fn on_enter_up(&mut self, _: &EnterUp, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_enter_up(&mut self, _: &EnterUp, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing_key(Direction::Up, false, true, window, cx) {
+            return;
+        }
         self.advance(Direction::Up, cx);
     }
     pub fn on_edit_cell(&mut self, _: &EditCell, window: &mut Window, cx: &mut Context<Self>) {
         self.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
     }
-    pub fn on_clear_contents(&mut self, _: &ClearContents, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_clear_contents(&mut self, _: &ClearContents, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing.is_some() {
+            // Backspace belongs to the text being typed.
+            self.focus_editor(window, cx);
+            return;
+        }
         self.clear(ClearMode::Contents, cx);
     }
     pub fn on_copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
@@ -2605,7 +2694,11 @@ impl ExcelApp {
         let prev = self.sheet.saturating_sub(1);
         self.switch_sheet(prev, window, cx);
     }
-    pub fn on_cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing.is_some() {
+            self.cancel_edit(window, cx);
+            return;
+        }
         self.clip = None;
         self.painter = None;
         self.popup = None;
