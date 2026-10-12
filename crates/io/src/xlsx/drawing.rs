@@ -17,8 +17,20 @@
 //! Groups are kept with their members (a chart in a group is left out
 //! of it; the chart reader shows it as a chart of its own).
 //!
+//! Of a picture, what the Picture Format tab does to it: its crop
+//! (`a:srcRect`) and the shape it is cropped to (its `a:prstGeom`),
+//! transparency (`a:alphaModFix`), brightness and contrast (`a:lum`),
+//! recolouring (`a:grayscl`, `a:biLevel`, `a:duotone`; "Washout" is the
+//! `a:lum` Excel writes for it). Saturation and colour temperature have
+//! no element of their own in a blip (Excel keeps them beside a second,
+//! HD Photo copy of the image, which is not written): they are written
+//! as the nearest effects there are, `a:hsl` (saturation) and `a:tint`
+//! (towards orange or blue), and read back from them. Of pictures and
+//! shapes, the effects that are drawn (`a:effectLst`: `a:outerShdw`,
+//! `a:glow`, `a:softEdge`).
+//!
 //! Not kept, because the engine has nothing for it:
-//! cropping and effects of pictures, pictures that are linked rather than
+//! the other effects (reflection, inner shadows, 3-D), pictures that are linked rather than
 //! embedded or of a format the engine does not show (EMF, SVG, TIFF),
 //! geometries outside the engine's gallery (read as rectangles, connectors
 //! as straight lines), gradients and patterns (read as one colour),
@@ -37,8 +49,9 @@ use super::read::{Package, Rel, relationships};
 use super::write::{NS_DOC_REL, NS_PKG_REL};
 use super::xml::{Event, Reader, Tag, XML_DECL, push_attr, push_text};
 use opensheet_engine::drawing::{
-    Corner, Dash, Drawing, DrawingKind, Frame, LineEnd, ObjectRef, Outline, Picture, Placement,
-    Shape, ShapePreset, TextAlign, TextAnchor,
+    Corner, Dash, Drawing, DrawingKind, Effects, Frame, Glow, LineEnd, NEUTRAL_TEMPERATURE,
+    ObjectRef, Outline, Picture, PictureAdjust, Placement, Recolor, Shadow, Shape, ShapePreset,
+    TextAlign, TextAnchor,
 };
 use opensheet_engine::style::{Font, Underline};
 use opensheet_engine::{Color, MAX_COLS, MAX_ROWS, Sheet, Workbook};
@@ -310,6 +323,7 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
         push_xfrm(x, drawing, frame);
         x.push_str("<a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom>");
         push_outline(x, shape.outline.as_ref());
+        push_effects(x, &drawing.effects);
         x.push_str("</xdr:spPr></xdr:cxnSp>");
         return;
     }
@@ -329,22 +343,180 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
         None => x.push_str("<a:noFill/>"),
     }
     push_outline(x, shape.outline.as_ref());
+    push_effects(x, &drawing.effects);
     x.push_str("</xdr:spPr>");
     push_text_body(x, shape);
     x.push_str("</xdr:sp>");
 }
 
+/// A fraction as the thousandths of a percent files count in.
+fn per_100k(fraction: f32) -> i64 {
+    if fraction.is_finite() {
+        (fraction as f64 * 100_000.0).round() as i64
+    } else {
+        0
+    }
+}
+
+/// A colour with how opaque it is (`<a:srgbClr><a:alpha/></a:srgbClr>`).
+fn push_color_alpha(x: &mut String, color: Color, transparency: f32) {
+    w!(x, "<a:srgbClr val=\"{:06X}\">", color.0 & 0xFF_FFFF);
+    let alpha = per_100k(1.0 - transparency.clamp(0.0, 1.0));
+    if alpha != 100_000 {
+        w!(x, "<a:alpha val=\"{alpha}\"/>");
+    }
+    x.push_str("</a:srgbClr>");
+}
+
+/// The side of the shape a shadow is measured from (`algn`): the one it
+/// falls away from, as Excel's presets say it.
+fn shadow_alignment(shadow: &Shadow) -> &'static str {
+    if shadow.distance <= 0.0 {
+        return "ctr";
+    }
+    // Eight directions, clockwise from the right.
+    const SIDES: [&str; 8] = ["l", "tl", "t", "tr", "r", "br", "b", "bl"];
+    let turn = (shadow.angle as f64).rem_euclid(360.0);
+    SIDES[((turn / 45.0).round() as usize) % 8]
+}
+
+/// `<a:effectLst>`: the glow, the shadow and the soft edges of a drawing,
+/// in the order of the schema. Nothing for a drawing without effects.
+fn push_effects(x: &mut String, effects: &Effects) {
+    if effects.is_none() {
+        return;
+    }
+    let length = |points: f32| (points.max(0.0) as f64 * EMU_PER_PT).round() as i64;
+    x.push_str("<a:effectLst>");
+    if let Some(glow) = &effects.glow {
+        w!(x, "<a:glow rad=\"{}\">", length(glow.radius));
+        push_color_alpha(x, glow.color, glow.transparency);
+        x.push_str("</a:glow>");
+    }
+    if let Some(shadow) = &effects.shadow {
+        let angle = ((shadow.angle as f64).rem_euclid(360.0) * ANGLE_UNITS).round() as i64;
+        w!(
+            x,
+            "<a:outerShdw blurRad=\"{}\" dist=\"{}\" dir=\"{angle}\"",
+            length(shadow.blur),
+            length(shadow.distance)
+        );
+        let size = per_100k(shadow.size);
+        if size != 100_000 {
+            w!(x, " sx=\"{size}\" sy=\"{size}\"");
+        }
+        w!(x, " algn=\"{}\" rotWithShape=\"0\">", shadow_alignment(shadow));
+        push_color_alpha(x, shadow.color, shadow.transparency);
+        x.push_str("</a:outerShdw>");
+    }
+    if effects.soft_edge > 0.0 {
+        w!(x, "<a:softEdge rad=\"{}\"/>", length(effects.soft_edge));
+    }
+    x.push_str("</a:effectLst>");
+}
+
+/// The hue `a:tint` pulls a picture towards for a colour temperature:
+/// orange for a warm one, blue for a cold one (60 000ths of a degree).
+const WARM_HUE: i64 = 30 * 60_000;
+const COLD_HUE: i64 = 210 * 60_000;
+/// The kelvins between the neutral temperature and either end.
+const TEMPERATURE_SPAN: f32 = 5000.0;
+
+/// The effects inside `<a:blip>` that say how a picture is adjusted.
+fn push_blip_effects(x: &mut String, adjust: &PictureAdjust) {
+    if adjust.transparency > 0.0 {
+        w!(x, "<a:alphaModFix amt=\"{}\"/>", per_100k(1.0 - adjust.transparency.min(1.0)));
+    }
+    let (mut bright, mut contrast) = (adjust.brightness, adjust.contrast);
+    match adjust.recolor {
+        Recolor::None => {}
+        Recolor::Grayscale => x.push_str("<a:grayscl/>"),
+        Recolor::BlackAndWhite(threshold) => {
+            w!(x, "<a:biLevel thresh=\"{}\"/>", per_100k(threshold.clamp(0.0, 1.0)));
+        }
+        Recolor::Duotone(dark, light) => {
+            w!(
+                x,
+                "<a:duotone><a:srgbClr val=\"{:06X}\"/><a:srgbClr val=\"{:06X}\"/></a:duotone>",
+                dark.0 & 0xFF_FFFF,
+                light.0 & 0xFF_FFFF
+            );
+        }
+        // Excel's own spelling of it: brighter, with less contrast.
+        Recolor::Washout => {
+            bright = WASHOUT.0;
+            contrast = WASHOUT.1;
+        }
+    }
+    if adjust.saturation != 1.0 {
+        w!(
+            x,
+            "<a:hsl hue=\"0\" sat=\"{}\" lum=\"0\"/>",
+            per_100k((adjust.saturation - 1.0).clamp(-1.0, 3.0))
+        );
+    }
+    if adjust.temperature != NEUTRAL_TEMPERATURE {
+        let warmth = (adjust.temperature - NEUTRAL_TEMPERATURE) / TEMPERATURE_SPAN;
+        let hue = if warmth > 0.0 { WARM_HUE } else { COLD_HUE };
+        w!(x, "<a:tint hue=\"{hue}\" amt=\"{}\"/>", per_100k(warmth.abs().min(1.0)));
+    }
+    if bright != 0.0 || contrast != 0.0 {
+        x.push_str("<a:lum");
+        if bright != 0.0 {
+            w!(x, " bright=\"{}\"", per_100k(bright.clamp(-1.0, 1.0)));
+        }
+        if contrast != 0.0 {
+            w!(x, " contrast=\"{}\"", per_100k(contrast.clamp(-1.0, 1.0)));
+        }
+        x.push_str("/>");
+    }
+}
+
+/// The brightness and the contrast Excel writes for "Washout".
+const WASHOUT: (f32, f32) = (0.7, -0.7);
+
 /// `image` is the relationship of the drawing part to the image file.
-fn push_picture(x: &mut String, drawing: &Drawing, id: usize, frame: Frame, image: usize) {
+fn push_picture(
+    x: &mut String,
+    drawing: &Drawing,
+    picture: &Picture,
+    id: usize,
+    frame: Frame,
+    image: usize,
+) {
     x.push_str("<xdr:pic><xdr:nvPicPr>");
     push_identity(x, drawing, id);
     push_non_visual(x, "cNvPicPr", "", "picLocks", drawing);
     w!(
         x,
-        "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr>"
+        "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\""
     );
+    let mut effects = String::new();
+    push_blip_effects(&mut effects, &picture.adjust);
+    if effects.is_empty() {
+        x.push_str("/>");
+    } else {
+        w!(x, ">{effects}</a:blip>");
+    }
+    // Only the sides that are cropped are named, as Excel does.
+    if picture.adjust.crop != [0.0; 4] {
+        x.push_str("<a:srcRect");
+        for (side, amount) in ["l", "t", "r", "b"].into_iter().zip(picture.adjust.crop) {
+            if amount != 0.0 {
+                w!(x, " {side}=\"{}\"", per_100k(amount));
+            }
+        }
+        x.push_str("/>");
+    }
+    x.push_str("<a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr>");
     push_xfrm(x, drawing, frame);
-    x.push_str("<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>");
+    w!(
+        x,
+        "<a:prstGeom prst=\"{}\"><a:avLst/></a:prstGeom>",
+        picture.adjust.shape.ooxml_name()
+    );
+    push_effects(x, &drawing.effects);
+    x.push_str("</xdr:spPr></xdr:pic>");
 }
 
 /// What the objects of one drawing part share while they are written:
@@ -380,7 +552,7 @@ impl PartWriter<'_> {
             DrawingKind::Shape(shape) => push_shape(x, drawing, shape, id, frame),
             DrawingKind::Picture(picture) => {
                 let image = self.image(picture);
-                push_picture(x, drawing, id, frame, image);
+                push_picture(x, drawing, picture, id, frame, image);
             }
             DrawingKind::Group(group) => {
                 x.push_str("<xdr:grpSp><xdr:nvGrpSpPr>");
@@ -657,7 +829,17 @@ fn mix_light(rgb: u32, amount: f64, toward: f64) -> u32 {
 /// lightened or darkened by the adjustments nested in it. Transparency is
 /// ignored.
 fn parse_color<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<Color> {
+    parse_color_alpha(r, tag, palette).map(|(color, _)| color)
+}
+
+/// `parse_color` with how opaque the colour is (1 when nothing says).
+fn parse_color_alpha<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+) -> Option<(Color, f32)> {
     let mut color = None;
+    let mut alpha = 1.0;
     each_child(r, tag, |r, t| {
         let mut rgb = match t.name {
             "srgbClr" => t.attr("val").and_then(|v| parse_rgb(&v)),
@@ -703,6 +885,7 @@ fn parse_color<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Opti
                     "lumOff" => shift += amount,
                     "tint" => rgb = Some(mix_light(base, amount, 1.0)),
                     "shade" => rgb = Some(mix_light(base, amount, 0.0)),
+                    "alpha" if color.is_none() => alpha = amount as f32,
                     _ => {}
                 }
             }
@@ -715,7 +898,129 @@ fn parse_color<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Opti
             color = rgb.map(Color);
         }
     });
-    color
+    color.map(|color| (color, alpha))
+}
+
+/// `<a:effectLst>`: the effects the engine draws; the others are left.
+fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Effects {
+    let mut effects = Effects::default();
+    let points = |t: &Tag, name: &str| {
+        let emu = t.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(0.0);
+        (emu / EMU_PER_PT).clamp(0.0, 10_000.0) as f32
+    };
+    each_child(r, tag, |r, t| match t.name {
+        "outerShdw" => {
+            let angle = t.attr_f64("dir").filter(|v| v.is_finite()).unwrap_or(0.0);
+            let size = t.attr_f64("sx").filter(|v| v.is_finite() && *v > 0.0);
+            let mut shadow = Shadow {
+                blur: points(t, "blurRad"),
+                distance: points(t, "dist"),
+                angle: (angle / ANGLE_UNITS).rem_euclid(360.0) as f32,
+                size: size.map_or(1.0, |v| (v / 100_000.0).clamp(0.01, 10.0) as f32),
+                color: Color::BLACK,
+                transparency: 0.0,
+            };
+            if let Some((color, alpha)) = parse_color_alpha(r, t, palette) {
+                shadow.color = color;
+                shadow.transparency = 1.0 - alpha;
+            }
+            effects.shadow = Some(shadow);
+        }
+        "glow" => {
+            let radius = points(t, "rad");
+            if let Some((color, alpha)) = parse_color_alpha(r, t, palette) {
+                effects.glow = Some(Glow {
+                    color,
+                    transparency: 1.0 - alpha,
+                    radius,
+                });
+            }
+        }
+        "softEdge" => {
+            effects.soft_edge = points(t, "rad");
+            r.skip(t);
+        }
+        _ => r.skip(t),
+    });
+    effects
+}
+
+/// The effects inside `<a:blip>`: how the picture is adjusted.
+fn parse_blip_effects<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+    adjust: &mut PictureAdjust,
+) {
+    let fraction = |t: &Tag, name: &str| {
+        t.attr_f64(name)
+            .filter(|v| v.is_finite())
+            .map(|v| (v / 100_000.0) as f32)
+    };
+    each_child(r, tag, |r, t| match t.name {
+        "alphaModFix" => {
+            adjust.transparency = 1.0 - fraction(t, "amt").unwrap_or(1.0).clamp(0.0, 1.0);
+            r.skip(t);
+        }
+        "grayscl" => {
+            adjust.recolor = Recolor::Grayscale;
+            r.skip(t);
+        }
+        "biLevel" => {
+            adjust.recolor =
+                Recolor::BlackAndWhite(fraction(t, "thresh").unwrap_or(0.5).clamp(0.0, 1.0));
+            r.skip(t);
+        }
+        "duotone" => {
+            let mut colors = Vec::new();
+            // Each child is a colour: read as the one colour of a parent.
+            each_child(r, t, |r, c| {
+                let rgb = match c.name {
+                    "srgbClr" => c.attr("val").and_then(|v| parse_rgb(&v)),
+                    "schemeClr" => c
+                        .attr("val")
+                        .and_then(|v| scheme_slot(&v))
+                        .map(|slot| palette.theme[slot]),
+                    "prstClr" => match c.attr("val").as_deref() {
+                        Some("black") => Some(0x000000),
+                        Some("white") => Some(0xFFFFFF),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                colors.extend(rgb.map(Color));
+                r.skip(c);
+            });
+            if let [dark, light] = colors[..] {
+                adjust.recolor = Recolor::Duotone(dark, light);
+            }
+        }
+        "hsl" => {
+            adjust.saturation = (1.0 + fraction(t, "sat").unwrap_or(0.0)).clamp(0.0, 4.0);
+            r.skip(t);
+        }
+        "tint" => {
+            let amount = fraction(t, "amt").unwrap_or(0.0).clamp(0.0, 1.0);
+            let hue = t.attr_f64("hue").filter(|v| v.is_finite()).unwrap_or(0.0) as i64;
+            // Towards the reds and yellows: warmer.
+            let warm = !(90 * 60_000..270 * 60_000).contains(&hue.rem_euclid(360 * 60_000));
+            let sign = if warm { 1.0 } else { -1.0 };
+            adjust.temperature = NEUTRAL_TEMPERATURE + sign * amount * TEMPERATURE_SPAN;
+            r.skip(t);
+        }
+        "lum" => {
+            let bright = fraction(t, "bright").unwrap_or(0.0).clamp(-1.0, 1.0);
+            let contrast = fraction(t, "contrast").unwrap_or(0.0).clamp(-1.0, 1.0);
+            if (bright, contrast) == WASHOUT && adjust.recolor == Recolor::None {
+                adjust.recolor = Recolor::Washout;
+            } else {
+                adjust.brightness = bright;
+                adjust.contrast = contrast;
+            }
+            r.skip(t);
+        }
+        _ => r.skip(t),
+    });
 }
 
 /// How a file paints a surface or a line.
@@ -1020,6 +1325,9 @@ struct RawObject {
     /// group is among the others (an object that stands alone is where
     /// its anchor says).
     xfrm_box: Option<(f64, f64, f64, f64)>,
+    effects: Effects,
+    /// How a picture is adjusted.
+    adjust: PictureAdjust,
     kind: RawKind,
 }
 
@@ -1034,6 +1342,8 @@ impl RawObject {
             flip_h: false,
             flip_v: false,
             xfrm_box: None,
+            effects: Effects::default(),
+            adjust: PictureAdjust::default(),
             kind,
         }
     }
@@ -1120,23 +1430,44 @@ fn parse_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme, depth: usiz
     object
 }
 
-fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawObject> {
+fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> Option<RawObject> {
+    let palette = theme.palette;
     let mut object = RawObject::new(RawKind::Picture(String::new()));
     let mut embed = None;
     each_child(r, tag, |r, t| match t.name {
         "nvPicPr" => {
             object.parse_identity(r, t);
         }
-        "blipFill" => each_child(r, t, |r, c| {
-            if c.name == "blip" {
+        "blipFill" => each_child(r, t, |r, c| match c.name {
+            "blip" => {
                 embed = c.attr_local("embed").map(|id| id.into_owned());
+                parse_blip_effects(r, c, palette, &mut object.adjust);
             }
-            r.skip(c);
+            "srcRect" => {
+                let side = |name: &str| {
+                    let amount = c.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(0.0);
+                    (amount / 100_000.0).clamp(-10.0, 0.99) as f32
+                };
+                let crop = [side("l"), side("t"), side("r"), side("b")];
+                // A crop that leaves nothing is no crop.
+                if crop[0] + crop[2] < 0.995 && crop[1] + crop[3] < 0.995 {
+                    object.adjust.crop = crop;
+                }
+                r.skip(c);
+            }
+            _ => r.skip(c),
         }),
         "spPr" => each_child(r, t, |r, c| match c.name {
             "xfrm" => {
                 object.parse_xfrm(r, c);
             }
+            "prstGeom" => {
+                let preset = c.attr("prst").and_then(|name| ShapePreset::from_ooxml_name(&name));
+                // A picture cut to a line would show nothing.
+                object.adjust.shape = preset.filter(|preset| !preset.is_line()).unwrap_or(ShapePreset::Rect);
+                r.skip(c);
+            }
+            "effectLst" => object.effects = parse_effects(r, c, palette),
             _ => r.skip(c),
         }),
         _ => r.skip(t),
@@ -1169,6 +1500,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
                 r.skip(c);
             }
             "ln" => line = Some(parse_line(r, c, palette)),
+            "effectLst" => object.effects = parse_effects(r, c, palette),
             _ => parse_paint(r, c, palette, &mut fill),
         }),
         "style" => style = parse_style(r, t, theme),
@@ -1260,7 +1592,7 @@ fn parse_content<'a>(
     object: &mut Option<RawObject>,
 ) {
     match t.name {
-        "pic" if object.is_none() => *object = parse_picture(r, t),
+        "pic" if object.is_none() => *object = parse_picture(r, t, theme),
         "sp" | "cxnSp" if object.is_none() => *object = Some(parse_shape(r, t, theme)),
         "grpSp" if object.is_none() && depth < MAX_GROUPS => *object = Some(parse_group(r, t, theme, depth)),
         "AlternateContent" | "Choice" if depth < MAX_NESTING => {
@@ -1505,7 +1837,10 @@ impl Loader {
                 let image = self.images.entry(target).or_insert_with_key(|target| {
                     pkg.read_bytes(target).ok().flatten().and_then(Picture::new)
                 });
-                Drawing::picture(image.clone()?)
+                // The bytes are shared; how they show is each picture's.
+                let mut picture = image.clone()?;
+                picture.adjust = object.adjust;
+                Drawing::picture(picture)
             }
             RawKind::Group { members, child_box } => {
                 // Where its members are is given in a box of its own;
@@ -1539,6 +1874,7 @@ impl Loader {
         drawing.lock_aspect = object.lock_aspect;
         drawing.alt_text = object.alt_text;
         drawing.hidden = object.hidden;
+        drawing.effects = object.effects;
         Some(drawing)
     }
 }

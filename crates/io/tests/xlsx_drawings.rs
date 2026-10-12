@@ -1567,3 +1567,94 @@ fn a_group_whose_children_have_a_scale_of_their_own() {
         ]
     );
 }
+
+// ---- picture adjustments and effects ---------------------------------------------
+
+#[test]
+fn picture_adjustments_and_effects_round_trip() {
+    use opensheet_engine::drawing::{Effects, Glow, PictureAdjust, Recolor, Shadow, ShadowPreset};
+    let mut wb = Workbook::new(Locale::en());
+    let adjusted = |wb: &mut Workbook, row: u32, name: &str, adjust: PictureAdjust, effects: Effects| {
+        let id = wb.add_picture(0, logo(), (row, 1)).expect("a picture");
+        change(wb, 0, id, |d| {
+            d.name = name.to_string();
+            d.effects = effects;
+            d.as_picture_mut().unwrap().adjust = adjust;
+        });
+    };
+    let plain = PictureAdjust::default();
+    let none = Effects::default();
+    adjusted(&mut wb, 1, "Cropped", PictureAdjust { crop: [0.25, 0.0, 0.1, -0.05], shape: ShapePreset::Ellipse, ..plain }, none);
+    adjusted(&mut wb, 6, "Faded", PictureAdjust { transparency: 0.3, brightness: 0.2, contrast: -0.4, ..plain }, none);
+    adjusted(&mut wb, 11, "Grey", PictureAdjust { recolor: Recolor::Grayscale, saturation: 2.0, ..plain }, none);
+    adjusted(&mut wb, 16, "Sepia", PictureAdjust { recolor: Recolor::Duotone(Color(0), Color(0xD9C3A5)), temperature: 4700.0, ..plain }, none);
+    adjusted(&mut wb, 21, "Washed", PictureAdjust { recolor: Recolor::Washout, temperature: 8800.0, ..plain }, none);
+    adjusted(&mut wb, 26, "Two tones", PictureAdjust { recolor: Recolor::BlackAndWhite(0.25), ..plain }, none);
+    let all = Effects {
+        shadow: Some(Shadow { color: Color(0x112233), transparency: 0.5, size: 1.02, blur: 6.0, angle: 135.0, distance: 4.0 }),
+        glow: Some(Glow { color: Color(0xE97132), transparency: 0.6, radius: 8.0 }),
+        soft_edge: 2.5,
+    };
+    adjusted(&mut wb, 31, "Effects", plain, all);
+    let shadowed = shape(&mut wb, 0, ShapeTool::Rectangle, (400.0, 40.0, 120.0, 60.0));
+    change(&mut wb, 0, shadowed, |d| d.effects.shadow = Some(ShadowPreset::BottomRight.shadow()));
+    let arrow = shape(&mut wb, 0, ShapeTool::Arrow, (400.0, 160.0, 120.0, 60.0));
+    change(&mut wb, 0, arrow, |d| d.effects.shadow = Some(ShadowPreset::Center.shadow()));
+    wb.commit("pictures");
+
+    let bytes = to_bytes(&wb);
+    keep("objects-picture-format.xlsx", &bytes);
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    for expected in [
+        "<a:srcRect l=\"25000\" r=\"10000\" b=\"-5000\"/>",
+        "<a:prstGeom prst=\"ellipse\"><a:avLst/></a:prstGeom>",
+        "<a:alphaModFix amt=\"70000\"/><a:lum bright=\"20000\" contrast=\"-40000\"/></a:blip>",
+        "<a:grayscl/><a:hsl hue=\"0\" sat=\"100000\" lum=\"0\"/>",
+        "<a:duotone><a:srgbClr val=\"000000\"/><a:srgbClr val=\"D9C3A5\"/></a:duotone><a:tint hue=\"12600000\" amt=\"36000\"/>",
+        "<a:tint hue=\"1800000\" amt=\"46000\"/><a:lum bright=\"70000\" contrast=\"-70000\"/>",
+        "<a:biLevel thresh=\"25000\"/>",
+        "<a:effectLst><a:glow rad=\"101600\"><a:srgbClr val=\"E97132\"><a:alpha val=\"40000\"/></a:srgbClr></a:glow><a:outerShdw blurRad=\"76200\" dist=\"50800\" dir=\"8100000\" sx=\"102000\" sy=\"102000\" algn=\"tr\" rotWithShape=\"0\"><a:srgbClr val=\"112233\"><a:alpha val=\"50000\"/></a:srgbClr></a:outerShdw><a:softEdge rad=\"31750\"/></a:effectLst>",
+        // Excel's first preset, as Excel writes it.
+        "<a:outerShdw blurRad=\"50800\" dist=\"38100\" dir=\"2700000\" algn=\"tl\" rotWithShape=\"0\"><a:srgbClr val=\"000000\"><a:alpha val=\"40000\"/></a:srgbClr></a:outerShdw>",
+        "algn=\"ctr\"",
+    ] {
+        assert!(xml.contains(expected), "{expected} is missing from\n{xml}");
+    }
+    // An untouched blip stays an empty element.
+    assert!(xml.contains("r:embed=\"rId1\"/><a:stretch>"), "{xml}");
+
+    let back = load(&bytes);
+    // To the precision of a file: thousandths of a percent, EMU.
+    let near = |a: f32, b: f32| (a - b).abs() < 2e-3;
+    for (da, db) in wb.sheets[0].drawings.iter().zip(&back.sheets[0].drawings) {
+        assert_eq!(da.name, db.name);
+        match (da.effects.shadow, db.effects.shadow) {
+            (Some(x), Some(y)) => {
+                assert_eq!(x.color, y.color, "{}", da.name);
+                for (p, q) in [(x.transparency, y.transparency), (x.size, y.size), (x.blur, y.blur), (x.angle, y.angle), (x.distance, y.distance)] {
+                    assert!(near(p, q), "{}: {p} became {q}", da.name);
+                }
+            }
+            (x, y) => assert_eq!(x, y, "{}", da.name),
+        }
+        assert_eq!(da.effects.glow.map(|g| (g.color, g.radius)), db.effects.glow.map(|g| (g.color, g.radius)), "{}", da.name);
+        assert!(near(da.effects.soft_edge, db.effects.soft_edge), "{}", da.name);
+        let (Some(pa), Some(pb)) = (da.as_picture(), db.as_picture()) else {
+            continue;
+        };
+        let (x, y) = (pa.adjust, pb.adjust);
+        assert_eq!((x.shape, x.recolor), (y.shape, y.recolor), "{}", da.name);
+        for (p, q) in x.crop.into_iter().zip(y.crop).chain([
+            (x.transparency, y.transparency),
+            (x.brightness, y.brightness),
+            (x.contrast, y.contrast),
+            (x.saturation, y.saturation),
+            (x.temperature / 1000.0, y.temperature / 1000.0),
+        ]) {
+            assert!(near(p, q), "{}: {p} became {q}", da.name);
+        }
+    }
+    // Written again, the part says the same.
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+}
