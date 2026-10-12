@@ -2,7 +2,7 @@
 //! box to answer in. The same card floats beside its cell on the grid and
 //! lines up with the others in the Comments pane.
 
-use super::text_area::{AreaEvent, TextArea};
+use crate::widgets::text_area::{AreaEvent, TextArea};
 use super::user_name;
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
