@@ -2,7 +2,7 @@
 //! centre, each series a closed line (filled or not) around it.
 
 use super::scale::{Fit, Scale};
-use super::{GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, label_text};
+use super::{AxisId, ChartElement, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, label_text};
 use crate::chart::ChartKind;
 use std::f32::consts::{FRAC_PI_2, TAU};
 
@@ -49,8 +49,11 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
 
     // Rings and spokes; no more rings than their labels have room for.
     let scale = Scale::new(&chart.axes.value, lo, hi, Fit::along(r, label_h * 1.25));
+    p.scale(AxisId::Value, &scale);
     let grid = Stroke::new(GRIDLINE, 1.0);
     let ticks = scale.major_ticks();
+    p.area(ChartElement::PlotArea, (cx - r, cy - r, cx + r, cy + r));
+    p.tag(ChartElement::MajorGridlines(AxisId::Value));
     if chart.axes.value.major_gridlines {
         for v in &ticks {
             let f = scale.clamped(*v);
@@ -65,6 +68,7 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
             }
         }
     }
+    p.tag(ChartElement::Axis(AxisId::Category));
     if show_categories {
         for k in 0..n {
             let (x, y) = at(k, 1.0);
@@ -73,9 +77,10 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     }
 
     // Series.
-    let mut texts: Vec<(String, f32, f32, TextAnchor)> = Vec::new();
+    let mut texts: Vec<(usize, String, f32, f32, TextAnchor)> = Vec::new();
     for si in 0..count {
         let look = p.look(si);
+        p.tag(ChartElement::Series(si as u32));
         let sd = &data.series[si];
         let points: Vec<Option<(f32, f32)>> =
             (0..n).map(|k| sd.values.get(k).copied().flatten().map(|v| at(k, scale.clamped(v)))).collect();
@@ -106,23 +111,28 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 }
             }
         }
-        if let Some(marker) = &look.marker {
-            for (x, y) in &all {
+        for (k, pt) in points.iter().enumerate() {
+            let Some((x, y)) = pt else { continue };
+            let element = ChartElement::Point(si as u32, k as u32);
+            p.tag(element);
+            if let Some(marker) = &look.marker {
                 p.marker(marker, *x, *y);
             }
+            p.pick(element, *x, *y);
         }
         if let Some(labels) = chart.labels_for(&chart.series[si]) {
             for (k, pt) in points.iter().enumerate() {
                 let Some((x, y)) = pt else { continue };
                 let text = label_text(p, si, k, None, labels);
                 if !text.is_empty() {
-                    texts.push((text, *x + 4.0 * z, *y - label_h, TextAnchor::Start));
+                    texts.push((si, text, *x + 4.0 * z, *y - label_h, TextAnchor::Start));
                 }
             }
         }
     }
 
     // Values up the first spoke, categories around the outside.
+    p.tag(ChartElement::Axis(AxisId::Value));
     if chart.axes.value.visible {
         let code = chart.axes.value.number_format.as_deref().unwrap_or(&data.value_format);
         let divisor = chart.axes.value.display_unit.divisor();
@@ -132,6 +142,7 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
             p.text(&label, cx - 4.0 * z, y - label_h / 2.0, label_size, TEXT, TextAnchor::End);
         }
     }
+    p.tag(ChartElement::Axis(AxisId::Category));
     for (k, (name, _)) in names.iter().enumerate() {
         if name.is_empty() {
             continue;
@@ -151,7 +162,8 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
         let top = y - label_h / 2.0 + sin * label_h / 2.0;
         p.text(name, x, top, label_size, TEXT, anchor);
     }
-    for (text, x, y, anchor) in texts {
+    for (si, text, x, y, anchor) in texts {
+        p.tag(ChartElement::DataLabels(si as u32));
         p.text(&text, x, y, label_size, TEXT, anchor);
     }
 }

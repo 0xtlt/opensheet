@@ -1,20 +1,23 @@
-//! Drawing charts over the grid. The engine lays a chart out as vector
-//! primitives (`opensheet_engine::chart_layout`); this module measures text
-//! for it, converts the primitives to the grid's display list and adds what
-//! belongs to the application: the selection frame and its handles.
+//! Drawing charts: over the grid, and in the previews and thumbnails of
+//! dialogs and galleries. The engine lays a chart out as vector primitives
+//! (`opensheet_engine::chart_layout`); this module measures text for it,
+//! converts the primitives to the grid's display list and adds what belongs
+//! to the application: the frames and handles of what is selected.
 
-use crate::grid::{Draw, GridLayout};
+use crate::grid::{Draw, GridLayout, Layer};
 use crate::i18n::t;
 use crate::theme::{c, ca};
 use gpui::{
-    BorderStyle, Bounds, Font, FontStyle, FontWeight, Hsla, PathBuilder, Pixels, Point, ShapedLine, SharedString,
-    TextRun, WindowTextSystem, fill, point, px, quad, size,
+    BorderStyle, Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels, Point, ShapedLine,
+    SharedString, Styled, TextRun, WindowTextSystem, canvas, fill, point, px, quad, size,
 };
 use opensheet_engine::chart::{Chart, ChartData};
 use opensheet_engine::chart_layout::{
-    Ink, Labels, LayoutOptions, Prim, Seg, Stroke, TextAnchor, TextMeasure, layout_chart, line_height,
+    ChartLayout, Ink, Labels, LayoutOptions, Outline, Prim, Seg, Stroke, TextAnchor, TextMeasure, layout_chart_elements,
+    line_height,
 };
 use opensheet_engine::{Color, Locale};
+use std::rc::Rc;
 
 pub struct ChartStyle<'a> {
     /// Font family for every label.
@@ -32,23 +35,6 @@ pub fn chart_rect(layout: &GridLayout, chart: &Chart) -> (f32, f32, f32, f32) {
     let x0 = layout.col_x(chart.anchor.1) + chart.offset.0 * z;
     let y0 = layout.row_y(chart.anchor.0) + chart.offset.1 * z;
     (x0, y0, x0 + chart.size.0 * z, y0 + chart.size.1 * z)
-}
-
-/// The eight resize handles: corners and edge midpoints, clockwise from the
-/// top-left corner.
-pub fn handle_points(rect: (f32, f32, f32, f32)) -> [(f32, f32); 8] {
-    let (x0, y0, x1, y1) = rect;
-    let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-    [
-        (x0, y0),
-        (mx, y0),
-        (x1, y0),
-        (x1, my),
-        (x1, y1),
-        (mx, y1),
-        (x0, y1),
-        (x0, my),
-    ]
 }
 
 /// Asset paths under this prefix are lines of text drawn as vector shapes
@@ -147,17 +133,16 @@ fn ink(ink: Ink) -> Hsla {
 /// Converts the engine's primitives, whose origin is the corner of the
 /// chart, into display-list items of the window.
 struct Converter<'a> {
-    layout: &'a GridLayout,
     shaper: Shaper<'a>,
     items: Vec<Draw>,
-    /// Corner of the chart in grid-element coordinates.
+    /// Corner of the chart in window coordinates.
     origin: (f32, f32),
     clip: Bounds<Pixels>,
 }
 
 impl Converter<'_> {
     fn pt(&self, x: f32, y: f32) -> Point<Pixels> {
-        self.layout.to_window(self.origin.0 + x, self.origin.1 + y)
+        point(px(self.origin.0 + x), px(self.origin.1 + y))
     }
 
     fn bounds(&self, x: f32, y: f32, w: f32, h: f32) -> Bounds<Pixels> {
@@ -281,7 +266,7 @@ impl Converter<'_> {
                 let y = (self.origin.1 + run.y - line_h / 2.0).round();
                 self.items.push(Draw::Text {
                     line,
-                    origin: self.layout.to_window(x, y),
+                    origin: point(px(x), px(y)),
                     line_height: px(line_h),
                     clip: self.clip,
                 });
@@ -301,71 +286,137 @@ impl Converter<'_> {
     }
 }
 
-/// Build the drawing commands of one chart.
-pub fn build_chart(
-    chart: &Chart,
-    data: &ChartData,
-    layout: &GridLayout,
-    ts: &WindowTextSystem,
-    style: &ChartStyle,
-    selected: bool,
-) -> Vec<Draw> {
-    let (x0, y0, x1, y1) = chart_rect(layout, chart);
-    let (w, h) = (x1 - x0, y1 - y0);
+/// The words of the interface language a chart shows.
+fn labels<'a>(style: &'a ChartStyle) -> Labels<'a> {
+    Labels {
+        placeholder_title: style.placeholder_title,
+        series_prefix: style.series_prefix,
+        trend_names: [
+            t("Linear", "Linéaire"),
+            t("Expon.", "Expon."),
+            t("Log.", "Log."),
+            t("Poly.", "Poly."),
+            t("Power", "Puissance"),
+            t("per. Mov. Avg.", "Moy. mobile sur pér."),
+        ],
+        unit_names: [
+            t("Hundreds", "Centaines"),
+            t("Thousands", "Milliers"),
+            t("Millions", "Millions"),
+            t("Billions", "Milliards"),
+            t("Trillions", "Billions"),
+        ],
+    }
+}
+
+/// Lay a chart out in a box of `size` pixels on screen, keeping track of
+/// its elements. `zoom` scales what Excel measures in points.
+pub fn layout(chart: &Chart, data: &ChartData, size: (f32, f32), zoom: f32, ts: &WindowTextSystem, style: &ChartStyle) -> ChartLayout {
+    let shaper = Shaper {
+        ts,
+        family: style.font.clone(),
+    };
+    let options = LayoutOptions {
+        scale: zoom,
+        locale: style.locale,
+        labels: labels(style),
+    };
+    layout_chart_elements(chart, data, size, &options, &shaper)
+}
+
+/// The display list of a chart laid out by [`layout`], its corner at
+/// `origin` (window coordinates).
+pub fn draws(layout: &ChartLayout, origin: Point<Pixels>, clip: Bounds<Pixels>, ts: &WindowTextSystem, style: &ChartStyle) -> Vec<Draw> {
     let mut out = Converter {
-        layout,
         shaper: Shaper {
             ts,
             family: style.font.clone(),
         },
-        items: Vec::new(),
-        origin: (x0, y0),
-        clip: Bounds::new(layout.to_window(x0, y0), size(px(w), px(h))),
+        items: Vec::with_capacity(layout.prims.len()),
+        origin: (f32::from(origin.x), f32::from(origin.y)),
+        clip,
     };
-    let options = LayoutOptions {
-        scale: layout.zoom,
-        locale: style.locale,
-        labels: Labels {
-            placeholder_title: style.placeholder_title,
-            series_prefix: style.series_prefix,
-            trend_names: [
-                t("Linear", "Linéaire"),
-                t("Expon.", "Expon."),
-                t("Log.", "Log."),
-                t("Poly.", "Poly."),
-                t("Power", "Puissance"),
-                t("per. Mov. Avg.", "Moy. mobile sur pér."),
-            ],
-            unit_names: [
-                t("Hundreds", "Centaines"),
-                t("Thousands", "Milliers"),
-                t("Millions", "Millions"),
-                t("Billions", "Milliards"),
-                t("Trillions", "Billions"),
-            ],
-        },
-    };
-    for prim in layout_chart(chart, data, (w, h), &options, &out.shaper) {
-        out.push(&prim);
+    for prim in &layout.prims {
+        out.push(prim);
     }
+    out.items
+}
 
-    if selected {
-        let frame = Color(0x8A8A8A);
+/// The frames and the round handles of the selected element of a chart.
+pub fn outline_draws(outline: &Outline, origin: Point<Pixels>, ts: &WindowTextSystem) -> Vec<Draw> {
+    let frame = Color(0x8A8A8A);
+    let mut out = Converter {
+        shaper: Shaper {
+            ts,
+            family: SharedString::default(),
+        },
+        items: Vec::new(),
+        origin: (f32::from(origin.x).round(), f32::from(origin.y).round()),
+        clip: Bounds::default(),
+    };
+    for b in &outline.frames {
         out.items.push(Draw::Quad(quad(
-            out.bounds(-1.0, -1.0, w + 2.0, h + 2.0),
+            out.bounds(b[0].round(), b[1].round(), (b[2] - b[0]).round(), (b[3] - b[1]).round()),
             px(0.),
             gpui::transparent_black(),
             px(1.),
             c(frame.0),
             BorderStyle::Solid,
         )));
-        // Handles sit on the frame and may poke out of the chart box.
-        for (hx, hy) in handle_points((0.0, 0.0, w, h)) {
-            out.disc(hx, hy, 4.5, frame);
-            out.disc(hx, hy, 3.5, Color::WHITE);
-        }
+    }
+    for (x, y) in &outline.handles {
+        out.disc(*x, *y, 3.5, frame);
+        out.disc(*x, *y, 2.5, Color::WHITE);
     }
     out.items
+}
+
+/// Build the drawing commands of one chart of the sheet.
+pub fn build_chart(
+    chart: &Chart,
+    data: &ChartData,
+    grid: &GridLayout,
+    ts: &WindowTextSystem,
+    style: &ChartStyle,
+) -> (ChartLayout, Vec<Draw>) {
+    let (x0, y0, x1, y1) = chart_rect(grid, chart);
+    let (w, h) = (x1 - x0, y1 - y0);
+    let origin = grid.to_window(x0, y0);
+    let laid = layout(chart, data, (w, h), grid.zoom, ts, style);
+    let items = draws(&laid, origin, Bounds::new(origin, size(px(w), px(h))), ts, style);
+    (laid, items)
+}
+
+/// A chart drawn in a dialog, a pane or a gallery: a preview, a thumbnail.
+/// `zoom` scales fonts and line widths (1 = as on the sheet at 100 %).
+pub fn chart_canvas(
+    chart: Rc<Chart>,
+    data: Rc<ChartData>,
+    width: f32,
+    height: f32,
+    zoom: f32,
+    font: SharedString,
+    locale: &'static Locale,
+) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds: Bounds<Pixels>, _, window, cx| {
+            let style = ChartStyle {
+                font: font.clone(),
+                placeholder_title: t("Chart Title", "Titre du graphique"),
+                series_prefix: t("Series", "Série"),
+                locale,
+            };
+            let ts = window.text_system().clone();
+            let size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+            let laid = layout(&chart, &data, size, zoom, &ts, &style);
+            let items = draws(&laid, bounds.origin, bounds, &ts, &style);
+            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+        },
+    )
+    .w(px(width))
+    .h(px(height))
+    .flex_none()
 }
 
 /// Paint a line of text turned around `pivot` (see `Draw::Turned`).

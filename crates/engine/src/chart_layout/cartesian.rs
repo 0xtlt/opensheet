@@ -4,8 +4,8 @@
 
 use super::scale::{Fit, Scale};
 use super::{
-    AXIS, GRIDLINE, Group, Ink, MINOR_GRIDLINE, PT, Painter, Stroke, TEXT, TextAnchor, clip_polygon, clip_polyline,
-    fmt_value, groups, label_text, line_height, smooth_points,
+    AXIS, AxisId, ChartElement, GRIDLINE, Group, Ink, MINOR_GRIDLINE, PT, Painter, Stroke, TEXT, TextAnchor, clip_polygon,
+    clip_polyline, fmt_value, groups, label_text, line_height, smooth_points,
 };
 use crate::chart::{
     Axis, AxisCrossing, BlanksAs, Chart, ChartData, DataLabels, DisplayUnit, ErrorAmount, ErrorBars, ErrorDirection, Family, Fill,
@@ -81,6 +81,8 @@ pub(super) fn shapes(chart: &Chart, data: &ChartData, groups: &[Group], n: usize
 /// (1 = the first) or X values, and values.
 struct Trend {
     series: usize,
+    /// Position among the trendlines of its series.
+    index: usize,
     stroke: Stroke,
     points: Vec<(f64, f64)>,
     label: Vec<Vec<EquationPart>>,
@@ -296,6 +298,7 @@ fn error_ends(bars: &ErrorBars, values: &[Option<f64>], v: f64) -> (f64, f64) {
 
 /// A data label waiting to be drawn over everything else.
 struct PendingLabel {
+    series: usize,
     text: String,
     x: f32,
     top: f32,
@@ -353,7 +356,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             }
             let x_lo = pts.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
             let x_hi = pts.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
-            for t in &chart.series[si].trendlines {
+            for (index, t) in chart.series[si].trendlines.iter().enumerate() {
                 let stroke = p.trend_stroke(si, &t.line);
                 let forward = t.forward.max(0.0);
                 // A category axis has half a category before the first point.
@@ -384,6 +387,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 if points.len() >= 2 {
                     trends.push(Trend {
                         series: si,
+                        index,
                         stroke,
                         points,
                         label,
@@ -540,6 +544,13 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
     };
     let scales = [scale_of(p, 0, &chart.axes.value), scale_of(p, 1, &chart.axes.secondary_value)];
     let x_scale = xy.then(|| fitted(p, &chart.axes.category, x_range.lo, x_range.hi, &data.x_format, false, false));
+    p.scale(AxisId::Value, &scales[0]);
+    if has_secondary {
+        p.scale(AxisId::SecondaryValue, &scales[1]);
+    }
+    if let Some(xs) = &x_scale {
+        p.scale(AxisId::Category, xs);
+    }
 
     // ---- axes, before the plot rectangle is known --------------------------
     let slots = n + extra_slots;
@@ -724,34 +735,42 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         _ => None,
     };
     let plot_border = p.stroke(&chart.plot_area.border, false, GRIDLINE, 0.75);
+    p.tag(ChartElement::PlotArea);
+    p.area(ChartElement::PlotArea, geo.rect());
     p.rect_styled(px0, py0, px1, py1, plot_fill, plot_border);
 
     // A line across the plot at fraction `f` of an axis that runs up
     // (`vertical`) or along the plot.
-    let rule = |p: &mut Painter, vertical: bool, f: f64, color: Color| {
+    let rule = |p: &mut Painter, element: ChartElement, vertical: bool, f: f64, color: Color| {
+        p.tag(element);
         if vertical {
             let y = (py1 - f as f32 * (py1 - py0)).round();
             p.hline(px0, px1, y, color);
+            p.anchor(element, px0, y);
+            p.anchor(element, px1, y);
         } else {
             let x = (px0 + f as f32 * (px1 - px0)).round();
             p.vline(x, py0, py1, color);
+            p.anchor(element, x, py0);
+            p.anchor(element, x, py1);
         }
     };
-    let mut gridded: Vec<(&Axis, &AxisPlan)> = vec![(&chart.axes.category, &category_plan), (&chart.axes.value, &value_plan)];
+    let mut gridded: Vec<(AxisId, &Axis, &AxisPlan)> =
+        vec![(AxisId::Category, &chart.axes.category, &category_plan), (AxisId::Value, &chart.axes.value, &value_plan)];
     if let Some(plan) = &secondary_plan {
-        gridded.push((&chart.axes.secondary_value, plan));
+        gridded.push((AxisId::SecondaryValue, &chart.axes.secondary_value, plan));
     }
-    for (axis, plan) in &gridded {
+    for (id, axis, plan) in &gridded {
         if axis.minor_gridlines {
             for f in &plan.minor_ticks {
-                rule(p, plan.vertical, *f, MINOR_GRIDLINE);
+                rule(p, ChartElement::MinorGridlines(*id), plan.vertical, *f, MINOR_GRIDLINE);
             }
         }
     }
-    for (axis, plan) in &gridded {
+    for (id, axis, plan) in &gridded {
         if axis.major_gridlines {
             for f in &plan.ticks {
-                rule(p, plan.vertical, *f, GRIDLINE);
+                rule(p, ChartElement::MajorGridlines(*id), plan.vertical, *f, GRIDLINE);
             }
         }
     }
@@ -768,6 +787,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         let label = label_text(p, si, k, None, labels);
         if !label.is_empty() {
             pending.push(PendingLabel {
+                series: si,
                 text: label,
                 x,
                 top,
@@ -815,7 +835,12 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                             }
                         }
                         let color = p.point_color(si, k);
+                        let point = ChartElement::Point(si as u32, k as u32);
+                        p.tag(point);
                         p.rect_styled(xa, ya, xb, yb, Some(Ink::solid(color)), look.outline);
+                        for (x, y) in [(xa, ya), (xb, ya), (xb, yb), (xa, yb)] {
+                            p.anchor(point, x, y);
+                        }
                         if let Some(labels) = &labels {
                             let raw = data.series[si].values.get(k).copied().flatten().unwrap_or(0.0);
                             // "Up" is the direction the bar grows on screen.
@@ -874,7 +899,11 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     let mut poly = upper.clone();
                     poly.extend(lower.iter().rev());
                     let poly = clip_polygon(&poly, geo.rect());
+                    p.tag(ChartElement::Series(si as u32));
                     p.polygon(&poly, Some(Ink::solid(look.color)), look.outline);
+                    for (x, y) in upper.iter().filter(|(x, y)| geo.inside(*x, *y)) {
+                        p.anchor(ChartElement::Series(si as u32), *x, *y);
+                    }
                     if let Some(labels) = chart.labels_for(&chart.series[si]) {
                         // In the middle of the band, as Excel writes them.
                         let mut at = 0;
@@ -914,6 +943,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         Some(geo.at(u, scale.fraction(v)))
                     };
                     let points: Vec<Option<(f32, f32)>> = (0..n).map(point).collect();
+                    p.tag(ChartElement::Series(si as u32));
                     if let Some(stroke) = look.line {
                         // A gap in the data breaks the line, unless gaps
                         // are to be spanned.
@@ -942,6 +972,8 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                             continue;
                         }
                         let mut reach = 0.0f32;
+                        let element = ChartElement::Point(si as u32, k as u32);
+                        p.tag(element);
                         if bubble {
                             let size = sd.sizes.get(k).copied().flatten().unwrap_or(if sd.sizes.is_empty() { 1.0 } else { 0.0 });
                             let biggest = if largest > 0.0 { largest } else { 1.0 };
@@ -952,6 +984,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                                     opacity: 0.75,
                                 };
                                 p.ellipse(x, y, r, r, Some(ink), look.outline);
+                                p.anchor(element, x, y);
                                 reach = r;
                             }
                         } else if let Some(marker) = &look.marker {
@@ -966,6 +999,9 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                             };
                             p.marker(&m, x, y);
                             reach = marker.r;
+                        }
+                        if !bubble {
+                            p.pick(element, x, y);
                         }
                         if let Some(labels) = chart.labels_for(&chart.series[si]) {
                             let mid = y - label_h / 2.0;
@@ -1012,7 +1048,9 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         None => Some(geo.cat(geo.centre(k))),
                     }
                 };
-                for bars in &chart.series[si].error_bars {
+                for (index, bars) in chart.series[si].error_bars.iter().enumerate() {
+                    let element = ChartElement::ErrorBars(si as u32, index as u32);
+                    p.tag(element);
                     for k in 0..sd.values.len() {
                         let (Some(v), Some(u)) = (sd.values[k], centre(k)) else { continue };
                         let f = scale.fraction(v);
@@ -1032,6 +1070,8 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                             continue;
                         }
                         p.line(a.0, a.1, b.0, b.1, stroke);
+                        p.anchor(element, a.0, a.1);
+                        p.anchor(element, b.0, b.1);
                         if bars.end_cap {
                             // Across the bar, at both ends.
                             let across_x = (a.1 - b.1).abs() > (a.0 - b.0).abs();
@@ -1066,9 +1106,17 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             })
             .collect();
         let mut last = None;
+        let element = ChartElement::Trendline(t.series as u32, t.index as u32);
+        p.tag(element);
         for piece in clip_polyline(&pts, geo.rect()) {
+            if let Some((x, y)) = piece.first() {
+                p.anchor(element, *x, *y);
+            }
             last = piece.last().copied();
             p.polyline(&piece, t.stroke);
+        }
+        if let Some((x, y)) = last {
+            p.anchor(element, x, y);
         }
         if let (Some((x, y)), false) = (last, t.label.is_empty()) {
             trend_labels.push((x, y, t));
@@ -1076,12 +1124,13 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
     }
 
     // ---- axes --------------------------------------------------------------
-    let mut plans: Vec<&AxisPlan> = vec![&value_plan];
-    plans.extend(secondary_plan.as_ref());
-    plans.push(&category_plan);
-    plans.extend(far_plan.as_ref());
-    for plan in plans {
+    let mut plans: Vec<(AxisId, &AxisPlan)> = vec![(AxisId::Value, &value_plan)];
+    plans.extend(secondary_plan.as_ref().map(|plan| (AxisId::SecondaryValue, plan)));
+    plans.push((AxisId::Category, &category_plan));
+    plans.extend(far_plan.as_ref().map(|plan| (AxisId::SecondaryCategory, plan)));
+    for (id, plan) in plans {
         let tick = 4.0 * z;
+        p.tag(ChartElement::Axis(id));
         if plan.vertical {
             let x = (px0 + plan.line_at as f32 * (px1 - px0)).round();
             if plan.draw_line {
@@ -1133,6 +1182,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             }
             if let Some(title) = &plan.title {
                 let cx = if high { px1 + out + title_h / 2.0 } else { px0 - out - title_h / 2.0 };
+                p.tag(ChartElement::AxisTitle(id));
                 p.text_rotated(title, cx, (py0 + py1) / 2.0, title_size, text, -90.0);
             }
         } else {
@@ -1192,6 +1242,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             }
             if let Some(title) = &plan.title {
                 let top = if high { py0 - out - title_h } else { py1 + out };
+                p.tag(ChartElement::AxisTitle(id));
                 p.text(title, (px0 + px1) / 2.0, top, title_size, text, TextAnchor::Middle);
             }
         }
@@ -1199,6 +1250,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
 
     // ---- data table --------------------------------------------------------
     if let Some(table) = table {
+        p.tag(ChartElement::DataTable);
         let rule = Stroke::new(GRIDLINE, 1.0);
         let rows = table_rows.len();
         let x_of = |c: f64| px0 + geo.cat(c) as f32 * (px1 - px0);
@@ -1249,6 +1301,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
 
     // ---- labels over everything --------------------------------------------
     for (x, y, t) in trend_labels {
+        p.tag(ChartElement::Trendline(t.series as u32, t.index as u32));
         let sup = (label_size * 0.65).max(5.0);
         let line_w = |parts: &[EquationPart]| -> f32 {
             parts.iter().map(|part| p.width(&part.text, if part.raised { sup } else { label_size })).sum()
@@ -1281,6 +1334,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         }
     }
     for label in pending {
+        p.tag(ChartElement::DataLabels(label.series as u32));
         let mut x = label.x;
         if let Some(color) = label.key {
             // The swatch goes before the text, the pair keeps its anchor.

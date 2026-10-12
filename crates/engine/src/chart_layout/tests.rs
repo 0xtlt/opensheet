@@ -992,3 +992,191 @@ fn to_svg(prims: &[Prim], size: (f32, f32)) -> String {
     svg.push_str("</svg>");
     svg
 }
+
+// ---- pointing at the elements of a chart -------------------------------------
+
+fn lay_elements(w: &Workbook, chart: &Chart) -> ChartLayout {
+    let data = w.chart_data(0, chart);
+    let options = LayoutOptions {
+        scale: 1.0,
+        locale: w.locale,
+        labels: Labels::default(),
+    };
+    layout_chart_elements(chart, &data, SIZE, &options, &Fixed)
+}
+
+/// The middle of the box of an element.
+fn middle(layout: &ChartLayout, element: ChartElement) -> (f32, f32) {
+    let b = layout.bounds(element).unwrap_or_else(|| panic!("no {element:?}"));
+    ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0)
+}
+
+#[test]
+fn every_primitive_has_its_element() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.axes.value.title = Some("Units".into());
+    chart.data_labels = true;
+    chart.series[0].trendlines.push(Trendline::new(TrendKind::Linear));
+    let layout = lay_elements(&w, &chart);
+    assert_eq!(layout.prims.len(), layout.tags.len());
+    // The same primitives as the plain layout gives.
+    assert_eq!(layout.prims, lay(&w, &chart));
+    let elements = layout.elements();
+    for wanted in [
+        ChartElement::ChartArea,
+        ChartElement::PlotArea,
+        ChartElement::Title,
+        ChartElement::Legend,
+        ChartElement::Axis(AxisId::Category),
+        ChartElement::Axis(AxisId::Value),
+        ChartElement::AxisTitle(AxisId::Value),
+        ChartElement::MajorGridlines(AxisId::Value),
+        ChartElement::Series(0),
+        ChartElement::Series(2),
+        ChartElement::DataLabels(1),
+        ChartElement::Trendline(0, 0),
+    ] {
+        assert!(elements.contains(&wanted), "{wanted:?} in {elements:?}");
+    }
+    // Points and legend entries are reached through their parents.
+    assert!(!elements.iter().any(|e| matches!(e, ChartElement::Point(..) | ChartElement::LegendEntry(_))));
+    assert!(!elements.contains(&ChartElement::MinorGridlines(AxisId::Value)));
+    // The bars carry the colour of their series and the tag of their point.
+    let first_bar = layout.tags.iter().position(|t| *t == ChartElement::Point(0, 0)).unwrap();
+    assert!(matches!(&layout.prims[first_bar], Prim::Rect { fill: Some(ink), .. } if ink.color == Color(crate::chart::PALETTE[0])));
+}
+
+#[test]
+fn a_point_of_the_chart_hits_what_is_drawn_there() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.axes.category.title = Some("Month".into());
+    let layout = lay_elements(&w, &chart);
+    let at = |element: ChartElement| {
+        let (x, y) = middle(&layout, element);
+        layout.hit(x, y)
+    };
+    assert_eq!(at(ChartElement::Title), ChartElement::Title);
+    assert_eq!(at(ChartElement::AxisTitle(AxisId::Category)), ChartElement::AxisTitle(AxisId::Category));
+    assert_eq!(at(ChartElement::Axis(AxisId::Value)), ChartElement::Axis(AxisId::Value));
+    assert_eq!(at(ChartElement::Axis(AxisId::Category)), ChartElement::Axis(AxisId::Category));
+    // A bar is a point of its series; the legend is hit by its entries.
+    assert_eq!(at(ChartElement::Point(1, 2)), ChartElement::Point(1, 2));
+    assert_eq!(ChartElement::Point(1, 2).parent(), ChartElement::Series(1));
+    assert_eq!(at(ChartElement::LegendEntry(2)), ChartElement::LegendEntry(2));
+    assert_eq!(at(ChartElement::LegendEntry(2)).parent(), ChartElement::Legend);
+    // Corners of the chart are the chart area; outside it too.
+    assert_eq!(layout.hit(2.0, 2.0), ChartElement::ChartArea);
+    assert_eq!(layout.hit(-5.0, 900.0), ChartElement::ChartArea);
+    // Between two clusters, on a gridline and off it.
+    let plot = layout.bounds(ChartElement::PlotArea).unwrap();
+    let grid: Vec<f32> = layout
+        .prims
+        .iter()
+        .zip(&layout.tags)
+        .filter_map(|(p, t)| match (p, t) {
+            (Prim::Line { y0, .. }, ChartElement::MajorGridlines(AxisId::Value)) => Some(*y0),
+            _ => None,
+        })
+        .collect();
+    assert!(grid.len() >= 3);
+    let top = grid.iter().cloned().fold(f32::INFINITY, f32::min);
+    let second = grid.iter().cloned().filter(|y| *y > top + 1.0).fold(f32::INFINITY, f32::min);
+    let between = plot[0] + 1.0;
+    assert_eq!(layout.hit(between, top + 1.0), ChartElement::MajorGridlines(AxisId::Value));
+    assert_eq!(layout.hit(between, (top + second) / 2.0), ChartElement::PlotArea);
+}
+
+#[test]
+fn lines_are_hit_near_their_stroke_and_points_by_their_place() {
+    let w = sales();
+    let chart = chart_of(&w, "A1:D5", ChartKind::Line);
+    let layout = lay_elements(&w, &chart);
+    // No markers: the points are still there to pick.
+    let handles = layout.outline(ChartElement::Series(0)).handles;
+    assert_eq!(handles.len(), 4);
+    let (x, y) = handles[1];
+    assert_eq!(layout.hit(x, y), ChartElement::Point(0, 1));
+    // Half way to the next point: the line, not a point.
+    let (nx, ny) = handles[2];
+    assert_eq!(layout.hit((x + nx) / 2.0, (y + ny) / 2.0), ChartElement::Series(0));
+    // A trendline is its own element, with a handle at each end.
+    let mut trended = chart.clone();
+    trended.series.truncate(1);
+    trended.series[0].trendlines.push(Trendline::new(TrendKind::Linear));
+    let layout = lay_elements(&w, &trended);
+    let ends = layout.outline(ChartElement::Trendline(0, 0)).handles;
+    assert_eq!(ends.len(), 2);
+    let mid = ((ends[0].0 + ends[1].0) / 2.0, (ends[0].1 + ends[1].1) / 2.0);
+    let hit = layout.hit(mid.0, mid.1);
+    assert!(matches!(hit, ChartElement::Trendline(0, 0) | ChartElement::Series(0) | ChartElement::Point(0, _)), "{hit:?}");
+}
+
+#[test]
+fn outlines_of_selected_elements() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.data_labels = true;
+    let layout = lay_elements(&w, &chart);
+    // A series: four handles on each of its four bars; a point: four.
+    assert_eq!(layout.outline(ChartElement::Series(1)).handles.len(), 16);
+    assert_eq!(layout.outline(ChartElement::Point(1, 0)).handles.len(), 4);
+    // A title: one frame, a handle on each corner.
+    let title = layout.outline(ChartElement::Title);
+    assert_eq!((title.frames.len(), title.handles.len()), (1, 4));
+    // The plot area and the legend also show handles on their edges.
+    assert_eq!(layout.outline(ChartElement::PlotArea).handles.len(), 8);
+    assert_eq!(layout.outline(ChartElement::Legend).handles.len(), 8);
+    // Data labels: a frame around each label.
+    assert_eq!(layout.outline(ChartElement::DataLabels(0)).frames.len(), 4);
+    // Gridlines: both ends of every line.
+    let grid = layout.outline(ChartElement::MajorGridlines(AxisId::Value));
+    assert!(grid.frames.is_empty() && grid.handles.len() >= 6 && grid.handles.len() % 2 == 0);
+    assert_eq!(layout.outline(ChartElement::ChartArea), Outline::default());
+    // What the chart does not show has nothing to outline.
+    assert_eq!(layout.outline(ChartElement::DataTable), Outline::default());
+}
+
+#[test]
+fn slices_and_three_d_bars_are_points() {
+    let w = sales();
+    let pie = chart_of(&w, "A1:B5", ChartKind::Pie);
+    let layout = lay_elements(&w, &pie);
+    let plot = layout.bounds(ChartElement::PlotArea).unwrap();
+    let (cx, cy) = ((plot[0] + plot[2]) / 2.0, (plot[1] + plot[3]) / 2.0);
+    let r = (plot[2] - plot[0]) / 2.0;
+    // Just right of 12 o'clock: the first slice; just left: the last.
+    assert_eq!(layout.hit(cx + 6.0, cy - r * 0.5), ChartElement::Point(0, 0));
+    assert_eq!(layout.hit(cx - 6.0, cy - r * 0.5), ChartElement::Point(0, 3));
+    assert_eq!(layout.outline(ChartElement::Point(0, 0)).handles.len(), 3);
+    // The entries of a pie's legend are its points.
+    assert!(layout.tags.contains(&ChartElement::LegendEntry(3)));
+
+    let solid = chart_of(&w, "A1:D5", ChartKind::Column3D);
+    let layout = lay_elements(&w, &solid);
+    assert!(layout.tags.contains(&ChartElement::Point(2, 3)));
+    let handles = layout.outline(ChartElement::Point(0, 0)).handles;
+    assert_eq!(handles.len(), 4);
+    let (x, y) = ((handles[0].0 + handles[2].0) / 2.0, (handles[0].1 + handles[2].1) / 2.0);
+    assert_eq!(layout.hit(x, y), ChartElement::Point(0, 0));
+}
+
+#[test]
+fn the_layout_tells_the_scales_it_used() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    let layout = lay_elements(&w, &chart);
+    let scale = layout.scale(AxisId::Value).expect("a value scale");
+    assert_eq!((scale.min, scale.max, scale.major), (0.0, 20.0, 2.0));
+    assert!(layout.scale(AxisId::Category).is_none());
+    assert!(layout.scale(AxisId::SecondaryValue).is_none());
+    chart.series[2].secondary = true;
+    chart.axes.value.max = Some(40.0);
+    let layout = lay_elements(&w, &chart);
+    assert_eq!(layout.scale(AxisId::Value).map(|s| s.max), Some(40.0));
+    assert!(layout.scale(AxisId::SecondaryValue).is_some());
+    assert!(layout.elements().contains(&ChartElement::Axis(AxisId::SecondaryValue)));
+    let scatter = chart_of(&w, "B1:C5", ChartKind::Scatter);
+    assert!(lay_elements(&w, &scatter).scale(AxisId::Category).is_some());
+}
