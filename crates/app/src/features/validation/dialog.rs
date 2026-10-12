@@ -5,6 +5,7 @@
 //! the rule to the cells without one, or to erase the rules and start
 //! afresh.
 
+use super::textarea::{TextArea, text_box};
 use crate::app::ExcelApp;
 use crate::features::{Cx, Intent};
 use crate::i18n::t;
@@ -136,6 +137,12 @@ fn clipped(text: &str, max: usize) -> Option<String> {
     (text.chars().count() > max).then(|| text.chars().take(max).collect())
 }
 
+/// Height of a tab page: the dialog keeps its size from tab to tab.
+const PAGE_HEIGHT: f32 = 258.0;
+
+/// Height of the boxes the two messages are typed in.
+const MESSAGE_HEIGHT: f32 = 92.0;
+
 const TAB_SETTINGS: usize = 0;
 const TAB_INPUT: usize = 1;
 const TAB_ERROR: usize = 2;
@@ -157,12 +164,12 @@ struct Dialog {
     // Input Message
     show_input: bool,
     input_title: Entity<TextInput>,
-    input_message: Entity<TextInput>,
+    input_message: Entity<TextArea>,
     // Error Alert
     show_error: bool,
     error_style: AlertStyle,
     error_title: Entity<TextInput>,
-    error_message: Entity<TextInput>,
+    error_message: Entity<TextArea>,
     /// Focus of the dialog frame, to close it from a message box.
     frame: FocusHandle,
 }
@@ -179,18 +186,24 @@ impl Dialog {
         };
         let first = modal.ref_input(reference, rule.operand1_text(row, col, open.locale), cx);
         let second = modal.ref_input(reference, rule.operand2_text(row, col, open.locale), cx);
-        let limited = |text: &str, max: usize, cx: &mut Context<Self>| {
+        // A title of 32 characters at most, as Excel takes.
+        let title = |text: &str, cx: &mut Context<Self>| {
             let field = widgets::input(cx, text);
-            cx.subscribe(&field, move |_, field, event: &InputEvent, cx| {
+            cx.subscribe(&field, |_, field, event: &InputEvent, cx| {
                 if *event != InputEvent::Changed {
                     return;
                 }
-                if let Some(kept) = clipped(field.read(cx).text(), max) {
+                if let Some(kept) = clipped(field.read(cx).text(), MAX_TITLE_LEN) {
                     field.update(cx, |field, cx| field.set_text(kept, cx));
                 }
             })
             .detach();
             field
+        };
+        let message = |text: &str, cx: &mut Context<Self>| {
+            let area = cx.new(|cx| TextArea::new(text, MAX_MESSAGE_LEN, cx));
+            cx.observe(&area, |_, _, cx| cx.notify()).detach();
+            area
         };
         Dialog {
             frame: modal.focus.clone(),
@@ -203,12 +216,12 @@ impl Dialog {
             in_cell_dropdown: rule.in_cell_dropdown,
             apply_to_alike: false,
             show_input: rule.show_input,
-            input_title: limited(&rule.input_title, MAX_TITLE_LEN, cx),
-            input_message: limited(&rule.input_message, MAX_MESSAGE_LEN, cx),
+            input_title: title(&rule.input_title, cx),
+            input_message: message(&rule.input_message, cx),
             show_error: rule.show_error,
             error_style: rule.error_style,
-            error_title: limited(&rule.error_title, MAX_TITLE_LEN, cx),
-            error_message: limited(&rule.error_message, MAX_MESSAGE_LEN, cx),
+            error_title: title(&rule.error_title, cx),
+            error_message: message(&rule.error_message, cx),
             modal,
             open,
         }
@@ -225,11 +238,11 @@ impl Dialog {
             in_cell_dropdown: self.in_cell_dropdown,
             show_input: self.show_input,
             input_title: text(&self.input_title),
-            input_message: text(&self.input_message),
+            input_message: self.input_message.read(cx).text().to_string(),
             show_error: self.show_error,
             error_style: self.error_style,
             error_title: text(&self.error_title),
-            error_message: text(&self.error_message),
+            error_message: self.error_message.read(cx).text().to_string(),
             // Nothing in the dialog changes these.
             ime_mode: self.open.rule.ime_mode,
             ranges: Vec::new(),
@@ -309,16 +322,11 @@ impl Dialog {
         self.show_input = fresh.show_input;
         self.show_error = fresh.show_error;
         self.error_style = fresh.error_style;
-        let fields = [
-            &self.first,
-            &self.second,
-            &self.input_title,
-            &self.input_message,
-            &self.error_title,
-            &self.error_message,
-        ];
-        for field in fields {
+        for field in [&self.first, &self.second, &self.input_title, &self.error_title] {
             field.update(cx, |field, cx| field.set_text("", cx));
+        }
+        for area in [&self.input_message, &self.error_message] {
+            area.update(cx, |area, cx| area.set_text("", cx));
         }
         cx.notify();
     }
@@ -349,6 +357,7 @@ impl Dialog {
             .into_iter()
             .filter_map(|(field, input)| Some(Self::titled(field_label(field?), RefEdit::new(input, &self.modal))));
         Self::section(t("Validation criteria", "Critères de validation"))
+            .flex_1()
             .child(
                 div()
                     .pl(px(10.))
@@ -409,10 +418,27 @@ impl Dialog {
                     ),
             )
             .child(div().pl(px(10.)).flex().flex_col().gap(px(8.)).children(boxes))
+            .child(div().flex_1())
+            .child(
+                Checkbox::new(
+                    "alike",
+                    t(
+                        "Apply these changes to all other cells with the same settings",
+                        "Appliquer ces modifications aux cellules dont les paramètres sont identiques",
+                    ),
+                    self.apply_to_alike,
+                )
+                // Only a rule that other cells share can be changed for them too.
+                .disabled(self.open.alike.is_empty())
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    this.apply_to_alike = *on;
+                    cx.notify();
+                })),
+            )
             .into_any_element()
     }
 
-    fn input_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn input_tab(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         div()
             .flex()
             .flex_col()
@@ -448,14 +474,14 @@ impl Dialog {
                         ))
                         .child(Self::titled(
                             t("Input message:", "Message de saisie :"),
-                            div().flex().child(TextField::new(&self.input_message)),
+                            div().flex().child(text_box(&self.input_message, MESSAGE_HEIGHT, window, cx)),
                         )),
                 ),
             )
             .into_any_element()
     }
 
-    fn error_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    fn error_tab(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let locale = self.open.locale;
         let styles: Vec<SharedString> = AlertStyle::ALL.iter().map(|style| style.label(locale).into()).collect();
         let style = AlertStyle::ALL.iter().position(|s| *s == self.error_style);
@@ -534,7 +560,7 @@ impl Dialog {
                                 ))
                                 .child(Self::titled(
                                     t("Error message:", "Message d’erreur :"),
-                                    div().flex().child(TextField::new(&self.error_message)),
+                                    div().flex().child(text_box(&self.error_message, MESSAGE_HEIGHT, window, cx)),
                                 )),
                         ),
                 ),
@@ -544,7 +570,7 @@ impl Dialog {
 }
 
 impl Render for Dialog {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tabs: Vec<SharedString> = [
             t("Settings", "Paramètres"),
             t("Input Message", "Message de saisie"),
@@ -554,12 +580,10 @@ impl Render for Dialog {
         .map(|name| (*name).into())
         .collect();
         let body = match self.tab {
-            TAB_INPUT => self.input_tab(cx),
-            TAB_ERROR => self.error_tab(cx),
+            TAB_INPUT => self.input_tab(window, cx),
+            TAB_ERROR => self.error_tab(window, cx),
             _ => self.settings_tab(cx),
         };
-        // Only a rule that other cells share can be changed for them too.
-        let shared = !self.open.alike.is_empty();
         let modal = self.modal.clone();
         dialog(&self.modal, t("Data Validation", "Validation des données"))
             .width(500.0)
@@ -570,24 +594,7 @@ impl Render for Dialog {
                     cx.notify();
                 })),
             )
-            .child(div().h(px(232.)).flex().flex_col().child(body))
-            .when(self.tab == TAB_SETTINGS, |d| {
-                d.child(
-                    Checkbox::new(
-                        "alike",
-                        t(
-                            "Apply these changes to all other cells with the same settings",
-                            "Appliquer ces modifications aux cellules dont les paramètres sont identiques",
-                        ),
-                        self.apply_to_alike,
-                    )
-                    .disabled(!shared)
-                    .on_change(cx.listener(|this, on: &bool, _, cx| {
-                        this.apply_to_alike = *on;
-                        cx.notify();
-                    })),
-                )
-            })
+            .child(div().h(px(PAGE_HEIGHT)).flex().flex_col().child(body))
             .footer(
                 div()
                     .flex_1()
@@ -628,11 +635,11 @@ mod tests {
     }
 
     #[test]
-    fn text_boxes_hold_what_excel_holds() {
+    fn titles_hold_what_excel_holds() {
         assert_eq!(clipped("short", MAX_TITLE_LEN), None);
         let long = "é".repeat(MAX_TITLE_LEN + 3);
         assert_eq!(clipped(&long, MAX_TITLE_LEN), Some("é".repeat(MAX_TITLE_LEN)));
-        assert_eq!(clipped(&"x".repeat(MAX_MESSAGE_LEN), MAX_MESSAGE_LEN), None);
+        assert_eq!(clipped(&"x".repeat(MAX_TITLE_LEN), MAX_TITLE_LEN), None);
     }
 
     #[test]

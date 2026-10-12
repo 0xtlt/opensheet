@@ -10,6 +10,7 @@
 
 mod dialog;
 mod list;
+mod textarea;
 
 use super::{
     CellEdit, ChangeCause, Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, PaintLayer, Painter, PendingEdit,
