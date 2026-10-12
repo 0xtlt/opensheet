@@ -53,6 +53,8 @@ pub(crate) struct SheetLinks {
     /// The query tables of the text imports, in the order of
     /// `Sheet::text_imports`; no element.
     pub queries: Vec<usize>,
+    /// The image behind the cells (`<picture>`).
+    pub background: Option<usize>,
 }
 
 impl SheetLinks {
@@ -77,17 +79,21 @@ impl SheetLinks {
             pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
             hyperlinks: sheet.hyperlinks.iter().filter_map(|link| id(!link.address.is_empty())).collect(),
             queries: sheet.text_imports.iter().filter_map(|_| id(true)).collect(),
+            background: id(sheet.background.is_some()),
         }
     }
 
     /// Append the elements of a worksheet that name other parts. They come
-    /// after the page setup, in this order.
+    /// after the page setup, in this order (that of the schema).
     pub fn push_elements(&self, x: &mut String) {
         if let Some(id) = self.drawing {
             w!(x, "<drawing r:id=\"rId{id}\"/>");
         }
         if let Some(id) = self.vml {
             w!(x, "<legacyDrawing r:id=\"rId{id}\"/>");
+        }
+        if let Some(id) = self.background {
+            w!(x, "<picture r:id=\"rId{id}\"/>");
         }
         if !self.tables.is_empty() {
             w!(x, "<tableParts count=\"{}\">", self.tables.len());
@@ -152,6 +158,7 @@ impl Extras {
         super::pivot::add_parts(wb, &mut extras, dxfs);
         super::hyperlink::add_parts(wb, &mut extras);
         super::datatools::add_parts(wb, &mut extras);
+        super::background::add_parts(wb, &mut extras);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),

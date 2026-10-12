@@ -111,6 +111,9 @@ pub struct Sheet {
     /// (see `names.rs`). They travel with the sheet when it is moved,
     /// copied or deleted.
     pub names: BTreeMap<String, DefinedName>,
+    /// The picture repeated behind the cells (Page Layout ▸ Background).
+    /// It is shown on screen only: a background is not printed.
+    pub background: Option<crate::drawing::Picture>,
 }
 
 impl Sheet {
@@ -151,6 +154,7 @@ impl Sheet {
             drawings: Vec::new(),
             hyperlinks: Vec::new(),
             names: BTreeMap::new(),
+            background: None,
         }
     }
 
@@ -1367,6 +1371,17 @@ impl Workbook {
             self.snapshot();
             self.sheets[index].tab_color = color;
         }
+    }
+
+    /// Give a sheet a background picture, or (`None`) take it away.
+    /// Returns false when there is no such sheet.
+    pub fn set_sheet_background(&mut self, sheet: usize, picture: Option<crate::drawing::Picture>) -> bool {
+        if sheet >= self.sheets.len() {
+            return false;
+        }
+        self.snapshot();
+        self.sheets[sheet].background = picture;
+        true
     }
 
     pub fn set_frozen(&mut self, sheet: usize, rows: u32, cols: u32) {

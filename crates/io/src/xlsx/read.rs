@@ -1627,6 +1627,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         let name = unique_sheet_name(name, &sheets, i);
         let mut loaded = SheetReader::read(&xml, name, &ctx);
         super::hyperlink::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
+        super::background::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
         drop(xml);
         loaded.sheet.charts = read_charts(
             &mut pkg,
