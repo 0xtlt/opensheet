@@ -214,14 +214,15 @@ fn sample(locale: &'static Locale) -> Workbook {
         legend: LegendPos::None,
         series: vec![Series {
             name: SeriesName::None,
-            values,
             categories: None,
             color: None,
+            ..Series::new(values)
         }],
         data_labels: false,
         anchor: (5, 3),
         offset: (0.0, 0.0),
         size: DEFAULT_CHART_SIZE,
+        ..Chart::new(ChartKind::Column)
     };
     assert!(wb.add_chart(2, chart).is_some());
     assert!(wb.set_note(2, 0, 0, "Thomas Tastet", "Thomas Tastet:\nBeside a chart."));
