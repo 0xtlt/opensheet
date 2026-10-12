@@ -6,10 +6,12 @@ use common::{
     assert_well_formed, assert_workbook_order, assert_worksheet_order, at, enter, formula, part,
     part_names, value,
 };
+use opensheet_engine::condfmt::{BarColor, CondFormat, DataBar, IconRule, IconSet, Rule};
+use opensheet_engine::page::{Orientation, PaperSize};
 use opensheet_engine::parser::parse_formula;
 use opensheet_engine::protect::{Permission, SheetProtection};
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
-use opensheet_engine::style::{Border, BorderStyle, HAlign, Style, Underline, VAlign};
+use opensheet_engine::style::{Border, BorderStyle, HAlign, Style, StylePatch, Underline, VAlign};
 use opensheet_engine::validation::{Operator, Validation, ValidationKind};
 use opensheet_engine::workbook::Content;
 use opensheet_engine::{Color, ErrorKind, Locale, Rect, Value, Workbook};
@@ -223,6 +225,44 @@ fn sample() -> Workbook {
     };
     list.set_operands("=Data!$B$1:$B$5", "", en).unwrap();
     assert!(wb.set_validation(0, &[Rect::parse("F8:F12").unwrap()], (7, 5), list));
+
+    // Conditional formats, one for each way the file stores them: with a
+    // format of the style sheet, in two halves, and in the extension list
+    // alone (newer icons, a formula about another sheet).
+    let bad = StylePatch {
+        bold: Some(true),
+        font_color: Some(Some(Color(0x9C0006))),
+        fill: Some(Some(Color(0xFFC7CE))),
+        ..StylePatch::default()
+    };
+    let column = vec![Rect::parse("A1:A5").unwrap()];
+    let rules = vec![
+        CondFormat::new(column.clone(), Rule::greater_than(parse_formula("15", en).unwrap()))
+            .with_format(bad.clone()),
+        CondFormat::new(column.clone(), Rule::DataBar(DataBar::preset(BarColor::Blue, true))),
+        CondFormat::new(column, Rule::IconSet(IconRule::preset(IconSet::ThreeStars))),
+        CondFormat::new(
+            vec![Rect::parse("B1:B5").unwrap()],
+            Rule::Formula(parse_formula("Summary!$A$2>LEN(B1)", en).unwrap()),
+        )
+        .with_format(bad),
+    ];
+    assert!(wb.set_cond_formats(1, rules));
+
+    // Page setup, with a print area and titles on a sheet whose name has
+    // to be quoted and escaped.
+    assert!(wb.set_print_area(2, &[Rect::parse("A1:C9").unwrap()]));
+    assert!(wb.set_print_titles(2, Some((0, 0)), None));
+    assert!(wb.insert_page_break(2, Some(5), None));
+    assert!(wb.update_page_setup(2, |page| {
+        page.paper = Some(PaperSize::A4);
+        page.orientation = Orientation::Landscape;
+        page.fit_to_page = true;
+        page.fit_height = 0;
+        page.center_horizontally = true;
+        page.header_footer.odd_header = "&C&A <&&>".into();
+        page.header_footer.odd_footer = "&RPage &P".into();
+    }));
     wb.commit("setup");
 
     // Protection (which, as in Excel, is not something to undo).
@@ -254,6 +294,8 @@ fn assert_same(a: &Workbook, b: &Workbook) {
         );
         assert_eq!(sa.validations, sb.validations, "{name}: data validation");
         assert_eq!(sa.protection, sb.protection, "{name}: protection");
+        assert_eq!(sa.cond_formats, sb.cond_formats, "{name}: conditional formats");
+        assert_eq!(sa.page, sb.page, "{name}: page setup");
         assert_eq!(sa.hidden_cols, sb.hidden_cols, "{name}: hidden columns");
         assert_eq!(sa.hidden_rows, sb.hidden_rows, "{name}: hidden rows");
         assert_eq!(sa.merges, sb.merges, "{name}: merges");
@@ -575,7 +617,29 @@ fn package_is_a_valid_zip_of_well_formed_parts() {
     ));
     assert!(sheet2.contains("<v>1e-7</v>") && sheet2.contains("<v>1.2345678901234568e20</v>"));
     assert!(sheet2.contains("<v>0.30000000000000004</v>"));
+    // The rules of a sheet: the 2007 forms among the worksheet's own
+    // elements, the rest in its extension list; their formats in the
+    // style sheet.
+    assert!(sheet2.contains(concat!(
+        "<conditionalFormatting sqref=\"A1:A5\">",
+        "<cfRule type=\"cellIs\" dxfId=\"0\" priority=\"1\" operator=\"greaterThan\"><formula>15</formula></cfRule>",
+        "<cfRule type=\"dataBar\" priority=\"2\"><dataBar>"
+    )), "{sheet2}");
+    assert!(sheet2.contains("<x14:cfRule type=\"iconSet\" priority=\"3\" id=\""));
+    assert!(sheet2.contains("<xm:f>Summary!$A$2&gt;LEN(B1)</xm:f><x14:dxf>"));
     let sheet3 = part(&bytes, "xl/worksheets/sheet3.xml");
+    assert!(sheet3.contains("<pageSetUpPr fitToPage=\"1\"/></sheetPr>"));
+    assert!(sheet3.contains(concat!(
+        "<printOptions horizontalCentered=\"1\"/><pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" ",
+        "bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/>",
+        "<pageSetup paperSize=\"9\" fitToHeight=\"0\" orientation=\"landscape\"/>",
+        "<headerFooter><oddHeader>&amp;C&amp;A &lt;&amp;&amp;&gt;</oddHeader><oddFooter>&amp;RPage &amp;P</oddFooter></headerFooter>",
+        "<rowBreaks count=\"1\" manualBreakCount=\"1\"><brk id=\"5\" max=\"16383\" man=\"1\"/></rowBreaks>"
+    )), "{sheet3}");
+    assert!(workbook.contains(concat!(
+        "<definedNames><definedName name=\"_xlnm.Print_Area\" localSheetId=\"2\">'Joe''s &amp; &lt;Co&gt;'!$A$1:$C$9</definedName>",
+        "<definedName name=\"_xlnm.Print_Titles\" localSheetId=\"2\">'Joe''s &amp; &lt;Co&gt;'!$1:$1</definedName>"
+    )), "{workbook}");
     assert!(sheet3.contains("showRowColHeaders=\"0\""));
     assert!(sheet3.contains(
         "<pane xSplit=\"1\" topLeftCell=\"B1\" activePane=\"topRight\" state=\"frozen\"/>"
@@ -597,6 +661,10 @@ fn package_is_a_valid_zip_of_well_formed_parts() {
     assert!(styles.contains("numFmtId=\"4\"") && styles.contains("numFmtId=\"49\""));
     assert!(styles.contains("<protection locked=\"0\"/>"));
     assert!(styles.contains("<protection hidden=\"1\"/>"));
+    assert!(styles.contains(concat!(
+        "<dxfs count=\"1\"><dxf><font><b/><color rgb=\"FF9C0006\"/></font>",
+        "<fill><patternFill><bgColor rgb=\"FFFFC7CE\"/></patternFill></fill></dxf></dxfs>"
+    )), "{styles}");
 
     // Each distinct string is stored once.
     let strings = part(&bytes, "xl/sharedStrings.xml");

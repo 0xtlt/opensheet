@@ -317,4 +317,26 @@ mod tests {
         }
         assert_eq!(chars_to_col_width(1e9, 7.0), MAX_COL_PX);
     }
+
+    #[test]
+    fn cell_width_counts_digits_of_the_default_font() {
+        let width_of_a = |set_in: Option<Font>| {
+            let mut wb = Workbook::new(crate::Locale::en());
+            if let Some(font) = set_in {
+                let mut normal = wb.styles.default_style().clone();
+                normal.font = font;
+                wb.styles.set_default(normal);
+            }
+            wb.set_col_width(0, 0, Some(149.0));
+            wb.set_cell_text(0, 0, 1, "=CELL(\"width\",A1)").unwrap();
+            wb.set_cell_text(0, 1, 1, "=CELL(\"width\",C1)").unwrap();
+            wb.commit("formulas");
+            (wb.value_at(0, 0, 1), wb.value_at(0, 1, 1))
+        };
+        // 144 pixels of digits: 20.57 digits of 7 pixels, 18 of 8 pixels.
+        // A column nobody sized has the width of the workbook's own font.
+        let n = crate::Value::Number;
+        assert_eq!(width_of_a(None), (n(21.0), n(8.0)));
+        assert_eq!(width_of_a(Some(font("Calibri", 12.0))), (n(18.0), n(7.0)));
+    }
 }
