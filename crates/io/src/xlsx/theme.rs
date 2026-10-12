@@ -146,6 +146,10 @@ fn element(xml: &str, name: &str) -> Option<(std::ops::Range<usize>, std::ops::R
 /// refers to other parts of its package (the pictures some themes fill
 /// shapes with), which are not kept: the theme is then written afresh.
 fn respliced(source: &str, theme: &Theme) -> Option<String> {
+    // A part that was cut short is not one to write.
+    if !source.trim_end().ends_with("</a:theme>") {
+        return None;
+    }
     let was = parse(source);
     let mut part = source.to_string();
     // From the last element to the first, so that the spans found in the
