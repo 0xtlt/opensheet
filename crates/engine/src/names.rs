@@ -202,9 +202,9 @@ impl Workbook {
     /// several areas separated by the list separator, a structured
     /// reference, `A1#`, a defined name or the name of a table.
     ///
-    /// `None` when the text is none of these. Names defined with a formula
-    /// that only gives a reference once calculated (`OFFSET`, `INDEX`) are
-    /// not followed.
+    /// `None` when the text is none of these. A formula that only gives a
+    /// reference once calculated (`OFFSET`, `INDEX`, a name defined with
+    /// them) is evaluated against the current values.
     pub fn reference_areas(
         &self,
         sheet: usize,
@@ -216,7 +216,9 @@ impl Workbook {
         let src = src.strip_prefix('=').unwrap_or(src);
         let expr = parse_formula(src, self.locale).ok()?;
         let mut areas = Vec::new();
-        self.expr_areas(&expr, sheet, row, col, 0, &mut areas)?;
+        if self.expr_areas(&expr, sheet, row, col, 0, &mut areas).is_none() {
+            return self.evaluate_areas(sheet, row, col, &expr);
+        }
         (!areas.is_empty()).then_some(areas)
     }
 

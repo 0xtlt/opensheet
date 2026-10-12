@@ -815,7 +815,8 @@ pub fn apply(wb: &mut Workbook, op: &Op) {
                 wb.snapshot();
             }
             let range = &mut wb.sheets[sheet].tables[0].range;
-            range.r1 = (range.r1 as i32 + by).clamp(range.r0 as i32 + 1, ROWS as i32 + 2) as u32;
+            let least = range.r0 as i32 + 1;
+            range.r1 = (range.r1 as i32 + by).clamp(least, least.max(ROWS as i32 + 2)) as u32;
             if *transaction {
                 wb.commit("resize table");
             } else {

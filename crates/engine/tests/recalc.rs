@@ -764,3 +764,107 @@ fn many_changes_at_once() {
     assert_eq!(value(&wb, 0, "D1"), num(sum * 5.0 + 50.0));
     assert_eq!(wb.calc_runs().1, runs.1 + 2);
 }
+
+#[test]
+fn the_cells_of_a_circular_reference_show_zero_and_are_listed() {
+    let mut wb = sheets(2);
+    edit(
+        &mut wb,
+        0,
+        &[
+            ("A1", "5"),
+            ("B1", "=C1+A1"),
+            ("C1", "=D1*2"),
+            ("D1", "=B1+1"),
+            ("E1", "=D1+10"),
+            ("F1", "=A1*2"),
+        ],
+    );
+    assert!(wb.circular);
+    // The loop is B1 -> C1 -> D1 -> B1; E1 only reads it.
+    assert_eq!(wb.circular_cells(), [(0, 0, 1), (0, 0, 2), (0, 0, 3)]);
+    for cell in ["B1", "C1", "D1"] {
+        assert_eq!(value(&wb, 0, cell), num(0.0), "{cell}");
+    }
+    assert_eq!(value(&wb, 0, "E1"), num(10.0));
+    assert_eq!(value(&wb, 0, "F1"), num(10.0));
+    // A second loop, on another sheet, and a cell reading itself.
+    edit(&mut wb, 1, &[("A1", "=A2"), ("A2", "=A1"), ("C3", "=C3+1")]);
+    assert_eq!(
+        wb.circular_cells(),
+        [
+            (0, 0, 1),
+            (0, 0, 2),
+            (0, 0, 3),
+            (1, 0, 0),
+            (1, 1, 0),
+            (1, 2, 2)
+        ]
+    );
+    // One loop opened: the others stay.
+    edit(&mut wb, 0, &[("C1", "7")]);
+    assert_eq!(wb.circular_cells(), [(1, 0, 0), (1, 1, 0), (1, 2, 2)]);
+    assert_eq!(value(&wb, 0, "E1"), num(23.0));
+    wb.clear(1, Rect::parse("A1:C3").unwrap(), ClearMode::Contents);
+    wb.commit("clear");
+    assert!(!wb.circular);
+    assert!(wb.circular_cells().is_empty());
+    // Iterative calculation knows no such error.
+    wb.set_iterative_calc(IterativeCalc {
+        enabled: true,
+        max_iterations: 3,
+        max_change: 0.001,
+    });
+    edit(&mut wb, 0, &[("H1", "=H1+1")]);
+    assert!(!wb.circular);
+    assert!(wb.circular_cells().is_empty());
+    assert_eq!(value(&wb, 0, "H1"), num(3.0));
+}
+
+#[test]
+fn the_areas_an_expression_evaluates_to() {
+    let mut wb = sheets(2);
+    edit(
+        &mut wb,
+        0,
+        &[("A1", "2"), ("A2", "3"), ("B1", "=SEQUENCE(3)")],
+    );
+    let grow = wb
+        .parse_name_formula("OFFSET(Sheet1!$A$1,0,0,Sheet1!$A$1,1)", 0, 0, 0)
+        .unwrap();
+    wb.define_name("Grow", grow);
+    wb.commit("name");
+    let areas = |wb: &Workbook, text: &str| {
+        let expr = parse_formula(text, Locale::en()).unwrap();
+        wb.evaluate_areas(1, 0, 0, &expr).map(|areas| {
+            let names: Vec<String> = areas
+                .iter()
+                .map(|a| format!("{}!{}", wb.sheets[a.sheet].name, a.rect.name()))
+                .collect();
+            names.join(" ")
+        })
+    };
+    assert_eq!(areas(&wb, "Grow").as_deref(), Some("Sheet1!A1:A2"));
+    assert_eq!(
+        areas(&wb, "INDEX(Sheet1!A:A,2)").as_deref(),
+        Some("Sheet1!A2")
+    );
+    assert_eq!(areas(&wb, "Sheet1!B1#").as_deref(), Some("Sheet1!B1:B3"));
+    assert_eq!(
+        areas(&wb, "(Sheet1!A1,Sheet1!B2:C3)").as_deref(),
+        Some("Sheet1!A1 Sheet1!B2:C3")
+    );
+    assert_eq!(
+        areas(&wb, "Sheet1:Sheet2!D4").as_deref(),
+        Some("Sheet1!D4 Sheet2!D4")
+    );
+    assert_eq!(areas(&wb, "1+1"), None);
+    // The name grows with the cell it is defined on; Go To follows it.
+    edit(&mut wb, 0, &[("A1", "4")]);
+    assert_eq!(areas(&wb, "Grow").as_deref(), Some("Sheet1!A1:A4"));
+    let found = wb.reference_areas(1, 0, 0, "Grow").unwrap();
+    assert_eq!(
+        (found[0].sheet, found[0].rect.name()),
+        (0, "A1:A4".to_string())
+    );
+}

@@ -94,6 +94,9 @@ pub struct CalcResult {
     /// Spilled arrays per sheet, sorted by anchor.
     pub spills: Vec<Vec<(SpillRect, Arc<Array>)>>,
     pub circular: bool,
+    /// The cells of the circular references that were found, in sheet
+    /// order. Empty with iterative calculation, which has no such error.
+    pub circular_cells: Vec<CellKey>,
     /// The outcome depends on the order in which formulas were calculated
     /// (a circular reference, two arrays spilling over the same cells, a
     /// formula reading the area of its own array), or the spilled arrays
@@ -252,6 +255,10 @@ pub struct Calc<'a> {
     range_cache: RefCell<FastMap<(Reference, u32, u32), Arc<Array>>>,
     /// A formula read a cell that was being calculated.
     cycles: Cell<bool>,
+    /// The formulas being calculated, outermost first, and the cells found
+    /// to be part of a circular reference.
+    path: RefCell<Vec<Pos>>,
+    looped: RefCell<FastSet<Pos>>,
     unsettled: Cell<bool>,
     depth: Cell<u32>,
     settle_depth: u32,
@@ -585,6 +592,8 @@ impl<'a> Calc<'a> {
             large: RefCell::default(),
             range_cache: RefCell::default(),
             cycles: Cell::new(false),
+            path: RefCell::default(),
+            looped: RefCell::default(),
             unsettled: Cell::new(false),
             depth: Cell::new(0),
             settle_depth: options.settle_depth,
@@ -813,11 +822,15 @@ impl<'a> Calc<'a> {
                 _ => None,
             })
             .collect();
+        let mut circular_cells: Vec<CellKey> =
+            self.looped.into_inner().into_iter().map(unpos).collect();
+        circular_cells.sort_unstable();
         CalcResult {
             values,
             spills,
             // With iterative calculation a circular reference is no error.
             circular: self.cycles.get() && self.iteration.is_none(),
+            circular_cells,
             unsettled: self.unsettled.get() || self.cycles.get(),
             blocked: self.blocked.into_inner(),
             moved,
@@ -864,12 +877,19 @@ impl<'a> Calc<'a> {
     }
 
     /// A formula reads a cell that is being calculated: a circular
-    /// reference, which reads as 0, or, with iterative calculation, as the
-    /// value of the previous iteration.
+    /// reference. As in Excel every cell of the loop then shows 0; with
+    /// iterative calculation the cell reads as it was at the previous
+    /// iteration.
     fn reentered(&self, at: Pos, cell: &SheetCell) -> Value {
         self.cycles.set(true);
         match &self.iteration {
-            None => Value::Number(0.0),
+            None => {
+                // The loop: from that cell to the formula reading it.
+                let path = self.path.borrow();
+                let from = path.iter().rposition(|p| *p == at).unwrap_or(0);
+                self.looped.borrow_mut().extend(&path[from..]);
+                Value::Number(0.0)
+            }
             Some(iteration) => {
                 iteration.targets.borrow_mut().insert(at);
                 let previous = iteration.previous.borrow();
@@ -886,6 +906,7 @@ impl<'a> Calc<'a> {
         let at = pos(sheet, row, col);
         self.cache.borrow_mut().insert(at, Slot::Computing);
         self.depth.set(self.depth.get() + 1);
+        self.path.borrow_mut().push(at);
         let outer = self.audit.as_ref().map(|a| a.reader.replace(Some(at)));
         let large = self.large.take();
         let ctx = EvalCtx {
@@ -902,6 +923,10 @@ impl<'a> Calc<'a> {
             audit.reader.set(outer);
         }
         self.depth.set(self.depth.get() - 1);
+        self.path.borrow_mut().pop();
+        if self.looped.borrow().contains(&at) {
+            v = Value::Number(0.0);
+        }
 
         if let Value::Array(a) = &v {
             // Blank elements of an array result read as 0, like a formula
@@ -1383,6 +1408,24 @@ impl<'a> EvalSession<'a> {
             home: sheet,
         };
         ctx.eval(expr)
+    }
+
+    /// The cells `expr` stands for when it evaluates to a reference, as
+    /// read from the cell (`sheet`, `row`, `col`): one area, or several for
+    /// a union or a 3-D reference. Formulas that only give a reference
+    /// once calculated (`OFFSET`, `INDEX`, `INDIRECT`, a name defined with
+    /// them) are followed. An error value when it is not a reference.
+    pub fn areas(&self, sheet: usize, row: u32, col: u32, expr: &Expr) -> R<Vec<Reference>> {
+        self.calc.large.take();
+        let ctx = EvalCtx {
+            calc: &self.calc,
+            sheet,
+            row,
+            col,
+            root: expr,
+            home: sheet,
+        };
+        ctx.eval_areas(expr)
     }
 
     pub fn workbook(&self) -> &'a Workbook {

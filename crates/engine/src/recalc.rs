@@ -12,7 +12,7 @@
 use crate::ast::Expr;
 use crate::deps::{self, DepGraph, GraphStats, Pos, pos, unpos};
 use crate::eval::{self, CalcResult, Changes, EvalSession, Options, Scope, SpillRect};
-use crate::refs::Rect;
+use crate::refs::{Rect, Reference};
 use crate::workbook::{Cell, Content, Sheet, Spill, Workbook};
 use std::sync::Arc;
 
@@ -152,6 +152,8 @@ pub(crate) struct CalcState {
     blocked: Vec<(usize, SpillRect)>,
     /// The last calculation depended on the order of calculation.
     unsettled: bool,
+    /// The cells of the circular references it found.
+    circular_cells: Vec<(usize, u32, u32)>,
     /// Formulas wait to be calculated (manual calculation).
     stale: bool,
     /// How many calculations covered every formula, and how many only
@@ -180,6 +182,7 @@ impl Default for CalcState {
             typed: Vec::new(),
             blocked: Vec::new(),
             unsettled: false,
+            circular_cells: Vec::new(),
             stale: false,
             runs: (0, 0),
             settle_depth: eval::SETTLE_DEPTH,
@@ -370,6 +373,14 @@ impl Workbook {
         }
     }
 
+    /// The cells that are part of a circular reference, in sheet order
+    /// (Error Checking > Circular References, and the status bar): the
+    /// formulas that refer to one another in a loop, each showing 0. Empty
+    /// when `circular` is false, and with iterative calculation.
+    pub fn circular_cells(&self) -> &[(usize, u32, u32)] {
+        &self.calc.circular_cells
+    }
+
     /// True when formulas wait for `calculate_now` (manual calculation):
     /// the status bar then shows "Calculate".
     pub fn needs_calculation(&self) -> bool {
@@ -418,6 +429,19 @@ impl Workbook {
             self.calc.visibility = true;
             self.calc.stale |= self.calc.mode == CalcMode::Manual;
         }
+    }
+
+    /// The cells an expression stands for once evaluated, as read from the
+    /// cell (`sheet`, `row`, `col`): see [`EvalSession::areas`]. `None`
+    /// when it does not evaluate to a reference.
+    pub fn evaluate_areas(
+        &self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        expr: &Expr,
+    ) -> Option<Vec<Reference>> {
+        self.eval_session().areas(sheet, row, col, expr).ok()
     }
 
     /// Evaluate expressions against the current values, see
@@ -646,9 +670,13 @@ impl Workbook {
             self.circular |= result.circular;
             st.unsettled |= result.unsettled;
             st.rects.extend(result.moved);
+            st.circular_cells.extend(result.circular_cells);
+            st.circular_cells.sort_unstable();
+            st.circular_cells.dedup();
         } else {
             self.circular = result.circular;
             st.unsettled = result.unsettled;
+            st.circular_cells = result.circular_cells;
         }
     }
 }
