@@ -84,6 +84,7 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     pivot::on_sheet_duplicated(wb, copy, original);
     drawing::on_sheet_duplicated(wb, copy, original);
     crate::ink::on_sheet_duplicated(wb, copy, original);
+    crate::custom_view::on_sheet_duplicated(wb, copy, original);
     hyperlink::on_sheet_duplicated(wb, copy, original);
 }
 
