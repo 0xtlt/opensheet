@@ -1215,9 +1215,8 @@ impl ExcelApp {
                     cx,
                     |this, window, cx| {
                         let entries = vec![
-                            MenuEntry::new(t("Sort A to Z", "Trier de A à Z"), |a, _, cx| a.sort(true, cx)).icon("sort-asc"),
-                            MenuEntry::new(t("Sort Z to A", "Trier de Z à A"), |a, _, cx| a.sort(false, cx))
-                                .icon("sort-desc"),
+                            MenuEntry::command(filters::Cmd::SortAscending, this),
+                            MenuEntry::command(filters::Cmd::SortDescending, this),
                             MenuEntry::command(filters::Cmd::CustomSort, this),
                             MenuEntry::separator(),
                             MenuEntry::command(filters::Cmd::Toggle, this).shortcut("⇧⌘L"),
@@ -1884,12 +1883,8 @@ impl ExcelApp {
                     .items_center()
                     .gap(px(2.))
                     .child(rows(vec![
-                        self.icon_btn("dt-asc", "sort-asc", t("Sort A to Z", "Trier de A à Z"), false, cx, |this, _, cx| {
-                            this.sort(true, cx)
-                        }),
-                        self.icon_btn("dt-desc", "sort-desc", t("Sort Z to A", "Trier de Z à A"), false, cx, |this, _, cx| {
-                            this.sort(false, cx)
-                        }),
+                        self.cmd_icon("dt-asc", filters::Cmd::SortAscending, cx),
+                        self.cmd_icon("dt-desc", filters::Cmd::SortDescending, cx),
                     ]))
                     .child(self.cmd_large("dt-sort", filters::Cmd::Sort, false, cx))
                     .child(self.cmd_large("dt-filter", filters::Cmd::Toggle, false, cx))
@@ -1905,7 +1900,7 @@ impl ExcelApp {
                 row(vec![
                     self.cmd_large("dt-ttc", misc::Cmd::TextToColumns, false, cx),
                     self.cmd_large("dt-flash", misc::Cmd::FlashFill, false, cx),
-                    self.cmd_large("dt-dup", tables::Cmd::RemoveDuplicates, false, cx),
+                    self.cmd_large("dt-dup", filters::Cmd::RemoveDuplicates, false, cx),
                     self.cmd_large("dt-valid", validation::Cmd::Menu, true, cx),
                     self.cmd_large("dt-consolidate", misc::Cmd::Consolidate, false, cx),
                 ]),

@@ -457,6 +457,7 @@ impl ExcelApp {
             .on_action(cx.listener(Self::on_auto_sum))
             .on_action(cx.listener(Self::on_insert_rows))
             .on_action(cx.listener(Self::on_delete_rows))
+            .on_action(cx.listener(Self::on_open_drop_down))
             .child(
                 canvas(
                     move |bounds, window, cx| {
@@ -1348,6 +1349,25 @@ impl Render for ExcelApp {
                     .on_action(cx.listener(|this, _: &NewWorkbook, window, cx| this.new_workbook(window, cx)))
             })
             .on_action(cx.listener(|this, _: &Quit, window, cx| this.request_quit(window, cx)))
+            // A press reported outside the window never comes from a real
+            // pointer: automation tools send one after each click. Painted
+            // first, this listener swallows it before a pop-up, painted later,
+            // takes it for a click elsewhere and closes.
+            .child(
+                canvas(
+                    |_, _, _| {},
+                    |_, _, window, _| {
+                        window.on_mouse_event(|ev: &MouseDownEvent, phase, _, cx| {
+                            let outside = ev.position.x < px(0.) || ev.position.y < px(0.);
+                            if phase == DispatchPhase::Capture && outside {
+                                cx.stop_propagation();
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .size_0(),
+            )
             .child(titlebar)
             .child(tabs)
             .child(ribbon)

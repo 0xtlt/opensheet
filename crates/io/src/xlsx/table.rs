@@ -12,8 +12,10 @@
 //! tables, XML maps, the comment of a table, custom table styles (the
 //! name stays, and draws nothing).
 
-use super::dxf::{DxfColors, Dxfs};
-use super::filter::{area, parse_auto_filter, parse_sort, push_auto_filter, push_text_attr};
+use super::dxf::Dxfs;
+use super::filter::{
+    DxfColors, area, parse_auto_filter, parse_sort, push_auto_filter, push_text_attr,
+};
 use super::formula::{from_file_text, to_file_text};
 use super::parts::{Extras, SheetLinks};
 use super::read::{Package, relationships};

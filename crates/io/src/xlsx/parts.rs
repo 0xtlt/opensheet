@@ -8,7 +8,7 @@
 //! states here what it adds; the writer lays the package out from that.
 
 use super::chart::write::Drawing;
-use super::stylerefs::StyleRefs;
+use super::dxf::Dxfs;
 use super::theme;
 use super::write::{NS_DOC_REL, NS_PKG_REL};
 use super::xml::{XML_DECL, push_attr};
@@ -121,8 +121,8 @@ impl Extras {
     /// What `wb` needs beside the parts of the worksheets, of the styles
     /// and of the strings; `drawings` are the charts, which the writer
     /// stores itself. The formats these parts refer to get their ids from
-    /// `refs`.
-    pub fn of(wb: &Workbook, drawings: &[Drawing], refs: &mut StyleRefs) -> Extras {
+    /// `dxfs`.
+    pub fn of(wb: &Workbook, drawings: &[Drawing], dxfs: &mut Dxfs) -> Extras {
         let mut extras = Extras {
             defaults: Vec::new(),
             workbook_rels: Vec::new(),
@@ -138,8 +138,8 @@ impl Extras {
             }
         }
         super::comments::add_parts(wb, &mut extras);
-        super::table::add_parts(wb, &mut extras, &mut refs.dxfs);
-        super::pivot::add_parts(wb, &mut extras, refs);
+        super::table::add_parts(wb, &mut extras, dxfs);
+        super::pivot::add_parts(wb, &mut extras, dxfs);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),

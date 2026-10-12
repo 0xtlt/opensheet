@@ -8,8 +8,9 @@
 //! `read.rs` and `write.rs` hold the package, the workbook part, the styles
 //! and the cells. Each feature stored inside the worksheet or the workbook
 //! part has a file of its own with a `read` / `write` pair (`validation.rs`,
-//! `protection.rs`, `defaults.rs`); the reader and the writer only call
-//! them, at the place the schema gives their elements.
+//! `protection.rs`, `defaults.rs`, `condfmt.rs`, `page.rs`); the reader and
+//! the writer only call them, at the place the schema gives their elements.
+//! `dxf.rs` holds the differential formats rules and tables share.
 //!
 //! [`Workbook`]: opensheet_engine::Workbook
 
@@ -23,11 +24,13 @@ macro_rules! w {
 mod chart;
 mod color;
 mod comments;
+mod condfmt;
 mod defaults;
 mod dxf;
 mod filter;
 mod formula;
 mod numfmt;
+mod page;
 mod parts;
 mod pivot;
 mod protection;

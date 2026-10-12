@@ -122,9 +122,15 @@ fn sample(locale: &'static Locale) -> Workbook {
         }
     }
     wb.update_style(0, rect("D2:D13"), &|s| s.num_fmt = Arc::from("#,##0.00"));
-    for (r, row) in [["Item", "Bin", "Qty"], ["nut", "A", "5"], ["bolt", "B", "50"], ["nut", "B", "7"], ["gear", "A", "8"]]
-        .iter()
-        .enumerate()
+    for (r, row) in [
+        ["Item", "Bin", "Qty"],
+        ["nut", "A", "5"],
+        ["bolt", "B", "50"],
+        ["nut", "B", "7"],
+        ["gear", "A", "8"],
+    ]
+    .iter()
+    .enumerate()
     {
         for (c, text) in row.iter().enumerate() {
             wb.set_cell_text(0, r as u32, 8 + c as u32, text).unwrap();
@@ -147,18 +153,29 @@ fn sample(locale: &'static Locale) -> Workbook {
     };
 
     // 1: one row field, one value field.
-    let basic = wb.pivot_create(source("A1:F13"), on(1, "A3"), false).unwrap();
-    wb.pivot_add_field(basic, REGION, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(basic, SALES_F, Area::Values, None, false).unwrap();
+    let basic = wb
+        .pivot_create(source("A1:F13"), on(1, "A3"), false)
+        .unwrap();
+    wb.pivot_add_field(basic, REGION, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(basic, SALES_F, Area::Values, None, false)
+        .unwrap();
 
     // 2: on the same cache. Two row fields in compact form, a column
     // field, two value fields, a filter field showing one item.
-    let cross = wb.pivot_create(source("A1:F13"), on(1, "A16"), false).unwrap();
-    wb.pivot_add_field(cross, REGION, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(cross, PRODUCT, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(cross, NOTE, Area::Columns, None, false).unwrap();
-    wb.pivot_add_field(cross, SALES_F, Area::Values, None, false).unwrap();
-    wb.pivot_add_field(cross, UNITS, Area::Values, None, false).unwrap();
+    let cross = wb
+        .pivot_create(source("A1:F13"), on(1, "A16"), false)
+        .unwrap();
+    wb.pivot_add_field(cross, REGION, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(cross, PRODUCT, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(cross, NOTE, Area::Columns, None, false)
+        .unwrap();
+    wb.pivot_add_field(cross, SALES_F, Area::Values, None, false)
+        .unwrap();
+    wb.pivot_add_field(cross, UNITS, Area::Values, None, false)
+        .unwrap();
     let apples = item(&wb, cross, PRODUCT, "Apples");
     let west = item(&wb, cross, REGION, "West");
     update(&mut wb, cross, |p| {
@@ -176,20 +193,28 @@ fn sample(locale: &'static Locale) -> Workbook {
     // 3: tabular form with everything turned on: custom subtotals, blank
     // lines, repeated labels, captions, sorts, filters of the three
     // kinds, the calculations of "Show Values As".
-    let full = wb.pivot_create(source("A1:F13"), on(1, "P3"), false).unwrap();
-    wb.pivot_add_field(full, PRODUCT, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(full, REGION, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(full, NOTE, Area::Filters, None, false).unwrap();
+    let full = wb
+        .pivot_create(source("A1:F13"), on(1, "P3"), false)
+        .unwrap();
+    wb.pivot_add_field(full, PRODUCT, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(full, REGION, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(full, NOTE, Area::Filters, None, false)
+        .unwrap();
     for _ in 0..4 {
-        wb.pivot_add_field(full, SALES_F, Area::Values, None, false).unwrap();
+        wb.pivot_add_field(full, SALES_F, Area::Values, None, false)
+            .unwrap();
     }
-    wb.pivot_add_field(full, UNITS, Area::Values, None, false).unwrap();
+    wb.pivot_add_field(full, UNITS, Area::Values, None, false)
+        .unwrap();
     let east = item(&wb, full, REGION, "East");
     let late = item(&wb, full, NOTE, "late");
     update(&mut wb, full, |p| {
         p.name = "Everything".to_string();
         p.set_report_layout(FieldLayout::Tabular);
-        p.fields[PRODUCT].subtotals = Subtotals::Custom(vec![Aggregation::Max, Aggregation::Sum, Aggregation::Varp]);
+        p.fields[PRODUCT].subtotals =
+            Subtotals::Custom(vec![Aggregation::Max, Aggregation::Sum, Aggregation::Varp]);
         p.fields[PRODUCT].blank_line = true;
         p.fields[PRODUCT].repeat_labels = true;
         p.fields[PRODUCT].show_all = true;
@@ -237,14 +262,23 @@ fn sample(locale: &'static Locale) -> Workbook {
 
     // 4: dates grouped by years, quarters and months, on a cache of its
     // own; outline form; values moved to the rows.
-    let dates = wb.pivot_create(source("A1:E13"), on(2, "A3"), false).unwrap();
-    wb.pivot_add_field(dates, DATE, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(dates, SALES_F, Area::Values, None, false).unwrap();
-    wb.pivot_add_field(dates, UNITS, Area::Values, None, false).unwrap();
+    let dates = wb
+        .pivot_create(source("A1:E13"), on(2, "A3"), false)
+        .unwrap();
+    wb.pivot_add_field(dates, DATE, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(dates, SALES_F, Area::Values, None, false)
+        .unwrap();
+    wb.pivot_add_field(dates, UNITS, Area::Values, None, false)
+        .unwrap();
     update(&mut wb, dates, |p| {
         p.name = "Dates".to_string();
         p.set_report_layout(FieldLayout::Outline);
-        let values = p.col_fields.iter().position(|a| *a == AxisField::Values).unwrap();
+        let values = p
+            .col_fields
+            .iter()
+            .position(|a| *a == AxisField::Values)
+            .unwrap();
         assert!(p.move_entry(Area::Columns, values, Area::Rows, 1, locale));
         p.options.col_grand_totals = false;
         p.set_value_filter(
@@ -258,14 +292,25 @@ fn sample(locale: &'static Locale) -> Workbook {
 
     // 5: numbers grouped by interval and items grouped by hand, on a
     // third cache; filter fields laid out over, then down.
-    let groups = wb.pivot_create(source("A1:D13"), on(2, "H5"), false).unwrap();
-    wb.pivot_add_field(groups, REGION, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(groups, SALES_F, Area::Columns, None, false).unwrap();
-    wb.pivot_add_field(groups, PRODUCT, Area::Filters, None, false).unwrap();
-    wb.pivot_add_field(groups, SALES_F, Area::Values, None, false).unwrap();
-    wb.pivot_group_numbers(groups, SALES_F, Some(0.0), None, 50.0, false).unwrap();
-    let picked = [item(&wb, groups, REGION, "North"), item(&wb, groups, REGION, "West")];
-    wb.pivot_group_items(groups, REGION, &picked, false).unwrap();
+    let groups = wb
+        .pivot_create(source("A1:D13"), on(2, "H5"), false)
+        .unwrap();
+    wb.pivot_add_field(groups, REGION, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(groups, SALES_F, Area::Columns, None, false)
+        .unwrap();
+    wb.pivot_add_field(groups, PRODUCT, Area::Filters, None, false)
+        .unwrap();
+    wb.pivot_add_field(groups, SALES_F, Area::Values, None, false)
+        .unwrap();
+    wb.pivot_group_numbers(groups, SALES_F, Some(0.0), None, 50.0, false)
+        .unwrap();
+    let picked = [
+        item(&wb, groups, REGION, "North"),
+        item(&wb, groups, REGION, "West"),
+    ];
+    wb.pivot_group_items(groups, REGION, &picked, false)
+        .unwrap();
     let pears = item(&wb, groups, PRODUCT, "Pears");
     update(&mut wb, groups, |p| {
         p.name = "Groups".to_string();
@@ -281,14 +326,18 @@ fn sample(locale: &'static Locale) -> Workbook {
     let on_table = wb
         .pivot_create(PivotSource::Name("Stock".to_string()), on(2, "T3"), false)
         .unwrap();
-    wb.pivot_add_field(on_table, 1, Area::Columns, None, false).unwrap();
-    wb.pivot_add_field(on_table, 0, Area::Rows, None, false).unwrap();
-    wb.pivot_add_field(on_table, 2, Area::Values, None, false).unwrap();
+    wb.pivot_add_field(on_table, 1, Area::Columns, None, false)
+        .unwrap();
+    wb.pivot_add_field(on_table, 0, Area::Rows, None, false)
+        .unwrap();
+    wb.pivot_add_field(on_table, 2, Area::Values, None, false)
+        .unwrap();
     update(&mut wb, on_table, |p| {
         p.set_function(0, Aggregation::Max, locale);
         p.data_fields[0].show_as = ShowAs::RankDescending { field: 0 };
     });
-    wb.pivot_create(source("A1:F13"), on(2, "T25"), false).unwrap();
+    wb.pivot_create(source("A1:F13"), on(2, "T25"), false)
+        .unwrap();
     wb.commit("pivots");
     wb
 }
@@ -336,7 +385,15 @@ fn pivots_round_trip() {
     let names: Vec<&str> = original.pivots().map(|(_, p)| p.name.as_str()).collect();
     assert_eq!(
         names,
-        ["PivotTable1", "Cross & <tab>", "Everything", "Dates", "Groups", "PivotTable2", "PivotTable3"]
+        [
+            "PivotTable1",
+            "Cross & <tab>",
+            "Everything",
+            "Dates",
+            "Groups",
+            "PivotTable2",
+            "PivotTable3"
+        ]
     );
     let bytes = to_bytes(&original);
     keep("opensheet-pivots.xlsx", &bytes);
@@ -361,7 +418,10 @@ fn pivots_round_trip() {
     changed.commit("refresh");
     let (sheet, basic) = named(&changed, "PivotTable1");
     let total = basic.location.unwrap();
-    assert_eq!(changed.value_at(sheet, total.r1, total.c1), Value::Number(2044.75));
+    assert_eq!(
+        changed.value_at(sheet, total.r1, total.c1),
+        Value::Number(2044.75)
+    );
     assert_eq!(value(&loaded, 1, "B8"), Value::Number(1044.75));
 
     // A second trip changes nothing, down to the bytes of every part.

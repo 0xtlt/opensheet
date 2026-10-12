@@ -24,10 +24,11 @@
 //! filters, slicers and timelines, the member properties of OLAP sources.
 //! Times are kept to the second.
 
+use super::dxf::Dxfs;
 use super::filter::{area, push_text_attr};
 use super::parts::{Extras, SheetLinks};
 use super::read::{Package, relationships};
-use super::stylerefs::{StyleLookup, StyleRefs};
+use super::stylerefs::StyleLookup;
 use super::write::{NS_DOC_REL, NS_MAIN, NS_PKG_REL, push_number};
 use super::xml::{Event, Reader, Tag, XML_DECL, decode_cell_text};
 use opensheet_engine::datetime::{date_to_serial, serial_to_ymd};
@@ -406,7 +407,7 @@ fn push_field_group(x: &mut String, cache: &PivotCache, index: usize) {
 }
 
 /// The definition part of a cache.
-fn definition_xml(cache: &PivotCache, source: &PivotSource, refs: &mut StyleRefs) -> String {
+fn definition_xml(cache: &PivotCache, source: &PivotSource, dxfs: &mut Dxfs) -> String {
     let mut x = String::from(XML_DECL);
     w!(
         x,
@@ -431,7 +432,7 @@ fn definition_xml(cache: &PivotCache, source: &PivotSource, refs: &mut StyleRefs
     for (index, field) in cache.fields.iter().enumerate() {
         x.push_str("<cacheField");
         push_text_attr(&mut x, "name", &field.name);
-        w!(x, " numFmtId=\"{}\"", refs.num_fmts.id(&field.num_fmt));
+        w!(x, " numFmtId=\"{}\"", dxfs.num_fmt_id(&field.num_fmt));
         if field.is_database() {
             x.push('>');
             push_shared_items(&mut x, field, cache.is_date(index));
@@ -736,7 +737,7 @@ fn push_filter(x: &mut String, filter: &PivotFilter, id: usize) {
 }
 
 /// Append a `<dataField>`.
-fn push_data_field(x: &mut String, data: &DataField, at: &Positions, refs: &mut StyleRefs) {
+fn push_data_field(x: &mut String, data: &DataField, at: &Positions, dxfs: &mut Dxfs) {
     x.push_str("<dataField");
     push_text_attr(x, "name", &data.name);
     w!(x, " fld=\"{}\"", data.field);
@@ -782,7 +783,7 @@ fn push_data_field(x: &mut String, data: &DataField, at: &Positions, refs: &mut 
         base_field.unwrap_or(0)
     );
     if let Some(format) = &data.num_fmt {
-        w!(x, " numFmtId=\"{}\"", refs.num_fmts.id(format));
+        w!(x, " numFmtId=\"{}\"", dxfs.num_fmt_id(format));
     }
     if later.is_empty() {
         x.push_str("/>");
@@ -801,7 +802,7 @@ fn push_pivot_field(
     p: &PivotTable,
     index: usize,
     default: &PivotField,
-    refs: &mut StyleRefs,
+    dxfs: &mut Dxfs,
 ) {
     let field = &p.fields[index];
     let axis = if p.row_fields.contains(&AxisField::Field(index)) {
@@ -824,7 +825,7 @@ fn push_pivot_field(
         x.push_str(" dataField=\"1\"");
     }
     if let Some(format) = &field.num_fmt {
-        w!(x, " numFmtId=\"{}\"", refs.num_fmts.id(format));
+        w!(x, " numFmtId=\"{}\"", dxfs.num_fmt_id(format));
     }
     match field.layout {
         FieldLayout::Compact => {}
@@ -942,7 +943,7 @@ fn push_axis(x: &mut String, element: &str, axis: &[AxisField]) {
 }
 
 /// The part of one PivotTable, on the cache numbered `cache_id`.
-fn table_xml(wb: &Workbook, p: &PivotTable, cache_id: usize, refs: &mut StyleRefs) -> String {
+fn table_xml(wb: &Workbook, p: &PivotTable, cache_id: usize, dxfs: &mut Dxfs) -> String {
     let options = &p.options;
     let report = &*p.report;
     let mut x = String::from(XML_DECL);
@@ -1047,7 +1048,7 @@ fn table_xml(wb: &Workbook, p: &PivotTable, cache_id: usize, refs: &mut StyleRef
     w!(x, "<pivotFields count=\"{}\">", p.fields.len());
     for index in 0..p.fields.len() {
         let default = defaults.fields.get(index).cloned().unwrap_or_default();
-        push_pivot_field(&mut x, p, index, &default, refs);
+        push_pivot_field(&mut x, p, index, &default, dxfs);
     }
     x.push_str("</pivotFields>");
     push_axis(&mut x, "rowFields", &p.row_fields);
@@ -1080,7 +1081,7 @@ fn table_xml(wb: &Workbook, p: &PivotTable, cache_id: usize, refs: &mut StyleRef
     if !p.data_fields.is_empty() {
         w!(x, "<dataFields count=\"{}\">", p.data_fields.len());
         for data in &p.data_fields {
-            push_data_field(&mut x, data, &at, refs);
+            push_data_field(&mut x, data, &at, dxfs);
         }
         x.push_str("</dataFields>");
     }
@@ -1116,8 +1117,8 @@ fn single_rel(kind: &str, target: &str) -> String {
 }
 
 /// What the PivotTables of a workbook add to its package. The number
-/// formats they name get their ids from `refs`.
-pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras, refs: &mut StyleRefs) {
+/// formats they name get their ids from `dxfs`.
+pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras, dxfs: &mut Dxfs) {
     // The caches, each once, in the order the PivotTables come in.
     let mut caches: Vec<&Arc<PivotCache>> = Vec::new();
     let mut tables = 0;
@@ -1131,7 +1132,7 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras, refs: &mut StyleRefs
                 extras.add_part(
                     format!("xl/pivotCache/pivotCacheDefinition{n}.xml"),
                     Some(CT_DEFINITION),
-                    definition_xml(&p.cache, &p.source, refs),
+                    definition_xml(&p.cache, &p.source, dxfs),
                 );
                 extras.add_part(
                     format!("xl/pivotCache/_rels/pivotCacheDefinition{n}.xml.rels"),
@@ -1150,7 +1151,7 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras, refs: &mut StyleRefs
             extras.add_part(
                 format!("xl/pivotTables/pivotTable{tables}.xml"),
                 Some(CT_TABLE),
-                table_xml(wb, p, cache, refs),
+                table_xml(wb, p, cache, dxfs),
             );
             extras.add_part(
                 format!("xl/pivotTables/_rels/pivotTable{tables}.xml.rels"),

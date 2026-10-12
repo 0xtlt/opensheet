@@ -12,7 +12,8 @@
 //! a date list, sorts by icon or by columns, the sort method of East Asian
 //! text.
 
-use super::dxf::{DxfColors, Dxfs};
+use super::color::{Palette, RawColor};
+use super::dxf::Dxfs;
 use super::write::push_number;
 use super::xml::{Event, Reader, Tag, decode_cell_text, push_cell_text};
 use opensheet_engine::filter::{
@@ -21,7 +22,8 @@ use opensheet_engine::filter::{
 };
 use opensheet_engine::ops::{SortLevel, SortOn};
 use opensheet_engine::refs::cell_name;
-use opensheet_engine::{Rect, Workbook};
+use opensheet_engine::style::StylePatch;
+use opensheet_engine::{Color, Rect, Workbook};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -145,14 +147,23 @@ fn push_criteria(
         }
         Criteria::Color(color) => {
             if color.font {
-                let id = dxfs.font_color(color.color);
+                let id = font_color_id(dxfs, color.color);
                 w!(x, "<colorFilter dxfId=\"{id}\" cellColor=\"0\"/>");
             } else {
-                let id = dxfs.fill(color.color);
+                let id = dxfs.cell_fill_id(color.color);
                 w!(x, "<colorFilter dxfId=\"{id}\"/>");
             }
         }
     }
+}
+
+/// The `dxfId` of the text colour a filter or a sort looks for (`None`:
+/// automatic).
+fn font_color_id(dxfs: &mut Dxfs, color: Option<Color>) -> u32 {
+    dxfs.id(&StylePatch {
+        font_color: Some(color),
+        ..StylePatch::default()
+    })
 }
 
 fn finite(n: f64) -> f64 {
@@ -184,10 +195,10 @@ fn push_sort(x: &mut String, sort: &SortState, data: Rect, dxfs: &mut Dxfs) {
         );
         match (&level.on, &level.custom_list) {
             (SortOn::CellColor(color), _) => {
-                w!(x, " dxfId=\"{}\"", dxfs.fill(*color));
+                w!(x, " dxfId=\"{}\"", dxfs.cell_fill_id(*color));
             }
             (SortOn::FontColor(color), _) => {
-                w!(x, " dxfId=\"{}\"", dxfs.font_color(*color));
+                w!(x, " dxfId=\"{}\"", font_color_id(dxfs, *color));
             }
             (SortOn::Values, Some(list)) => push_text_attr(x, "customList", &list.join(",")),
             (SortOn::Values, None) => {}
@@ -266,6 +277,77 @@ pub(crate) fn push_auto_filter(
 
 fn text_attr(tag: &Tag, name: &str) -> Option<String> {
     tag.attr(name).map(|v| decode_cell_text(&v).into_owned())
+}
+
+/// The colours of one `<dxf>` of a file that is read.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct DxfColors {
+    /// The colour of the text; `None` when the format has none or says
+    /// automatic.
+    pub font: Option<Color>,
+    /// The fill; `None` when the format has none or says no fill.
+    pub fill: Option<Color>,
+}
+
+/// The colours of the `<dxf>` elements of a styles part, by `dxfId`.
+pub(crate) fn parse_colors(styles: &str, palette: &Palette) -> Vec<DxfColors> {
+    let mut out = Vec::new();
+    let mut r = Reader::new(styles);
+    loop {
+        match r.next() {
+            Event::Open(t) if t.name == "styleSheet" => {}
+            Event::Open(t) if t.name == "dxfs" && !t.empty => loop {
+                match r.next() {
+                    Event::Open(dxf) if dxf.name == "dxf" => {
+                        let mut colors = DxfColors::default();
+                        // Foreground and background of the pattern, and
+                        // whether it is one that shows.
+                        let (mut fg, mut bg, mut solid) = (None, None, true);
+                        let mut font = false;
+                        let mut depth = usize::from(!dxf.empty);
+                        while depth > 0 {
+                            match r.next() {
+                                Event::Open(t) => {
+                                    match t.name {
+                                        "font" => font = !t.empty,
+                                        "color" if font => {
+                                            colors.font = RawColor::from_tag(&t).resolve(palette);
+                                        }
+                                        "patternFill" => {
+                                            solid =
+                                                t.attr("patternType").as_deref() != Some("none");
+                                        }
+                                        "fgColor" => fg = RawColor::from_tag(&t).resolve(palette),
+                                        "bgColor" => bg = RawColor::from_tag(&t).resolve(palette),
+                                        _ => {}
+                                    }
+                                    depth += usize::from(!t.empty);
+                                }
+                                Event::Close(name) => {
+                                    font &= name != "font";
+                                    depth -= 1;
+                                }
+                                Event::Eof => break,
+                                Event::Text(_) => {}
+                            }
+                        }
+                        // Excel writes the colour a filter goes by as the
+                        // foreground of a solid pattern, and the fill of a
+                        // conditional format as the background.
+                        colors.fill = fg.or(bg).filter(|_| solid);
+                        out.push(colors);
+                    }
+                    Event::Open(t) => r.skip(&t),
+                    Event::Close(_) | Event::Eof => break,
+                    Event::Text(_) => {}
+                }
+            },
+            Event::Open(t) => r.skip(&t),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The children of a `<filterColumn>`: its criterion, if it is one the
@@ -526,9 +608,7 @@ pub(crate) fn parse_auto_filter<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xlsx::color::Palette;
-    use crate::xlsx::dxf::parse_colors;
-    use opensheet_engine::{Color, Locale};
+    use opensheet_engine::Locale;
 
     fn parse(xml: &str, colors: &[DxfColors]) -> Option<AutoFilter> {
         let mut r = Reader::new(xml);
@@ -561,7 +641,7 @@ mod tests {
     }
 
     fn written(wb: &Workbook) -> (String, Dxfs) {
-        let mut dxfs = Dxfs::default();
+        let mut dxfs = Dxfs::new(Vec::new(), Locale::en());
         let mut x = String::new();
         push_auto_filter(&mut x, wb, 0, FilterScope::Sheet, &mut dxfs);
         (x, dxfs)
@@ -657,7 +737,7 @@ mod tests {
             ],
         });
         let wb = with_filter(filter.clone());
-        let (xml, dxfs) = written(&wb);
+        let (xml, mut dxfs) = written(&wb);
         assert_eq!(
             xml,
             concat!(
@@ -678,7 +758,17 @@ mod tests {
             )
         );
         // And back, through the formats the colours went to.
-        let styles = dxfs.apply("<styleSheet><dxfs count=\"0\"/></styleSheet>");
+        let styles = format!("<styleSheet>{}</styleSheet>", dxfs.xml());
+        assert_eq!(
+            styles,
+            concat!(
+                "<styleSheet><dxfs count=\"3\">",
+                "<dxf><fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFFFFF00\"/><bgColor rgb=\"FFFFFF00\"/></patternFill></fill></dxf>",
+                "<dxf><font><color auto=\"1\"/></font></dxf>",
+                "<dxf><font><color rgb=\"FFC00000\"/></font></dxf>",
+                "</dxfs></styleSheet>"
+            )
+        );
         let colors = parse_colors(&styles, &Palette::default());
         assert_eq!(parse(&xml, &colors), Some(filter));
     }
@@ -799,6 +889,43 @@ mod tests {
         // Cut short anywhere, it still ends.
         for cut in (0..xml.len()).filter(|i| xml.is_char_boundary(*i)) {
             parse(&xml[..cut], &colors);
+        }
+    }
+
+    #[test]
+    fn colours_of_formats_from_excel() {
+        // A filter colour, a conditional format, theme and indexed colours,
+        // and elements that are not colours of the format itself.
+        let styles = r#"<styleSheet><fonts><font><color rgb="FF123456"/></font></fonts><dxfs count="5">
+            <dxf><fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor rgb="FF000000"/></patternFill></fill></dxf>
+            <dxf><font><b/><color rgb="FF9C0006"/></font><fill><patternFill><bgColor rgb="FFFFC7CE"/></patternFill></fill><border><left style="thin"><color rgb="FF00FF00"/></left></border></dxf>
+            <dxf><font><color theme="4"/></font><fill><patternFill><bgColor indexed="10"/></patternFill></fill></dxf>
+            <dxf/>
+            <dxf><fill><patternFill patternType="none"><fgColor rgb="FFFF0000"/></patternFill></fill></dxf>
+            </dxfs><extLst><ext><dxfs><dxf><font><color rgb="FF000001"/></font></dxf></dxfs></ext></extLst></styleSheet>"#;
+        let colors = parse_colors(styles, &Palette::default());
+        assert_eq!(colors.len(), 5);
+        assert_eq!(
+            colors[0],
+            DxfColors {
+                font: None,
+                fill: Some(Color(0xFFFF00))
+            }
+        );
+        assert_eq!(
+            colors[1],
+            DxfColors {
+                font: Some(Color(0x9C0006)),
+                fill: Some(Color(0xFFC7CE))
+            }
+        );
+        assert_eq!(colors[2].font, Some(Color(0x4472C4)));
+        assert_eq!(colors[2].fill, Some(Color(0xFF0000)));
+        assert_eq!(colors[3], DxfColors::default());
+        assert_eq!(colors[4], DxfColors::default());
+        // Cut short anywhere, it still ends.
+        for cut in (0..styles.len()).filter(|i| styles.is_char_boundary(*i)) {
+            parse_colors(&styles[..cut], &Palette::default());
         }
     }
 }

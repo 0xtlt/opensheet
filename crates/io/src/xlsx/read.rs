@@ -3,11 +3,13 @@
 use super::chart::Track;
 use super::chart::read::{parse_chart, parse_drawing};
 use super::color::{Palette, RawColor, blend, parse_rgb, parse_theme};
+use super::condfmt::{self, CondFormats};
 use super::defaults::{self, Defaults};
+use super::dxf::read_dxf;
 use super::formula::from_file_text;
 use super::numfmt::{builtin_code, shows_date};
 use super::xml::{Event, Reader, Tag, decode_cell_text, parse_bool};
-use super::{col_width_to_px, points_to_px, protection, validation};
+use super::{col_width_to_px, page, points_to_px, protection, validation};
 use crate::{IoError, Result, decode_utf16};
 use opensheet_engine::ast::Expr;
 use opensheet_engine::chart::Chart;
@@ -16,7 +18,7 @@ use opensheet_engine::protect::WorkbookProtection;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
     Border, BorderStyle, Borders, DEFAULT_FONT, DEFAULT_FONT_SIZE, Font, HAlign, Style, StyleId,
-    StyleTable, Underline, VAlign,
+    StylePatch, StyleTable, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
 use opensheet_engine::workbook::{Cell, Content, DefinedName, Sheet};
@@ -549,6 +551,8 @@ struct StylesPart {
     palette: Palette,
     /// The sizes that follow from the workbook's default font.
     defaults: Defaults,
+    /// The differential formats, by `dxfId`.
+    dxfs: Vec<StylePatch>,
 }
 
 // `Style` values are built field by field so the engine can add fields.
@@ -571,6 +575,9 @@ fn parse_styles(
     let mut style_xfs: Vec<RawXf> = Vec::new();
     // `xfId` of the cell style called Normal.
     let mut normal_xf = 0usize;
+    // The differential formats use colours, which may be redefined after
+    // them in the part: they are read once everything else is.
+    let mut dxfs_at: Option<(&str, Tag)> = None;
 
     let mut r = Reader::new(xml.unwrap_or(""));
     loop {
@@ -605,6 +612,10 @@ fn parse_styles(
                         is_normal.then_some(xf)
                     });
                     normal_xf = normal.into_iter().flatten().next().unwrap_or(0);
+                }
+                "dxfs" => {
+                    dxfs_at = Some((r.rest(), t));
+                    r.skip(&t);
                 }
                 "colors" => {}
                 "indexedColors" => {
@@ -700,10 +711,17 @@ fn parse_styles(
     if out.is_empty() {
         out.push(StyleId(0));
     }
+    let dxfs = match dxfs_at {
+        Some((rest, tag)) => parse_list(&mut Reader::new(rest), &tag, "dxf", |r, dxf| {
+            read_dxf(r, dxf, &palette, locale)
+        }),
+        None => Vec::new(),
+    };
     StylesPart {
         xfs: out,
         palette,
         defaults,
+        dxfs,
     }
 }
 
@@ -754,6 +772,9 @@ struct Ctx<'c> {
     xfs: &'c [StyleId],
     strings: &'c [Arc<str>],
     palette: &'c Palette,
+    /// The differential formats of the workbook, by `dxfId`.
+    dxfs: &'c [StylePatch],
+    locale: &'c Locale,
     /// The sizes that follow from the workbook's default font.
     defaults: Defaults,
     /// In a 1904-based workbook: the styles whose values are dates.
@@ -843,6 +864,8 @@ struct SheetReader<'c> {
     /// The default row height exactly as the file states it, in pixels
     /// (the sheet keeps it in whole pixels).
     stated_row_height: f32,
+    /// The conditional formats, gathered from two places of the part.
+    cond_formats: CondFormats,
     /// Relationship id of the drawing part.
     drawing: Option<String>,
 }
@@ -867,6 +890,7 @@ impl<'c> SheetReader<'c> {
             sheet,
             shared: HashMap::new(),
             arrays: Vec::new(),
+            cond_formats: CondFormats::default(),
             drawing: None,
         };
         let mut r = Reader::new(xml);
@@ -890,7 +914,14 @@ impl<'c> SheetReader<'c> {
                         r.skip(&t);
                     }
                     "mergeCells" => this.merges(&mut r, &t),
+                    "conditionalFormatting" => {
+                        let ctx = this.cond_format_context();
+                        this.cond_formats.read(&mut r, &t, &ctx);
+                    }
                     "dataValidations" => validation::read(&mut r, &t, &mut this.sheet),
+                    // printOptions, pageMargins, pageSetup, headerFooter,
+                    // rowBreaks, colBreaks
+                    _ if page::read(&mut r, &t, &mut this.sheet) => {}
                     "drawing" => {
                         this.drawing = t.attr_local("id").map(Cow::into_owned);
                         r.skip(&t);
@@ -917,6 +948,10 @@ impl<'c> SheetReader<'c> {
                 Event::Open(ext) if ext.name == "ext" && !ext.empty => loop {
                     match r.next() {
                         Event::Open(t) => match t.name {
+                            "conditionalFormattings" => {
+                                let ctx = self.cond_format_context();
+                                self.cond_formats.read_ext(r, &t, &ctx);
+                            }
                             "dataValidations" => validation::read(r, &t, &mut self.sheet),
                             _ => r.skip(&t),
                         },
@@ -931,6 +966,14 @@ impl<'c> SheetReader<'c> {
         }
     }
 
+    fn cond_format_context(&self) -> condfmt::Context<'c> {
+        condfmt::Context {
+            palette: self.ctx.palette,
+            dxfs: self.ctx.dxfs,
+            locale: self.ctx.locale,
+        }
+    }
+
     fn sheet_pr<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
         if tag.empty {
             return;
@@ -938,9 +981,13 @@ impl<'c> SheetReader<'c> {
         loop {
             match r.next() {
                 Event::Open(t) => {
-                    if t.name == "tabColor" {
+                    match t.name {
                         // An automatic tab colour is no colour.
-                        self.sheet.tab_color = RawColor::from_tag(&t).resolve(self.ctx.palette);
+                        "tabColor" => {
+                            self.sheet.tab_color = RawColor::from_tag(&t).resolve(self.ctx.palette)
+                        }
+                        "pageSetUpPr" => page::read_sheet_pr(&t, &mut self.sheet.page),
+                        _ => {}
                     }
                     r.skip(&t);
                 }
@@ -1270,6 +1317,7 @@ impl<'c> SheetReader<'c> {
     }
 
     fn finish(mut self) -> LoadedSheet {
+        std::mem::take(&mut self.cond_formats).finish(&mut self.sheet);
         // The cells an array formula spills into are stored in the file with
         // their cached values. As constants they would block the spill, so
         // they are dropped: the engine recomputes them.
@@ -1477,6 +1525,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         xfs: &styles.xfs,
         strings: &strings,
         palette: &styles.palette,
+        dxfs: &styles.dxfs,
+        locale,
         defaults: styles.defaults,
         shift_dates: info.date1904.then_some(&date_styles),
     };
@@ -1517,7 +1567,10 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         );
         // Note boxes are placed with the sizes the file gives its columns
         // and rows.
-        let default_sizes = (loaded.sheet.default_col_width, loaded.sheet.default_row_height);
+        let default_sizes = (
+            loaded.sheet.default_col_width,
+            loaded.sheet.default_row_height,
+        );
         super::comments::read_sheet(&mut pkg, &part, &mut loaded.sheet, default_sizes, &comments);
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
@@ -1541,16 +1594,22 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     names.sort_by_key(|n| n.local_sheet.is_some());
     for raw in names {
         let key = raw.name.to_uppercase();
-        // `_xlnm.` names are print areas, filter ranges and the like.
-        if raw.name.is_empty() || key.starts_with("_XLNM.") {
+        let scope = raw
+            .local_sheet
+            .and_then(|i| loaded_as.get(i).copied().flatten());
+        // The print area and the print titles of a sheet are part of its
+        // page setup. The other `_xlnm.` names (filter ranges and the
+        // like) belong to features that keep their ranges elsewhere.
+        let sheet = scope.and_then(|sheet| wb.sheets.get_mut(sheet));
+        if page::read_name(&key, &raw.text, sheet)
+            || raw.name.is_empty()
+            || key.starts_with("_XLNM.")
+        {
             continue;
         }
         let Some(expr) = from_file_text(&raw.text) else {
             continue;
         };
-        let scope = raw
-            .local_sheet
-            .and_then(|i| loaded_as.get(i).copied().flatten());
         let names = match scope {
             Some(sheet) => &mut wb.sheets[sheet].names,
             None => &mut wb.names,
