@@ -87,6 +87,8 @@ pub struct Sheet {
     /// Scenarios and data tables (What-If Analysis), see `whatif.rs`.
     pub scenarios: Vec<crate::whatif::Scenario>,
     pub data_tables: Vec<crate::whatif::DataTable>,
+    /// The text files imported into this sheet, see `text_columns.rs`.
+    pub text_imports: Vec<crate::text_columns::TextImport>,
     /// Tables ("Format as Table"), see `table.rs`.
     pub tables: Vec<crate::table::Table>,
     /// Conditional formats, in priority order, see `condfmt.rs`.
@@ -136,6 +138,7 @@ impl Sheet {
             consolidation: None,
             scenarios: Vec::new(),
             data_tables: Vec::new(),
+            text_imports: Vec::new(),
             tables: Vec::new(),
             cond_formats: Vec::new(),
             validations: Vec::new(),

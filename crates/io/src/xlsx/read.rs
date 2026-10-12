@@ -1632,6 +1632,9 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         loaded_as.clear();
     }
 
+    // The text files the sheets import; the names below say where.
+    let mut imports = super::datatools::PendingImports::read(&mut pkg, &sheet_parts);
+
     // Workbook-scoped names first: a name scoped to a sheet that was not
     // loaded (a chart sheet) is kept for the workbook, where it may only
     // take a spelling that is still free.
@@ -1648,6 +1651,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         let sheet = scope.and_then(|sheet| wb.sheets.get_mut(sheet));
         if page::read_name(&key, &raw.text, sheet)
             || super::filter::read_name(&key, &raw.text, scope.and_then(|sheet| wb.sheets.get_mut(sheet)))
+            || imports.read_name(&key, &raw.text, scope)
             || raw.name.is_empty()
             || key.starts_with("_XLNM.")
         {
@@ -1668,6 +1672,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     }
 
     super::filter::finish_names(&mut wb);
+    imports.finish(&mut wb);
 
     // Formulas the engine cannot calculate keep their cached result.
     super::formula::keep_cached_results(&mut wb);

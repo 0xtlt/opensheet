@@ -3,8 +3,9 @@
 
 mod common;
 
-use common::{assert_worksheet_order, enter, package, part, part_names, value};
+use common::{assert_well_formed, assert_workbook_order, assert_worksheet_order, enter, package, part, part_names, value};
 use opensheet_engine::consolidate::{ConsolidateFunction, ConsolidateSource, Consolidation};
+use opensheet_engine::text_columns::{ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextImport};
 use opensheet_engine::whatif::{DataTable, Scenario, ScenarioCell};
 use opensheet_engine::{Locale, Rect, Value, Workbook};
 use opensheet_io::{read_xlsx, write_xlsx};
@@ -294,4 +295,105 @@ fn data_tables_round_trip() {
     let back = load(&with_part(&bytes, "xl/worksheets/sheet1.xml", &broken));
     assert_eq!(back.sheets[0].data_tables.len(), 2);
     assert_eq!(value(&back, 0, "E8"), Value::text("50!"));
+}
+
+#[test]
+fn text_imports_round_trip() {
+    let mut wb = list();
+    wb.add_sheet(1);
+    let mut semicolons = Delimiters::only(';');
+    semicolons.consecutive_as_one = true;
+    semicolons.qualifier = None;
+    semicolons.other = Some('|');
+    let delimited = TextImport {
+        name: String::new(),
+        path: "/Users/ann/Sales & co/sales.csv".into(),
+        range: Rect::cell(0, 0),
+        first_row: 2,
+        spec: Spec {
+            layout: Layout::Delimited(semicolons),
+            formats: vec![ColumnFormat::Text, ColumnFormat::General, ColumnFormat::Date(DateOrder::DMY), ColumnFormat::Skip],
+        },
+    };
+    let fixed = TextImport {
+        name: String::new(),
+        path: "/Users/ann/stock.txt".into(),
+        range: Rect::cell(0, 0),
+        first_row: 1,
+        spec: Spec::new(Layout::FixedWidth(vec![5, 9])),
+    };
+    let plain = TextImport {
+        name: String::new(),
+        path: "/Users/ann/notes.txt".into(),
+        range: Rect::cell(0, 0),
+        first_row: 1,
+        spec: Spec::new(Layout::Delimited(Delimiters::default())),
+    };
+    wb.import_text(0, (9, 0), "skipped\n007;x|31/01/2024;gone\n008;y|01/02/2024;gone", delimited.clone()).unwrap();
+    wb.import_text(1, (0, 0), "Jean Dup 12\nAnne Mar  7", fixed.clone()).unwrap();
+    wb.import_text(1, (5, 2), "a\tb", plain.clone()).unwrap();
+    wb.commit("Import Data");
+    let bytes = to_bytes(&wb);
+
+    let names = part_names(&bytes);
+    for name in ["xl/connections.xml", "xl/queryTables/queryTable1.xml", "xl/queryTables/queryTable3.xml", "xl/worksheets/_rels/sheet2.xml.rels"] {
+        assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
+    }
+    let connections = part(&bytes, "xl/connections.xml");
+    assert_well_formed("connections", &connections);
+    for expected in [
+        concat!(
+            "<connection id=\"1\" name=\"sales\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\">",
+            "<textPr sourceFile=\"/Users/ann/Sales &amp; co/sales.csv\" firstRow=\"2\" tab=\"0\" semicolon=\"1\" consecutive=\"1\" qualifier=\"none\" delimiter=\"|\">",
+            "<textFields count=\"4\"><textField type=\"text\"/><textField/><textField type=\"DMY\"/><textField type=\"skip\"/></textFields></textPr></connection>"
+        ),
+        "<textPr sourceFile=\"/Users/ann/stock.txt\" delimited=\"0\"><textFields count=\"3\"><textField/><textField position=\"5\"/><textField position=\"9\"/></textFields></textPr>",
+        "<connection id=\"3\" name=\"notes\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr sourceFile=\"/Users/ann/notes.txt\"/></connection>",
+    ] {
+        assert!(connections.contains(expected), "{expected}\n{connections}");
+    }
+    let query = part(&bytes, "xl/queryTables/queryTable2.xml");
+    assert_well_formed("queryTable2", &query);
+    assert!(query.contains("<queryTable xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" name=\"stock\" connectionId=\"2\""), "{query}");
+    let types = part(&bytes, "[Content_Types].xml");
+    assert!(types.contains("/xl/connections.xml") && types.contains("spreadsheetml.connections+xml"), "{types}");
+    assert!(types.contains("/xl/queryTables/queryTable3.xml") && types.contains("spreadsheetml.queryTable+xml"));
+    assert!(part(&bytes, "xl/_rels/workbook.xml.rels").contains("relationships/connections\" Target=\"connections.xml\""));
+    let rels = part(&bytes, "xl/worksheets/_rels/sheet2.xml.rels");
+    assert!(rels.contains("relationships/queryTable\" Target=\"../queryTables/queryTable2.xml\""), "{rels}");
+    let workbook = part(&bytes, "xl/workbook.xml");
+    assert_workbook_order(&workbook);
+    assert!(workbook.contains("<definedName name=\"sales\" localSheetId=\"0\">Sheet1!$A$10:$C$11</definedName>"), "{workbook}");
+    assert!(workbook.contains("<definedName name=\"notes\" localSheetId=\"1\">Sheet2!$C$6:$D$6</definedName>"), "{workbook}");
+
+    let mut back = load(&bytes);
+    let read = |sheet: usize, index: usize| back.sheets[sheet].text_imports[index].clone();
+    let expect = |mut import: TextImport, name: &str, range: &str| {
+        import.name = name.into();
+        import.range = rect(range);
+        import
+    };
+    assert_eq!(read(0, 0), expect(delimited, "sales", "A10:C11"));
+    // The positions of a fixed-width file say a format for each column.
+    let mut fixed = expect(fixed, "stock", "A1:C2");
+    fixed.spec.formats = vec![ColumnFormat::General; 3];
+    assert_eq!(read(1, 0), fixed);
+    assert_eq!(read(1, 1), expect(plain, "notes", "C6:D6"));
+    // The ranges are not ordinary names of the workbook.
+    assert!(back.all_names().is_empty());
+    assert_eq!(value(&back, 0, "A10"), Value::text("007"));
+    // Read back, an import can be refreshed.
+    back.refresh_text_import(1, 0, "Zoe  Lee 99").unwrap();
+    back.commit("Refresh All");
+    assert_eq!(value(&back, 1, "C1"), Value::Number(99.0));
+    assert_eq!(value(&back, 1, "A2"), Value::Empty);
+
+    // A query on something else than a text file, or without its range, is left out.
+    let other = connections.replace("type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr sourceFile=\"/Users/ann/notes.txt\"/>", "type=\"5\"><dbPr connection=\"x\" command=\"y\"/>");
+    let unnamed = workbook.replace("<definedName name=\"stock\" localSheetId=\"1\">Sheet2!$A$1:$C$2</definedName>", "");
+    assert_ne!(unnamed, workbook);
+    let bytes = with_part(&with_part(&bytes, "xl/connections.xml", &other), "xl/workbook.xml", &unnamed);
+    let back = load(&bytes);
+    assert_eq!(back.sheets[0].text_imports.len(), 1);
+    assert!(back.sheets[1].text_imports.is_empty());
 }

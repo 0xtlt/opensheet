@@ -1,15 +1,19 @@
 //! Splitting text into columns: the logic behind Excel's Convert Text to
-//! Columns Wizard, also used to import a text file.
+//! Columns Wizard, also used to import a text file. An import is
+//! remembered on its sheet (`Sheet::text_imports`, the text connection and
+//! query table of a file) so that it can be refreshed from the file.
 //!
 //! A [`Spec`] says how a line is cut ([`Layout`]: at delimiters or at fixed
 //! positions) and what becomes of each piece ([`ColumnFormat`]). Pieces
 //! kept as "General" are stored the way typing them into a cell would, in
 //! the locale of the workbook.
 
+use crate::ast::StructuralEdit;
 use crate::datetime::{date_to_serial, days_in_month};
+use crate::filter::AutoFilter;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
 use crate::value::Value;
-use crate::workbook::{Content, Workbook};
+use crate::workbook::{ClearMode, Content, Sheet, Workbook};
 use std::sync::Arc;
 
 /// The characters that end a field of delimited text.
@@ -448,6 +452,141 @@ impl Workbook {
     }
 }
 
+/// A text file imported into a sheet (Data > Get Data > From Text/CSV):
+/// where it came from, how it was cut and where it landed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextImport {
+    /// The name of the query, also that of the range in a file.
+    pub name: String,
+    /// The path of the text file.
+    pub path: String,
+    /// The cells the data fills.
+    pub range: Rect,
+    /// The first line imported (1 is the first of the file).
+    pub first_row: u32,
+    pub spec: Spec,
+}
+
+/// The lines of a text file. A line break inside a quoted field does not
+/// end the line.
+pub fn text_lines(text: &str, qualifier: Option<char>) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut quoted = false;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if Some(ch) == qualifier {
+            quoted = !quoted;
+            line.push(ch);
+        } else if !quoted && (ch == '\n' || ch == '\r') {
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            lines.push(std::mem::take(&mut line));
+        } else {
+            line.push(ch);
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+impl TextImport {
+    /// The lines of the file this import takes.
+    fn lines(&self, text: &str) -> Vec<String> {
+        let qualifier = match &self.spec.layout {
+            Layout::Delimited(delimiters) => delimiters.qualifier,
+            Layout::FixedWidth(_) => None,
+        };
+        let skip = self.first_row.saturating_sub(1) as usize;
+        text_lines(text, qualifier).into_iter().skip(skip).collect()
+    }
+}
+
+impl Workbook {
+    /// A name for the query of a file that no import of the workbook and
+    /// no defined name has: the name of the file made a valid name, with
+    /// a number when it is taken.
+    pub fn text_import_name(&self, path: &str) -> String {
+        let stem = std::path::Path::new(path).file_stem().and_then(|stem| stem.to_str()).unwrap_or("data");
+        let mut base: String = stem.chars().map(|ch| if ch.is_alphanumeric() || ch == '_' { ch } else { '_' }).collect();
+        // A name starts with a letter and must not read as a cell.
+        if !base.chars().next().is_some_and(char::is_alphabetic) || crate::refs::parse_cell_name(&base).is_some() {
+            base.insert(0, '_');
+        }
+        let taken = |name: &str| {
+            let key = name.to_uppercase();
+            self.names.contains_key(&key)
+                || self.sheets.iter().any(|sh| sh.names.contains_key(&key) || sh.text_imports.iter().any(|import| import.name.to_uppercase() == key))
+        };
+        let mut name = base.clone();
+        let mut n = 1;
+        while taken(&name) {
+            name = format!("{base}_{n}");
+            n += 1;
+        }
+        name
+    }
+
+    /// Import the text of a file into `sheet` from `dest`, and remember
+    /// the import there. `import.range` and an empty `import.name` are
+    /// filled in. Returns the rectangle written. The caller commits.
+    pub fn import_text(&mut self, sheet: usize, dest: (u32, u32), text: &str, mut import: TextImport) -> Result<Rect, TextColumnsError> {
+        if sheet >= self.sheets.len() {
+            return Err(TextColumnsError::NoData);
+        }
+        let lines = import.lines(text);
+        if lines.is_empty() {
+            return Err(TextColumnsError::NoData);
+        }
+        let extent = self.write_text_columns(sheet, dest, &lines, &import.spec)?;
+        if import.name.is_empty() {
+            import.name = self.text_import_name(&import.path);
+        }
+        import.range = extent;
+        self.snapshot();
+        self.sheets[sheet].text_imports.push(import);
+        Ok(extent)
+    }
+
+    /// Refresh an import with the text its file holds now: the old data
+    /// is cleared and the new written from the same corner. Returns the
+    /// rectangle written. The caller commits.
+    pub fn refresh_text_import(&mut self, sheet: usize, index: usize, text: &str) -> Result<Rect, TextColumnsError> {
+        let import = self.sheets.get(sheet).and_then(|sh| sh.text_imports.get(index)).cloned().ok_or(TextColumnsError::NoData)?;
+        let lines = import.lines(text);
+        let dest = (import.range.r0, import.range.c0);
+        let extent = self.text_columns_extent(dest, &lines, &import.spec)?;
+        self.clear(sheet, import.range, ClearMode::Contents);
+        self.write_text_columns(sheet, dest, &lines, &import.spec)?;
+        self.snapshot();
+        self.sheets[sheet].text_imports[index].range = extent;
+        Ok(extent)
+    }
+
+    /// The import whose data a cell belongs to: its index on the sheet.
+    pub fn text_import_at(&self, sheet: usize, row: u32, col: u32) -> Option<usize> {
+        self.sheets.get(sheet)?.text_imports.iter().position(|import| import.range.contains(row, col))
+    }
+}
+
+/// See `features::on_structural_edit`: the range of an import follows
+/// the rows and columns of its sheet, and an import whose first row or
+/// whose columns are deleted is forgotten.
+pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited_sheet: &str) {
+    if sheet.name != edited_sheet {
+        return;
+    }
+    sheet.text_imports.retain_mut(|import| {
+        let mut range = AutoFilter::new(import.range);
+        let kept = range.adjust(edit);
+        import.range = range.range;
+        kept
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -619,5 +758,77 @@ mod tests {
         w.set_cell_text(0, 2, 0, "12.5").unwrap();
         w.commit("setup");
         assert_eq!(w.text_column_lines(0, Rect::cell(2, 0)).unwrap(), ["12.5"]);
+    }
+
+    fn csv_import(path: &str) -> TextImport {
+        TextImport {
+            name: String::new(),
+            path: path.to_string(),
+            range: Rect::cell(0, 0),
+            first_row: 1,
+            spec: Spec::new(Layout::Delimited(Delimiters::only(','))),
+        }
+    }
+
+    #[test]
+    fn lines_of_a_file() {
+        assert_eq!(text_lines("a\nb\r\nc\rd\n", Some('"')), ["a", "b", "c", "d"]);
+        assert_eq!(text_lines("a,\"x\ny\",b\nc", Some('"')), ["a,\"x\ny\",b", "c"]);
+        assert_eq!(text_lines("a,\"x\ny", None), ["a,\"x", "y"]);
+        assert_eq!(text_lines("a\n\nb", None), ["a", "", "b"]);
+        assert!(text_lines("", None).is_empty());
+    }
+
+    #[test]
+    fn import_and_refresh() {
+        let mut w = wb(&[("E1", "keep")]);
+        let mut import = csv_import("/tmp/sales 2024.csv");
+        import.first_row = 2;
+        let extent = w.import_text(0, (1, 1), "skipped\nName,Qty\nAnn,3\nBob,4\n", import).unwrap();
+        w.commit("Import Data");
+        assert_eq!(extent, Rect::parse("B2:C4").unwrap());
+        assert_eq!(val(&w, "B3"), Value::text("Ann"));
+        assert_eq!(val(&w, "C4"), Value::Number(4.0));
+        let kept = w.sheets[0].text_imports[0].clone();
+        assert_eq!((kept.name.as_str(), kept.range), ("sales_2024", extent));
+        assert_eq!(w.text_import_at(0, 2, 2), Some(0));
+        assert_eq!(w.text_import_at(0, 0, 0), None);
+        // The file changed: fewer rows, one more column.
+        let extent = w.refresh_text_import(0, 0, "skipped\nName,Qty,City\nCid,5,Paris\n").unwrap();
+        w.commit("Refresh All");
+        assert_eq!(extent, Rect::parse("B2:D3").unwrap());
+        assert_eq!(val(&w, "B3"), Value::text("Cid"));
+        assert_eq!(val(&w, "D3"), Value::text("Paris"));
+        assert_eq!(val(&w, "B4"), Value::Empty);
+        assert_eq!(val(&w, "E1"), Value::text("keep"));
+        assert_eq!(w.sheets[0].text_imports[0].range, extent);
+        // One step back each.
+        w.undo();
+        assert_eq!(val(&w, "B4"), Value::text("Bob"));
+        assert_eq!(w.sheets[0].text_imports[0].range, Rect::parse("B2:C4").unwrap());
+        w.undo();
+        assert!(w.sheets[0].text_imports.is_empty());
+        assert_eq!(val(&w, "B3"), Value::Empty);
+    }
+
+    #[test]
+    fn import_names_and_refusals() {
+        let mut w = wb(&[]);
+        w.import_text(0, (0, 0), "a,b", csv_import("/x/data.csv")).unwrap();
+        w.import_text(0, (5, 0), "a,b", csv_import("/y/data.csv")).unwrap();
+        w.import_text(0, (9, 0), "a,b", csv_import("/y/2024 q1.txt")).unwrap();
+        w.import_text(0, (12, 0), "a,b", csv_import("/y/A1.csv")).unwrap();
+        w.commit("Import Data");
+        let names: Vec<&str> = w.sheets[0].text_imports.iter().map(|import| import.name.as_str()).collect();
+        assert_eq!(names, ["data", "data_1", "_2024_q1", "_A1"]);
+        assert_eq!(w.import_text(0, (0, 0), "", csv_import("/x/empty.csv")), Err(TextColumnsError::NoData));
+        assert_eq!(w.import_text(0, (0, MAX_COLS - 1), "a,b", csv_import("/x/wide.csv")), Err(TextColumnsError::OffSheet));
+        assert_eq!(w.refresh_text_import(0, 9, "a"), Err(TextColumnsError::NoData));
+        // The ranges follow the rows; an import whose first row goes is forgotten.
+        w.insert_rows(0, 0, 1);
+        w.delete_rows(0, 6, 1);
+        w.commit("rows");
+        let ranges: Vec<Rect> = w.sheets[0].text_imports.iter().map(|import| import.range).collect();
+        assert_eq!(ranges, [Rect::parse("A2:B2").unwrap(), Rect::parse("A10:B10").unwrap(), Rect::parse("A13:B13").unwrap()]);
     }
 }

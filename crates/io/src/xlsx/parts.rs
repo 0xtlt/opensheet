@@ -47,6 +47,9 @@ pub(crate) struct SheetLinks {
     pub tables: Vec<usize>,
     /// The PivotTables, in the order of `Sheet::pivots`; no element.
     pub pivots: Vec<usize>,
+    /// The query tables of the text imports, in the order of
+    /// `Sheet::text_imports`; no element.
+    pub queries: Vec<usize>,
 }
 
 impl SheetLinks {
@@ -69,6 +72,7 @@ impl SheetLinks {
             threads: id(threaded),
             tables: sheet.tables.iter().filter_map(|_| id(true)).collect(),
             pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
+            queries: sheet.text_imports.iter().filter_map(|_| id(true)).collect(),
         }
     }
 
@@ -142,6 +146,7 @@ impl Extras {
         super::comments::add_parts(wb, &mut extras);
         super::table::add_parts(wb, &mut extras, dxfs);
         super::pivot::add_parts(wb, &mut extras, dxfs);
+        super::datatools::add_parts(wb, &mut extras);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),

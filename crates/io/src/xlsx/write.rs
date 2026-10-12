@@ -924,8 +924,10 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         .into_iter()
         .filter(|(_, def)| is_valid_name(&def.name))
         .collect();
-    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) {
+    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) || super::datatools::has_names(wb) {
         x.push_str("<definedNames>");
+        // The cells each imported text file fills.
+        super::datatools::push_names(&mut x, wb);
         // The ranges of the sheets' filters, which Excel keeps as hidden
         // names beside the filters themselves.
         super::filter::push_names(&mut x, wb);

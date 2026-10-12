@@ -2,16 +2,28 @@
 //! settings of Data > Consolidate; `<scenarios>`, the scenarios of the
 //! Scenario Manager; and the data tables of What-If Analysis, which are a
 //! formula of their own kind (`<f t="dataTable">`) on their first cell.
+//!
+//! And the text files a workbook imports, which a package spreads over
+//! three places: a connection of `xl/connections.xml` says which file and
+//! how it is cut (`<textPr>`), a query table part related to the sheet
+//! names the connection, and a defined name of the sheet, called like the
+//! query table, gives the cells the data fills.
 
-use super::read::parse_cell_ref;
-use super::write::{push_number, push_range};
-use super::xml::{Event, Reader, Tag, push_attr};
+use super::parts::{Extras, SheetLinks};
+use super::read::{Package, parse_cell_ref, relationships};
+use super::write::{NS_DOC_REL, NS_MAIN, push_number, push_range};
+use super::xml::{Event, Reader, Tag, XML_DECL, push_attr, push_cell_text};
 use opensheet_engine::consolidate::{ConsolidateFunction, ConsolidateSource, Consolidation};
 use opensheet_engine::input::parse_numeric_text;
 use opensheet_engine::refs::cell_name;
+use opensheet_engine::text_columns::{ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextImport};
 use opensheet_engine::whatif::{DataTable, Scenario, ScenarioCell};
-use opensheet_engine::{Content, Locale, Rect, Sheet};
+use opensheet_engine::{Content, Locale, Rect, Sheet, Workbook};
 use std::fmt::Write;
+use std::io::{Read, Seek};
+
+const CT_CONNECTIONS: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml";
+const CT_QUERY_TABLE: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml";
 
 /// Read `<dataConsolidate>`: the function, the labels used and the
 /// references. References to other workbooks (`r:id`) and to names are
@@ -235,5 +247,302 @@ pub(crate) fn read_table(f: &Tag, sheet: &mut Sheet) {
             row_input,
             col_input,
         });
+    }
+}
+
+// ---- text imports ----------------------------------------------------------
+
+/// The `type` of a `<textField>`.
+fn field_type(format: ColumnFormat) -> &'static str {
+    match format {
+        ColumnFormat::General => "general",
+        ColumnFormat::Text => "text",
+        ColumnFormat::Skip => "skip",
+        ColumnFormat::Date(order) => order.letters(),
+    }
+}
+
+fn field_format(name: &str) -> ColumnFormat {
+    match name {
+        "text" => ColumnFormat::Text,
+        "skip" => ColumnFormat::Skip,
+        other => DateOrder::ALL.into_iter().find(|order| order.letters() == other).map_or(ColumnFormat::General, ColumnFormat::Date),
+    }
+}
+
+/// `<connection>` of a text import, numbered `id`.
+fn push_connection(x: &mut String, id: usize, import: &TextImport) {
+    w!(x, "<connection id=\"{id}\" name=\"");
+    push_attr(x, &import.name);
+    x.push_str("\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr sourceFile=\"");
+    push_attr(x, &import.path);
+    x.push('"');
+    if import.first_row > 1 {
+        w!(x, " firstRow=\"{}\"", import.first_row);
+    }
+    // Only what differs from the defaults of the schema is said: tab
+    // delimited, `"` as the qualifier.
+    let mut positions = Vec::new();
+    match &import.spec.layout {
+        Layout::Delimited(d) => {
+            if !d.tab {
+                x.push_str(" tab=\"0\"");
+            }
+            for (name, on) in [("semicolon", d.semicolon), ("comma", d.comma), ("space", d.space), ("consecutive", d.consecutive_as_one)] {
+                if on {
+                    w!(x, " {name}=\"1\"");
+                }
+            }
+            match d.qualifier {
+                Some('"') => {}
+                Some(_) => x.push_str(" qualifier=\"singleQuote\""),
+                None => x.push_str(" qualifier=\"none\""),
+            }
+            if let Some(other) = d.other {
+                x.push_str(" delimiter=\"");
+                push_attr(x, &other.to_string());
+                x.push('"');
+            }
+        }
+        Layout::FixedWidth(breaks) => {
+            x.push_str(" delimited=\"0\"");
+            positions.push(0);
+            positions.extend(breaks.iter().copied());
+        }
+    }
+    // One field per column of a fixed-width file (its position), else
+    // one per format chosen.
+    let count = positions.len().max(import.spec.formats.len());
+    if count == 0 {
+        x.push_str("/></connection>");
+        return;
+    }
+    w!(x, "><textFields count=\"{count}\">");
+    for i in 0..count {
+        x.push_str("<textField");
+        let format = import.spec.format(i);
+        if format != ColumnFormat::General {
+            w!(x, " type=\"{}\"", field_type(format));
+        }
+        if let Some(position) = positions.get(i).filter(|position| **position > 0) {
+            w!(x, " position=\"{position}\"");
+        }
+        x.push_str("/>");
+    }
+    x.push_str("</textFields></textPr></connection>");
+}
+
+/// The parts of the text imports: the connections of the workbook and a
+/// query table for each import, related to its sheet.
+pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
+    let mut connections = String::new();
+    let mut number = 0;
+    for (index, sheet) in wb.sheets.iter().enumerate() {
+        let links = SheetLinks::of(sheet);
+        for (import, id) in sheet.text_imports.iter().zip(&links.queries) {
+            number += 1;
+            push_connection(&mut connections, number, import);
+            let mut table = format!("{XML_DECL}<queryTable xmlns=\"{NS_MAIN}\" name=\"");
+            push_attr(&mut table, &import.name);
+            w!(table, "\" connectionId=\"{number}\" autoFormatId=\"16\" applyNumberFormats=\"0\" applyBorderFormats=\"0\" applyFontFormats=\"0\" applyPatternFormats=\"0\" applyAlignmentFormats=\"0\" applyWidthHeightFormats=\"0\"/>");
+            extras.add_part(format!("xl/queryTables/queryTable{number}.xml"), Some(CT_QUERY_TABLE), table);
+            extras.relate_sheet(index, *id, &format!("{NS_DOC_REL}/queryTable"), &format!("../queryTables/queryTable{number}.xml"));
+        }
+    }
+    if number > 0 {
+        extras.add_part(
+            "xl/connections.xml".to_string(),
+            Some(CT_CONNECTIONS),
+            format!("{XML_DECL}<connections xmlns=\"{NS_MAIN}\">{connections}</connections>"),
+        );
+        extras.relate_workbook(&format!("{NS_DOC_REL}/connections"), "connections.xml");
+    }
+}
+
+/// Whether a sheet imports a text file, whose range a file names (see
+/// [`push_names`]).
+pub(crate) fn has_names(wb: &Workbook) -> bool {
+    wb.sheets.iter().any(|sheet| !sheet.text_imports.is_empty())
+}
+
+/// Append the defined names that give the range of each text import
+/// (children of `<definedNames>`).
+pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
+    for (index, sheet) in wb.sheets.iter().enumerate() {
+        for import in &sheet.text_imports {
+            x.push_str("<definedName name=\"");
+            push_attr(x, &import.name);
+            w!(x, "\" localSheetId=\"{index}\">");
+            let mut text = String::new();
+            opensheet_engine::ast::write_sheet_name(&sheet.name, &mut text);
+            text.push('!');
+            let (first, last) = (cell_name(import.range.r0, import.range.c0), cell_name(import.range.r1, import.range.c1));
+            for (n, name) in [first, last].iter().enumerate() {
+                if n == 1 {
+                    text.push(':');
+                }
+                let letters = name.trim_end_matches(|c: char| c.is_ascii_digit());
+                w!(text, "${letters}${}", &name[letters.len()..]);
+            }
+            push_cell_text(x, &text);
+            x.push_str("</definedName>");
+        }
+    }
+}
+
+/// The text connections of `xl/connections.xml`, by id. `range` and
+/// `name` are those of the query table that uses one.
+fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
+    let mut found = Vec::new();
+    let mut r = Reader::new(xml);
+    // The connection being read, until its `<textPr>` is seen.
+    let mut id = None;
+    let mut current: Option<TextImport> = None;
+    let mut breaks: Vec<usize> = Vec::new();
+    loop {
+        match r.next() {
+            Event::Open(t) => match t.name {
+                "connections" | "textFields" => {}
+                "connection" => {
+                    id = t.attr_u32("id");
+                    if t.empty {
+                        id = None;
+                    }
+                }
+                "textPr" => {
+                    let on = |name: &str, default: bool| t.attr_bool(name).unwrap_or(default);
+                    let layout = if on("delimited", true) {
+                        Layout::Delimited(Delimiters {
+                            tab: on("tab", true),
+                            semicolon: on("semicolon", false),
+                            comma: on("comma", false),
+                            space: on("space", false),
+                            other: t.attr("delimiter").and_then(|text| text.chars().next()),
+                            consecutive_as_one: on("consecutive", false),
+                            qualifier: match t.attr("qualifier").as_deref() {
+                                Some("singleQuote") => Some('\''),
+                                Some("none") => None,
+                                _ => Some('"'),
+                            },
+                        })
+                    } else {
+                        Layout::FixedWidth(Vec::new())
+                    };
+                    breaks.clear();
+                    current = t.attr("sourceFile").map(|path| TextImport {
+                        name: String::new(),
+                        path: path.into_owned(),
+                        range: Rect::cell(0, 0),
+                        first_row: t.attr_u32("firstRow").unwrap_or(1).max(1),
+                        spec: Spec::new(layout),
+                    });
+                    if t.empty {
+                        if let (Some(id), Some(import)) = (id, current.take()) {
+                            found.push((id, import));
+                        }
+                    }
+                }
+                "textField" => {
+                    if let Some(import) = current.as_mut() {
+                        import.spec.formats.push(field_format(t.attr("type").as_deref().unwrap_or("general")));
+                        if let Some(position) = t.attr_u32("position").filter(|position| *position > 0) {
+                            breaks.push(position as usize);
+                        }
+                    }
+                    r.skip(&t);
+                }
+                _ => r.skip(&t),
+            },
+            Event::Close(name) if name == "textPr" => {
+                if let (Some(id), Some(mut import)) = (id, current.take()) {
+                    if let Layout::FixedWidth(positions) = &mut import.spec.layout {
+                        breaks.sort_unstable();
+                        breaks.dedup();
+                        *positions = std::mem::take(&mut breaks);
+                    }
+                    found.push((id, import));
+                }
+            }
+            Event::Close(name) if name == "connection" => id = None,
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    found
+}
+
+/// The text imports of a file being read, until the defined names say
+/// where the data of each is.
+pub(crate) struct PendingImports {
+    /// The sheet (its place in `sheet_parts`) and the import, its range
+    /// still unknown.
+    imports: Vec<(usize, TextImport, bool)>,
+}
+
+impl PendingImports {
+    /// Read the connections of the workbook and the query tables of the
+    /// sheets. `sheet_parts` names the worksheet part of each sheet, in
+    /// order. Queries on anything but a text file are left out.
+    pub fn read<R: Read + Seek>(pkg: &mut Package<R>, sheet_parts: &[String]) -> PendingImports {
+        let mut pending = PendingImports { imports: Vec::new() };
+        let Ok(Some(xml)) = pkg.read("xl/connections.xml") else {
+            return pending;
+        };
+        let connections = parse_connections(&xml);
+        if connections.is_empty() {
+            return pending;
+        }
+        for (index, part) in sheet_parts.iter().enumerate() {
+            for rel in relationships(pkg, part).into_iter().filter(|rel| rel.kind == "queryTable") {
+                let Ok(Some(xml)) = pkg.read(&rel.target) else {
+                    continue;
+                };
+                let mut r = Reader::new(&xml);
+                let root = loop {
+                    match r.next() {
+                        Event::Open(t) if t.name == "queryTable" => break Some(t),
+                        Event::Open(t) => r.skip(&t),
+                        Event::Eof => break None,
+                        _ => {}
+                    }
+                };
+                let Some(root) = root else { continue };
+                let connection = root.attr_u32("connectionId").and_then(|id| connections.iter().find(|(known, _)| *known == id));
+                if let (Some((_, import)), Some(name)) = (connection, root.attr("name")) {
+                    let mut import = import.clone();
+                    import.name = name.into_owned();
+                    pending.imports.push((index, import, false));
+                }
+            }
+        }
+        pending
+    }
+
+    /// Take a defined name of the workbook part if it is the range of a
+    /// text import of `sheet` (`name` in upper case). Returns whether it
+    /// was.
+    pub fn read_name(&mut self, name: &str, text: &str, sheet: Option<usize>) -> bool {
+        let Some(entry) = self
+            .imports
+            .iter_mut()
+            .find(|(on, import, placed)| Some(*on) == sheet && !placed && import.name.to_uppercase() == name)
+        else {
+            return false;
+        };
+        let cells = text.rsplit('!').next().unwrap_or(text);
+        if let Some(range) = Rect::parse(&cells.replace('$', "")) {
+            entry.1.range = range;
+            entry.2 = true;
+        }
+        true
+    }
+
+    /// Give the sheets the imports whose data was found.
+    pub fn finish(self, wb: &mut Workbook) {
+        for (sheet, import, placed) in self.imports {
+            if let (true, Some(sheet)) = (placed, wb.sheets.get_mut(sheet)) {
+                sheet.text_imports.push(import);
+            }
+        }
     }
 }
