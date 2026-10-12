@@ -188,6 +188,18 @@ impl Default for CalcState {
 }
 
 impl CalcState {
+    /// The state of a workbook that is up to date and holds no spilled
+    /// array (a new one).
+    pub(crate) fn of_calculated(wb: &Workbook) -> CalcState {
+        CalcState {
+            graph: Some(DepGraph::build(wb)),
+            structure: Structure::of(wb),
+            typed: wb.sheets.iter().map(|s| s.cell_extent()).collect(),
+            untracked: false,
+            ..CalcState::default()
+        }
+    }
+
     /// The content of a cell changed. `replaced` tells whether it held a
     /// formula.
     pub(crate) fn touch(&mut self, sheet: usize, row: u32, col: u32, replaced: bool) {
@@ -475,6 +487,12 @@ impl Workbook {
         if structure != st.structure {
             st.untracked = true;
         }
+        // When most cells changed, following the changes costs more than
+        // starting afresh.
+        let cells: usize = self.sheets.iter().map(|s| s.cells.len()).sum();
+        if st.touched.len() > cells / 2 + 4096 {
+            st.untracked = true;
+        }
         let known = !st.untracked && st.graph.is_some() && st.typed.len() == self.sheets.len();
         // Nothing a formula can read has changed since the last
         // calculation.
@@ -490,7 +508,7 @@ impl Workbook {
             self.calculate_entered(&mut st, &options);
         } else if demand != Demand::Everything && known && !st.unsettled {
             st.sync(self);
-            if st.graph.as_ref().is_some_and(|g| g.outdated(self)) {
+            if st.graph.as_ref().is_some_and(|g| g.outdated()) {
                 st.graph = Some(DepGraph::build(self));
             }
             let (typed, stretched) = st.typed_now(self);
@@ -508,7 +526,17 @@ impl Workbook {
                 _ => Scope::Workbook,
             };
             let graph = st.graph.as_ref();
-            match self.on_calc_thread(|wb| eval::run_dirty(wb, graph, &changes, scope, &options)) {
+            let check = graph.filter(|_| scope == Scope::Workbook && deps::verify());
+            let outcome = self.on_calc_thread(|wb| match check {
+                Some(graph) => eval::run_dirty_checked(wb, graph, &changes, &options),
+                None => Ok(eval::run_dirty(wb, graph, &changes, scope, &options)),
+            });
+            let outcome = match outcome {
+                Some(Err(difference)) => panic!("{difference}"),
+                Some(Ok(result)) => Some(result),
+                None => None,
+            };
+            match outcome {
                 Some(Some(result)) if scope == Scope::Workbook => {
                     st.runs.1 += 1;
                     st.forget_changes();
@@ -527,7 +555,7 @@ impl Workbook {
             if !rebuild {
                 st.sync(self);
             }
-            if rebuild || st.graph.as_ref().is_some_and(|g| g.outdated(self)) {
+            if rebuild || st.graph.as_ref().is_some_and(|g| g.outdated()) {
                 st.graph = st.incremental.then(|| DepGraph::build(self));
             }
             self.calculate_all(&mut st, structure, &options);

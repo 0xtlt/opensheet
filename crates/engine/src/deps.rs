@@ -84,6 +84,8 @@ pub(crate) struct Precedents {
     /// Depends on which rows are hidden or filtered out (`SUBTOTAL`,
     /// `AGGREGATE`).
     pub visibility: bool,
+    /// Draws random numbers: two calculations never agree on it.
+    pub random: bool,
 }
 
 impl Precedents {
@@ -189,6 +191,7 @@ impl Walker<'_> {
             }
             Expr::Func(name, args) => {
                 self.out.volatile |= is_volatile(name);
+                self.out.random |= matches!(&**name, "RAND" | "RANDBETWEEN" | "RANDARRAY");
                 self.out.dynamic |= is_dynamic(name);
                 self.out.visibility |= reads_visibility(name);
                 match (&**name, args.as_slice()) {
@@ -468,10 +471,10 @@ impl DepGraph {
         graph
     }
 
-    /// True when the graph was built for another number of sheets, or
-    /// carries so many stale entries that building it again pays off.
-    pub fn outdated(&self, wb: &Workbook) -> bool {
-        self.levels.len() != wb.sheets.len() || self.stale > self.formulas / 2 + 4096
+    /// True when the graph carries so many stale entries that building it
+    /// again pays off.
+    pub fn outdated(&self) -> bool {
+        self.stale > self.formulas / 2 + 4096
     }
 
     /// Bring the graph up to date with the content of one cell. `replaced`
@@ -724,6 +727,14 @@ impl DepGraph {
 // ---- checking the precedents ----------------------------------------------------
 
 static AUDIT: AtomicBool = AtomicBool::new(cfg!(test));
+static VERIFY: AtomicBool = AtomicBool::new(cfg!(test));
+
+/// The environment variable that switches both checks on in any program
+/// using the engine: `OPENSHEET_CHECK_RECALC=1 cargo test`.
+fn asked_for() -> bool {
+    static ASKED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ASKED.get_or_init(|| std::env::var_os("OPENSHEET_CHECK_RECALC").is_some())
+}
 
 /// When on, every recalculation checks that what a formula reads is among
 /// the precedents derived from its text, and panics otherwise. On in the
@@ -734,7 +745,20 @@ pub fn set_audit(on: bool) {
 }
 
 pub(crate) fn audit() -> bool {
-    AUDIT.load(Ordering::Relaxed)
+    AUDIT.load(Ordering::Relaxed) || asked_for()
+}
+
+/// When on, every incremental recalculation is followed by a full one of
+/// the same workbook, and the engine panics if they differ on the value of
+/// a cell, a spilled array or the circular-reference warning. On in the
+/// engine's unit tests.
+#[doc(hidden)]
+pub fn set_verify(on: bool) {
+    VERIFY.store(on, Ordering::Relaxed);
+}
+
+pub(crate) fn verify() -> bool {
+    VERIFY.load(Ordering::Relaxed) || asked_for()
 }
 
 #[cfg(test)]

@@ -269,7 +269,18 @@ pub struct Calc<'a> {
 /// read as, so the pass is repeated until the arrays land where the pass
 /// expected them (`graph` is only needed for iterative calculation).
 pub(crate) fn run_full(wb: &Workbook, graph: Option<&DepGraph>, options: &Options) -> CalcResult {
-    let now = crate::datetime::now_serial();
+    full(wb, graph, options, crate::datetime::now_serial(), &[])
+}
+
+/// `run_full` at a given time, with the results of some formulas taken as
+/// given rather than calculated (`pinned`).
+fn full(
+    wb: &Workbook,
+    graph: Option<&DepGraph>,
+    options: &Options,
+    now: f64,
+    pinned: &[(Pos, &Value)],
+) -> CalcResult {
     let mut hints: Vec<Vec<SpillRect>> = wb
         .sheets
         .iter()
@@ -283,6 +294,9 @@ pub(crate) fn run_full(wb: &Workbook, graph: Option<&DepGraph>, options: &Option
     loop {
         let mut calc = Calc::new(wb, true, now, options);
         calc.hints = hints.clone();
+        for (at, value) in pinned {
+            calc.pin(*at, value);
+        }
         for (si, sheet) in wb.sheets.iter().enumerate() {
             for ((row, col), cell) in sheet.cells.iter() {
                 if let Content::Formula(expr) = &cell.content {
@@ -323,7 +337,102 @@ pub(crate) fn run_dirty(
     scope: Scope,
     options: &Options,
 ) -> Option<CalcResult> {
-    let mut calc = Calc::new(wb, false, crate::datetime::now_serial(), options);
+    dirty(
+        wb,
+        graph,
+        changes,
+        scope,
+        options,
+        crate::datetime::now_serial(),
+    )
+}
+
+/// `run_dirty`, then a full recalculation of the same workbook at the same
+/// time: `Err` says where the two differ. Formulas drawing random numbers
+/// cannot be compared; the full recalculation takes their results from the
+/// incremental one, and everything reading them is compared.
+pub(crate) fn run_dirty_checked(
+    wb: &Workbook,
+    graph: &DepGraph,
+    changes: &Changes,
+    options: &Options,
+) -> Result<Option<CalcResult>, String> {
+    let now = crate::datetime::now_serial();
+    let Some(result) = dirty(wb, Some(graph), changes, Scope::Workbook, options, now) else {
+        return Ok(None);
+    };
+    let random = |at: &CellKey| {
+        root(wb, pos(at.0, at.1, at.2))
+            .is_some_and(|f| deps::precedents(wb, at.0, at.1, at.2, f.expr).random)
+    };
+    let pinned: Vec<(Pos, &Value)> = result
+        .values
+        .iter()
+        .filter(|(at, _)| random(at))
+        .map(|(at, value)| (pos(at.0, at.1, at.2), value))
+        .collect();
+    let expected = full(wb, Some(graph), options, now, &pinned);
+    let at = |key: &CellKey| {
+        let name = crate::refs::cell_name(key.1, key.2);
+        format!(
+            "{}!{name} ({})",
+            wb.sheets[key.0].name,
+            wb.edit_text(key.0, key.1, key.2)
+        )
+    };
+    if expected.circular || expected.unsettled {
+        return Err(
+            "a full recalculation finds a circular reference or colliding arrays, \
+                    the incremental one does not"
+                .to_string(),
+        );
+    }
+    let found: FastMap<CellKey, &Value> = result.values.iter().map(|(k, v)| (*k, v)).collect();
+    for (key, value) in &expected.values {
+        let stored = || wb.cell(key.0, key.1, key.2).map(|c| &c.value);
+        let Some(got) = found.get(key).copied().or_else(stored) else {
+            continue;
+        };
+        let (got, value) = (got.clone().into_scalar(), value.clone().into_scalar());
+        if got != value {
+            return Err(format!(
+                "incremental recalculation gives {got:?} in {}, a full one {value:?}",
+                at(key)
+            ));
+        }
+    }
+    for (sheet, (got, wanted)) in result.spills.iter().zip(&expected.spills).enumerate() {
+        let same = got.len() == wanted.len()
+            && got
+                .iter()
+                .zip(wanted)
+                .all(|(a, b)| a.0 == b.0 && a.1 == b.1);
+        if !same {
+            let rects = |list: &[(SpillRect, Arc<Array>)]| {
+                let names: Vec<String> = list.iter().map(|(s, _)| s.rect.name()).collect();
+                names.join(", ")
+            };
+            return Err(format!(
+                "incremental recalculation spills arrays over [{}] of {}, a full one over [{}], \
+                 or with other values",
+                rects(got),
+                wb.sheets[sheet].name,
+                rects(wanted)
+            ));
+        }
+    }
+    Ok(Some(result))
+}
+
+fn dirty(
+    wb: &Workbook,
+    graph: Option<&DepGraph>,
+    changes: &Changes,
+    scope: Scope,
+    options: &Options,
+    now: f64,
+) -> Option<CalcResult> {
+    let mut calc = Calc::new(wb, false, now, options);
     *calc.spills.get_mut() = stored_spills(wb);
     *calc.blocked.get_mut() = changes.blocked.to_vec();
     for (typed, known) in calc.typed.get_mut().iter_mut().zip(changes.typed) {
@@ -496,6 +605,28 @@ impl<'a> Calc<'a> {
     /// To evaluate several, open one [`EvalSession`] for all of them.
     pub fn eval_once(wb: &Workbook, sheet: usize, row: u32, col: u32, expr: &Expr) -> Value {
         EvalSession::new(wb).eval(sheet, row, col, expr)
+    }
+
+    /// Take the result of a formula as given: it is not calculated.
+    fn pin(&mut self, at: Pos, value: &Value) {
+        let (sheet, row, col) = unpos(at);
+        if let Value::Array(array) = value {
+            let rect = Rect::new(
+                row,
+                col,
+                row + array.rows as u32 - 1,
+                col + array.cols as u32 - 1,
+            );
+            self.spills.get_mut()[sheet].push(Live {
+                at: SpillRect {
+                    anchor: (row, col),
+                    rect,
+                },
+                array: array.clone(),
+            });
+        }
+        self.cache.get_mut().insert(at, Slot::Done(value.clone()));
+        self.order.get_mut().push(at);
     }
 
     /// The formulas among `queue` and, with a graph, every formula reading

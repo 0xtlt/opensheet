@@ -426,7 +426,7 @@ pub struct Workbook {
 impl Workbook {
     /// A new workbook with one empty sheet.
     pub fn new(locale: &'static Locale) -> Workbook {
-        Workbook {
+        let mut wb = Workbook {
             sheets: vec![Sheet::new(format!("{}1", locale.sheet_prefix))],
             styles: StyleTable::default(),
             names: BTreeMap::new(),
@@ -441,7 +441,11 @@ impl Workbook {
             redo_stack: Vec::new(),
             pending: Vec::new(),
             snapshot_taken: false,
-        }
+        };
+        // An empty workbook is calculated: what is typed into it is what
+        // there is to calculate.
+        wb.calc = crate::recalc::CalcState::of_calculated(&wb);
+        wb
     }
 
     // ---- lookup ---------------------------------------------------------
