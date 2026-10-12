@@ -427,9 +427,11 @@ pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>
     if right - left >= 1.0 {
         let bounds = Bounds::new(point(px(left), px(y0)), size(px(right - left), px(y1 - y0)));
         let background = if bar.gradient {
-            // From the full colour at the base of the bar to almost white
-            // at its tip, whichever way it grows.
-            let angle = if tip >= base { 90.0 } else { 270.0 };
+            // From the full colour to almost white in the direction the
+            // bars of positive numbers grow: the bars of negative numbers,
+            // which grow the other way, fade towards the axis.
+            let rightwards = (tip >= base) != bar.negative;
+            let angle = if rightwards { 90.0 } else { 270.0 };
             linear_gradient(
                 angle,
                 linear_color_stop(c(bar.fill.0), 0.0),
@@ -613,6 +615,31 @@ mod tests {
         assert!(all[1..].iter().all(|dash| f32::from(dash.left()) == 51.0 && f32::from(dash.size.width) == 1.0));
         assert_eq!(f32::from(all[1].top()), 0.0);
         assert_eq!(f32::from(all.last().unwrap().bottom()), 19.0);
+    }
+
+    #[test]
+    fn gradients_fade_the_way_positive_bars_grow() {
+        let angle = |bar: &Bar| {
+            let mut out = Vec::new();
+            super::bar(bar, (0.0, 0.0, 103.0, 20.0), 1.0, &mut out);
+            match &out[0] {
+                Draw::Quad(q) => format!("{:?}", q.background),
+                _ => String::new(),
+            }
+        };
+        let gradient = |start: f32, end: f32, negative: bool| Bar {
+            gradient: true,
+            negative,
+            ..sample_bar(start, end)
+        };
+        // Left to right: a positive bar and a negative one fade alike.
+        let positive = angle(&gradient(0.5, 1.0, false));
+        let negative = angle(&gradient(0.5, 0.0, true));
+        let mirrored = angle(&gradient(0.5, 0.0, false));
+        assert_eq!(positive, negative);
+        // Right to left, everything is mirrored.
+        assert_ne!(positive, mirrored);
+        assert_eq!(mirrored, angle(&gradient(0.5, 1.0, true)));
     }
 
     #[test]
