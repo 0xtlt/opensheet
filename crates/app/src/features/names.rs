@@ -19,6 +19,7 @@ use opensheet_engine::eval::Calc;
 use opensheet_engine::format::format_value;
 use opensheet_engine::names::{NameError, NameScope, is_valid_name};
 use opensheet_engine::ops::PasteMode;
+use opensheet_engine::parser::parse_formula;
 use opensheet_engine::protect::Action;
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::{Content, ErrorKind, Expr, Locale, Rect, Reference, Value, Workbook};
@@ -161,6 +162,9 @@ pub(crate) enum RowKind {
     Name(NameScope),
     /// A table: its sheet and its id.
     Table(usize, u32),
+    /// The print area or the print titles of a sheet: names for Excel,
+    /// kept with the page setup here and only shown.
+    Print(usize),
 }
 
 /// A line of the Name Manager.
@@ -179,6 +183,11 @@ pub(crate) struct NameRow {
 impl NameRow {
     pub fn is_table(&self) -> bool {
         matches!(self.kind, RowKind::Table(..))
+    }
+
+    /// A name that can be edited and deleted here.
+    pub fn is_name(&self) -> bool {
+        matches!(self.kind, RowKind::Name(_))
     }
 
     fn column(&self, column: Column) -> &str {
@@ -235,7 +244,7 @@ impl NameFilter {
     }
 
     fn keeps(&self, row: &NameRow) -> bool {
-        let sheet_scoped = matches!(row.kind, RowKind::Name(NameScope::Sheet(_)));
+        let sheet_scoped = matches!(row.kind, RowKind::Name(NameScope::Sheet(_)) | RowKind::Print(_));
         self.sheet_scoped.is_none_or(|wanted| wanted == sheet_scoped)
             && self.with_errors.is_none_or(|wanted| wanted == row.error)
             && self.tables.is_none_or(|wanted| wanted == row.is_table())
@@ -346,6 +355,31 @@ pub(crate) fn name_rows(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Vec<
                 value: listed_value(&value, wb.locale),
                 refers_to: RefStyle::formula().format(data, &sh.name),
                 scope: scope_label(wb, NameScope::Workbook),
+                comment: String::new(),
+                error: false,
+            });
+        }
+    }
+    for (index, sh) in wb.sheets.iter().enumerate() {
+        let built_in = [
+            (t("Print_Area", "Zone_d_impression"), sh.page.print_area_formula(&sh.name)),
+            (t("Print_Titles", "Impression_des_titres"), sh.page.print_titles_formula(&sh.name)),
+        ];
+        for (name, formula) in built_in {
+            // The page setup spells its ranges in English.
+            let Some(expr) = formula.and_then(|formula| parse_formula(&formula, Locale::en()).ok()) else {
+                continue;
+            };
+            let value = match &expr {
+                Expr::Union(_) => "{...}".to_string(),
+                one => listed_value(&Calc::eval_once(wb, index, row, col, one), wb.locale),
+            };
+            rows.push(NameRow {
+                kind: RowKind::Print(index),
+                name: name.to_string(),
+                value,
+                refers_to: format!("={}", expr.to_text(wb.locale)),
+                scope: sh.name.clone(),
                 comment: String::new(),
                 error: false,
             });
@@ -820,7 +854,6 @@ pub(crate) fn paste_list(app: &mut ExcelApp, cx: &mut Cx) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opensheet_engine::parser::parse_formula;
 
     fn workbook() -> Workbook {
         let mut wb = Workbook::new(Locale::en());
@@ -905,6 +938,31 @@ mod tests {
             ranges: vec![Rect::new(1, 0, 2, 2)],
         };
         assert_eq!(selection_name(&wb, 0, &body), Some(rows[0].name.clone()));
+    }
+
+    #[test]
+    fn print_areas_and_titles_are_listed_with_their_sheet() {
+        let mut wb = workbook();
+        wb.snapshot();
+        wb.sheets[0].page.print_area = vec![Rect::new(0, 0, 2, 2)];
+        wb.sheets[1].page.print_area = vec![Rect::new(0, 0, 1, 0), Rect::new(3, 0, 4, 0)];
+        wb.sheets[1].page.title_rows = Some((0, 0));
+        wb.commit("page setup");
+        let rows = name_rows(&wb, 0, 0, 0);
+        let shown: Vec<(&str, &str, &str)> = rows.iter().map(|row| (row.name.as_str(), row.scope.as_str(), row.refers_to.as_str())).collect();
+        assert_eq!(
+            shown,
+            [
+                ("Print_Area", "Sheet1", "=Sheet1!$A$1:$C$3"),
+                ("Print_Area", "Sheet2", "=Sheet2!$A$1:$A$2,Sheet2!$A$4:$A$5"),
+                ("Print_Titles", "Sheet2", "=Sheet2!$1:$1"),
+            ]
+        );
+        assert_eq!(rows[0].kind, RowKind::Print(0));
+        assert!(!rows[0].is_name() && !rows[0].is_table());
+        // They count as names of their sheet for the Filter menu.
+        let scoped = NameFilter { sheet_scoped: Some(true), tables: Some(false), ..Default::default() };
+        assert_eq!(filter_rows(rows, &scoped).len(), 3);
     }
 
     #[test]

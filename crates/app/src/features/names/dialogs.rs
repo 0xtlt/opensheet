@@ -113,6 +113,7 @@ pub(super) fn open_edit_name(app: &mut ExcelApp, row: &NameRow, window: &mut Win
             (Target::Name(scope, row.name.clone()), index)
         }
         RowKind::Table(sheet, id) => (Target::Table(sheet, id), 0),
+        RowKind::Print(_) => return,
     };
     let init = NameInit {
         target,
@@ -377,7 +378,7 @@ impl Render for CreateNames {
         };
         let sides = self.sides;
         dialog(&self.modal, t("Create Names from Selection", "Créer des noms à partir de la sélection"))
-            .width(300.0)
+            .width(330.0)
             .on_ok(cx.listener(Self::ok))
             .child(label(t("Create names from values in the:", "Créer des noms à partir des valeurs de la :")))
             .child(

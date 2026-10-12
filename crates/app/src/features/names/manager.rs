@@ -146,7 +146,7 @@ impl Manager {
 
     /// The "Refers to" box holds something that was not stored yet.
     fn refers_edited(&self, cx: &Context<Self>) -> bool {
-        self.row().is_some_and(|row| !row.is_table()) && self.refers.read(cx).text() != self.refers_original
+        self.row().is_some_and(|row| row.is_name()) && self.refers.read(cx).text() != self.refers_original
     }
 
     fn accept_refers(&mut self, cx: &mut Context<Self>) {
@@ -213,7 +213,7 @@ impl Manager {
         if self.locked {
             return;
         }
-        let Some(row) = self.row().cloned() else {
+        let Some(row) = self.row().filter(|row| row.is_name() || row.is_table()).cloned() else {
             return;
         };
         self.modal.update_app(cx, |app, cx| dialogs::open_edit_name(app, &row, window, cx));
@@ -377,9 +377,10 @@ impl Render for Manager {
         let rows = self.rows.clone();
         let names: Vec<SharedString> = rows.iter().map(|row| SharedString::from(row.name.clone())).collect();
         let row = self.row();
-        let is_name = row.is_some_and(|row| !row.is_table());
+        let is_name = row.is_some_and(|row| row.is_name());
         let edited = self.refers_edited(cx);
-        let can_edit = row.is_some() && !self.locked;
+        // A table can be renamed here; print areas belong to Page Setup.
+        let can_edit = row.is_some_and(|row| row.is_name() || row.is_table()) && !self.locked;
         let can_delete = is_name && !self.locked;
 
         let mark = |id: &'static str, icon_name: &'static str, color: u32| {
@@ -400,7 +401,7 @@ impl Render for Manager {
         let refers: AnyElement = if is_name && !self.locked {
             RefEdit::new(&self.refers, &self.modal).into_any_element()
         } else {
-            // Tables are resized on the sheet, not here.
+            // Tables are resized on the sheet, print areas set in Page Setup.
             div()
                 .flex_1()
                 .h(px(24.))

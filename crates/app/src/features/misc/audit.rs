@@ -622,9 +622,9 @@ impl Render for ErrorChecking {
         });
         let (cell, formula, kind) = shown.unwrap_or_default();
         let (title, explanation) = kind.map(error_text).unwrap_or_default();
-        let button = |id: &'static str, text: &'static str| Button::new(id, text).width(190.0);
+        let button = |id: &'static str, text: &'static str| Button::new(id, text).width(230.0);
         dialog(&self.modal, t("Error Checking", "Vérification des erreurs"))
-            .width(470.0)
+            .width(540.0)
             .child(
                 div()
                     .flex()

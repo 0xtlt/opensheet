@@ -304,10 +304,17 @@ pub fn function_arguments(app: &mut ExcelApp, function: &'static str, window: &m
     }
     let restore = if app.is_editing() {
         let original = app.edit_text(cx);
-        let name = app.wb.locale.fn_to_local(function);
-        let text = format!("{}{name}()", if original.is_empty() { "=" } else { "" });
+        let call = format!("{}()", app.wb.locale.fn_to_local(function));
+        // A formula being typed takes the function at the caret; anything
+        // else gives way to a formula.
+        let formula = original.starts_with('=');
         app.editor().clone().update(cx, |input, cx| {
-            input.insert(&text, window, cx);
+            if formula {
+                input.insert(&call, window, cx);
+            } else {
+                input.select_all_text(cx);
+                input.insert(&format!("={call}"), window, cx);
+            }
             // Between the parentheses.
             let caret = input.selection().start.saturating_sub(1);
             input.set_selection(caret..caret, cx);
@@ -330,6 +337,8 @@ struct InsertFunction {
     /// once a search was made.
     category: usize,
     found: Option<Vec<&'static FunctionDef>>,
+    /// What was last searched for.
+    searched: String,
     selected: Option<usize>,
 }
 
@@ -349,6 +358,7 @@ impl InsertFunction {
             search,
             category: with_memory(|memory| memory.category),
             found: None,
+            searched: String::new(),
             selected: Some(0),
         }
     }
@@ -366,6 +376,7 @@ impl InsertFunction {
     fn go(&mut self, cx: &mut Context<Self>) {
         let query = self.search.read(cx).text().to_string();
         let found = search(&query, self.locale);
+        self.searched = query;
         // "Recommended" joins the categories, and is chosen.
         self.category = 0;
         self.selected = (!found.is_empty()).then_some(0);
@@ -374,8 +385,10 @@ impl InsertFunction {
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        // Return in the search box searches.
-        if self.search.read(cx).focus_handle(cx).is_focused(window) && !self.search.read(cx).text().trim().is_empty() {
+        // Return in the search box searches; once the answers are there,
+        // it takes the one selected.
+        let query = self.search.read(cx).text().to_string();
+        if self.search.read(cx).focus_handle(cx).is_focused(window) && !query.trim().is_empty() && query != self.searched {
             self.go(cx);
             return;
         }
