@@ -23,8 +23,8 @@
 //! An option left automatic in the model is written the way Excel spells
 //! it in its own new charts, and that spelling is read back as automatic.
 //! Automatic colours are spelled out too (the colours of the engine's
-//! palette, per series or per point): Excel would take them from a theme,
-//! and packages are written without one. What a chart has no use for (the
+//! palette, per series or per point), rather than left to what Excel
+//! makes of the theme of the package. What a chart has no use for (the
 //! hole of a doughnut in a column chart, an overlap without bars, a
 //! legend entry without a legend) is not written, and what Excel refuses
 //! in a file (a label position its chart type does not have, trendlines
@@ -37,8 +37,8 @@
 //! place changes, [`foreign::reusable`] lets the writer put that text back
 //! as it was, with everything the model has no place for. Its theme
 //! colours alone are replaced by the colours they stand for, when the
-//! theme of the workbook is not the one Excel assumes for a package
-//! without a theme ([`foreign::without_theme`]). The text is not written
+//! theme of the workbook is not the one packages are written with
+//! ([`foreign::without_theme`]). The text is not written
 //! back when it
 //!
 //! * is not a well-formed chart part in UTF-8,
