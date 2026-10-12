@@ -1320,7 +1320,6 @@ fn read_charts<R: Read + Seek>(
             let place = frame.placement(&cols, &rows);
             charts.push(Chart {
                 id: *next_id,
-                kind: content.kind,
                 title: content.title,
                 legend: content.legend,
                 series: content.series,
@@ -1328,6 +1327,7 @@ fn read_charts<R: Read + Seek>(
                 anchor: place.anchor,
                 offset: place.offset,
                 size: place.size,
+                ..Chart::new(content.kind)
             });
             *next_id += 1;
         }

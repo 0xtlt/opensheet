@@ -632,9 +632,9 @@ pub(crate) fn parse_chart(xml: &str, palette: &Palette) -> Option<ChartContent> 
             let categories = s.categories.map(|c| innermost_level(&c, &values));
             Some(Series {
                 name: s.name,
-                values,
                 categories,
                 color: s.color,
+                ..Series::new(values)
             })
         })
         .collect();

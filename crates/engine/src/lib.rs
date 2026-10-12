@@ -5,6 +5,8 @@
 
 pub mod ast;
 pub mod chart;
+pub mod chart_layout;
+pub mod chart_trend;
 pub mod comment;
 pub mod condfmt;
 pub mod datetime;

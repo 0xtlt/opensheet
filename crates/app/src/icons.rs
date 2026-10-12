@@ -105,6 +105,10 @@ pub struct Assets;
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+        // Turned text of charts is drawn as an image made on the fly.
+        if let Some(svg) = crate::chart_view::text_asset(path) {
+            return Ok(Some(Cow::Owned(svg)));
+        }
         let Some(name) = path.strip_prefix("icons/").and_then(|p| p.strip_suffix(".svg")) else {
             return Ok(None);
         };

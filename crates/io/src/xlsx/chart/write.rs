@@ -510,7 +510,19 @@ impl ChartWriter<'_> {
 
     /// `number` is the chart's number in the package.
     fn chart_xml(&self, chart: &Chart, number: usize) -> String {
-        let kind = chart.kind;
+        // Stopgap until the writer knows the new kinds.
+        use opensheet_engine::chart::Family;
+        let kind = match (chart.kind.family(), chart.kind.is_stacked()) {
+            (Family::Column, false) => ChartKind::Column,
+            (Family::Column, true) => ChartKind::StackedColumn,
+            (Family::Bar, false) => ChartKind::Bar,
+            (Family::Bar, true) => ChartKind::StackedBar,
+            (Family::Line | Family::Radar, _) => ChartKind::Line,
+            (Family::Area, _) => ChartKind::Area,
+            (Family::Pie, _) => ChartKind::Pie,
+            (Family::Doughnut, _) => ChartKind::Doughnut,
+            (Family::Scatter | Family::Bubble, _) => ChartKind::Scatter,
+        };
         let mut x = String::from(XML_DECL);
         w!(
             x,
@@ -547,6 +559,7 @@ impl ChartWriter<'_> {
                 "c:scatterChart",
                 "<c:scatterStyle val=\"lineMarker\"/>".to_string(),
             ),
+            _ => unreachable!(),
         };
         // Slices of a pie each get a colour; elsewhere a series has one.
         w!(
@@ -590,6 +603,7 @@ impl ChartWriter<'_> {
             ChartKind::Doughnut => {
                 x.push_str("<c:firstSliceAng val=\"0\"/><c:holeSize val=\"75\"/>")
             }
+            _ => unreachable!(),
         }
         w!(x, "</{element}>");
 
@@ -627,13 +641,14 @@ impl ChartWriter<'_> {
                     'l',
                 );
             }
+            _ => unreachable!(),
         }
         x.push_str("</c:plotArea>");
 
         let legend = match chart.legend {
             LegendPos::None => None,
             LegendPos::Bottom => Some('b'),
-            LegendPos::Right => Some('r'),
+            LegendPos::Right | LegendPos::TopRight => Some('r'),
             LegendPos::Top => Some('t'),
             LegendPos::Left => Some('l'),
         };
