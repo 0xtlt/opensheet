@@ -570,9 +570,9 @@ pub(super) fn cells_written(app: &mut ExcelApp, edit: &CellEdit) {
     if matches!(edit.cause, ChangeCause::Clear(ClearMode::Formats)) {
         return;
     }
-    // A protected sheet keeps its tables as they are: nothing grows. Cells
-    // of a table that may be typed in still name its columns and totals.
-    if features::guard(app, &Intent::ChangeTable).is_some() && !actions::in_tables(&app.wb, sheet, edit.rect) {
+    // A protected sheet keeps its tables as they are (the engine does not
+    // ask by itself).
+    if features::guard(app, &Intent::ChangeTable).is_some() {
         return;
     }
     // What the user entered is kept aside, to offer taking back what the

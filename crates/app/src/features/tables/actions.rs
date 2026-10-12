@@ -233,6 +233,12 @@ pub fn go_to_target(wb: &Workbook, sheet: usize, active: (u32, u32), text: &str)
 /// `from` (`None`: a cell of another sheet) when Excel writes a structured
 /// reference there (`Table1[Sales]`, `[@Sales]`) rather than `C2:C9`.
 pub fn pointed_reference(wb: &Workbook, sheet: usize, rect: Rect, from: Option<(u32, u32)>) -> Option<String> {
+    // A formula typed right beside a table belongs to it, since the table
+    // grows over it: the name of the table is left out there too.
+    let from = from.map(|(row, col)| match wb.table_for_entry(sheet, row, col) {
+        Some(table) if !table.contains(row, col) && table.contains(row, table.range.c1) => (row, table.range.c1),
+        _ => (row, col),
+    });
     let reference = wb.structured_reference(sheet, rect, from)?;
     // The engine spells the item specifiers in English (`#Headers`); a
     // formula is typed in the language of the workbook.
@@ -281,13 +287,6 @@ pub fn near_tables(wb: &Workbook, sheet: usize, rect: Rect) -> bool {
             Rect::new(r.r0, r.c0, (r.r1 + 1).min(MAX_ROWS - 1), (r.c1 + 1).min(MAX_COLS - 1)).intersects(&rect)
         })
     })
-}
-
-/// Whether changing `rect` touches cells of a table.
-pub fn in_tables(wb: &Workbook, sheet: usize, rect: Rect) -> bool {
-    wb.sheets
-        .get(sheet)
-        .is_some_and(|sh| sh.tables.iter().any(|table| table.range.intersects(&rect)))
 }
 
 impl AutoChange {
@@ -597,6 +596,16 @@ mod tests {
             pointed_reference(&wb, 0, Rect::cell(2, 1), Some((2, 2))),
             Some("[@Qty]".to_string())
         );
+        // From the cell right beside the table too: the formula will be in
+        // the table once entered. Further away the table is named.
+        assert_eq!(
+            pointed_reference(&wb, 0, Rect::cell(2, 1), Some((2, 3))),
+            Some("[@Qty]".to_string())
+        );
+        assert_eq!(
+            pointed_reference(&wb, 0, Rect::cell(2, 1), Some((2, 5))),
+            Some(format!("{name}[@Qty]"))
+        );
         // Any other single cell is a plain reference.
         assert_eq!(pointed_reference(&wb, 0, Rect::cell(2, 1), Some((6, 6))), None);
         assert_eq!(pointed_reference(&wb, 0, Rect::cell(9, 9), Some((6, 6))), None);
@@ -640,7 +649,6 @@ mod tests {
         let edited = Rect::cell(4, 0);
         wb.set_cell_text(0, 4, 0, "Cap").unwrap();
         assert!(near_tables(&wb, 0, edited));
-        assert!(!in_tables(&wb, 0, edited));
         let mut change = AutoChange::before(&wb, 0, edited).unwrap();
         let did = wb.tables_after_edit(0, edited);
         assert_eq!(did.expanded, Some(id));
@@ -692,6 +700,6 @@ mod tests {
         assert!(AutoChange::before(&wb, 0, Rect::new(0, 0, 9, 9)).is_some());
         assert!(!near_tables(&wb, 0, Rect::cell(5, 0)));
         assert!(near_tables(&wb, 0, Rect::cell(2, 3)));
-        assert!(in_tables(&wb, 0, Rect::new(3, 2, 8, 8)));
+        assert!(near_tables(&wb, 0, Rect::new(3, 2, 8, 8)));
     }
 }
