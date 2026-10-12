@@ -2,7 +2,10 @@
 //!
 //! The grid is painted directly (quads + shaped text) rather than built from
 //! elements, so a full screen of cells costs one pass over the visible range.
+//! Features add their own drawing through the hooks of `features/mod.rs`.
 
+use crate::app::ExcelApp;
+use crate::features::{self, PaintLayer, Painter, Zone};
 use crate::theme::{self, c, ca};
 use gpui::{
     App, BorderStyle, Bounds, ContentMask, Font, FontStyle, FontWeight, Hsla, PaintQuad, Pixels,
@@ -12,7 +15,8 @@ use gpui::{
 use opensheet_engine::format;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, col_to_letters};
 use opensheet_engine::style::{Border, BorderStyle as CellBorderStyle, HAlign, Style, Underline, VAlign};
-use opensheet_engine::workbook::{Content, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, Sheet};
+use opensheet_engine::workbook::{Content, Sheet};
+use opensheet_engine::features::CellDisplay;
 use opensheet_engine::{Rect, StyleId, Value, Workbook};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -74,6 +78,9 @@ pub struct Axis {
     default: f32,
     entries: Vec<AxisEntry>,
     count: u32,
+    /// Blank space before some tracks (between the pages of the Page
+    /// Layout view): (track, space before it and all earlier tracks).
+    gaps: Vec<(u32, f64)>,
 }
 
 impl Axis {
@@ -90,10 +97,35 @@ impl Axis {
             default,
             entries,
             count,
+            gaps: Vec::new(),
         }
     }
 
+    /// Leave blank space before some tracks: (track, pixels), sorted by
+    /// track. Positions inside a gap belong to the track that follows it.
+    #[allow(dead_code)] // for `Feature::adjust_layout` of the Page Layout view
+    pub fn set_gaps(&mut self, gaps: &[(u32, f32)]) {
+        let mut total = 0.0f64;
+        self.gaps = gaps
+            .iter()
+            .map(|(index, space)| {
+                total += space.max(0.0) as f64;
+                (*index, total)
+            })
+            .collect();
+    }
+
+    fn gap_before(&self, index: u32) -> f64 {
+        let k = self.gaps.partition_point(|(i, _)| *i <= index);
+        if k == 0 { 0.0 } else { self.gaps[k - 1].1 }
+    }
+
     pub fn start(&self, index: u32) -> f64 {
+        self.packed_start(index) + self.gap_before(index)
+    }
+
+    /// Start of a track when the gaps are left out.
+    fn packed_start(&self, index: u32) -> f64 {
         let k = self.entries.partition_point(|e| e.index < index);
         let delta = if k == 0 {
             0.0
@@ -124,6 +156,21 @@ impl Axis {
         if pos <= 0.0 {
             return 0;
         }
+        // Take out the gaps lying before the position.
+        let mut pos = pos;
+        let mut before = 0.0f64;
+        for (index, total) in &self.gaps {
+            let track = self.packed_start(*index);
+            if pos >= track + total {
+                before = *total;
+            } else {
+                if pos >= track + before {
+                    return (*index).min(self.count - 1);
+                }
+                break;
+            }
+        }
+        pos -= before;
         let k = self.entries.partition_point(|e| e.start <= pos);
         let idx = if k == 0 {
             (pos / self.default as f64).floor() as u64
@@ -138,16 +185,10 @@ impl Axis {
         };
         idx.min(self.count as u64 - 1) as u32
     }
-
-    /// Next track with a non-zero size at or after `index` (skips hidden).
-    pub fn next_visible(&self, mut index: u32) -> u32 {
-        while index + 1 < self.count && self.size(index) <= 0.0 {
-            index += 1;
-        }
-        index
-    }
 }
 
+/// `hidden`: the tracks shown with no size (for rows: hidden by hand or by
+/// a filter).
 fn build_axis(
     default: f32,
     count: u32,
@@ -189,8 +230,21 @@ pub struct GridLayout {
 
 impl GridLayout {
     pub fn new(sheet: &Sheet, bounds: Bounds<Pixels>, zoom: f32, scroll_x: f64, scroll_y: f64) -> GridLayout {
-        let cols = build_axis(DEFAULT_COL_WIDTH, MAX_COLS, zoom, &sheet.col_widths, &sheet.hidden_cols);
-        let rows = build_axis(DEFAULT_ROW_HEIGHT, MAX_ROWS, zoom, &sheet.row_heights, &sheet.hidden_rows);
+        // The size of the tracks nobody resized is asked from the sheet (a
+        // sheet may have its own default): from the last track that has no
+        // size of its own and is shown.
+        let not_shown = sheet.rows_not_shown();
+        let plain_col = (0..MAX_COLS)
+            .rev()
+            .find(|c| !sheet.col_widths.contains_key(c) && !sheet.hidden_cols.contains(c))
+            .unwrap_or(MAX_COLS - 1);
+        let plain_row = (0..MAX_ROWS)
+            .rev()
+            .find(|r| !sheet.row_heights.contains_key(r) && !not_shown.contains(r))
+            .unwrap_or(MAX_ROWS - 1);
+        let cols = build_axis(sheet.col_width(plain_col), MAX_COLS, zoom, &sheet.col_widths, &sheet.hidden_cols);
+        // Rows a filter hides take no room either.
+        let rows = build_axis(sheet.row_height(plain_row), MAX_ROWS, zoom, &sheet.row_heights, &not_shown);
         let frozen_w = cols.start(sheet.frozen_cols) as f32;
         let frozen_h = rows.start(sheet.frozen_rows) as f32;
         let (header_w, header_h) = if sheet.show_headers {
@@ -219,9 +273,15 @@ impl GridLayout {
             frozen_h,
             zoom,
         };
-        layout.scroll_x = scroll_x.clamp(0.0, layout.max_scroll_x());
-        layout.scroll_y = scroll_y.clamp(0.0, layout.max_scroll_y());
+        layout.clamp_scroll();
         layout
+    }
+
+    /// Bring the scroll offsets back inside the sheet (after the axes
+    /// changed).
+    pub fn clamp_scroll(&mut self) {
+        self.scroll_x = self.scroll_x.clamp(0.0, self.max_scroll_x());
+        self.scroll_y = self.scroll_y.clamp(0.0, self.max_scroll_y());
     }
 
     pub fn width(&self) -> f32 {
@@ -325,7 +385,7 @@ impl GridLayout {
         )
     }
 
-    fn bounds_px(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Bounds<Pixels> {
+    pub fn bounds_px(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Bounds<Pixels> {
         Bounds::new(self.to_window(x0, y0), size(px((x1 - x0).max(0.0)), px((y1 - y0).max(0.0))))
     }
 
@@ -345,11 +405,6 @@ impl GridLayout {
     /// Number of fully visible scrolled rows (for Page Up / Down).
     pub fn page_rows(&self) -> u32 {
         let r = self.scrolled_rows();
-        (r.end - r.start).saturating_sub(2).max(1)
-    }
-
-    pub fn page_cols(&self) -> u32 {
-        let r = self.scrolled_cols();
         (r.end - r.start).saturating_sub(2).max(1)
     }
 
@@ -523,6 +578,18 @@ pub enum Draw {
         align: TextAlign,
         bounds: Bounds<Pixels>,
     },
+    /// A line of text turned by `turn` radians (clockwise) around `pivot`:
+    /// the title of a vertical chart axis. `path` names the text as an
+    /// asset (see `chart_view::text_asset`), `bounds` is its box before it
+    /// is turned.
+    Turned {
+        path: SharedString,
+        bounds: Bounds<Pixels>,
+        pivot: Point<Pixels>,
+        turn: f32,
+        color: Hsla,
+        clip: Bounds<Pixels>,
+    },
 }
 
 pub struct Layer {
@@ -530,8 +597,17 @@ pub struct Layer {
     pub items: Vec<Draw>,
 }
 
+/// What `build_scene` returns: what to paint, and the areas features made
+/// sensitive to the mouse.
+pub struct Scene {
+    pub layers: Vec<Layer>,
+    pub zones: Vec<Zone>,
+}
+
 /// Everything the scene builder needs to know besides the workbook.
 pub struct SceneInput<'a> {
+    /// For the feature hooks.
+    pub app: &'a ExcelApp,
     pub wb: &'a Workbook,
     pub sheet: usize,
     pub selection: &'a Selection,
@@ -551,12 +627,6 @@ pub struct SceneInput<'a> {
     pub hot_scrollbar: u8,
     /// Device pixels per logical pixel.
     pub scale: f32,
-    /// Chart drawn with its selection frame and handles.
-    pub selected_chart: Option<u32>,
-    /// Title shown on charts that have none of their own yet.
-    pub chart_placeholder: &'a str,
-    /// Prefix of unnamed series in chart legends.
-    pub series_prefix: &'a str,
 }
 
 struct PaneCtx<'a> {
@@ -565,7 +635,11 @@ struct PaneCtx<'a> {
     sheet: &'a Sheet,
     ts: &'a WindowTextSystem,
     hair: f32,
+    /// Tables, pivot tables or conditional formats restyle cells of this
+    /// sheet: every visible cell goes through `Workbook::display`.
+    layered: bool,
     digit_w: RefCell<HashMap<(SharedString, u32, bool), f32>>,
+    zones: RefCell<Vec<Zone>>,
 }
 
 fn solid(layout: &GridLayout, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla) -> Draw {
@@ -671,6 +745,14 @@ impl<'a> PaneCtx<'a> {
         self.ts.shape_line(text, px(size), &[run], None)
     }
 
+    /// What the features draw for one pane and layer.
+    fn feature_layer(&self, layer: PaintLayer, visible: Rect, clip: (f32, f32, f32, f32), items: &mut Vec<Draw>) {
+        let mut painter = Painter::new(self.input.app, self.layout, self.ts, layer, visible, clip, self.input.scale);
+        features::paint(&mut painter);
+        items.append(&mut painter.items);
+        self.zones.borrow_mut().append(&mut painter.zones);
+    }
+
     /// Build one pane (a block of rows × columns sharing a clip rectangle).
     fn build(&self, rows: Range<u32>, cols: Range<u32>, clip: (f32, f32, f32, f32)) -> Layer {
         let layout = self.layout;
@@ -703,6 +785,8 @@ impl<'a> PaneCtx<'a> {
         let mut borders: Vec<Draw> = Vec::new();
         let mut texts: Vec<Draw> = Vec::new();
 
+        self.feature_layer(PaintLayer::Under, visible, clip, &mut items);
+
         // Gridlines.
         if sheet.show_gridlines {
             let line = c(theme::GRIDLINE);
@@ -718,7 +802,7 @@ impl<'a> PaneCtx<'a> {
         let merges: Vec<Rect> = sheet.merges.iter().filter(|m| m.intersects(&visible)).copied().collect();
         let in_merge = |row: u32, col: u32| -> Option<Rect> { merges.iter().find(|m| m.contains(row, col)).copied() };
 
-        let has_inherited = !sheet.col_styles.is_empty() || !sheet.row_styles.is_empty();
+        let has_inherited = self.layered || !sheet.col_styles.is_empty() || !sheet.row_styles.is_empty();
         let pad = (3.0 * zoom).round().max(1.0);
 
         // Every cell that needs drawing: (row, col, pixel box, style id).
@@ -730,7 +814,11 @@ impl<'a> PaneCtx<'a> {
                         continue;
                     }
                     let id = sheet.style_id_at(*row, *col);
-                    if id != StyleId(0) || sheet.cells.contains_key(&(*row, *col)) || !sheet.spills.is_empty() {
+                    if self.layered
+                        || id != StyleId(0)
+                        || sheet.cells.contains_key(&(*row, *col))
+                        || !sheet.spills.is_empty()
+                    {
                         cells.push((*row, *col, (*x, *y, x + w, y + h), id));
                     }
                 }
@@ -799,8 +887,17 @@ impl<'a> PaneCtx<'a> {
 
         for (pass, list) in [(0, &cells), (1, &overflow_sources)] {
             for (row, col, (x0, y0, x1, y1), style_id) in list.iter() {
-                let style = wb.styles.get(*style_id);
+                // The cell's own formatting with table styles and
+                // conditional formats laid over it.
+                let display: Option<CellDisplay> = self.layered.then(|| wb.display(self.input.sheet, *row, *col));
+                let style: &Style = match &display {
+                    Some(d) => &d.style,
+                    None => wb.styles.get(*style_id),
+                };
                 let merged = in_merge(*row, *col);
+                let value = sheet.value_at(*row, *col);
+                let mut hide_text = false;
+                let mut inset = (0.0f32, 0.0f32);
                 if pass == 0 {
                     if let Some(color) = style.fill {
                         fills.push(solid(
@@ -819,10 +916,27 @@ impl<'a> PaneCtx<'a> {
                         border_edge(layout, &mut borders, b.left, false, x0 - 1.0, y0 - 1.0, *y1);
                         border_edge(layout, &mut borders, b.right, false, x1 - 1.0, y0 - 1.0, *y1);
                     }
+                    if let Some(adornment) = display.as_ref().and_then(|d| d.adornment.as_ref()) {
+                        // Data bars and icons: under the text, or beside it.
+                        let cell = features::condfmt::CellBox {
+                            row: *row,
+                            col: *col,
+                            rect: (*x0, *y0, *x1, *y1),
+                            value: &value,
+                            style,
+                            layout,
+                            ts: self.ts,
+                        };
+                        let mut paint = features::condfmt::paint_adornment(adornment, &cell);
+                        fills.append(&mut paint.under);
+                        texts.append(&mut paint.over);
+                        // "Show Bar Only" / "Show Icon Only".
+                        hide_text = adornment.hide_value;
+                        inset = paint.text_inset;
+                    }
                 }
 
-                let value = sheet.value_at(*row, *col);
-                if value.is_empty() {
+                if value.is_empty() || hide_text {
                     continue;
                 }
                 let formatted = format::format_value(&value, &style.num_fmt, wb.locale);
@@ -837,6 +951,7 @@ impl<'a> PaneCtx<'a> {
                     .map(theme::engine_color)
                     .unwrap_or(c(0x000000));
                 let line_h = (font_px * 1.22).round();
+                let (x0, x1) = (&(x0 + inset.0), &(x1 - inset.1));
                 let (w, h) = (x1 - x0, y1 - y0);
                 let indent = style.indent as f32 * 9.0 * zoom;
                 let avail = (w - 2.0 * pad - indent - 1.0).max(0.0);
@@ -980,6 +1095,7 @@ impl<'a> PaneCtx<'a> {
         items.append(&mut texts);
 
         self.selection_overlay(&mut items, visible);
+        self.feature_layer(PaintLayer::Over, visible, clip, &mut items);
         Layer {
             clip: clip_bounds,
             items,
@@ -1125,8 +1241,9 @@ fn header_text(ts: &WindowTextSystem, text: String, size: f32, color: Hsla, bold
     ts.shape_line(text.into(), px(size), &[run], None)
 }
 
-/// Build the whole grid scene: cell panes, headers, scrollbars.
-pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSystem) -> Vec<Layer> {
+/// Build the whole grid scene: cell panes, floating objects, headers,
+/// scrollbars.
+pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSystem) -> Scene {
     let sheet = &input.wb.sheets[input.sheet];
     let ctx = PaneCtx {
         input,
@@ -1134,7 +1251,9 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         sheet,
         ts,
         hair: if input.scale >= 2.0 { 0.5 } else { 1.0 },
+        layered: !sheet.tables.is_empty() || !sheet.pivots.is_empty() || !sheet.cond_formats.is_empty(),
         digit_w: RefCell::new(HashMap::new()),
+        zones: RefCell::new(Vec::new()),
     };
     let mut layers: Vec<Layer> = Vec::new();
     let (hw, hh) = (layout.header_w, layout.header_h);
@@ -1177,33 +1296,32 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         items: chrome,
     });
 
-    // Charts float over the cells and scroll with them.
-    if !sheet.charts.is_empty() {
-        let style = crate::chart_view::ChartStyle {
-            font: input.fonts.resolve(&Arc::from(opensheet_engine::style::DEFAULT_FONT)),
-            placeholder_title: input.chart_placeholder,
-            series_prefix: input.series_prefix,
-            locale: input.wb.locale,
-        };
-        let mut items: Vec<Draw> = Vec::new();
-        for chart in &sheet.charts {
-            let (x0, y0, x1, y1) = crate::chart_view::chart_rect(layout, chart);
-            if x1 < hw || y1 < hh || x0 > w || y0 > h {
+    // Charts, pictures and shapes float over the cells and scroll with them.
+    let all_visible = Rect::new(
+        if layout.frozen_rows > 0 { 0 } else { s_rows.start },
+        if layout.frozen_cols > 0 { 0 } else { s_cols.start },
+        s_rows.end.max(1) - 1,
+        s_cols.end.max(1) - 1,
+    );
+    let objects = features::objects(input.app, input.sheet);
+    if !objects.is_empty() {
+        let clip = (hw, hh, w, h);
+        let mut painter = Painter::new(input.app, layout, ts, PaintLayer::Top, all_visible, clip, input.scale);
+        for (id, object) in &objects {
+            let rect = crate::objects::object_rect(layout, &object.place);
+            if rect.2 < hw || rect.3 < hh || rect.0 > w || rect.1 > h {
                 continue;
             }
-            let data = input.wb.chart_data(input.sheet, chart);
-            items.extend(crate::chart_view::build_chart(
-                chart,
-                &data,
-                layout,
-                ts,
-                &style,
-                input.selected_chart == Some(chart.id),
-            ));
+            painter.owner = id.owner;
+            features::all()[id.owner].paint_object(&mut painter, object, rect);
+            if input.app.object_sel == Some(*id) {
+                crate::objects::paint_selection(&mut painter, rect);
+            }
         }
+        ctx.zones.borrow_mut().append(&mut painter.zones);
         layers.push(Layer {
             clip: layout.bounds_px(hw, hh, w, h),
-            items,
+            items: painter.items,
         });
     }
 
@@ -1329,6 +1447,16 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         });
     }
 
+    // What features draw over everything.
+    let mut top: Vec<Draw> = Vec::new();
+    ctx.feature_layer(PaintLayer::Top, all_visible, (0.0, 0.0, w, h), &mut top);
+    if !top.is_empty() {
+        layers.push(Layer {
+            clip: layout.bounds,
+            items: top,
+        });
+    }
+
     // Scrollbars (overlay style).
     let mut bars: Vec<Draw> = Vec::new();
     let thumb = |hot: bool| ca(0x000000, if hot { 0.45 } else { 0.25 });
@@ -1347,7 +1475,10 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         items: bars,
     });
 
-    layers
+    Scene {
+        layers,
+        zones: ctx.zones.into_inner(),
+    }
 }
 
 pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
@@ -1365,6 +1496,18 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
                     } => {
                         window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
                             let _ = line.paint(origin, line_height, window, cx);
+                        });
+                    }
+                    Draw::Turned {
+                        path,
+                        bounds,
+                        pivot,
+                        turn,
+                        color,
+                        clip,
+                    } => {
+                        window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                            crate::chart_view::paint_turned(path, bounds, pivot, turn, color, window, cx);
                         });
                     }
                     Draw::Wrapped {

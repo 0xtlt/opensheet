@@ -72,6 +72,21 @@ pub const PALETTE_STANDARD: [u32; 10] = [
     0x7030A0,
 ];
 
+/// The theme colours as a colour picker lays them out: the ten colours,
+/// then five rows of lighter and darker variants.
+pub fn palette_rows() -> Vec<[u32; 10]> {
+    let mut rows = vec![PALETTE_THEME];
+    for amount in [0.8f32, 0.6, 0.4, -0.25, -0.5] {
+        rows.push(PALETTE_THEME.map(|col| match col {
+            // White and black get greys instead of tints.
+            0xFFFFFF => tint(0xFFFFFF, -(1.0 - amount.abs()) * 0.5 - 0.05),
+            0x000000 => tint(0x000000, (amount.abs() * 0.6).min(0.9)),
+            other => tint(other, amount),
+        }));
+    }
+    rows
+}
+
 /// Lighter / darker variants of a theme colour, as in the Office picker.
 pub fn tint(hex: u32, amount: f32) -> u32 {
     let ch = |shift: u32| -> u32 {

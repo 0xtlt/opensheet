@@ -49,6 +49,13 @@ pub struct Locale {
     pub accounting_format: &'static str,
     /// Default name prefix for new sheets ("Sheet", "Feuil").
     pub sheet_prefix: &'static str,
+    /// Default name prefix for new tables ("Table", "Tableau").
+    pub table_prefix: &'static str,
+    /// Default name prefix for table columns without a header ("Column",
+    /// "Colonne").
+    pub column_prefix: &'static str,
+    /// Label written in the first cell of a table's totals row.
+    pub total_label: &'static str,
     /// Separator accepted in typed dates besides `/` and `-` (`.` in German).
     pub date_sep: char,
     /// Letters standing for day and year in number-format codes written in
@@ -412,6 +419,9 @@ static EN: Locale = Locale {
     currency_format: "$#,##0.00",
     accounting_format: "_($* #,##0.00_);_($* (#,##0.00);_($* \"-\"??_);_(@_)",
     sheet_prefix: "Sheet",
+    table_prefix: "Table",
+    column_prefix: "Column",
+    total_label: "Total",
     date_sep: '/',
     fmt_day: 'd',
     fmt_year: 'y',
@@ -462,6 +472,9 @@ static FR: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Feuil",
+    table_prefix: "Tableau",
+    column_prefix: "Colonne",
+    total_label: "Total",
     date_sep: '/',
     fmt_day: 'j',
     fmt_year: 'a',
@@ -530,6 +543,9 @@ static ES: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Hoja",
+    table_prefix: "Tabla",
+    column_prefix: "Columna",
+    total_label: "Total",
     date_sep: '/',
     fmt_day: 'd',
     fmt_year: 'a',
@@ -596,6 +612,9 @@ static DE: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Tabelle",
+    table_prefix: "Tabelle",
+    column_prefix: "Spalte",
+    total_label: "Ergebnis",
     date_sep: '.',
     fmt_day: 't',
     fmt_year: 'j',
@@ -669,6 +688,9 @@ static IT: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Foglio",
+    table_prefix: "Tabella",
+    column_prefix: "Colonna",
+    total_label: "Totale",
     date_sep: '/',
     fmt_day: 'g',
     fmt_year: 'a',

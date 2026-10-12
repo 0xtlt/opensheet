@@ -1,5 +1,6 @@
 //! A single-line text field with IME support, used for the in-cell editor,
-//! the formula bar, the name box and small ribbon fields.
+//! the formula bar, the name box, small ribbon fields and the text fields of
+//! dialogs (see `widgets.rs`).
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementId, ElementInputHandler,
@@ -105,6 +106,19 @@ pub enum InputEvent {
     Navigate { key: NavKey, shift: bool },
     Focused,
     Blurred,
+    /// The caret was placed with the mouse.
+    Clicked,
+}
+
+/// Makes a field numeric: Up / Down (and the spinner buttons drawn by
+/// `widgets::NumberField`) step its value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Spin {
+    pub min: f64,
+    pub max: f64,
+    pub step: f64,
+    /// Decimal separator used when reading and writing the value.
+    pub decimal_sep: char,
 }
 
 pub struct TextInput {
@@ -125,6 +139,14 @@ pub struct TextInput {
     pub highlights: Vec<(Range<usize>, Hsla)>,
     /// Select everything when the field gains focus by a click.
     pub select_on_focus: bool,
+    /// Select everything when the field gains focus from the keyboard, as
+    /// dialog fields do.
+    pub select_on_tab: bool,
+    /// Dialog fields let Tab, Return, Escape and the vertical arrows go on
+    /// to the dialog once the field has reported them.
+    pub propagate_keys: bool,
+    /// Numeric stepping with Up / Down.
+    pub spin: Option<Spin>,
     was_focused: bool,
 }
 
@@ -146,8 +168,21 @@ impl TextInput {
             navigate_mode: false,
             highlights: Vec::new(),
             select_on_focus: false,
+            select_on_tab: false,
+            propagate_keys: false,
+            spin: None,
             was_focused: false,
         }
+    }
+
+    /// A field for a dialog or a pane: it takes part in the Tab order and
+    /// leaves Tab, Return and Escape to its dialog.
+    pub fn field(cx: &mut Context<Self>) -> Self {
+        let mut input = TextInput::new(cx);
+        input.focus_handle = cx.focus_handle().tab_stop(true);
+        input.select_on_tab = true;
+        input.propagate_keys = true;
+        input
     }
 
     pub fn text(&self) -> &str {
@@ -163,10 +198,6 @@ impl TextInput {
         self.marked_range = None;
         self.scroll_x = px(0.);
         cx.notify();
-    }
-
-    pub fn cursor(&self) -> usize {
-        self.cursor_offset()
     }
 
     pub fn selection(&self) -> Range<usize> {
@@ -204,6 +235,70 @@ impl TextInput {
         self.replace_text_in_range(None, text, window, cx);
     }
 
+    /// The number typed in a numeric field.
+    pub fn number(&self) -> Option<f64> {
+        let sep = self.spin.map(|s| s.decimal_sep).unwrap_or('.');
+        let text: String = self
+            .content
+            .trim()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .map(|c| if c == sep { '.' } else { c })
+            .collect();
+        text.parse::<f64>().ok().filter(|n| n.is_finite())
+    }
+
+    /// Step a numeric field up (`steps > 0`) or down, within its range.
+    pub fn step(&mut self, steps: f64, cx: &mut Context<Self>) {
+        let Some(spin) = self.spin else {
+            return;
+        };
+        let current = self.number().unwrap_or(spin.min.max(0.0).min(spin.max));
+        let next = (current + steps * spin.step).clamp(spin.min, spin.max);
+        // Whole steps show no decimals; fractional ones show what they need.
+        let mut text = format!("{:.6}", next);
+        while text.contains('.') && (text.ends_with('0') || text.ends_with('.')) {
+            text.pop();
+        }
+        self.content = text.replace('.', &spin.decimal_sep.to_string());
+        self.selected_range = 0..self.content.len();
+        self.selection_reversed = false;
+        self.marked_range = None;
+        cx.emit(InputEvent::Changed);
+        cx.notify();
+    }
+
+    /// Put the caret under a point of the window that lies outside the line
+    /// of text itself (the padding of the box around the field). Clicks on
+    /// the text are handled by the field.
+    pub fn caret_to_point(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.last_bounds.is_some_and(|b| b.contains(&position)) {
+            return;
+        }
+        self.navigate_mode = false;
+        self.move_to(self.index_for_mouse_position(position), cx);
+        cx.emit(InputEvent::Clicked);
+    }
+
+    /// Byte index of the character boundary closest to a horizontal offset
+    /// from the start of the text, for text shaped with `font` at `size`.
+    pub fn index_for_offset(text: &str, x: Pixels, font: gpui::Font, size: Pixels, window: &Window) -> usize {
+        if text.is_empty() {
+            return 0;
+        }
+        let shown: SharedString = text.replace('\n', " ").into();
+        let run = TextRun {
+            len: shown.len(),
+            font,
+            color: gpui::black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let line = window.text_system().shape_line(shown, size, &[run], None);
+        line.closest_index_for_x(x).min(text.len())
+    }
+
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
         if self.navigate_mode {
             cx.emit(InputEvent::Navigate {
@@ -235,17 +330,31 @@ impl TextInput {
     }
 
     fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+        if self.spin.is_some() {
+            self.step(1.0, cx);
+            return;
+        }
         cx.emit(InputEvent::Navigate {
             key: NavKey::Up,
             shift: false,
         });
+        if self.propagate_keys {
+            cx.propagate();
+        }
     }
 
     fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+        if self.spin.is_some() {
+            self.step(-1.0, cx);
+            return;
+        }
         cx.emit(InputEvent::Navigate {
             key: NavKey::Down,
             shift: false,
         });
+        if self.propagate_keys {
+            cx.propagate();
+        }
     }
 
     fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
@@ -329,6 +438,9 @@ impl TextInput {
 
     fn enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         cx.emit(InputEvent::Enter { shift: false });
+        if self.propagate_keys {
+            cx.propagate();
+        }
     }
 
     fn shift_enter(&mut self, _: &ShiftEnter, _: &mut Window, cx: &mut Context<Self>) {
@@ -336,19 +448,32 @@ impl TextInput {
     }
 
     fn alt_enter(&mut self, _: &AltEnter, window: &mut Window, cx: &mut Context<Self>) {
+        if self.propagate_keys {
+            // Dialog fields hold a single line.
+            return;
+        }
         self.replace_text_in_range(None, "\n", window, cx);
     }
 
     fn tab(&mut self, _: &Tab, _: &mut Window, cx: &mut Context<Self>) {
         cx.emit(InputEvent::Tab { shift: false });
+        if self.propagate_keys {
+            cx.propagate();
+        }
     }
 
     fn shift_tab(&mut self, _: &ShiftTab, _: &mut Window, cx: &mut Context<Self>) {
         cx.emit(InputEvent::Tab { shift: true });
+        if self.propagate_keys {
+            cx.propagate();
+        }
     }
 
     fn escape(&mut self, _: &Escape, _: &mut Window, cx: &mut Context<Self>) {
         cx.emit(InputEvent::Escape);
+        if self.propagate_keys {
+            cx.propagate();
+        }
     }
 
     fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -373,6 +498,7 @@ impl TextInput {
         } else {
             self.move_to(self.index_for_mouse_position(event.position), cx)
         }
+        cx.emit(InputEvent::Clicked);
     }
 
     fn on_mouse_up(&mut self, _: &MouseUpEvent, _window: &mut Window, _: &mut Context<Self>) {
@@ -856,6 +982,11 @@ impl Element for TextElement {
             input.scroll_x = scroll_x;
             if focused != input.was_focused {
                 input.was_focused = focused;
+                if focused && input.select_on_tab && !input.is_selecting {
+                    input.selected_range = 0..input.content.len();
+                    input.selection_reversed = false;
+                    cx.notify();
+                }
                 cx.emit(if focused {
                     InputEvent::Focused
                 } else {

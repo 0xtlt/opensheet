@@ -1,6 +1,7 @@
 //! New / Open / Save, and the "unsaved changes" guard.
 
-use crate::app::{Dialog, ExcelApp};
+use crate::app::ExcelApp;
+use crate::shell::Alert;
 use crate::i18n::t;
 use gpui::{Context, PathPromptOptions, PromptLevel, Window};
 use std::path::PathBuf;
@@ -79,11 +80,14 @@ impl ExcelApp {
                 self.set_workbook(wb, Some(path), title, cx);
             }
             Err(err) => {
-                self.dialog = Some(Dialog {
-                    title: t("Can't open this file", "Impossible d'ouvrir ce fichier").into(),
-                    message: format!("{}\n\n{}", path.display(), err).into(),
-                });
-                cx.notify();
+                self.alert(
+                    Alert::new(
+                        t("Can't open this file", "Impossible d'ouvrir ce fichier"),
+                        format!("{}\n\n{}", path.display(), err),
+                    )
+                    .warning(),
+                    cx,
+                );
             }
         }
     }
@@ -131,11 +135,14 @@ impl ExcelApp {
                 self.set_status(t("Saved", "Enregistré"), cx);
             }
             Err(err) => {
-                self.dialog = Some(Dialog {
-                    title: t("Can't save this file", "Impossible d'enregistrer ce fichier").into(),
-                    message: format!("{}\n\n{}", path.display(), err).into(),
-                });
-                cx.notify();
+                self.alert(
+                    Alert::new(
+                        t("Can't save this file", "Impossible d'enregistrer ce fichier"),
+                        format!("{}\n\n{}", path.display(), err),
+                    )
+                    .warning(),
+                    cx,
+                );
             }
         }
     }
