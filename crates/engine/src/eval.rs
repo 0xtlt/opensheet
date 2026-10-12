@@ -298,6 +298,8 @@ fn full(
         })
         .collect();
     let mut pass = 0;
+    // The last pass that found a circular reference, while passes go on.
+    let mut circular: Option<CalcResult> = None;
     loop {
         let mut calc = Calc::new(wb, true, now, options);
         calc.hints = hints.clone();
@@ -316,12 +318,30 @@ fn full(
         }
         let found = calc.spill_rects();
         pass += 1;
-        if found == hints || pass >= MAX_PASSES {
-            let mut result = calc.finish(Vec::new());
-            result.unsettled |= found != hints;
+        let settled = found == hints;
+        let last = settled || pass >= MAX_PASSES;
+        if !last && !calc.cycles.get() {
+            hints = found;
+            continue;
+        }
+        let mut result = calc.finish(Vec::new());
+        if settled {
             return result;
         }
-        hints = found;
+        result.unsettled = true;
+        if !last {
+            circular = Some(result);
+            hints = found;
+            continue;
+        }
+        // The arrays never came to rest. A formula reading the cells its
+        // own array spills into does that: it is a circular reference
+        // when the array is there, and none once the array has given way.
+        // The answer is then the circular one, wherever the passes began.
+        return match circular {
+            Some(found) if !result.circular => found,
+            _ => result,
+        };
     }
 }
 

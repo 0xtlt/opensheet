@@ -127,6 +127,9 @@ pub(crate) struct CalcState {
     iterative: IterativeCalc,
     /// Off, every recalculation calculates every formula.
     incremental: bool,
+    /// Every recalculation of the workbook calculates every formula, the
+    /// dependency graph being kept all the same (for tests).
+    always_full: bool,
     graph: Option<DepGraph>,
     structure: Structure,
     /// Cells whose content changed since the last calculation.
@@ -169,6 +172,7 @@ impl Default for CalcState {
             mode: CalcMode::default(),
             iterative: IterativeCalc::default(),
             incremental: true,
+            always_full: false,
             graph: None,
             structure: Structure::default(),
             touched: Vec::new(),
@@ -470,6 +474,15 @@ impl Workbook {
         self.calc.runs
     }
 
+    /// For tests: with `true`, every recalculation of the whole workbook
+    /// calculates every formula. Unlike `set_incremental(false)` the rest
+    /// goes on as usual: calculating one sheet, or the formulas entered
+    /// under manual calculation.
+    #[doc(hidden)]
+    pub fn set_always_full(&mut self, on: bool) {
+        self.calc.always_full = on;
+    }
+
     /// For tests and benchmarks: with `false`, every recalculation
     /// calculates every formula, as if nothing were known of what changed.
     #[doc(hidden)]
@@ -530,7 +543,11 @@ impl Workbook {
         } else if demand == Demand::Entered {
             st.stale |= !quiet;
             self.calculate_entered(&mut st, &options);
-        } else if demand != Demand::Everything && known && !st.unsettled {
+        } else if demand != Demand::Everything
+            && known
+            && !st.unsettled
+            && !(st.always_full && !matches!(demand, Demand::Sheet(_)))
+        {
             st.sync(self);
             if st.graph.as_ref().is_some_and(|g| g.outdated()) {
                 st.graph = Some(DepGraph::build(self));

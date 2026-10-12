@@ -2,8 +2,7 @@
 //! `examples/bench.rs`.
 //!
 //! Two workbooks receive the same random edits. One recalculates what
-//! depends on each edit; the other is told to forget what it knows and
-//! calculates every formula every time. After each step they must hold the
+//! depends on each edit; the other calculates every formula every time. After each step they must hold the
 //! same values, the same spilled arrays and the same circular-reference
 //! flag. Both also check that formulas read nothing but the precedents the
 //! dependency graph knows them by (`deps::set_audit`).
@@ -1043,7 +1042,9 @@ pub fn run(seed: u64, steps: usize) -> Result<Tally, String> {
     let mut rng = Rng::new(seed);
     let mut incremental = Workbook::new(Locale::en());
     let mut full = Workbook::new(Locale::en());
-    full.set_incremental(false);
+    // Partial calculations (a sheet, a formula entered under manual
+    // calculation) go the same way in both, so that they stay in step.
+    full.set_always_full(true);
     // Two workbooks in three also calculate the precedents of a formula
     // ahead of it almost at once, as for long chains of formulas: that
     // changes nothing either.
