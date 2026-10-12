@@ -3,9 +3,11 @@
 //! column's values with its check boxes.
 //!
 //! The drop-down is a view shown with `open_popup_view`. Its submenus hang
-//! outside that view, so a press on one of their entries first closes the
-//! drop-down (a press outside it does) and then runs the entry: entries act
-//! on the press itself, through the application, never through this view.
+//! outside that view, and a press outside it closes the drop-down before
+//! anything else hears of it. So the entries act on the press itself and
+//! through the application, never through a listener of this view (which
+//! may be gone by then), and a press that lands in a submenu without
+//! running an entry puts the drop-down back (`FilterMenu::keep_open`).
 
 use super::{
     Cmd, State, apply_criteria, blanks_label, clear_filter_label, column_title, custom, dynamic_label, month_name,
