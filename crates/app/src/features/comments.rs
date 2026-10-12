@@ -9,7 +9,8 @@
 //!
 //! The marks and the boxes are painted on the grid (`notes.rs`); the box
 //! in which a note is typed and the comment cards are elements placed
-//! over it (`text_area.rs`, `card.rs`, `pane.rs`).
+//! over it (`text_area.rs`, `card.rs`, `pane.rs`). `ui_tests.rs` drives
+//! all of it in GPUI's headless window.
 
 mod card;
 mod notes;

@@ -1173,3 +1173,100 @@ fn the_pointer_finds_notes_under_frozen_panes_and_near_the_edges(cx: &mut TestAp
     let cell = in_cell(&app, cx, (31, last_col), (0.0, 0.0));
     assert!(edge.2 < f32::from(cell.x), "left of its cell");
 }
+
+// ---------------------------------------------------------- what is painted
+
+/// What the feature paints on a layer of the grid, and the zones it makes.
+fn painted(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, layer: PaintLayer) -> (Vec<crate::grid::Draw>, Vec<Zone>) {
+    app.update_in(cx, |app, window, _| {
+        let layout = app.current_layout().expect("the grid was drawn");
+        let text_system = window.text_system().clone();
+        let everything = (0.0, 0.0, layout.width(), layout.height());
+        let mut painter = Painter::new(app, &layout, &text_system, layer, Rect::new(0, 0, 40, 15), everything, 1.0);
+        Comments.paint(&mut painter);
+        (std::mem::take(&mut painter.items), std::mem::take(&mut painter.zones))
+    })
+}
+
+#[gpui::test]
+fn marks_and_boxes_are_painted_where_excel_puts_them(cx: &mut TestAppContext) {
+    use crate::grid::Draw;
+    use gpui::Background;
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.set_note(0, 4, 2, "Ada", "Ada:\nShown");
+        wb.set_note_visible(0, 4, 2, true);
+        wb.set_note(0, 7, 0, "Ada", "Ada:\nHidden");
+        wb.add_comment(0, 9, 1, &bob(), 45_000.0, "A thread");
+    });
+    let solid = |color: u32| Background::from(c(color));
+
+    // Under the boxes: one mark per annotated cell, red for a note and
+    // purple for a comment, and the whole cell answers the pointer.
+    let (marks, zones) = painted(&app, cx, PaintLayer::Over);
+    let colours: Vec<_> = marks
+        .iter()
+        .map(|draw| match draw {
+            Draw::Path(_, colour) => *colour,
+            _ => panic!("a mark is a filled shape"),
+        })
+        .collect();
+    assert_eq!(colours, [c(NOTE_MARK), c(NOTE_MARK), c(COMMENT_MARK)]);
+    let spots: Vec<Spot> = zones.iter().map(|zone| *zone.payload::<Spot>().unwrap()).collect();
+    assert_eq!(spots, [Spot::Cell(4, 2), Spot::Cell(7, 0), Spot::Cell(9, 1)]);
+    let (layout, cell) = app.update(cx, |app, _| {
+        let layout = app.current_layout().unwrap();
+        let cell = layout.rect_px(Rect::cell(4, 2));
+        (layout, cell)
+    });
+    assert_eq!(zones[0].bounds, cell);
+
+    // Over everything: the box of the note left showing, and only that one.
+    let (items, zones) = painted(&app, cx, PaintLayer::Top);
+    let rect = app.update(cx, |app, _| boxes(app, &layout)[0].rect);
+    let quads: Vec<_> = items
+        .iter()
+        .filter_map(|draw| match draw {
+            Draw::Quad(quad) => Some(quad),
+            _ => None,
+        })
+        .collect();
+    // The pale yellow paper fills the box...
+    let paper: Vec<_> = quads.iter().filter(|quad| quad.background == solid(notes::PAPER)).collect();
+    assert_eq!(paper.len(), 1);
+    assert_eq!(paper[0].bounds, layout.bounds_px(rect.0, rect.1, rect.2, rect.3));
+    // ...inside a black line, with a shadow two pixels wide at its right
+    // and under it.
+    let black: Vec<_> = quads.iter().filter(|quad| quad.background == solid(0x000000)).map(|quad| quad.bounds).collect();
+    assert_eq!(black.len(), 6);
+    assert_eq!(black[0], layout.bounds_px(rect.2, rect.1 + 2.0, rect.2 + 2.0, rect.3 + 2.0));
+    assert_eq!(black[1], layout.bounds_px(rect.0 + 2.0, rect.3, rect.2, rect.3 + 2.0));
+    assert!(black[2..].iter().all(|edge| edge.size.width == px(1.) || edge.size.height == px(1.)));
+    // The line to the cell and its arrow head are drawn first, in black.
+    assert!(matches!(&items[0], Draw::Path(_, colour) if *colour == c(0x000000)));
+    assert!(matches!(&items[1], Draw::Path(_, colour) if *colour == c(0x000000)));
+    // The text: the author on the first line, then the note, wrapped to
+    // the box and a little inside it.
+    let text: Vec<_> = items
+        .iter()
+        .filter_map(|draw| match draw {
+            Draw::Wrapped { lines, origin, .. } => Some((lines.iter().map(|line| line.text.to_string()).collect::<Vec<_>>(), *origin)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text.len(), 1);
+    assert_eq!(text[0].0, ["Ada:", "Shown"]);
+    assert_eq!(text[0].1, layout.to_window(rect.0 + notes::INSET.0, rect.1 + notes::INSET.1));
+    // The box takes the mouse: its inside, and the four sides of its border.
+    let spots: Vec<Spot> = zones.iter().map(|zone| *zone.payload::<Spot>().unwrap()).collect();
+    assert_eq!(spots[0], Spot::Body(4, 2));
+    assert_eq!(spots[1..], [Spot::Grip(4, 2, Grip::Move); 4]);
+
+    // Selected, it shows a band and eight handles, each a zone.
+    app.update_in(cx, |app, window, cx| select_box(app, (4, 2), window, cx));
+    let (items, zones) = painted(&app, cx, PaintLayer::Top);
+    let white = items.iter().filter(|draw| matches!(draw, Draw::Quad(quad) if quad.background == solid(0xFFFFFF))).count();
+    assert_eq!(white, 4);
+    let handles = zones.iter().filter(|zone| matches!(zone.payload::<Spot>(), Some(Spot::Grip(_, _, Grip::Handle(_))))).count();
+    assert_eq!(handles, 8);
+}
