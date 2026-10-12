@@ -1474,6 +1474,29 @@ fn f_formulatext(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     finish(out)
 }
 
+// ---- GETPIVOTDATA -------------------------------------------------------------
+
+/// `GETPIVOTDATA(data_field, pivot_table, [field1, item1], ...)`: the value
+/// a PivotTable shows for a value field at the given items. `#REF!` when the
+/// reference is not in a PivotTable, or when the report shows no such value.
+fn f_getpivotdata(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
+    if !args.len().is_multiple_of(2) {
+        return Err(ErrorKind::Ref);
+    }
+    let data_field = ctx.text(&args[0])?;
+    let reference = ctx.eval_ref(&args[1]).map_err(|_| ErrorKind::Ref)?;
+    let mut pairs = Vec::with_capacity(args.len() / 2 - 1);
+    for pair in args[2..].chunks(2) {
+        let field = ctx.text(&pair[0])?;
+        match ctx.eval_scalar(&pair[1]) {
+            Value::Error(e) => return Err(e),
+            item => pairs.push((field, item)),
+        }
+    }
+    let at = (reference.sheet, reference.rect.r0, reference.rect.c0);
+    crate::pivot::get_pivot_data(ctx.workbook(), at, &data_field, &pairs)
+}
+
 // ---- dynamic arrays -----------------------------------------------------------
 
 fn f_transpose(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
@@ -1964,6 +1987,7 @@ pub const FUNCTIONS: &[FunctionDef] = &[
     FunctionDef::new("ADDRESS", 2, 5, Kind::Scalar, Category::Lookup, f_address),
     FunctionDef::new("HYPERLINK", 1, 2, Kind::Scalar, Category::Lookup, f_hyperlink),
     FunctionDef::new("FORMULATEXT", 1, 1, Kind::Raw, Category::Lookup, f_formulatext),
+    FunctionDef::new("GETPIVOTDATA", 2, VAR, Kind::Raw, Category::Lookup, f_getpivotdata),
     FunctionDef::new("TRANSPOSE", 1, 1, Kind::Raw, Category::Lookup, f_transpose),
     FunctionDef::new("FILTER", 2, 3, Kind::Raw, Category::Lookup, f_filter),
     FunctionDef::new("SORT", 1, 4, Kind::Raw, Category::Lookup, f_sort),
