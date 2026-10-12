@@ -327,6 +327,25 @@ impl StyleTable {
             .unwrap_or_else(|| self.styles[0].as_ref())
     }
 
+    /// The default style (id 0): the formatting of every cell that was
+    /// given none. A new workbook has `Style::default()`; a workbook read
+    /// from a file has the default font of that file (Calibri 11 in most).
+    pub fn default_style(&self) -> &Style {
+        self.styles[0].as_ref()
+    }
+
+    /// Replace the default style. The cells without formatting of their
+    /// own change with it, so this is for a workbook being built (by the
+    /// file reader), not for one being edited.
+    pub fn set_default(&mut self, style: Style) {
+        let style = Arc::new(style);
+        let old = std::mem::replace(&mut self.styles[0], style.clone());
+        if self.index.get(&old) == Some(&0) {
+            self.index.remove(&old);
+        }
+        self.index.insert(style, 0);
+    }
+
     pub fn intern(&mut self, style: Style) -> StyleId {
         if let Some(id) = self.index.get(&style) {
             return StyleId(*id);

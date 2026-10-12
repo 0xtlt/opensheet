@@ -589,6 +589,18 @@ pub enum Draw {
         clip: Bounds<Pixels>,
         items: Vec<Draw>,
     },
+    /// A line of text turned by `turn` radians (clockwise) around `pivot`:
+    /// the title of a vertical chart axis. `path` names the text as an
+    /// asset (see `chart_view::text_asset`), `bounds` is its box before it
+    /// is turned.
+    Turned {
+        path: SharedString,
+        bounds: Bounds<Pixels>,
+        pivot: Point<Pixels>,
+        turn: f32,
+        color: Hsla,
+        clip: Bounds<Pixels>,
+    },
 }
 
 pub struct Layer {
@@ -1498,6 +1510,18 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
                     } => {
                         window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
                             let _ = line.paint(origin, line_height, window, cx);
+                        });
+                    }
+                    Draw::Turned {
+                        path,
+                        bounds,
+                        pivot,
+                        turn,
+                        color,
+                        clip,
+                    } => {
+                        window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                            crate::chart_view::paint_turned(path, bounds, pivot, turn, color, window, cx);
                         });
                     }
                     Draw::Wrapped {

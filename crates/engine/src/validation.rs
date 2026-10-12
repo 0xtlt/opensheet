@@ -13,6 +13,7 @@
 
 use crate::ast::{Expr, StructuralEdit, UnaryOp};
 use crate::eval::{Calc, compare_text};
+use crate::features::{CellShift, TIDY_LIMIT, join_sorted, tiled, without_bands};
 use crate::format;
 use crate::input;
 use crate::locale::Locale;
@@ -954,8 +955,17 @@ fn subtract_all(rects: &[Rect], cuts: &[Rect]) -> Vec<Rect> {
 }
 
 /// Join rectangles that together form a rectangle and drop those inside
-/// another, keeping the order of the list.
+/// another, keeping the order of the list. A long list (a rule left on
+/// the rows a filter shows, one block of rows after the other) is joined
+/// by sorting instead, and comes out in reading order: comparing every
+/// pair, over and over, would take for ever.
 fn coalesce(rects: &mut Vec<Rect>) {
+    if rects.len() > TIDY_LIMIT {
+        *rects = join_sorted(std::mem::take(rects));
+        if rects.len() > TIDY_LIMIT {
+            return;
+        }
+    }
     let joined = |a: &Rect, b: &Rect| -> Option<Rect> {
         let union = a.union(b);
         let inside = union == *a || union == *b;
@@ -1265,6 +1275,22 @@ fn store(sheet: &mut Sheet, rule: Validation) {
     }
 }
 
+/// As `remove_from`, for the blocks of rows a filter leaves shown in a
+/// selection (see `without_bands`), however many there are.
+fn remove_bands(sheet: &mut Sheet, bands: &[Rect]) -> bool {
+    let mut changed = false;
+    for rule in &mut sheet.validations {
+        let mut ranges = without_bands(&rule.ranges, bands);
+        if ranges != rule.ranges {
+            coalesce(&mut ranges);
+            rule.set_ranges(ranges);
+            changed = true;
+        }
+    }
+    sheet.validations.retain(|rule| !rule.ranges.is_empty());
+    changed
+}
+
 impl Workbook {
     /// The rule of a cell.
     pub fn validation_at(&self, sheet: usize, row: u32, col: u32) -> Option<&Validation> {
@@ -1373,54 +1399,76 @@ impl Workbook {
     }
 
     /// Give the block at (`dest_row`, `dest_col`) the rules of the block
-    /// `src`, cell for cell, as pasting does (Paste, Paste Special ▸
-    /// Validation): cells without a rule clear the rule of their
-    /// destination. Recorded for undo.
+    /// `src`, cell for cell, as pasting does (`paste` calls this for
+    /// Paste and for Paste Special ▸ Validation): cells without a rule
+    /// clear the rule of their destination. Recorded for undo.
     pub fn copy_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
-        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
+        if dest_row >= MAX_ROWS || dest_col >= MAX_COLS {
             return;
         }
         let rows = src.rows().min(MAX_ROWS - dest_row);
         let cols = src.cols().min(MAX_COLS - dest_col);
         let dest = Rect::new(dest_row, dest_col, dest_row + rows - 1, dest_col + cols - 1);
-        let (d_row, d_col) = (dest_row as i64 - src.r0 as i64, dest_col as i64 - src.c0 as i64);
+        self.tile_validation(src_sheet, src, dest_sheet, &[dest]);
+    }
+
+    /// As `copy_validation`, laying `src` over each of `dests`: a
+    /// destination holds a whole number of copies of `src` (one cell
+    /// pasted over a selection, a row filled down) or one copy cut short,
+    /// and every copy gets the rules of `src`. Several destinations are
+    /// the blocks of rows a filter leaves shown (see `without_bands`):
+    /// the rows it hides keep their rules. All in one pass, so that the
+    /// rules do not crumble a little more with every block.
+    pub(crate) fn tile_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dests: &[Rect]) {
+        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
+            return;
+        }
         let mut copies = Vec::new();
         for rule in &self.sheets[src_sheet].validations {
             for piece in rule.ranges.iter().filter_map(|r| r.intersection(&src)) {
-                let moved = Rect::new(
-                    (piece.r0 as i64 + d_row) as u32,
-                    (piece.c0 as i64 + d_col) as u32,
-                    (piece.r1 as i64 + d_row) as u32,
-                    (piece.c1 as i64 + d_col) as u32,
-                );
-                let Some(moved) = moved.intersection(&dest) else {
+                let ranges: Vec<Rect> = dests.iter().flat_map(|dest| tiled(piece, &src, dest)).collect();
+                let Some(first) = ranges.first() else {
                     continue;
                 };
+                let (d_row, d_col) = (first.r0 as i64 - piece.r0 as i64, first.c0 as i64 - piece.c0 as i64);
                 // The copy says in its cells what the original says in
                 // its own: the formulas keep their relative reading.
                 let mut copy = rule.clone();
-                copy.set_ranges(vec![Rect::cell(
-                    (moved.r0 as i64 - d_row) as u32,
-                    (moved.c0 as i64 - d_col) as u32,
-                )]);
+                copy.set_ranges(vec![Rect::cell(piece.r0, piece.c0)]);
                 copy.map_formulas(|e| e.shifted(d_row, d_col));
-                copy.ranges = vec![moved];
+                copy.ranges = ranges;
                 copies.push(copy);
             }
         }
         let has_rules = self.sheets[dest_sheet]
             .validations
             .iter()
-            .any(|rule| rule.ranges.iter().any(|r| r.intersects(&dest)));
+            .any(|rule| without_bands(&rule.ranges, dests) != rule.ranges);
         if copies.is_empty() && !has_rules {
             return;
         }
         self.snapshot();
         let sh = &mut self.sheets[dest_sheet];
-        remove_from(sh, &[dest]);
+        remove_bands(sh, dests);
         for copy in copies {
             store(sh, copy);
         }
+    }
+
+    /// As `clear_validation`, for the blocks of rows a filter leaves shown
+    /// in a selection (`Sheet::shown_parts`): one pass, however many
+    /// blocks there are.
+    pub(crate) fn clear_validation_in_bands(&mut self, sheet: usize, bands: &[Rect]) -> bool {
+        let touched = self.sheets.get(sheet).is_some_and(|sh| {
+            sh.validations
+                .iter()
+                .any(|rule| without_bands(&rule.ranges, bands) != rule.ranges)
+        });
+        if !touched {
+            return false;
+        }
+        self.snapshot();
+        remove_bands(&mut self.sheets[sheet], bands)
     }
 
     // ---- checking --------------------------------------------------------
@@ -1819,6 +1867,49 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     let name = wb.sheets[copy].name.clone();
     for rule in &mut wb.sheets[copy].validations {
         rule.map_formulas(|e| e.with_sheet_renamed(original, &name));
+    }
+}
+
+/// See `features::on_sheet_deleted`: rules that read the deleted sheet
+/// (the source of a list, most often) read `#REF!`.
+pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet, order: &[&str]) {
+    for rule in wb.sheets.iter_mut().flat_map(|sh| &mut sh.validations) {
+        rule.map_formulas(|e| e.with_sheet_deleted(&deleted.name, order));
+    }
+}
+
+/// See `features::on_sheet_moved`: 3-D references follow their end sheets.
+pub(crate) fn on_sheet_moved(wb: &mut Workbook, moved: &str, before: &[&str], after: &[&str]) {
+    for rule in wb.sheets.iter_mut().flat_map(|sh| &mut sh.validations) {
+        rule.map_formulas(|e| e.with_sheet_moved(moved, before, after));
+    }
+}
+
+/// See `features::on_cells_shifted`: the cells that moved keep their
+/// rules, cell for cell, as if pasted where they now are, and the rules
+/// of deleted cells go. Inserted cells take the rule of the cell before
+/// them, as rows and columns inserted into the sheet do.
+pub(crate) fn on_cells_shifted(wb: &mut Workbook, sheet: usize, shift: CellShift) {
+    if wb.sheets.iter().all(|sh| sh.validations.is_empty()) {
+        return;
+    }
+    if let Some((from, to)) = shift.carried() {
+        wb.copy_validation(sheet, from, sheet, to.r0, to.c0);
+    }
+    match shift.inserted() {
+        Some((blank, Some(before))) => wb.tile_validation(sheet, before, sheet, &[blank]),
+        Some((blank, None)) => {
+            wb.clear_validation(sheet, &[blank]);
+        }
+        None => {}
+    }
+    // Rules anywhere that name the moved cells go on reading them.
+    let edited = wb.sheets[sheet].name.clone();
+    for sh in &mut wb.sheets {
+        let own = sh.name.clone();
+        for rule in &mut sh.validations {
+            rule.map_formulas(|e| shift.fix_rule(e, &edited, &own));
+        }
     }
 }
 

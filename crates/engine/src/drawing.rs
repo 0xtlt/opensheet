@@ -13,11 +13,12 @@
 //! writer can both follow.
 
 use crate::ast::StructuralEdit;
+use crate::features::CellShift;
 use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS};
 use crate::style::{Color, Font};
 use crate::validation::localized;
-use crate::workbook::{DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, Sheet, Workbook};
+use crate::workbook::{Sheet, Workbook};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -1209,7 +1210,7 @@ impl Track<'_> {
 
 pub(crate) fn columns(sheet: &Sheet) -> Track<'_> {
     Track {
-        default: DEFAULT_COL_WIDTH as f64,
+        default: sheet.default_col_width as f64,
         sizes: &sheet.col_widths,
         hidden: [&sheet.hidden_cols, &NO_CELLS],
         count: MAX_COLS,
@@ -1218,7 +1219,7 @@ pub(crate) fn columns(sheet: &Sheet) -> Track<'_> {
 
 pub(crate) fn rows(sheet: &Sheet) -> Track<'_> {
     Track {
-        default: DEFAULT_ROW_HEIGHT as f64,
+        default: sheet.default_row_height as f64,
         sizes: &sheet.row_heights,
         hidden: [&sheet.hidden_rows, &sheet.filtered_rows],
         count: MAX_ROWS,
@@ -1621,6 +1622,18 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
         drawing.id = id;
     }
 }
+
+/// See `features::on_sheet_deleted`: the drawings of a sheet go with it,
+/// and those of the other sheets name no sheet.
+pub(crate) fn on_sheet_deleted(_wb: &mut Workbook, _deleted: &Sheet, _order: &[&str]) {}
+
+/// See `features::on_sheet_moved`: drawings are kept on their sheet.
+pub(crate) fn on_sheet_moved(_wb: &mut Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+
+/// See `features::on_cells_shifted`. Drawings are pinned to the rows and
+/// the columns of the grid, which stay where they are when only some of
+/// their cells are shifted.
+pub(crate) fn on_cells_shifted(_wb: &mut Workbook, _sheet: usize, _shift: CellShift) {}
 
 #[cfg(test)]
 mod tests {

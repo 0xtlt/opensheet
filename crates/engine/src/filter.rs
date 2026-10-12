@@ -15,6 +15,7 @@
 use crate::ast::StructuralEdit;
 use crate::datetime::{date_to_serial, now_serial, serial_to_hms, serial_to_ymd, weekday};
 use crate::eval::compare_text;
+use crate::features::CellShift;
 use crate::format::{self, FormatKind};
 use crate::functions::wildcard_match;
 use crate::input::parse_numeric_text;
@@ -1520,6 +1521,19 @@ pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
 /// See `features::on_sheet_duplicated`. The copy keeps the filter and the
 /// hidden rows of the original; nothing in them names the sheet.
 pub(crate) fn on_sheet_duplicated(_wb: &mut Workbook, _copy: usize, _original: &str) {}
+
+/// See `features::on_sheet_deleted`. The filter of the sheet and the rows
+/// it hid went with it.
+pub(crate) fn on_sheet_deleted(_wb: &mut Workbook, _deleted: &Sheet, _order: &[&str]) {}
+
+/// See `features::on_sheet_moved`. Filters are kept on their sheet and
+/// travel with it.
+pub(crate) fn on_sheet_moved(_wb: &mut Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+
+/// See `features::on_cells_shifted`. Cells under the sheet's filter are
+/// never shifted (the move is refused), and the rows hidden for a table
+/// are moved by the table as it grows or shrinks.
+pub(crate) fn on_cells_shifted(_wb: &mut Workbook, _sheet: usize, _shift: CellShift) {}
 
 #[cfg(test)]
 mod tests {
