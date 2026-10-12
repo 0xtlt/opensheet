@@ -1741,8 +1741,8 @@ impl ExcelApp {
             group(
                 t("Get & Transform Data", "Récupérer et transformer des données"),
                 row(vec![
-                    self.cmd_large("dt-get", misc::Cmd::GetData, true, cx),
-                    self.cmd_large("dt-refresh", misc::Cmd::RefreshAll, true, cx),
+                    self.cmd_large("dt-get", data_tools::Cmd::GetData, true, cx),
+                    self.cmd_large("dt-refresh", data_tools::Cmd::RefreshMenu, true, cx),
                 ]),
             )
             .into_any_element(),

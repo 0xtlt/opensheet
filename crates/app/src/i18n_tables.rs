@@ -2711,6 +2711,15 @@ pub static ES: &[(&str, &str)] = &[
     ("Scenario Manager…", "Administrador de escenarios…"),
     ("Goal Seek…", "Buscar objetivo…"),
     ("Data Table…", "Tabla de datos…"),
+    ("Import Data", "Importar datos"),
+    ("Excel cannot find the text file to refresh this external data range.\n\nCheck to make sure the text file has not been moved or renamed, then try the refresh again.", "No se puede encontrar el archivo de texto para actualizar este rango de datos externos.\n\nCompruebe que no se haya cambiado el nombre del archivo de texto o que no se haya movido y vuelva a intentar realizar la actualización."),
+    ("Import", "Importar"),
+    ("Where do you want to put the data?", "¿Dónde desea situar los datos?"),
+    ("Existing sheet:", "Hoja existente:"),
+    ("Start import at row:", "Comenzar a importar en la fila:"),
+    ("Text Import Wizard - Step | of 3", "Asistente para importar texto - paso | de 3"),
+    ("Preview of file |.", "Vista previa del archivo |."),
+    ("From Text/CSV…", "De texto/CSV…"),
 ];
 
 pub static DE: &[(&str, &str)] = &[
@@ -5401,6 +5410,15 @@ pub static DE: &[(&str, &str)] = &[
     ("Scenario Manager…", "Szenario-Manager…"),
     ("Goal Seek…", "Zielwertsuche…"),
     ("Data Table…", "Datentabelle…"),
+    ("Import Data", "Daten importieren"),
+    ("Excel cannot find the text file to refresh this external data range.\n\nCheck to make sure the text file has not been moved or renamed, then try the refresh again.", "Excel kann die Textdatei für die Aktualisierung des externen Datenbereichs nicht finden.\n\nVergewissern Sie sich, dass die Textdatei nicht verschoben oder umbenannt wurde. Wiederholen Sie anschließend die Aktualisierung."),
+    ("Import", "Importieren"),
+    ("Where do you want to put the data?", "Wo sollen die Daten eingefügt werden?"),
+    ("Existing sheet:", "Vorhandenes Blatt:"),
+    ("Start import at row:", "Import beginnen in Zeile:"),
+    ("Text Import Wizard - Step | of 3", "Textkonvertierungs-Assistent - Schritt | von 3"),
+    ("Preview of file |.", "Vorschau der Datei |."),
+    ("From Text/CSV…", "Aus Text/CSV…"),
 ];
 
 pub static IT: &[(&str, &str)] = &[
@@ -8085,4 +8103,13 @@ pub static IT: &[(&str, &str)] = &[
     ("Scenario Manager…", "Gestione scenari…"),
     ("Goal Seek…", "Ricerca obiettivo…"),
     ("Data Table…", "Tabella dati…"),
+    ("Import Data", "Importa dati"),
+    ("Excel cannot find the text file to refresh this external data range.\n\nCheck to make sure the text file has not been moved or renamed, then try the refresh again.", "Impossibile trovare il file di testo necessario per aggiornare l'intervallo di dati esterno.\n\nControllare che il file di testo non sia stato spostato o rinominato, quindi ripetere l'aggiornamento."),
+    ("Import", "Importa"),
+    ("Where do you want to put the data?", "Indicare dove si desidera inserire i dati."),
+    ("Existing sheet:", "Foglio esistente:"),
+    ("Start import at row:", "Inizia ad importare alla riga:"),
+    ("Text Import Wizard - Step | of 3", "Importazione guidata testo - Passaggio | di 3"),
+    ("Preview of file |.", "Anteprima del file |."),
+    ("From Text/CSV…", "Da testo/CSV…"),
 ];

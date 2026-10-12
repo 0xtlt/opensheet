@@ -757,3 +757,144 @@ fn data_table_refusals(cx: &mut TestAppContext) {
     assert!(app.update(cx, |app, _| app.wb.sheets[0].data_tables.is_empty()));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
 }
+
+// ------------------------------------------------- Get Data and Refresh All
+
+/// A text file of this test, in a directory of its own.
+fn text_file(name: &str, content: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("opensheet-datatools-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a directory for the test");
+    let path = dir.join("sales.csv");
+    std::fs::write(&path, content).expect("the file is written");
+    path
+}
+
+fn import(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, path: &std::path::Path) -> Entity<text_wizard::Wizard> {
+    let wizard = app.update_in(cx, |app, window, cx| import::import_file(app, path, window, cx));
+    redraw(cx);
+    wizard.expect("the Text Import Wizard")
+}
+
+#[gpui::test]
+fn get_data_from_text_then_refresh_all(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let path = text_file("refresh", "Sales 2024\nName;Qty\nAnn;3\nBob;4\n");
+    // The menu of the ribbon button.
+    run(&app, cx, Cmd::GetData);
+    assert!(!modal_open(&app, cx));
+    select(&app, cx, "B2");
+    let wizard = import(&app, cx, &path);
+    assert!(modal_open(&app, cx));
+    // The title line is skipped; the semicolon is recognised.
+    wizard.update(cx, |wizard, cx| wizard.set_first_row(2, cx));
+    redraw(cx);
+    cx.simulate_keystrokes("enter enter enter");
+    redraw(cx);
+    // "Import Data" proposes the active cell; Return takes it.
+    assert!(modal_open(&app, cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "B2"), text("Name"));
+    assert_eq!(value(&app, cx, "C4"), Value::Number(4.0));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Import Data"));
+    let kept = app.update(cx, |app, _| app.wb.sheets[0].text_imports[0].clone());
+    assert_eq!((kept.name.as_str(), kept.first_row, kept.range), ("sales", 2, Rect::parse("B2:C4").unwrap()));
+
+    // The file changes; Refresh All reads it again, in one step.
+    std::fs::write(&path, "Sales 2025\nName;Qty\nCid;9\n").unwrap();
+    run(&app, cx, Cmd::RefreshAll);
+    assert_eq!(value(&app, cx, "B3"), text("Cid"));
+    assert_eq!(value(&app, cx, "C3"), Value::Number(9.0));
+    assert_eq!(value(&app, cx, "B4"), Value::Empty);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh All"));
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "B4"), text("Bob"));
+    // Refresh works where the data is, and only there.
+    select(&app, cx, "F9");
+    assert!(!app.update(cx, |app, _| crate::features::Command::enabled(Cmd::Refresh, app)));
+    select(&app, cx, "C3");
+    assert!(app.update(cx, |app, _| crate::features::Command::enabled(Cmd::Refresh, app)));
+    run(&app, cx, Cmd::Refresh);
+    assert_eq!(value(&app, cx, "B3"), text("Cid"));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh"));
+
+    // The file is gone: Excel's message, and the data stays.
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    run(&app, cx, Cmd::RefreshAll);
+    assert_eq!(modal_count(&app, cx), 1);
+    assert_eq!(value(&app, cx, "B3"), text("Cid"));
+}
+
+#[gpui::test]
+fn get_data_on_a_new_sheet_and_refusals(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let path = text_file("new-sheet", "a,b\n1,2\n");
+    let wizard = import(&app, cx, &path);
+    wizard.update_in(cx, |wizard, window, cx| wizard.finish(window, cx));
+    redraw(cx);
+    // A destination that is no reference keeps the dialog.
+    let dialog = app.update_in(cx, |app, window, cx| {
+        app.close_modal(window, cx);
+        let import = opensheet_engine::text_columns::TextImport {
+            name: String::new(),
+            path: path.to_string_lossy().into_owned(),
+            range: Rect::cell(0, 0),
+            first_row: 1,
+            spec: opensheet_engine::text_columns::Spec::new(opensheet_engine::text_columns::Layout::Delimited(
+                opensheet_engine::text_columns::Delimiters::only(','),
+            )),
+        };
+        import::open_destination(app, import, "a,b\n1,2".to_string(), window, cx)
+    });
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| dialog.set(false, "nowhere", cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(modal_open(&app, cx));
+    // On a new sheet: it comes after the current one and is shown.
+    dialog.update(cx, |dialog, cx| dialog.set(true, "", cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())), (1, 2));
+    assert_eq!(value(&app, cx, "B2"), Value::Number(2.0));
+    cx.simulate_keystrokes("cmd-z");
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())), (0, 1));
+    // A file that is not there, or empty: a message, no wizard.
+    std::fs::write(&path, "").unwrap();
+    for missing in [path.clone(), path.with_file_name("none.csv")] {
+        assert!(app.update_in(cx, |app, window, cx| import::import_file(app, &missing, window, cx)).is_none());
+        redraw(cx);
+        assert_eq!(modal_count(&app, cx), 1);
+    }
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[gpui::test]
+fn refresh_all_recomputes_pivot_tables(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "City"), ("B1", "Qty"), ("A2", "Paris"), ("B2", "1"), ("A3", "Lyon"), ("B3", "2")]);
+    app.update(cx, |app, cx| {
+        let source = opensheet_engine::pivot::PivotSource::parse("Sheet1!$A$1:$B$3", 0, &app.wb).expect("a source");
+        let dest = opensheet_engine::pivot::PivotDestination::Existing { sheet: 0, row: 0, col: 4 };
+        let id = app.wb.pivot_create(source, dest, false).expect("a PivotTable");
+        app.wb.pivot_add_field(id, 1, opensheet_engine::pivot::Area::Values, None, false).expect("a value field");
+        app.commit("pivot", cx);
+    });
+    redraw(cx);
+    let total = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| -> Vec<Value> {
+        // What the report shows, wherever its total sits.
+        app.update(cx, |app, _| (0..8).flat_map(|r| (4..8).map(move |c| (r, c))).map(|(r, c)| app.wb.value_at(0, r, c)).collect())
+    };
+    assert!(total(&app, cx).contains(&Value::Number(3.0)));
+    // The source changes; the report waits for a refresh.
+    fill(&app, cx, &[("B3", "10")]);
+    assert!(total(&app, cx).contains(&Value::Number(3.0)));
+    run(&app, cx, Cmd::RefreshAll);
+    assert!(total(&app, cx).contains(&Value::Number(11.0)), "{:?}", total(&app, cx));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh All"));
+}

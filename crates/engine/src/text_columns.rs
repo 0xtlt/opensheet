@@ -287,20 +287,22 @@ pub fn looks_delimited<S: AsRef<str>>(lines: &[S]) -> bool {
     !(padded && !guess_breaks(lines).is_empty())
 }
 
-/// The delimiters the wizard ticks for this text: the tab, plus the
-/// first of `;`, `,` and the space that every line has.
+/// The delimiters the wizard ticks for this text: the tab, plus `;` or
+/// `,` when most lines have it (a title line may not), else the space
+/// when every line has one.
 pub fn guess_delimiters<S: AsRef<str>>(lines: &[S]) -> Delimiters {
     let mut d = Delimiters::default();
     let lines: Vec<&str> = lines.iter().map(AsRef::as_ref).filter(|line| !line.is_empty()).collect();
     if lines.is_empty() || lines.iter().any(|line| line.contains('\t')) {
         return d;
     }
-    let every = |ch: char| lines.iter().all(|line| line.contains(ch));
-    if every(';') {
+    let with = |ch: char| lines.iter().filter(|line| line.contains(ch)).count();
+    let (semicolons, commas) = (with(';'), with(','));
+    if semicolons * 2 > lines.len() && semicolons >= commas {
         d.semicolon = true;
-    } else if every(',') {
+    } else if commas * 2 > lines.len() {
         d.comma = true;
-    } else if every(' ') {
+    } else if with(' ') == lines.len() {
         d.space = true;
     }
     d
@@ -530,6 +532,12 @@ impl Workbook {
         name
     }
 
+    /// Where the text of a file would land from `dest` with the settings
+    /// of `import`.
+    pub fn text_import_extent(&self, dest: (u32, u32), text: &str, import: &TextImport) -> Result<Rect, TextColumnsError> {
+        self.text_columns_extent(dest, &import.lines(text), &import.spec)
+    }
+
     /// Import the text of a file into `sheet` from `dest`, and remember
     /// the import there. `import.range` and an empty `import.name` are
     /// filled in. Returns the rectangle written. The caller commits.
@@ -660,6 +668,8 @@ mod tests {
         assert!(guess_delimiters(&["a;b", "c;d"]).semicolon);
         assert!(guess_delimiters(&["a,b", "c,d"]).comma);
         assert!(guess_delimiters(&["Jean Dupont", "Marie Curie"]).space);
+        assert!(guess_delimiters(&["Sales 2024", "a;b", "c;d"]).semicolon);
+        assert!(guess_delimiters(&["a;b,5", "c;d,5"]).semicolon);
         let tab = guess_delimiters(&["a\tb c", "d\te"]);
         assert!(tab.tab && !tab.space);
         assert_eq!(field_count(&["a;b", "c;d;e"], &Layout::Delimited(Delimiters::only(';'))), 3);

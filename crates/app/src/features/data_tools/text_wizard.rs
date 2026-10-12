@@ -1,6 +1,7 @@
 //! The Convert Text to Columns Wizard: three steps (the kind of text, the
 //! delimiters or the break lines, the format of each column) over a
-//! preview of the data.
+//! preview of the data. The same wizard, as the Text Import Wizard, cuts
+//! the lines of a text file (`import.rs`).
 
 use super::{typed_range, warn};
 use crate::app::ExcelApp;
@@ -9,15 +10,15 @@ use crate::i18n::t;
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, Checkbox, GroupBox, RadioGroup, RefEdit, Select, TextField, dialog, label};
+use crate::widgets::{self, Button, Checkbox, GroupBox, RadioGroup, RefEdit, Select, TextField, dialog};
 use gpui::{
     Context, Entity, Font, FontStyle, FontWeight, MouseButton, MouseDownEvent, Pixels, Point, SharedString, Window, canvas,
     div, prelude::*, px,
 };
 use opensheet_engine::Rect;
 use opensheet_engine::text_columns::{
-    ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextColumnsError, field_count, guess_breaks, guess_delimiters,
-    looks_delimited, split_line,
+    ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextColumnsError, TextImport, field_count, guess_breaks,
+    guess_delimiters, looks_delimited, split_line, text_lines,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -105,7 +106,23 @@ pub(super) fn open_text_to_columns(app: &mut ExcelApp, window: &mut Window, cx: 
         }
     };
     let destination = RefStyle::absolute().format(Rect::cell(source.r0, source.c0), &app.wb.sheets[app.sheet].name);
-    Some(app.open_modal(window, cx, move |modal, _, cx| Wizard::new(modal, source, lines, destination, cx)))
+    Some(app.open_modal(window, cx, move |modal, _, cx| Wizard::new(modal, Purpose::Columns(source), lines, destination, cx)))
+}
+
+/// Get Data ▸ From Text/CSV: open the wizard on the text of a file.
+pub(super) fn open_text_import(app: &mut ExcelApp, path: String, text: &str, window: &mut Window, cx: &mut Cx) -> Entity<Wizard> {
+    // Line breaks inside quoted fields belong to their field.
+    let lines = text_lines(text, Some('"'));
+    app.open_modal(window, cx, move |modal, _, cx| Wizard::new(modal, Purpose::Import(path), lines, String::new(), cx))
+}
+
+/// What the wizard cuts.
+#[derive(Clone, Debug, PartialEq)]
+enum Purpose {
+    /// The cells of a column, written back from a destination.
+    Columns(Rect),
+    /// The lines of the text file at this path.
+    Import(String),
 }
 
 fn error_text(error: TextColumnsError) -> &'static str {
@@ -188,9 +205,11 @@ fn carry_out(app: &mut ExcelApp, plan: Plan, cx: &mut Cx) {
 
 pub(super) struct Wizard {
     modal: Modal,
-    /// The column being converted.
-    source: Rect,
+    purpose: Purpose,
+    /// Every line of the column or of the file.
     lines: Vec<String>,
+    /// "Start import at row", for a file.
+    first_row: Entity<TextInput>,
     /// 0, 1 or 2.
     step: usize,
     delimited: bool,
@@ -212,7 +231,7 @@ pub(super) struct Wizard {
 }
 
 impl Wizard {
-    fn new(modal: Modal, source: Rect, lines: Vec<String>, destination: String, cx: &mut Context<Self>) -> Self {
+    fn new(modal: Modal, purpose: Purpose, lines: Vec<String>, destination: String, cx: &mut Context<Self>) -> Self {
         let sample = &lines[..lines.len().min(64)];
         // The order dates are typed in with this interface language.
         let date_order = match crate::i18n::lang().locale().date_order {
@@ -226,8 +245,9 @@ impl Wizard {
             other_on: false,
             other: widgets::input(cx, ""),
             destination: modal.ref_input(RefStyle::absolute(), destination, cx),
+            first_row: widgets::number_input(cx, Some(1.0), 1.0, 1_048_576.0, 1.0),
             modal,
-            source,
+            purpose,
             lines,
             step: 0,
             formats: Vec::new(),
@@ -255,21 +275,33 @@ impl Wizard {
         }
     }
 
-    fn shown(&self) -> &[String] {
-        &self.lines[..self.lines.len().min(PREVIEW_LINES)]
+    /// The first line taken (1 is the first there is).
+    fn first_row(&self, cx: &Context<Self>) -> u32 {
+        self.first_row.read(cx).number().map_or(1, |n| n.max(1.0) as u32)
+    }
+
+    /// The lines that are cut: all of them, from "Start import at row".
+    fn data(&self, cx: &Context<Self>) -> &[String] {
+        let skip = (self.first_row(cx) as usize - 1).min(self.lines.len());
+        &self.lines[skip..]
+    }
+
+    fn shown(&self, cx: &Context<Self>) -> &[String] {
+        let data = self.data(cx);
+        &data[..data.len().min(PREVIEW_LINES)]
     }
 
     /// The shown lines cut into fields.
     fn shown_fields(&self, cx: &Context<Self>) -> Vec<Vec<String>> {
         let layout = self.layout(cx);
-        self.shown().iter().map(|line| split_line(line, &layout)).collect()
+        self.shown(cx).iter().map(|line| split_line(line, &layout)).collect()
     }
 
     pub(super) fn go_to_step(&mut self, step: usize, cx: &mut Context<Self>) {
         self.step = step.min(2);
         if self.step == 2 {
             // One format per column of the data as it is cut now.
-            let columns = field_count(&self.lines, &self.layout(cx));
+            let columns = field_count(self.data(cx), &self.layout(cx));
             self.formats.resize(columns, ColumnFormat::General);
             self.column = self.column.min(columns.saturating_sub(1));
         }
@@ -379,21 +411,45 @@ impl Wizard {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn set_first_row(&mut self, row: u32, cx: &mut Context<Self>) {
+        self.first_row.update(cx, |field, cx| field.set_text(row.to_string(), cx));
+    }
+
     pub(super) fn finish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Finish from an earlier step keeps every column General.
         if self.step < 2 {
-            let columns = field_count(&self.lines, &self.layout(cx));
+            let columns = field_count(self.data(cx), &self.layout(cx));
             self.formats.resize(columns, ColumnFormat::General);
         }
-        let (source, spec) = (self.source, self.spec(cx));
-        let destination = self.destination.read(cx).text().to_string();
-        let Some(Some(plan)) = self.modal.update_app(cx, |app, cx| plan(app, source, &destination, spec, cx)) else {
-            return;
-        };
-        // The wizard goes away first: the question about data in the way
-        // is asked over the sheet, as in Excel.
-        self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| carry_out(app, plan, cx));
+        let spec = self.spec(cx);
+        match self.purpose.clone() {
+            Purpose::Columns(source) => {
+                let destination = self.destination.read(cx).text().to_string();
+                let Some(Some(plan)) = self.modal.update_app(cx, |app, cx| plan(app, source, &destination, spec, cx)) else {
+                    return;
+                };
+                // The wizard goes away first: the question about data in
+                // the way is asked over the sheet, as in Excel.
+                self.modal.close(window, cx);
+                self.modal.update_app(cx, |app, cx| carry_out(app, plan, cx));
+            }
+            Purpose::Import(path) => {
+                let import = TextImport {
+                    name: String::new(),
+                    path,
+                    range: Rect::cell(0, 0),
+                    first_row: self.first_row(cx),
+                    spec,
+                };
+                let text = self.lines.join("\n");
+                // "Import Data" asks where the data goes.
+                self.modal.close(window, cx);
+                self.modal.update_app(cx, |app, cx| {
+                    super::import::open_destination(app, import, text, window, cx);
+                });
+            }
+        }
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
@@ -408,7 +464,7 @@ impl Wizard {
 
     fn preview(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let (step, delimited) = (self.step, self.delimited);
-        let lines: Vec<String> = self.shown().to_vec();
+        let lines: Vec<String> = self.shown(cx).to_vec();
         let fields = self.shown_fields(cx);
         let breaks = self.breaks.clone();
         let formats = self.formats.clone();
@@ -536,6 +592,12 @@ impl Wizard {
                 )
                 .on_change(cx.listener(|this, index: &usize, _, cx| this.set_delimited(*index == 0, cx))),
             )
+            .when(matches!(self.purpose, Purpose::Import(_)), |page| {
+                page.child(widgets::labeled(
+                    t("Start import at row:", "Commencer l’importation à la ligne :"),
+                    widgets::NumberField::new("first-row", &self.first_row).width(80.0),
+                ))
+            })
     }
 
     fn step_two(&self, cx: &mut Context<Self>) -> gpui::Div {
@@ -681,20 +743,29 @@ impl Wizard {
                         ),
                 ),
             )
-            .child(widgets::labeled(
-                t("Destination:", "Destination :"),
-                RefEdit::new(&self.destination, &self.modal).width(220.0),
-            ))
+            // A file is placed by the Import Data dialog that follows.
+            .when(matches!(self.purpose, Purpose::Columns(_)), |page| {
+                page.child(widgets::labeled(
+                    t("Destination:", "Destination :"),
+                    RefEdit::new(&self.destination, &self.modal).width(220.0),
+                ))
+            })
     }
 }
 
 impl Render for Wizard {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let title = t(
-            "Convert Text to Columns Wizard - Step | of 3",
-            "Assistant Conversion - Étape | sur 3",
-        )
-        .replace('|', &(self.step + 1).to_string());
+        let (title, preview) = match &self.purpose {
+            Purpose::Columns(_) => (
+                t("Convert Text to Columns Wizard - Step | of 3", "Assistant Conversion - Étape | sur 3"),
+                t("Preview of selected data:", "Aperçu des données sélectionnées :").to_string(),
+            ),
+            Purpose::Import(path) => (
+                t("Text Import Wizard - Step | of 3", "Assistant Importation de texte - Étape | sur 3"),
+                t("Preview of file |.", "Aperçu du fichier |.").replace('|', path),
+            ),
+        };
+        let title = title.replace('|', &(self.step + 1).to_string());
         let page = match self.step {
             0 => self.step_one(cx),
             1 => self.step_two(cx),
@@ -727,7 +798,7 @@ impl Render for Wizard {
             // Every step is as tall as the tallest, so that the buttons
             // do not move under the pointer.
             .child(page.h(px(176.)))
-            .child(label(t("Preview of selected data:", "Aperçu des données sélectionnées :")))
+            .child(div().overflow_hidden().whitespace_nowrap().child(preview))
             .child(self.preview(cx))
             .footer(footer)
     }

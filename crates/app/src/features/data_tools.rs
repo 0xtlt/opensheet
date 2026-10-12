@@ -10,6 +10,7 @@
 mod advanced;
 mod consolidate;
 mod flash;
+mod import;
 mod text_wizard;
 mod whatif;
 #[cfg(test)]
@@ -35,6 +36,11 @@ commands! {
         ScenarioManager = "", t("Scenario Manager…", "Gestionnaire de scénarios…");
         GoalSeek = "", t("Goal Seek…", "Valeur cible…");
         DataTable = "", t("Data Table…", "Table de données…");
+        GetData = "data", t("Get Data", "Obtenir des données");
+        FromText = "", t("From Text/CSV…", "À partir d’un fichier texte/CSV…");
+        RefreshMenu = "refresh", t("Refresh All", "Actualiser tout");
+        RefreshAll = "refresh", t("Refresh All", "Actualiser tout");
+        Refresh = "", t("Refresh", "Actualiser");
     }
 }
 
@@ -45,6 +51,13 @@ impl Command for Cmd {
 
     fn icon(self) -> &'static str {
         self.face().0
+    }
+
+    fn enabled(self, app: &ExcelApp) -> bool {
+        match self {
+            Cmd::Refresh => import::can_refresh_here(app),
+            _ => true,
+        }
     }
 
     fn run(self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
@@ -76,6 +89,17 @@ impl Command for Cmd {
             Cmd::DataTable => {
                 whatif::open_data_table(app, window, cx);
             }
+            Cmd::GetData => {
+                let entries = vec![MenuEntry::command(Cmd::FromText, app)];
+                app.open_command_menu(entries, 260.0, window, cx);
+            }
+            Cmd::FromText => import::choose_file(app, window, cx),
+            Cmd::RefreshMenu => {
+                let entries = vec![MenuEntry::command(Cmd::RefreshAll, app), MenuEntry::command(Cmd::Refresh, app)];
+                app.open_command_menu(entries, 220.0, window, cx);
+            }
+            Cmd::RefreshAll => import::refresh_all(app, window, cx),
+            Cmd::Refresh => import::refresh_here(app, window, cx),
         }
     }
 }

@@ -470,6 +470,17 @@ fn update_active(
     }
 }
 
+/// Data > Refresh All, for the PivotTables: every one is recomputed from
+/// its source.
+pub fn refresh_all(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    actions::refresh(app, true, window, cx);
+}
+
+/// Data > Refresh All > Refresh, on the PivotTable of the active cell.
+pub fn refresh_active(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    actions::refresh(app, false, window, cx);
+}
+
 /// A command inserted a sheet at `index`: the views follow the sheets.
 fn sheet_inserted(app: &mut ExcelApp, index: usize) {
     let index = index.min(app.views.len());
