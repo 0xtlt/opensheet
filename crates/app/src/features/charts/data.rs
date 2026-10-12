@@ -102,14 +102,15 @@ pub fn data_range(app: &ExcelApp, own_sheet: usize, kind: ChartKind, series: &[S
         Some(name) => app.wb.sheet_index(name)?,
         None => own_sheet,
     };
-    // Series may run along the rows or the columns of the block.
+    // Series may run along the rows or the columns of the block, and in
+    // any order: moving one up or down does not change the range.
     let same = |rebuilt: &Chart| {
-        rebuilt.series.len() == series.len()
-            && rebuilt.series.iter().zip(series).all(|(a, b)| {
-                a.values.rect() == b.values.rect()
-                    && a.categories.as_ref().map(RefExpr::rect) == b.categories.as_ref().map(RefExpr::rect)
-                    && a.bubble_sizes.as_ref().map(RefExpr::rect) == b.bubble_sizes.as_ref().map(RefExpr::rect)
-            })
+        let alike = |a: &Series, b: &Series| {
+            a.values.rect() == b.values.rect()
+                && a.categories.as_ref().map(RefExpr::rect) == b.categories.as_ref().map(RefExpr::rect)
+                && a.bubble_sizes.as_ref().map(RefExpr::rect) == b.bubble_sizes.as_ref().map(RefExpr::rect)
+        };
+        rebuilt.series.len() == series.len() && series.iter().all(|ours| rebuilt.series.iter().any(|theirs| alike(ours, theirs)))
     };
     let fits = [Some(false), Some(true)].into_iter().any(|by_rows| same(&app.wb.chart_from_block(sheet, block, kind, by_rows)));
     fits.then(|| RefStyle::formula().format(block, &app.wb.sheets[sheet].name))
@@ -132,14 +133,16 @@ struct SelectData {
 }
 
 pub(crate) fn open_select_data(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let Some(chart) = app.selected_chart().cloned() else {
-        return;
-    };
+    open_dialog(app, window, cx);
+}
+
+fn open_dialog(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<Entity<SelectData>> {
+    let chart = app.selected_chart().cloned()?;
     let sheet = app.sheet;
     let own_sheet = app.wb.sheets[sheet].name.to_string();
     let locale = app.wb.locale;
     let range = data_range(app, sheet, chart.kind, &chart.series).unwrap_or_default();
-    app.open_modal(window, cx, move |modal, _, cx| SelectData {
+    Some(app.open_modal(window, cx, move |modal, _, cx| SelectData {
         range: modal.ref_input(RefStyle::formula(), range.clone(), cx),
         modal,
         kind: chart.kind,
@@ -150,7 +153,7 @@ pub(crate) fn open_select_data(app: &mut ExcelApp, window: &mut Window, cx: &mut
         series: chart.series,
         blanks: chart.blanks,
         applied: range,
-    });
+    }))
 }
 
 impl SelectData {

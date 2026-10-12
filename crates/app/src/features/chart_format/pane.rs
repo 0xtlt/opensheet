@@ -4,11 +4,12 @@
 
 use super::fields::{self, Field, MARKER_SHAPES, fill_of, is_lined, labels_mut, line_of, line_of_mut, marker_mut, set_fill};
 use crate::app::ExcelApp;
+use crate::chart_view;
 use crate::features::charts::elements::{axis_name, is_horizontal};
 use crate::i18n::t;
-use crate::text_input::{InputEvent, TextInput};
+use crate::text_input::{InputEvent, NavKey, TextInput};
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, Checkbox, ColorButton, NumberField, RadioGroup, Select, TabStrip, TextField, icon};
+use crate::widgets::{self, Button, Checkbox, ColorButton, RadioGroup, Select, TabStrip, TextField, icon};
 use gpui::{AnyElement, Context, Entity, Focusable, FontWeight, Render, SharedString, Subscription, WeakEntity, Window, div, prelude::*, px};
 use opensheet_engine::chart::{
     AxisCrossing, Chart, ChartTitle, Dash, DataLabels, DataTable, DisplayUnit, ErrorAmount, ErrorDirection, Family,
@@ -17,7 +18,7 @@ use opensheet_engine::chart::{
 use opensheet_engine::chart_layout::{AxisId, ChartElement, Scale};
 use opensheet_engine::format::{self, FormatKind};
 use opensheet_engine::style::Color;
-use opensheet_engine::Locale;
+use opensheet_engine::{Locale, Value};
 use std::collections::{HashMap, HashSet};
 
 pub struct FormatPane {
@@ -156,8 +157,20 @@ impl FormatPane {
 
     // ---- fields ----------------------------------------------------------
 
+    /// The input of a field, once the pane has shown it.
+    #[cfg(test)]
+    pub(super) fn field_input(&self, field: Field) -> Option<Entity<TextInput>> {
+        self.fields.get(&field).cloned()
+    }
+
+    #[cfg(test)]
+    pub(super) fn show_tab(&mut self, tab: usize, cx: &mut Context<Self>) {
+        self.tab = tab;
+        cx.notify();
+    }
+
     /// Store what a field holds, when it says something new.
-    fn commit_field(&mut self, field: Field, cx: &mut Context<Self>) {
+    pub(super) fn commit_field(&mut self, field: Field, cx: &mut Context<Self>) {
         let Some(text) = self.fields.get(&field).map(|input| input.read(cx).text().to_string()) else {
             return;
         };
@@ -174,19 +187,27 @@ impl FormatPane {
         cx.notify();
     }
 
-    fn on_field_event(&mut self, field: Field, input: &Entity<TextInput>, ev: &InputEvent, cx: &mut Context<Self>) {
+    fn on_field_event(&mut self, field: Field, ev: &InputEvent, cx: &mut Context<Self>) {
         match ev {
             InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => self.commit_field(field, cx),
-            // A step of the spinner leaves the whole number selected;
-            // typing leaves the caret behind what was typed.
-            InputEvent::Changed if field.spin().is_some() => {
-                let input = input.read(cx);
-                if !input.text().is_empty() && input.selection() == (0..input.text().len()) {
-                    self.commit_field(field, cx);
-                }
-            }
+            // Up and Down step a number like the arrows beside it.
+            InputEvent::Navigate { key: NavKey::Up, .. } => self.step_field(field, 1.0, cx),
+            InputEvent::Navigate { key: NavKey::Down, .. } => self.step_field(field, -1.0, cx),
             _ => {}
         }
+    }
+
+    /// Step a numeric field up or down and apply the result at once. The
+    /// field shows its unit ("219 %"), so the number is read here.
+    pub(super) fn step_field(&mut self, field: Field, steps: f64, cx: &mut Context<Self>) {
+        let (Some((min, max, step)), Some(input)) = (field.spin(), self.fields.get(&field).cloned()) else {
+            return;
+        };
+        let sep = crate::i18n::lang().locale().decimal_sep;
+        let current = fields::parse_number(input.read(cx).text(), sep).unwrap_or(min.max(0.0).min(max));
+        let next = (current + steps * step).clamp(min, max);
+        input.update(cx, |input, cx| input.set_text(widgets::number_text(next, sep), cx));
+        self.commit_field(field, cx);
     }
 
     /// The input of a field, showing what the chart says unless the user
@@ -195,12 +216,9 @@ impl FormatPane {
         let input = match self.fields.get(&field) {
             Some(input) => input.clone(),
             None => {
-                let input = match field.spin() {
-                    Some((min, max, step)) => widgets::number_input(cx, None, min, max, step),
-                    None => widgets::input(cx, ""),
-                };
+                let input = widgets::input(cx, "");
                 self._subscriptions
-                    .push(cx.subscribe(&input, move |this, input, ev: &InputEvent, cx| this.on_field_event(field, &input, ev, cx)));
+                    .push(cx.subscribe(&input, move |this, _, ev: &InputEvent, cx| this.on_field_event(field, ev, cx)));
                 self.fields.insert(field, input.clone());
                 input
             }
@@ -219,10 +237,34 @@ impl FormatPane {
     /// A label with a numeric field on its right.
     fn number(&mut self, label: &'static str, field: Field, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let input = self.input(field, shown, window, cx);
-        let control = match field.spin() {
-            Some(_) => NumberField::new(("field", field as usize), &input).width(88.0).into_any_element(),
-            None => TextField::new(&input).width(88.0).into_any_element(),
-        };
+        let mut control = TextField::new(&input).width(88.0);
+        if field.spin().is_some() {
+            let arrow = |name: &'static str, icon_name: &'static str, steps: f64, cx: &mut Context<Self>| {
+                div()
+                    .id((name, field as usize))
+                    .w(px(14.))
+                    .h(px(10.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .hover(|s| s.bg(c(theme::HOVER)))
+                    .active(|s| s.bg(c(theme::PRESSED)))
+                    .child(icon(icon_name, 8.0, theme::TEXT_MUTED))
+                    // Stepping does not move the caret into the padding.
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(move |this, _, _, cx| this.step_field(field, steps, cx)))
+            };
+            control = control.trailing(
+                div()
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .border_l_1()
+                    .border_color(c(theme::BORDER))
+                    .child(arrow("field-up", "chevron-up", 1.0, cx))
+                    .child(arrow("field-down", "chevron-down", -1.0, cx)),
+            );
+        }
         row(label, control)
     }
 
@@ -786,14 +828,7 @@ impl FormatPane {
             FormatKind::DateTime => FormatKind::Date,
             kind => kind,
         };
-        let store = |chart: &mut Chart, element: ChartElement, code: Option<String>| match element {
-            ChartElement::Axis(id) => id.of_mut(&mut chart.axes).number_format = code,
-            _ => {
-                if let Some(labels) = labels_mut(chart, element) {
-                    labels.number_format = code;
-                }
-            }
-        };
+        let store = store_number_format;
         let codes: Vec<String> = categories.iter().map(|(_, _, code)| code.clone()).collect();
         let input = self.input(Field::NumberFormat, shown, window, cx);
         let body = vec![
@@ -825,8 +860,35 @@ impl FormatPane {
                     store(chart, element, None);
                 }
             }),
+            Button::new("number-more", t("More Number Formats…", "Autres formats numériques…"))
+                .on_click(cx.listener(|this, _, window, cx| this.open_number_dialog(window, cx)))
+                .into_any_element(),
         ];
         self.section(t("Number", "Nombre"), cx, body)
+    }
+
+    /// The Number tab of Format Cells, for the format of the labels of the
+    /// selected axis or of the selected data labels.
+    fn open_number_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let weak = self.app.clone();
+        self.app
+            .update(cx, |app, cx| {
+                let Some(chart) = app.selected_chart() else { return };
+                let element = app.chart_element();
+                let code = match element {
+                    ChartElement::Axis(id) => id.of(&chart.axes).number_format.clone(),
+                    _ => element.series().and_then(|s| chart.series.get(s)).and_then(|s| chart.labels_for(s)).and_then(|l| l.number_format.clone()),
+                };
+                let code = code.unwrap_or_else(|| "General".to_string());
+                crate::features::format_cells::open_number_format(app, &code, Value::Number(1234.5), window, cx, move |code, _, cx| {
+                    let code = (!code.eq_ignore_ascii_case("General")).then(|| code.to_string());
+                    weak.update(cx, |app, cx| {
+                        app.edit_chart(t("Number Format", "Format de nombre"), cx, |chart| store_number_format(chart, element, code));
+                    })
+                    .ok();
+                });
+            })
+            .ok();
     }
 
     fn label_sections(&mut self, series: usize, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
@@ -1298,6 +1360,19 @@ impl FormatPane {
     }
 }
 
+/// Give the labels of an axis, or the data labels of a series, a number
+/// format (`None`: that of the cells).
+fn store_number_format(chart: &mut Chart, element: ChartElement, code: Option<String>) {
+    match element {
+        ChartElement::Axis(id) => id.of_mut(&mut chart.axes).number_format = code,
+        _ => {
+            if let Some(labels) = labels_mut(chart, element) {
+                labels.number_format = code;
+            }
+        }
+    }
+}
+
 /// A label with its control on the right.
 fn row(label: &'static str, control: impl IntoElement) -> AnyElement {
     div()
@@ -1315,8 +1390,15 @@ impl Render for FormatPane {
             let app = app.read(cx);
             let chart = app.selected_chart()?;
             let element = app.chart_element();
+            // The bounds left automatic are those the chart is drawn with:
+            // laid out here, as the sheet does, they are never a frame late.
             let scale = match element {
-                ChartElement::Axis(id) => app.painted_chart(chart.id).and_then(|zone| zone.layout.scale(id)).cloned(),
+                ChartElement::Axis(id) => {
+                    let data = app.wb.chart_data(app.sheet, chart);
+                    let zoom = app.zoom;
+                    let size = (chart.size.0 * zoom, chart.size.1 * zoom);
+                    chart_view::layout(chart, &data, size, zoom, window.text_system(), &app.chart_style()).scale(id).cloned()
+                }
                 _ => None,
             };
             Some(Shown {

@@ -6,6 +6,8 @@
 
 mod fields;
 mod pane;
+#[cfg(test)]
+mod ui_tests;
 
 use super::charts::{self, elements};
 use super::{Command, ContextTab, Cx, Feature};
