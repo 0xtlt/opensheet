@@ -1058,7 +1058,7 @@ impl FormatPane {
             },
         )];
         match trend.kind {
-            TrendKind::Polynomial(_) => body.push(self.number(t("Order", "Degré"), Field::TrendOrder, shown, window, cx)),
+            TrendKind::Polynomial(_) => body.push(self.number(crate::i18n::t_ctx("trendline", "Order", "Degré"), Field::TrendOrder, shown, window, cx)),
             TrendKind::MovingAverage(_) => body.push(self.number(t("Period", "Période"), Field::TrendPeriod, shown, window, cx)),
             _ => {}
         }
@@ -1234,7 +1234,7 @@ impl FormatPane {
     /// The tabs of the pane for an element: (title, sections).
     fn tabs(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<(&'static str, Vec<AnyElement>)> {
         let chart = &shown.chart;
-        let fill_and_line = t("Fill & Line", "Remplissage et trait");
+        let fill_and_line = t("Fill & Line", "Remplissage et contour");
         let border = t("Border", "Bordure");
         match shown.element {
             ChartElement::ChartArea => {

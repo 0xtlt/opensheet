@@ -4,7 +4,8 @@
 Interface strings are written inline as `t("English", "Français")`; Spanish,
 German and Italian are looked up by the English text in
 `crates/app/src/i18n_tables.rs`. This script extracts the English text of
-every `t(…)` call in `crates/app/src/*.rs`, parses the three tables, and
+every `t(…)` call in `crates/app/src/*.rs` (a `t_ctx("context", …)` call
+counts under its table key `"context|English"`), parses the three tables, and
 reports for each language:
 
   * missing keys    - used in the source, absent from the table (shown in English)
@@ -188,7 +189,7 @@ def extract_calls(path):
     tokens = tokenize(path.read_text(encoding="utf-8"), path)
     calls, problems = [], []
     for idx, (kind, value, line) in enumerate(tokens):
-        if kind != "ident" or value != "t":
+        if kind != "ident" or value not in ("t", "t_ctx"):
             continue
         if idx + 1 >= len(tokens) or tokens[idx + 1][:2] != ("punct", "("):
             continue
@@ -199,6 +200,16 @@ def extract_calls(path):
             if prev[:2] == ("punct", "."):
                 continue  # a method named `t`, not the lookup function
         where = f"{path.relative_to(ROOT)}:{line}"
+        context = None
+        if value == "t_ctx":
+            # t_ctx("context", "English", "Français"): the key is "context|English".
+            head = tokens[idx + 2 : idx + 4]
+            if len(head) == 2 and head[0][0] == "str" and head[1][:2] == ("punct", ","):
+                context = head[0][1]
+                idx += 2
+            else:
+                problems.append(f"{where}: t_ctx(…) call whose context is not a string literal")
+                continue
         args = tokens[idx + 2 : idx + 7]
         kinds = [a[:2] if a[0] == "punct" else (a[0],) for a in args]
         if (
@@ -211,7 +222,8 @@ def extract_calls(path):
                 or (len(kinds) == 5 and kinds[3] == ("punct", ",") and kinds[4] == ("punct", ")"))
             )
         ):
-            calls.append((args[0][1], args[2][1], where))
+            key = args[0][1] if context is None else f"{context}|{args[0][1]}"
+            calls.append((key, args[2][1], where))
         else:
             problems.append(f"{where}: t(…) call whose arguments are not two string literals")
     return calls, problems

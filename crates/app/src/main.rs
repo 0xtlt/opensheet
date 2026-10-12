@@ -142,7 +142,7 @@ pub(crate) fn set_menus(cx: &mut App) {
             ],
         },
         Menu {
-            name: t("Edit", "Édition").into(),
+            name: i18n::t_ctx("menu", "Edit", "Édition").into(),
             items: vec![
                 MenuItem::action(t("Undo", "Annuler"), Undo),
                 MenuItem::action(t("Redo", "Rétablir"), Redo),

@@ -76,7 +76,7 @@ fn more(label: &'static str, element: ChartElement) -> MenuEntry {
 
 /// The label positions Excel offers for a kind of chart, with their names.
 pub(crate) fn label_positions(chart: &Chart) -> Vec<(LabelPosition, &'static str)> {
-    let center = (LabelPosition::Center, t("Center", "Centre"));
+    let center = (LabelPosition::Center, crate::i18n::t_ctx("label", "Center", "Centre"));
     let inside_end = (LabelPosition::InsideEnd, t("Inside End", "Bord intérieur"));
     let inside_base = (LabelPosition::InsideBase, t("Inside Base", "Intérieur base"));
     let outside_end = (LabelPosition::OutsideEnd, t("Outside End", "Bord extérieur"));

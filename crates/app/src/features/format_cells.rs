@@ -1138,7 +1138,7 @@ impl Dialog {
             t("Left (Indent)", "Gauche (Retrait)"),
             t("Center", "Centré"),
             t("Right (Indent)", "Droite (Retrait)"),
-            t("Fill", "Recopié"),
+            crate::i18n::t_ctx("align", "Fill", "Recopié"),
             t("Justify", "Justifié"),
             t("Center Across Selection", "Centré sur plusieurs colonnes"),
         ]
@@ -1888,7 +1888,7 @@ impl Render for Dialog {
             t("Alignment", "Alignement"),
             t("Font", "Police"),
             t("Border", "Bordure"),
-            t("Fill", "Remplissage"),
+            crate::i18n::t_ctx("tab", "Fill", "Remplissage"),
             t("Protection", "Protection"),
         ];
         // The tabs on show, as indexes into `names`.
