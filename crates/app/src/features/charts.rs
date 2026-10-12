@@ -243,7 +243,7 @@ fn design_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
                             let kind = *kind;
                             MenuEntry::new(chart_kind_name(kind), move |a, _, cx| {
                                 a.edit_chart(t("Change Chart Type", "Modifier le type de graphique"), cx, move |c| {
-                                    c.kind = kind
+                                    c.set_kind(kind)
                                 })
                             })
                             .checked(current == Some(kind))
@@ -369,7 +369,7 @@ impl Feature for Charts {
                 let kind = *kind;
                 MenuEntry::new(chart_kind_name(kind), move |a, _, cx| {
                     a.edit_chart(t("Change Chart Type", "Modifier le type de graphique"), cx, move |c| {
-                        c.kind = kind
+                        c.set_kind(kind)
                     })
                 })
                 .checked(current == Some(kind))
