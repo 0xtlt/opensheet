@@ -26,6 +26,7 @@ use crate::grid::GridLayout;
 use crate::i18n::{t, t_ctx};
 use crate::ribbon::{group, rows};
 use gpui::{AnyElement, App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*, px};
+use opensheet_engine::protect::Action;
 
 pub struct Misc;
 
@@ -208,6 +209,20 @@ impl Command for Cmd {
         }
     }
 
+    fn enabled(self, app: &ExcelApp) -> bool {
+        match self {
+            // Tracer arrows are objects drawn on the sheet: a protected
+            // sheet allows them only with "Edit objects", as in Excel.
+            Cmd::TracePrecedents | Cmd::TraceDependents | Cmd::TraceError | Cmd::RemoveArrowsMenu => {
+                let drawing = Action::EditObject {
+                    sheet: app.sheet,
+                    locked: true,
+                };
+                app.wb.permits(&drawing).is_ok()
+            }
+            _ => true,
+        }
+    }
 }
 
 fn set_calc_mode(app: &mut ExcelApp, mode: CalcMode, cx: &mut Cx) {

@@ -128,10 +128,15 @@ impl Feature for Names {
 /// protection of the workbook structure alone leaves names free, as in
 /// Excel.
 pub(crate) fn locked(app: &ExcelApp) -> Option<String> {
-    app.wb
-        .permits(&Action::ChangeSheet { sheet: app.sheet })
+    protected(&app.wb, app.sheet)
+}
+
+/// `locked` for a sheet of a workbook: the message of its protection, if
+/// it is protected.
+pub(crate) fn protected(wb: &Workbook, sheet: usize) -> Option<String> {
+    wb.permits(&Action::ChangeSheet { sheet })
         .err()
-        .map(|denied| denied.message(app.wb.locale))
+        .map(|denied| denied.message(wb.locale))
 }
 
 // ----------------------------------------------------------------- messages
@@ -938,6 +943,19 @@ mod tests {
             ranges: vec![Rect::new(1, 0, 2, 2)],
         };
         assert_eq!(selection_name(&wb, 0, &body), Some(rows[0].name.clone()));
+    }
+
+    #[test]
+    fn names_are_frozen_on_a_protected_sheet_only() {
+        let mut wb = workbook();
+        assert_eq!(protected(&wb, 0), None);
+        // The structure of the workbook alone leaves names free.
+        wb.protect_workbook(true, false, "");
+        assert_eq!(protected(&wb, 0), None);
+        wb.protect_sheet(0, Default::default(), "");
+        assert!(protected(&wb, 0).is_some_and(|message| message.contains("protected sheet")));
+        // From another sheet, names can still be defined.
+        assert_eq!(protected(&wb, 1), None);
     }
 
     #[test]

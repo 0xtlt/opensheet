@@ -272,12 +272,14 @@ pub(super) fn insert_function(app: &mut ExcelApp, window: &mut Window, cx: &mut 
             return;
         }
     } else {
-        // A cell holding a formula: its first function.
+        // A cell holding a formula: its first function. (A formula the
+        // protection of the sheet hides is not read.)
         let (row, col) = app.active();
-        let first = app
-            .wb
-            .formula_text(app.sheet, row, col)
-            .and_then(|text| calls(&text, app.wb.locale).into_iter().find(|call| function_of(call, app.wb.locale).is_some()));
+        let text = app.wb.formula_bar_text(app.sheet, row, col);
+        let first = text
+            .starts_with('=')
+            .then(|| calls(&text, app.wb.locale).into_iter().find(|call| function_of(call, app.wb.locale).is_some()))
+            .flatten();
         if let Some(call) = first {
             app.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
             if !app.is_editing() {

@@ -793,8 +793,10 @@ pub(crate) struct Frame {
 
 impl Frame {
     fn of(wb: &Workbook, cell: (usize, u32, u32)) -> Frame {
+        // A formula hidden by the protection of its sheet is not shown
+        // step by step either: the cell reads as its value.
         let expr = match wb.cell(cell.0, cell.1, cell.2).map(|c| &c.content) {
-            Some(Content::Formula(expr)) => Some((**expr).clone()),
+            Some(Content::Formula(expr)) if !wb.is_formula_hidden(cell.0, cell.1, cell.2) => Some((**expr).clone()),
             _ => None,
         };
         Frame { cell, expr, last: None }
@@ -836,7 +838,9 @@ impl Evaluation {
         };
         let is_reference = matches!(part, Expr::Ref(_) | Expr::Name(_) | Expr::SheetName(..));
         let cell = (reference.sheet, reference.rect.r0, reference.rect.c0);
-        let formula = matches!(wb.cell(cell.0, cell.1, cell.2).map(|c| &c.content), Some(Content::Formula(_)));
+        // A formula to show: not one the protection of its sheet hides.
+        let formula = matches!(wb.cell(cell.0, cell.1, cell.2).map(|c| &c.content), Some(Content::Formula(_)))
+            && !wb.is_formula_hidden(cell.0, cell.1, cell.2);
         (is_reference && reference.is_single() && formula).then_some(cell)
     }
 
@@ -1120,7 +1124,7 @@ pub(crate) fn watch_lines(wb: &Workbook, watches: &[(String, u32, u32)]) -> Vec<
                     sheet.clone(),
                     cell,
                     wb.display_text(index, *row, *col).text,
-                    wb.formula_text(index, *row, *col).unwrap_or_default(),
+                    shown_formula(wb, index, *row, *col).unwrap_or_default(),
                 ],
                 None => [sheet.clone(), cell, wb.locale.error_name(ErrorKind::Ref).to_string(), String::new()],
             }
@@ -1564,6 +1568,27 @@ mod tests {
 
         assert_eq!(shown_formula(&wb, 0, 0, 1).as_deref(), Some("=A1+A2*2"));
         assert_eq!(shown_formula(&wb, 0, 0, 0), None);
+    }
+
+    #[test]
+    fn formulas_hidden_by_protection_stay_hidden() {
+        let mut wb = workbook();
+        wb.update_style(0, Rect::cell(0, 1), &|style| style.hidden = true);
+        wb.commit("hidden");
+        // Nothing is hidden until the sheet is protected.
+        assert_eq!(shown_formula(&wb, 0, 0, 1).as_deref(), Some("=A1+A2*2"));
+        wb.protect_sheet(0, Default::default(), "");
+        // Show Formulas and the Watch Window show nothing for the cell;
+        // Evaluate Formula reads it as a value.
+        assert_eq!(shown_formula(&wb, 0, 0, 1).as_deref(), Some(""));
+        assert_eq!(watch_lines(&wb, &[("Sheet1".to_string(), 0, 1)])[0], ["Sheet1", "B1", "20", ""]);
+        let evaluation = Evaluation::start(&wb, (0, 0, 1));
+        assert!(evaluation.frames[0].expr.is_none() && evaluation.finished());
+        // The cell beside it is not hidden.
+        assert!(Evaluation::start(&wb, (0, 1, 1)).frames[0].expr.is_some());
+        // A reference to the hidden formula is not stepped into.
+        let from = Evaluation::start(&wb, (0, 0, 2));
+        assert_eq!(from.step_target(&wb), None);
     }
 
     #[test]
