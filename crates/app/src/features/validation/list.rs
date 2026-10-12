@@ -74,8 +74,9 @@ fn line_starting_with(items: &[ListItem], letter: &str, from: Option<usize>) -> 
         .find(|at| items[*at].text.to_lowercase().starts_with(&letter))
 }
 
-/// Open the list of the active cell under it.
-pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+/// Open the list of the active cell under it. False when there is nothing
+/// to pick from, or when the cell may not be changed.
+pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> bool {
     let sheet = app.sheet;
     let (row, col) = app.active();
     // What is being typed gives way to the choice.
@@ -84,7 +85,7 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     }
     let items = entries(&app.wb, sheet, row, col);
     if items.is_empty() || !app.may(Intent::EditCells(Rect::cell(row, col)), cx) {
-        return;
+        return false;
     }
     let rect = active_rect(app);
     // As wide as the cell and its arrow.
@@ -114,6 +115,7 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let focus = view.read(cx).focus.clone();
     app.open_popup_view(app.cell_anchor(rect), view, cx);
     window.focus(&focus);
+    true
 }
 
 struct DropList {

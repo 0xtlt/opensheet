@@ -2110,3 +2110,13 @@ fn a_hundred_thousand_formatted_cells_scroll_smoothly() {
         "the first frame after an edit took {after_edit:?}"
     );
 }
+
+#[test]
+fn the_number_span_ignores_text_and_blank_cells() {
+    let wb = column(&["4", "abc", "", "-2.5", "=A1*3", "TRUE"]);
+    assert_eq!(number_span(&wb, 0, &rects("A1:A6")), Some((-2.5, 12.0)));
+    assert_eq!(number_span(&wb, 0, &rects("A2:A3,A6")), None);
+    // Whole columns and cells counted twice change nothing.
+    assert_eq!(number_span(&wb, 0, &rects("A:A,A1:A2")), Some((-2.5, 12.0)));
+    assert_eq!(number_span(&wb, 5, &rects("A1:A6")), None);
+}

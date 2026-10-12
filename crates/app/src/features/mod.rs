@@ -41,6 +41,7 @@
 //! | Refusing a selection (protection) | [`Feature::can_select`] |
 //! | Checking an entry (validation) | [`Feature::may_commit`] → [`Verdict`]; the alert's buttons call `app.commit_edit_unchecked`, `app.focus_editor` or `app.cancel_edit` |
 //! | Following edits | [`Feature::cells_written`] (same undo step), [`Feature::cells_changed`] (afterwards), [`Feature::selection_changed`] |
+//! | Alt+Down on a cell | [`Feature::cell_drop_down`] |
 //! | Context menus | [`Feature::context_menu`] with a [`MenuTarget`] |
 //! | Status bar | [`Feature::status_items`] |
 //! | Pictures and shapes | [`Feature::objects`] and the `*_object` hooks; selecting, moving, resizing, nudging, deleting, copy / paste and stacking order come from `objects.rs` |
@@ -994,6 +995,13 @@ pub trait Feature: Sync + 'static {
         true
     }
 
+    /// Alt+Down on the active cell: open the drop-down the feature hangs
+    /// from it (the list of a filter button) and answer true; false when
+    /// it has none there.
+    fn cell_drop_down(&self, _app: &mut ExcelApp, _window: &mut Window, _cx: &mut Cx) -> bool {
+        false
+    }
+
     // ---- menus and status bar ---------------------------------------------
 
     /// Add entries to a context menu about to open.
@@ -1107,6 +1115,11 @@ pub(crate) fn cells_changed(app: &mut ExcelApp, edit: &CellEdit, cx: &mut Cx) {
 
 pub(crate) fn can_select(app: &ExcelApp, row: u32, col: u32) -> bool {
     all().iter().all(|f| f.can_select(app, row, col))
+}
+
+/// The first feature that has a drop-down on the active cell opens it.
+pub(crate) fn cell_drop_down(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> bool {
+    all().iter().any(|f| f.cell_drop_down(app, window, cx))
 }
 
 pub(crate) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {

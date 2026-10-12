@@ -4,17 +4,17 @@
 //! The rules live in the engine (`Sheet::validations`). This module shows
 //! them on the sheet (the arrow beside a cell with a list, the yellow note
 //! of an input message, the red circles), checks what is typed against
-//! them (`may_commit`) and makes them follow the cells that are pasted,
-//! filled and cleared (`cells_written`). Entries that are not typed are
-//! never refused, as in Excel.
+//! them (`may_commit`). Entries that are not typed are never refused, as
+//! in Excel; the engine makes the rules follow the cells that are pasted,
+//! filled, moved and cleared.
 
 mod dialog;
 mod list;
 mod textarea;
 
 use super::{
-    CellEdit, ChangeCause, Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, PaintLayer, Painter, PendingEdit,
-    Verdict, Zone, ZoneEvent, ZoneResponse,
+    Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, PaintLayer, Painter, PendingEdit, Verdict, Zone,
+    ZoneEvent, ZoneResponse,
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::GridLayout;
@@ -22,9 +22,8 @@ use crate::i18n::t;
 use crate::shell::Alert;
 use crate::theme::c;
 use gpui::{AnyElement, CursorStyle, FontWeight, SharedString, Window, div, prelude::*, px};
-use opensheet_engine::ops::{Direction, PasteMode};
+use opensheet_engine::ops::Direction;
 use opensheet_engine::validation::{AlertStyle, EntryCheck};
-use opensheet_engine::workbook::ClearMode;
 use opensheet_engine::{Rect, Workbook};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -83,7 +82,9 @@ impl Command for Cmd {
                 app.ext_mut::<Circles>().clear(&name);
                 cx.notify();
             }
-            Cmd::PickFromList => list::open(app, window, cx),
+            Cmd::PickFromList => {
+                list::open(app, window, cx);
+            }
         }
     }
 }
@@ -309,32 +310,9 @@ impl Feature for Validation {
         }
     }
 
-    /// Rules travel with the cells: pasting and filling copy them, cutting
-    /// moves them, Clear All removes them. (The values that arrive are not
-    /// checked: Excel only checks what is typed.)
-    fn cells_written(&self, app: &mut ExcelApp, edit: &CellEdit, _cx: &mut Cx) {
-        let origin = (edit.rect.r0, edit.rect.c0);
-        match edit.cause {
-            ChangeCause::Paste {
-                from: Some((sheet, rect)),
-                cut: true,
-                mode: PasteMode::All,
-            } => app.wb.move_validation(sheet, rect, edit.sheet, origin.0, origin.1),
-            ChangeCause::Paste {
-                from: Some((sheet, rect)),
-                cut: false,
-                mode: PasteMode::All,
-            } => app.wb.tile_validation(sheet, rect, edit.sheet, edit.rect, origin),
-            ChangeCause::Fill => {
-                if let Some(source) = app.fill_source.filter(|source| edit.rect.intersection(source) == Some(*source)) {
-                    app.wb.tile_validation(edit.sheet, source, edit.sheet, edit.rect, (source.r0, source.c0));
-                }
-            }
-            ChangeCause::Clear(ClearMode::All) => {
-                app.wb.clear_validation(edit.sheet, &[edit.rect]);
-            }
-            _ => {}
-        }
+    /// Alt+Down: the list of the active cell.
+    fn cell_drop_down(&self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> bool {
+        list::open(app, window, cx)
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {

@@ -5,9 +5,11 @@
 mod common;
 
 use common::{at, formula, package, value};
+use opensheet_engine::condfmt::Rule;
+use opensheet_engine::page::{Margins, PageSetup};
 use opensheet_engine::style::{Border, BorderStyle, HAlign, Underline, VAlign};
 use opensheet_engine::workbook::Content;
-use opensheet_engine::{Color, ErrorKind, Locale, Rect, StyleId, Value, Workbook};
+use opensheet_engine::{Color, ErrorKind, Expr, Locale, Rect, StyleId, Value, Workbook};
 use opensheet_io::read_xlsx;
 use std::io::Cursor;
 
@@ -493,6 +495,46 @@ fn styles() {
         (e9.rotation, e9.h_align, e9.v_align),
         (0, HAlign::Justify, VAlign::Center)
     );
+}
+
+#[test]
+fn conditional_formats_and_page_setup() {
+    let wb = load(&excel_like(), Locale::en());
+    let first = &wb.sheets[0];
+    // The rule takes its format from the differential formats of the
+    // style sheet.
+    assert_eq!(first.cond_formats.len(), 1);
+    let cf = &first.cond_formats[0];
+    assert_eq!(cf.ranges, [Rect::parse("A1:A5").unwrap()]);
+    assert_eq!(cf.rule, Rule::greater_than(Expr::Number(5.0)));
+    assert!(!cf.stop_if_true);
+    assert_eq!(cf.format.bold, Some(true));
+    assert_eq!(cf.format.font_color, Some(Some(Color(0x9C0006))));
+    assert_eq!(cf.format.fill, Some(Some(Color(0xFFC7CE))));
+    assert_eq!(cf.format.num_fmt.as_deref(), Some("0.0"));
+    assert_eq!(
+        cf.format.border_left,
+        Some(Border {
+            style: BorderStyle::Thick,
+            color: None
+        })
+    );
+    assert_eq!(
+        cf.format.border_right, None,
+        "a side the format says nothing about"
+    );
+
+    // The page: one flag of the sheet properties, the margins, and the
+    // print area, which the file keeps among the names.
+    let page = PageSetup {
+        fit_to_page: true,
+        print_area: vec![Rect::parse("A1:F12").unwrap()],
+        ..PageSetup::default()
+    };
+    assert_eq!(first.page, page);
+    assert_eq!(first.page.margins, Margins::NORMAL);
+    assert_eq!(wb.sheets[1].page, PageSetup::default());
+    assert!(wb.sheets[1].cond_formats.is_empty());
 }
 
 #[test]

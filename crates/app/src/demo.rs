@@ -107,32 +107,6 @@ pub fn fill_workbook(wb: &mut Workbook) {
     wb.set_col_width(0, 3, Some(96.0));
     wb.set_col_width(0, 4, Some(96.0));
     wb.set_col_width(0, 5, Some(88.0));
-    // TEMP-UIRULES: rules to look at while testing (never committed).
-    {
-        use opensheet_engine::validation::{AlertStyle, Operator, Validation, ValidationKind};
-        let mut list = Validation { kind: ValidationKind::List, ..Default::default() };
-        list.set_operands("Nord;Sud;Est;Ouest", "", locale).unwrap();
-        list.input_title = "Région".into();
-        list.input_message = "Choisissez une région\ndans la liste déroulante.".into();
-        wb.set_validation(0, &[Rect::new(1, 1, 8, 1)], (1, 1), list);
-        let mut whole = Validation { kind: ValidationKind::Whole, operator: Operator::Between, ..Default::default() };
-        whole.set_operands("1", "100", locale).unwrap();
-        whole.error_style = AlertStyle::Warning;
-        whole.error_title = "Quantité".into();
-        whole.error_message = "La quantité doit être comprise entre 1 et 100.".into();
-        wb.set_validation(0, &[Rect::new(1, 2, 8, 2)], (1, 2), whole);
-        let mut price = Validation { kind: ValidationKind::Decimal, operator: Operator::GreaterThan, ..Default::default() };
-        price.set_operands("0", "", locale).unwrap();
-        wb.set_validation(0, &[Rect::new(1, 3, 8, 3)], (1, 3), price);
-        let mut from_cells = Validation { kind: ValidationKind::List, ..Default::default() };
-        from_cells.set_operands("=$A$2:$A$9", "", locale).unwrap();
-        from_cells.error_style = AlertStyle::Information;
-        wb.set_validation(0, &[Rect::new(1, 7, 4, 7)], (1, 7), from_cells);
-        let _ = wb.set_cell_text(0, 3, 2, "700");
-        let _ = wb.set_cell_text(0, 5, 1, "Centre");
-        wb.update_style(0, Rect::new(1, 7, 4, 7), &|s| s.locked = false);
-        wb.update_style(0, Rect::new(1, 2, 8, 2), &|s| s.locked = false);
-    }
     wb.commit("Demo");
     wb.clear_history();
     wb.modified = false;
