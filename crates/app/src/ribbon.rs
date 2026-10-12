@@ -112,7 +112,7 @@ impl ExcelApp {
     /// of buttons that open a menu.
     pub fn cmd_large<C: Command>(&self, id: &'static str, cmd: C, dropdown: bool, cx: &mut Cx) -> AnyElement {
         let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
-        self.large_state(id, icon_name, cmd.label(), dropdown, cmd.checked(self), cmd.enabled(self), cx, move |this, window, cx| {
+        self.large_state(id, icon_name, cmd.label_in(self), dropdown, cmd.checked(self), cmd.enabled(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
     }
@@ -141,9 +141,9 @@ impl ExcelApp {
                 .px(px(2.))
                 .text_color(c(color))
                 .child(icon(icon_name, 16.0, color))
-                .child(div().whitespace_nowrap().child(cmd.label()))
+                .child(div().whitespace_nowrap().child(cmd.label_in(self)))
                 .when(dropdown, |d| d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED))),
-            cmd.label(),
+            cmd.label_in(self),
             cmd.checked(self),
             cx,
             move |this, window, cx| this.run_from(id, cmd, window, cx),
@@ -156,7 +156,7 @@ impl ExcelApp {
     pub fn cmd_icon<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
         let color = if cmd.enabled(self) { theme::TEXT } else { theme::TEXT_DISABLED };
         let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
-        self.small(id, icon(icon_name, 16.0, color), cmd.label(), cmd.checked(self), cx, move |this, window, cx| {
+        self.small(id, icon(icon_name, 16.0, color), cmd.label_in(self), cmd.checked(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
         .into_any_element()
@@ -164,7 +164,7 @@ impl ExcelApp {
 
     /// A check box showing `cmd.checked` and running the command.
     pub fn cmd_check<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
-        self.check(id, cmd.label(), cmd.checked(self), cx, move |this, window, cx| {
+        self.check(id, cmd.label_in(self), cmd.checked(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
     }
@@ -1117,6 +1117,10 @@ impl ExcelApp {
                             t("AutoFit Column Width", "Ajuster la largeur de colonne"),
                             |a, window, cx| {
                                 let r = a.wb.clamp_to_used(a.sheet, a.sel().current());
+                                // One refusal, not one for each column.
+                                if !a.may(features::Intent::FormatColumns, cx) {
+                                    return;
+                                }
                                 for col in r.c0..=r.c1.min(r.c0 + 500) {
                                     a.autofit_col(col, window, cx);
                                 }

@@ -150,7 +150,8 @@ pub enum AlertKind {
 }
 
 /// A message box: a title, a text and buttons. The first button is the
-/// default one (Return), the last one answers Escape.
+/// default one (Return) unless `default_button` names another, the last
+/// one answers Escape.
 ///
 /// ```ignore
 /// app.alert(
@@ -167,6 +168,8 @@ pub struct Alert {
     message: SharedString,
     kind: AlertKind,
     buttons: Vec<(SharedString, Option<MenuAction>)>,
+    /// Index of the button Return presses.
+    default: usize,
 }
 
 impl Alert {
@@ -177,7 +180,15 @@ impl Alert {
             message: message.into(),
             kind: AlertKind::Info,
             buttons: Vec::new(),
+            default: 0,
         }
+    }
+
+    /// Make the button at `index` the default one: Excel's warnings
+    /// propose "No".
+    pub fn default_button(mut self, index: usize) -> Alert {
+        self.default = index;
+        self
     }
 
     pub fn warning(mut self) -> Alert {
@@ -225,6 +236,7 @@ impl MessageBox {
 impl Render for MessageBox {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let last = self.alert.buttons.len().saturating_sub(1);
+        let default = self.alert.default.min(last);
         let buttons: Vec<AnyElement> = self
             .alert
             .buttons
@@ -233,7 +245,7 @@ impl Render for MessageBox {
             .map(|(i, (label, _))| {
                 let mut button = Button::new(("alert-button", i), label.clone())
                     .on_click(cx.listener(move |this, _, window, cx| this.press(i, window, cx)));
-                if i == 0 {
+                if i == default {
                     button = button.primary();
                 }
                 button.into_any_element()
@@ -246,7 +258,7 @@ impl Render for MessageBox {
         };
         widgets::dialog(&self.modal, self.alert.title.clone())
             .width(440.0)
-            .on_ok(cx.listener(|this, _, window, cx| this.press(0, window, cx)))
+            .on_ok(cx.listener(move |this, _, window, cx| this.press(default, window, cx)))
             .on_cancel(cx.listener(move |this, _, window, cx| this.press(last, window, cx)))
             .child(
                 div()

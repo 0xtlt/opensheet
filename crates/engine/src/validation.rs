@@ -742,6 +742,46 @@ impl RuleError {
     }
 }
 
+/// What is wrong, for now, with the formulas typed in the dialog: found
+/// when OK is pressed (`Workbook::rule_formula_warning`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormulaWarning {
+    /// The list source is a name nobody defined: the rule is refused.
+    UnknownName,
+    /// The formula of this box gives an error; the user may go on.
+    Error(Field),
+}
+
+impl FormulaWarning {
+    /// Excel's message: a refusal, or the question whether to continue.
+    pub fn message(self, locale: &Locale) -> String {
+        match self {
+            FormulaWarning::UnknownName => localized(
+                locale,
+                [
+                    "A named range you specified cannot be found.",
+                    "Nous ne trouvons pas une plage nommée que vous avez spécifiée.",
+                    "No se puede encontrar uno de los rangos especificados.",
+                    "Der angegebene benannte Bereich wurde nicht gefunden.",
+                    "L'intervallo denominato specificato non è stato trovato.",
+                ],
+            )
+            .to_string(),
+            FormulaWarning::Error(field) => localized(
+                locale,
+                [
+                    "| currently evaluates to an error. Do you want to continue?",
+                    "| est reconnu comme erroné. Voulez-vous continuer ?",
+                    "| actualmente evalúa un error. ¿Desea continuar?",
+                    "| untersucht gerade einen möglichen Fehler. Möchten Sie den Vorgang fortsetzen?",
+                    "| restituisce attualmente un errore. Continuare?",
+                ],
+            )
+            .replace('|', field.capitalized(locale)),
+        }
+    }
+}
+
 /// A constant written as a number, possibly signed.
 fn constant_number(expr: &Expr) -> Option<f64> {
     match expr {
@@ -901,6 +941,10 @@ pub struct InvalidCells {
 
 /// Excel circles this many invalid cells and no more.
 pub const MAX_CIRCLES: usize = 255;
+
+/// Filling a pattern of rules over a large range gives a rule this many
+/// ranges at most; the cells beyond keep no rule.
+const MAX_TILED_RANGES: usize = 4096;
 
 /// A drop-down list shows this many lines at most, as in Excel.
 pub const MAX_LIST_ITEMS: usize = 32_767;
@@ -1421,6 +1465,124 @@ impl Workbook {
         for copy in copies {
             store(sh, copy);
         }
+    }
+
+    /// Lay the rules of the block `src` over `dest` like a wallpaper, one
+    /// copy of the block having its top-left cell at `origin`: what a
+    /// paste repeated over a larger range does (`origin` is the top-left
+    /// of `dest`) and what filling does (`dest` contains `src`, `origin`
+    /// is the top-left of `src`). Cells without a rule clear the rule of
+    /// their copies. Recorded for undo.
+    pub fn tile_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest: Rect, origin: (u32, u32)) {
+        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
+            return;
+        }
+        // Where the copies of the rows (or columns) `lo..=hi` of a block
+        // of `size` fall in `first..=last`, the pattern starting at `start`.
+        let spans = |lo: u32, hi: u32, size: u32, start: u32, first: u32, last: u32| -> Vec<(u32, u32)> {
+            if lo == 0 && hi + 1 == size {
+                return vec![(first, last)];
+            }
+            let (lo, hi, size) = (lo as i64, hi as i64, size as i64);
+            let (start, first, last) = (start as i64, first as i64, last as i64);
+            let mut out = Vec::new();
+            let mut tile = (first - start - hi).div_euclid(size);
+            while start + tile * size + lo <= last && out.len() < MAX_TILED_RANGES {
+                let (a, b) = (start + tile * size + lo, start + tile * size + hi);
+                if b >= first {
+                    out.push((a.max(first) as u32, b.min(last) as u32));
+                }
+                tile += 1;
+            }
+            out
+        };
+        let mut copies = Vec::new();
+        for rule in &self.sheets[src_sheet].validations {
+            let mut images: Vec<Rect> = Vec::new();
+            for piece in rule.ranges.iter().filter_map(|r| r.intersection(&src)) {
+                let rows = spans(piece.r0 - src.r0, piece.r1 - src.r0, src.rows(), origin.0, dest.r0, dest.r1);
+                let cols = spans(piece.c0 - src.c0, piece.c1 - src.c0, src.cols(), origin.1, dest.c0, dest.c1);
+                for (r0, r1) in &rows {
+                    images.extend(cols.iter().map(|(c0, c1)| Rect::new(*r0, *c0, *r1, *c1)));
+                }
+                images.truncate(MAX_TILED_RANGES);
+            }
+            coalesce(&mut images);
+            let Some(first) = images.first() else {
+                continue;
+            };
+            // The cell of the block the first cell of the copy stands for.
+            let turn = |at: u32, start: u32, size: u32| (at as i64 - start as i64).rem_euclid(size as i64) as u32;
+            let model = (
+                src.r0 + turn(first.r0, origin.0, src.rows()),
+                src.c0 + turn(first.c0, origin.1, src.cols()),
+            );
+            let (d_row, d_col) = (first.r0 as i64 - model.0 as i64, first.c0 as i64 - model.1 as i64);
+            // The copy says in its cells what the original says in its
+            // own: the formulas keep their relative reading.
+            let mut copy = rule.clone();
+            copy.set_ranges(vec![Rect::cell(model.0, model.1)]);
+            copy.map_formulas(|e| e.shifted(d_row, d_col));
+            copy.ranges = images;
+            copies.push(copy);
+        }
+        let has_rules = self.sheets[dest_sheet]
+            .validations
+            .iter()
+            .any(|rule| rule.ranges.iter().any(|r| r.intersects(&dest)));
+        if copies.is_empty() && !has_rules {
+            return;
+        }
+        self.snapshot();
+        let sh = &mut self.sheets[dest_sheet];
+        remove_from(sh, &[dest]);
+        for copy in copies {
+            store(sh, copy);
+        }
+    }
+
+    /// Take the rules of the block `src` to (`dest_row`, `dest_col`) with
+    /// its cells, as cutting and pasting does: the cells the block leaves
+    /// keep no rule. Recorded for undo.
+    pub fn move_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
+        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
+            return;
+        }
+        let rows = src.rows().min(MAX_ROWS - dest_row);
+        let cols = src.cols().min(MAX_COLS - dest_col);
+        let dest = Rect::new(dest_row, dest_col, dest_row + rows - 1, dest_col + cols - 1);
+        self.tile_validation(src_sheet, src, dest_sheet, dest, (dest_row, dest_col));
+        let left = if src_sheet == dest_sheet { subtract(src, &dest) } else { vec![src] };
+        self.clear_validation(src_sheet, &left);
+    }
+
+    /// What the dialog asks about before giving cells a rule whose boxes
+    /// were just filled in (`Validation::set_operands`, the formulas still
+    /// reading from `active`): a list named after nothing, or a formula
+    /// that gives an error where it stands.
+    pub fn rule_formula_warning(&self, sheet: usize, active: (u32, u32), rule: &Validation) -> Option<FormulaWarning> {
+        let (row, col) = active;
+        let (field1, field2) = operand_fields(rule.kind, rule.operator);
+        let boxes = [(field1, &rule.formula1), (field2, &rule.formula2)];
+        for (field, formula) in boxes {
+            let (Some(field), Some(formula)) = (field, formula.as_deref()) else {
+                continue;
+            };
+            // A list read from cells is judged entry by entry, not as a whole.
+            if rule.kind == ValidationKind::List
+                && (matches!(formula, Expr::Text(_)) || self.list_reference(sheet, row, col, formula, 0).is_some())
+            {
+                continue;
+            }
+            let value = Calc::eval_once(self, sheet, row, col, formula).into_scalar();
+            if rule.kind == ValidationKind::List && matches!(formula, Expr::Name(_)) && value.is_error() {
+                return Some(FormulaWarning::UnknownName);
+            }
+            if value.is_error() {
+                return Some(FormulaWarning::Error(field));
+            }
+        }
+        None
     }
 
     // ---- checking --------------------------------------------------------
@@ -2529,6 +2691,143 @@ mod tests {
         assert!(w.validation_at(0, 4, 3).is_none());
         w.undo();
         assert_eq!(ranges(&w), [vec!["A1:A2"], vec!["D4"]]);
+    }
+
+    #[test]
+    fn filling_extends_rules() {
+        let operand = |w: &Workbook, at: &str| {
+            let (r, c) = cell(at);
+            w.validation_at(0, r, c).map(|v| v.operand1_text(r, c, Locale::en()))
+        };
+        // One cell filled down: the rule grows, its formula read from each cell.
+        let mut w = wb(&[]);
+        apply(
+            &mut w,
+            "B2",
+            rule(ValidationKind::Decimal, Operator::GreaterThan, "=A2", ""),
+        );
+        apply(&mut w, "B5", rule(ValidationKind::Whole, Operator::Equal, "1", ""));
+        w.tile_validation(0, rect("B2"), 0, rect("B2:B6"), (1, 1));
+        w.commit("fill");
+        assert_eq!(ranges(&w), [vec!["B2:B6"]]);
+        assert_eq!(operand(&w, "B6").as_deref(), Some("=A6"));
+        w.undo();
+        assert_eq!(ranges(&w), [vec!["B2"], vec!["B5"]]);
+
+        // Part of a rule filled beyond it: one rule still.
+        let mut w = wb(&[]);
+        apply(&mut w, "A1:A4", rule(ValidationKind::List, Operator::Between, "a,b", ""));
+        w.tile_validation(0, rect("A4"), 0, rect("A4:A9"), (3, 0));
+        w.commit("fill");
+        assert_eq!(ranges(&w), [vec!["A1:A9"]]);
+
+        // A pattern of two rows, one with a rule, filled down and up:
+        // every other row, cut where the range ends.
+        let mut w = wb(&[]);
+        apply(
+            &mut w,
+            "C5",
+            rule(ValidationKind::Whole, Operator::LessThan, "=$A$1+D5", ""),
+        );
+        apply(&mut w, "C8", rule(ValidationKind::TextLength, Operator::Equal, "3", ""));
+        w.tile_validation(0, rect("C5:C6"), 0, rect("C2:C9"), (4, 2));
+        w.commit("fill");
+        assert_eq!(ranges(&w), [vec!["C3", "C5", "C7", "C9"]]);
+        assert_eq!(operand(&w, "C3").as_deref(), Some("=$A$1+D3"));
+        assert_eq!(operand(&w, "C9").as_deref(), Some("=$A$1+D9"));
+        assert_eq!(operand(&w, "C8"), None);
+
+        // Across: a row of two cells, the second without a rule.
+        let mut w = wb(&[]);
+        apply(&mut w, "A1", rule(ValidationKind::Whole, Operator::Equal, "1", ""));
+        apply(&mut w, "B1:E1", rule(ValidationKind::Whole, Operator::Equal, "2", ""));
+        w.tile_validation(0, rect("A1:B1"), 0, rect("A1:E1"), (0, 0));
+        w.commit("fill");
+        assert_eq!(ranges(&w), [vec!["A1", "C1", "E1"], vec!["B1", "D1"]]);
+    }
+
+    #[test]
+    fn pasting_repeats_and_cutting_moves() {
+        let mut w = wb(&[]);
+        apply(
+            &mut w,
+            "A1",
+            rule(ValidationKind::Decimal, Operator::GreaterThan, "=B1", ""),
+        );
+        // A1:A2 pasted over D1:E4: the block repeats four times.
+        w.tile_validation(0, rect("A1:A2"), 0, rect("D1:E4"), (0, 3));
+        w.commit("paste");
+        assert_eq!(ranges(&w), [vec!["A1", "D1:E1", "D3:E3"]]);
+        assert_eq!(
+            w.validation_at(0, 2, 4).unwrap().operand1_text(2, 4, Locale::en()),
+            "=F3"
+        );
+        // Onto another sheet.
+        let other = w.add_sheet(1);
+        w.tile_validation(0, rect("A1"), other, rect("C3"), (2, 2));
+        w.commit("paste");
+        let pasted = w.validation_at(other, 2, 2).unwrap();
+        assert_eq!(pasted.ranges, [rect("C3")]);
+        assert_eq!(pasted.operand1_text(2, 2, Locale::en()), "=D3");
+
+        // Cutting A1:A2 to A2:A3: the rule goes with its cell.
+        let mut w = wb(&[]);
+        apply(&mut w, "A1", rule(ValidationKind::Whole, Operator::Equal, "1", ""));
+        apply(&mut w, "A3", rule(ValidationKind::Whole, Operator::Equal, "3", ""));
+        w.move_validation(0, rect("A1:A2"), 0, 1, 0);
+        w.commit("cut");
+        assert_eq!(ranges(&w), [vec!["A2"]]);
+        assert_eq!(w.validation_at(0, 1, 0).unwrap().operand1_text(1, 0, Locale::en()), "1");
+        w.undo();
+        assert_eq!(ranges(&w), [vec!["A1"], vec!["A3"]]);
+        // To another sheet: nothing stays behind.
+        let other = w.add_sheet(1);
+        w.move_validation(0, rect("A1:A3"), other, 0, 0);
+        w.commit("cut");
+        assert!(w.sheets[0].validations.is_empty());
+        assert_eq!(w.sheets[other].validations.len(), 2);
+    }
+
+    #[test]
+    fn formulas_that_fail_are_asked_about() {
+        let mut w = wb(&[("A1", "0"), ("C1", "x"), ("C2", "=1/0")]);
+        w.define_name("Fruits", crate::parser::parse_formula("Sheet1!$C$1:$C$2", Locale::en()).unwrap());
+        w.commit("names");
+        let warning = |w: &Workbook, kind, first: &str| {
+            w.rule_formula_warning(0, (4, 4), &rule(kind, Operator::GreaterThan, first, ""))
+        };
+        assert_eq!(warning(&w, ValidationKind::Whole, "5"), None);
+        assert_eq!(warning(&w, ValidationKind::Whole, "=A1+1"), None);
+        assert_eq!(
+            warning(&w, ValidationKind::Whole, "=1/A1"),
+            Some(FormulaWarning::Error(Field::Minimum))
+        );
+        assert_eq!(
+            warning(&w, ValidationKind::Custom, "=E5/A1>0"),
+            Some(FormulaWarning::Error(Field::Formula))
+        );
+        // A list of cells may hold errors; a name must exist.
+        assert_eq!(warning(&w, ValidationKind::List, "=$C$1:$C$2"), None);
+        assert_eq!(warning(&w, ValidationKind::List, "=Fruits"), None);
+        assert_eq!(warning(&w, ValidationKind::List, "a,b"), None);
+        assert_eq!(
+            warning(&w, ValidationKind::List, "=Nowhere"),
+            Some(FormulaWarning::UnknownName)
+        );
+        let second = w.rule_formula_warning(
+            0,
+            (0, 1),
+            &rule(ValidationKind::Decimal, Operator::Between, "1", "=1/A1"),
+        );
+        assert_eq!(second, Some(FormulaWarning::Error(Field::Maximum)));
+        assert_eq!(
+            FormulaWarning::Error(Field::Source).message(Locale::en()),
+            "The Source currently evaluates to an error. Do you want to continue?"
+        );
+        assert_eq!(
+            FormulaWarning::Error(Field::Minimum).message(Locale::fr()),
+            "Le minimum est reconnu comme erroné. Voulez-vous continuer ?"
+        );
     }
 
     #[test]

@@ -904,16 +904,16 @@ impl Denied {
 }
 
 impl Workbook {
-    /// Whether no cell of `rect` is locked. Cells that were never touched
-    /// take the format of their row, else of their column, else the
-    /// default one, which is locked.
-    fn all_unlocked(&self, sheet: &Sheet, rect: Rect) -> bool {
-        let open = |id: StyleId| !self.styles.get(id).locked;
-        // Rows with a format of their own: (unlocked, cells present).
+    /// Whether the Locked flag of every cell of `rect` is `locked`. Cells
+    /// that were never touched take the format of their row, else of their
+    /// column, else the default one, which is locked.
+    fn all_locked_as(&self, sheet: &Sheet, rect: Rect, locked: bool) -> bool {
+        let fits = |id: StyleId| self.styles.get(id).locked == locked;
+        // Rows with a format of their own: (fits, cells present).
         let mut styled: BTreeMap<u32, (bool, u32)> = sheet
             .row_styles
             .range(rect.r0..=rect.r1)
-            .map(|(row, id)| (*row, (open(*id), 0)))
+            .map(|(row, id)| (*row, (fits(*id), 0)))
             .collect();
         // Cells present per column in the other rows.
         let mut plain: HashMap<u32, u32> = HashMap::new();
@@ -921,7 +921,7 @@ impl Workbook {
             if *col < rect.c0 || *col > rect.c1 {
                 continue;
             }
-            if !open(cell.style) {
+            if !fits(cell.style) {
                 return false;
             }
             match styled.get_mut(row) {
@@ -931,16 +931,22 @@ impl Workbook {
         }
         if styled
             .values()
-            .any(|(unlocked, present)| !unlocked && *present < rect.cols())
+            .any(|(fitting, present)| !fitting && *present < rect.cols())
         {
             return false;
         }
         let plain_rows = rect.rows() - styled.len() as u32;
+        let default_fits = fits(StyleId::default());
         plain_rows == 0
             || (rect.c0..=rect.c1).all(|col| {
-                sheet.col_styles.get(&col).is_some_and(|id| open(*id))
+                sheet.col_styles.get(&col).map_or(default_fits, |id| fits(*id))
                     || plain.get(&col).copied().unwrap_or(0) == plain_rows
             })
+    }
+
+    /// Whether no cell of `rect` is locked.
+    fn all_unlocked(&self, sheet: &Sheet, rect: Rect) -> bool {
+        self.all_locked_as(sheet, rect, false)
     }
 
     /// May this action proceed? `Err` says why not; its message is the
@@ -1035,6 +1041,139 @@ impl Workbook {
             protection.allows(Permission::SelectLockedCells)
         } else {
             protection.allows(Permission::SelectUnlockedCells)
+        }
+    }
+
+    /// Whether a whole range may be selected: every cell of it may be.
+    pub fn can_select_range(&self, sheet: usize, rect: Rect) -> bool {
+        let Some(sh) = self.sheets.get(sheet) else {
+            return true;
+        };
+        let Some(protection) = &sh.protection else {
+            return true;
+        };
+        match (
+            protection.allows(Permission::SelectLockedCells),
+            protection.allows(Permission::SelectUnlockedCells),
+        ) {
+            (true, true) => true,
+            (false, false) => false,
+            (false, true) => self.all_locked_as(sh, rect, false),
+            (true, false) => self.all_locked_as(sh, rect, true),
+        }
+    }
+
+    /// The first unlocked cell of a row at or after column `from` (at or
+    /// before it when going backwards).
+    fn unlocked_in_row(&self, sheet: &Sheet, row: u32, from: u32, forward: bool) -> Option<u32> {
+        let open = |id: StyleId| !self.styles.get(id).locked;
+        // A cell of the row that exists has its own format.
+        let own = |col: u32| sheet.cells.get(&(row, col)).map(|cell| open(cell.style));
+        let typed = if forward {
+            sheet.cells.range((row, from)..=(row, MAX_COLS - 1))
+        } else {
+            sheet.cells.range((row, 0)..=(row, from))
+        };
+        let pick = |mut cols: Box<dyn DoubleEndedIterator<Item = u32> + '_>| {
+            if forward { cols.next() } else { cols.next_back() }
+        };
+        let typed_open = pick(Box::new(
+            typed.filter(|(_, cell)| open(cell.style)).map(|((_, col), _)| *col),
+        ));
+        match sheet.row_styles.get(&row) {
+            // An unlocked row: the first cell that is not locked by itself.
+            Some(id) if open(*id) => {
+                let cols: Box<dyn DoubleEndedIterator<Item = u32>> = if forward {
+                    Box::new(from..MAX_COLS)
+                } else {
+                    Box::new(0..=from)
+                };
+                pick(Box::new(cols.filter(|col| own(*col).unwrap_or(true))))
+            }
+            Some(_) => typed_open,
+            None => {
+                let styled = if forward {
+                    sheet.col_styles.range(from..)
+                } else {
+                    sheet.col_styles.range(..=from)
+                };
+                let column_open = pick(Box::new(
+                    styled
+                        .filter(|(col, id)| open(**id) && own(**col).unwrap_or(true))
+                        .map(|(col, _)| *col),
+                ));
+                match (typed_open, column_open) {
+                    (Some(a), Some(b)) => Some(if forward { a.min(b) } else { a.max(b) }),
+                    (a, b) => a.or(b),
+                }
+            }
+        }
+    }
+
+    /// The unlocked cell that follows `from` in reading order (or comes
+    /// before it), going round the sheet: where Tab and Shift+Tab lead on
+    /// a protected sheet. `None` when no other cell is unlocked.
+    pub fn next_unlocked_cell(&self, sheet: usize, from: (u32, u32), forward: bool) -> Option<(u32, u32)> {
+        let sh = self.sheets.get(sheet)?;
+        let (row, col) = from;
+        let rest = if forward {
+            (col + 1 < MAX_COLS).then_some(col + 1)
+        } else {
+            col.checked_sub(1)
+        };
+        if let Some(found) = rest.and_then(|start| self.unlocked_in_row(sh, row, start, forward)) {
+            return Some((row, found));
+        }
+        // With an unlocked column every row may hold an unlocked cell;
+        // otherwise only rows with cells or a format of their own do.
+        let any_column = sh.col_styles.values().any(|id| !self.styles.get(*id).locked);
+        let following = |after: Option<u32>| -> Option<u32> {
+            if forward {
+                let start = after.map_or(0, |row| row + 1);
+                if start >= MAX_ROWS {
+                    return None;
+                }
+                if any_column {
+                    return Some(start);
+                }
+                let typed = sh.cells.range((start, 0)..).next().map(|((row, _), _)| *row);
+                let styled = sh.row_styles.range(start..).next().map(|(row, _)| *row);
+                typed.into_iter().chain(styled).min()
+            } else {
+                let end = match after {
+                    Some(0) => return None,
+                    Some(row) => row - 1,
+                    None => MAX_ROWS - 1,
+                };
+                if any_column {
+                    return Some(end);
+                }
+                let typed = sh.cells.range(..=(end, u32::MAX)).next_back().map(|((row, _), _)| *row);
+                let styled = sh.row_styles.range(..=end).next_back().map(|(row, _)| *row);
+                typed.into_iter().chain(styled).max()
+            }
+        };
+        let edge = if forward { 0 } else { MAX_COLS - 1 };
+        let mut at = Some(row);
+        let mut wrapped = false;
+        loop {
+            let next = match following(at) {
+                Some(next) => next,
+                None if !wrapped => {
+                    wrapped = true;
+                    at = None;
+                    continue;
+                }
+                None => return None,
+            };
+            // Back where it started: only the cells before `from` are left.
+            if wrapped && (if forward { next > row } else { next < row }) {
+                return None;
+            }
+            if let Some(found) = self.unlocked_in_row(sh, next, edge, forward) {
+                return ((next, found) != from).then_some((next, found));
+            }
+            at = Some(next);
         }
     }
 
@@ -1410,6 +1549,83 @@ mod tests {
         assert!(!edit("3:4") && !edit("A4:C4") && !edit("A2:A3"));
         // The bold row is locked, even where it crosses the unlocked column.
         assert!(edit("G1:G8") && !edit("G:G") && !edit("G9") && !edit("A9"));
+    }
+
+    #[test]
+    fn selecting_ranges() {
+        let mut w = form();
+        assert!(w.can_select_range(0, rect("A1:Z9")));
+        w.protect_sheet(0, SheetProtection::default(), "");
+        assert!(w.can_select_range(0, rect("A1:Z9")) && w.can_select_range(0, rect("A:XFD")));
+        // Unlocked cells only.
+        w.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectUnlockedCells]), "");
+        assert!(w.can_select_range(0, rect("B2:C3")) && w.can_select_range(0, rect("E:E")));
+        assert!(!w.can_select_range(0, rect("B2:C4")) && !w.can_select_range(0, rect("A1")));
+        assert!(!w.can_select_range(0, rect("D:E")) && !w.can_select_range(0, rect("2:2")));
+        // Locked cells only, as a file may ask.
+        w.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectLockedCells]), "");
+        assert!(w.can_select_range(0, rect("A1:A9")) && w.can_select_range(0, rect("F:XFD")));
+        assert!(!w.can_select_range(0, rect("A1:B2")) && !w.can_select_range(0, rect("E7")));
+        assert!(!w.can_select_range(0, rect("1:1")));
+        // Nothing at all.
+        w.protect_sheet(0, SheetProtection::allowing(&[]), "");
+        assert!(!w.can_select_range(0, rect("B2")) && !w.can_select_range(0, rect("A1")));
+        assert!(w.can_select_range(1, rect("A1")));
+    }
+
+    #[test]
+    fn tab_walks_the_unlocked_cells() {
+        let cell = |name: &str| crate::refs::parse_cell_name(name).unwrap();
+        let walk = |w: &Workbook, from: &str, forward: bool| {
+            w.next_unlocked_cell(0, cell(from), forward)
+                .map(|(row, col)| crate::refs::cell_name(row, col))
+        };
+        // Cells unlocked one by one: reading order, round the sheet.
+        let mut w = wb(&[("A1", "Title"), ("D9", "end")]);
+        for name in ["B2", "D2", "C5"] {
+            w.update_style(0, rect(name), &|s| s.locked = false);
+        }
+        w.commit("format");
+        assert_eq!(walk(&w, "A1", true).as_deref(), Some("B2"));
+        assert_eq!(walk(&w, "B2", true).as_deref(), Some("D2"));
+        assert_eq!(walk(&w, "D2", true).as_deref(), Some("C5"));
+        assert_eq!(walk(&w, "C5", true).as_deref(), Some("B2"));
+        assert_eq!(walk(&w, "B2", false).as_deref(), Some("C5"));
+        assert_eq!(walk(&w, "C5", false).as_deref(), Some("D2"));
+        assert_eq!(walk(&w, "D2", false).as_deref(), Some("B2"));
+        // From a locked cell between them, and from below them all.
+        assert_eq!(walk(&w, "C2", true).as_deref(), Some("D2"));
+        assert_eq!(walk(&w, "C2", false).as_deref(), Some("B2"));
+        assert_eq!(walk(&w, "Z99", true).as_deref(), Some("B2"));
+        assert_eq!(walk(&w, "Z99", false).as_deref(), Some("C5"));
+
+        // A single unlocked cell leads nowhere from itself, none at all
+        // leads nowhere from anywhere.
+        let mut one = wb(&[("A1", "x")]);
+        assert_eq!(walk(&one, "A1", true), None);
+        one.update_style(0, rect("C3"), &|s| s.locked = false);
+        one.commit("format");
+        assert_eq!(walk(&one, "C3", true), None);
+        assert_eq!(walk(&one, "C3", false), None);
+        assert_eq!(walk(&one, "A1", true).as_deref(), Some("C3"));
+        assert_eq!(walk(&one, "D8", false).as_deref(), Some("C3"));
+
+        // Unlocked rows and columns, with locked cells of their own.
+        let w = form();
+        assert_eq!(walk(&w, "C2", true).as_deref(), Some("E2"));
+        assert_eq!(walk(&w, "E2", true).as_deref(), Some("B3"));
+        assert_eq!(walk(&w, "E3", true).as_deref(), Some("E4"));
+        assert_eq!(walk(&w, "E4", false).as_deref(), Some("E3"));
+        assert_eq!(walk(&w, "B2", false).as_deref(), Some("E1"));
+        assert_eq!(walk(&w, "E1", false).as_deref(), Some("E1048576"));
+        let mut rows = wb(&[]);
+        rows.update_style(0, rect("3:3"), &|s| s.locked = false);
+        rows.update_style(0, rect("B3:C3"), &|s| s.locked = true);
+        rows.commit("format");
+        assert_eq!(walk(&rows, "A3", true).as_deref(), Some("D3"));
+        assert_eq!(walk(&rows, "D3", false).as_deref(), Some("A3"));
+        assert_eq!(walk(&rows, "XFD3", true).as_deref(), Some("A3"));
+        assert_eq!(walk(&rows, "A3", false).as_deref(), Some("XFD3"));
     }
 
     #[test]

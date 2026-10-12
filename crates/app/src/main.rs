@@ -113,6 +113,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-f2", NewNote, w),
         KeyBinding::new("ctrl-f3", NameManager, w),
         KeyBinding::new("cmd-k", InsertLink, w),
+        KeyBinding::new("alt-down", PickFromList, g),
         KeyBinding::new("cmd-q", Quit, None),
     ]);
 }

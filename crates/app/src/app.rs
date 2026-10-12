@@ -99,6 +99,7 @@ actions!(
         NewNote,
         NameManager,
         InsertLink,
+        PickFromList,
     ]
 );
 
@@ -267,7 +268,7 @@ impl MenuEntry {
 
     /// The entry of a feature command: its label, icon and current state.
     pub fn command<C: Command>(cmd: C, app: &ExcelApp) -> MenuEntry {
-        let mut entry = MenuEntry::new(cmd.label(), move |a, window, cx| cmd.run(a, window, cx))
+        let mut entry = MenuEntry::new(cmd.label_in(app), move |a, window, cx| cmd.run(a, window, cx))
             .checked(cmd.checked(app))
             .disabled(!cmd.enabled(app));
         if !cmd.icon().is_empty() {
@@ -434,6 +435,9 @@ pub struct ExcelApp {
     tab_origin: Option<u32>,
     /// Formats waiting to be applied by the format painter.
     pub painter: Option<Clip>,
+    /// The cells a fill copies from, while the features hear about it
+    /// (`ChangeCause::Fill`).
+    pub fill_source: Option<Rect>,
     /// Coloured ranges of the formula being edited, on the visible sheet.
     pub ref_highlights: Vec<(Rect, u32)>,
     _subscriptions: Vec<Subscription>,
@@ -547,6 +551,7 @@ impl ExcelApp {
             show_find: false,
             tab_origin: None,
             painter: None,
+            fill_source: None,
             ref_highlights: Vec::new(),
             _subscriptions: subscriptions,
         };
@@ -908,7 +913,8 @@ impl ExcelApp {
             let (r, c) = self.step(lead, dir);
             self.extend_to(r, c, cx);
         } else {
-            let (r, c) = self.step(self.active(), dir);
+            let from = self.active();
+            let (r, c) = features::next_cell(self, from, dir, false).unwrap_or_else(|| self.step(from, dir));
             self.select_cell(r, c, cx);
         }
     }
@@ -930,7 +936,12 @@ impl ExcelApp {
         let cur = sel.current();
         let merged = self.wb.sheets[self.sheet].merge_at(sel.active.0, sel.active.1) == Some(cur);
         if sel.ranges.len() == 1 && (cur.is_single() || merged) {
-            self.move_selection(dir, false, cx);
+            // A feature may know better where an entry leads (Tab on a
+            // protected sheet).
+            match features::next_cell(self, sel.active, dir, true) {
+                Some((r, c)) => self.select_cell(r, c, cx),
+                None => self.move_selection(dir, false, cx),
+            }
             return;
         }
         let cur = self.wb.clamp_to_used(self.sheet, cur);
@@ -1160,6 +1171,11 @@ impl ExcelApp {
                 if source == EditSource::FormulaBar && self.editing.is_none() {
                     let text = self.formula_input.read(cx).text().to_string();
                     let (row, col) = self.active();
+                    // A protected cell refuses here as it does in the grid.
+                    if !self.may(Intent::EditCells(Rect::cell(row, col)), cx) {
+                        window.focus(&self.grid_focus);
+                        return;
+                    }
                     self.editing = Some(Editing {
                         sheet: self.sheet,
                         row,
@@ -1619,19 +1635,21 @@ impl ExcelApp {
         }
         let system = cx.read_from_clipboard().and_then(|item| item.text());
         let dest = self.sel().current();
-        let intent = if mode == PasteMode::Formats {
-            Intent::FormatCells(dest)
-        } else {
-            Intent::EditCells(dest)
-        };
-        if !self.may(intent, cx) {
-            return;
-        }
         let internal = match (&self.clip, &system) {
             (Some(state), Some(text)) => state.clip.text == *text,
             (Some(_), None) => true,
             _ => false,
         };
+        // A paste may cover more cells than are selected.
+        let target = self.paste_target(dest, internal, system.as_deref(), mode);
+        let intent = if mode == PasteMode::Formats {
+            Intent::FormatCells(target)
+        } else {
+            Intent::EditCells(target)
+        };
+        if !self.may(intent, cx) {
+            return;
+        }
         // Where the cells come from, for the features that follow them
         // (comments, validation, conditional formats).
         let mut from = None;
@@ -1663,6 +1681,38 @@ impl ExcelApp {
             sel.anchor = active;
             self.commit_cells(t("Paste", "Coller"), &[rect], ChangeCause::Paste { from, cut, mode }, cx);
         }
+    }
+
+    /// The cells a paste at `dest` will write: the block on the clipboard,
+    /// repeated when the selection is a multiple of it.
+    fn paste_target(&self, dest: Rect, internal: bool, text: Option<&str>, mode: PasteMode) -> Rect {
+        let (rows, cols) = match (&self.clip, text) {
+            (Some(state), _) if internal && state.cut && mode == PasteMode::All => {
+                let src = self.wb.clamp_to_used(state.clip.sheet, state.clip.rect);
+                (src.rows(), src.cols())
+            }
+            (Some(state), _) if internal => {
+                let dest = self.wb.clamp_to_used(self.sheet, dest);
+                let (rows, cols) = ((state.clip.rows.len() as u32).max(1), state.clip.rect.cols());
+                if dest.rows() % rows == 0 && dest.cols() % cols == 0 {
+                    (dest.rows(), dest.cols())
+                } else {
+                    (rows, cols)
+                }
+            }
+            (_, Some(text)) => {
+                let lines = opensheet_engine::ops::parse_tsv(text);
+                let widest = lines.iter().map(Vec::len).max().unwrap_or(1);
+                (lines.len().max(1) as u32, widest.max(1) as u32)
+            }
+            _ => return dest,
+        };
+        Rect::new(
+            dest.r0,
+            dest.c0,
+            (dest.r0 + rows - 1).min(MAX_ROWS - 1),
+            (dest.c0 + cols - 1).min(MAX_COLS - 1),
+        )
     }
 
     /// Apply a formatting change to the whole selection.
@@ -2666,7 +2716,9 @@ impl ExcelApp {
             Drag::Fill { src, dest } => {
                 if dest != src && self.may(Intent::EditCells(dest), cx) {
                     self.wb.autofill(self.sheet, src, dest);
+                    self.fill_source = Some(src);
                     self.commit_cells(t("Auto Fill", "Recopie incrémentée"), &[dest], ChangeCause::Fill, cx);
+                    self.fill_source = None;
                     let active = self.active();
                     let sel = self.sel_mut();
                     sel.ranges = vec![dest];
@@ -2729,7 +2781,9 @@ impl ExcelApp {
             }
             self.wb.autofill(self.sheet, src, dest);
             self.sel_mut().ranges = vec![dest];
+            self.fill_source = Some(src);
             self.commit_cells(t("Auto Fill", "Recopie incrémentée"), &[dest], ChangeCause::Fill, cx);
+            self.fill_source = None;
         }
     }
 
@@ -2917,6 +2971,10 @@ impl ExcelApp {
                     t("AutoFit Column Width", "Ajuster la largeur de colonne"),
                     |a, window, cx| {
                         let r = a.sel().current();
+                        // One refusal, not one for each column.
+                        if !a.may(Intent::FormatColumns, cx) {
+                            return;
+                        }
                         for col in r.c0..=r.c1.min(r.c0 + 500) {
                             a.autofit_col(col, window, cx);
                         }
@@ -3119,7 +3177,7 @@ impl ExcelApp {
             ColorTarget::Fill => self.set_fill(color, cx),
             ColorTarget::Font => self.set_font_color(color, cx),
             ColorTarget::Tab => {
-                if self.may(Intent::ChangeSheet, cx) {
+                if self.may(Intent::TabColor, cx) {
                     self.wb.set_tab_color(self.sheet, color);
                     self.commit(t("Tab Color", "Couleur d'onglet"), cx);
                 }
@@ -3403,12 +3461,15 @@ impl ExcelApp {
         }
         let label = if dir == Direction::Right {
             self.wb.fill_right(self.sheet, r);
+            self.fill_source = Some(Rect::new(r.r0, r.c0, r.r1, r.c0));
             t("Fill Right", "Recopier à droite")
         } else {
             self.wb.fill_down(self.sheet, r);
+            self.fill_source = Some(Rect::new(r.r0, r.c0, r.r0, r.c1));
             t("Fill Down", "Recopier vers le bas")
         };
         self.commit_cells(label, &[r], ChangeCause::Fill, cx);
+        self.fill_source = None;
     }
     pub fn on_page_up(&mut self, _: &PageUp, _: &mut Window, cx: &mut Context<Self>) {
         let n = self.current_layout().map(|l| l.page_rows()).unwrap_or(20);
@@ -3530,6 +3591,9 @@ impl ExcelApp {
     }
     pub fn on_insert_link(&mut self, _: &InsertLink, window: &mut Window, cx: &mut Context<Self>) {
         self.run_command(features::misc::Cmd::Link, window, cx);
+    }
+    pub fn on_pick_from_list(&mut self, _: &PickFromList, window: &mut Window, cx: &mut Context<Self>) {
+        self.run_command(features::validation::Cmd::PickFromList, window, cx);
     }
 
     /// Run a feature command from the keyboard or the menu bar: an entry
