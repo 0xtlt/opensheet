@@ -3,15 +3,19 @@
 mod app;
 mod chart_view;
 mod demo;
+mod features;
 mod file;
 mod grid;
 mod i18n;
 mod i18n_tables;
 mod icons;
+mod objects;
 mod ribbon;
+mod shell;
 mod text_input;
 mod theme;
 mod view;
+mod widgets;
 
 use app::*;
 use gpui::{
@@ -22,6 +26,7 @@ use i18n::t;
 
 fn bind_keys(cx: &mut App) {
     text_input::bind_keys(cx);
+    widgets::bind_keys(cx);
     let g = Some("Grid");
     let w = Some("Workbook");
     cx.bind_keys([
@@ -97,6 +102,17 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-pageup", PrevSheet, w),
         KeyBinding::new("alt-right", NextSheet, g),
         KeyBinding::new("alt-left", PrevSheet, g),
+        // Commands of the feature modules
+        KeyBinding::new("cmd-1", FormatCells, w),
+        KeyBinding::new("ctrl-1", FormatCells, w),
+        KeyBinding::new("cmd-p", Print, w),
+        KeyBinding::new("cmd-shift-l", ToggleFilter, w),
+        KeyBinding::new("ctrl-shift-l", ToggleFilter, w),
+        KeyBinding::new("cmd-t", InsertTable, w),
+        KeyBinding::new("ctrl-t", InsertTable, w),
+        KeyBinding::new("shift-f2", NewNote, w),
+        KeyBinding::new("ctrl-f3", NameManager, w),
+        KeyBinding::new("cmd-k", InsertLink, w),
         KeyBinding::new("cmd-q", Quit, None),
     ]);
 }
@@ -115,6 +131,8 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::separator(),
                 MenuItem::action(t("Save", "Enregistrer"), Save),
                 MenuItem::action(t("Save As…", "Enregistrer sous…"), SaveAs),
+                MenuItem::separator(),
+                MenuItem::action(t("Print…", "Imprimer…"), Print),
             ],
         },
         Menu {
@@ -131,6 +149,10 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Select All", "Sélectionner tout"), SelectAll),
                 MenuItem::action(t("Find…", "Rechercher…"), Find),
             ],
+        },
+        Menu {
+            name: i18n::t_ctx("menu", "Format", "Format").into(),
+            items: vec![MenuItem::action(t("Cells…", "Cellule…"), FormatCells)],
         },
         Menu {
             name: i18n::t_ctx("menu", "View", "Affichage").into(),

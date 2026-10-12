@@ -352,6 +352,67 @@ pub fn code_from_locale(code: &str, locale: &Locale) -> String {
     apply_edits(code, edits)
 }
 
+/// The inverse of [`code_from_locale`]: a canonical code written the way
+/// the Format Cells dialog shows it in the locale (`"#,##0.00"` reads
+/// `"# ##0,00"` and `"dd/mm/yyyy"` reads `"jj/mm/aaaa"` in French). In an
+/// English locale this is the identity.
+///
+/// A scaling comma (`"0,"`) is written like a grouping separator, as Excel
+/// does; such a code does not survive the round trip in locales that group
+/// with a space or a dot, so keep the canonical code next to the text shown.
+pub fn code_to_locale(code: &str, locale: &Locale) -> String {
+    let (day, year) = (locale.fmt_day, locale.fmt_year);
+    if locale.decimal_sep == '.' && day == 'd' && year == 'y' {
+        return code.to_string();
+    }
+    let tokens = lex(code);
+    let mut edits: Vec<(usize, usize, String)> = Vec::new();
+    // Keep the case of the letters being replaced ("DD" reads "JJ").
+    let letters = |t: &Token, to: char| -> String {
+        code[t.start..t.end]
+            .chars()
+            .map(|c| if c.is_ascii_uppercase() { to.to_ascii_uppercase() } else { to })
+            .collect()
+    };
+    let grouping = if locale.thousands_sep.is_whitespace() {
+        ' '
+    } else {
+        locale.thousands_sep
+    };
+    for sec in tokens.split(|t| t.lex == Lex::Sep) {
+        if raw_kind(sec) == RawKind::Date {
+            for (i, t) in sec.iter().enumerate() {
+                match t.lex {
+                    Lex::Date('d', _) if day != 'd' => edits.push((t.start, t.end, letters(t, day))),
+                    Lex::Date('y', _) if year != 'y' => edits.push((t.start, t.end, letters(t, year))),
+                    // Fractional seconds: "ss.00".
+                    Lex::Dot
+                        if locale.decimal_sep != '.'
+                            && i > 0
+                            && matches!(sec[i - 1].lex, Lex::Date('s', _) | Lex::Elapsed('s', _))
+                            && sec.get(i + 1).is_some_and(|n| n.lex == Lex::Digit('0')) =>
+                    {
+                        edits.push((t.start, t.end, locale.decimal_sep.to_string()))
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        if locale.decimal_sep == '.' {
+            continue;
+        }
+        for t in sec {
+            match t.lex {
+                Lex::Dot => edits.push((t.start, t.end, locale.decimal_sep.to_string())),
+                Lex::Comma => edits.push((t.start, t.end, grouping.to_string())),
+                _ => {}
+            }
+        }
+    }
+    apply_edits(code, edits)
+}
+
 // ---------------------------------------------------------------------------
 // Decimal arithmetic
 // ---------------------------------------------------------------------------
@@ -2650,6 +2711,47 @@ mod tests {
             fr(1234.5, &code_from_locale("# ##0,00 €", fr_)),
             "1\u{202f}234,50 €"
         );
+    }
+
+    #[test]
+    fn codes_shown_in_the_locale() {
+        let fr_ = Locale::fr();
+        assert_eq!(code_to_locale("#,##0.00", Locale::en()), "#,##0.00");
+        assert_eq!(code_to_locale("#,##0.00", fr_), "# ##0,00");
+        assert_eq!(code_to_locale("0.00%", fr_), "0,00%");
+        assert_eq!(code_to_locale("dd/mm/yyyy", fr_), "jj/mm/aaaa");
+        assert_eq!(code_to_locale("DD/MM/YYYY hh:mm", fr_), "JJ/MM/AAAA hh:mm");
+        assert_eq!(code_to_locale("mm:ss.00", fr_), "mm:ss,00");
+        assert_eq!(code_to_locale("\"a, b.\"0", fr_), "\"a, b.\"0");
+        assert_eq!(code_to_locale("General", fr_), "General");
+        assert_eq!(code_to_locale("#,##0.00", Locale::de()), "#.##0,00");
+        assert_eq!(code_to_locale("dd.mm.yyyy", Locale::de()), "tt.mm.jjjj");
+        // What the dialog shows is read back as the same code.
+        for locale in Locale::all() {
+            for code in [
+                "0",
+                "0.00",
+                "#,##0",
+                "#,##0.00",
+                "#,##0.00;[Red]-#,##0.00",
+                "0%",
+                "0.00%",
+                "0.00E+00",
+                "@",
+                "h:mm:ss",
+                "dd/mm/yyyy hh:mm",
+                "[h]:mm:ss",
+                "mm:ss.0",
+                locale.short_date_format,
+                locale.long_date_format,
+                locale.time_format,
+                locale.currency_format,
+                locale.accounting_format,
+            ] {
+                let shown = code_to_locale(code, locale);
+                assert_eq!(code_from_locale(&shown, locale), code, "{code} shown as {shown} in {}", locale.id);
+            }
+        }
     }
 
     /// Arbitrary codes must never panic, whatever the value.

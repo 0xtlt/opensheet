@@ -220,7 +220,7 @@ def extract_calls(path):
 def source_strings():
     """All calls of the app sources, in file then line order."""
     calls, problems = [], []
-    for path in sorted(SRC_DIR.glob("*.rs")):
+    for path in sorted(SRC_DIR.rglob("*.rs")):
         if path.name in SKIP:
             continue
         file_calls, file_problems = extract_calls(path)
