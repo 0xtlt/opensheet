@@ -84,6 +84,36 @@ impl Feature for FormatCells {
     }
 }
 
+/// What receives the format code chosen in a dialog opened with
+/// [`open_number_format`].
+type NumberFormatSink = Rc<dyn Fn(&mut ExcelApp, &str, &mut Window, &mut Cx)>;
+
+/// Open the dialog with its Number tab alone, for a number format that is
+/// not the selection's (the values of a PivotTable field). It opens on
+/// `code`, shows `sample` formatted, and hands the code chosen to `apply`
+/// when the user presses OK; the cells are left alone.
+pub fn open_number_format(
+    app: &mut ExcelApp,
+    code: &str,
+    sample: Value,
+    window: &mut Window,
+    cx: &mut Cx,
+    apply: impl Fn(&mut ExcelApp, &str, &mut Window, &mut Cx) + 'static,
+) {
+    let mut state = Opening::of(app, TAB_NUMBER);
+    state.sample = sample;
+    state.styles = vec![Style {
+        num_fmt: Arc::from(code),
+        ..Style::default()
+    }];
+    let apply: NumberFormatSink = Rc::new(apply);
+    app.open_modal(window, cx, move |modal, _, cx| {
+        let mut dialog = Dialog::new(modal, state, cx);
+        dialog.number_only = Some(apply);
+        dialog
+    });
+}
+
 const TAB_NUMBER: usize = 0;
 const TAB_ALIGNMENT: usize = 1;
 const TAB_FONT: usize = 2;
@@ -512,6 +542,10 @@ struct Dialog {
     // Protection
     locked: Prop<bool>,
     hidden: Prop<bool>,
+
+    /// Set by `open_number_format`: only the Number tab shows, and OK
+    /// hands the code over instead of formatting the selection.
+    number_only: Option<NumberFormatSink>,
 }
 
 /// A size in points as the Size box shows it.
@@ -616,6 +650,7 @@ impl Dialog {
             fill: Prop::of(styles, |s| s.fill),
             locked: Prop::of(styles, |s| s.locked),
             hidden: Prop::of(styles, |s| s.hidden),
+            number_only: None,
             fonts: open.fonts,
             modal,
         }
@@ -692,6 +727,12 @@ impl Dialog {
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(apply) = self.number_only.clone() {
+            let code = self.code(cx);
+            self.modal.close(window, cx);
+            self.modal.update_app(cx, |app, cx| apply(app, &code, window, cx));
+            return;
+        }
         let changes = self.changes(cx);
         self.modal.update_app(cx, |app, cx| changes.apply(app, cx));
         self.modal.close(window, cx);
@@ -1698,6 +1739,7 @@ impl Render for Dialog {
             t("Protection", "Protection"),
         ]
         .iter()
+        .take(if self.number_only.is_some() { 1 } else { usize::MAX })
         .map(|name| (*name).into())
         .collect();
         let body = match self.tab {
