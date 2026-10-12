@@ -89,7 +89,7 @@ pub fn toggle(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let showing = showing(app);
     let state = app.ext_mut::<Ui>();
     let was_open = state.menu.take().is_some();
-    let just_closed = state.menu_closed.take().is_some_and(|at| at.elapsed() < Duration::from_millis(300));
+    let just_closed = state.menu_closed.take().is_some_and(|at| at.elapsed() < Duration::from_millis(500));
     if was_open || just_closed {
         end_preview(app, cx);
         if showing {
