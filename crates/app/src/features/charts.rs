@@ -143,11 +143,9 @@ impl ExcelApp {
         self.fonts.resolve(&Arc::from(opensheet_engine::style::DEFAULT_FONT))
     }
 
-    pub fn chart_style(&self) -> ChartStyle<'static> {
+    pub fn chart_style(&self) -> ChartStyle {
         ChartStyle {
             font: self.chart_font(),
-            placeholder_title: t("Chart Title", "Titre du graphique"),
-            series_prefix: t("Series", "Série"),
             locale: self.wb.locale,
         }
     }

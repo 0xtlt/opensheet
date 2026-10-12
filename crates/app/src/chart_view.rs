@@ -19,13 +19,10 @@ use opensheet_engine::chart_layout::{
 use opensheet_engine::{Color, Locale};
 use std::rc::Rc;
 
-pub struct ChartStyle<'a> {
+/// What drawing a chart on screen needs besides the chart.
+pub struct ChartStyle {
     /// Font family for every label.
     pub font: SharedString,
-    /// Shown when the chart has an automatic title and several series.
-    pub placeholder_title: &'a str,
-    /// Prefix of unnamed series ("Series" → "Series1").
-    pub series_prefix: &'a str,
     pub locale: &'static Locale,
 }
 
@@ -52,8 +49,22 @@ fn unhex(text: &str) -> Option<String> {
     String::from_utf8(bytes?).ok()
 }
 
-/// The SVG image behind an asset path made by `Shaper::turned`: one line of
-/// text in a box of its own size. `None` for any other path.
+/// The asset path of one line of text drawn as a shape in a box of
+/// `width` × `height` pixels, its baseline `baseline` pixels under the top
+/// of the box (see `text_asset`). The screen and the print preview both
+/// draw turned text through it.
+pub fn text_asset_path(width: f32, height: f32, baseline: f32, size: f32, bold: bool, family: &str, text: &str) -> SharedString {
+    format!(
+        "{TEXT_ASSET}{width:.0}/{height:.0}/{baseline:.2}/{size:.2}/{}/{}/{}.svg",
+        if bold { "b" } else { "r" },
+        hex(family),
+        hex(text)
+    )
+    .into()
+}
+
+/// The SVG image behind an asset path made by `text_asset_path`: one line
+/// of text in a box of its own size. `None` for any other path.
 pub fn text_asset(path: &str) -> Option<Vec<u8>> {
     let mut parts = path.strip_prefix(TEXT_ASSET)?.strip_suffix(".svg")?.split('/');
     let mut number = || parts.next()?.parse::<f32>().ok().filter(|v| v.is_finite());
@@ -110,13 +121,7 @@ impl Shaper<'_> {
         let (ascent, descent) = (f32::from(self.ts.ascent(font_id, px(size))), f32::from(self.ts.descent(font_id, px(size))));
         // Where GPUI itself puts the baseline in a line of this height.
         let baseline = (h - ascent - descent) / 2.0 + ascent;
-        let path = format!(
-            "{TEXT_ASSET}{w:.0}/{h:.0}/{baseline:.2}/{size:.2}/{}/{}/{}.svg",
-            if bold { "b" } else { "r" },
-            hex(&self.family),
-            hex(text)
-        );
-        (path.into(), w, h)
+        (text_asset_path(w, h, baseline, size, bold, &self.family, text), w, h)
     }
 }
 
@@ -286,11 +291,14 @@ impl Converter<'_> {
     }
 }
 
-/// The words of the interface language a chart shows.
-fn labels<'a>(style: &'a ChartStyle) -> Labels<'a> {
+/// The words a chart takes from the language of the interface: on the
+/// sheet, in previews and on paper.
+pub fn chart_labels() -> Labels<'static> {
     Labels {
-        placeholder_title: style.placeholder_title,
-        series_prefix: style.series_prefix,
+        // Shown when the chart has an automatic title and several series.
+        placeholder_title: t("Chart Title", "Titre du graphique"),
+        // Prefix of unnamed series ("Series" → "Series1").
+        series_prefix: t("Series", "Série"),
         trend_names: [
             t("Linear", "Linéaire"),
             t("Expon.", "Expon."),
@@ -319,7 +327,7 @@ pub fn layout(chart: &Chart, data: &ChartData, size: (f32, f32), zoom: f32, ts: 
     let options = LayoutOptions {
         scale: zoom,
         locale: style.locale,
-        labels: labels(style),
+        labels: chart_labels(),
     };
     layout_chart_elements(chart, data, size, &options, &shaper)
 }
@@ -403,8 +411,6 @@ pub fn chart_canvas(
         move |bounds: Bounds<Pixels>, _, window, cx| {
             let style = ChartStyle {
                 font: font.clone(),
-                placeholder_title: t("Chart Title", "Titre du graphique"),
-                series_prefix: t("Series", "Série"),
                 locale,
             };
             let ts = window.text_system().clone();

@@ -355,14 +355,7 @@ impl Brush<'_> {
         let width = f32::from(line.width).ceil() + 2.0;
         let height = (pixels * 1.25).round();
         let baseline = f32::from(line.ascent);
-        let hex = |s: &str| s.bytes().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let path: SharedString = format!(
-            "chart-text/{width:.0}/{height:.0}/{baseline:.2}/{pixels:.2}/{}/{}/{}.svg",
-            if face.bold() { "b" } else { "r" },
-            hex(&font.family),
-            hex(&shown)
-        )
-        .into();
+        let path = crate::chart_view::text_asset_path(width, height, baseline, pixels, face.bold(), &font.family, &shown);
         // The shape centres the text in its box: put the start of the
         // baseline on the point, then turn around it.
         let advance = f32::from(line.width);

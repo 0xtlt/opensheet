@@ -5,10 +5,9 @@
 //! The canvas handed to every method is in sheet pixels at 100 % with its
 //! origin on the object, so the numbers are those of the screen.
 
-use crate::i18n::t;
 use gpui::RenderImage;
 use opensheet_engine::chart::Chart;
-use opensheet_engine::chart_layout::{self, Ink, Labels, LayoutOptions, Prim, Seg, TextAnchor, layout_chart};
+use opensheet_engine::chart_layout::{self, Ink, LayoutOptions, Prim, Seg, TextAnchor, layout_chart};
 use opensheet_engine::condfmt::{Adornment, Bar, Icon};
 use opensheet_engine::drawing::{
     Drawing, DrawingKind, ImageFormat, LineEnd, Outline, PathCommand, Picture, Shape, TEXT_MARGIN, TextAlign,
@@ -19,30 +18,6 @@ use opensheet_print::{Canvas, FontDb, Image, LineCap, LineJoin, ObjectPainter, P
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-/// The words charts take from the application's language. They are the
-/// ones `chart_view.rs` and `features/charts.rs` draw with on screen.
-fn chart_labels() -> Labels<'static> {
-    Labels {
-        placeholder_title: t("Chart Title", "Titre du graphique"),
-        series_prefix: t("Series", "Série"),
-        trend_names: [
-            t("Linear", "Linéaire"),
-            t("Expon.", "Expon."),
-            t("Log.", "Log."),
-            t("Poly.", "Poly."),
-            t("Power", "Puissance"),
-            t("per. Mov. Avg.", "Moy. mobile sur pér."),
-        ],
-        unit_names: [
-            t("Hundreds", "Centaines"),
-            t("Thousands", "Milliers"),
-            t("Millions", "Millions"),
-            t("Billions", "Milliards"),
-            t("Trillions", "Billions"),
-        ],
-    }
-}
 
 /// Measures chart text with the fonts of the printer.
 struct Measure<'a> {
@@ -155,7 +130,7 @@ impl ObjectPainter for PaperPainter {
         let options = LayoutOptions {
             scale: 1.0,
             locale: wb.locale,
-            labels: chart_labels(),
+            labels: crate::chart_view::chart_labels(),
         };
         for prim in layout_chart(chart, &data, (size.0 as f32, size.1 as f32), &options, &measure) {
             match prim {
