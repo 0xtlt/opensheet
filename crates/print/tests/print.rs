@@ -1282,3 +1282,47 @@ fn notes_print_at_the_end_or_where_they_are_shown() {
     }
     save(&dir, "notes-as-displayed.pdf", &print_pdf(&wb, &job));
 }
+
+#[test]
+fn sparklines_print_in_their_cells() {
+    use opensheet_engine::sparkline::SparklineType;
+    let mut wb = Workbook::new(Locale::en());
+    // What prints is the block of cells that hold something: F5 brings
+    // the cells of the sparklines into it.
+    for (cell, text) in [("A1", "1"), ("B1", "4"), ("C1", "2"), ("A2", "3"), ("B2", "-1"), ("C2", "2"), ("F5", "x")] {
+        enter(&mut wb, cell, text);
+    }
+    let data = Rect::parse("A1:C2").unwrap();
+    wb.add_sparklines(0, SparklineType::Line, (0, Rect::parse("A1:C1").unwrap()), Rect::parse("E1").unwrap()).unwrap();
+    wb.add_sparklines(0, SparklineType::Column, (0, data), Rect::parse("E3:E4").unwrap()).unwrap();
+    wb.commit("sparklines");
+    let fonts = FontDb::standard_only();
+    let mut job = job(PrintWhat::Sheet(0));
+    job.fonts = Some(&fonts);
+    let plan = plan(&wb, &job);
+    let scene = render_page(&wb, &job, &plan, 0).unwrap();
+    // The line: one stroke of three points in Excel's blue, inside E1
+    // (columns of 48 pt from the 50.4 pt margin, rows of 15 pt from 54).
+    let strokes: Vec<_> = scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Stroke { path, stroke } if stroke.paint.color == Color(0x376092) => Some((path, stroke.width)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(strokes.len(), 1);
+    assert_eq!(strokes[0].1, 1.0);
+    // Six columns in the two cells under it.
+    let bars = scene
+        .ops
+        .iter()
+        .filter(|op| matches!(op, Op::Fill { paint, .. } if paint.color == Color(0x376092)))
+        .count();
+    assert_eq!(bars, 6);
+    // Each cell is drawn in its own box, clipped to it.
+    let clips: Vec<&RectF> = scene.ops.iter().filter_map(|op| if let Op::Clip(r) = op { Some(r) } else { None }).collect();
+    let e1 = clips.iter().find(|r| (r.x - (50.4 + 4.0 * 48.0)).abs() < 1e-6 && (r.y - 54.0).abs() < 1e-6 && (r.w - 48.0).abs() < 1e-6);
+    assert!(e1.is_some(), "{clips:?}");
+    assert!(!print_pdf(&wb, &job).is_empty());
+}

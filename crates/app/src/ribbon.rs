@@ -1453,7 +1453,7 @@ impl ExcelApp {
             group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
                 t("Sparklines", "Graphiques sparkline"),
-                row(vec![self.cmd_large("in-sparklines", misc::Cmd::Sparklines, true, cx)]),
+                row(vec![self.cmd_large("in-sparklines", features::sparklines::Cmd::Menu, true, cx)]),
             )
             .into_any_element(),
             group(

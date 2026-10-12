@@ -1137,6 +1137,10 @@ impl<'a> PaneCtx<'a> {
         items.append(&mut fills);
         items.append(&mut erasers);
         items.append(&mut borders);
+        // Sparklines lie over the fill of their cell and under its text.
+        let mut sparklines = Painter::new(self.input.app, layout, self.ts, PaintLayer::Under, visible, clip, self.input.scale);
+        features::sparklines::paint_cells(&mut sparklines);
+        items.append(&mut sparklines.items);
         items.append(&mut texts);
 
         self.selection_overlay(&mut items, visible);

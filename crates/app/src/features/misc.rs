@@ -39,7 +39,6 @@ commands! {
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert
-        Sparklines = "chart-line", t("Sparklines", "Graphiques sparkline");
         Equation = "function", t("Equation", "Équation");
         // Draw
         Draw = "brush", t_ctx("button", "Draw", "Dessiner");
