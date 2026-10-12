@@ -88,8 +88,10 @@ impl RenderOnce for ColorGrid {
         // Keyboard cursor over the swatches: (row, column).
         let cursor = window.use_keyed_state(self.id.clone(), cx, |_, _| (0usize, 0usize));
         let at = *cursor.read(cx);
+        // The colours of the theme of the workbook, as references to it;
+        // the standard colours are the same everywhere.
         let mut rows = theme::palette_rows();
-        rows.push(theme::PALETTE_STANDARD);
+        rows.push(theme::PALETTE_STANDARD.map(Color));
         let rows = Rc::new(rows);
         let selected = self.selected;
         let handler = self.on_pick;
@@ -102,20 +104,20 @@ impl RenderOnce for ColorGrid {
             }
         };
 
-        let swatch = |row: usize, col: usize, color: u32| {
+        let swatch = |row: usize, col: usize, color: Color| {
             let pick = pick.clone();
-            let on = selected == Some(Some(Color(color)));
+            let on = selected == Some(Some(color));
             let under_cursor = focused && at == (row, col);
             div()
                 .id(("swatch", row * 16 + col))
                 .size(px(SWATCH))
                 .flex_none()
-                .bg(c(color))
+                .bg(c(color.value()))
                 .border_1()
                 .border_color(c(if on || under_cursor { 0xE8590C } else { 0xD0D0D0 }))
                 .when(on, |d| d.border_2())
                 .hover(|s| s.border_color(c(0xF2994A)))
-                .on_click(move |_, window, cx| pick(Some(Color(color)), window, cx))
+                .on_click(move |_, window, cx| pick(Some(color), window, cx))
         };
         let heading = |text: &'static str| {
             div()
@@ -191,7 +193,7 @@ impl RenderOnce for ColorGrid {
                     "up" => (row.saturating_sub(1), col),
                     "down" => ((row + 1).min(key_rows.len() - 1), col),
                     "space" => {
-                        key_pick(Some(Color(key_rows[row][col])), window, cx);
+                        key_pick(Some(key_rows[row][col]), window, cx);
                         cx.stop_propagation();
                         return;
                     }

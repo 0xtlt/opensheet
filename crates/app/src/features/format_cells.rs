@@ -472,7 +472,7 @@ impl Changes {
             s.rotation = v;
         }
         if let Some(v) = &self.font_name {
-            s.font.name = v.clone();
+            crate::theme::set_font_choice(&mut s.font, v, &crate::theme::document_theme());
         }
         if let Some(v) = self.bold {
             s.font.bold = v;
@@ -742,7 +742,9 @@ impl Dialog {
         let rotation_input = widgets::number_input(cx, rotation.value.map(|v| v as f64), -90.0, 90.0, 1.0);
 
         // Office fonts first, as in the ribbon's list, then the system's.
-        let mut font_names: Vec<SharedString> = Vec::new();
+        // The fonts of the theme come before all others.
+        let mut font_names: Vec<SharedString> =
+            crate::theme::theme_font_labels(&crate::theme::document_theme()).into_iter().map(SharedString::from).collect();
         for name in ["Aptos Narrow", "Aptos", "Calibri", "Arial", "Times New Roman", "Courier New"]
             .iter()
             .map(|n| n.to_string())
@@ -752,7 +754,7 @@ impl Dialog {
                 font_names.push(name.into());
             }
         }
-        let font_name = Prop::of(styles, |s| s.font.name.to_string());
+        let font_name = Prop::of(styles, |s| crate::theme::font_label(&s.font));
         let font_name_at_open = font_name.value.clone().unwrap_or_default();
         let size = Prop::of(styles, |s| s.font.size);
         let size_at_open = size.value.map(|half| size_text(half as f32 / 2.0, locale)).unwrap_or_default();
@@ -830,7 +832,7 @@ impl Dialog {
         let mut style = Style::default();
         let name = self.font_name.read(cx).text().trim().to_string();
         if !name.is_empty() {
-            style.font.name = Arc::from(name);
+            crate::theme::set_font_choice(&mut style.font, &name, &crate::theme::document_theme());
         }
         if let Some(pt) = self.typed_size(cx) {
             style.font.set_size_pt(pt);

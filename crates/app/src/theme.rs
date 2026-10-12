@@ -1,6 +1,11 @@
 //! Colours and metrics of the interface.
 
 use gpui::{Hsla, Rgba, rgb};
+use crate::i18n::t;
+use opensheet_engine::style::{Font, ThemeFont};
+use opensheet_engine::{Color, Theme};
+use std::cell::RefCell;
+use std::sync::Arc;
 
 pub fn c(hex: u32) -> Hsla {
     rgb(hex).into()
@@ -12,7 +17,7 @@ pub fn ca(hex: u32, alpha: f32) -> Hsla {
     c.into()
 }
 
-pub fn engine_color(color: opensheet_engine::Color) -> Hsla {
+pub fn engine_color(color: Color) -> Hsla {
     c(color.value())
 }
 
@@ -61,33 +66,43 @@ pub const STATUS_H: f32 = 24.0;
 pub const COL_HEADER_H: f32 = 20.0;
 pub const SCROLLBAR: f32 = 12.0;
 
-/// Standard palette shown in colour pickers (theme colours row + tints).
-pub const PALETTE_THEME: [u32; 10] = [
-    0xFFFFFF, 0x000000, 0xE8E8E8, 0x0E2841, 0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93,
-    0x4EA72E,
-];
-
+/// The standard colours of colour pickers, the same in every theme.
 pub const PALETTE_STANDARD: [u32; 10] = [
     0xC00000, 0xFF0000, 0xFFC000, 0xFFFF00, 0x92D050, 0x00B050, 0x00B0F0, 0x0070C0, 0x002060,
     0x7030A0,
 ];
 
-/// The theme colours as a colour picker lays them out: the ten colours,
-/// then five rows of lighter and darker variants.
-pub fn palette_rows() -> Vec<[u32; 10]> {
-    let mut rows = vec![PALETTE_THEME];
-    for amount in [0.8f32, 0.6, 0.4, -0.25, -0.5] {
-        rows.push(PALETTE_THEME.map(|col| match col {
-            // White and black get greys instead of tints.
-            0xFFFFFF => tint(0xFFFFFF, -(1.0 - amount.abs()) * 0.5 - 0.05),
-            0x000000 => tint(0x000000, (amount.abs() * 0.6).min(0.9)),
-            other => tint(other, amount),
-        }));
-    }
-    rows
+thread_local! {
+    /// The theme of the workbook of the window being drawn.
+    static DOCUMENT: RefCell<Arc<Theme>> = RefCell::new(Arc::new(Theme::default()));
 }
 
-/// Lighter / darker variants of a theme colour, as in the Office picker.
+/// Say which theme the pickers drawn from now on show: the application
+/// does when it draws its window, so that a picker anywhere in it offers
+/// the theme colours of its workbook.
+pub fn set_document_theme(theme: Arc<Theme>) {
+    DOCUMENT.with(|current| {
+        if !Arc::ptr_eq(&current.borrow(), &theme) {
+            *current.borrow_mut() = theme;
+        }
+    });
+}
+
+/// The theme of the workbook of the window being drawn.
+pub fn document_theme() -> Arc<Theme> {
+    DOCUMENT.with(|current| current.borrow().clone())
+}
+
+/// The theme colours as a colour picker lays them out: the ten colours,
+/// then five rows of lighter and darker variants. Each is a reference to
+/// the theme: cells given one follow the theme when it changes.
+pub fn palette_rows() -> Vec<[Color; 10]> {
+    document_theme().palette()
+}
+
+/// A colour moved towards white (`amount` > 0) or black, channel by
+/// channel: the shades of chart palettes. (The variants of theme colours
+/// in a picker are the engine's: `Theme::palette`.)
 pub fn tint(hex: u32, amount: f32) -> u32 {
     let ch = |shift: u32| -> u32 {
         let v = ((hex >> shift) & 0xFF) as f32;
@@ -99,4 +114,46 @@ pub fn tint(hex: u32, amount: f32) -> u32 {
         (out.round().clamp(0.0, 255.0) as u32) << shift
     };
     ch(16) | ch(8) | ch(0)
+}
+
+// ---- theme fonts --------------------------------------------------------------
+
+/// What follows the name of a theme font in a list of fonts: "Aptos
+/// Narrow (Body)", "Aptos Display (Headings)".
+fn role_suffix(role: ThemeFont) -> &'static str {
+    match role {
+        ThemeFont::Major => t("(Headings)", "(En-têtes)"),
+        ThemeFont::Minor => t("(Body)", "(Corps)"),
+    }
+}
+
+/// The two entries a list of fonts begins with: the heading font and the
+/// body font of the theme, as Excel names them.
+pub fn theme_font_labels(theme: &Theme) -> [String; 2] {
+    [ThemeFont::Major, ThemeFont::Minor].map(|role| format!("{} {}", theme.font(role), role_suffix(role)))
+}
+
+/// What a font box shows for a font: its name, with "(Body)" or
+/// "(Headings)" when it is a font of the theme.
+pub fn font_label(font: &Font) -> String {
+    match font.theme {
+        Some(role) => format!("{} {}", font.name, role_suffix(role)),
+        None => font.name.to_string(),
+    }
+}
+
+/// Give a font what was picked in a list of fonts or typed in a font box:
+/// one of the two theme entries makes it a font of the theme, which
+/// follows the theme; any other name is a font of its own.
+pub fn set_font_choice(font: &mut Font, choice: &str, theme: &Theme) {
+    let choice = choice.trim();
+    let labels = theme_font_labels(theme);
+    for (role, label) in [ThemeFont::Major, ThemeFont::Minor].into_iter().zip(&labels) {
+        if choice.eq_ignore_ascii_case(label) {
+            font.name = theme.font(role).clone();
+            font.theme = Some(role);
+            return;
+        }
+    }
+    font.set_name(choice);
 }

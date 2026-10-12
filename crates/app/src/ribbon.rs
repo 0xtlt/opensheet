@@ -718,7 +718,7 @@ impl ExcelApp {
             let (r, col) = self.active();
             self.wb.sheets[self.sheet].merge_at(r, col).is_some()
         };
-        let font_name = style.font.name.to_string();
+        let font_name = theme::font_label(&style.font);
         let size = style.font.size_pt();
         let size_text = if (size - size.round()).abs() < 0.01 {
             format!("{:.0}", size)
@@ -1291,8 +1291,9 @@ impl ExcelApp {
     }
 
     fn open_font_menu(&mut self, window: &mut Window, cx: &mut Cx) {
-        let current = self.active_style().font.name.to_string();
-        let mut names: Vec<String> = Vec::new();
+        let current = theme::font_label(&self.active_style().font);
+        // The two fonts of the theme come first, as in Excel.
+        let mut names: Vec<String> = theme::theme_font_labels(self.wb.theme()).to_vec();
         for office in ["Aptos Narrow", "Aptos", "Calibri", "Arial", "Times New Roman", "Courier New"] {
             names.push(office.to_string());
         }
