@@ -10,36 +10,59 @@
 //! * **A [`Feature`]**: a unit struct listed in [`all`]. Each method of the
 //!   trait is a hook the central code calls for every feature; all of them
 //!   default to "nothing to say", so a module implements only what it uses.
-//! * **Commands**: a `Cmd` enum implementing [`Command`]. The ribbon, the
-//!   menus and the keyboard shortcuts already run them
-//!   (`Cmd::Toggle.run(app, window, cx)`); a command that is not written yet
-//!   ends in `app.not_implemented(self.label(), cx)`.
+//! * **Commands**: a `Cmd` enum (declared with `commands!`) implementing
+//!   [`Command`]. The ribbon, the menus and the keyboard shortcuts already
+//!   run them (`Cmd::Toggle.run(app, window, cx)`); a command that is not
+//!   written yet ends in `app.not_implemented(self.label(), cx)`. A command
+//!   that opens a drop-down builds a `Vec<MenuEntry>` (`MenuEntry::command`,
+//!   `MenuEntry::submenu`) and calls `app.open_command_menu`.
 //!
 //! State a feature keeps between events lives in `app.ext_mut::<MyState>()`
 //! (any `Default` type, created on first use, dropped when another workbook
-//! is opened). The workbook itself is `app.wb`; change it the usual way
-//! (`app.wb.snapshot()`, mutate, `app.commit(label, cx)`).
+//! is opened; `app.ext::<MyState>()` reads it). The workbook itself is
+//! `app.wb`: the engine functions take the undo snapshot themselves and the
+//! feature ends with `app.commit(label, cx)`.
 //!
 //! # What the hooks cover
 //!
 //! | Need | Hook / API |
 //! |---|---|
-//! | Ribbon button, menu entry, shortcut | [`Command`]; menus are `Vec<MenuEntry>` (`MenuEntry::command`, `MenuEntry::submenu`) opened with `app.open_command_menu` |
-//! | Contextual ribbon tab ("Table Design") | [`Feature::context_tabs`] + [`Feature::render_tab`], built with the `pub` helpers of `ribbon.rs` (`group`, `rows`, `row`, `app.cmd_large`, `app.cmd_labeled`, `app.cmd_check`, …) |
-//! | Modal dialog | `app.open_modal(window, cx, \|modal, window, cx\| MyDialog::new(modal, …))`; the view is drawn with `widgets::dialog(&self.modal, title)`; alerts with `app.alert(Alert::new(..), cx)` |
-//! | Side pane right of the grid | `app.open_pane(id, title, view, cx)`, `app.close_pane(id, cx)` |
-//! | Drop-down hanging from a cell | `app.open_popup_view(app.cell_anchor(rect), view, cx)` |
-//! | Cell appearance | the grid paints `Workbook::display`; [`condfmt::paint_adornment`] draws data bars and icons |
-//! | Drawing under / over the cells | [`Feature::paint`] with a [`Painter`] (once per pane and [`PaintLayer`]) |
-//! | Clickable things drawn on the grid | [`Painter::zone`], then [`Feature::zone_mouse_down`], [`Feature::zone_drag`], [`Feature::zone_mouse_up`], [`Feature::zone_hover`]; cursor and tooltip are fields of the [`Zone`] |
+//! | Ribbon button, menu entry, shortcut | [`Command`] |
+//! | Contextual ribbon tab ("Table Design") | [`Feature::context_tabs`] + [`Feature::render_tab`], built with the `pub` helpers of `ribbon.rs`: `group`, `launcher_group`, `rows`, `row`, `sep`, `app.cmd_large`, `app.cmd_labeled`, `app.cmd_icon`, `app.cmd_check`, `app.combo`, `app.arrange_group` |
+//! | Modal dialog | `app.open_modal(window, cx, \|modal, window, cx\| MyDialog::new(modal, ..))`; the view is drawn with `widgets::dialog(&self.modal, title)` and reaches the application with `modal.update_app` / `modal.read_app` |
+//! | Message box | `app.alert(Alert::new(title, text).warning().button(label, \|app, window, cx\| ..), cx)` |
+//! | Side pane right of the grid | `app.open_pane(id, title, view, cx)`, `app.close_pane(id, cx)`, `app.pane_open(id)` |
+//! | Drop-down hanging from a cell | `app.open_popup_view(app.cell_anchor(rect), view, cx)`, `app.close_popup(window, cx)` |
+//! | Cell appearance | the grid paints `Workbook::display` (table, pivot and conditional styles); [`condfmt::paint_adornment`] draws data bars and icons |
+//! | Drawing under / over the cells | [`Feature::paint`] with a [`Painter`], once per pane and [`PaintLayer`] |
+//! | Clickable things drawn on the grid | [`Painter::zone`], then [`Feature::zone_mouse_down`], [`Feature::zone_drag`], [`Feature::zone_mouse_up`], [`Feature::zone_hover`]; cursor and tooltip are set on the [`Zone`] |
 //! | Real elements over the grid (a note being typed) | [`Feature::overlay_elements`] |
-//! | Refusing a change (protection, pivot cells) | [`Feature::guard`] with an [`Intent`] |
-//! | Checking an entry (validation) | [`Feature::may_commit`] → [`Verdict`] |
-//! | Reacting to edits and to the selection | [`Feature::cells_changed`], [`Feature::selection_changed`] |
+//! | Refusing a change (protection, pivot cells) | [`Feature::guard`] with an [`Intent`]; a feature asks before its own changes with `app.may(intent, cx)` |
+//! | Refusing a selection (protection) | [`Feature::can_select`] |
+//! | Checking an entry (validation) | [`Feature::may_commit`] → [`Verdict`]; the alert's buttons call `app.commit_edit_unchecked`, `app.focus_editor` or `app.cancel_edit` |
+//! | Following edits | [`Feature::cells_written`] (same undo step), [`Feature::cells_changed`] (afterwards), [`Feature::selection_changed`] |
 //! | Context menus | [`Feature::context_menu`] with a [`MenuTarget`] |
 //! | Status bar | [`Feature::status_items`] |
-//! | Charts-like objects (pictures, shapes) | [`Feature::objects`] and the `*_object` hooks; selection, moving, resizing, nudging, deleting, copy / paste and z-order come from `objects.rs` |
-//! | Page Layout view / Page Break Preview | `app.view_mode()`, [`Feature::adjust_layout`] (`Axis::set_gaps`), [`Feature::view_mode_changed`] |
+//! | Pictures and shapes | [`Feature::objects`] and the `*_object` hooks; selecting, moving, resizing, nudging, deleting, copy / paste and stacking order come from `objects.rs` |
+//! | Page Layout view / Page Break Preview | `app.view_mode()`, [`Feature::view_mode_changed`], [`Feature::adjust_layout`] (`Axis::set_gaps` leaves room between pages) |
+//!
+//! Row heights and the arrow keys already skip rows a filter hides
+//! (`Sheet::rows_not_shown`), the formula bar shows
+//! `Workbook::formula_bar_text`, and references are coloured while typing
+//! with `parser::scan_refs_in` (tables, names and `A1#` included).
+//!
+//! # Rules
+//!
+//! * A hook runs for every feature: start by returning when the event is
+//!   not yours (another layer, a zone whose payload is of another type, an
+//!   object another feature owns).
+//! * `paint` runs at every repaint: draw only what `p.visible` shows and
+//!   read caches rather than recomputing.
+//! * GPUI forbids nested `deferred` elements. Dialogs, panes and
+//!   `open_popup_view` are not deferred, so widgets that open a list
+//!   (`Select`, `ComboBox`, `ColorButton`) work in them; never wrap a view
+//!   holding such widgets in `deferred` yourself.
+//! * User-visible strings are `t("English", "Français")`.
 //!
 //! # A worked example
 //!
@@ -49,20 +72,22 @@
 //! ```ignore
 //! pub struct Notes;
 //!
-//! #[derive(Clone, Copy)]
-//! pub enum Cmd { Edit }
+//! commands! {
+//!     /// What the user can ask of notes.
+//!     pub enum Cmd {
+//!         Edit = "comment", t("Edit Note", "Modifier la note");
+//!     }
+//! }
 //!
 //! impl Command for Cmd {
-//!     fn label(self) -> &'static str { t("Edit Note", "Modifier la note") }
-//!     fn icon(self) -> &'static str { "comment" }
-//!     fn enabled(self, app: &ExcelApp) -> bool {
-//!         let (r, c) = app.active();
-//!         app.wb.sheets[app.sheet].comments.contains_key(&(r, c))
-//!     }
+//!     fn label(self) -> &'static str { self.face().1 }
+//!     fn icon(self) -> &'static str { self.face().0 }
 //!     fn run(self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+//!         // A protected sheet answers through `guard` and the user is told why.
+//!         if !app.may(Intent::EditComment, cx) { return; }
 //!         let (row, col) = app.active();
-//!         if !app.may(Intent::EditObjects, cx) { return; }
-//!         let text = app.wb.sheets[app.sheet].comments.get(&(row, col)).map(|c| c.text.clone());
+//!         let text = app.wb.comment_at(app.sheet, row, col)
+//!             .and_then(|c| c.as_note()).map(|n| n.text()).unwrap_or_default();
 //!         app.open_modal(window, cx, move |modal, _, cx| NoteDialog::new(modal, row, col, text, cx));
 //!     }
 //! }
@@ -76,11 +101,12 @@
 //!     fn paint(&self, p: &mut Painter) {
 //!         if p.layer != PaintLayer::Over { return; }
 //!         let sheet = &p.app.wb.sheets[p.app.sheet];
-//!         for ((row, col), note) in sheet.comments.range((p.visible.r0, 0)..=(p.visible.r1, u32::MAX)) {
+//!         for ((row, col), comment) in sheet.comments.range((p.visible.r0, 0)..=(p.visible.r1, u32::MAX)) {
+//!             let Some(note) = comment.as_note() else { continue };
 //!             if !p.visible.contains(*row, *col) { continue; }
 //!             let (_, y0, x1, _) = p.cell_box(Rect::cell(*row, *col));
 //!             p.polygon(&[(x1 - 7.0, y0), (x1 - 1.0, y0), (x1 - 1.0, y0 + 6.0)], c(0xC00000));
-//!             p.zone((x1 - 8.0, y0, x1, y0 + 8.0), Corner(*row, *col)).tooltip(note.text.clone());
+//!             p.zone((x1 - 8.0, y0, x1, y0 + 8.0), Corner(*row, *col)).tooltip(note.text());
 //!         }
 //!     }
 //!
@@ -97,21 +123,28 @@
 //!             menu.add(MenuSection::Review, MenuEntry::command(Cmd::Edit, app));
 //!         }
 //!     }
+//!
+//!     // Pasted cells bring their notes along, in the undo step of the paste.
+//!     fn cells_written(&self, app: &mut ExcelApp, edit: &CellEdit, _cx: &mut Cx) {
+//!         if let ChangeCause::Paste { from: Some((sheet, rect)), cut, mode: PasteMode::All } = edit.cause {
+//!             let (r0, c0) = (edit.rect.r0, edit.rect.c0);
+//!             if cut { app.wb.move_comments(sheet, rect, edit.sheet, r0, c0) }
+//!             else { app.wb.copy_comments(sheet, rect, edit.sheet, r0, c0) }
+//!         }
+//!     }
 //! }
 //!
 //! struct NoteDialog { modal: Modal, row: u32, col: u32, text: Entity<TextInput> }
 //!
 //! impl NoteDialog {
-//!     fn new(modal: Modal, row: u32, col: u32, text: Option<String>, cx: &mut Context<Self>) -> Self {
-//!         let text = widgets::input(cx, text.unwrap_or_default());
-//!         NoteDialog { modal, row, col, text }
+//!     fn new(modal: Modal, row: u32, col: u32, text: String, cx: &mut Context<Self>) -> Self {
+//!         NoteDialog { modal, row, col, text: widgets::input(cx, text) }
 //!     }
 //!     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
 //!         let (row, col, text) = (self.row, self.col, self.text.read(cx).text().to_string());
 //!         self.modal.update_app(cx, |app, cx| {
-//!             app.wb.snapshot();
 //!             let sheet = app.sheet;
-//!             app.wb.sheets[sheet].comments.entry((row, col)).or_default().text = text;
+//!             app.wb.set_note(sheet, row, col, "Me", &text);
 //!             app.commit(t("Edit Note", "Modifier la note"), cx);
 //!         });
 //!         self.modal.close(window, cx);
@@ -123,15 +156,17 @@
 //!         widgets::dialog(&self.modal, t("Edit Note", "Modifier la note"))
 //!             .width(360.0)
 //!             .on_ok(cx.listener(Self::ok))
-//!             .child(widgets::TextField::new(&self.text))
+//!             .child(div().flex().child(widgets::TextField::new(&self.text)))
 //!             .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
 //!     }
 //! }
 //! ```
 //!
-//! `format_cells.rs` (a full dialog) and `charts.rs` (floating objects, a
-//! contextual tab, a context menu) are the two modules already written
-//! this way.
+//! Working code to read next: `format_cells.rs` (a full dialog),
+//! `charts.rs` (floating objects, a contextual tab, a context menu, an
+//! element over the grid, state in `app.ext`), and `widgets/gallery.rs`
+//! (every widget, a pane, a drop-down, a message box, a zone; shown by
+//! `opensheet --widgets`).
 
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{Draw, GridLayout};

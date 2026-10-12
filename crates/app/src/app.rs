@@ -1506,7 +1506,11 @@ impl ExcelApp {
         }
         let from = self.active();
         match self.wb.find_next(self.sheet, from, &needle, &Default::default()) {
-            Some((r, c)) => self.select_cell(r, c, cx),
+            Some((r, c)) => {
+                // A match answers an earlier "no match" message.
+                self.status_message = None;
+                self.select_cell(r, c, cx)
+            }
             None => self.set_status(
                 t("No match for “{}”", "Aucune occurrence de « {} »").replace("{}", &needle),
                 cx,
