@@ -1,6 +1,7 @@
 //! Writing a [`Workbook`] as an `.xlsx` package.
 
 use super::chart::write::{CT_CHART, CT_DRAWING, drawings};
+use super::dxf::Dxfs;
 use super::formula::{is_valid_name, needs_array_evaluation, to_file_text};
 use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
 use super::parts::{Extras, SheetLinks, push_relationship};
@@ -620,6 +621,7 @@ impl SheetWriter<'_> {
             .row_heights
             .keys()
             .chain(sheet.hidden_rows.iter())
+            .chain(sheet.filtered_rows.iter())
             .chain(sheet.row_styles.keys())
             .copied()
             .filter(|r| *r < MAX_ROWS)
@@ -657,7 +659,8 @@ impl SheetWriter<'_> {
                     px_to_points(*height).min(MAX_ROW_HEIGHT_PT)
                 );
             }
-            if sheet.hidden_rows.contains(&row) {
+            // Hidden by hand or by a filter: a file does not say which.
+            if sheet.hidden_rows.contains(&row) || sheet.filtered_rows.contains(&row) {
                 x.push_str(" hidden=\"1\"");
             }
             x.push('>');
@@ -845,7 +848,8 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
     let drawings = drawings(wb);
-    let extras = Extras::of(wb, &drawings);
+    let mut dxfs = Dxfs::default();
+    let extras = Extras::of(wb, &drawings, &mut dxfs);
 
     let mut content_types = String::from(XML_DECL);
     content_types
@@ -973,7 +977,7 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     for (i, xml) in sheets.iter().enumerate() {
         put(&format!("xl/worksheets/sheet{}.xml", i + 1), xml)?;
     }
-    put("xl/styles.xml", &styles.xml)?;
+    put("xl/styles.xml", &dxfs.apply(&styles.xml))?;
     put("xl/sharedStrings.xml", &strings.xml())?;
     if dynamic_arrays {
         put("xl/metadata.xml", &format!("{XML_DECL}{METADATA_XML}"))?;
@@ -991,7 +995,8 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     }
     // The relationships of the worksheets are among them.
     for part in &extras.parts {
-        put(&part.name, &part.data)?;
+        zip.start_file(part.name.as_str(), options)?;
+        zip.write_all(&part.data)?;
     }
     Ok(zip.finish()?)
 }

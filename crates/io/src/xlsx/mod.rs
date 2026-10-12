@@ -18,10 +18,14 @@ macro_rules! w {
 mod chart;
 mod color;
 mod comments;
+mod dxf;
+mod filter;
 mod formula;
 mod numfmt;
 mod parts;
 pub(crate) mod read;
+mod table;
+mod theme;
 pub(crate) mod write;
 mod xml;
 

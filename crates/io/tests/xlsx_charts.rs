@@ -476,8 +476,8 @@ fn chart_parts_say_what_the_model_says() {
     // An automatic title: a title element without text, and not deleted.
     assert!(column.contains("<c:chart><c:title><c:overlay val=\"0\"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"1400\" b=\"0\"/></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr></c:title><c:autoTitleDeleted val=\"0\"/><c:plotArea>"));
     assert!(!column.contains("<c:dLbls>") && !column.contains("srgbClr val=\"C00000\""));
-    // The automatic colours of the series are spelled out: Excel would take
-    // them from a theme, and the package has none.
+    // The automatic colours of the series are spelled out, whatever Excel
+    // would make of the theme of the package.
     for automatic in ["156082", "E97132", "196B24"] {
         assert!(column.contains(&format!("</c:tx><c:spPr><a:solidFill><a:srgbClr val=\"{automatic}\"/></a:solidFill></c:spPr><c:invertIfNegative val=\"0\"/>")));
     }
@@ -3472,7 +3472,7 @@ const HAIRLINE: &str = "<c:spPr><a:ln w=\"9525\"><a:solidFill><a:srgbClr val=\"D
 
 #[test]
 fn automatic_colours_are_spelled_out() {
-    // Excel would take them from a theme, which the package does not have:
+    // Excel would pick colours of its own from the theme of the package:
     // every series says the colour the engine gives it, wherever it has ink.
     let mut dotted = plain(ChartKind::LineMarkers);
     dotted.series[1].line.color = Some(Color(0x00FF00));
@@ -5363,7 +5363,9 @@ fn lines_widths_and_what_bars_do_by_themselves() {
 
 #[test]
 fn untouched_charts_are_written_back_as_they_were() {
-    let bytes = foreign_package(&[]);
+    // In a workbook with the theme packages are written with: theme
+    // colours can stay what they are.
+    let bytes = foreign_package(&[("xl/theme/theme1.xml", THEME_2023)]);
     let original = |n: usize| part(&bytes, &format!("xl/charts/chart{n}.xml"));
     let saved = |wb: &Workbook| -> Vec<String> {
         let bytes = to_bytes(wb);
@@ -5449,7 +5451,10 @@ fn untouched_charts_are_written_back_as_they_were() {
 fn charts_that_refer_to_other_parts() {
     let columns = excel_columns();
     let saved = |chart: &str| {
-        let wb = load(&foreign_package(&[("xl/charts/chart1.xml", chart)]));
+        let wb = load(&foreign_package(&[
+            ("xl/charts/chart1.xml", chart),
+            ("xl/theme/theme1.xml", THEME_2023),
+        ]));
         part(&to_bytes(&wb), "xl/charts/chart1.xml")
     };
     assert_eq!(saved(&columns), columns);
@@ -5496,10 +5501,10 @@ fn charts_that_refer_to_other_parts() {
 
 #[test]
 fn untouched_charts_keep_the_colours_of_their_theme() {
-    // The package being written has no theme, and Excel then reads theme
-    // colours as those of its default theme, the one of 2013. A chart
-    // from a workbook with another theme has its theme colours spelled
-    // out: nothing else in its part changes.
+    // The package being written has the theme of the engine, the Office
+    // theme of 2023, whatever the workbook came with. A chart from a
+    // workbook with another theme has its theme colours spelled out:
+    // nothing else in its part changes.
     let columns = excel_columns();
     let saved = |theme: &str, name: &str| {
         let wb = load(&foreign_package(&[("xl/theme/theme1.xml", theme)]));
@@ -5507,32 +5512,35 @@ fn untouched_charts_keep_the_colours_of_their_theme() {
         keep(name, &bytes);
         (part(&bytes, "xl/charts/chart1.xml"), load(&bytes))
     };
-    let (kept, _) = saved(THEME, "foreign-charts-saved.xlsx");
+    let (kept, _) = saved(THEME_2023, "foreign-charts-saved-2023.xlsx");
     assert_eq!(kept, columns);
-    let (spelled, reread) = saved(THEME_2023, "foreign-charts-saved-2023.xlsx");
+    let (spelled, reread) = saved(THEME, "foreign-charts-saved.xlsx");
     assert_ne!(spelled, columns);
     assert!(!spelled.contains("schemeClr") && columns.contains("schemeClr"));
     let expected = columns
         .replace(
             "<a:schemeClr val=\"accent1\"/>",
-            "<a:srgbClr val=\"156082\"/>",
+            "<a:srgbClr val=\"4472C4\"/>",
         )
         .replace(
             "<a:schemeClr val=\"accent2\"/>",
-            "<a:srgbClr val=\"E97132\"/>",
+            "<a:srgbClr val=\"ED7D31\"/>",
         )
         .replace("<a:schemeClr val=\"tx1\">", "<a:srgbClr val=\"000000\">")
         .replace("</a:schemeClr>", "</a:srgbClr>");
     assert_eq!(spelled, expected);
     assert_well_formed("chart1.xml", &spelled);
-    // Read without the theme, the chart is the one read with it: series in
-    // the colours of that theme, which are the automatic ones.
-    let original = load(&foreign_package(&[("xl/theme/theme1.xml", THEME_2023)]));
+    // Read without its theme, the chart is the one read with it: series in
+    // the colours of that theme, which are colours of their own here.
+    let original = load(&foreign_package(&[("xl/theme/theme1.xml", THEME)]));
     assert_same_content(
         "columns",
         &original.sheets[0].charts[0],
         &reread.sheets[0].charts[0],
     );
-    assert_eq!(reread.sheets[0].charts[0].series[0].color, None);
+    assert_eq!(
+        reread.sheets[0].charts[0].series[0].color,
+        Some(Color(0x4472C4))
+    );
     assert_eq!(part(&to_bytes(&reread), "xl/charts/chart1.xml"), spelled);
 }

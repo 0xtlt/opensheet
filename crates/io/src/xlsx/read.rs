@@ -1412,6 +1412,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     let mut wb = Workbook::new(locale);
     let styles_xml = pkg.read(&part_of("styles", "styles.xml"))?;
     let styles = parse_styles(styles_xml.as_deref(), theme, locale, &mut wb.styles);
+    let dxf_colors = super::dxf::parse_colors(styles_xml.as_deref().unwrap_or(""), &styles.palette);
     drop(styles_xml);
     let strings = match pkg.read(&part_of("sharedStrings", "sharedStrings.xml"))? {
         Some(xml) => parse_shared_strings(&xml),
@@ -1436,6 +1437,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     };
 
     let mut sheets: Vec<Sheet> = Vec::new();
+    // The worksheet part of each sheet that was loaded.
+    let mut sheet_parts: Vec<String> = Vec::new();
     // Where each sheet of the file ended up (`None` when it was not loaded).
     let mut loaded_as: Vec<Option<usize>> = vec![None; info.sheets.len()];
     // Chart ids are unique in the workbook; files have no such thing.
@@ -1476,9 +1479,13 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         );
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
+        sheet_parts.push(part);
     }
     if !sheets.is_empty() {
         wb.sheets = sheets;
+        // What needs the whole workbook: tables have names and ids no
+        // other table of any sheet may have.
+        super::table::read_all(&mut pkg, &mut wb, &sheet_parts, &dxf_colors);
     } else {
         loaded_as.clear();
     }

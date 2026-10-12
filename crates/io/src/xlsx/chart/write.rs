@@ -855,7 +855,7 @@ impl ChartWriter<'_> {
 
     /// `<c:dPt>`: the points of a series that do not look like the others,
     /// and all of them where every point has a colour of its own: Excel
-    /// would pick those colours from a theme the file does not have.
+    /// would pick those colours itself, and not always the engine's.
     /// `count` is the number of points to give a colour then, `ink` the
     /// colour of the series.
     fn push_points(
@@ -1067,8 +1067,8 @@ impl ChartWriter<'_> {
         // The colour goes where the series has its ink: the stroke of a
         // line and its markers, the fill of anything else. What a series
         // looks like is always spelled out, whatever the type of the
-        // chart would give it, and so is its automatic colour: Excel's
-        // would come from a theme, and the file has none.
+        // chart would give it, and so is its automatic colour, which is
+        // the engine's whatever Excel would make of the theme.
         let ink = s.color.unwrap_or_else(|| palette_color(index));
         // Where every point has a colour of its own, each says which.
         let varied = chart.varies_colors() && (chart.kind.is_round() || chart.series.len() == 1);
