@@ -534,10 +534,10 @@ impl SortDialog {
     /// The box of a colour: a bar of it, or the name of "no colour".
     fn color_face(color: Option<Color>, basis: Basis) -> AnyElement {
         match color {
-            Some(Color(rgb)) => div()
+            Some(color) => div()
                 .w(px(84.))
                 .h(px(12.))
-                .bg(c(rgb))
+                .bg(c(color.value()))
                 .border_1()
                 .border_color(c(theme::BORDER_STRONG))
                 .into_any_element(),

@@ -434,18 +434,18 @@ pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>
             let angle = if tip >= base { 90.0 } else { 270.0 };
             linear_gradient(
                 angle,
-                linear_color_stop(c(bar.fill.0), 0.0),
+                linear_color_stop(c(bar.fill.value()), 0.0),
                 linear_color_stop(towards_white(bar.fill, GRADIENT_FADE), 1.0),
             )
         } else {
-            c(bar.fill.0).into()
+            c(bar.fill.value()).into()
         };
         out.push(Draw::Quad(quad(
             bounds,
             px(0.),
             background,
             px(if bar.border.is_some() { gap.min(right - left) } else { 0.0 }),
-            bar.border.map(|color| c(color.0)).unwrap_or(transparent_black()),
+            bar.border.map(|color| c(color.value())).unwrap_or(transparent_black()),
             BorderStyle::Solid,
         )));
     }
@@ -458,7 +458,7 @@ pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>
             let end = (y + dash).min(bottom);
             out.push(Draw::Quad(fill(
                 Bounds::new(point(px(x), px(y)), size(px(gap), px(end - y))),
-                c(bar.axis_color.0),
+                c(bar.axis_color.value()),
             )));
             y += dash + space;
         }
@@ -470,7 +470,7 @@ pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>
 pub fn scale_strip(colors: &[Color], bounds: Bounds<Pixels>, out: &mut Vec<Draw>) {
     match colors {
         [] => {}
-        [only] => out.push(Draw::Quad(fill(bounds, c(only.0)))),
+        [only] => out.push(Draw::Quad(fill(bounds, c(only.value())))),
         _ => {
             let parts = colors.len() - 1;
             let width = f32::from(bounds.size.width) / parts as f32;
@@ -479,7 +479,7 @@ pub fn scale_strip(colors: &[Color], bounds: Bounds<Pixels>, out: &mut Vec<Draw>
                 let right = if i + 1 == parts { bounds.right() } else { bounds.origin.x + px(((i + 1) as f32 * width).floor()) };
                 out.push(Draw::Quad(fill(
                     Bounds::new(point(left, bounds.origin.y), size(right - left, bounds.size.height)),
-                    linear_gradient(90.0, linear_color_stop(c(pair[0].0), 0.0), linear_color_stop(c(pair[1].0), 1.0)),
+                    linear_gradient(90.0, linear_color_stop(c(pair[0].value()), 0.0), linear_color_stop(c(pair[1].value()), 1.0)),
                 )));
             }
         }

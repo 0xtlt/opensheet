@@ -594,11 +594,11 @@ impl TextMeasure for Rough {
 fn svg(prims: &[Prim], size: (f32, f32)) -> String {
     let paint = |fill: &Option<opensheet_engine::chart_layout::Ink>, stroke: &Option<opensheet_engine::chart_layout::Stroke>| {
         let mut out = match fill {
-            Some(ink) => format!("fill=\"#{:06X}\" fill-opacity=\"{}\"", ink.color.0, ink.opacity),
+            Some(ink) => format!("fill=\"#{:06X}\" fill-opacity=\"{}\"", ink.color.value(), ink.opacity),
             None => "fill=\"none\"".to_string(),
         };
         if let Some(s) = stroke {
-            write!(out, " stroke=\"#{:06X}\" stroke-width=\"{}\" stroke-linejoin=\"round\"", s.ink.color.0, s.width).unwrap();
+            write!(out, " stroke=\"#{:06X}\" stroke-width=\"{}\" stroke-linejoin=\"round\"", s.ink.color.value(), s.width).unwrap();
             let dashes: Vec<String> = s.dash.pattern().iter().map(|d| (d * s.width).to_string()).collect();
             if !dashes.is_empty() {
                 write!(out, " stroke-dasharray=\"{}\"", dashes.join(" ")).unwrap();
@@ -641,7 +641,7 @@ fn svg(prims: &[Prim], size: (f32, f32)) -> String {
                     t.y,
                     t.size,
                     if t.bold { "bold" } else { "normal" },
-                    t.color.0,
+                    t.color.value(),
                     t.rotation,
                     t.x,
                     t.y

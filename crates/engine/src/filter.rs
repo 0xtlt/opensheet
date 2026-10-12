@@ -829,7 +829,9 @@ pub enum FilterError {
 }
 
 /// The fill and font colours a cell shows, conditional formats included
-/// (table styles are not: Excel neither filters nor sorts on them).
+/// (table styles are not: Excel neither filters nor sorts on them). They
+/// are the colours as they are seen: a colour of the theme and the same
+/// colour picked elsewhere are one colour to a filter or a sort.
 pub(crate) fn cell_colors(wb: &Workbook, sheet: usize, row: u32, col: u32) -> (Option<Color>, Option<Color>) {
     let style = wb.style_at(sheet, row, col);
     let (mut fill, mut font) = (style.fill, style.font.color);
@@ -839,7 +841,7 @@ pub(crate) fn cell_colors(wb: &Workbook, sheet: usize, row: u32, col: u32) -> (O
             font = result.patch.font_color.unwrap_or(font);
         }
     }
-    (fill, font)
+    (fill.map(Color::plain), font.map(Color::plain))
 }
 
 /// The sheet's own filter, then those of its tables.
@@ -990,7 +992,7 @@ impl Workbook {
             Matcher::Quarter(quarter) => number.is_some_and(|n| serial_to_ymd(n).1.div_ceil(3) == *quarter),
             Matcher::Color(filter) => {
                 let (fill, font) = cell_colors(self, sheet, row, col);
-                filter.color == if filter.font { font } else { fill }
+                filter.color.map(Color::plain) == if filter.font { font } else { fill }
             }
             Matcher::Nothing => false,
         }

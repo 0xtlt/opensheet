@@ -1172,15 +1172,15 @@ impl ExcelApp {
             }
             PopupKind::Palette(target) => {
                 let target = *target;
-                let swatch = move |color: u32, cx: &mut Context<Self>| {
+                let swatch = move |place: usize, color: Color, cx: &mut Context<Self>| {
                     div()
-                        .id(("swatch", color as usize))
+                        .id(("swatch", place))
                         .size(px(18.))
-                        .bg(c(color))
+                        .bg(c(color.value()))
                         .border_1()
                         .border_color(c(0xD0D0D0))
                         .hover(|s| s.border_color(c(0xF2994A)))
-                        .on_click(cx.listener(move |this, _, _, cx| this.pick_color(target, Some(Color(color)), cx)))
+                        .on_click(cx.listener(move |this, _, _, cx| this.pick_color(target, Some(color), cx)))
                 };
                 let label = |text: &'static str| {
                     div()
@@ -1192,11 +1192,12 @@ impl ExcelApp {
                 };
                 let theme_rows: Vec<AnyElement> = theme::palette_rows()
                     .into_iter()
-                    .map(|row| {
+                    .enumerate()
+                    .map(|(at, row)| {
                         div()
                             .flex()
                             .gap(px(2.))
-                            .children(row.into_iter().map(|col| swatch(col, cx)))
+                            .children(row.into_iter().enumerate().map(|(col, color)| swatch(at * 10 + col, color, cx)))
                             .into_any_element()
                     })
                     .collect();
@@ -1237,7 +1238,7 @@ impl ExcelApp {
                         div()
                             .flex()
                             .gap(px(2.))
-                            .children(theme::PALETTE_STANDARD.iter().map(|col| swatch(*col, cx))),
+                            .children(theme::PALETTE_STANDARD.iter().enumerate().map(|(col, rgb)| swatch(60 + col, Color(*rgb), cx))),
                     );
                 panels.push(
                     anchored()
@@ -1292,6 +1293,8 @@ impl ExcelApp {
 impl Render for ExcelApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         window.set_window_title(&format!("{} — OpenSheet", self.title));
+        // The pickers of this window offer the theme colours of its workbook.
+        theme::set_document_theme(self.wb.theme_arc());
         let titlebar = self.render_titlebar(window, cx).into_any_element();
         let tabs = self.render_ribbon_tabs(cx).into_any_element();
         let ribbon = self.render_ribbon(window, cx).into_any_element();
@@ -1334,6 +1337,7 @@ impl Render for ExcelApp {
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.pane_resize_move(ev, cx)))
             .when(!modal, |d| {
+                let d = features::outline::key_actions(d, cx);
                 features::data_tools::key_actions(features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx), cx)
                     .on_action(cx.listener(Self::on_undo))
                     .on_action(cx.listener(Self::on_redo))

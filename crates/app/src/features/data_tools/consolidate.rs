@@ -43,6 +43,10 @@ fn error_text(error: ConsolidateError) -> &'static str {
         ),
         ConsolidateError::OffSheet => t("No data was consolidated.", "Aucune donnée n'a été consolidée."),
         ConsolidateError::Overlap => t("Source reference overlaps destination area.", "La référence source se superpose à la zone de destination."),
+        ConsolidateError::LinkToSelf => t(
+            "Cannot create links to consolidation sheet.",
+            "Impossible de créer des liaisons à la feuille de consolidation.",
+        ),
     }
 }
 
@@ -234,10 +238,13 @@ impl Render for ConsolidateDialog {
                         }),
                     )),
             )
-            // Links are formulas under an outline, which the sheet does
-            // not have: the box is there, greyed out.
             .child(
-                Checkbox::new("links", t("Create links to source data", "Lier aux données sources"), false).disabled(true),
+                Checkbox::new("links", t("Create links to source data", "Lier aux données sources"), self.spec.link).on_change(
+                    cx.listener(|this, on: &bool, _, cx| {
+                        this.spec.link = *on;
+                        cx.notify();
+                    }),
+                ),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }

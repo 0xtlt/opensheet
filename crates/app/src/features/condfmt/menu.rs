@@ -287,7 +287,7 @@ fn scale_thumbnail(colors: Vec<Color>) -> AnyElement {
         let (x, y) = (bounds.origin.x, bounds.origin.y);
         for (i, color) in rows.iter().enumerate() {
             let top = y + px(1.0 + i as f32 * 8.0);
-            out.push(Draw::Quad(fill(Bounds::new(point(x + px(1.), top), size(px(24.), px(7.))), c(color.0))));
+            out.push(Draw::Quad(fill(Bounds::new(point(x + px(1.), top), size(px(24.), px(7.))), c(color.value()))));
         }
     })
 }

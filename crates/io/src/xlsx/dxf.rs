@@ -240,9 +240,21 @@ impl Dxfs {
     }
 }
 
-/// Append a colour element with an explicit colour.
+/// Append a colour element: a colour of the theme by its number and its
+/// tint, any other colour by its value.
 pub(crate) fn push_color(x: &mut String, element: &str, color: Color) {
-    w!(x, "<{element} rgb=\"FF{:06X}\"/>", color.0 & 0xFF_FFFF);
+    match color.theme() {
+        Some(reference) => {
+            w!(x, "<{element} theme=\"{}\"", reference.slot.index());
+            if reference.tint != 0.0 {
+                w!(x, " tint=\"{}\"", reference.tint);
+            }
+            x.push_str("/>");
+        }
+        None => {
+            w!(x, "<{element} rgb=\"FF{:06X}\"/>", color.value() & 0xFF_FFFF);
+        }
+    }
 }
 
 // ---- reading -------------------------------------------------------------------
@@ -346,8 +358,8 @@ fn read_fill<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, patch: &m
                         _ => 0.25,
                     };
                     Some(Some(Color(blend(
-                        fg.map_or(0x000000, |c| c.0),
-                        bg.map_or(0xFFFFFF, |c| c.0),
+                        fg.map_or(0x000000, |c| c.value()),
+                        bg.map_or(0xFFFFFF, |c| c.value()),
                         density,
                     ))))
                 }
@@ -555,11 +567,9 @@ mod tests {
         ));
         assert_eq!(patch.bold, Some(true));
         assert_eq!(patch.italic, Some(false));
-        assert_eq!(
-            patch.font_color,
-            Some(Some(Color(0xC65911))),
-            "accent 2, darker 25 %"
-        );
+        let font_color = patch.font_color.flatten().unwrap();
+        assert_eq!(font_color.plain(), Color(0xC65911), "accent 2, darker 25 %");
+        assert_eq!(font_color.theme().map(|t| t.slot.index()), Some(5));
         assert_eq!(patch.num_fmt.as_deref(), Some("0.00%"));
         assert_eq!(patch.fill, Some(Some(Color(0xFF0000))));
         assert_eq!(patch.border_left, None);

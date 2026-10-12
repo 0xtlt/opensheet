@@ -23,12 +23,13 @@ use crate::xlsx::points_to_px;
 use crate::xlsx::write::{
     MAX_COL_WIDTH_PX, MAX_ROW_HEIGHT_PT, NS_DOC_REL, NS_PKG_REL, push_number,
 };
+use crate::xlsx::color::push_drawing_color;
 use crate::xlsx::xml::{XML_DECL, push_attr, push_cell_text, push_text};
 use opensheet_engine::ast::{CellRef, RefExpr};
 use opensheet_engine::chart::{
     Axis, AxisCrossing, BlanksAs, Chart, ChartKind, ChartTitle, DEFAULT_CHART_SIZE, Dash,
     DataLabels, DisplayUnit, ErrorAmount, ErrorDirection, Family, Fill, Grouping, LegendPos, Line,
-    Marker, MarkerShape, Series, SeriesName, ShapeFormat, TrendKind, palette_color,
+    Marker, MarkerShape, Series, SeriesName, ShapeFormat, TrendKind,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::workbook::Content;
@@ -191,10 +192,10 @@ fn push_anchor(x: &mut String, chart: &Chart, number: usize, cols: &Track, rows:
 // ---- chart -----------------------------------------------------------------------
 
 fn solid_fill(color: Color) -> String {
-    format!(
-        "<a:solidFill><a:srgbClr val=\"{:06X}\"/></a:solidFill>",
-        color.0 & 0xFF_FFFF
-    )
+    let mut x = String::from("<a:solidFill>");
+    push_drawing_color(&mut x, color, None);
+    x.push_str("</a:solidFill>");
+    x
 }
 
 /// The fill of the shapes of a series. Bubbles overlap: like Excel's own,
@@ -203,10 +204,10 @@ fn shape_fill(color: Color, plot: Plot) -> String {
     if plot.family != Family::Bubble {
         return solid_fill(color);
     }
-    format!(
-        "<a:solidFill><a:srgbClr val=\"{:06X}\"><a:alpha val=\"75000\"/></a:srgbClr></a:solidFill>",
-        color.0 & 0xFF_FFFF
-    )
+    let mut x = String::from("<a:solidFill>");
+    push_drawing_color(&mut x, color, Some(75_000));
+    x.push_str("</a:solidFill>");
+    x
 }
 
 /// A number as an attribute value.
@@ -899,7 +900,7 @@ impl ChartWriter<'_> {
         }
         let marker = s.marker_for(kind);
         for (index, point) in points {
-            let varied = ((index as u64) < count).then(|| palette_color(index as usize));
+            let varied = ((index as u64) < count).then(|| self.wb.theme().chart_color(index as usize));
             let color = point.and_then(|p| p.color).or(varied);
             // Only slices can be pulled out.
             let explosion = point.and_then(|p| p.explosion).filter(|_| plot.is_round());
@@ -1086,8 +1087,8 @@ impl ChartWriter<'_> {
         // line and its markers, the fill of anything else. What a series
         // looks like is always spelled out, whatever the type of the
         // chart would give it, and so is its automatic colour, which is
-        // the engine's whatever Excel would make of the theme.
-        let ink = s.color.unwrap_or_else(|| palette_color(index));
+        // the engine's for the theme of the workbook.
+        let ink = s.color.unwrap_or_else(|| self.wb.theme().chart_color(index));
         // Where every point has a colour of its own, each says which.
         let varied = chart.varies_colors() && (chart.kind.is_round() || chart.series.len() == 1);
         // Excel reads a series along one row or one column.

@@ -272,7 +272,7 @@ impl Gallery {
             .modal
             .read_app(cx, |app| app.sel().current().name())
             .unwrap_or_default();
-        let fill = self.fill.flatten().map(|color| color.0).unwrap_or(0xFFFFFF);
+        let fill = self.fill.flatten().map(|color| color.value()).unwrap_or(0xFFFFFF);
         div()
             .flex()
             .gap(px(20.))

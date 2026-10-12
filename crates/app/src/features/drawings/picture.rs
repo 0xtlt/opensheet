@@ -357,7 +357,7 @@ fn treatment(adjust: &PictureAdjust, soft: f32, natural: (f32, f32)) -> Option<T
         Recolor::Grayscale => [1, 0, 0],
         Recolor::BlackAndWhite(threshold) => [2, threshold.to_bits(), 0],
         Recolor::Washout => [3, 0, 0],
-        Recolor::Duotone(dark, light) => [4, dark.0, light.0],
+        Recolor::Duotone(dark, light) => [4, dark.value(), light.value()],
     });
     let shaped = adjust.shape != ShapePreset::Rect;
     let natural = if shaped { (natural.0.round() as u32, natural.1.round() as u32) } else { (0, 0) };

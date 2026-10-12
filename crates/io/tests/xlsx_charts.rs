@@ -1380,8 +1380,9 @@ const CONTENT: &[(&str, &[&str])] = &[
             "a:tailEnd",
         ],
     ),
-    ("a:solidFill", &["a:srgbClr"]),
+    ("a:solidFill", &["a:srgbClr|a:schemeClr"]),
     ("a:srgbClr", &["a:alpha"]),
+    ("a:schemeClr", &["a:lumMod", "a:lumOff", "a:alpha"]),
     ("c:rich", &["a:bodyPr", "a:lstStyle", "a:p"]),
     ("c:txPr", &["a:bodyPr", "a:lstStyle", "a:p"]),
     ("a:p", &["a:pPr", "a:r|a:br|a:fld", "a:endParaRPr"]),
@@ -1994,11 +1995,17 @@ fn charts_from_other_applications() {
         refs(&columns.series[1]),
         ("Data!$D$2:$D$4".into(), Some("Data!$B$2:$B$4".into()))
     );
-    // Theme colours, resolved; the red of one point; the green of a trend
-    // line, which is solid. The outlines Excel says are not there are the
-    // automatic ones.
-    assert_eq!(columns.series[0].color, Some(Color(0x4472C4)));
-    assert_eq!(columns.series[1].color, Some(Color(0xED7D31)));
+    // The accents of the theme of the file are the automatic colours of
+    // its series; the red of one point; the green of a trend line, which
+    // is solid. The outlines Excel says are not there are the automatic
+    // ones.
+    assert_eq!(columns.series[0].color, None);
+    assert_eq!(columns.series[1].color, None);
+    let data = wb.chart_data(0, columns);
+    assert_eq!(
+        (data.series[0].color, data.series[1].color),
+        (Color(0x4472C4), Color(0xED7D31))
+    );
     assert_eq!(columns.series[0].points, [point(1, Some(0xFF0000), None)]);
     assert_eq!(columns.series[0].line, Line::default());
     assert_eq!(
@@ -2074,11 +2081,14 @@ fn charts_from_other_applications() {
         SeriesName::Text("Trend A & co".into())
     );
     assert_eq!(refs(&combo.series[1]), ("Data!$C$2:$C$4".into(), None));
+    // The stroke of the line: accent 3, a quarter darker, which stays a
+    // colour of the theme (with the value cells give that variant, a unit
+    // away from the 7C7C7C of a chart).
     assert_eq!(
         combo.series[1].color,
-        Some(Color(0x7C7C7C)),
-        "the stroke of the line: accent 3, a quarter darker"
+        Some(wb.theme().accent(3, -0.25))
     );
+    assert_eq!(combo.series[1].color.map(|c| c.value()), Some(0x7B7B7B));
     assert_eq!(
         combo
             .series
@@ -2170,10 +2180,7 @@ fn charts_from_other_applications() {
     assert_eq!(pie.series[0].color, None);
     assert_eq!(
         pie.series[0].points,
-        [
-            point(0, Some(0x4472C4), None),
-            point(1, Some(0xED7D31), None)
-        ],
+        [],
         "the colours of another theme are colours of their own"
     );
     assert_eq!(wb.chart_data(0, pie).categories, ["Q1", "Q2", "Q3"]);
@@ -2201,12 +2208,12 @@ fn charts_from_other_applications() {
         ("Data!$D$2:$D$4".into(), Some("Data!$C$2:$C$4".into()))
     );
     // Markers filled in a colour (its transparency is not kept), in an
-    // outline left to Excel.
+    // outline left to Excel: the first accent of the theme of the file.
     assert_eq!(scatter.series[0].color, Some(Color(0x7030A0)));
     assert_eq!(
         scatter.series[0].marker,
         Some(Marker {
-            line: Some(Color(0x156082)),
+            line: Some(Color(0x4472C4)),
             ..Marker::new(MarkerShape::Circle)
         })
     );
@@ -5501,10 +5508,9 @@ fn charts_that_refer_to_other_parts() {
 
 #[test]
 fn untouched_charts_keep_the_colours_of_their_theme() {
-    // The package being written has the theme of the engine, the Office
-    // theme of 2023, whatever the workbook came with. A chart from a
-    // workbook with another theme has its theme colours spelled out:
-    // nothing else in its part changes.
+    // The package is written with the theme the workbook came with: a
+    // chart nobody touched keeps its part to the letter, theme colours
+    // included, and they stand for the same colours.
     let columns = excel_columns();
     let saved = |theme: &str, name: &str| {
         let wb = load(&foreign_package(&[("xl/theme/theme1.xml", theme)]));
@@ -5514,33 +5520,20 @@ fn untouched_charts_keep_the_colours_of_their_theme() {
     };
     let (kept, _) = saved(THEME_2023, "foreign-charts-saved-2023.xlsx");
     assert_eq!(kept, columns);
-    let (spelled, reread) = saved(THEME, "foreign-charts-saved.xlsx");
-    assert_ne!(spelled, columns);
-    assert!(!spelled.contains("schemeClr") && columns.contains("schemeClr"));
-    let expected = columns
-        .replace(
-            "<a:schemeClr val=\"accent1\"/>",
-            "<a:srgbClr val=\"4472C4\"/>",
-        )
-        .replace(
-            "<a:schemeClr val=\"accent2\"/>",
-            "<a:srgbClr val=\"ED7D31\"/>",
-        )
-        .replace("<a:schemeClr val=\"tx1\">", "<a:srgbClr val=\"000000\">")
-        .replace("</a:schemeClr>", "</a:srgbClr>");
-    assert_eq!(spelled, expected);
-    assert_well_formed("chart1.xml", &spelled);
-    // Read without its theme, the chart is the one read with it: series in
-    // the colours of that theme, which are colours of their own here.
+    let (kept, reread) = saved(THEME, "foreign-charts-saved.xlsx");
+    assert_eq!(kept, columns);
+    assert!(columns.contains("schemeClr"));
+    assert_eq!(reread.theme().rgb(opensheet_engine::style::ThemeSlot::Accent1), 0x4472C4);
     let original = load(&foreign_package(&[("xl/theme/theme1.xml", THEME)]));
     assert_same_content(
         "columns",
         &original.sheets[0].charts[0],
         &reread.sheets[0].charts[0],
     );
-    assert_eq!(
-        reread.sheets[0].charts[0].series[0].color,
-        Some(Color(0x4472C4))
-    );
-    assert_eq!(part(&to_bytes(&reread), "xl/charts/chart1.xml"), spelled);
+    // The first accent of that theme is the automatic colour of the
+    // first series.
+    let chart = &reread.sheets[0].charts[0];
+    assert_eq!(chart.series[0].color, None);
+    assert_eq!(reread.chart_data(0, chart).series[0].color, Color(0x4472C4));
+    assert_eq!(part(&to_bytes(&reread), "xl/charts/chart1.xml"), columns);
 }

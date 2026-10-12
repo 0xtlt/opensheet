@@ -717,7 +717,7 @@ fn parts_say_what_the_model_says() {
         corner("from", 0, 10, 0, 5),
         corner("to", 1, 46, 2, 15),
         "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"3\" name=\"Rectangle 2\"/><xdr:cNvSpPr/></xdr:nvSpPr>".to_string(),
-        "<xdr:spPr><a:xfrm><a:off x=\"95250\" y=\"47625\"/><a:ext cx=\"952500\" cy=\"476250\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"156082\"/></a:solidFill><a:ln w=\"12700\"><a:solidFill><a:srgbClr val=\"042433\"/></a:solidFill></a:ln></xdr:spPr>".to_string(),
+        "<xdr:spPr><a:xfrm><a:off x=\"95250\" y=\"47625\"/><a:ext cx=\"952500\" cy=\"476250\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill><a:ln w=\"12700\"><a:solidFill><a:srgbClr val=\"042433\"/></a:solidFill></a:ln></xdr:spPr>".to_string(),
         "<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"ctr\"/><a:lstStyle/>".to_string(),
         format!("<a:p><a:pPr algn=\"ctr\"/><a:r><a:rPr sz=\"1100\">{white}</a:rPr><a:t>Hi</a:t></a:r></a:p>"),
         format!("<a:p><a:pPr algn=\"ctr\"/><a:r><a:rPr sz=\"1100\">{white}</a:rPr><a:t>there</a:t></a:r></a:p>"),
@@ -728,7 +728,7 @@ fn parts_say_what_the_model_says() {
         corner("from", 3, 8, 2, 0),
         corner("to", 4, 24, 2, 0),
         "<xdr:cxnSp macro=\"\"><xdr:nvCxnSpPr><xdr:cNvPr id=\"4\" name=\"Straight Arrow Connector 3\"/><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr>".to_string(),
-        "<xdr:spPr><a:xfrm><a:off x=\"1905000\" y=\"381000\"/><a:ext cx=\"762000\" cy=\"0\"/></a:xfrm><a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom><a:ln w=\"12700\"><a:solidFill><a:srgbClr val=\"156082\"/></a:solidFill><a:tailEnd type=\"triangle\"/></a:ln></xdr:spPr></xdr:cxnSp><xdr:clientData/></xdr:twoCellAnchor>".to_string(),
+        "<xdr:spPr><a:xfrm><a:off x=\"1905000\" y=\"381000\"/><a:ext cx=\"762000\" cy=\"0\"/></a:xfrm><a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom><a:ln w=\"12700\"><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill><a:tailEnd type=\"triangle\"/></a:ln></xdr:spPr></xdr:cxnSp><xdr:clientData/></xdr:twoCellAnchor>".to_string(),
         // The text box at (300, 100), 96 × 48, turned on its side: the
         // anchor holds the box as it stands, 48 × 96 about the same
         // centre, `xfrm` the box before the turn.
@@ -1091,7 +1091,16 @@ fn drawings_from_excel() {
         let f = sheet.drawing_frame(named(&wb, 0, name));
         (f.x, f.y, f.width, f.height)
     };
-    let look = |name: &str| named(&wb, 0, name).as_shape().unwrap().clone();
+    // The looks as they are seen: a colour of the theme by its value.
+    let look = |name: &str| {
+        let mut shape = named(&wb, 0, name).as_shape().unwrap().clone();
+        shape.fill = shape.fill.map(Color::plain);
+        shape.font.color = shape.font.color.map(Color::plain);
+        if let Some(outline) = &mut shape.outline {
+            outline.color = outline.color.plain();
+        }
+        shape
+    };
 
     // A new shape of Excel 2013 to 2021: the theme's first accent, its
     // outline a shade of it one point wide, white text.
@@ -1103,6 +1112,8 @@ fn drawings_from_excel() {
     assert_eq!(s.preset, ShapePreset::Rect);
     assert!(!s.text_box);
     assert_eq!(s.fill, Some(Color(0x4472C4)));
+    // It is the first accent of the theme, and stays so.
+    assert_eq!(d.as_shape().unwrap().fill, Some(wb.theme().accent(1, 0.0)));
     assert_eq!(s.outline, Some(Outline::solid(Color(0x172C51), 1.0)));
     // One font for the whole text: that of its first run.
     assert_eq!(s.text, "Bonjour tout le monde\n");

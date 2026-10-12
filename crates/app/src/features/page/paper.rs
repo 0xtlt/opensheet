@@ -422,7 +422,7 @@ const ICON_SIZE: f64 = 16.0;
 
 fn mix(a: Color, b: Color, t: f64) -> Color {
     let channel = |shift: u32| {
-        let (x, y) = (((a.0 >> shift) & 0xFF) as f64, ((b.0 >> shift) & 0xFF) as f64);
+        let (x, y) = (((a.value() >> shift) & 0xFF) as f64, ((b.value() >> shift) & 0xFF) as f64);
         ((x + (y - x) * t).round() as u32) << shift
     };
     Color(channel(16) | channel(8) | channel(0))

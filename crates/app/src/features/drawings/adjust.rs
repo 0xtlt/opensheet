@@ -10,7 +10,6 @@ use crate::features::{Command, Cx};
 use crate::i18n::{labelled, lang, t};
 use gpui::Window;
 use opensheet_engine::Color;
-use opensheet_engine::chart::PALETTE;
 use opensheet_engine::drawing::{
     Drawing, Effects, Frame, Glow, PictureAdjust, Recolor, SEPIA, Shadow, ShadowPreset, ShapeTool,
 };
@@ -289,8 +288,14 @@ pub(super) fn open_corrections(app: &mut ExcelApp, window: &mut Window, cx: &mut
     app.open_command_menu(entries, 270.0, window, cx);
 }
 
+/// The six accent colours of the workbook's theme.
+fn accents(app: &ExcelApp) -> [Color; 6] {
+    let theme = app.wb.theme();
+    std::array::from_fn(|n| theme.chart_color(n))
+}
+
 /// The Recolor list: its names and what each makes of the picture.
-fn recolourings() -> Vec<(String, Recolor)> {
+fn recolourings(accents: [Color; 6]) -> Vec<(String, Recolor)> {
     let mut list = vec![
         (t("No Recolor", "Aucune recolorisation").to_string(), Recolor::None),
         (t("Grayscale", "Nuances de gris").to_string(), Recolor::Grayscale),
@@ -306,8 +311,7 @@ fn recolourings() -> Vec<(String, Recolor)> {
     // The accent colours: from black to the colour, then from the colour
     // to white.
     for (dark, tone) in [(true, t("Dark", "Foncé")), (false, t("Light", "Clair"))] {
-        for (n, rgb) in PALETTE.into_iter().enumerate() {
-            let accent = Color(rgb);
+        for (n, accent) in accents.into_iter().enumerate() {
             let recolor = if dark {
                 Recolor::Duotone(Color(0x000000), accent)
             } else {
@@ -340,7 +344,7 @@ pub(super) fn open_color(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
             .checked(current.is_some_and(|adjust| adjust.temperature.round() as u32 == kelvins))
         })
         .collect();
-    let recolor = recolourings()
+    let recolor = recolourings(accents(app))
         .into_iter()
         .map(|(name, recolor)| {
             MenuEntry::new(name, move |app, _, cx| adjust(app, label, cx, |adjust| adjust.recolor = recolor))
@@ -404,12 +408,12 @@ pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
         MenuEntry::separator(),
     ];
     for radius in GLOWS {
-        let colours = PALETTE
+        let colours = accents(app)
             .into_iter()
             .enumerate()
-            .map(|(n, rgb)| {
+            .map(|(n, color)| {
                 let made = Glow {
-                    color: Color(rgb),
+                    color,
                     transparency: 0.6,
                     radius,
                 };
@@ -507,7 +511,7 @@ mod tests {
 
     #[test]
     fn every_recolouring_has_a_name_of_its_own() {
-        let list = recolourings();
+        let list = recolourings(std::array::from_fn(|n| Color(n as u32 + 1)));
         assert_eq!(list.len(), 19);
         let names: std::collections::HashSet<&str> = list.iter().map(|(name, _)| name.as_str()).collect();
         assert_eq!(names.len(), list.len());

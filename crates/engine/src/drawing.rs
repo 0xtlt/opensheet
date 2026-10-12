@@ -16,7 +16,7 @@ use crate::ast::StructuralEdit;
 use crate::features::CellShift;
 use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS};
-use crate::style::{Color, Font};
+use crate::style::{Color, Font, ThemeSlot};
 use crate::validation::localized;
 use crate::workbook::{Sheet, Workbook};
 use std::collections::{BTreeMap, BTreeSet};
@@ -333,7 +333,7 @@ impl PictureAdjust {
             Recolor::Duotone(dark, light) => {
                 let t = luma(r, g, b);
                 let mix = |shift: u32| {
-                    let (lo, hi) = (((dark.0 >> shift) & 0xFF) as f32 / 255.0, ((light.0 >> shift) & 0xFF) as f32 / 255.0);
+                    let (lo, hi) = (((dark.value() >> shift) & 0xFF) as f32 / 255.0, ((light.value() >> shift) & 0xFF) as f32 / 255.0);
                     lo + (hi - lo) * t
                 };
                 (r, g, b) = (mix(16), mix(8), mix(0));
@@ -1026,9 +1026,10 @@ pub enum ShapeTool {
     Callout,
 }
 
-/// Fill of new shapes and colour of new lines (first accent of the Office
-/// theme), and the darker shade of their outline.
-const ACCENT: Color = Color(0x156082);
+/// Fill of new shapes and colour of new lines (the first accent of the
+/// theme, here with its value in the Office theme: `add_drawing` gives it
+/// the one of the workbook), and the darker shade of their outline.
+const ACCENT: Color = Color::themed(ThemeSlot::Accent1, 0.0, 0x156082);
 const ACCENT_DARK: Color = Color(0x042433);
 
 impl ShapeTool {
@@ -1530,6 +1531,31 @@ impl Drawing {
         }
     }
 
+    /// Work out again the theme colours of the drawing after the theme
+    /// of its workbook changed: those of a shape, of the members of a
+    /// group, of the effects and of a recolouring.
+    pub fn retheme(&mut self, theme: &crate::theme::Theme) {
+        if let Some(shadow) = &mut self.effects.shadow {
+            shadow.color = theme.resolve(shadow.color);
+        }
+        if let Some(glow) = &mut self.effects.glow {
+            glow.color = theme.resolve(glow.color);
+        }
+        match &mut self.kind {
+            DrawingKind::Shape(shape) => theme.resolve_shape(shape),
+            DrawingKind::Picture(picture) => {
+                if let Recolor::Duotone(dark, light) = &mut picture.adjust.recolor {
+                    (*dark, *light) = (theme.resolve(*dark), theme.resolve(*light));
+                }
+            }
+            DrawingKind::Group(group) => {
+                for member in &mut group.members {
+                    member.retheme(theme);
+                }
+            }
+        }
+    }
+
     /// The largest id in the drawing: its own, or one of its members'.
     fn max_id(&self) -> u32 {
         let members = self.as_group().map(|group| group.members.iter().map(Drawing::max_id).max().unwrap_or(0));
@@ -1908,6 +1934,9 @@ impl Workbook {
         // The members of a group get ids of their own too.
         let mut next = self.next_drawing_id();
         drawing.renumber(&mut next);
+        if let DrawingKind::Shape(shape) = &mut drawing.kind {
+            self.theme().resolve_shape(shape);
+        }
         let sh = &mut self.sheets[sheet];
         if drawing.name.is_empty() {
             let base = match &drawing.kind {
@@ -2558,7 +2587,7 @@ mod tests {
         let rectangle = shape(ShapeTool::Rectangle);
         assert_eq!(
             (rectangle.fill, rectangle.align, rectangle.anchor),
-            (Some(Color(0x156082)), TextAlign::Center, TextAnchor::Middle)
+            (Some(ACCENT), TextAlign::Center, TextAnchor::Middle)
         );
         assert_eq!(rectangle.font.color, Some(Color::WHITE));
         let ends = |tool: ShapeTool| shape(tool).outline.map(|o| (o.start, o.end)).unwrap();

@@ -235,10 +235,13 @@ pub mod filters;
 pub mod format_cells;
 pub mod misc;
 pub mod names;
+pub mod outline;
 pub mod page;
 pub mod pivot;
 pub mod protection;
+pub mod sparklines;
 pub mod tables;
+pub mod themes;
 pub mod validation;
 
 /// The context every hook that may change the application receives.
@@ -249,7 +252,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// charts, pictures and shapes, which share one stacking order
 /// (`objects::stack`).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 17] = [
+    static ALL: [&dyn Feature; 20] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -265,6 +268,9 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &names::Names,
         &edit_tools::EditTools,
         &data_tools::DataTools,
+        &themes::Themes,
+        &outline::Outline,
+        &sparklines::Sparklines,
         &misc::Misc,
         &crate::widgets::gallery::GalleryMarks,
     ];

@@ -1158,7 +1158,7 @@ fn corrections_colours_transparency_and_effects(cx: &mut TestAppContext) {
     assert_eq!(drawing(&app, cx, id).effects.shadow, Some(Shadow::default()));
     pick(&app, cx, Cmd::PictureEffects, &["Glow", "8 pt", "Accent 2"]);
     let glow = drawing(&app, cx, id).effects.glow.expect("a glow");
-    assert_eq!((glow.radius, glow.color), (8.0, opensheet_engine::Color(opensheet_engine::chart::PALETTE[1])));
+    assert_eq!((glow.radius, glow.color.value()), (8.0, app.update(cx, |app, _| app.wb.theme().chart_color(1).value())));
     pick(&app, cx, Cmd::PictureEffects, &["Soft Edges", "5 pt"]);
     assert_eq!(drawing(&app, cx, id).effects.soft_edge, 5.0);
     redraw(cx);

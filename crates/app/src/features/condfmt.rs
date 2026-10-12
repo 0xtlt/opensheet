@@ -247,7 +247,7 @@ fn format_sample(format: &StylePatch, width: f32, height: f32) -> AnyElement {
     }
     let line = |border: Option<Border>| border.filter(|b| !b.is_none());
     let edges = [format.border_top, format.border_right, format.border_bottom, format.border_left].map(line);
-    let line_color = edges.iter().flatten().next().map(|b| b.color.map(|color| color.0).unwrap_or(0x000000));
+    let line_color = edges.iter().flatten().next().map(|b| b.color.map(|color| color.value()).unwrap_or(0x000000));
     let side = |edge: Option<Border>| px(if edge.is_some() { 1.0 } else { 0.0 });
     frame
         .child(
@@ -258,8 +258,8 @@ fn format_sample(format: &StylePatch, width: f32, height: f32) -> AnyElement {
                 .justify_center()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .when_some(format.fill.flatten(), |d, fill| d.bg(c(fill.0)))
-                .when_some(format.font_color.flatten(), |d, color| d.text_color(c(color.0)))
+                .when_some(format.fill.flatten(), |d, fill| d.bg(c(fill.value())))
+                .when_some(format.font_color.flatten(), |d, color| d.text_color(c(color.value())))
                 .when(format.bold == Some(true), |d| d.font_weight(FontWeight::BOLD))
                 .when(format.italic == Some(true), |d| d.italic())
                 .when(format.underline.is_some_and(|u| u != Underline::None), |d| d.underline())

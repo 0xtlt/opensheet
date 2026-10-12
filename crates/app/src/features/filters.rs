@@ -981,8 +981,9 @@ const FILTERED_ROW_NUMBER: u32 = 0x1F5FBF;
 fn paint_row_numbers(p: &mut Painter) {
     let app = p.app;
     let layout = p.layout;
-    let hw = layout.header_w;
-    if hw <= 0.0 {
+    // The headings begin after the margin of the outline symbols.
+    let (left, hw) = (layout.margin_w, layout.header_w);
+    if hw <= left {
         return;
     }
     let lists: Vec<Rect> = filters_of(&app.wb, app.sheet)
@@ -1017,14 +1018,14 @@ fn paint_row_numbers(p: &mut Painter) {
                 continue;
             }
             let (background, edge) = if in_selection { (theme::HEADER_SEL_BG, 2.0) } else { (theme::HEADER_BG, 1.0) };
-            p.rect(0.0, y0, hw - edge, y1, c(background));
+            p.rect(left, y0, hw - edge, y1, c(background));
             let line = p.shape(&(row + 1).to_string(), size, c(FILTERED_ROW_NUMBER), in_selection);
             let width = f32::from(line.width);
             p.push(Draw::Text {
                 line,
-                origin: layout.to_window(((hw - width) / 2.0).round(), y + ((height - line_h) / 2.0).round()),
+                origin: layout.to_window(left + ((hw - left - width) / 2.0).round(), y + ((height - line_h) / 2.0).round()),
                 line_height: px(line_h),
-                clip: layout.bounds_px(0.0, y0, hw, y1),
+                clip: layout.bounds_px(left, y0, hw, y1),
             });
         }
     }

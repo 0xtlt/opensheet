@@ -302,8 +302,9 @@ fn header_scrolled_away(layout: &GridLayout, table: &Table) -> bool {
 fn header_names(p: &mut Painter) {
     let app = p.app;
     let layout = p.layout;
-    let height = layout.header_h;
-    if height <= 0.0 {
+    // The headings begin under the margin of the outline symbols.
+    let (top, height) = (layout.margin_h, layout.header_h);
+    if height <= top {
         return;
     }
     let Some(table) = active_table(app).filter(|table| header_scrolled_away(layout, table)) else {
@@ -343,9 +344,9 @@ fn header_names(p: &mut Painter) {
             1 => (theme::HEADER_SEL_BG, theme::HEADER_SEL_TEXT),
             _ => (theme::HEADER_BG, theme::HEADER_TEXT),
         };
-        p.rect(x0, 0.0, x1, height, c(background));
+        p.rect(x0, top, x1, height, c(background));
         if x + width <= hi {
-            p.rect(x + width - 1.0, 0.0, x + width, height, c(theme::HEADER_BORDER));
+            p.rect(x + width - 1.0, top, x + width, height, c(theme::HEADER_BORDER));
         }
         let line = p.shape(&column.name, size, c(ink), state > 0);
         let text_w = f32::from(line.width);
@@ -357,9 +358,9 @@ fn header_names(p: &mut Painter) {
         };
         p.push(Draw::Text {
             line,
-            origin: layout.to_window(text_x, ((height - line_h) / 2.0).round()),
+            origin: layout.to_window(text_x, top + ((height - top - line_h) / 2.0).round()),
             line_height: px(line_h),
-            clip: layout.bounds_px(x0, 0.0, (x1 - 1.0).max(x0), height),
+            clip: layout.bounds_px(x0, top, (x1 - 1.0).max(x0), height),
         });
         if state == 1 {
             p.rect(x0, height - 2.0, x1, height, c(theme::SELECTION));
