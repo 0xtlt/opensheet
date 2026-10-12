@@ -621,6 +621,8 @@ pub(super) fn open_format(app: &mut ExcelApp, section: Section, window: &mut Win
             view
         }
     };
+    // Wide enough for its longest label ("Don't move or size with cells").
+    app.pane_width = app.pane_width.max(356.0);
     app.open_pane(FORMAT, title, view, cx);
 }
 
