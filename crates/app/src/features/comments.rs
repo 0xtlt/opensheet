@@ -23,8 +23,8 @@ use self::notes::{BoxDrag, Grip};
 use self::pane::CommentsPane;
 use self::text_area::{AreaEvent, TextArea};
 use super::{
-    CellEdit, ChangeCause, Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PaintLayer, Painter,
-    StatusItem, Zone, ZoneEvent, ZoneResponse,
+    Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PaintLayer, Painter, StatusItem, Zone,
+    ZoneEvent, ZoneResponse,
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{GridLayout, pt_to_px};
@@ -146,15 +146,22 @@ impl Command for Cmd {
                     app.commit(self.label(), cx);
                 }
             }
-            Cmd::Delete | Cmd::Clear => {
+            Cmd::Delete => {
                 finish_note_edit(app, cx);
                 let ranges = app.sel().ranges.clone();
                 if may_edit(app, cx) && app.wb.delete_comments(sheet, &ranges) > 0 {
-                    let label = match self {
-                        Cmd::Clear => self.label(),
-                        _ => Cmd::DeleteComment.label(),
-                    };
-                    app.commit(label, cx);
+                    app.commit(Cmd::DeleteComment.label(), cx);
+                }
+            }
+            // One of the Clear commands of the Home tab: like the others,
+            // it leaves the rows a filter hides alone.
+            Cmd::Clear => {
+                finish_note_edit(app, cx);
+                if may_edit(app, cx) {
+                    for range in app.sel().ranges.clone() {
+                        app.wb.clear(sheet, range, ClearMode::Comments);
+                    }
+                    app.commit(self.label(), cx);
                 }
             }
             Cmd::ShowHideNote => {
@@ -1206,14 +1213,6 @@ impl Feature for Comments {
         match zone.and_then(|zone| zone.payload::<Spot>()) {
             Some(Spot::Cell(row, col)) => pointer_on(app, (*row, *col), cx),
             _ => pointer_off(app, cx),
-        }
-    }
-
-    /// Clear All takes the notes and comments of the cells with it, in
-    /// the same undo step.
-    fn cells_written(&self, app: &mut ExcelApp, edit: &CellEdit, _cx: &mut Cx) {
-        if edit.cause == ChangeCause::Clear(ClearMode::All) {
-            app.wb.delete_comments(edit.sheet, &[edit.rect]);
         }
     }
 

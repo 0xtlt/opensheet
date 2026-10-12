@@ -926,49 +926,6 @@ impl Workbook {
             comments.insert(target, comment);
         }
     }
-
-    /// Notes and comments follow the lines a sort reorders: call next to
-    /// the sort, with the lines that moved as (from, to) pairs (rows, or
-    /// columns when the sort went left to right) and the span of the
-    /// sorted range on the other axis.
-    pub fn reorder_comments(&mut self, sheet: usize, by_rows: bool, across: std::ops::RangeInclusive<u32>, moves: &[(u32, u32)]) {
-        let Some(sh) = self.sheets.get(sheet) else {
-            return;
-        };
-        let line_of = |cell: &(u32, u32)| if by_rows { (cell.0, cell.1) } else { (cell.1, cell.0) };
-        let carried: Vec<((u32, u32), u32)> = sh
-            .comments
-            .keys()
-            .filter_map(|cell| {
-                let (line, place) = line_of(cell);
-                let (_, to) = moves.iter().find(|(from, _)| *from == line)?;
-                across.contains(&place).then_some((*cell, *to))
-            })
-            .collect();
-        if carried.is_empty() {
-            return;
-        }
-        self.snapshot();
-        // Lift them all, then set them down: lines swap places.
-        let comments = &mut self.sheets[sheet].comments;
-        let lifted: Vec<((u32, u32), u32, Comment)> = carried
-            .into_iter()
-            .filter_map(|(cell, to)| Some((cell, to, comments.remove(&cell)?)))
-            .collect();
-        for ((row, col), to, mut comment) in lifted {
-            let (target, d_row, d_col) = if by_rows {
-                ((to, col), to as i64 - row as i64, 0)
-            } else {
-                ((row, to), 0, to as i64 - col as i64)
-            };
-            // A box that was placed by hand keeps its place relative to
-            // the cell.
-            if let Comment::Note(note) = &mut comment {
-                note.frame = note.frame.map(|frame| shifted_box(frame, d_row, d_col));
-            }
-            comments.insert(target, comment);
-        }
-    }
 }
 
 /// See `features::on_structural_edit`: notes and comments follow their
@@ -1401,33 +1358,6 @@ mod tests {
         assert_eq!(w.delete_comments(0, &[rect("A1:C6")]), 3);
         assert_eq!(w.delete_comments(0, &[rect("A1:C6")]), 0);
         assert_eq!(w.sheets[0].comment_cells(None), [cell("J10")]);
-    }
-
-    #[test]
-    fn comments_follow_sorted_lines() {
-        let mut w = wb(&[("A1", "c"), ("A2", "a"), ("A3", "b"), ("B1", "3"), ("B2", "1"), ("B3", "2")]);
-        w.set_note(0, 0, 0, "Ada", "on c");
-        w.add_comment(0, 1, 1, &Person::new("Bob"), NOON, "on 1");
-        w.set_note(0, 2, 5, "Ada", "outside the sorted columns");
-        w.commit("setup");
-        // Sorted A to Z: row 1 goes to row 3, row 2 to row 1, row 3 to row 2.
-        w.reorder_comments(0, true, 0..=1, &[(0, 2), (1, 0), (2, 1)]);
-        w.commit("sort");
-        assert_eq!(note_text(&w, "A3").as_deref(), Some("on c"));
-        assert_eq!(thread(&w, "B1").first.text, "on 1");
-        assert_eq!(note_text(&w, "F3").as_deref(), Some("outside the sorted columns"));
-        assert_eq!(w.sheets[0].comments.len(), 3);
-        w.undo();
-        assert_eq!(note_text(&w, "A1").as_deref(), Some("on c"));
-        // Left to right: columns A and B swap in rows 1 to 3.
-        w.reorder_comments(0, false, 0..=2, &[(0, 1), (1, 0)]);
-        w.commit("sort");
-        assert_eq!(note_text(&w, "B1").as_deref(), Some("on c"));
-        assert_eq!(thread(&w, "A2").first.text, "on 1");
-        // Lines that did not move, or a sheet that does not exist: nothing.
-        w.reorder_comments(0, true, 0..=1, &[]);
-        w.reorder_comments(9, true, 0..=1, &[(0, 1)]);
-        assert!(!w.commit("nothing"));
     }
 
     #[test]
