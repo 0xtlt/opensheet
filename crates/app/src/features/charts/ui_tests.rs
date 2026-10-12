@@ -450,3 +450,28 @@ fn the_floating_buttons_open_their_lists(cx: &mut TestAppContext) {
     redraw(cx);
     assert!(app.update(cx, |app, _| app.zones.iter().all(|z| z.payload::<FloatButton>().is_none())));
 }
+
+#[gpui::test]
+fn charts_follow_the_sheet_in_every_view(cx: &mut TestAppContext) {
+    use crate::features::ViewMode;
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    for mode in [ViewMode::PageLayout, ViewMode::PageBreakPreview, ViewMode::Normal] {
+        app.update(cx, |app, cx| {
+            app.set_view_mode(mode, cx);
+            app.select_chart_element(ChartElement::ChartArea, cx);
+        });
+        redraw(cx);
+        // Painted where the sheet puts the object, whatever the view adds
+        // between the pages.
+        app.update(cx, |app, _| {
+            let layout = app.current_layout().unwrap();
+            let chart = app.wb.chart(app.sheet, id).unwrap();
+            let zone = app.painted_chart(id).expect("the chart is painted");
+            let rect = crate::chart_view::chart_rect(&layout, chart);
+            assert_eq!(zone.origin, (rect.0, rect.1), "{mode:?}");
+        });
+        click_on(&app, cx, id, ChartElement::Title);
+        assert_eq!(element(&app, cx), ChartElement::Title, "{mode:?}");
+    }
+}

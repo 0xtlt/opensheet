@@ -573,7 +573,7 @@ impl Feature for Charts {
         };
         let style = p.app.chart_style();
         let data = p.app.wb.chart_data(p.app.sheet, chart);
-        let (layout, items) = chart_view::build_chart(chart, &data, p.layout, p.ts, &style);
+        let (layout, items) = chart_view::build_chart(chart, &data, p.layout, rect, p.ts, &style);
         p.extend(items);
         if p.app.object_sel == Some(object_id(self, object.id)) {
             let element = p.app.chart_element();

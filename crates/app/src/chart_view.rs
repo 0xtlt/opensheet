@@ -379,15 +379,17 @@ pub fn outline_draws(outline: &Outline, origin: Point<Pixels>, ts: &WindowTextSy
     out.items
 }
 
-/// Build the drawing commands of one chart of the sheet.
+/// Build the drawing commands of one chart of the sheet, in the box
+/// (x0, y0, x1, y1) the sheet gives it (grid-element coordinates).
 pub fn build_chart(
     chart: &Chart,
     data: &ChartData,
     grid: &GridLayout,
+    rect: (f32, f32, f32, f32),
     ts: &WindowTextSystem,
     style: &ChartStyle,
 ) -> (ChartLayout, Vec<Draw>) {
-    let (x0, y0, x1, y1) = chart_rect(grid, chart);
+    let (x0, y0, x1, y1) = rect;
     let (w, h) = (x1 - x0, y1 - y0);
     let origin = grid.to_window(x0, y0);
     let laid = layout(chart, data, (w, h), grid.zoom, ts, style);

@@ -689,7 +689,162 @@ impl Render for MoveChart {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{Lang, set_lang};
+    use gpui::{Modifiers, TestAppContext, VisualTestContext, point};
     use opensheet_engine::Rect;
+
+    fn redraw(cx: &mut VisualTestContext) {
+        cx.run_until_parked();
+        cx.simulate_mouse_move(point(px(2.), px(2.)), None, Modifiers::none());
+        cx.run_until_parked();
+    }
+
+    /// A window with three months of two regions and a chart of them.
+    fn open(cx: &mut TestAppContext, kind: ChartKind) -> (Entity<ExcelApp>, &mut VisualTestContext) {
+        set_lang(Lang::En);
+        cx.update(crate::bind_keys);
+        let (app, cx) = cx.add_window_view(ExcelApp::new);
+        app.update_in(cx, |app, window, cx| {
+            let rows = [["Month", "North", "South"], ["Jan", "12", "8"], ["Feb", "15", "11"], ["Mar", "9", "14"]];
+            for (r, row) in rows.iter().enumerate() {
+                for (c, text) in row.iter().enumerate() {
+                    let _ = app.wb.set_cell_text(0, r as u32, c as u32, text);
+                }
+            }
+            app.commit("setup", cx);
+            app.select_rect(Rect::new(0, 0, 3, 2), cx);
+            app.insert_chart(kind, window, cx);
+        });
+        redraw(cx);
+        (app, cx)
+    }
+
+    fn chart(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Chart {
+        app.update(cx, |app, _| app.wb.sheets.iter().flat_map(|s| s.charts.iter()).next().cloned().expect("a chart"))
+    }
+
+    #[gpui::test]
+    fn select_data_edits_a_copy_until_ok(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx, ChartKind::Column);
+        let dialog = app.update_in(cx, |app, window, cx| open_dialog(app, window, cx)).expect("the dialog");
+        redraw(cx);
+        let range = |cx: &mut VisualTestContext| dialog.read_with(cx, |d, cx| d.range.read(cx).text().to_string());
+        assert_eq!(range(cx), "=Sheet1!$A$1:$C$4");
+        // Moving a series keeps the range; removing one makes it the rest.
+        dialog.update(cx, |d, cx| d.shift(true, cx));
+        assert_eq!(dialog.read_with(cx, |d, _| d.selected), Some(1));
+        assert_eq!(range(cx), "=Sheet1!$A$1:$C$4");
+        // (South is first now; without it the block ends at North.)
+        dialog.update(cx, |d, cx| {
+            d.selected = Some(0);
+            d.remove(cx);
+        });
+        assert_eq!(dialog.read_with(cx, |d, _| d.series.len()), 1);
+        assert_eq!(range(cx), "=Sheet1!$A$1:$B$4");
+        // A range typed in the field replaces every series.
+        dialog.update(cx, |d, cx| d.range.update(cx, |input, cx| input.set_text("=Sheet1!$A$1:$C$3", cx)));
+        redraw(cx);
+        let series = dialog.read_with(cx, |d, _| d.series.clone());
+        assert_eq!(series.len(), 2);
+        assert_eq!(series[1].values.to_text(), "Sheet1!$C$2:$C$3");
+        // Switch Row/Column: one series per month.
+        dialog.update(cx, |d, cx| d.switch(cx));
+        assert_eq!(dialog.read_with(cx, |d, _| d.series.len()), 2);
+        assert_eq!(dialog.read_with(cx, |d, _| d.series[0].values.to_text()), "Sheet1!$B$2:$C$2");
+        dialog.update(cx, |d, cx| d.switch(cx));
+        // Nothing reached the chart yet.
+        assert_eq!(chart(&app, cx).series.len(), 2);
+        assert_eq!(chart(&app, cx).series[0].values.to_text(), "Sheet1!$B$2:$B$4");
+        dialog.update(cx, |d, _| d.blanks = BlanksAs::Span);
+        dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
+        redraw(cx);
+        let after = chart(&app, cx);
+        assert_eq!(after.series[0].values.to_text(), "Sheet1!$B$2:$B$3");
+        assert_eq!(after.blanks, BlanksAs::Span);
+        app.update(cx, |app, _| {
+            assert!(!app.modal_open());
+            assert_eq!(app.wb.undo_label(), Some("Select Data"));
+        });
+    }
+
+    #[gpui::test]
+    fn edit_series_and_axis_labels_write_into_the_dialog(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx, ChartKind::Column);
+        let dialog = app.update_in(cx, |app, window, cx| open_dialog(app, window, cx)).expect("the dialog");
+        let parent = dialog.downgrade();
+        let edit = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, index: Option<usize>| {
+            let base = index.and_then(|i| dialog.read_with(cx, |d, _| d.series.get(i).cloned()));
+            let parent = parent.clone();
+            app.update_in(cx, |app, window, cx| {
+                app.open_modal(window, cx, move |modal, _, cx| {
+                    EditSeries::new(modal, parent, index, base, ChartKind::Column, "Sheet1".into(), Locale::en(), cx)
+                })
+            })
+        };
+        // Edit: the fields show the series; a new name and new values.
+        let series = edit(&app, cx, Some(1));
+        redraw(cx);
+        assert_eq!(series.read_with(cx, |s, cx| s.name.read(cx).text().to_string()), "=Sheet1!$C$1");
+        assert_eq!(series.read_with(cx, |s, cx| s.values.read(cx).text().to_string()), "=Sheet1!$C$2:$C$4");
+        series.update(cx, |s, cx| {
+            s.name.update(cx, |input, cx| input.set_text("South (est.)", cx));
+            s.values.update(cx, |input, cx| input.set_text("c2:c3", cx));
+        });
+        series.update_in(cx, |s, window, cx| s.ok(&(), window, cx));
+        let edited = dialog.read_with(cx, |d, _| d.series[1].clone());
+        assert_eq!(edited.name, SeriesName::Text("South (est.)".into()));
+        assert_eq!(edited.values.to_text(), "Sheet1!$C$2:$C$3");
+        // Add: values that cannot be read keep the dialog open.
+        let added = edit(&app, cx, None);
+        added.update_in(cx, |s, window, cx| s.ok(&(), window, cx));
+        assert_eq!(dialog.read_with(cx, |d, _| d.series.len()), 2);
+        app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+        added.update(cx, |s, cx| s.values.update(cx, |input, cx| input.set_text("=Sheet1!$B$2:$B$4", cx)));
+        added.update_in(cx, |s, window, cx| s.ok(&(), window, cx));
+        let series = dialog.read_with(cx, |d, _| d.series.clone());
+        assert_eq!(series.len(), 3);
+        // The new series shares the categories of the others.
+        assert_eq!(series[2].categories, series[0].categories);
+        assert_eq!(dialog.read_with(cx, |d, _| d.selected), Some(2));
+        // Axis labels are those of every series.
+        let labels = app.update_in(cx, |app, window, cx| {
+            let parent = parent.clone();
+            app.open_modal(window, cx, move |modal, _, cx| AxisLabels {
+                range: modal.ref_input(RefStyle::formula(), "=Sheet1!$A$2:$A$3", cx),
+                modal,
+                parent,
+                own_sheet: "Sheet1".into(),
+                locale: Locale::en(),
+            })
+        });
+        labels.update_in(cx, |l, window, cx| l.ok(&(), window, cx));
+        let series = dialog.read_with(cx, |d, _| d.series.clone());
+        assert!(series.iter().all(|s| s.categories.as_ref().map(RefExpr::to_text).as_deref() == Some("Sheet1!$A$2:$A$3")));
+    }
+
+    #[gpui::test]
+    fn a_chart_moves_to_another_sheet(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx, ChartKind::Line);
+        let id = chart(&app, cx).id;
+        app.update_in(cx, |app, window, cx| {
+            app.add_sheet(cx);
+            app.switch_sheet(0, window, cx);
+            app.select_object(Some(object_id(&Charts, id)), cx);
+            move_chart(app, id, 1, window, cx);
+        });
+        redraw(cx);
+        app.update(cx, |app, _| {
+            assert!(app.wb.sheets[0].charts.is_empty());
+            assert_eq!(app.wb.sheets[1].charts.len(), 1);
+            // It shows on its new sheet, selected, plotting the same cells.
+            assert_eq!(app.sheet, 1);
+            assert_eq!(app.selected_chart().map(|c| c.id), Some(id));
+            assert_eq!(app.wb.chart_data(1, &app.wb.sheets[1].charts[0]).series[0].values, vec![Some(12.0), Some(15.0), Some(9.0)]);
+            assert_eq!(app.wb.undo_label(), Some("Move Chart"));
+        });
+        cx.simulate_keystrokes("escape cmd-z");
+        assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].charts.len()), 1);
+    }
 
     #[test]
     fn ranges_are_read_as_typed() {
