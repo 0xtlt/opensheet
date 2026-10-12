@@ -225,8 +225,21 @@ impl ExcelApp {
                     .px_2()
                     .text_size(px(12.))
                     .line_height(px(18.))
+                    .relative()
                     .child(self.name_box.clone())
-                    .child(icon("chevron-down", 12.0, theme::TEXT_MUTED)),
+                    // The names to go to hang from the box.
+                    .child(
+                        div()
+                            .id("name-box-list")
+                            .flex_none()
+                            .rounded(px(2.))
+                            .hover(|s| s.bg(c(theme::HOVER)))
+                            .child(icon("chevron-down", 12.0, theme::TEXT_MUTED))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                features::Command::run(features::names::Cmd::NameBoxList, this, window, cx)
+                            })),
+                    )
+                    .child(self.anchor("name-box")),
             )
             .child(
                 small("fb-cancel", "close", if editing { 0xC42B1C } else { theme::TEXT_DISABLED })
@@ -249,9 +262,9 @@ impl ExcelApp {
             .child(
                 small("fb-fx", "function", theme::TEXT_MUTED)
                     .tooltip(tooltip(t("Insert Function", "Insérer une fonction")))
-                    .on_click(cx.listener(|this, _, window, cx| this.open_function_menu("fb-fx-anchor", None, window, cx)))
-                    .relative()
-                    .child(self.anchor("fb-fx-anchor")),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        features::Command::run(features::misc::Cmd::InsertFunction, this, window, cx)
+                    })),
             )
             .child(
                 div()
@@ -1324,7 +1337,8 @@ impl Render for ExcelApp {
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.pane_resize_move(ev, cx)))
             .when(!modal, |d| {
-                d.on_action(cx.listener(Self::on_undo))
+                features::misc::key_actions(d, cx)
+                    .on_action(cx.listener(Self::on_undo))
                     .on_action(cx.listener(Self::on_redo))
                     .on_action(cx.listener(Self::on_bold))
                     .on_action(cx.listener(Self::on_italic))
