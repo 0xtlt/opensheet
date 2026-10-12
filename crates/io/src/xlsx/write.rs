@@ -1,10 +1,12 @@
 //! Writing a [`Workbook`] as an `.xlsx` package.
 
 use super::chart::write::{CT_CHART, CT_DRAWING, drawings};
+use super::defaults::{self, Defaults};
 use super::formula::{is_valid_name, needs_array_evaluation, to_file_text};
 use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
+use super::parts::{Extras, SheetLinks, push_relationship};
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
-use super::{px_to_col_width, px_to_points};
+use super::{protection, px_to_col_width, px_to_points, validation};
 use crate::Result;
 use opensheet_engine::names::NameScope;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
@@ -12,20 +14,21 @@ use opensheet_engine::style::{
     Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
-use opensheet_engine::workbook::{Cell, Content, DEFAULT_COL_WIDTH, Sheet};
+use opensheet_engine::workbook::{Cell, Content, Sheet};
 use opensheet_engine::{Color, Workbook};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::io::{Seek, Write};
 use std::sync::Arc;
 
-const NS_MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+pub(crate) const NS_MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 pub(crate) const NS_DOC_REL: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 pub(crate) const NS_PKG_REL: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CT_SHEET: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml";
 
-/// Widest column Excel accepts: 255 characters.
+/// Widest column Excel accepts: 255 characters, here of a font whose
+/// digits are 7 pixels wide (see `Defaults::max_col_width`).
 pub(crate) const MAX_COL_WIDTH_PX: f32 = 255.0 * 7.0 + 5.0;
 /// Tallest row Excel accepts, in points.
 pub(crate) const MAX_ROW_HEIGHT_PT: f64 = 409.5;
@@ -51,7 +54,7 @@ fn push_cell_ref(x: &mut String, row: u32, col: u32) {
 }
 
 /// Append "A1" or "A1:B2" (always with explicit corners).
-fn push_range(x: &mut String, rect: Rect) {
+pub(crate) fn push_range(x: &mut String, rect: Rect) {
     push_cell_ref(x, rect.r0, rect.c0);
     if !rect.is_single() {
         x.push(':');
@@ -256,18 +259,27 @@ impl StyleBook {
             if !alignment.is_empty() {
                 xfs.push_str(" applyAlignment=\"1\"");
             }
-            if !style.locked {
+            // Cells are locked and show their formula unless told otherwise.
+            let protection = !style.locked || style.hidden;
+            if protection {
                 xfs.push_str(" applyProtection=\"1\"");
             }
-            if alignment.is_empty() && style.locked {
+            if alignment.is_empty() && !protection {
                 xfs.push_str("/>");
             } else {
                 xfs.push('>');
                 if !alignment.is_empty() {
                     w!(xfs, "<alignment{alignment}/>");
                 }
-                if !style.locked {
-                    xfs.push_str("<protection locked=\"0\"/>");
+                if protection {
+                    xfs.push_str("<protection");
+                    if !style.locked {
+                        xfs.push_str(" locked=\"0\"");
+                    }
+                    if style.hidden {
+                        xfs.push_str(" hidden=\"1\"");
+                    }
+                    xfs.push_str("/>");
                 }
                 xfs.push_str("</xf>");
             }
@@ -363,7 +375,7 @@ impl SharedStrings {
 }
 
 /// Append a `<t>` element, asking readers to keep significant whitespace.
-fn push_t(x: &mut String, s: &str) {
+pub(crate) fn push_t(x: &mut String, s: &str) {
     let preserve = s.starts_with(char::is_whitespace)
         || s.ends_with(char::is_whitespace)
         || s.contains(['\n', '\t', '\r'])
@@ -418,7 +430,7 @@ fn push_sheet_views(x: &mut String, sheet: &Sheet, selected: bool) {
     w!(x, "<selection pane=\"{active}\"/></sheetView></sheetViews>");
 }
 
-fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook) {
+fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defaults) {
     #[derive(Clone, Copy, Default, PartialEq)]
     struct Col {
         width: Option<f32>,
@@ -451,7 +463,12 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook) {
             last += 1;
             iter.next();
         }
-        let width = px_to_col_width(col.width.unwrap_or(DEFAULT_COL_WIDTH).min(MAX_COL_WIDTH_PX));
+        let width = px_to_col_width(
+            col.width
+                .unwrap_or(sheet.default_col_width)
+                .min(defaults.max_col_width()),
+            defaults.digit_width,
+        );
         w!(
             x,
             "<col min=\"{}\" max=\"{}\" width=\"{width}\"",
@@ -513,6 +530,8 @@ fn push_v(x: &mut String, value: &Value) {
 struct SheetWriter<'a> {
     wb: &'a Workbook,
     styles: &'a StyleBook,
+    /// The sizes that follow from the workbook's default font.
+    defaults: Defaults,
     strings: &'a mut SharedStrings,
     /// Set when a dynamic array formula was written (the package then needs
     /// the metadata part that marks such formulas).
@@ -728,21 +747,48 @@ impl SheetWriter<'_> {
             x,
             "<worksheet xmlns=\"{NS_MAIN}\" xmlns:r=\"{NS_DOC_REL}\">"
         );
+        // The children of a worksheet come in the order of the schema
+        // (CT_Worksheet); Excel refuses a part that departs from it:
+        //
+        //   sheetPr, dimension, sheetViews, sheetFormatPr, cols, sheetData,
+        //   sheetCalcPr, sheetProtection, protectedRanges, scenarios,
+        //   autoFilter, sortState, dataConsolidate, customSheetViews,
+        //   mergeCells, phoneticPr, conditionalFormatting, dataValidations,
+        //   hyperlinks, printOptions, pageMargins, pageSetup, headerFooter,
+        //   rowBreaks, colBreaks, customProperties, cellWatches,
+        //   ignoredErrors, smartTags, drawing, legacyDrawing,
+        //   legacyDrawingHF, drawingHF, picture, oleObjects, controls,
+        //   webPublishItems, tableParts, extLst
+        //
+        // Each element written has its step below, named after it; a new
+        // one goes between its neighbours of the list.
+
+        // sheetPr
         if let Some(color) = sheet.tab_color {
             x.push_str("<sheetPr>");
             push_rgb(&mut x, "tabColor", color);
             x.push_str("</sheetPr>");
         }
+        // dimension
         x.push_str("<dimension ref=\"");
         match sheet.used_rect() {
             Some(rect) => push_range(&mut x, rect),
             None => x.push_str("A1"),
         }
         x.push_str("\"/>");
+        // sheetViews
         push_sheet_views(&mut x, sheet, selected);
-        x.push_str("<sheetFormatPr defaultRowHeight=\"15\"/>");
-        push_cols(&mut x, sheet, self.styles);
+        // sheetFormatPr
+        defaults::write(&mut x, sheet, &self.defaults);
+        // cols
+        push_cols(&mut x, sheet, self.styles, &self.defaults);
+        // sheetData
         self.push_sheet_data(&mut x, sheet);
+        // sheetProtection
+        if let Some(protection) = &sheet.protection {
+            protection::write_sheet(&mut x, protection);
+        }
+        // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {
             w!(x, "<mergeCells count=\"{}\">", merges.len());
@@ -753,10 +799,19 @@ impl SheetWriter<'_> {
             }
             x.push_str("</mergeCells>");
         }
+        // dataValidations
+        validation::write(&mut x, sheet, self.wb);
+        // pageMargins
         x.push_str("<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/>");
-        if !sheet.charts.is_empty() {
-            // The drawing part is the only relationship of a sheet.
-            x.push_str("<drawing r:id=\"rId1\"/>");
+        // drawing, legacyDrawing: what lives in parts of its own (charts,
+        // the boxes of notes).
+        SheetLinks::of(sheet).push_elements(&mut x);
+        // extLst: one `<ext>` per feature, in the order Excel writes them
+        // (conditional formats, then data validations).
+        let mut extensions = String::new();
+        validation::write_ext(&mut extensions, sheet, self.wb);
+        if !extensions.is_empty() {
+            w!(x, "<extLst>{extensions}</extLst>");
         }
         x.push_str("</worksheet>");
         x
@@ -768,7 +823,13 @@ impl SheetWriter<'_> {
 fn workbook_xml(wb: &Workbook) -> String {
     let mut x = String::from(XML_DECL);
     w!(x, "<workbook xmlns=\"{NS_MAIN}\" xmlns:r=\"{NS_DOC_REL}\">");
+    // The children of the workbook, in the order of the schema
+    // (CT_Workbook): fileVersion, fileSharing, workbookPr,
+    // workbookProtection, bookViews, sheets, functionGroups,
+    // externalReferences, definedNames, calcPr, oleSize,
+    // customWorkbookViews, pivotCaches, ..., extLst.
     x.push_str("<workbookPr/>");
+    protection::write_workbook(&mut x, &wb.protection);
     x.push_str("<bookViews><workbookView xWindow=\"0\" yWindow=\"0\" windowWidth=\"28800\" windowHeight=\"17600\"/></bookViews>");
     x.push_str("<sheets>");
     for (i, sheet) in wb.sheets.iter().enumerate() {
@@ -834,6 +895,7 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let mut writer = SheetWriter {
         wb,
         styles: &styles,
+        defaults: Defaults::of(&wb.styles.default_style().font),
         strings: &mut strings,
         dynamic_arrays: false,
     };
@@ -846,12 +908,19 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
     let drawings = drawings(wb);
+    let extras = Extras::of(wb, &drawings);
 
     let mut content_types = String::from(XML_DECL);
     content_types
         .push_str("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
     content_types.push_str("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
     content_types.push_str("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
+    for (extension, content_type) in &extras.defaults {
+        w!(
+            content_types,
+            "<Default Extension=\"{extension}\" ContentType=\"{content_type}\"/>"
+        );
+    }
     let mut override_part = |part: &str, content_type: &str| {
         w!(
             content_types,
@@ -889,6 +958,11 @@ pub(crate) fn write_workbook<W: Write + Seek>(
             override_part(&format!("/xl/charts/chart{number}.xml"), CT_CHART);
         }
     }
+    for part in &extras.parts {
+        if let Some(content_type) = part.content_type {
+            override_part(&format!("/{}", part.name), content_type);
+        }
+    }
     override_part(
         "/docProps/core.xml",
         "application/vnd.openxmlformats-package.core-properties+xml",
@@ -918,13 +992,12 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let mut workbook_rels = String::from(XML_DECL);
     w!(workbook_rels, "<Relationships xmlns=\"{NS_PKG_REL}\">");
     let mut next_id = 1;
-    let mut relate = |kind: &str, target: &str| {
-        w!(
-            workbook_rels,
-            "<Relationship Id=\"rId{next_id}\" Type=\"{NS_DOC_REL}/{kind}\" Target=\"{target}\"/>"
-        );
+    // `kind` is the whole type of the relationship.
+    let mut relate_as = |kind: &str, target: &str| {
+        push_relationship(&mut workbook_rels, next_id, kind, target);
         next_id += 1;
     };
+    let mut relate = |kind: &str, target: &str| relate_as(&format!("{NS_DOC_REL}/{kind}"), target);
     // Sheets first: `workbook.xml` refers to sheet n as rId n.
     for i in 1..=sheet_count {
         relate("worksheet", &format!("worksheets/sheet{i}.xml"));
@@ -933,6 +1006,9 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     relate("sharedStrings", "sharedStrings.xml");
     if dynamic_arrays {
         relate("sheetMetadata", "metadata.xml");
+    }
+    for (kind, target) in &extras.workbook_rels {
+        relate_as(kind, target);
     }
     workbook_rels.push_str("</Relationships>");
 
@@ -967,12 +1043,6 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     }
     for drawing in &drawings {
         let n = drawing.number;
-        put(
-            &format!("xl/worksheets/_rels/sheet{}.xml.rels", drawing.sheet + 1),
-            &format!(
-                "{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{NS_DOC_REL}/drawing\" Target=\"../drawings/drawing{n}.xml\"/></Relationships>"
-            ),
-        )?;
         put(&format!("xl/drawings/drawing{n}.xml"), &drawing.xml)?;
         put(
             &format!("xl/drawings/_rels/drawing{n}.xml.rels"),
@@ -981,6 +1051,10 @@ pub(crate) fn write_workbook<W: Write + Seek>(
         for (number, xml) in &drawing.charts {
             put(&format!("xl/charts/chart{number}.xml"), xml)?;
         }
+    }
+    // The relationships of the worksheets are among them.
+    for part in &extras.parts {
+        put(&part.name, &part.data)?;
     }
     Ok(zip.finish()?)
 }
