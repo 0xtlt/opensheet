@@ -857,6 +857,41 @@ pub fn select_rect(p: &PivotTable, what: SelectWhat) -> Option<Rect> {
 pub const FILTER_BUTTON: f32 = 17.0;
 /// One step of indentation, as the grid draws it.
 const INDENT: f32 = 9.0;
+
+/// A box on the grid: x0, y0, x1, y1.
+pub type Box4 = (f32, f32, f32, f32);
+
+/// Where the drop-down button of a header or filter cell is drawn: at the
+/// bottom right of the cell, 15 pixels wide at 100 %, smaller in a cell
+/// that is not that high. `None` in a cell too small to show one.
+pub fn filter_button_box((x0, y0, x1, y1): Box4, zoom: f32) -> Option<Box4> {
+    if x1 - x0 < 6.0 || y1 - y0 < 6.0 {
+        return None;
+    }
+    let size = (15.0 * zoom).round().min(y1 - y0 - 3.0).min(x1 - x0 - 3.0).max(5.0);
+    Some((x1 - 2.0 - size, y1 - 2.0 - size, x1 - 2.0, y1 - 2.0))
+}
+
+/// Where the "+" / "-" box of a label is drawn: at the left of the cell,
+/// after the indentation of the label's level, centred on the row. The
+/// engine makes room for it by indenting the text one step more. `None`
+/// when the cell cannot hold it.
+pub fn drill_button_box((x0, y0, x1, y1): Box4, indent: u8, zoom: f32) -> Option<Box4> {
+    if x1 - x0 < 6.0 || y1 - y0 < 6.0 {
+        return None;
+    }
+    let size = (9.0 * zoom).round().max(5.0).min(y1 - y0 - 2.0);
+    let left = (x0 + (2.0 + indent as f32 * INDENT) * zoom).round();
+    let top = (y0 + (y1 - y0 - size) / 2.0).round();
+    (left + size <= x1).then_some((left, top, left + size, top + size))
+}
+
+/// The entry of an area box a field dragged to height `y` (from the top of
+/// the first entry, scrolling included) would go before: the one whose
+/// middle the pointer is above, or `count` below the last one.
+pub fn drop_slot(y: f32, entry_height: f32, count: usize) -> usize {
+    ((y / entry_height + 0.5).floor().max(0.0) as usize).min(count)
+}
 /// More rows than this are not measured (the first ones give the widths).
 const FIT_ROWS: u32 = 3000;
 
@@ -1976,6 +2011,52 @@ mod tests {
         assert_eq!(MoveTo::Beginning.target(2, 3), 0);
         assert_eq!(MoveTo::End.target(0, 3), 2);
         assert_eq!(MoveTo::End.target(0, 0), 0);
+    }
+
+    #[test]
+    fn buttons_stay_inside_their_cell() {
+        let inside = |b: Box4, cell: Box4| b.0 >= cell.0 && b.1 >= cell.1 && b.2 <= cell.2 && b.3 <= cell.3;
+        for zoom in [0.5f32, 1.0, 1.75, 4.0] {
+            // A cell of the default size at this zoom.
+            let cell = (40.0, 60.0, 40.0 + 64.0 * zoom, 60.0 + 20.0 * zoom);
+            let button = filter_button_box(cell, zoom).unwrap();
+            assert!(inside(button, cell), "{zoom}");
+            // Square, in the bottom right corner.
+            assert_eq!(button.2 - button.0, button.3 - button.1);
+            assert_eq!((button.2, button.3), (cell.2 - 2.0, cell.3 - 2.0));
+            for indent in 0..3u8 {
+                let drill = drill_button_box(cell, indent, zoom).unwrap();
+                assert!(inside(drill, cell), "{zoom} {indent}");
+                // The text starts after its padding and one step more of
+                // indentation than its level: clear of the box.
+                let text = cell.0 + (3.0 * zoom).round().max(1.0) + (indent as f32 + 1.0) * INDENT * zoom;
+                assert!(drill.2 <= text + 0.5, "{zoom} {indent}: {} > {text}", drill.2);
+            }
+        }
+        // At 100 % the drop-down button is 15 pixels wide: what the fitted
+        // columns leave room for.
+        let button = filter_button_box((0.0, 0.0, 64.0, 20.0), 1.0).unwrap();
+        assert_eq!(button.2 - button.0, 15.0);
+        assert!(button.2 - button.0 + 2.0 <= FILTER_BUTTON);
+        // A low row gets a smaller button, a hidden one none.
+        let low = filter_button_box((0.0, 0.0, 64.0, 12.0), 1.0).unwrap();
+        assert_eq!(low.3 - low.1, 9.0);
+        assert_eq!(filter_button_box((0.0, 0.0, 64.0, 2.0), 1.0), None);
+        assert_eq!(drill_button_box((0.0, 0.0, 4.0, 20.0), 0, 1.0), None);
+        // A label too deep for its column has no box.
+        assert_eq!(drill_button_box((0.0, 0.0, 30.0, 20.0), 3, 1.0), None);
+    }
+
+    #[test]
+    fn a_dragged_field_lands_between_entries() {
+        // Entries are 24 pixels high: above the middle of the first one,
+        // before it; past the middle, after it.
+        assert_eq!(drop_slot(-5.0, 24.0, 3), 0);
+        assert_eq!(drop_slot(11.0, 24.0, 3), 0);
+        assert_eq!(drop_slot(13.0, 24.0, 3), 1);
+        assert_eq!(drop_slot(40.0, 24.0, 3), 2);
+        assert_eq!(drop_slot(500.0, 24.0, 3), 3);
+        assert_eq!(drop_slot(50.0, 24.0, 0), 0);
     }
 
     #[test]

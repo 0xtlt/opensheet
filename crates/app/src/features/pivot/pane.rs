@@ -424,7 +424,7 @@ impl FieldsPane {
                         let wanted = if ev.bounds.contains(&position) {
                             // Before the entry whose middle the pointer is above.
                             let y = f32::from(position.y - ev.bounds.top()) - 3.0 - f32::from(scroll.offset().y);
-                            Some((area, ((y / ENTRY_H + 0.5).floor().max(0.0) as usize).min(count)))
+                            Some((area, logic::drop_slot(y, ENTRY_H, count)))
                         } else {
                             this.drop_at.filter(|(a, _)| *a != area)
                         };

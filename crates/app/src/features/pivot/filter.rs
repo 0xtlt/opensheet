@@ -1203,3 +1203,146 @@ impl Render for Top10Dialog {
         .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opensheet_engine::Workbook;
+    use opensheet_engine::pivot::{LabelFilter, PivotDestination, PivotSource, ValueFilter};
+
+    const REGION: usize = 0;
+    const PRODUCT: usize = 1;
+    const SALES: usize = 2;
+
+    /// Regions in the rows, products in the filters, sales in the values.
+    fn workbook() -> (Workbook, u32) {
+        let mut wb = Workbook::new(Locale::en());
+        let rows = [
+            ["Region", "Product", "Sales"],
+            ["West", "Pears", "50"],
+            ["East", "Apples", "100"],
+            ["North", "Apples", "70"],
+        ];
+        for (r, row) in rows.iter().enumerate() {
+            for (c, text) in row.iter().enumerate() {
+                wb.set_cell_text(0, r as u32, c as u32, text).unwrap();
+            }
+        }
+        wb.commit("data");
+        let source = PivotSource::Range {
+            sheet: wb.sheets[0].name.clone(),
+            range: Rect::new(0, 0, 3, 2),
+        };
+        let id = wb.pivot_create(source, PivotDestination::NewSheet { index: 1 }, false).unwrap();
+        let locale = wb.locale;
+        wb.pivot_update(id, false, |p| {
+            p.add_field(REGION, Area::Rows, None, locale);
+            p.add_field(PRODUCT, Area::Filters, None, locale);
+            p.add_field(SALES, Area::Values, None, locale);
+        })
+        .unwrap();
+        wb.commit("pivot");
+        (wb, id)
+    }
+
+    fn state(wb: &Workbook, id: u32, field: usize) -> FieldState {
+        FieldState::of(wb.pivot(id).unwrap().1, field, wb.locale)
+    }
+
+    fn labels(state: &FieldState) -> Vec<(String, bool)> {
+        state.checks.iter().map(|item| (item.label.to_string(), item.checked)).collect()
+    }
+
+    #[test]
+    fn the_list_of_a_row_field() {
+        let (mut wb, id) = workbook();
+        let region = state(&wb, id, REGION);
+        assert!(!region.page && !region.filtered && region.has_values);
+        assert_eq!(region.caption, "Region");
+        assert_eq!(region.sort_labels.0, "Sort A to Z");
+        // The items come in the order of the report, all ticked.
+        assert_eq!(
+            labels(&region),
+            [("East".to_string(), true), ("North".to_string(), true), ("West".to_string(), true)]
+        );
+        assert_eq!((region.label_test, region.value_filter), (None, None));
+
+        // Unticking "North" and pressing OK hides it.
+        let checked = [true, false, true];
+        let visible = logic::items_to_show(&region.items, &checked, None);
+        wb.pivot_update(id, false, |p| p.set_visible_items(REGION, &visible)).unwrap();
+        let region = state(&wb, id, REGION);
+        assert!(region.filtered);
+        assert_eq!(labels(&region)[1], ("North".to_string(), false));
+
+        // Label and value filters show in the submenus.
+        wb.pivot_update(id, false, |p| {
+            p.clear_filters(REGION);
+            p.set_label_filter(REGION, Some(LabelFilter::BeginsWith("E".into())));
+        })
+        .unwrap();
+        assert_eq!(state(&wb, id, REGION).label_test, Some(LabelTest::BeginsWith));
+        wb.pivot_update(id, false, |p| {
+            p.set_value_filter(
+                REGION,
+                Some(FilterKind::Value {
+                    data_field: 0,
+                    test: ValueFilter::GreaterThan(60.0),
+                }),
+            )
+        })
+        .unwrap();
+        assert_eq!(state(&wb, id, REGION).value_filter, Some(Some(ValueTest::GreaterThan)));
+        wb.pivot_update(id, false, |p| {
+            p.set_value_filter(
+                REGION,
+                Some(FilterKind::Top10 {
+                    data_field: 0,
+                    top: true,
+                    count: 1.0,
+                    by: Top10By::Items,
+                }),
+            )
+        })
+        .unwrap();
+        let region = state(&wb, id, REGION);
+        assert_eq!(region.value_filter, Some(None));
+        assert!(region.filtered);
+    }
+
+    #[test]
+    fn the_list_of_a_report_filter() {
+        let (mut wb, id) = workbook();
+        let product = state(&wb, id, PRODUCT);
+        // "(All)": one item is picked at a time until several are ticked.
+        assert!(product.page && !product.multi && !product.filtered);
+        assert_eq!(product.page_item, None);
+        assert_eq!(labels(&product), [("Apples".to_string(), true), ("Pears".to_string(), true)]);
+
+        let pears = product.items[1];
+        wb.pivot_update(id, false, |p| p.set_page_item(PRODUCT, Some(pears))).unwrap();
+        let product = state(&wb, id, PRODUCT);
+        assert_eq!(product.page_item, Some(pears));
+        assert!(product.filtered && !product.multi);
+
+        // Several items ticked, one of them not: "(Multiple Items)".
+        wb.pivot_update(id, false, |p| p.set_item_hidden(PRODUCT, pears, true)).unwrap();
+        let product = state(&wb, id, PRODUCT);
+        assert!(product.multi && product.filtered);
+        assert_eq!(product.page_item, None);
+        assert_eq!(labels(&product)[1], ("Pears".to_string(), false));
+    }
+
+    #[test]
+    fn the_cells_that_carry_a_drop_down() {
+        let (wb, id) = workbook();
+        let (sheet, pivot) = wb.pivot(id).unwrap();
+        // B1 is the filter cell of the products, A3 "Row Labels".
+        let filter = wb.pivot_cell(sheet, 0, 1).unwrap();
+        assert_eq!(filter.fields, [PRODUCT]);
+        let header = pivot.cell(2, 0).unwrap();
+        assert_eq!(header.fields, [REGION]);
+        // A value has no drop-down: nothing to list.
+        assert!(pivot.cell(3, 1).unwrap().fields.is_empty());
+    }
+}

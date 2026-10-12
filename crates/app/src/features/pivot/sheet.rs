@@ -79,27 +79,19 @@ fn paint_buttons(p: &mut Painter, pivot: &PivotTable) {
         let Some(button) = cell.button else {
             continue;
         };
-        let (x0, y0, x1, y1) = p.cell_box(Rect::cell(row, col));
-        if x1 - x0 < 6.0 || y1 - y0 < 6.0 {
-            continue;
-        }
+        let cell_box = p.cell_box(Rect::cell(row, col));
         let bounds = match button {
             PivotButton::Filter { filtered } => {
-                // At the bottom right of the cell, as large as the row lets it be.
-                let size = (15.0 * zoom).round().min(y1 - y0 - 3.0).min(x1 - x0 - 3.0).max(5.0);
-                let (bx1, by1) = (x1 - 2.0, y1 - 2.0);
-                let bounds = (bx1 - size, by1 - size, bx1, by1);
+                let Some(bounds) = logic::filter_button_box(cell_box, zoom) else {
+                    continue;
+                };
                 paint_filter_button(p, bounds, filtered);
                 bounds
             }
             PivotButton::Expand | PivotButton::Collapse => {
-                let size = (9.0 * zoom).round().max(7.0).min(y1 - y0 - 2.0);
-                let bx0 = (x0 + (2.0 + cell.indent as f32 * 9.0) * zoom).round();
-                let by0 = (y0 + (y1 - y0 - size) / 2.0).round();
-                let bounds = (bx0, by0, bx0 + size, by0 + size);
-                if bounds.2 > x1 {
+                let Some(bounds) = logic::drill_button_box(cell_box, cell.indent, zoom) else {
                     continue;
-                }
+                };
                 paint_drill_button(p, bounds, button == PivotButton::Expand);
                 bounds
             }
