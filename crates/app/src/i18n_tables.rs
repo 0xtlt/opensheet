@@ -1019,6 +1019,9 @@ pub static ES: &[(&str, &str)] = &[
     ),
     ("(1-2 detailed sentences recommended)", "(1-2 oraciones detalladas recomendadas)"),
     ("Selection", "Selección"),
+    // ---- Charts: free layout, text, gridlines; sheet background ----
+    ("Text Options", "Opciones de texto"),
+    ("Delete Background", "Eliminar fondo"),
     // ---- Format Cells dialog ----
     ("Format Cells…", "Formato de celdas…"),
     ("Format Cell Alignment", "Aplicar formato de la alineación de celdas"),
@@ -3834,6 +3837,9 @@ pub static DE: &[(&str, &str)] = &[
     ),
     ("(1-2 detailed sentences recommended)", "(1–2 ausführliche Sätze empfohlen)"),
     ("Selection", "Auswahl"),
+    // ---- Charts: free layout, text, gridlines; sheet background ----
+    ("Text Options", "Textoptionen"),
+    ("Delete Background", "Hintergrund löschen"),
     // ---- Format Cells dialog ----
     ("Format Cells…", "Zellen formatieren…"),
     ("Format Cell Alignment", "Zellausrichtung formatieren"),
@@ -6643,6 +6649,9 @@ pub static IT: &[(&str, &str)] = &[
     ),
     ("(1-2 detailed sentences recommended)", "(1-2 frasi dettagliate consigliate)"),
     ("Selection", "Selezione"),
+    // ---- Charts: free layout, text, gridlines; sheet background ----
+    ("Text Options", "Opzioni testo"),
+    ("Delete Background", "Elimina sfondo"),
     // ---- Format Cells dialog ----
     ("Format Cells…", "Formato celle…"),
     ("Format Cell Alignment", "Formato allineamento celle"),
