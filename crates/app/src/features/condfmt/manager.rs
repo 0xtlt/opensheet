@@ -346,7 +346,7 @@ impl Render for Manager {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sheet = self.sheet();
         let active = self.selections[sheet].1;
-        let scopes: Vec<SharedString> = [t("Current Selection", "Sélection actuelle"), t("This Worksheet", "Cette feuille de calcul")]
+        let scopes: Vec<SharedString> = [crate::i18n::t_ctx("rules", "Current Selection", "Sélection actuelle"), t("This Worksheet", "Cette feuille de calcul")]
             .into_iter()
             .map(SharedString::from)
             .chain(

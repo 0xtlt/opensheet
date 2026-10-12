@@ -8,7 +8,7 @@ use super::draft::{At, Contains, Draft, Graded, Kind, Level};
 use super::{add_rule, draw, format_sample, words};
 use crate::app::ExcelApp;
 use crate::features::{Cx, format_cells};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
@@ -698,7 +698,7 @@ impl RuleDialog {
             .items_end()
             .gap(px(12.))
             .child(titled(
-                t("Fill", "Remplissage"),
+                t_ctx("bar", "Fill", "Remplissage"),
                 self.choice("bar-fill-kind", fills, bar.gradient as usize, 130.0, cx, |draft, ix| draft.bar.gradient = ix == 1)
                     .into_any_element(),
             ))
@@ -777,7 +777,7 @@ impl RuleDialog {
         let bands = draft.icons.len();
         let style_face: AnyElement = match draft.shown_set() {
             Some(set) => draw::set_picture(set, 16.0, 3.0).into_any_element(),
-            None => div().child(t("Custom", "Personnalisé")).into_any_element(),
+            None => div().child(t_ctx("icons", "Custom", "Personnalisé")).into_any_element(),
         };
         let set_panel = (self.drop == Some(Drop::Set)).then(|| self.set_panel(cx));
         let top = div()
@@ -919,7 +919,7 @@ impl RuleDialog {
     }
 
     fn ranked_editor(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let sides = Self::names([t("Top", "premiers"), t("Bottom", "derniers")]);
+        let sides = Self::names([t_ctx("rank", "Top", "premiers"), t_ctx("rank", "Bottom", "derniers")]);
         let row = div()
             .flex()
             .items_center()

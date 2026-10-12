@@ -2,7 +2,7 @@
 //! periods and of the icon sets, and how the Rules Manager describes a
 //! rule. Wording is Excel's.
 
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use opensheet_engine::Locale;
 use opensheet_engine::condfmt::{
     BarColor, CellOp, CondFormat, HighlightFormat, IconSet, Rule, ScalePreset, TextOp, TimePeriod, operand_text,
@@ -110,8 +110,8 @@ pub fn average_names() -> [&'static str; 10] {
 
 fn average_rule(above: bool, or_equal: bool, std_dev: u32) -> String {
     match (std_dev, or_equal, above) {
-        (0, false, true) => t("Above Average", "Valeurs supérieures à la moyenne").to_string(),
-        (0, false, false) => t("Below Average", "Valeurs inférieures à la moyenne").to_string(),
+        (0, false, true) => t_ctx("rule", "Above Average", "Valeurs supérieures à la moyenne").to_string(),
+        (0, false, false) => t_ctx("rule", "Below Average", "Valeurs inférieures à la moyenne").to_string(),
         (0, true, true) => t("Equal to or Above Average", "Égales ou au-dessus de la moyenne").to_string(),
         (0, true, false) => t("Equal to or Below Average", "Égales ou en dessous de la moyenne").to_string(),
         (n, _, true) => match n {
@@ -229,7 +229,7 @@ pub fn describe(cf: &CondFormat, locale: &Locale, active: (u32, u32)) -> String 
             operand_text(e, locale, anchor, active, false)
         ),
         Rule::TopBottom { rank, percent, bottom } => {
-            let side = if *bottom { t("Bottom", "Bas") } else { t("Top", "Haut") };
+            let side = if *bottom { t_ctx("rule", "Bottom", "Bas") } else { t_ctx("rule", "Top", "Haut") };
             format!("{side} {rank}{}", if *percent { "%" } else { "" })
         }
         Rule::Average { above, or_equal, std_dev } => average_rule(*above, *or_equal, *std_dev),

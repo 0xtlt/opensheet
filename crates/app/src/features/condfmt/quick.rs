@@ -6,7 +6,7 @@
 use super::{add_rule, end_preview, preview, words};
 use crate::app::ExcelApp;
 use crate::features::{Cx, format_cells};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::widgets::{self, NumberField, RefEdit, Select, dialog, label, ok_cancel};
@@ -49,8 +49,8 @@ impl Kind {
             Kind::TopPercent => t("Top 10%", "10% des valeurs les plus élevées"),
             Kind::BottomItems => t("Bottom 10 Items", "10 valeurs les moins élevées"),
             Kind::BottomPercent => t("Bottom 10%", "10 % des valeurs les moins élevées"),
-            Kind::AboveAverage => t("Above Average", "Valeurs supérieures à la moyenne"),
-            Kind::BelowAverage => t("Below Average", "Valeurs inférieures à la moyenne"),
+            Kind::AboveAverage => t_ctx("rule", "Above Average", "Valeurs supérieures à la moyenne"),
+            Kind::BelowAverage => t_ctx("rule", "Below Average", "Valeurs inférieures à la moyenne"),
         }
     }
 
@@ -393,7 +393,7 @@ impl Render for Dialog {
                 row.child(choice(periods, 200.0, self, cx)).child(label(with))
             }
             Kind::DuplicateValues => {
-                let kinds = vec![t("Duplicate", "en double").into(), t("Unique", "uniques").into()];
+                let kinds = vec![t_ctx("values", "Duplicate", "en double").into(), t("Unique", "uniques").into()];
                 row.child(choice(kinds, 110.0, self, cx)).child(label(t("values with", "avec")))
             }
             Kind::TopItems | Kind::BottomItems => row.child(NumberField::new("rank", &self.first).width(70.0)).child(label(with)),
