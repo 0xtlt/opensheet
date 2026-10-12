@@ -306,6 +306,48 @@ pub fn open_partial(
     });
 }
 
+/// A whole format being edited for someone else (a cell style) and who
+/// gets it back.
+struct Whole {
+    base: Style,
+    on_ok: Rc<dyn Fn(&Style, &mut Window, &mut App)>,
+}
+
+/// Open the dialog, all its tabs, on a format that is not the selection's
+/// (that of a cell style). `on_ok` receives the format the user leaves the
+/// dialog with; nothing is applied to the workbook.
+pub fn open_for_style(
+    app: &mut ExcelApp,
+    style: Style,
+    window: &mut Window,
+    cx: &mut Cx,
+    on_ok: impl Fn(&Style, &mut Window, &mut App) + 'static,
+) {
+    let tab = app.ext::<Memory>().map(|m| m.tab).unwrap_or(TAB_NUMBER);
+    let mut state = Opening::of(app, tab);
+    state.styles = vec![style.clone()];
+    state.merged = Some(false);
+    state.many_rows = false;
+    state.many_cols = false;
+    let borders = style.borders;
+    state.edges = [
+        Some(borders.top),
+        Some(borders.bottom),
+        Some(borders.left),
+        Some(borders.right),
+        Some(Border::NONE),
+        Some(Border::NONE),
+    ];
+    app.open_modal(window, cx, move |modal, _, cx| {
+        let mut dialog = Dialog::new(modal, state, cx);
+        dialog.whole = Some(Whole {
+            base: style,
+            on_ok: Rc::new(on_ok),
+        });
+        dialog
+    });
+}
+
 /// Open the dialog with its Number tab alone, for a number format that is
 /// not a cell's (the values of a PivotTable field). It opens on `code`,
 /// shows `sample` formatted, and `on_ok` receives the code the user leaves
@@ -650,6 +692,8 @@ struct Dialog {
 
     /// Set when the dialog edits a partial format rather than the selection.
     partial: Option<Partial>,
+    /// Set when the dialog edits the format of a cell style.
+    whole: Option<Whole>,
     /// The partial format is a number format: the Number tab shows alone
     /// (see `open_number_format`).
     number_only: bool,
@@ -759,6 +803,7 @@ impl Dialog {
             hidden: Prop::of(styles, |s| s.hidden),
             fonts: open.fonts,
             partial: None,
+            whole: None,
             number_only: false,
             modal,
         }
@@ -840,6 +885,20 @@ impl Dialog {
             let (format, on_ok) = (changes.over(&partial.base), partial.on_ok.clone());
             self.modal.close(window, cx);
             on_ok(&format, window, cx);
+            return;
+        }
+        if let Some(whole) = &self.whole {
+            let mut style = whole.base.clone();
+            changes.style(&mut style);
+            let borders = &mut style.borders;
+            for (index, side) in [(TOP, &mut borders.top), (BOTTOM, &mut borders.bottom), (LEFT, &mut borders.left), (RIGHT, &mut borders.right)] {
+                if let Some(border) = changes.edges[index] {
+                    *side = border;
+                }
+            }
+            let on_ok = whole.on_ok.clone();
+            self.modal.close(window, cx);
+            on_ok(&style, window, cx);
             return;
         }
         self.modal.update_app(cx, |app, cx| changes.apply(app, cx));

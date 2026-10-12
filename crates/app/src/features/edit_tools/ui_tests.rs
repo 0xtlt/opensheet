@@ -517,3 +517,125 @@ fn typing_an_address_makes_a_link_and_links_follow_their_cells(cx: &mut TestAppC
     assert_eq!(dialogs(&app, cx), 1, "the message of protected sheets, not the dialog");
     assert!(!app.update(cx, |app, cx| links::insert(app, Hyperlink::external(Rect::parse("B9").unwrap(), "https://example.org"), None, cx)));
 }
+
+// --------------------------------------------------------------- cell styles
+
+fn style_name(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> String {
+    let at = Rect::parse(name).unwrap();
+    app.update(cx, |app, _| app.wb.cell_style_at(app.sheet, at.r0, at.c0).to_string())
+}
+
+fn fill(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> Option<opensheet_engine::Color> {
+    let at = Rect::parse(name).unwrap();
+    app.update(cx, |app, _| app.wb.style_at(app.sheet, at.r0, at.c0).fill)
+}
+
+#[gpui::test]
+fn the_gallery_shows_excels_styles_and_applies_one(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| enter(wb, &[("B2", "ok"), ("B3", "also")]));
+    select(&app, cx, "B2:B3");
+    run(&app, cx, Cmd::CellStyles);
+    // Excel's sections, in Excel's order, each style drawn.
+    let shown = app.update(cx, |app, _| styles::sections(app));
+    let titles: Vec<(opensheet_engine::cell_style::StyleGroup, usize)> = shown.iter().map(|(group, styles)| (*group, styles.len())).collect();
+    use opensheet_engine::cell_style::StyleGroup::*;
+    assert_eq!(titles, [(GoodBadNeutral, 4), (DataModel, 10), (TitlesHeadings, 6), (Themed, 24), (NumberFormat, 5)]);
+    for name in ["Normal", "Good", "Heading 1", "20% - Accent1", "Accent6", "Percent"] {
+        assert!(cx.debug_bounds(Box::leak(format!("cell-style-{name}").into_boxed_str())).is_some(), "{name} is drawn");
+    }
+    // A click applies the style to the selection and closes the gallery.
+    press(cx, "cell-style-Good");
+    assert!(app.update(cx, |app, _| app.popup.is_none()));
+    assert_eq!(style_name(&app, cx, "B2"), "Good");
+    assert_eq!(style_name(&app, cx, "B3"), "Good");
+    assert_eq!(fill(&app, cx, "B2"), Some(opensheet_engine::Color(0xC6EFCE)));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Cell Styles"));
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!((style_name(&app, cx, "B2"), fill(&app, cx, "B2")), ("Normal".to_string(), None));
+    // The names follow the language of the interface, not the file's.
+    let good = app.update(cx, |app, _| app.wb.cell_style("Good").unwrap());
+    assert_eq!(styles::display_name(&good), "Good");
+    // A protected sheet keeps its formats.
+    edit(&app, cx, |wb| {
+        wb.protect_sheet(0, Default::default(), "");
+    });
+    app.update(cx, |app, cx| styles::apply(app, "Bad", cx));
+    assert_eq!(style_name(&app, cx, "B2"), "Normal");
+    assert_eq!(dialogs(&app, cx), 1);
+}
+
+#[gpui::test]
+fn a_new_style_is_made_modified_duplicated_and_deleted(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        enter(wb, &[("A1", "mine"), ("A2", "other")]);
+        wb.update_style(0, Rect::parse("A1").unwrap(), &|s| {
+            s.fill = Some(opensheet_engine::Color(0x00B0F0));
+            s.font.bold = true;
+        });
+    });
+    select(&app, cx, "A1");
+    // New Cell Style from the gallery: the name Excel proposes is there,
+    // selected; the style is the format of the active cell.
+    run(&app, cx, Cmd::CellStyles);
+    press(cx, "new-cell-style");
+    assert_eq!(dialogs(&app, cx), 1);
+    cx.simulate_input("Blue box");
+    // The font is left out of what the style includes.
+    press(cx, "style-font");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(dialogs(&app, cx), 0);
+    let made = app.update(cx, |app, _| app.wb.cell_style("Blue box").expect("the style"));
+    assert_eq!(made.style.fill, Some(opensheet_engine::Color(0x00B0F0)));
+    assert!(made.includes.fill && !made.includes.font);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("New Cell Style"));
+    // It leads the gallery, under Custom.
+    let first = app.update(cx, |app, _| styles::sections(app).remove(0));
+    assert_eq!((first.0, first.1[0].name.as_str()), (opensheet_engine::cell_style::StyleGroup::Custom, "Blue box"));
+    // Applied to another cell, then modified: the cell follows.
+    select(&app, cx, "A2");
+    app.update(cx, |app, cx| styles::apply(app, "Blue box", cx));
+    assert_eq!(fill(&app, cx, "A2"), Some(opensheet_engine::Color(0x00B0F0)));
+    app.update_in(cx, |app, window, cx| styles::open_dialog(app, styles::Purpose::Modify("Blue box".into()), None, window, cx));
+    redraw(cx);
+    assert_eq!(dialogs(&app, cx), 1);
+    // Format… opens Format Cells over the dialog; Return keeps the format.
+    press(cx, "style-format");
+    assert_eq!(dialogs(&app, cx), 2);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(dialogs(&app, cx), 1);
+    cx.simulate_keystrokes("escape");
+    let mut changed = made.style.clone();
+    changed.fill = Some(opensheet_engine::Color(0xFF0000));
+    assert!(app.update(cx, |app, cx| styles::save(app, &styles::Purpose::Modify("Blue box".into()), "", changed, made.includes, cx)));
+    assert_eq!(fill(&app, cx, "A2"), Some(opensheet_engine::Color(0xFF0000)));
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(fill(&app, cx, "A2"), Some(opensheet_engine::Color(0x00B0F0)));
+    // A name that is taken is refused, as Excel does.
+    assert!(!app.update(cx, |app, cx| styles::save(app, &styles::Purpose::New, "good", made.style.clone(), made.includes, cx)));
+    assert_eq!(dialogs(&app, cx), 1);
+    cx.simulate_keystrokes("enter");
+    // The menu of a style: Normal cannot be modified, Excel's styles
+    // cannot be deleted, the user's can.
+    let entries = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str| {
+        app.update(cx, |app, _| {
+            let style = app.wb.cell_style(name).unwrap();
+            styles::style_menu(app, &style).into_iter().map(|entry| (entry.label.to_string(), entry.disabled)).collect::<Vec<_>>()
+        })
+    };
+    let all = |disabled: [bool; 4]| ["Apply", "Modify...", "Duplicate...", "Delete"].iter().map(|l| l.to_string()).zip(disabled).collect::<Vec<_>>();
+    assert_eq!(entries(&app, cx, "Blue box"), all([false, false, false, false]));
+    assert_eq!(entries(&app, cx, "Good"), all([false, false, false, true]));
+    assert_eq!(entries(&app, cx, "Normal"), all([false, true, false, true]));
+    // Duplicate proposes a name of its own.
+    app.update_in(cx, |app, window, cx| styles::open_dialog(app, styles::Purpose::New, Some("Blue box"), window, cx));
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    assert!(app.update(cx, |app, _| app.wb.cell_style("Blue box 2").is_some()));
+    // Delete: the cells that had the style are Normal again.
+    app.update(cx, |app, cx| styles::delete(app, "Blue box", cx));
+    assert_eq!((style_name(&app, cx, "A2"), fill(&app, cx, "A2")), ("Normal".to_string(), None));
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(style_name(&app, cx, "A2"), "Blue box");
+}

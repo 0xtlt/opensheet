@@ -1084,7 +1084,7 @@ impl ExcelApp {
         let style_buttons = vec![
             self.cmd_adaptive("rb-cond", condfmt::Cmd::Menu, cx),
             self.cmd_adaptive("rb-table", tables::Cmd::FormatAs, cx),
-            self.cmd_adaptive("rb-cellstyles", misc::Cmd::CellStyles, cx),
+            self.cmd_adaptive("rb-cellstyles", edit_tools::Cmd::CellStyles, cx),
         ];
         let styles = group(
             t("Styles", "Styles"),

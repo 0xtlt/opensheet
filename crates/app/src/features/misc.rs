@@ -36,7 +36,6 @@ commands! {
     pub enum Cmd {
         Share = "share", t("Share", "Partager");
         // Home
-        CellStyles = "cell-styles", t("Cell Styles", "Styles de cellules");
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert

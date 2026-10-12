@@ -7,6 +7,7 @@
 mod find;
 mod links;
 mod paste;
+mod styles;
 #[cfg(test)]
 mod ui_tests;
 
@@ -57,6 +58,9 @@ commands! {
         RemoveLink = "", t("Remove Link", "Supprimer le lien");
         ClearHyperlinks = "", t("Clear Hyperlinks", "Effacer les liens hypertexte");
         RemoveHyperlinks = "", t("Remove Hyperlinks", "Supprimer les liens hypertexte");
+        // Home ▸ Cell Styles
+        CellStyles = "cell-styles", t("Cell Styles", "Styles de cellules");
+        NewCellStyle = "", t("New Cell Style…", "Nouveau style de cellule…");
     }
 }
 
@@ -100,6 +104,8 @@ impl Command for Cmd {
             }
             Cmd::RemoveLink | Cmd::RemoveHyperlinks => links::remove(app, true, cx),
             Cmd::ClearHyperlinks => links::remove(app, false, cx),
+            Cmd::CellStyles => styles::open_gallery(app, window, cx),
+            Cmd::NewCellStyle => styles::open_dialog(app, styles::Purpose::New, None, window, cx),
             Cmd::PasteSpecial => paste::open(app, window, cx),
             Cmd::PasteLink => paste::paste_link(app, cx),
             Cmd::PasteFormulas
