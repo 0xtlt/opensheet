@@ -47,7 +47,6 @@ commands! {
         Toggle = "filter", t("Filter", "Filtrer");
         Clear = "clear", t("Clear", "Effacer");
         Reapply = "refresh", t("Reapply", "Réappliquer");
-        Advanced = "filter", t("Advanced", "Avancé");
         Sort = "sort-filter", t("Sort", "Trier");
         CustomSort = "sort-filter", t("Custom Sort…", "Tri personnalisé…");
         SortAscending = "sort-asc", t("Sort A to Z", "Trier de A à Z");
@@ -69,6 +68,8 @@ impl Command for Cmd {
         match self {
             // Something to clear or to apply again: a criterion, or the
             // sort remembered with the filter.
+            // An Advanced Filter applied in place is cleared like the others.
+            Cmd::Clear if app.wb.sheets[app.sheet].advanced_filter.is_some() => true,
             Cmd::Clear | Cmd::Reapply => active_scope(app)
                 .and_then(|scope| app.wb.auto_filter(app.sheet, scope))
                 .is_some_and(|filter| filter.is_filtered() || filter.sort.is_some()),
@@ -88,7 +89,6 @@ impl Command for Cmd {
             Cmd::Toggle => toggle(app, cx),
             Cmd::Clear => clear(app, cx),
             Cmd::Reapply => reapply(app, cx),
-            Cmd::Advanced => app.not_implemented(self.label(), cx),
             Cmd::Sort | Cmd::CustomSort => sort::open(app, window, cx),
             Cmd::SortAscending => sort_selection(app, SortOn::Values, false, window, cx),
             Cmd::SortDescending => sort_selection(app, SortOn::Values, true, window, cx),
@@ -434,6 +434,8 @@ fn toggle(app: &mut ExcelApp, cx: &mut Cx) {
     if !app.may(Intent::ToggleAutoFilter, cx) {
         return;
     }
+    // The rows an Advanced Filter hides show again, in the same step.
+    app.wb.clear_advanced_filter(app.sheet);
     match app.wb.toggle_auto_filter(app.sheet, selection) {
         Ok(_) => app.commit(Cmd::Toggle.label(), cx),
         Err(_) => {
@@ -445,6 +447,12 @@ fn toggle(app: &mut ExcelApp, cx: &mut Cx) {
 
 /// Data > Clear: every criterion of the filter and its sort arrow.
 fn clear(app: &mut ExcelApp, cx: &mut Cx) {
+    if app.wb.sheets[app.sheet].advanced_filter.is_some() {
+        if app.may(Intent::UseAutoFilter, cx) && app.wb.clear_advanced_filter(app.sheet) {
+            app.commit(t("Clear Filter", "Effacer le filtre"), cx);
+        }
+        return;
+    }
     let Some(scope) = active_scope(app) else {
         return;
     };

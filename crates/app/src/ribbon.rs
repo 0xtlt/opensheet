@@ -6,8 +6,8 @@
 
 use crate::app::*;
 use crate::features::{
-    self, Command, ViewMode, charts, comments, condfmt, drawings, edit_tools, filters, format_cells, misc, names, page, pivot,
-    protection, tables, validation,
+    self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
+    pivot, protection, tables, validation,
 };
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -1212,8 +1212,10 @@ impl ExcelApp {
                         let entries = vec![
                             MenuEntry::new(t("Down", "En bas"), |a, _, cx| a.fill(Direction::Down, cx)).shortcut("⌘D"),
                             MenuEntry::new(crate::i18n::t_ctx("fill", "Right", "À droite"), |a, _, cx| a.fill(Direction::Right, cx)).shortcut("⌘R"),
+                            MenuEntry::separator(),
+                            MenuEntry::command(data_tools::Cmd::FlashFill, this).shortcut("⌃E"),
                         ];
-                        this.open_menu("rb-fill-series", entries, 180.0, window, cx);
+                        this.open_menu("rb-fill-series", entries, 240.0, window, cx);
                     }),
                     self.labeled("rb-clear", "clear", t("Clear", "Effacer"), true, false, cx, |this, window, cx| {
                         let entries = vec![
@@ -1764,8 +1766,8 @@ impl ExcelApp {
             group(
                 t("Get & Transform Data", "Récupérer et transformer des données"),
                 row(vec![
-                    self.cmd_large("dt-get", misc::Cmd::GetData, true, cx),
-                    self.cmd_large("dt-refresh", misc::Cmd::RefreshAll, true, cx),
+                    self.cmd_large("dt-get", data_tools::Cmd::GetData, true, cx),
+                    self.cmd_large("dt-refresh", data_tools::Cmd::RefreshMenu, true, cx),
                 ]),
             )
             .into_any_element(),
@@ -1784,24 +1786,24 @@ impl ExcelApp {
                     .child(rows(vec![
                         self.cmd_labeled("dt-clear", filters::Cmd::Clear, false, cx),
                         self.cmd_labeled("dt-reapply", filters::Cmd::Reapply, false, cx),
-                        self.cmd_labeled("dt-advanced", filters::Cmd::Advanced, false, cx),
+                        self.cmd_labeled("dt-advanced", data_tools::Cmd::AdvancedFilter, false, cx),
                     ])),
             )
             .into_any_element(),
             group(
                 t("Data Tools", "Outils de données"),
                 row(vec![
-                    self.cmd_large("dt-ttc", misc::Cmd::TextToColumns, false, cx),
-                    self.cmd_large("dt-flash", misc::Cmd::FlashFill, false, cx),
+                    self.cmd_large("dt-ttc", data_tools::Cmd::TextToColumns, false, cx),
+                    self.cmd_large("dt-flash", data_tools::Cmd::FlashFill, false, cx),
                     self.cmd_large("dt-dup", filters::Cmd::RemoveDuplicates, false, cx),
                     self.cmd_large("dt-valid", validation::Cmd::Menu, true, cx),
-                    self.cmd_large("dt-consolidate", misc::Cmd::Consolidate, false, cx),
+                    self.cmd_large("dt-consolidate", data_tools::Cmd::Consolidate, false, cx),
                 ]),
             )
             .into_any_element(),
             group(
                 t("Forecast", "Prévision"),
-                row(vec![self.cmd_large("dt-whatif", misc::Cmd::WhatIf, true, cx)]),
+                row(vec![self.cmd_large("dt-whatif", data_tools::Cmd::WhatIf, true, cx)]),
             )
             .into_any_element(),
             group(

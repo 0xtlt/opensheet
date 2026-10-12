@@ -20,13 +20,13 @@ use super::dxf::Dxfs;
 use super::write::push_number;
 use super::xml::{Event, Reader, Tag, decode_cell_text, push_cell_text};
 use opensheet_engine::filter::{
-    AutoFilter, ColorFilter, Condition, Criteria, CustomFilter, CustomOp, DateGroup, DynamicFilter,
+    AdvancedFilter, AutoFilter, ColorFilter, Condition, Criteria, CustomFilter, CustomOp, DateGroup, DynamicFilter,
     FilterScope, SortState, Top10, ValueFilter,
 };
 use opensheet_engine::ops::{SortLevel, SortOn};
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::style::StylePatch;
-use opensheet_engine::{Color, Rect, Workbook};
+use opensheet_engine::{Color, Rect, Sheet, Workbook};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -174,41 +174,108 @@ pub(crate) fn write_sheet(x: &mut String, wb: &Workbook, sheet: usize, dxfs: &mu
     push_auto_filter(x, wb, sheet, FilterScope::Sheet, dxfs);
 }
 
-/// Whether any sheet has a filter of its own, which a file also names
-/// (see [`push_names`]).
+/// Whether any sheet has a filter of its own or an Advanced Filter, which
+/// a file also names (see [`push_names`]).
 pub(crate) fn has_names(wb: &Workbook) -> bool {
-    wb.sheets.iter().any(|sheet| sheet.auto_filter.is_some())
+    wb.sheets.iter().any(|sheet| sheet.auto_filter.is_some() || sheet.advanced_filter.is_some())
+}
+
+/// `Sheet1!$A$1:$C$7`.
+fn name_text(sheet: &str, range: Rect) -> String {
+    let mut text = String::new();
+    opensheet_engine::ast::write_sheet_name(sheet, &mut text);
+    text.push('!');
+    for (n, (row, col)) in [(range.r0, range.c0), (range.r1, range.c1)]
+        .into_iter()
+        .enumerate()
+    {
+        if n == 1 {
+            text.push(':');
+        }
+        let name = cell_name(row, col);
+        let letters = name.trim_end_matches(|c: char| c.is_ascii_digit());
+        w!(text, "${letters}${}", row + 1);
+    }
+    text
 }
 
 /// Append the hidden defined names Excel keeps beside the filters of the
 /// sheets (children of `<definedNames>`): `_xlnm._FilterDatabase`, the
-/// range of the filter with its header row.
+/// range of the filter with its header row (the list, for an Advanced
+/// Filter in place), and `_xlnm.Criteria`, the criteria range of an
+/// Advanced Filter.
 pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
     for (index, sheet) in wb.sheets.iter().enumerate() {
-        let Some(filter) = &sheet.auto_filter else {
+        let advanced = sheet.advanced_filter.as_ref();
+        if let Some(criteria) = advanced.and_then(|filter| filter.criteria) {
+            w!(x, "<definedName name=\"_xlnm.Criteria\" localSheetId=\"{index}\">");
+            push_cell_text(x, &name_text(&sheet.name, criteria));
+            x.push_str("</definedName>");
+        }
+        let Some(range) = sheet.auto_filter.as_ref().map(|filter| filter.range).or(advanced.map(|filter| filter.range)) else {
             continue;
         };
-        let mut text = String::new();
-        opensheet_engine::ast::write_sheet_name(&sheet.name, &mut text);
-        text.push('!');
-        let range = filter.range;
-        for (n, (row, col)) in [(range.r0, range.c0), (range.r1, range.c1)]
-            .into_iter()
-            .enumerate()
-        {
-            if n == 1 {
-                text.push(':');
-            }
-            let name = cell_name(row, col);
-            let letters = name.trim_end_matches(|c: char| c.is_ascii_digit());
-            w!(text, "${letters}${}", row + 1);
-        }
         w!(
             x,
             "<definedName name=\"_xlnm._FilterDatabase\" localSheetId=\"{index}\" hidden=\"1\">"
         );
-        push_cell_text(x, &text);
+        push_cell_text(x, &name_text(&sheet.name, range));
         x.push_str("</definedName>");
+    }
+}
+
+/// The range a filter name of a file stands for (`Sheet1!$A$1:$C$7`).
+fn name_range(text: &str) -> Option<Rect> {
+    let cells = text.rsplit('!').next()?;
+    Rect::parse(&cells.replace('$', ""))
+}
+
+/// `<sheetPr filterMode="1">` was read on a sheet: rows are hidden by a
+/// filter. When the sheet turns out to have no `<autoFilter>`, it is an
+/// Advanced Filter, whose list the names of the workbook give
+/// ([`read_name`]).
+pub(crate) fn read_filter_mode(sheet: &mut Sheet) {
+    sheet.advanced_filter = Some(AdvancedFilter::default());
+}
+
+/// Take a defined name of the workbook part if it belongs to the filters
+/// (`name` in upper case): the list and the criteria of an Advanced
+/// Filter are read, the others only recognised. Returns whether it was
+/// one of them.
+pub(crate) fn read_name(name: &str, text: &str, sheet: Option<&mut Sheet>) -> bool {
+    let list = name == "_XLNM._FILTERDATABASE";
+    if !list && name != "_XLNM.CRITERIA" {
+        return false;
+    }
+    let Some(sheet) = sheet else {
+        return true;
+    };
+    let (Some(filter), Some(range)) = (sheet.advanced_filter.as_mut(), name_range(text)) else {
+        return true;
+    };
+    if !list {
+        filter.criteria = Some(range);
+    } else if sheet.auto_filter.is_none() && range.rows() > 1 {
+        // The rows hidden under the header of the list are those the
+        // filter hides: the file is the truth, as for an AutoFilter.
+        filter.range = range;
+        let rows: Vec<u32> = sheet.hidden_rows.range(range.r0 + 1..=range.r1).copied().collect();
+        for row in rows {
+            sheet.hidden_rows.remove(&row);
+            sheet.filtered_rows.insert(row);
+            filter.hidden.insert(row);
+        }
+    }
+    true
+}
+
+/// Once the names are read: a sheet in filter mode without the list of an
+/// Advanced Filter was filtered by its AutoFilter or by a table.
+pub(crate) fn finish_names(wb: &mut Workbook) {
+    for sheet in &mut wb.sheets {
+        if sheet.advanced_filter.as_ref().is_some_and(|filter| filter.range.rows() < 2) {
+            sheet.advanced_filter = None;
+        }
     }
 }
 

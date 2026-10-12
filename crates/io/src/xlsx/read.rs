@@ -846,7 +846,7 @@ impl Ctx<'_> {
 }
 
 /// Parse an A1-style cell reference into 0-based (row, col).
-fn parse_cell_ref(s: &str) -> Option<(u32, u32)> {
+pub(crate) fn parse_cell_ref(s: &str) -> Option<(u32, u32)> {
     let mut col = 0u32;
     let mut row = 0u32;
     let mut letters = 0;
@@ -971,10 +971,12 @@ impl<'c> SheetReader<'c> {
                         this.sheet.protection = protection::read_sheet(&t);
                         r.skip(&t);
                     }
+                    "scenarios" => super::datatools::read_scenarios(&mut r, &t, &mut this.sheet, ctx.locale),
                     "autoFilter" => {
                         this.sheet.auto_filter =
                             super::filter::parse_auto_filter(&mut r, &t, ctx.filter_colors)
                     }
+                    "dataConsolidate" => super::datatools::read_consolidate(&mut r, &t, &mut this.sheet),
                     "mergeCells" => this.merges(&mut r, &t),
                     "conditionalFormatting" => {
                         let ctx = this.cond_format_context();
@@ -1037,6 +1039,9 @@ impl<'c> SheetReader<'c> {
     }
 
     fn sheet_pr<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
+        if tag.attr_bool("filterMode") == Some(true) {
+            super::filter::read_filter_mode(&mut self.sheet);
+        }
         if tag.empty {
             return;
         }
@@ -1317,9 +1322,9 @@ impl<'c> SheetReader<'c> {
                         self.arrays.push((range, (row, col)));
                     }
                 }
-                // What-if data tables have no formula the engine could run;
-                // their cached results are kept as constants.
-                Some("dataTable") => {}
+                // A what-if data table: its results are constants the
+                // engine works out again, see `whatif.rs`.
+                Some("dataTable") => super::datatools::read_table(&f, &mut self.sheet),
                 _ => expr = from_file_text(&text),
             }
         }
@@ -1660,6 +1665,9 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         loaded_as.clear();
     }
 
+    // The text files the sheets import; the names below say where.
+    let mut imports = super::datatools::PendingImports::read(&mut pkg, &sheet_parts);
+
     // Workbook-scoped names first: a name scoped to a sheet that was not
     // loaded (a chart sheet) is kept for the workbook, where it may only
     // take a spelling that is still free.
@@ -1675,6 +1683,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         // like) belong to features that keep their ranges elsewhere.
         let sheet = scope.and_then(|sheet| wb.sheets.get_mut(sheet));
         if page::read_name(&key, &raw.text, sheet)
+            || super::filter::read_name(&key, &raw.text, scope.and_then(|sheet| wb.sheets.get_mut(sheet)))
+            || imports.read_name(&key, &raw.text, scope)
             || raw.name.is_empty()
             || key.starts_with("_XLNM.")
         {
@@ -1693,6 +1703,9 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             comment: raw.comment,
         });
     }
+
+    super::filter::finish_names(&mut wb);
+    imports.finish(&mut wb);
 
     // Formulas the engine cannot calculate keep their cached result.
     super::formula::keep_cached_results(&mut wb);

@@ -80,6 +80,15 @@ pub struct Sheet {
     /// Rows hidden by a filter (of the sheet or of a table), kept apart
     /// from the rows the user hid by hand.
     pub filtered_rows: BTreeSet<u32>,
+    /// The Advanced Filter applied in place, see `filter/advanced.rs`.
+    pub advanced_filter: Option<crate::filter::AdvancedFilter>,
+    /// The settings of the last Data > Consolidate into this sheet.
+    pub consolidation: Option<crate::consolidate::Consolidation>,
+    /// Scenarios and data tables (What-If Analysis), see `whatif.rs`.
+    pub scenarios: Vec<crate::whatif::Scenario>,
+    pub data_tables: Vec<crate::whatif::DataTable>,
+    /// The text files imported into this sheet, see `text_columns.rs`.
+    pub text_imports: Vec<crate::text_columns::TextImport>,
     /// Tables ("Format as Table"), see `table.rs`.
     pub tables: Vec<crate::table::Table>,
     /// Conditional formats, in priority order, see `condfmt.rs`.
@@ -127,6 +136,11 @@ impl Sheet {
             charts: Vec::new(),
             auto_filter: None,
             filtered_rows: BTreeSet::new(),
+            advanced_filter: None,
+            consolidation: None,
+            scenarios: Vec::new(),
+            data_tables: Vec::new(),
+            text_imports: Vec::new(),
             tables: Vec::new(),
             cond_formats: Vec::new(),
             validations: Vec::new(),

@@ -50,6 +50,9 @@ pub(crate) struct SheetLinks {
     /// The hyperlinks leading outside the workbook, in the order of
     /// `Sheet::hyperlinks` (`<hyperlinks>`).
     pub hyperlinks: Vec<usize>,
+    /// The query tables of the text imports, in the order of
+    /// `Sheet::text_imports`; no element.
+    pub queries: Vec<usize>,
 }
 
 impl SheetLinks {
@@ -73,6 +76,7 @@ impl SheetLinks {
             tables: sheet.tables.iter().filter_map(|_| id(true)).collect(),
             pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
             hyperlinks: sheet.hyperlinks.iter().filter_map(|link| id(!link.address.is_empty())).collect(),
+            queries: sheet.text_imports.iter().filter_map(|_| id(true)).collect(),
         }
     }
 
@@ -147,6 +151,7 @@ impl Extras {
         super::table::add_parts(wb, &mut extras, dxfs);
         super::pivot::add_parts(wb, &mut extras, dxfs);
         super::hyperlink::add_parts(wb, &mut extras);
+        super::datatools::add_parts(wb, &mut extras);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),

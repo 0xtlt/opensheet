@@ -71,12 +71,6 @@ commands! {
         CalcNow = "misc-calc-now", t("Calculate Now", "Calculer maintenant");
         CalcSheet = "misc-calc-sheet", t("Calculate Sheet", "Calculer la feuille");
         // Data
-        GetData = "data", t("Get Data", "Obtenir des données");
-        RefreshAll = "refresh", t("Refresh All", "Actualiser tout");
-        TextToColumns = "columns", t("Text to Columns", "Convertir");
-        FlashFill = "fill-down", t("Flash Fill", "Remplissage instantané");
-        Consolidate = "grid", t("Consolidate", "Consolider");
-        WhatIf = "calculator", t("What-If Analysis", "Analyse de scénarios");
         GroupRows = "group-objects", t_ctx("outline", "Group", "Grouper");
         UngroupRows = "group-objects", t_ctx("outline", "Ungroup", "Dissocier");
         Subtotal = "calculator", t("Subtotal", "Sous-total");

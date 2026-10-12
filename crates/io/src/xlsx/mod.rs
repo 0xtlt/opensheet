@@ -33,6 +33,7 @@ mod chart;
 mod color;
 mod comments;
 mod condfmt;
+mod datatools;
 mod defaults;
 mod drawing;
 mod dxf;

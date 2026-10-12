@@ -318,7 +318,9 @@ fn sheet_filters_from_excel() {
     let plain = load(&excel_package("<autoFilter ref=\"A1:C6\"/>"));
     assert!(plain.sheets[0].filtered_rows.is_empty());
     assert_eq!(rows(&plain.sheets[0].hidden_rows), [2, 4, 7]);
-    // No filter at all, or one that is nowhere.
+    // No filter at all, or one that is nowhere: the sheet is in filter
+    // mode and its list has a name, which is how Excel keeps an Advanced
+    // Filter applied in place. The rows of the list are hidden by it.
     for none in [
         "",
         "<autoFilter/>",
@@ -326,7 +328,10 @@ fn sheet_filters_from_excel() {
     ] {
         let wb = load(&excel_package(none));
         assert!(wb.sheets[0].auto_filter.is_none(), "{none}");
-        assert_eq!(rows(&wb.sheets[0].hidden_rows), [2, 4, 7]);
+        let advanced = wb.sheets[0].advanced_filter.as_ref().expect("an Advanced Filter");
+        assert_eq!(advanced.range, rect("A1:C6"), "{none}");
+        assert_eq!(rows(&wb.sheets[0].filtered_rows), [2, 4], "{none}");
+        assert_eq!(rows(&wb.sheets[0].hidden_rows), [7], "{none}");
     }
 }
 

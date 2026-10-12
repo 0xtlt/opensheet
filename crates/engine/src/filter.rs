@@ -12,6 +12,10 @@
 //! Criteria are evaluated when they are set and on "Reapply", never behind
 //! the user's back when cells change, as in Excel.
 
+mod advanced;
+
+pub use advanced::{AdvancedFilter, AdvancedFilterError};
+
 use crate::ast::StructuralEdit;
 use crate::datetime::{date_to_serial, now_serial, serial_to_hms, serial_to_ymd, weekday};
 use crate::eval::compare_text;
@@ -1080,6 +1084,10 @@ impl Workbook {
             }
         }
         let sh = &mut self.sheets[sheet];
+        // The rows an Advanced Filter hides stay hidden until it is cleared.
+        if let Some(advanced) = &sh.advanced_filter {
+            hidden.extend(advanced.hidden.iter().copied());
+        }
         sh.filtered_rows = hidden;
         if let (Some(filter), Some(range)) = (&mut sh.auto_filter, grown) {
             filter.range = range;
@@ -1513,6 +1521,7 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     if sheet.auto_filter.as_mut().is_some_and(|f| !f.adjust(edit)) {
         sheet.auto_filter = None;
     }
+    advanced::on_structural_edit(sheet, edit);
 }
 
 /// See `features::on_sheet_renamed`.

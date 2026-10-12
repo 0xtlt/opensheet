@@ -1189,6 +1189,9 @@ impl Workbook {
     pub fn formula_bar_text(&self, sheet: usize, row: u32, col: u32) -> String {
         if self.is_formula_hidden(sheet, row, col) {
             String::new()
+        } else if let Some(table) = self.data_table_text(sheet, row, col) {
+            // A result of a data table reads as Excel's array formula.
+            table
         } else {
             self.edit_text(sheet, row, col)
         }

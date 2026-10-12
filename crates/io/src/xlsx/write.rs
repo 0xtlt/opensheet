@@ -823,7 +823,23 @@ impl SheetWriter<'_> {
                                 array,
                             );
                         }
-                        Content::Value(value) => self.push_constant(x, row, col, xf, value),
+                        // The first result of a data table carries its formula.
+                        Content::Value(value) => match super::datatools::table_formula(sheet, row, col) {
+                            Some(table) => {
+                                x.push_str("<c r=\"");
+                                push_cell_ref(x, row, col);
+                                x.push('"');
+                                if xf != 0 {
+                                    w!(x, " s=\"{xf}\"");
+                                }
+                                x.push_str(value_type(value));
+                                x.push('>');
+                                x.push_str(&table);
+                                push_v(x, value);
+                                x.push_str("</c>");
+                            }
+                            None => self.push_constant(x, row, col, xf, value),
+                        },
                         // A formatted but empty cell may sit under a spill.
                         Content::Empty => {
                             self.push_constant(x, row, col, xf, spill.unwrap_or(&Value::Empty))
@@ -864,8 +880,10 @@ impl SheetWriter<'_> {
         // one goes between its neighbours of the list.
 
         // sheetPr: tabColor, then pageSetUpPr
-        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) {
-            x.push_str("<sheetPr>");
+        // filterMode: rows are hidden by an Advanced Filter.
+        let filter_mode = sheet.advanced_filter.is_some();
+        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode {
+            x.push_str(if filter_mode { "<sheetPr filterMode=\"1\">" } else { "<sheetPr>" });
             if let Some(color) = sheet.tab_color {
                 push_rgb(&mut x, "tabColor", color);
             }
@@ -891,8 +909,12 @@ impl SheetWriter<'_> {
         if let Some(protection) = &sheet.protection {
             protection::write_sheet(&mut x, protection);
         }
+        // scenarios
+        super::datatools::write_scenarios(&mut x, sheet, self.wb.locale);
         // autoFilter (the rows it hides are hidden rows of sheetData)
         super::filter::write_sheet(&mut x, self.wb, index, self.dxfs);
+        // dataConsolidate
+        super::datatools::write_consolidate(&mut x, sheet);
         // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {
@@ -958,8 +980,10 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         .into_iter()
         .filter(|(_, def)| is_valid_name(&def.name))
         .collect();
-    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) {
+    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) || super::datatools::has_names(wb) {
         x.push_str("<definedNames>");
+        // The cells each imported text file fills.
+        super::datatools::push_names(&mut x, wb);
         // The ranges of the sheets' filters, which Excel keeps as hidden
         // names beside the filters themselves.
         super::filter::push_names(&mut x, wb);
