@@ -1193,8 +1193,10 @@ impl ExcelApp {
                         let entries = vec![
                             MenuEntry::new(t("Down", "En bas"), |a, _, cx| a.fill(Direction::Down, cx)).shortcut("⌘D"),
                             MenuEntry::new(crate::i18n::t_ctx("fill", "Right", "À droite"), |a, _, cx| a.fill(Direction::Right, cx)).shortcut("⌘R"),
+                            MenuEntry::separator(),
+                            MenuEntry::command(data_tools::Cmd::FlashFill, this).shortcut("⌃E"),
                         ];
-                        this.open_menu("rb-fill-series", entries, 180.0, window, cx);
+                        this.open_menu("rb-fill-series", entries, 240.0, window, cx);
                     }),
                     self.labeled("rb-clear", "clear", t("Clear", "Effacer"), true, false, cx, |this, window, cx| {
                         let entries = vec![
@@ -1767,7 +1769,7 @@ impl ExcelApp {
                 t("Data Tools", "Outils de données"),
                 row(vec![
                     self.cmd_large("dt-ttc", data_tools::Cmd::TextToColumns, false, cx),
-                    self.cmd_large("dt-flash", misc::Cmd::FlashFill, false, cx),
+                    self.cmd_large("dt-flash", data_tools::Cmd::FlashFill, false, cx),
                     self.cmd_large("dt-dup", filters::Cmd::RemoveDuplicates, false, cx),
                     self.cmd_large("dt-valid", validation::Cmd::Menu, true, cx),
                     self.cmd_large("dt-consolidate", misc::Cmd::Consolidate, false, cx),

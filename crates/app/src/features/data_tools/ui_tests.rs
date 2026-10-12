@@ -209,3 +209,52 @@ fn text_to_columns_refusals(cx: &mut TestAppContext) {
     assert!(modal_open(&app, cx));
     assert_eq!(value(&app, cx, "A1"), text("a b"));
 }
+
+// --------------------------------------------------------------- Flash Fill
+
+#[gpui::test]
+fn flash_fill_from_the_keyboard(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("A3", "Victor Hugo"), ("B1", "Dupont, J.")]);
+    select(&app, cx, "B2");
+    cx.simulate_keystrokes("ctrl-e");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "B2"), text("Curie, M."));
+    assert_eq!(value(&app, cx, "B3"), text("Hugo, V."));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Flash Fill"));
+    // One step back, and the command of the ribbon does the same.
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "B2"), Value::Empty);
+    assert_eq!(value(&app, cx, "B3"), Value::Empty);
+    run(&app, cx, Cmd::FlashFill);
+    assert_eq!(value(&app, cx, "B3"), text("Hugo, V."));
+}
+
+#[gpui::test]
+fn flash_fill_without_a_pattern_says_so(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("B1", "xyz")]);
+    select(&app, cx, "B2");
+    run(&app, cx, Cmd::FlashFill);
+    assert!(modal_open(&app, cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "B2"), Value::Empty);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
+}
+
+#[gpui::test]
+fn flash_fill_respects_protection(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("B1", "Jean")]);
+    edit(&app, cx, |wb| {
+        wb.protect_sheet(0, Default::default(), "");
+    });
+    select(&app, cx, "B2");
+    run(&app, cx, Cmd::FlashFill);
+    // The protection message, and nothing written.
+    assert!(modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "B2"), Value::Empty);
+}

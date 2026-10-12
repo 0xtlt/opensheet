@@ -2628,6 +2628,8 @@ pub static ES: &[(&str, &str)] = &[
     ("Next >", "Siguiente >"),
     ("Finish", "Finalizar"),
     ("Preview of selected data:", "Vista previa de los datos seleccionados:"),
+    ("We looked at all the data next to your selection and didn't see a pattern for filling in values for you.\n\nTo use Flash Fill, enter a couple of examples of the output you'd like to see, keep the active cell in the column you want filled in, and click the Flash Fill button again.", "Se han comprobado todos los datos junto a la selección y no se ha observado ningún patrón para rellenar valores.\n\nPara usar el Relleno rápido, especifique un par de ejemplos de los datos que desea ver, mantenga la celda activa en la columna en la que desea que se rellenen los datos y vuelva a hacer clic en el botón Relleno rápido."),
+    ("Flash Fill Changed Cells", "Relleno rápido en  las celdas modificadas"),
 ];
 
 pub static DE: &[(&str, &str)] = &[
@@ -5235,6 +5237,8 @@ pub static DE: &[(&str, &str)] = &[
     ("Next >", "Weiter >"),
     ("Finish", "Fertig stellen"),
     ("Preview of selected data:", "Vorschau der markierten Daten:"),
+    ("We looked at all the data next to your selection and didn't see a pattern for filling in values for you.\n\nTo use Flash Fill, enter a couple of examples of the output you'd like to see, keep the active cell in the column you want filled in, and click the Flash Fill button again.", "Wir haben alle Daten neben Ihrer Auswahl untersucht und konnten kein Muster zum Ausfüllen mit Werten erkennen.\n\nGeben Sie zum Verwenden der Blitzvorschau einige Beispiele für die gewünschte Ausgabe ein, halten Sie die aktive Zelle in der Spalte, die mit Werten gefüllt werden soll, und klicken Sie dann erneut auf die Schaltfläche \"Blitzvorschau\"."),
+    ("Flash Fill Changed Cells", "Blitzvorschau für geänderte Zellen"),
 ];
 
 pub static IT: &[(&str, &str)] = &[
@@ -7836,4 +7840,6 @@ pub static IT: &[(&str, &str)] = &[
     ("Next >", "Avanti >"),
     ("Finish", "Fine"),
     ("Preview of selected data:", "Anteprima dei dati selezionati:"),
+    ("We looked at all the data next to your selection and didn't see a pattern for filling in values for you.\n\nTo use Flash Fill, enter a couple of examples of the output you'd like to see, keep the active cell in the column you want filled in, and click the Flash Fill button again.", "Sono stati esaminati i dati accanto alla selezione e non è stato possibile identificare un criterio per la compilazione automatica dei valori.\n\nPer usare Anteprima suggerimenti, aggiungere alcuni esempi dell'output che si vuole ottenere, mantenere la cella attiva nella colonna da compilare e fare nuovamente clic sul pulsante Anteprima suggerimenti."),
+    ("Flash Fill Changed Cells", "Celle modificate Anteprima suggerimenti"),
 ];

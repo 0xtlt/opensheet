@@ -29,6 +29,7 @@ fn bind_keys(cx: &mut App) {
     widgets::bind_keys(cx);
     features::comments::bind_keys(cx);
     features::misc::bind_keys(cx);
+    features::data_tools::bind_keys(cx);
     let g = Some("Grid");
     let w = Some("Workbook");
     cx.bind_keys([

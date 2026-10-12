@@ -15,6 +15,7 @@ pub mod drawing;
 pub mod eval;
 pub mod features;
 pub mod filter;
+pub mod flashfill;
 pub mod format;
 pub mod functions;
 pub mod input;
