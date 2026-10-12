@@ -10,6 +10,7 @@ use opensheet_engine::condfmt::{
     HighlightFormat, IconRule, IconSet, IconThreshold, Rule, ScalePreset, TextOp, TimePeriod,
     result_at,
 };
+use opensheet_engine::page::{Margins, Orientation, PaperSize};
 use opensheet_engine::parser::parse_formula;
 use opensheet_engine::style::{Border, BorderStyle, StylePatch, Underline};
 use opensheet_engine::validation::{Validation, ValidationKind};
@@ -1014,4 +1015,65 @@ fn rules_that_cannot_be_written_are_left_out() {
     assert!(!sheet.contains("extLst") && !sheet.contains("stopIfTrue"));
     assert!(part(&bytes, "xl/styles.xml").contains("<dxfs count=\"1\">"));
     assert_eq!(load(&bytes).sheets[0].cond_formats.len(), 4);
+}
+
+/// Everything a sheet keeps after its cells, at once: the rules before
+/// the page setup, the extension list of rules and validation after it.
+#[test]
+fn rules_and_page_setup_share_a_sheet() {
+    let mut wb = sample();
+    assert!(wb.set_print_area(0, &rects("A1:G20")));
+    assert!(wb.set_print_titles(0, Some((0, 0)), Some((0, 0))));
+    assert!(wb.insert_page_break(0, Some(10), Some(4)));
+    assert!(wb.update_page_setup(0, |page| {
+        page.paper = Some(PaperSize::A4);
+        page.orientation = Orientation::Landscape;
+        page.fit_to_page = true;
+        page.fit_height = 0;
+        page.gridlines = true;
+        page.center_horizontally = true;
+        page.margins = Margins::NARROW;
+        let hf = &mut page.header_footer;
+        hf.odd_header = "&L&A&C&\"Arial,Bold\"&14Scores&R&D".into();
+        hf.odd_footer = "&CPage &P of &N".into();
+        hf.first_header = "&CFirst page".into();
+        hf.different_first = true;
+    }));
+    assert!(wb.set_print_area(1, &rects("A1:B1")));
+    wb.commit("page setup");
+
+    let bytes = to_bytes(&wb);
+    common::keep_sample("conditional-formats-and-page-setup.xlsx", &bytes);
+    let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
+    assert_well_formed("sheet1.xml", &sheet);
+    assert_worksheet_order("sheet1.xml", &sheet);
+    let order = [
+        "<pageSetUpPr fitToPage=\"1\"/></sheetPr>",
+        "</sheetData>",
+        "<conditionalFormatting ",
+        "<printOptions ",
+        "<pageMargins ",
+        "<pageSetup ",
+        "<headerFooter ",
+        "<rowBreaks ",
+        "<colBreaks ",
+        "<x14:conditionalFormattings>",
+        "<x14:dataValidations ",
+    ];
+    let places: Vec<usize> = order
+        .iter()
+        .map(|tag| sheet.find(tag).unwrap_or_else(|| panic!("no {tag}")))
+        .collect();
+    assert!(places.is_sorted(), "{places:?}");
+    assert!(part(&bytes, "xl/workbook.xml").contains(concat!(
+        "<definedName name=\"_xlnm.Print_Area\" localSheetId=\"1\">",
+        "'Limits &amp; more'!$A$1:$B$1</definedName>"
+    )));
+
+    let loaded = load(&bytes);
+    for (a, b) in wb.sheets.iter().zip(&loaded.sheets) {
+        assert_eq!(a.cond_formats, b.cond_formats, "{}", a.name);
+        assert_eq!(a.validations, b.validations, "{}", a.name);
+        assert_eq!(a.page, b.page, "{}", a.name);
+    }
 }
