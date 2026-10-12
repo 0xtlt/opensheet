@@ -1408,8 +1408,8 @@ fn notes_and_threads_from_excel() {
 
 #[test]
 fn boxes_are_measured_on_the_sheet_of_the_file() {
-    // Excel for Mac: wider columns and taller rows by default, which the
-    // engine does not have. The box keeps the size it had there.
+    // Excel for Mac: wider columns and taller rows by default. The box is
+    // measured with the sizes the sheet got from the file.
     let sheet = format!(
         r#"{DECL}<worksheet xmlns="{MAIN}" xmlns:r="{REL}"><sheetFormatPr baseColWidth="10" defaultRowHeight="16"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><legacyDrawing r:id="rId1"/></worksheet>"#
     );
@@ -1435,12 +1435,12 @@ fn boxes_are_measured_on_the_sheet_of_the_file() {
     let wb = load(&bytes);
     let frame = note_at(&wb, 0, "C3").frame.expect("a box of its own");
     assert_eq!((frame.anchor, frame.offset), ((4, 5), (10.0, 3.0)));
-    // Two columns of 80 px and 20 more; four rows of 16 points and 3 more.
+    // Two columns of 80 px and 20 more; four rows of 16 points (whole
+    // pixels on the sheet) and 3 more.
     assert_eq!(frame.size.0, 180.0);
-    assert!(
-        (frame.size.1 - (4.0 * 16.0 * 96.0 / 72.0 + 3.0)).abs() < 0.01,
-        "{frame:?}"
-    );
+    let row = wb.sheets[0].default_row_height;
+    assert_eq!(row, 21.0);
+    assert!((frame.size.1 - (4.0 * row + 3.0)).abs() < 0.01, "{frame:?}");
 }
 
 // ---- damage ----------------------------------------------------------------------
