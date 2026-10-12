@@ -728,7 +728,7 @@ fn legend_title_and_areas() {
     let prims = lay(&w, &chart);
     let (north, west) = (find_text(&prims, "North"), find_text(&prims, "West"));
     assert_eq!(north.x, west.x);
-    assert!(north.x > 400.0 && north.y < 60.0 && west.y == north.y + 30.0);
+    assert!(north.x > 400.0 && north.y < 60.0 && west.y == north.y + 36.0);
     // Laid over the plot, legend and title take no room from it.
     let right_end = |prims: &[Prim]| lines(prims, GRIDLINE).iter().map(|l| l.2).fold(0.0, f32::max);
     let top_end = |prims: &[Prim]| lines(prims, GRIDLINE).iter().map(|l| l.1).fold(f32::INFINITY, f32::min);

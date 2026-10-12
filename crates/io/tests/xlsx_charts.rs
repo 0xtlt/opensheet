@@ -474,7 +474,7 @@ fn chart_parts_say_what_the_model_says() {
         "on the value axis only"
     );
     // An automatic title: a title element without text, and not deleted.
-    assert!(column.contains("<c:chart><c:title><c:overlay val=\"0\"/></c:title><c:autoTitleDeleted val=\"0\"/><c:plotArea>"));
+    assert!(column.contains("<c:chart><c:title><c:overlay val=\"0\"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"1400\" b=\"0\"/></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr></c:title><c:autoTitleDeleted val=\"0\"/><c:plotArea>"));
     assert!(!column.contains("<c:dLbls>") && !column.contains("srgbClr val=\"C00000\""));
     // The automatic colours of the series are spelled out: Excel would take
     // them from a theme, and the package has none.
@@ -4678,7 +4678,7 @@ fn title_legend_and_areas() {
     let parts = assert_round_trip(vec![c, bare]);
     let xml = &parts[0];
     assert!(xml.contains(
-        "<c:chart><c:title><c:overlay val=\"1\"/></c:title><c:autoTitleDeleted val=\"0\"/>"
+        "<c:chart><c:title><c:overlay val=\"1\"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"1400\" b=\"0\"/></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr></c:title><c:autoTitleDeleted val=\"0\"/>"
     ));
     assert!(xml.contains("</c:valAx><c:spPr><a:solidFill><a:srgbClr val=\"FFFFFF\"/></a:solidFill><a:ln w=\"9525\"><a:solidFill><a:srgbClr val=\"D9D9D9\"/></a:solidFill></a:ln></c:spPr></c:plotArea><c:legend><c:legendPos val=\"tr\"/><c:legendEntry><c:idx val=\"2\"/><c:delete val=\"1\"/></c:legendEntry><c:legendEntry><c:idx val=\"0\"/><c:delete val=\"1\"/></c:legendEntry><c:overlay val=\"1\"/></c:legend><c:plotVisOnly val=\"1\"/><c:dispBlanksAs val=\"span\"/></c:chart><c:spPr><a:solidFill><a:srgbClr val=\"102030\"/></a:solidFill><a:ln w=\"31750\"><a:solidFill><a:srgbClr val=\"405060\"/></a:solidFill><a:prstDash val=\"lgDashDotDot\"/></a:ln></c:spPr><c:txPr>"), "{xml}");
     let xml = &parts[1];

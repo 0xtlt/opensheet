@@ -249,7 +249,16 @@ fn push_title(x: &mut String, text: Option<&str>, size: u32, upright: bool, over
         }
         x.push_str("</c:rich></c:tx>");
     }
-    w!(x, "<c:overlay val=\"{}\"/></c:title>", overlay as u8);
+    w!(x, "<c:overlay val=\"{}\"/>", overlay as u8);
+    if text.is_none() {
+        // Excel writes the title it makes up small and bold unless told
+        // otherwise: it is drawn like any other title.
+        w!(
+            x,
+            "<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"{size}\" b=\"0\"/></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr>"
+        );
+    }
+    x.push_str("</c:title>");
 }
 
 /// `<c:numFmt>` of an axis or of data labels that do not show the format

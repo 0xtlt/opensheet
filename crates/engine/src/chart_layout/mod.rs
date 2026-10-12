@@ -833,7 +833,9 @@ impl Painter<'_> {
                 }
                 LegendPos::Right | LegendPos::Left | LegendPos::TopRight => {
                     let col_w = (0..entries.len()).map(entry_w).fold(0.0f32, f32::max);
-                    let total_h = label_h * entries.len() as f32;
+                    // Entries under each other stand a little apart, as in Excel.
+                    let pitch = (label_h * 1.2).round();
+                    let total_h = pitch * entries.len() as f32;
                     let x = if chart.legend == LegendPos::Left {
                         let x = left;
                         if reserve {
@@ -857,7 +859,7 @@ impl Painter<'_> {
                         if x >= 0.0 && x + mark <= w && y + label_h <= h {
                             placed.push((i, x, y));
                         }
-                        y += label_h;
+                        y += pitch;
                     }
                 }
                 LegendPos::None => {}
