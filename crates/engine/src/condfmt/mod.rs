@@ -37,7 +37,7 @@ pub use model::{
     BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, Icon, IconRule, IconSet,
     IconThreshold, Rule, TextOp, TimePeriod,
 };
-pub use presets::{BarColor, HighlightFormat, ScalePreset};
+pub use presets::{BarColor, HighlightFormat, ScalePreset, number_span};
 
 #[cfg(test)]
 mod tests;

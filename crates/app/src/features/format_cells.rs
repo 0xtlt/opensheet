@@ -5,6 +5,10 @@
 //! selected cells disagree on is shown blank (or as a mixed check box) and
 //! is left alone unless the user sets it: only what was touched is applied,
 //! in one undo step.
+//!
+//! [`open_partial`] opens the same dialog on a partial format instead (what
+//! a conditional format changes): only the tabs and controls such a format
+//! can use are shown, and OK hands the format back to the caller.
 
 mod number;
 
@@ -25,7 +29,7 @@ use gpui::{
     canvas, div, prelude::*, px,
 };
 use opensheet_engine::format;
-use opensheet_engine::style::{Border, BorderStyle, Color, HAlign, Style, Underline, VAlign};
+use opensheet_engine::style::{Border, BorderStyle, Color, HAlign, Style, StylePatch, Underline, VAlign};
 use opensheet_engine::{Locale, Rect, Value};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -230,6 +234,78 @@ impl Opening {
     }
 }
 
+/// The tabs shown for a partial format.
+const PARTIAL_TABS: [usize; 4] = [TAB_NUMBER, TAB_FONT, TAB_BORDER, TAB_FILL];
+
+/// A partial format being edited and who gets it back.
+struct Partial {
+    /// The format the dialog (or its Clear button) started from.
+    base: StylePatch,
+    on_ok: Rc<dyn Fn(&StylePatch, &mut Window, &mut App)>,
+}
+
+impl Opening {
+    /// What the dialog shows for a partial format. The format is laid over
+    /// two styles that differ in everything it could set: what it leaves
+    /// alone then reads as "the cells disagree", which the dialog shows
+    /// blank and does not apply.
+    fn partial(app: &ExcelApp, format: &StylePatch, tab: usize) -> Opening {
+        let mut opening = Opening::of(app, tab);
+        let mut first = Style::default();
+        let mut second = Style::default();
+        second.font.name = Arc::from("");
+        second.font.size = 2;
+        second.font.bold = true;
+        second.font.italic = true;
+        second.font.underline = Underline::Single;
+        second.font.strike = true;
+        second.font.color = Some(Color(0x010101));
+        second.fill = Some(Color(0x010101));
+        second.num_fmt = Arc::from("0.000000000000");
+        format.apply(&mut first);
+        format.apply(&mut second);
+        opening.tab = if PARTIAL_TABS.contains(&tab) { tab } else { TAB_FONT };
+        opening.styles = vec![first, second];
+        opening.merged = Some(false);
+        opening.many_rows = false;
+        opening.many_cols = false;
+        // An edge the format does not set is an edge without a line.
+        let edge = |border: Option<Border>| Some(border.unwrap_or(Border::NONE));
+        opening.edges = [
+            edge(format.border_top),
+            edge(format.border_bottom),
+            edge(format.border_left),
+            edge(format.border_right),
+            Some(Border::NONE),
+            Some(Border::NONE),
+        ];
+        opening
+    }
+}
+
+/// Open the dialog on a partial format (a conditional format): the Number,
+/// Font, Border and Fill tabs, without what such a format cannot change
+/// (the font and its size, thick lines). `on_ok` receives the format the
+/// user leaves the dialog with; nothing is applied to the workbook.
+pub fn open_partial(
+    app: &mut ExcelApp,
+    format: StylePatch,
+    window: &mut Window,
+    cx: &mut Cx,
+    on_ok: impl Fn(&StylePatch, &mut Window, &mut App) + 'static,
+) {
+    let tab = app.ext::<Memory>().map(|m| m.tab).unwrap_or(TAB_FONT);
+    let state = Opening::partial(app, &format, tab);
+    app.open_modal(window, cx, move |modal, _, cx| {
+        let mut dialog = Dialog::new(modal, state, cx);
+        dialog.partial = Some(Partial {
+            base: format,
+            on_ok: Rc::new(on_ok),
+        });
+        dialog
+    });
+}
+
 /// The border along each edge of a range: `None` where its cells disagree.
 fn edges_of(app: &ExcelApp, range: Rect) -> [Option<Border>; 6] {
     let sheet = &app.wb.sheets[app.sheet];
@@ -352,6 +428,34 @@ impl Changes {
         if let Some(v) = self.hidden {
             s.hidden = v;
         }
+    }
+
+    /// A partial format with these changes laid over it. Choosing no fill
+    /// or no line takes the fill or the line out of the format.
+    fn over(&self, base: &StylePatch) -> StylePatch {
+        let mut out = base.clone();
+        if let Some(code) = &self.num_fmt {
+            out.num_fmt = Some(code.clone());
+        }
+        out.bold = self.bold.or(out.bold);
+        out.italic = self.italic.or(out.italic);
+        out.underline = self.underline.or(out.underline);
+        out.strike = self.strike.or(out.strike);
+        out.font_color = self.color.or(out.font_color);
+        if let Some(fill) = self.fill {
+            out.fill = fill.map(Some);
+        }
+        for (index, slot) in [
+            (TOP, &mut out.border_top),
+            (BOTTOM, &mut out.border_bottom),
+            (LEFT, &mut out.border_left),
+            (RIGHT, &mut out.border_right),
+        ] {
+            if let Some(border) = self.edges[index] {
+                *slot = (!border.is_none()).then_some(border);
+            }
+        }
+        out
     }
 
     /// Apply everything to the selection as one undo step.
@@ -512,6 +616,9 @@ struct Dialog {
     // Protection
     locked: Prop<bool>,
     hidden: Prop<bool>,
+
+    /// Set when the dialog edits a partial format rather than the selection.
+    partial: Option<Partial>,
 }
 
 /// A size in points as the Size box shows it.
@@ -617,6 +724,7 @@ impl Dialog {
             locked: Prop::of(styles, |s| s.locked),
             hidden: Prop::of(styles, |s| s.hidden),
             fonts: open.fonts,
+            partial: None,
             modal,
         }
     }
@@ -693,8 +801,47 @@ impl Dialog {
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let changes = self.changes(cx);
+        if let Some(partial) = &self.partial {
+            let (format, on_ok) = (changes.over(&partial.base), partial.on_ok.clone());
+            self.modal.close(window, cx);
+            on_ok(&format, window, cx);
+            return;
+        }
         self.modal.update_app(cx, |app, cx| changes.apply(app, cx));
         self.modal.close(window, cx);
+    }
+
+    /// The Clear button of a partial format: what the current tab sets
+    /// goes back to "not set".
+    fn clear_tab(&mut self, cx: &mut Context<Self>) {
+        let Some(partial) = &self.partial else {
+            return;
+        };
+        let mut format = self.changes(cx).over(&partial.base);
+        match self.tab {
+            TAB_NUMBER => format.num_fmt = None,
+            TAB_FONT => {
+                format.bold = None;
+                format.italic = None;
+                format.underline = None;
+                format.strike = None;
+                format.font_color = None;
+            }
+            TAB_BORDER => {
+                format.border_top = None;
+                format.border_bottom = None;
+                format.border_left = None;
+                format.border_right = None;
+            }
+            _ => format.fill = None,
+        }
+        let (on_ok, tab) = (partial.on_ok.clone(), self.tab);
+        let Some(opening) = self.modal.read_app(cx, |app| Opening::partial(app, &format, tab)) else {
+            return;
+        };
+        *self = Dialog::new(self.modal.clone(), opening, cx);
+        self.partial = Some(Partial { base: format, on_ok });
+        cx.notify();
     }
 
     // ---- small builders -----------------------------------------------------
@@ -1132,6 +1279,8 @@ impl Dialog {
             s.styled_text(text, x, y, &font, font_px, color, underline, strike);
         });
 
+        // A partial format cannot change the font or its size.
+        let whole = self.partial.is_none();
         div()
             .flex()
             .flex_col()
@@ -1140,7 +1289,7 @@ impl Dialog {
                 div()
                     .flex()
                     .gap(px(12.))
-                    .child(Self::titled(
+                    .when(whole, |d| d.child(Self::titled(
                         t("Font:", "Police :"),
                         div()
                             .w(px(220.))
@@ -1157,7 +1306,7 @@ impl Dialog {
                                         cx.notify();
                                     })),
                             ),
-                    ))
+                    )))
                     .child(Self::titled(
                         t("Font style:", "Style :"),
                         ListBox::new("font-style", styles, style_ix)
@@ -1169,7 +1318,7 @@ impl Dialog {
                                 cx.notify();
                             })),
                     ))
-                    .child(Self::titled(
+                    .when(whole, |d| d.child(Self::titled(
                         t("Size:", "Taille :"),
                         div()
                             .w(px(80.))
@@ -1186,7 +1335,7 @@ impl Dialog {
                                         cx.notify();
                                     })),
                             ),
-                    )),
+                    ))),
             )
             .child(
                 div()
@@ -1305,8 +1454,18 @@ impl Dialog {
                     .into_any_element(),
             }
         };
-        let style_ix = LINE_STYLES.iter().position(|s| *s == self.line_style);
-        let names: Vec<SharedString> = LINE_STYLES.iter().map(|_| SharedString::default()).collect();
+        // A partial format takes no line wider than the gridlines.
+        let partial = self.partial.is_some();
+        let styles: Rc<Vec<BorderStyle>> = Rc::new(
+            LINE_STYLES
+                .iter()
+                .copied()
+                .filter(|s| !partial || !matches!(s, BorderStyle::Medium | BorderStyle::Thick | BorderStyle::Double))
+                .collect(),
+        );
+        let style_ix = styles.iter().position(|s| *s == self.line_style);
+        let names: Vec<SharedString> = styles.iter().map(|_| SharedString::default()).collect();
+        let (row_styles, picked_styles) = (styles.clone(), styles);
 
         // The preview: one cell, or two by two when the selection has
         // inside edges, with each edge as it would be drawn.
@@ -1502,9 +1661,9 @@ impl Dialog {
                             t("Style:", "Style :"),
                             ListBox::new("line-style", names, style_ix)
                                 .height(widgets::ROW_H * 8.0)
-                                .row(move |i, _| div().h_full().flex().items_center().child(sample(LINE_STYLES[i])).into_any_element())
-                                .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                    this.line_style = LINE_STYLES[*ix];
+                                .row(move |i, _| div().h_full().flex().items_center().child(sample(row_styles[i])).into_any_element())
+                                .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                                    this.line_style = picked_styles[*ix];
                                     cx.notify();
                                 })),
                         ))
@@ -1689,17 +1848,31 @@ impl Dialog {
 
 impl Render for Dialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let tabs: Vec<SharedString> = [
+        let names = [
             crate::i18n::t_ctx("format", "Number", "Nombre"),
             t("Alignment", "Alignement"),
             t("Font", "Police"),
             t("Border", "Bordure"),
             t("Fill", "Remplissage"),
             t("Protection", "Protection"),
-        ]
-        .iter()
-        .map(|name| (*name).into())
-        .collect();
+        ];
+        // The tabs on show, as indexes into `names`.
+        let shown: Vec<usize> = match self.partial {
+            Some(_) => PARTIAL_TABS.to_vec(),
+            None => (0..names.len()).collect(),
+        };
+        let tabs: Vec<SharedString> = shown.iter().map(|ix| names[*ix].into()).collect();
+        let selected = shown.iter().position(|ix| *ix == self.tab).unwrap_or(0);
+        let footer = div()
+            .flex()
+            .gap(px(8.))
+            .when(self.partial.is_some(), |d| {
+                d.child(
+                    widgets::Button::new("clear", t("Clear", "Effacer"))
+                        .on_click(cx.listener(|this, _, _, cx| this.clear_tab(cx))),
+                )
+            })
+            .child(ok_cancel(&self.modal, cx.listener(Self::ok)));
         let body = match self.tab {
             TAB_ALIGNMENT => self.alignment_tab(cx),
             TAB_FONT => self.font_tab(cx),
@@ -1712,15 +1885,15 @@ impl Render for Dialog {
             .width(560.0)
             .on_ok(cx.listener(Self::ok))
             .child(
-                TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
-                    this.tab = *ix;
+                TabStrip::new("tabs", tabs, selected).on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                    let tab = shown[*ix];
+                    this.tab = tab;
                     // The dialog reopens on the tab it was left on.
-                    let tab = *ix;
                     this.modal.update_app(cx, |app, _| app.ext_mut::<Memory>().tab = tab);
                     cx.notify();
                 })),
             )
             .child(div().h(px(352.)).flex().flex_col().font_weight(FontWeight::NORMAL).child(body))
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+            .footer(footer)
     }
 }
