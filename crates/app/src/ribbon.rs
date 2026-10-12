@@ -1761,7 +1761,7 @@ impl ExcelApp {
                     .child(rows(vec![
                         self.cmd_labeled("dt-clear", filters::Cmd::Clear, false, cx),
                         self.cmd_labeled("dt-reapply", filters::Cmd::Reapply, false, cx),
-                        self.cmd_labeled("dt-advanced", filters::Cmd::Advanced, false, cx),
+                        self.cmd_labeled("dt-advanced", data_tools::Cmd::AdvancedFilter, false, cx),
                     ])),
             )
             .into_any_element(),

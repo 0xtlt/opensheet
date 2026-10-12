@@ -258,3 +258,121 @@ fn flash_fill_respects_protection(cx: &mut TestAppContext) {
     assert!(modal_open(&app, cx));
     assert_eq!(value(&app, cx, "B2"), Value::Empty);
 }
+
+// ---------------------------------------------------------- Advanced Filter
+
+/// A list in A1:B5 with a criteria range in D1:D2.
+fn staff(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) {
+    fill(
+        app,
+        cx,
+        &[
+            ("A1", "Name"),
+            ("B1", "City"),
+            ("A2", "Ann"),
+            ("B2", "Paris"),
+            ("A3", "Bob"),
+            ("B3", "Lyon"),
+            ("A4", "Cid"),
+            ("B4", "Paris"),
+            ("A5", "Dee"),
+            ("B5", "Nice"),
+            ("D1", "City"),
+            ("D2", "Paris"),
+        ],
+    );
+}
+
+fn hidden_rows(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<u32> {
+    app.update(cx, |app, _| app.wb.sheets[app.sheet].filtered_rows.iter().copied().collect())
+}
+
+#[gpui::test]
+fn advanced_filter_in_place_and_clear(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    staff(&app, cx);
+    select(&app, cx, "A2");
+    let dialog = app.update_in(cx, |app, window, cx| advanced::open(app, window, cx));
+    redraw(cx);
+    assert!(modal_open(&app, cx));
+    // The list is proposed; the keyboard goes to the criteria range.
+    // (The first Tab enters the dialog: no frame has given its first
+    // control the keyboard in this window.)
+    cx.simulate_keystrokes("tab tab tab");
+    cx.simulate_input("D1:D2");
+    assert_eq!(dialog.update(cx, |d, cx| d.texts(cx)), ["$A$1:$B$5".to_string(), "D1:D2".to_string(), String::new()]);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(hidden_rows(&app, cx), [2, 4]);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Advanced Filter"));
+    // Data > Clear shows the rows again; undo twice goes back to the start.
+    assert!(app.update(cx, |app, _| crate::features::Command::enabled(crate::features::filters::Cmd::Clear, app)));
+    app.update_in(cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::Clear, window, cx));
+    redraw(cx);
+    assert_eq!(hidden_rows(&app, cx), Vec::<u32>::new());
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(hidden_rows(&app, cx), [2, 4]);
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(hidden_rows(&app, cx), Vec::<u32>::new());
+}
+
+#[gpui::test]
+fn advanced_filter_copies_to_another_location(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    staff(&app, cx);
+    fill(&app, cx, &[("G1", "City"), ("H1", "Name")]);
+    select(&app, cx, "A1");
+    let dialog = app.update_in(cx, |app, window, cx| advanced::open(app, window, cx));
+    redraw(cx);
+    let request = advanced::Request {
+        copy: true,
+        list: "$A$1:$B$5".into(),
+        criteria: "$D$1:$D$2".into(),
+        copy_to: "$G$1:$H$1".into(),
+        unique: false,
+    };
+    dialog.update(cx, |dialog, cx| dialog.set(&request, cx));
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    // The headings in place choose and order the columns.
+    assert_eq!(value(&app, cx, "G2"), text("Paris"));
+    assert_eq!(value(&app, cx, "H2"), text("Ann"));
+    assert_eq!(value(&app, cx, "H3"), text("Cid"));
+    assert_eq!(value(&app, cx, "G4"), Value::Empty);
+    assert_eq!(hidden_rows(&app, cx), Vec::<u32>::new());
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "G2"), Value::Empty);
+}
+
+#[gpui::test]
+fn advanced_filter_refusals_keep_the_dialog(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    staff(&app, cx);
+    fill(&app, cx, &[("G1", "Colour")]);
+    select(&app, cx, "A1");
+    let dialog = app.update_in(cx, |app, window, cx| advanced::open(app, window, cx));
+    redraw(cx);
+    let mut request = advanced::Request {
+        copy: true,
+        list: "$A$1:$B$5".into(),
+        criteria: String::new(),
+        copy_to: "$G$1".into(),
+        unique: true,
+    };
+    for (criteria, copy_to) in [("", "$G$1"), ("nowhere", "$J$1"), ("", "")] {
+        request.criteria = criteria.into();
+        request.copy_to = copy_to.into();
+        dialog.update(cx, |dialog, cx| dialog.set(&request, cx));
+        redraw(cx);
+        cx.simulate_keystrokes("enter");
+        redraw(cx);
+        // A message over the dialog; once read, the dialog is still there.
+        cx.simulate_keystrokes("enter");
+        redraw(cx);
+        assert!(modal_open(&app, cx), "{criteria:?} {copy_to:?}");
+    }
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
+}

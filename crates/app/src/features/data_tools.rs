@@ -7,6 +7,7 @@
 //! `whatif.rs`) and the files here hold the dialogs. `ui_tests.rs` drives
 //! them in GPUI's headless window.
 
+mod advanced;
 mod flash;
 mod text_wizard;
 #[cfg(test)]
@@ -26,6 +27,7 @@ commands! {
     pub enum Cmd {
         TextToColumns = "columns", t("Text to Columns", "Convertir");
         FlashFill = "fill-down", t("Flash Fill", "Remplissage instantané");
+        AdvancedFilter = "filter", t("Advanced", "Avancé");
     }
 }
 
@@ -44,6 +46,9 @@ impl Command for Cmd {
                 text_wizard::open_text_to_columns(app, window, cx);
             }
             Cmd::FlashFill => flash::flash_fill(app, cx),
+            Cmd::AdvancedFilter => {
+                advanced::open(app, window, cx);
+            }
         }
     }
 }
