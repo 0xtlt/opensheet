@@ -266,7 +266,7 @@ impl Render for DuplicatesDialog {
         let nothing = !self.checked.contains(&true);
         let modal = self.modal.clone();
         dialog(&self.modal, Cmd::RemoveDuplicates.label())
-            .width(460.0)
+            .width(520.0)
             .on_ok(cx.listener(Self::ok))
             .child(div().line_height(px(18.)).child(t(
                 "To delete duplicate values, select one or more columns that contain duplicates.",

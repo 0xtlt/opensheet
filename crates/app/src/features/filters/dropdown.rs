@@ -1244,7 +1244,9 @@ impl FilterMenu {
                         .rounded(px(2.))
                         .hover(|s| s.bg(c(theme::HOVER)))
                         .child(icon(if open { "chevron-down" } else { "chevron-right" }, 9.0, theme::TEXT_MUTED))
-                        .on_click(move |_, _, cx: &mut App| {
+                        // On the press, which then never reaches the line:
+                        // unfolding must not tick its box as well.
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx: &mut App| {
                             view.update(cx, |this, cx| {
                                 this.list.set_expanded(row, !open);
                                 this.cursor = i;

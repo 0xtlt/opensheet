@@ -358,9 +358,9 @@ fn run(app: &mut ExcelApp, sheet: usize, setup: Setup, spec: SortSpec, cx: &mut 
 
 const LEVEL_H: f32 = 32.0;
 const LABEL_W: f32 = 64.0;
-const KEY_W: f32 = 176.0;
-const BASIS_W: f32 = 176.0;
-const ORDER_W: f32 = 250.0;
+const KEY_W: f32 = 186.0;
+const BASIS_W: f32 = 186.0;
+const ORDER_W: f32 = 280.0;
 const FIELD_BORDER: u32 = 0xABABAB;
 
 struct SortDialog {
