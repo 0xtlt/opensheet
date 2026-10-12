@@ -107,8 +107,8 @@ fn as_plain_ref(sheet_name: &str, rect: Rect, this_row: bool) -> Expr {
 impl Workbook {
     /// The formula as it is stored when typed into the cell (`sheet`,
     /// `row`, `col`): structured references written without a table name
-    /// (`[@Col]`) get the name of the table holding the cell. They are an
-    /// error anywhere else.
+    /// (`[@Col]`) get the name of the table holding the cell, or about to
+    /// grow over it (`table_for_entry`). They are an error anywhere else.
     pub fn qualify_table_refs(
         &self,
         e: &Expr,
@@ -121,7 +121,7 @@ impl Workbook {
         if !unqualified {
             return Ok(e.clone());
         }
-        match self.table_at(sheet, row, col) {
+        match self.table_for_entry(sheet, row, col) {
             Some(table) => Ok(e.with_table_qualified(&table.name)),
             None => Err(ParseError {
                 pos: 0,

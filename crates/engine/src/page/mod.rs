@@ -847,5 +847,14 @@ pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
 /// clone of the sheet already carries: nothing names the original sheet.
 pub(crate) fn on_sheet_duplicated(_wb: &mut Workbook, _copy: usize, _original: &str) {}
 
+/// See `features::on_sheet_deleted`.
+pub(crate) fn on_sheet_deleted(_wb: &mut crate::workbook::Workbook, _deleted: &crate::workbook::Sheet, _order: &[&str]) {}
+
+/// See `features::on_sheet_moved`.
+pub(crate) fn on_sheet_moved(_wb: &mut crate::workbook::Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+
+/// See `features::on_cells_shifted`.
+pub(crate) fn on_cells_shifted(_wb: &mut crate::workbook::Workbook, _sheet: usize, _shift: crate::features::CellShift) {}
+
 #[cfg(test)]
 mod tests;

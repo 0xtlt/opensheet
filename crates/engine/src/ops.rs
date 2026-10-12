@@ -2,7 +2,7 @@
 //! deleting rows and columns, sorting, removing duplicates, merging,
 //! borders, navigation, find.
 
-use crate::ast::{Expr, RefExpr, RefKind, StructuralEdit};
+use crate::ast::{Expr, RefExpr, RefKind, StructuralEdit, TableCols};
 use crate::filter::cell_colors;
 use crate::format;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
@@ -10,7 +10,7 @@ use crate::style::{Border, Color, StyleId};
 use crate::value::{ErrorKind, Value};
 use crate::workbook::{Cell, Content, Sheet, Workbook};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
@@ -43,12 +43,125 @@ impl Clip {
     }
 }
 
+/// What a paste brings along: the choices of the Paste Special dialog.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PasteMode {
+    /// Contents and formats, merged cells, conditional formats, data
+    /// validation, notes and comments.
     All,
     Values,
     Formulas,
+    /// Formats, merged cells and conditional formats: also what the
+    /// format painter applies.
     Formats,
+    /// Notes and comments only.
+    Comments,
+    /// Data validation only.
+    Validation,
+    /// As `All`, but the cells written keep their own borders.
+    AllExceptBorders,
+    /// The widths of the copied columns, nothing else.
+    ColumnWidths,
+    /// Formulas with their number formats.
+    FormulasAndNumberFormats,
+    /// Values with their number formats.
+    ValuesAndNumberFormats,
+}
+
+impl PasteMode {
+    /// Whether everything a cell has travels.
+    fn everything(self) -> bool {
+        matches!(self, PasteMode::All | PasteMode::AllExceptBorders)
+    }
+
+    /// Whether the formats travel, and with them merged cells and
+    /// conditional formats.
+    fn formats(self) -> bool {
+        self.everything() || self == PasteMode::Formats
+    }
+
+    /// Whether the cells themselves are written.
+    fn cells(self) -> bool {
+        !matches!(self, PasteMode::Comments | PasteMode::Validation | PasteMode::ColumnWidths)
+    }
+}
+
+/// A block of copied cells and where a paste or a fill lays it: over the
+/// whole of each of `dests`, which hold one copy of `src` or several.
+/// Several `dests` are the blocks of rows a filter leaves shown: over the
+/// same columns, apart from each other, top to bottom.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Lay {
+    src: Rect,
+    dests: Vec<Rect>,
+}
+
+/// Where a paste writes.
+struct Landing {
+    /// The rectangle written (rows a filter hides inside it may be left
+    /// out, see `rows`).
+    out: Rect,
+    /// The sheet rows written, top to bottom.
+    rows: Vec<u32>,
+}
+
+/// The maximal runs of consecutive numbers of an ascending list, as
+/// (index of the first, first, last).
+fn runs(lines: &[u32]) -> Vec<(usize, u32, u32)> {
+    let mut out: Vec<(usize, u32, u32)> = Vec::new();
+    for (i, &line) in lines.iter().enumerate() {
+        match out.last_mut() {
+            Some((_, _, last)) if *last + 1 == line => *last = line,
+            _ => out.push((i, line, line)),
+        }
+    }
+    out
+}
+
+/// `rect` without the cells of `hole`: up to four pieces.
+fn rect_minus(rect: Rect, hole: &Rect) -> Vec<Rect> {
+    let Some(cut) = rect.intersection(hole) else {
+        return vec![rect];
+    };
+    let mut out = Vec::new();
+    if cut.r0 > rect.r0 {
+        out.push(Rect::new(rect.r0, rect.c0, cut.r0 - 1, rect.c1));
+    }
+    if cut.r1 < rect.r1 {
+        out.push(Rect::new(cut.r1 + 1, rect.c0, rect.r1, rect.c1));
+    }
+    if cut.c0 > rect.c0 {
+        out.push(Rect::new(cut.r0, rect.c0, cut.r1, cut.c0 - 1));
+    }
+    if cut.c1 < rect.c1 {
+        out.push(Rect::new(cut.r0, cut.c1 + 1, cut.r1, rect.c1));
+    }
+    out
+}
+
+/// A formula after the block `from` of the sheet named `sheet` was moved
+/// by (`d_row`, `d_col`): references to cells of the block follow it. In
+/// a rule or a defined name (`fixed_only`), relative references are
+/// offsets from whichever cell reads the formula: only fixed ones name
+/// the cells that moved.
+fn following_move(
+    e: &Expr,
+    sheet: &str,
+    own: &str,
+    from: Rect,
+    d_row: i64,
+    d_col: i64,
+    fixed_only: bool,
+) -> Expr {
+    e.map_refs(&mut |r| {
+        let end = r.end.unwrap_or(r.start);
+        let fixed = r.start.abs_row && r.start.abs_col && end.abs_row && end.abs_col;
+        if fixed_only && !fixed {
+            Expr::Ref(r.clone())
+        } else {
+            Expr::Ref(r.clone()).with_moved_range(sheet, own, from, d_row, d_col)
+        }
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -323,9 +436,13 @@ impl Workbook {
         }
     }
 
-    /// Paste a clip at `dest`. When `dest` is a multiple of the clip size the
-    /// clip is tiled over it. Returns the rectangle written.
-    pub fn paste(&mut self, sheet: usize, dest: Rect, clip: &Clip, mode: PasteMode) -> Rect {
+    /// Where pasting `clip` at `dest` writes. When `dest` is a multiple of
+    /// the clip size the clip is tiled over it; otherwise one copy is laid
+    /// from its top-left cell. As in Excel, a single copied row pasted
+    /// over a selection that a filter runs through only lands on the rows
+    /// the filter shows; anything else is laid on consecutive rows, hidden
+    /// or not.
+    fn landing(&self, sheet: usize, dest: Rect, clip: &Clip) -> Landing {
         let (ch, cw) = (clip.rows.len() as u32, clip.rect.cols());
         let dest = self.clamp_to_used(sheet, dest);
         let (mut th, mut tw) = (ch, cw);
@@ -336,22 +453,152 @@ impl Workbook {
         let th = th.min(MAX_ROWS - dest.r0);
         let tw = tw.min(MAX_COLS - dest.c0);
         let out = Rect::new(dest.r0, dest.c0, dest.r0 + th - 1, dest.c0 + tw - 1);
+        let filtered = &self.sheets[sheet].filtered_rows;
+        let rows = if ch == 1 && th > 1 && filtered.range(out.r0..=out.r1).next().is_some() {
+            (out.r0..=out.r1).filter(|r| !filtered.contains(r)).collect()
+        } else {
+            (out.r0..=out.r1).collect()
+        };
+        Landing { out, rows }
+    }
 
-        if mode == PasteMode::All && !clip.merges.is_empty() || self.sheets[sheet].merges.iter().any(|m| m.intersects(&out)) {
+    /// The rectangle `paste` would write for these arguments (what it
+    /// returns, known beforehand).
+    pub fn paste_area(&self, sheet: usize, dest: Rect, clip: &Clip) -> Rect {
+        if sheet >= self.sheets.len() || clip.rows.is_empty() {
+            return dest;
+        }
+        self.landing(sheet, dest, clip).out
+    }
+
+    /// The cells `paste` would change for these arguments: `paste_area`,
+    /// in several blocks when rows a filter hides are left out of it.
+    pub fn paste_blocks(&self, sheet: usize, dest: Rect, clip: &Clip) -> Vec<Rect> {
+        if sheet >= self.sheets.len() || clip.rows.is_empty() {
+            return vec![dest];
+        }
+        let landing = self.landing(sheet, dest, clip);
+        let block = |(_, r0, r1): (usize, u32, u32)| Rect::new(r0, landing.out.c0, r1, landing.out.c1);
+        runs(&landing.rows).into_iter().map(block).collect()
+    }
+
+    /// The blocks of the clip's sheet and where a landing lays them, for
+    /// what is copied block by block rather than cell by cell.
+    fn lays(clip: &Clip, landing: &Landing) -> Vec<Lay> {
+        let (src, out) = (clip.rect, landing.out);
+        let ch = clip.rows.len();
+        let from = |r0: u32, r1: u32| Rect::new(r0, src.c0, r1, src.c1);
+        let onto = |r0: u32, r1: u32| Rect::new(r0, out.c0, r1, out.c1);
+        let source = runs(&clip.rows);
+        if ch == 1 {
+            // One row, copied onto every block of rows written.
+            return vec![Lay {
+                src: from(clip.rows[0], clip.rows[0]),
+                dests: runs(&landing.rows).into_iter().map(|(_, r0, r1)| onto(r0, r1)).collect(),
+            }];
+        }
+        if source.len() == 1 {
+            return vec![Lay {
+                src: from(clip.rows[0], clip.rows[ch - 1]),
+                dests: vec![out],
+            }];
+        }
+        // Rows a filter hid were left out of the clip: each run of the
+        // rows that were copied lands on its own, in every copy.
+        let mut lays = Vec::new();
+        for copy in (0..landing.rows.len()).step_by(ch) {
+            for &(at, r0, r1) in &source {
+                let top = out.r0 + (copy + at) as u32;
+                if top <= out.r1 {
+                    lays.push(Lay {
+                        src: from(r0, r1),
+                        dests: vec![onto(top, (top + (r1 - r0)).min(out.r1))],
+                    });
+                }
+            }
+        }
+        lays
+    }
+
+    /// Copy what the features keep on cells along with them: conditional
+    /// formats, validation rules, notes and comments.
+    fn carry(&mut self, src_sheet: usize, sheet: usize, lays: &[Lay], formats: bool, validation: bool, comments: bool) {
+        for lay in lays.iter().filter(|lay| !lay.dests.is_empty()) {
+            if formats {
+                match lay.dests.as_slice() {
+                    [dest] => self.copy_cond_formats(src_sheet, lay.src, sheet, *dest),
+                    bands => self.copy_cond_formats_to_bands(src_sheet, lay.src, sheet, bands),
+                };
+            }
+            if validation {
+                self.tile_validation(src_sheet, lay.src, sheet, &lay.dests);
+            }
+            if comments {
+                self.tile_comments(src_sheet, lay.src, sheet, &lay.dests);
+            }
+        }
+    }
+
+    /// Paste a clip at `dest` (see `paste_area` for where it lands), as
+    /// Paste and the choices of Paste Special do. Conditional formats,
+    /// validation rules, notes and comments are those the copied cells
+    /// have when the paste is made. Returns the rectangle written.
+    pub fn paste(&mut self, sheet: usize, dest: Rect, clip: &Clip, mode: PasteMode) -> Rect {
+        self.paste_as(sheet, dest, clip, mode, false)
+    }
+
+    /// `paste`, or with `fill` what the Fill commands do with the same
+    /// cells: structured references then move along the columns of their
+    /// table (`shifted_for_fill`).
+    fn paste_as(&mut self, sheet: usize, dest: Rect, clip: &Clip, mode: PasteMode, fill: bool) -> Rect {
+        if sheet >= self.sheets.len() || clip.rows.is_empty() {
+            return dest;
+        }
+        let (ch, cw) = (clip.rows.len(), clip.rect.cols());
+        let landing = self.landing(sheet, dest, clip);
+        let out = landing.out;
+        let tw = out.cols();
+
+        if mode == PasteMode::ColumnWidths {
+            let Some(source) = self.sheets.get(clip.sheet) else {
+                return out;
+            };
+            let widths: Vec<Option<f32>> = (0..cw).map(|i| source.col_widths.get(&(clip.rect.c0 + i)).copied()).collect();
+            for dc in 0..tw {
+                self.set_col_width(sheet, out.c0 + dc, widths[(dc % cw) as usize]);
+            }
+            return out;
+        }
+
+        // First what is kept beside the cells: an undo snapshot taken here
+        // is found at once by the next one that looks for it.
+        let everything = mode.everything();
+        self.carry(
+            clip.sheet,
+            sheet,
+            &Self::lays(clip, &landing),
+            mode.formats(),
+            everything || mode == PasteMode::Validation,
+            everything || mode == PasteMode::Comments,
+        );
+        if !mode.cells() {
+            return out;
+        }
+
+        let merged = mode.formats() && !clip.merges.is_empty();
+        if merged || self.sheets[sheet].merges.iter().any(|m| m.intersects(&out)) {
             self.snapshot();
             self.sheets[sheet].merges.retain(|m| !m.intersects(&out));
-            if mode == PasteMode::All {
-                for tr in (0..th).step_by(ch as usize) {
+            if merged {
+                for top in (0..landing.rows.len()).step_by(ch) {
                     for tc in (0..tw).step_by(cw as usize) {
                         for m in &clip.merges {
-                            let r = Rect::new(
-                                out.r0 + tr + m.r0,
-                                out.c0 + tc + m.c0,
-                                out.r0 + tr + m.r1,
-                                out.c0 + tc + m.c1,
-                            );
-                            if r.r1 < MAX_ROWS && r.c1 < MAX_COLS {
-                                self.sheets[sheet].merges.push(r);
+                            let rows = (landing.rows.get(top + m.r0 as usize), landing.rows.get(top + m.r1 as usize));
+                            if let (Some(&r0), Some(&r1)) = rows {
+                                let r = Rect::new(r0, out.c0 + tc + m.c0, r1, out.c0 + tc + m.c1);
+                                if r.c1 < MAX_COLS {
+                                    self.sheets[sheet].merges.push(r);
+                                }
                             }
                         }
                     }
@@ -359,45 +606,88 @@ impl Workbook {
             }
         }
 
-        for dr in 0..th {
+        // Styles made of the copied cell's and of the one it lands on.
+        let mut mixed: HashMap<(StyleId, StyleId), StyleId> = HashMap::new();
+        let mut mix = |wb: &mut Workbook, from: StyleId, onto: StyleId| -> StyleId {
+            *mixed.entry((from, onto)).or_insert_with(|| {
+                let (from, onto) = (wb.styles.get(from).clone(), wb.styles.get(onto).clone());
+                let style = if mode == PasteMode::AllExceptBorders {
+                    crate::style::Style {
+                        borders: onto.borders,
+                        ..from
+                    }
+                } else {
+                    crate::style::Style {
+                        num_fmt: from.num_fmt,
+                        ..onto
+                    }
+                };
+                wb.styles.intern(style)
+            })
+        };
+
+        for (i, &row) in landing.rows.iter().enumerate() {
+            let from_row = clip.rows[i % ch];
             for dc in 0..tw {
-                let (row, col) = (out.r0 + dr, out.c0 + dc);
-                let src = clip.get(dr % ch, dc % cw);
-                let d_row = row as i64 - clip.rows[(dr % ch) as usize] as i64;
+                let col = out.c0 + dc;
+                let src = clip.get((i % ch) as u32, dc % cw);
+                let d_row = row as i64 - from_row as i64;
                 let d_col = col as i64 - (clip.rect.c0 + dc % cw) as i64;
                 let existing = self.sheets[sheet].cells.get(&(row, col)).cloned();
                 let cur_style = self.sheets[sheet].style_id_at(row, col);
-                let new = match (mode, src) {
-                    (PasteMode::All, None) => None,
-                    (PasteMode::All, Some(s)) => Some(Cell {
-                        content: shift_content(&s.content, &s.value, d_row, d_col),
-                        value: s.value.clone(),
+                let content = |wb: &Workbook| match src.map(|s| &s.content) {
+                    Some(Content::Formula(e)) if fill => Content::Formula(Arc::new(wb.shifted_for_fill(e, d_row, d_col))),
+                    Some(content) => shift_content(content, d_row, d_col),
+                    None => Content::Empty,
+                };
+                let value = src.map(|s| s.value.clone()).unwrap_or_default();
+                let constant = || {
+                    if value.is_empty() {
+                        Content::Empty
+                    } else {
+                        Content::Value(value.clone())
+                    }
+                };
+                let from_style = src.map(|s| s.style).unwrap_or_default();
+                let new = match mode {
+                    PasteMode::All => src.map(|s| Cell {
+                        content: content(self),
+                        value: value.clone(),
                         style: s.style,
                     }),
-                    (PasteMode::Formulas, src) => Some(Cell {
-                        content: src
-                            .map(|s| shift_content(&s.content, &s.value, d_row, d_col))
-                            .unwrap_or(Content::Empty),
-                        value: src.map(|s| s.value.clone()).unwrap_or_default(),
+                    PasteMode::AllExceptBorders => Some(Cell {
+                        content: content(self),
+                        value: value.clone(),
+                        style: mix(self, from_style, cur_style),
+                    }),
+                    PasteMode::Formulas => Some(Cell {
+                        content: content(self),
+                        value: value.clone(),
                         style: cur_style,
                     }),
-                    (PasteMode::Values, src) => {
-                        let v = src.map(|s| s.value.clone()).unwrap_or_default();
+                    PasteMode::FormulasAndNumberFormats => Some(Cell {
+                        content: content(self),
+                        value: value.clone(),
+                        style: mix(self, from_style, cur_style),
+                    }),
+                    PasteMode::Values => Some(Cell {
+                        content: constant(),
+                        value: value.clone(),
+                        style: cur_style,
+                    }),
+                    PasteMode::ValuesAndNumberFormats => Some(Cell {
+                        content: constant(),
+                        value: value.clone(),
+                        style: mix(self, from_style, cur_style),
+                    }),
+                    // Formats (the last three write no cell and left above).
+                    PasteMode::Formats | PasteMode::Comments | PasteMode::Validation | PasteMode::ColumnWidths => {
                         Some(Cell {
-                            content: if v.is_empty() {
-                                Content::Empty
-                            } else {
-                                Content::Value(v.clone())
-                            },
-                            value: v,
-                            style: cur_style,
+                            content: existing.as_ref().map(|c| c.content.clone()).unwrap_or(Content::Empty),
+                            value: existing.as_ref().map(|c| c.value.clone()).unwrap_or_default(),
+                            style: from_style,
                         })
                     }
-                    (PasteMode::Formats, src) => Some(Cell {
-                        content: existing.as_ref().map(|c| c.content.clone()).unwrap_or(Content::Empty),
-                        value: existing.as_ref().map(|c| c.value.clone()).unwrap_or_default(),
-                        style: src.map(|s| s.style).unwrap_or_default(),
-                    }),
                 };
                 self.put_cell(sheet, row, col, new);
             }
@@ -405,9 +695,47 @@ impl Workbook {
         out
     }
 
+    /// A formula as the Fill commands copy it by (`d_row`, `d_col`): like
+    /// any copy, except that across columns a structured reference to one
+    /// column moves on to the column that many places further in its
+    /// table (`#REF!` past its edge), as in Excel. `Table1[[Qty]:[Qty]]`
+    /// is how a column is made to stay.
+    fn shifted_for_fill(&self, e: &Expr, d_row: i64, d_col: i64) -> Expr {
+        let shifted = e.shifted(d_row, d_col);
+        if d_col == 0 || !shifted.has_table_refs() {
+            return shifted;
+        }
+        shifted.map(&mut |x| match x {
+            Expr::Table(mut t) => {
+                let column = match (&t.table, &t.cols) {
+                    (Some(table), TableCols::One(column)) => self.table_by_name(table).map(|(_, table)| {
+                        let at = table.column_index(column)? as i64 + d_col;
+                        let moved = usize::try_from(at).ok().and_then(|i| table.columns.get(i))?;
+                        Some(Arc::<str>::from(moved.name.as_str()))
+                    }),
+                    _ => None,
+                };
+                match column {
+                    Some(Some(column)) => {
+                        t.cols = TableCols::One(column);
+                        Expr::Table(t)
+                    }
+                    Some(None) => Expr::Error(ErrorKind::Ref),
+                    None => Expr::Table(t),
+                }
+            }
+            other => other,
+        })
+    }
+
     /// Move a block (cut + paste): cells keep their formulas unchanged and
-    /// formulas elsewhere that pointed into the block follow it.
+    /// what pointed into the block follows it: formulas elsewhere, defined
+    /// names, charts, validation rules and conditional formats. The
+    /// conditional formats, the validation rules, the notes and the
+    /// comments of the cells move with them. As in Excel the whole block
+    /// moves, the rows a filter hides too.
     pub fn move_range(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) -> Rect {
+        let block = src;
         let src = self.clamp_to_used(src_sheet, src);
         let d_row = dest_row as i64 - src.r0 as i64;
         let d_col = dest_col as i64 - src.c0 as i64;
@@ -458,18 +786,53 @@ impl Workbook {
                 (m.c1 as i64 + d_col) as u32,
             ));
         }
-        // Formulas referring to the moved block follow it.
+        // What the features keep on the cells moves with them (the whole
+        // block that was cut: a note may sit on a cell that holds nothing).
+        self.move_cond_formats(src_sheet, block, dest_sheet, dest_row, dest_col);
+        self.copy_validation(src_sheet, block, dest_sheet, dest_row, dest_col);
+        let landed = Rect::new(
+            dest_row,
+            dest_col,
+            (dest_row as u64 + block.rows() as u64 - 1).min(MAX_ROWS as u64 - 1) as u32,
+            (dest_col as u64 + block.cols() as u64 - 1).min(MAX_COLS as u64 - 1) as u32,
+        );
+        let left = if src_sheet == dest_sheet {
+            rect_minus(block, &landed)
+        } else {
+            vec![block]
+        };
+        self.clear_validation(src_sheet, &left);
+        self.move_comments(src_sheet, block, dest_sheet, dest_row, dest_col);
+        // What referred to the moved block follows it.
         if src_sheet == dest_sheet {
+            let follow = |e: &Expr, own: &str, fixed_only: bool| following_move(e, &src_name, own, src, d_row, d_col, fixed_only);
             for sh in &mut self.sheets {
                 let own = sh.name.clone();
                 for cell in sh.cells.values_mut() {
                     if let Content::Formula(e) = &cell.content {
-                        let moved = e.with_moved_range(&src_name, &own, src, d_row, d_col);
+                        let moved = follow(e, &own, false);
                         if moved != **e {
                             cell.content = Content::Formula(Arc::new(moved));
                         }
                     }
                 }
+                for def in sh.names.values_mut() {
+                    def.expr = Arc::new(follow(&def.expr, &own, true));
+                }
+                for rule in &mut sh.validations {
+                    for formula in [&mut rule.formula1, &mut rule.formula2].into_iter().flatten() {
+                        *formula = Arc::new(follow(formula, &own, true));
+                    }
+                }
+                for chart in &mut sh.charts {
+                    chart.map_refs(&mut |r| match follow(&Expr::Ref(r.clone()), &own, false) {
+                        Expr::Ref(r) => Some(r),
+                        _ => None,
+                    });
+                }
+            }
+            for def in self.names.values_mut() {
+                def.expr = Arc::new(follow(&def.expr, &src_name, true));
             }
         }
         out
@@ -529,6 +892,10 @@ impl Workbook {
         if vertical && !filtered.is_empty() {
             targets.retain(|r| !filtered.contains(&(*r as u32)));
         }
+        // Conditional formats, validation, notes and comments are copied
+        // like the formats, whatever series the values make.
+        let lays = self.fill_lays(sheet, src, vertical, forward, &targets);
+        self.carry(sheet, sheet, &lays, true, true, true);
 
         for lane in 0..lanes {
             if !vertical && filtered.contains(&(src.r0 + lane)) {
@@ -606,7 +973,7 @@ impl Workbook {
                     match &model.content {
                         Content::Formula(e) => {
                             let (sr, sc) = pos(si as i64);
-                            let shifted = e.shifted(row as i64 - sr as i64, col as i64 - sc as i64);
+                            let shifted = self.shifted_for_fill(e, row as i64 - sr as i64, col as i64 - sc as i64);
                             cell.content = Content::Formula(Arc::new(shifted));
                         }
                         Content::Value(Value::Text(s)) => {
@@ -631,6 +998,75 @@ impl Workbook {
                 self.put_cell(sheet, row, col, Some(cell));
             }
         }
+    }
+
+    /// The blocks of `src` and where the fill handle copies them: `targets`
+    /// are the rows (columns) filled, in the order they are filled, each
+    /// taking the next line of `src` in turn.
+    fn fill_lays(&self, sheet: usize, src: Rect, vertical: bool, forward: bool, targets: &[i64]) -> Vec<Lay> {
+        let n = if vertical { src.rows() } else { src.cols() };
+        let first = if vertical { src.r0 } else { src.c0 };
+        // Lines `a..=b` of the source and the lines `t0..=t1` of the sheet,
+        // across the rows (columns) of `band`.
+        let from = |a: u32, b: u32, band: &Rect| {
+            if vertical {
+                Rect::new(first + a, band.c0, first + b, band.c1)
+            } else {
+                Rect::new(band.r0, first + a, band.r1, first + b)
+            }
+        };
+        let onto = |t0: u32, t1: u32, band: &Rect| {
+            if vertical {
+                Rect::new(t0, band.c0, t1, band.c1)
+            } else {
+                Rect::new(band.r0, t0, band.r1, t1)
+            }
+        };
+        let mut ascending: Vec<u32> = targets.iter().map(|t| *t as u32).collect();
+        ascending.sort_unstable();
+        let blocks = runs(&ascending);
+        // Source lines, and the blocks of lines each is copied onto.
+        let mut along: Vec<(u32, u32, Vec<(u32, u32)>)> = Vec::new();
+        if n == 1 {
+            along.push((0, 0, blocks.iter().map(|&(_, t0, t1)| (t0, t1)).collect()));
+        } else if let [(_, t0, t1)] = blocks[..] {
+            // Whole copies next to the source, then what is left of one:
+            // its first lines going forward, its last lines going back.
+            let (whole, rest) = ((t1 - t0 + 1) / n * n, (t1 - t0 + 1) % n);
+            if forward {
+                along.extend((whole > 0).then(|| (0, n - 1, vec![(t0, t0 + whole - 1)])));
+                along.extend((rest > 0).then(|| (0, rest - 1, vec![(t0 + whole, t1)])));
+            } else {
+                along.extend((whole > 0).then(|| (0, n - 1, vec![(t1 + 1 - whole, t1)])));
+                along.extend((rest > 0).then(|| (n - rest, n - 1, vec![(t0, t0 + rest - 1)])));
+            }
+        } else {
+            // A filter leaves gaps among the rows filled: line by line,
+            // each line of the source with the rows that take it.
+            along.extend((0..n).map(|line| (line, line, Vec::new())));
+            for (k, &t) in targets.iter().enumerate() {
+                let idx = if forward { n as i64 + k as i64 } else { -(k as i64) - 1 };
+                along[idx.rem_euclid(n as i64) as usize].2.push((t as u32, t as u32));
+            }
+            for (_, _, rows) in &mut along {
+                rows.sort_unstable();
+            }
+        }
+        // Filling sideways leaves the rows a filter hides alone.
+        let bands = if vertical { vec![src] } else { self.sheets[sheet].shown_parts(src) };
+        let mut lays = Vec::new();
+        for band in &bands {
+            for (a, b, places) in &along {
+                let dests: Vec<Rect> = places.iter().map(|&(t0, t1)| onto(t0, t1, band)).collect();
+                if !dests.is_empty() {
+                    lays.push(Lay {
+                        src: from(*a, *b, band),
+                        dests,
+                    });
+                }
+            }
+        }
+        lays
     }
 
     fn numbered_count(&self, source: &[Option<Cell>]) -> usize {
@@ -704,19 +1140,14 @@ impl Workbook {
             return;
         }
         let filtered = &self.sheets[sheet].filtered_rows;
-        if filtered.range(rect.r0..=rect.r1).next().is_none() {
-            let clip = self.copy(sheet, Rect::new(rect.r0, rect.c0, rect.r0, rect.c1));
-            self.paste(sheet, Rect::new(rect.r0 + 1, rect.c0, rect.r1, rect.c1), &clip, PasteMode::All);
-            return;
-        }
-        let shown: Vec<u32> = (rect.r0..=rect.r1).filter(|r| !filtered.contains(r)).collect();
-        let Some((first, rest)) = shown.split_first() else {
+        let mut shown = (rect.r0..=rect.r1).filter(|r| !filtered.contains(r));
+        let (Some(first), Some(next)) = (shown.next(), shown.next()) else {
             return;
         };
-        let clip = self.copy(sheet, Rect::new(*first, rect.c0, *first, rect.c1));
-        for row in rest {
-            self.paste(sheet, Rect::new(*row, rect.c0, *row, rect.c1), &clip, PasteMode::All);
-        }
+        let last = shown.last().unwrap_or(next);
+        // Pasting one row over several skips those a filter hides.
+        let clip = self.copy(sheet, Rect::new(first, rect.c0, first, rect.c1));
+        self.paste_as(sheet, Rect::new(next, rect.c0, last, rect.c1), &clip, PasteMode::All, true);
     }
 
     /// Copy the first column of `rect` into the columns to the right
@@ -725,16 +1156,10 @@ impl Workbook {
         if rect.cols() < 2 || sheet >= self.sheets.len() {
             return;
         }
-        let filtered = &self.sheets[sheet].filtered_rows;
-        if filtered.range(rect.r0..=rect.r1).next().is_none() {
-            let clip = self.copy(sheet, Rect::new(rect.r0, rect.c0, rect.r1, rect.c0));
-            self.paste(sheet, Rect::new(rect.r0, rect.c0 + 1, rect.r1, rect.c1), &clip, PasteMode::All);
-            return;
-        }
-        let shown: Vec<u32> = (rect.r0..=rect.r1).filter(|r| !filtered.contains(r)).collect();
-        for row in shown {
-            let clip = self.copy(sheet, Rect::cell(row, rect.c0));
-            self.paste(sheet, Rect::new(row, rect.c0 + 1, row, rect.c1), &clip, PasteMode::All);
+        for part in self.sheets[sheet].shown_parts(rect) {
+            let clip = self.copy(sheet, Rect::new(part.r0, part.c0, part.r1, part.c0));
+            let dest = Rect::new(part.r0, part.c0 + 1, part.r1, part.c1);
+            self.paste_as(sheet, dest, &clip, PasteMode::All, true);
         }
     }
 
@@ -754,6 +1179,7 @@ impl Workbook {
         if count == 0 {
             return;
         }
+        crate::table::before_structural_edits(self, sheet, &[edit]);
         let edited_name = self.sheets[sheet].name.clone();
         let criteria_before = crate::filter::criteria_count(&self.sheets[sheet]);
         {
@@ -933,6 +1359,10 @@ impl Workbook {
     /// of runs: one `structural` edit per run would take for ever.
     fn delete_row_runs(&mut self, sheet: usize, runs: &[(u32, u32)]) {
         self.snapshot();
+        // Bottom first, so that the rows above keep their numbers.
+        let edits: Vec<StructuralEdit> =
+            runs.iter().rev().map(|&(at, count)| StructuralEdit::DeleteRows { at, count }).collect();
+        crate::table::before_structural_edits(self, sheet, &edits);
         let cut = RowCut::new(runs);
         let edited = self.sheets[sheet].name.clone();
         let criteria_before = crate::filter::criteria_count(&self.sheets[sheet]);
@@ -966,14 +1396,15 @@ impl Workbook {
                     }
                 }
             }
+            for def in sh.names.values_mut() {
+                def.expr = Arc::new(def.expr.map_refs(&mut |r| cut.fix(r, &edited, &own)));
+            }
         }
         for def in self.names.values_mut() {
             def.expr = Arc::new(def.expr.map_refs(&mut |r| cut.fix(r, &edited, &edited)));
         }
-        // Charts and the features of the other modules follow run by run,
-        // bottom first so that the rows above keep their numbers.
-        for &(at, count) in runs.iter().rev() {
-            let edit = StructuralEdit::DeleteRows { at, count };
+        // Charts and the features of the other modules follow run by run.
+        for edit in edits {
             for sh in &mut self.sheets {
                 let own = sh.name.clone();
                 for chart in &mut sh.charts {
@@ -1088,9 +1519,20 @@ impl Workbook {
 
     // ---- borders --------------------------------------------------------
 
-    /// Apply one of the ribbon's border presets to a rectangle.
+    /// Apply one of the ribbon's border presets to a rectangle. Rows a
+    /// filter hides keep their borders, as in Excel: the selection is then
+    /// the blocks of rows that are shown, and each gets the preset.
     pub fn apply_borders(&mut self, sheet: usize, rect: Rect, preset: BorderPreset, line: Border) {
+        if sheet >= self.sheets.len() {
+            return;
+        }
         let rect = self.clamp_to_used(sheet, rect);
+        for part in self.sheets[sheet].shown_parts(rect) {
+            self.border_block(sheet, part, preset, line);
+        }
+    }
+
+    fn border_block(&mut self, sheet: usize, rect: Rect, preset: BorderPreset, line: Border) {
         let thick = Border {
             style: crate::style::BorderStyle::Thick,
             color: line.color,
@@ -1180,11 +1622,12 @@ impl Workbook {
                     wb.set_style_id(sheet, r, c, new);
                 }
             };
+            let shown = |wb: &Workbook, row: u32| !wb.sheets[sheet].filtered_rows.contains(&row);
             for c in rect.c0..=rect.c1 {
-                if rect.r0 > 0 {
+                if rect.r0 > 0 && shown(self, rect.r0 - 1) {
                     clear_edge(self, rect.r0 - 1, c, &|b| b.bottom = Border::NONE);
                 }
-                if rect.r1 + 1 < MAX_ROWS {
+                if rect.r1 + 1 < MAX_ROWS && shown(self, rect.r1 + 1) {
                     clear_edge(self, rect.r1 + 1, c, &|b| b.top = Border::NONE);
                 }
             }
@@ -1216,7 +1659,8 @@ impl Workbook {
     /// Sort a range as the Sort dialog does: on several levels, on values
     /// or colours, by rows or left to right. Hidden and filtered rows
     /// (hidden columns, left to right) stay where they are; formulas move
-    /// with their cells and read as if they had been copied there.
+    /// with their cells and read as if they had been copied there, and
+    /// notes and comments move with their cells.
     pub fn sort_range(&mut self, sheet: usize, rect: Rect, spec: &SortSpec) -> Result<(), SortError> {
         let Some(sh) = self.sheets.get(sheet) else {
             return Ok(());
@@ -1304,6 +1748,8 @@ impl Workbook {
                 moves.push((from, to, cells));
             }
         }
+        let places: Vec<(u32, u32)> = moves.iter().map(|(from, to, _)| (*from, *to)).collect();
+        self.reorder_comments(sheet, rect, by_rows, &places);
         for (from, to, cells) in moves {
             let delta = to as i64 - from as i64;
             for (x, cell) in across.clone().zip(cells) {
@@ -1363,7 +1809,8 @@ impl Workbook {
     /// row in the compared columns (`columns` are offsets from the left of
     /// `rect`; empty = every column). As in Excel, cells are compared by
     /// what they display, without case, and the rows below move up inside
-    /// the range only. A table shrinks by the rows removed.
+    /// the range only, with their notes and comments. A table shrinks by
+    /// the rows removed.
     pub fn remove_duplicates(
         &mut self,
         sheet: usize,
@@ -1412,7 +1859,15 @@ impl Workbook {
                     && t.data_range().is_some_and(|d| d.r0 <= data.r0 && data.r1 <= d.r1)
             })
             .map(|t| t.id);
-        // The rows that stay close up at the top of the range...
+        // The rows that stay close up at the top of the range, with their
+        // notes and comments...
+        let places: Vec<(u32, u32)> = kept
+            .iter()
+            .enumerate()
+            .map(|(i, &from)| (from, data.r0 + i as u32))
+            .filter(|(from, to)| from != to)
+            .collect();
+        self.reorder_comments(sheet, data, true, &places);
         for (i, &from) in kept.iter().enumerate() {
             let to = data.r0 + i as u32;
             if from == to {
@@ -1436,6 +1891,7 @@ impl Workbook {
                 self.put_cell(sheet, row, col, None);
             }
         }
+        self.delete_comments(sheet, &[Rect::new(vacated, data.c0, data.r1, data.c1)]);
         if let Some(id) = table {
             let _ = self.table_delete_rows(sheet, id, vacated, dropped as u32);
         }
@@ -1490,32 +1946,67 @@ impl Workbook {
         })
     }
 
-    /// The block of data around a cell (Ctrl+A / Ctrl+Shift+*).
+    /// The block of data around a cell (Ctrl+A / Ctrl+Shift+*): the
+    /// smallest rectangle around it with nothing in the cells that border
+    /// it.
     pub fn current_region(&self, sheet: usize, row: u32, col: u32) -> Rect {
         let Some(sh) = self.sheets.get(sheet) else {
             return Rect::cell(row, col);
         };
         let mut rect = Rect::cell(row, col);
         let (er, ec) = sh.content_extent();
-        loop {
-            let mut grown = false;
-            // Past the last row or column holding data there is nothing to
-            // reach for (and the probe must not turn inside out).
-            let probe = Rect::new(
+        // The cells bordering the block: one more on each side. Past the
+        // last row or column holding data there is nothing to reach for
+        // (and the border must not turn inside out).
+        let border = |rect: Rect| {
+            Rect::new(
                 rect.r0.saturating_sub(1),
                 rect.c0.saturating_sub(1),
                 (rect.r1 + 1).min(er).max(rect.r1),
                 (rect.c1 + 1).min(ec).max(rect.c1),
-            );
-            for r in probe.r0..=probe.r1 {
-                for c in probe.c0..=probe.c1 {
-                    if !rect.contains(r, c) && !sh.is_blank(r, c) {
-                        rect = rect.union(&Rect::cell(r, c));
-                        grown = true;
+            )
+        };
+        // The block grown over what one side of its border holds.
+        let reach = |rect: Rect, side: Rect| -> Option<Rect> {
+            let mut grown: Option<Rect> = None;
+            for r in side.r0..=side.r1 {
+                for c in side.c0..=side.c1 {
+                    if !sh.is_blank(r, c) {
+                        grown = Some(grown.unwrap_or(rect).union(&Rect::cell(r, c)));
                     }
                 }
             }
-            if !grown {
+            grown
+        };
+        loop {
+            let before = rect;
+            // Row after row first, without looking at the sides again for
+            // each: a list of a hundred thousand rows is walked once.
+            loop {
+                let around = border(rect);
+                let under = Rect::new(around.r1, around.c0, around.r1, around.c1);
+                match reach(rect, under).filter(|_| around.r1 > rect.r1) {
+                    Some(grown) => rect = grown,
+                    None => break,
+                }
+            }
+            loop {
+                let around = border(rect);
+                let over = Rect::new(around.r0, around.c0, around.r0, around.c1);
+                match reach(rect, over).filter(|_| around.r0 < rect.r0) {
+                    Some(grown) => rect = grown,
+                    None => break,
+                }
+            }
+            let around = border(rect);
+            if around.c1 > rect.c1 {
+                rect = reach(rect, Rect::new(around.r0, around.c1, around.r1, around.c1)).unwrap_or(rect);
+            }
+            let around = border(rect);
+            if around.c0 < rect.c0 {
+                rect = reach(rect, Rect::new(around.r0, around.c0, around.r1, around.c0)).unwrap_or(rect);
+            }
+            if rect == before {
                 return rect;
             }
         }
@@ -1600,7 +2091,19 @@ impl Workbook {
 
     // ---- find -----------------------------------------------------------
 
+    /// Whether Find looks at a cell: never in a row a filter hides, and
+    /// only when looking in formulas in a row or a column hidden by hand,
+    /// as in Excel.
+    fn is_searched(&self, sheet: usize, row: u32, col: u32, opts: &FindOptions) -> bool {
+        let sh = &self.sheets[sheet];
+        !sh.filtered_rows.contains(&row)
+            && (opts.in_formulas || !(sh.hidden_rows.contains(&row) || sh.hidden_cols.contains(&col)))
+    }
+
     fn cell_matches(&self, sheet: usize, row: u32, col: u32, needle: &str, opts: &FindOptions) -> bool {
+        if !self.is_searched(sheet, row, col, opts) {
+            return false;
+        }
         let hay = if opts.in_formulas {
             self.edit_text(sheet, row, col)
         } else {
@@ -1619,6 +2122,9 @@ impl Workbook {
     }
 
     /// Next cell after `from` (reading order, wrapping) whose text matches.
+    /// Cells that are not shown are passed over as Excel does: those of
+    /// rows a filter hides always, those hidden by hand unless the search
+    /// looks in formulas.
     pub fn find_next(&self, sheet: usize, from: (u32, u32), needle: &str, opts: &FindOptions) -> Option<(u32, u32)> {
         if needle.is_empty() {
             return None;
@@ -1653,7 +2159,7 @@ impl Workbook {
     }
 
     /// Replace occurrences in constants and formulas. Returns the number of
-    /// cells changed.
+    /// cells changed. Rows a filter hides are left alone, as in Excel.
     pub fn replace_all(&mut self, sheet: usize, needle: &str, replacement: &str, opts: &FindOptions) -> usize {
         let mut o = opts.clone();
         o.in_formulas = true;
@@ -1738,7 +2244,11 @@ impl RowCut {
         let end = r.end.unwrap_or(r.start);
         let flipped = r.start.row > end.row;
         let Some((lo, hi)) = self.interval(r.start.row.min(end.row), r.start.row.max(end.row)) else {
-            return Expr::Error(ErrorKind::Ref);
+            // The sheet is still there, its cells are not: `Sheet2!#REF!`.
+            return match &r.sheet {
+                Some(sheet) => Expr::RefError(sheet.clone()),
+                None => Expr::Error(ErrorKind::Ref),
+            };
         };
         let mut out = r.clone();
         out.start.row = if flipped { hi } else { lo };
@@ -1862,7 +2372,7 @@ fn replace_ignore_case(text: &str, needle: &str, replacement: &str) -> String {
     out
 }
 
-fn shift_content(content: &Content, _value: &Value, d_row: i64, d_col: i64) -> Content {
+fn shift_content(content: &Content, d_row: i64, d_col: i64) -> Content {
     match content {
         Content::Formula(e) => Content::Formula(Arc::new(e.shifted(d_row, d_col))),
         other => other.clone(),
@@ -2375,5 +2885,75 @@ mod tests {
         assert_eq!(w.current_region(0, 0, 0), rect("A1:B2"));
         assert_eq!(w.current_region(0, 2, 2), rect("A1:C3"));
         assert_eq!(w.current_region(0, 9, 9), rect("J10"));
+    }
+
+    #[test]
+    fn regions_of_every_shape() {
+        // Blocks that only touch by a corner are one region; a blank row
+        // or column parts two.
+        let w = wb(&[
+            ("C3", "x"),
+            ("D4", "x"),
+            ("B4", "x"),
+            ("A5", "x"),
+            ("E5", "x"),
+            ("F2", "x"),
+            ("H1", "apart"),
+            ("C7", "apart"),
+        ]);
+        for start in ["C3", "A5", "D3", "B2"] {
+            let at = rect(start);
+            assert_eq!(w.current_region(0, at.r0, at.c0), rect("A2:F5"), "{start}");
+        }
+        // The block reaches F2 by its border, but nothing borders F2.
+        assert_eq!(w.current_region(0, 1, 5), rect("F2"));
+        assert_eq!(w.current_region(0, 0, 7), rect("H1"));
+        assert_eq!(w.current_region(0, 6, 2), rect("C7"));
+        assert_eq!(w.current_region(0, 7, 3), rect("C7:D8"));
+
+        // On scattered cells, the same block as growing it one ring of
+        // cells at a time, which is what it means.
+        let ring_by_ring = |w: &Workbook, row: u32, col: u32| {
+            let sh = &w.sheets[0];
+            let (er, ec) = sh.content_extent();
+            let mut block = Rect::cell(row, col);
+            loop {
+                let mut grown = block;
+                for r in block.r0.saturating_sub(1)..=(block.r1 + 1).min(er).max(block.r1) {
+                    for c in block.c0.saturating_sub(1)..=(block.c1 + 1).min(ec).max(block.c1) {
+                        if !sh.is_blank(r, c) {
+                            grown = grown.union(&Rect::cell(r, c));
+                        }
+                    }
+                }
+                if grown == block {
+                    return block;
+                }
+                block = grown;
+            }
+        };
+        let mut seed = 12345u32;
+        let mut next = |below: u32| {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (seed >> 16) % below
+        };
+        for density in [15, 30, 60] {
+            let mut w = Workbook::new(Locale::en());
+            for _ in 0..density {
+                w.set_value(0, next(14), next(14), Value::Number(1.0));
+            }
+            for (row, col) in (0..16).flat_map(|r| (0..16).map(move |c| (r, c))) {
+                assert_eq!(w.current_region(0, row, col), ring_by_ring(&w, row, col), "{density}: {row}, {col}");
+            }
+        }
+        // A long list is one walk down, from wherever it starts.
+        let mut w = wb(&[("A1", "n"), ("B1", "m")]);
+        for r in 1..100_000u32 {
+            w.set_value(0, r, (r % 3 == 0) as u32, Value::Number(r as f64));
+        }
+        w.set_value(0, 99_999, 2, Value::Number(1.0));
+        assert_eq!(w.current_region(0, 0, 0), rect("A1:C100000"));
+        assert_eq!(w.current_region(0, 99_999, 2), rect("A1:C100000"));
+        assert_eq!(w.current_region(0, 50_000, 1), rect("A1:C100000"));
     }
 }
