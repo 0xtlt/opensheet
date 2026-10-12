@@ -316,22 +316,39 @@ fn push_shared_items(x: &mut String, field: &CacheField, date: bool) {
     x.push_str("</sharedItems>");
 }
 
+/// The period a field groups the dates of another field by.
+fn period(cache: &PivotCache, field: usize) -> Option<GroupBy> {
+    match cache.fields[field].group.as_ref()?.kind {
+        GroupKind::Range { by, .. } if by != GroupBy::Range => Some(by),
+        _ => None,
+    }
+}
+
+/// The fields that group `base`, outermost first. The periods of a date
+/// ("Years", "Quarters", "Months", all derived from the date itself) nest
+/// by their length, whatever order the fields come in.
+fn levels(cache: &PivotCache, base: usize) -> Vec<usize> {
+    let mut levels = cache.group_children(base);
+    if levels.iter().all(|f| period(cache, *f).is_some()) {
+        levels.sort_by_key(|f| std::cmp::Reverse(period(cache, *f)));
+    }
+    levels
+}
+
 /// The field one level up in a grouping (`par`): a field's groups, then
-/// the groups of those groups. The periods of a date ("Years", "Quarters",
-/// "Months", all derived from the date itself, outermost first) nest in
-/// the order they come in.
+/// the groups of those groups.
 fn parent_field(cache: &PivotCache, field: usize) -> Option<usize> {
     if let Some(base) = cache.fields[field].group.as_ref().and_then(|g| g.base)
         && base != field
     {
-        let siblings = cache.group_children(base);
+        let siblings = levels(cache, base);
         if let Some(at) = siblings.iter().position(|f| *f == field)
             && at > 0
         {
             return Some(siblings[at - 1]);
         }
     }
-    cache.group_children(field).last().copied()
+    levels(cache, field).last().copied()
 }
 
 /// Append the `<fieldGroup>` of a field that groups, or is grouped.
@@ -1051,22 +1068,29 @@ fn table_xml(wb: &Workbook, p: &PivotTable, cache_id: usize, dxfs: &mut Dxfs) ->
         push_pivot_field(&mut x, p, index, &default, dxfs);
     }
     x.push_str("</pivotFields>");
+    // A PivotTable nothing was put in yet has no lines either way; any
+    // other has both lists, were it a single line without items.
+    let empty = p.row_fields.is_empty() && p.col_fields.is_empty() && p.data_fields.is_empty();
     push_axis(&mut x, "rowFields", &p.row_fields);
-    push_lines(
-        &mut x,
-        "rowItems",
-        &p.row_fields,
-        &report.lines(true, p),
-        &at,
-    );
+    if !empty {
+        push_lines(
+            &mut x,
+            "rowItems",
+            &p.row_fields,
+            &report.lines(true, p),
+            &at,
+        );
+    }
     push_axis(&mut x, "colFields", &p.col_fields);
-    push_lines(
-        &mut x,
-        "colItems",
-        &p.col_fields,
-        &report.lines(false, p),
-        &at,
-    );
+    if !empty {
+        push_lines(
+            &mut x,
+            "colItems",
+            &p.col_fields,
+            &report.lines(false, p),
+            &at,
+        );
+    }
     if !p.page_fields.is_empty() {
         w!(x, "<pageFields count=\"{}\">", p.page_fields.len());
         for page in &p.page_fields {
@@ -1300,6 +1324,61 @@ struct RawCache {
     /// For every field, whether the definition lists its distinct values:
     /// the records then name them by their place, else they hold them.
     listed: Vec<bool>,
+    /// The date fields the file groups in place, with the field that
+    /// holds their period here (see [`split_date_groups`]).
+    moved: Vec<(usize, usize)>,
+}
+
+/// A cache that was read: what PivotTables on it share.
+#[derive(Clone)]
+struct ReadCache {
+    cache: Arc<PivotCache>,
+    source: PivotSource,
+    moved: Vec<(usize, usize)>,
+}
+
+/// Excel groups a date field in place by the shortest period chosen and
+/// derives the longer ones from it. The engine keeps the dates as they are
+/// and derives every period, so the period of the field itself moves to a
+/// new field at the end. Returns (date field, new field) for each.
+fn split_date_groups(
+    fields: &mut Vec<CacheField>,
+    locale: &opensheet_engine::Locale,
+) -> Vec<(usize, usize)> {
+    let mut moved = Vec::new();
+    for index in 0..fields.len() {
+        let by = match &fields[index].group {
+            Some(FieldGroup {
+                base: None,
+                kind: GroupKind::Range { by, .. },
+                ..
+            }) if *by != GroupBy::Range => *by,
+            _ => continue,
+        };
+        let Some(mut group) = fields[index].group.take() else {
+            continue;
+        };
+        group.base = Some(index);
+        let plain = format!("{} ({})", by.label(locale), fields[index].name);
+        let mut name = plain.clone();
+        let mut n = 2;
+        while fields
+            .iter()
+            .any(|f| f.name.to_lowercase() == name.to_lowercase())
+        {
+            name = format!("{plain} {n}");
+            n += 1;
+        }
+        moved.push((index, fields.len()));
+        fields.push(CacheField {
+            name,
+            shared: Vec::new(),
+            records: Vec::new(),
+            num_fmt: Arc::from("General"),
+            group: Some(group),
+        });
+    }
+    moved
 }
 
 fn parse_definition(
@@ -1378,10 +1457,13 @@ fn parse_definition(
             _ => {}
         }
     }
+    let moved = split_date_groups(&mut fields, locale);
+    listed.resize(fields.len(), false);
     (found && !fields.is_empty()).then_some(RawCache {
         source,
         fields,
         listed,
+        moved,
     })
 }
 
@@ -1459,7 +1541,7 @@ fn read_cache<R: Read + Seek>(
     part: &str,
     lookup: &StyleLookup,
     locale: &opensheet_engine::Locale,
-) -> Option<(Arc<PivotCache>, PivotSource)> {
+) -> Option<ReadCache> {
     let xml = pkg.read(part).ok()??;
     let mut raw = parse_definition(&xml, lookup, locale)?;
     let records = relationships(pkg, part)
@@ -1472,7 +1554,11 @@ fn read_cache<R: Read + Seek>(
         rows,
     };
     cache.complete_groups(locale);
-    cache.is_valid().then(|| (Arc::new(cache), raw.source))
+    cache.is_valid().then(|| ReadCache {
+        cache: Arc::new(cache),
+        source: raw.source,
+        moved: raw.moved,
+    })
 }
 
 // ---- reading: the table ----------------------------------------------------
@@ -1797,7 +1883,11 @@ fn parse_axis<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Vec<AxisField> {
 fn parse_table(
     xml: &str,
     id: u32,
-    (cache, source): (Arc<PivotCache>, PivotSource),
+    ReadCache {
+        cache,
+        source,
+        moved,
+    }: ReadCache,
     lookup: &StyleLookup,
     locale: &opensheet_engine::Locale,
 ) -> Option<PivotTable> {
@@ -1913,8 +2003,34 @@ fn parse_table(
         cache,
         (location.r0, location.c0),
     );
+    // What the file says of a date field it groups in place is said of
+    // the field that holds the period here; only values are still made of
+    // the dates themselves.
+    let placed = |field: usize| {
+        moved
+            .iter()
+            .find(|(date, _)| *date == field)
+            .map_or(field, |(_, period)| *period)
+    };
+    for axis in [&mut row_fields, &mut col_fields] {
+        for field in axis.iter_mut() {
+            if let AxisField::Field(f) = field {
+                *f = placed(*f);
+            }
+        }
+    }
+    for (field, _) in &mut page_fields {
+        *field = placed(*field);
+    }
+    for filter in &mut filters {
+        filter.field = placed(filter.field);
+    }
     // A field that lists no items has them as a new PivotTable would.
-    for (index, mut field) in fields.into_iter().enumerate().take(p.fields.len()) {
+    for (index, mut field) in fields.into_iter().enumerate() {
+        let index = placed(index);
+        if index >= p.fields.len() {
+            continue;
+        }
         if field.items.is_empty() {
             field.items = std::mem::take(&mut p.fields[index].items);
         }
@@ -1946,10 +2062,16 @@ fn parse_table(
                 ShowAs::PercentOf { field, item }
                 | ShowAs::Difference { field, item }
                 | ShowAs::PercentDifference { field, item } => {
+                    *field = placed(*field);
                     if matches!(item, BaseItem::Item(_)) {
                         *item = named(*field);
                     }
                 }
+                ShowAs::PercentOfParent { field }
+                | ShowAs::RunningTotal { field }
+                | ShowAs::PercentRunningTotal { field }
+                | ShowAs::RankAscending { field }
+                | ShowAs::RankDescending { field } => *field = placed(*field),
                 _ => {}
             }
             data
@@ -2006,7 +2128,7 @@ pub(crate) fn read_all<R: Read + Seek>(
     let locale = wb.locale;
     // The caches by the name of their part: PivotTables naming the same
     // part share the cache.
-    let mut caches: HashMap<String, Option<(Arc<PivotCache>, PivotSource)>> = HashMap::new();
+    let mut caches: HashMap<String, Option<ReadCache>> = HashMap::new();
     for (index, part) in sheet_parts.iter().enumerate() {
         let mut rels = relationships(pkg, part);
         rels.retain(|rel| rel.kind == "pivotTable");
