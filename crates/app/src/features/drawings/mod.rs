@@ -27,9 +27,13 @@ pub(crate) mod geometry;
 mod paint;
 mod pane;
 mod picture;
+mod svg;
 mod tabs;
 mod text;
 mod tool;
+mod wordart;
+#[cfg(test)]
+mod insertart_tests;
 #[cfg(test)]
 mod ui_tests;
 
@@ -109,6 +113,7 @@ commands! {
         TextFill = "fill", t("Text Fill", "Remplissage du texte");
         TextOutline = "borders", t("Text Outline", "Contour du texte");
         TextEffects = "wordart", t("Text Effects", "Effets du texte");
+        WordArtStyles = "wordart", t("Quick Styles", "Styles rapides");
         // Both
         AltText = "comment", t("Alt Text", "Texte de remplacement");
         ViewAltText = "comment", t("View Alt Text…", "Afficher le texte de remplacement…");
@@ -150,7 +155,10 @@ impl Command for Cmd {
             Cmd::FormatPicture | Cmd::ResetPicture | Cmd::ResetPictureOnly | Cmd::ResetPictureAndSize | Cmd::ChangePicture => {
                 drawing.is_some_and(is_picture)
             }
-            Cmd::FormatShape | Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::TextFill | Cmd::EditShape => shape.is_some(),
+            Cmd::FormatShape | Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::EditShape => shape.is_some(),
+            Cmd::TextFill | Cmd::TextOutline | Cmd::TextEffects | Cmd::WordArtStyles => {
+                shape.is_some_and(|shape| !shape.preset.is_line())
+            }
             Cmd::EditText => shape.is_some_and(|shape| !shape.preset.is_line()),
             _ => true,
         }
@@ -212,6 +220,10 @@ impl Command for Cmd {
             Cmd::ShapeFill => tabs::open_fill(app, tabs::Paint::Fill, window, cx),
             Cmd::TextFill => tabs::open_fill(app, tabs::Paint::Text, window, cx),
             Cmd::ShapeOutline => tabs::open_outline(app, window, cx),
+            Cmd::WordArt => wordart::open_gallery(app, false, window, cx),
+            Cmd::WordArtStyles => wordart::open_gallery(app, true, window, cx),
+            Cmd::TextOutline => wordart::open_outline(app, window, cx),
+            Cmd::TextEffects => wordart::open_effects(app, window, cx),
             Cmd::EditShape => {
                 let current = selected(app).and_then(Drawing::as_shape).map(|shape| shape.preset);
                 let closed = current.is_some_and(|preset| !preset.is_line());
@@ -278,6 +290,9 @@ enum TextStart {
     Typed(String),
     /// Under the pointer (a double click).
     At(Point<Pixels>),
+    /// With the whole text selected: new WordArt, whose placeholder is
+    /// typed over.
+    All,
 }
 
 fn owner() -> usize {
@@ -436,6 +451,7 @@ fn begin_text_edit(app: &mut ExcelApp, id: u32, start: TextStart, window: &mut W
         TextStart::Typed(typed) => area.replace_text_in_range(None, &typed, window, cx),
         // A double click puts the caret where it was made.
         TextStart::At(position) => area.caret_at_next_paint(position),
+        TextStart::All => area.select_all_text(cx),
         TextStart::End => {}
     });
     let subscription = cx.subscribe_in(&area, window, |app, _, event: &AreaEvent, window, cx| match event {
@@ -472,9 +488,10 @@ fn end_text_edit(app: &mut ExcelApp, cx: &mut Cx) {
     if changed {
         app.wb.update_drawing(sheet, edit.id, |drawing| {
             if let Some(shape) = drawing.as_shape_mut() {
-                shape.text = typed;
+                shape.set_text(typed);
             }
         });
+        wordart::fit_to_text(app, edit.id, cx);
         app.commit(t("Typing", "Saisie"), cx);
     } else {
         cx.notify();
@@ -590,6 +607,8 @@ impl Feature for Drawings {
 
     fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
         picture::sweep(window, cx);
+        svg::install(cx);
+        svg::sweep(window, cx);
         // Image files dropped on the cells become pictures. The element
         // takes nothing else from the mouse.
         let mut out = vec![
@@ -856,13 +875,8 @@ impl Feature for Drawings {
             .drawing(app.sheet, id)
             .and_then(Drawing::as_shape)
             .is_some_and(|shape| !shape.preset.is_line());
-        if takes_text && app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
-            app.wb.update_drawing(app.sheet, id, |drawing| {
-                if let Some(shape) = drawing.as_shape_mut() {
-                    restyle(shape, change);
-                }
-            });
-            app.commit(label, cx);
+        if takes_text {
+            wordart::restyle(app, id, label, change, cx);
         }
         true
     }

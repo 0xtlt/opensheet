@@ -375,6 +375,18 @@ impl TextArea {
         cx.notify();
     }
 
+    /// The bytes of the text that are selected (empty: only a caret).
+    pub fn selection(&self) -> Range<usize> {
+        self.buffer.selected.clone()
+    }
+
+    /// Select the whole text: what is typed next replaces it.
+    pub fn select_all_text(&mut self, cx: &mut Context<Self>) {
+        self.buffer.selected = 0..self.buffer.text.len();
+        self.buffer.reversed = false;
+        cx.notify();
+    }
+
     /// Put the caret under a point of the window that lies beside the
     /// text (the margin of the box around it). Clicks on the text itself
     /// are handled by the box.

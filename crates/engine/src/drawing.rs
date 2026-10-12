@@ -702,6 +702,15 @@ pub struct Shape {
     pub font: Font,
     pub align: TextAlign,
     pub anchor: TextAnchor,
+    /// What the letters have besides their font: an outline, a shadow
+    /// (WordArt, see `wordart.rs`).
+    pub effects: crate::wordart::TextEffects,
+    /// The looks of a text formatted in parts; empty when the whole text
+    /// has the look of `font` and `effects`.
+    pub runs: Vec<crate::wordart::TextRun>,
+    /// Lines are broken at the width of the shape (`wrap` of
+    /// `<a:bodyPr>`; WordArt is not wrapped).
+    pub wrap: bool,
 }
 
 /// The entries of the Insert ▸ Shapes gallery: a geometry with the look
@@ -792,6 +801,9 @@ impl ShapeTool {
             },
             align: TextAlign::Center,
             anchor: TextAnchor::Middle,
+            effects: Default::default(),
+            runs: Vec::new(),
+            wrap: true,
         };
         if preset.is_line() {
             let arrow = |pointed: bool| if pointed { LineEnd::Triangle } else { LineEnd::None };

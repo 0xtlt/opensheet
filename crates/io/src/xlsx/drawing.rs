@@ -60,6 +60,8 @@ const MAX_PX: f64 = 600_000_000.0;
 const ROOT_END: &str = "</xdr:wsDr>";
 const RELS_END: &str = "</Relationships>";
 
+mod wordart;
+
 // ---- writing -------------------------------------------------------------------
 
 fn emu(px: f64) -> i64 {
@@ -202,58 +204,6 @@ fn push_outline(x: &mut String, outline: Option<&Outline>) {
     x.push_str("</a:ln>");
 }
 
-/// The properties of a run (`a:rPr`), or of the end of a paragraph that
-/// has none (`a:endParaRPr`).
-fn push_run_properties(x: &mut String, element: &str, font: &Font) {
-    w!(x, "<a:{element} sz=\"{}\"", font.size as u32 * 50);
-    if font.bold {
-        x.push_str(" b=\"1\"");
-    }
-    if font.italic {
-        x.push_str(" i=\"1\"");
-    }
-    match font.underline {
-        Underline::None => {}
-        Underline::Single => x.push_str(" u=\"sng\""),
-        Underline::Double => x.push_str(" u=\"dbl\""),
-    }
-    if font.strike {
-        x.push_str(" strike=\"sngStrike\"");
-    }
-    x.push('>');
-    if let Some(color) = font.color {
-        push_solid_fill(x, color);
-    }
-    for script in ["latin", "cs"] {
-        w!(x, "<a:{script} typeface=\"");
-        push_attr(x, &font.name);
-        x.push_str("\"/>");
-    }
-    w!(x, "</a:{element}>");
-}
-
-fn push_text_body(x: &mut String, shape: &Shape) {
-    w!(
-        x,
-        "<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"{}\"/><a:lstStyle/>",
-        shape.anchor.ooxml_name()
-    );
-    for paragraph in shape.text.split('\n') {
-        w!(x, "<a:p><a:pPr algn=\"{}\"/>", shape.align.ooxml_name());
-        if paragraph.is_empty() {
-            push_run_properties(x, "endParaRPr", &shape.font);
-        } else {
-            x.push_str("<a:r>");
-            push_run_properties(x, "rPr", &shape.font);
-            x.push_str("<a:t>");
-            push_text(x, paragraph);
-            x.push_str("</a:t></a:r>");
-        }
-        x.push_str("</a:p>");
-    }
-    x.push_str("</xdr:txBody>");
-}
-
 /// What a connector is read as: a line with nothing but its outline. A
 /// connector has no text in a file, so a line is written as one only when
 /// that loses nothing.
@@ -323,7 +273,7 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     }
     push_outline(x, shape.outline.as_ref());
     x.push_str("</xdr:spPr>");
-    push_text_body(x, shape);
+    wordart::push_text_body(x, shape);
     x.push_str("</xdr:sp>");
 }
 
@@ -780,119 +730,6 @@ fn parse_style<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawStyle
     style
 }
 
-/// The properties of the first run of a text, which stand for the whole
-/// text here.
-struct RawRun {
-    font: Font,
-    /// The run gives its colour itself.
-    colored: bool,
-}
-
-fn parse_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawRun {
-    let mut font = Font::default();
-    if let Some(size) = tag.attr_f64("sz").filter(|size| size.is_finite()) {
-        font.size = (size / 50.0).round().clamp(2.0, 818.0) as u16;
-    }
-    font.bold = tag.attr_bool("b").unwrap_or(false);
-    font.italic = tag.attr_bool("i").unwrap_or(false);
-    font.underline = match tag.attr("u").as_deref() {
-        None | Some("none") => Underline::None,
-        Some("dbl" | "wavyDbl") => Underline::Double,
-        Some(_) => Underline::Single,
-    };
-    font.strike = matches!(
-        tag.attr("strike").as_deref(),
-        Some("sngStrike" | "dblStrike")
-    );
-    let mut paint = Paint::Unset;
-    each_child(r, tag, |r, t| match t.name {
-        "latin" => {
-            // "+mn-lt" and the like name a font of the theme.
-            if let Some(name) = t
-                .attr("typeface")
-                .filter(|name| !name.is_empty() && !name.starts_with('+'))
-            {
-                font.name = Arc::from(name.as_ref());
-            }
-            r.skip(t);
-        }
-        _ => parse_paint(r, t, palette, &mut paint),
-    });
-    if let Paint::Color(color) = paint {
-        font.color = Some(color);
-    }
-    RawRun {
-        font,
-        colored: !matches!(paint, Paint::Unset),
-    }
-}
-
-/// `<xdr:txBody>` as a file has it.
-#[derive(Default)]
-struct RawText {
-    text: String,
-    run: Option<RawRun>,
-    align: Option<TextAlign>,
-    anchor: Option<TextAnchor>,
-}
-
-fn parse_paragraph<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, out: &mut RawText) {
-    each_child(r, tag, |r, t| match t.name {
-        "pPr" => {
-            if out.align.is_none() {
-                out.align = Some(
-                    t.attr("algn")
-                        .and_then(|name| TextAlign::from_ooxml_name(&name))
-                        .unwrap_or_default(),
-                );
-            }
-            r.skip(t);
-        }
-        // A run, or a field shown as the text it had when saved.
-        "r" | "fld" => each_child(r, t, |r, c| match c.name {
-            "rPr" => {
-                let run = parse_run_properties(r, c, palette);
-                out.run.get_or_insert(run);
-            }
-            "t" => out.text.push_str(&r.text(c)),
-            _ => r.skip(c),
-        }),
-        "br" => {
-            out.text.push('\n');
-            r.skip(t);
-        }
-        "endParaRPr" => {
-            let run = parse_run_properties(r, t, palette);
-            out.run.get_or_insert(run);
-        }
-        _ => r.skip(t),
-    });
-}
-
-fn parse_text<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawText {
-    let mut out = RawText::default();
-    let mut paragraphs = 0;
-    each_child(r, tag, |r, t| match t.name {
-        "bodyPr" => {
-            out.anchor = Some(
-                t.attr("anchor")
-                    .and_then(|name| TextAnchor::from_ooxml_name(&name))
-                    .unwrap_or_default(),
-            );
-            r.skip(t);
-        }
-        "p" => {
-            if paragraphs > 0 {
-                out.text.push('\n');
-            }
-            paragraphs += 1;
-            parse_paragraph(r, t, palette, &mut out);
-        }
-        _ => r.skip(t),
-    });
-    out
-}
-
 /// A text without the characters a file cannot hold again; line breaks
 /// and tabs stay where a text has `lines`.
 fn printable(text: &str, lines: bool) -> String {
@@ -999,7 +836,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
     let mut fill = Paint::Unset;
     let mut line: Option<RawLine> = None;
     let mut style = RawStyle::default();
-    let mut text = RawText::default();
+    let mut text = wordart::RawText::default();
     each_child(r, tag, |r, t| match t.name {
         "nvSpPr" | "nvCxnSpPr" => text_box = object.parse_identity(r, t),
         "spPr" => each_child(r, t, |r, c| match c.name {
@@ -1014,7 +851,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
             _ => parse_paint(r, c, palette, &mut fill),
         }),
         "style" => style = parse_style(r, t, theme),
-        "txBody" => text = parse_text(r, t, palette),
+        "txBody" => text = wordart::parse_text(r, t, palette),
         _ => r.skip(t),
     });
     // A geometry the engine does not have: the nearest thing it has.
@@ -1045,27 +882,25 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
         end: line.end,
     });
     // Without text, a shape has the text settings of a new one.
-    let mut font = Font::default();
-    if let Some(run) = text.run {
-        font = run.font;
-        if !run.colored {
-            font.color = style.text;
-        }
-    }
-    object.kind = RawKind::Shape(Shape {
+    let mut shape = Shape {
         preset,
         text_box,
         fill: fill.filter(|_| !preset.is_line() || !connector),
         outline,
-        text: printable(&text.text, true),
-        font,
+        text: String::new(),
+        font: Font::default(),
         align: text.align.unwrap_or(if text.anchor.is_some() {
             TextAlign::Left
         } else {
             TextAlign::Center
         }),
         anchor: text.anchor.unwrap_or(TextAnchor::Middle),
-    });
+        effects: Default::default(),
+        runs: Vec::new(),
+        wrap: true,
+    };
+    text.into_shape(&mut shape, style.text);
+    object.kind = RawKind::Shape(shape);
     object
 }
 

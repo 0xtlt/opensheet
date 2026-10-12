@@ -289,9 +289,12 @@ fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush
     if let Some(fonts) = text.filter(|_| !shape.text.is_empty() && !shape.preset.is_line()) {
         let look = text_look(shape, brush.zoom, fonts);
         let turn = geometry::normalise_angle(placed.rotation);
-        if turn < 0.5 || turn > 359.5 {
+        if shape.has_text_effects() {
+            // Letters with an outline or a shadow: WordArt.
+            super::wordart::draw_art(shape, placed, natural, brush, fonts, out);
+        } else if turn < 0.5 || turn > 359.5 {
             let (x0, y0, x1, y1) = text_box(shape, placed, natural, brush.zoom);
-            let (lines, rows) = look.wrap(&shape.text, x1 - x0, brush.ts);
+            let (lines, rows) = super::wordart::wrap(shape, &look, fonts, x1 - x0, brush.ts);
             let origin = brush.at((x0, y0 + look.top(rows, y1 - y0)));
             // Lines are aligned in the width of the box; a text too tall
             // for it shows above and below as far as the pane goes.

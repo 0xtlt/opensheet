@@ -41,6 +41,7 @@ pub mod text_columns;
 pub mod validation;
 pub mod value;
 pub mod whatif;
+pub mod wordart;
 pub mod workbook;
 
 pub use ast::Expr;
