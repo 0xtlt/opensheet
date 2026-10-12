@@ -8,7 +8,7 @@ use crate::features::Cx;
 use crate::i18n::t;
 use crate::shell::Alert;
 use gpui::Window;
-use opensheet_engine::pivot::{Aggregation, Area, PivotTable, ShowAs, SortOrder, Subtotals};
+use opensheet_engine::pivot::{Aggregation, Area, PivotTable, ShowAs, SortOrder};
 
 /// Tell the user something Excel says in a message box.
 pub(super) fn warn(app: &mut ExcelApp, text: &'static str, cx: &mut Cx) {
@@ -276,14 +276,7 @@ pub(super) fn set_show_as(app: &mut ExcelApp, id: u32, data: usize, show: ShowAs
 
 /// The "Subtotal "Field"" entry of the context menu: on (automatic) or off.
 pub(super) fn toggle_subtotal(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("Subtotals", "Sous-totaux"), window, cx, move |p| {
-        if let Some(f) = p.fields.get_mut(field) {
-            f.subtotals = match f.subtotals {
-                Subtotals::None => Subtotals::Automatic,
-                _ => Subtotals::None,
-            };
-        }
-    });
+    update(app, id, t("Subtotals", "Sous-totaux"), window, cx, move |p| logic::toggle_subtotal(p, field));
 }
 
 /// "Keep Only Selected Items" / "Hide Selected Items".
@@ -296,42 +289,13 @@ pub(super) fn filter_selected(app: &mut ExcelApp, keep: bool, window: &mut Windo
     } else {
         t("Hide Selected Items", "Masquer les éléments sélectionnés")
     };
-    update(app, id, label, window, cx, move |p| {
-        let Some(f) = p.fields.get(field) else {
-            return;
-        };
-        let visible: Vec<u32> = f
-            .items
-            .iter()
-            .filter(|it| !it.hidden && items.contains(&it.x) == keep)
-            .map(|it| it.x)
-            .collect();
-        // Hiding everything would leave an empty report: Excel refuses.
-        if !visible.is_empty() {
-            p.set_visible_items(field, &visible);
-        }
-    });
+    update(app, id, label, window, cx, move |p| logic::filter_items(p, field, &items, keep));
 }
 
 /// Move an item among the items of its field (the field becomes sorted by
 /// hand).
 pub(super) fn move_item(app: &mut ExcelApp, id: u32, field: usize, item: u32, to: MoveTo, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("Move", "Déplacer"), window, cx, move |p| {
-        // The order on screen becomes the manual order first.
-        let shown = p.items_in_order(field);
-        let Some(f) = p.fields.get_mut(field) else {
-            return;
-        };
-        f.items.sort_by_key(|it| shown.iter().position(|x| *x == it.x).unwrap_or(usize::MAX));
-        let visible: Vec<u32> = f.items.iter().filter(|it| !it.hidden).map(|it| it.x).collect();
-        let Some(at) = visible.iter().position(|x| *x == item) else {
-            return;
-        };
-        // Step over the visible items only: hidden ones stay where they are.
-        let neighbour = visible[to.target(at, visible.len())];
-        let position = f.items.iter().position(|it| it.x == neighbour).unwrap_or(0);
-        p.move_item(field, item, position);
-    });
+    update(app, id, t("Move", "Déplacer"), window, cx, move |p| logic::move_item(p, field, item, to));
 }
 
 /// Move a field inside its area.

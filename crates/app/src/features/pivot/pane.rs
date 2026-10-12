@@ -132,13 +132,7 @@ fn update_deferred(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     };
     let id = pending.id;
     perform(app, t("PivotTable Fields", "Champs de tableau croisé dynamique"), window, cx, move |app, overwrite| {
-        app.wb.pivot_update(id, overwrite, |p| {
-            p.row_fields = pending.row_fields.clone();
-            p.col_fields = pending.col_fields.clone();
-            p.page_fields = pending.page_fields.clone();
-            p.data_fields = pending.data_fields.clone();
-            p.filters = pending.filters.clone();
-        })
+        app.wb.pivot_update(id, overwrite, |p| logic::adopt_layout(p, &pending))
     });
 }
 

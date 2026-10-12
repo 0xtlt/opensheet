@@ -1074,6 +1074,76 @@ pub fn sort_labels(p: &PivotTable, field: usize) -> (&'static str, &'static str)
     }
 }
 
+// ------------------------------------------------------- changes to a field
+
+/// Switch the subtotals of a field on (automatic) or off.
+pub fn toggle_subtotal(p: &mut PivotTable, field: usize) {
+    if let Some(f) = p.fields.get_mut(field) {
+        f.subtotals = match f.subtotals {
+            Subtotals::None => Subtotals::Automatic,
+            _ => Subtotals::None,
+        };
+    }
+}
+
+/// "Keep Only Selected Items" (`keep`) or "Hide Selected Items": of the
+/// items showing, only the given ones stay, or all but them. Hiding every
+/// item would empty the report: nothing changes then, as in Excel.
+pub fn filter_items(p: &mut PivotTable, field: usize, items: &[u32], keep: bool) {
+    let Some(f) = p.fields.get(field) else {
+        return;
+    };
+    let visible: Vec<u32> = f
+        .items
+        .iter()
+        .filter(|it| !it.hidden && items.contains(&it.x) == keep)
+        .map(|it| it.x)
+        .collect();
+    if !visible.is_empty() {
+        p.set_visible_items(field, &visible);
+    }
+}
+
+/// Move an item among the items its field shows. The order on screen
+/// becomes the manual order of the field first; hidden items stay where
+/// they are.
+pub fn move_item(p: &mut PivotTable, field: usize, item: u32, to: MoveTo) {
+    let shown = p.items_in_order(field);
+    let Some(f) = p.fields.get_mut(field) else {
+        return;
+    };
+    f.items.sort_by_key(|it| shown.iter().position(|x| *x == it.x).unwrap_or(usize::MAX));
+    let visible: Vec<u32> = f.items.iter().filter(|it| !it.hidden).map(|it| it.x).collect();
+    let Some(at) = visible.iter().position(|x| *x == item) else {
+        return;
+    };
+    // The item takes the place of the visible item it steps to.
+    let neighbour = visible[to.target(at, visible.len())];
+    let position = f.items.iter().position(|it| it.x == neighbour).unwrap_or(0);
+    p.move_item(field, item, position);
+}
+
+/// Give a PivotTable the areas and filters of a definition prepared while
+/// layout updates were deferred.
+pub fn adopt_layout(p: &mut PivotTable, pending: &PivotTable) {
+    p.row_fields = pending.row_fields.clone();
+    p.col_fields = pending.col_fields.clone();
+    p.page_fields = pending.page_fields.clone();
+    p.data_fields = pending.data_fields.clone();
+    p.filters = pending.filters.clone();
+}
+
+/// "Show Detail": put `detail` below the field of a label, showing it
+/// under the item that was double-clicked only.
+pub fn show_detail(p: &mut PivotTable, field: usize, item: u32, detail: usize, locale: &Locale) {
+    let Some((area, index)) = place_of(p, field) else {
+        return;
+    };
+    p.add_field(detail, area, Some(index + 1), locale);
+    p.set_field_collapsed(field, true);
+    p.set_collapsed(field, item, false);
+}
+
 // --------------------------------------------------------- the context menu
 
 /// Where the "Move" menu sends an item or a field.
@@ -2064,6 +2134,121 @@ mod tests {
         assert_eq!(MoveTo::Beginning.target(2, 3), 0);
         assert_eq!(MoveTo::End.target(0, 3), 2);
         assert_eq!(MoveTo::End.target(0, 0), 0);
+    }
+
+    /// The labels of the first column of a report, from its first row of
+    /// values down.
+    fn row_labels(wb: &Workbook, id: u32) -> Vec<String> {
+        let (sheet, p) = wb.pivot(id).unwrap();
+        let body = p.location.unwrap();
+        (body.r0 + p.report.first_data_row()..=body.r1)
+            .map(|row| wb.display_text(sheet, row, body.c0).text)
+            .collect()
+    }
+
+    #[test]
+    fn items_move_hide_and_show_their_detail() {
+        let (mut wb, id) = workbook();
+        // More regions, to have something to move.
+        for (r, row) in [["North", "Apples", "2024-03-01", "70"], ["South", "Pears", "2024-04-01", "30"]]
+            .iter()
+            .enumerate()
+        {
+            for (c, text) in row.iter().enumerate() {
+                wb.set_cell_text(0, 5 + r as u32, c as u32, text).unwrap();
+            }
+        }
+        wb.commit("more data");
+        let source = PivotSource::Range {
+            sheet: "Sheet1".to_string(),
+            range: Rect::new(0, 0, 6, 3),
+        };
+        wb.pivot_change_source(id, source, false).unwrap();
+        for op in [PaneOp::Check(REGION), PaneOp::Check(SALES)] {
+            run(&mut wb, id, op);
+        }
+        // The regions that came with the new source follow the others, as
+        // new items do in Excel.
+        assert_eq!(row_labels(&wb, id), ["East", "West", "North", "South", "Grand Total"]);
+        let item = |wb: &Workbook, label: &str| {
+            let (_, p) = wb.pivot(id).unwrap();
+            (0..4u32).find(|x| p.item_text(REGION, *x, wb.locale) == label).unwrap()
+        };
+        let (east, north, south, west) = (item(&wb, "East"), item(&wb, "North"), item(&wb, "South"), item(&wb, "West"));
+        let change = |wb: &mut Workbook, edit: &dyn Fn(&mut PivotTable)| {
+            wb.pivot_update(id, false, edit).unwrap();
+            wb.commit("change");
+        };
+
+        // Moving among the items shown.
+        change(&mut wb, &|p| move_item(p, REGION, west, MoveTo::Beginning));
+        assert_eq!(row_labels(&wb, id), ["West", "East", "North", "South", "Grand Total"]);
+        change(&mut wb, &|p| move_item(p, REGION, west, MoveTo::Down));
+        assert_eq!(row_labels(&wb, id), ["East", "West", "North", "South", "Grand Total"]);
+        change(&mut wb, &|p| move_item(p, REGION, east, MoveTo::End));
+        assert_eq!(row_labels(&wb, id), ["West", "North", "South", "East", "Grand Total"]);
+        change(&mut wb, &|p| move_item(p, REGION, east, MoveTo::Up));
+        assert_eq!(row_labels(&wb, id), ["West", "North", "East", "South", "Grand Total"]);
+        // At the end already: nothing moves.
+        change(&mut wb, &|p| move_item(p, REGION, south, MoveTo::Down));
+        assert_eq!(row_labels(&wb, id), ["West", "North", "East", "South", "Grand Total"]);
+
+        // Hiding the selection, then keeping only one item; a hidden item
+        // is stepped over by a move.
+        change(&mut wb, &|p| filter_items(p, REGION, &[north], false));
+        assert_eq!(row_labels(&wb, id), ["West", "East", "South", "Grand Total"]);
+        change(&mut wb, &|p| move_item(p, REGION, east, MoveTo::Up));
+        assert_eq!(row_labels(&wb, id), ["East", "West", "South", "Grand Total"]);
+        change(&mut wb, &|p| filter_items(p, REGION, &[south, west], true));
+        assert_eq!(row_labels(&wb, id), ["West", "South", "Grand Total"]);
+        // Hiding everything that shows is not done.
+        change(&mut wb, &|p| filter_items(p, REGION, &[south, west], false));
+        assert_eq!(row_labels(&wb, id), ["West", "South", "Grand Total"]);
+
+        // "Show Detail" on West: the products go below, shown for West only.
+        let locale = wb.locale;
+        change(&mut wb, &|p| {
+            p.clear_filters(REGION);
+            show_detail(p, REGION, west, PRODUCT, locale);
+        });
+        assert_eq!(labels(&wb, id, Area::Rows), ["Region", "Product"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["East", "West", "Apples", "Pears", "North", "South", "Grand Total"]
+        );
+
+        // Subtotals of the regions off, then on again.
+        let subtotals = |wb: &Workbook| wb.pivot(id).unwrap().1.fields[REGION].subtotals.clone();
+        change(&mut wb, &|p| toggle_subtotal(p, REGION));
+        assert_eq!(subtotals(&wb), Subtotals::None);
+        change(&mut wb, &|p| toggle_subtotal(p, REGION));
+        assert_eq!(subtotals(&wb), Subtotals::Automatic);
+    }
+
+    #[test]
+    fn a_deferred_layout_is_adopted_whole() {
+        let (mut wb, id) = workbook();
+        run(&mut wb, id, PaneOp::Check(REGION));
+        let mut pending = wb.pivot(id).unwrap().1.clone();
+        for op in [
+            PaneOp::Uncheck(REGION),
+            PaneOp::Add {
+                field: PRODUCT,
+                area: Area::Columns,
+                position: None,
+            },
+            PaneOp::Check(SALES),
+        ] {
+            apply_op(&mut pending, op, wb.locale);
+        }
+        wb.pivot_update(id, false, |p| adopt_layout(p, &pending)).unwrap();
+        wb.commit("update");
+        assert!(labels(&wb, id, Area::Rows).is_empty());
+        assert_eq!(labels(&wb, id, Area::Columns), ["Product"]);
+        assert_eq!(labels(&wb, id, Area::Values), ["Sum of Sales"]);
+        // One undo step brings the report back.
+        wb.undo();
+        assert_eq!(labels(&wb, id, Area::Rows), ["Region"]);
     }
 
     #[test]

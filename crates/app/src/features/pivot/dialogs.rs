@@ -1300,14 +1300,7 @@ impl ShowDetail {
         self.modal.update_app(cx, |app, cx| {
             let locale = app.wb.locale;
             update_in_dialog(app, &modal, id, t("Show Detail", "Afficher le détail"), window, cx, move |p| {
-                let Some((area, index)) = logic::place_of(p, field) else {
-                    return;
-                };
-                // The new field goes below; only the item that was
-                // double-clicked shows its detail.
-                p.add_field(detail, area, Some(index + 1), locale);
-                p.set_field_collapsed(field, true);
-                p.set_collapsed(field, item, false);
+                logic::show_detail(p, field, item, detail, locale)
             });
         });
     }
