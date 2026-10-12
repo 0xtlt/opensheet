@@ -80,6 +80,8 @@ pub struct Sheet {
     /// Rows hidden by a filter (of the sheet or of a table), kept apart
     /// from the rows the user hid by hand.
     pub filtered_rows: BTreeSet<u32>,
+    /// The Advanced Filter applied in place, see `filter/advanced.rs`.
+    pub advanced_filter: Option<crate::filter::AdvancedFilter>,
     /// Tables ("Format as Table"), see `table.rs`.
     pub tables: Vec<crate::table::Table>,
     /// Conditional formats, in priority order, see `condfmt.rs`.
@@ -125,6 +127,7 @@ impl Sheet {
             charts: Vec::new(),
             auto_filter: None,
             filtered_rows: BTreeSet::new(),
+            advanced_filter: None,
             tables: Vec::new(),
             cond_formats: Vec::new(),
             validations: Vec::new(),
