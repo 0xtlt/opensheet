@@ -363,7 +363,6 @@ pub(self) struct Ui {
     note_sel: Option<(u32, u32)>,
     /// What has the keyboard while a box is selected.
     box_focus: Option<FocusHandle>,
-    _box_blur: Option<Subscription>,
     drag: Option<BoxDrag>,
     card: Option<OpenCard>,
     pane: Option<Entity<CommentsPane>>,
@@ -493,17 +492,6 @@ fn select_box(app: &mut ExcelApp, cell: (u32, u32), window: &mut Window, cx: &mu
     let ui = app.ext_mut::<Ui>();
     let handle = ui.box_focus.get_or_insert_with(|| cx.focus_handle()).clone();
     ui.note_sel = Some(cell);
-    if ui._box_blur.is_none() {
-        ui._box_blur = Some(cx.on_blur(&handle, window, |app, _, cx| {
-            let ui = app.ext_mut::<Ui>();
-            // A press on a zone hands the keyboard to the grid for the
-            // time of the drag; the box gets it back at the release.
-            if ui.drag.is_none() {
-                ui.note_sel = None;
-                cx.notify();
-            }
-        }));
-    }
     window.focus(&handle);
     cx.notify();
 }
@@ -1037,8 +1025,9 @@ fn status_text(cell: &str, comment: &Comment) -> String {
 
 // ----------------------------------------------------------------- elements
 
-/// Forget what no longer exists (deleted, undone), and give the grid the
-/// keyboard an editor that was put away still holds.
+/// Forget what no longer exists (deleted, undone), let go of a box that
+/// lost the keyboard, and give the grid the keyboard an editor that was
+/// put away still holds.
 fn tidy(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let Some(ui) = app.ext::<Ui>() else {
         return;
@@ -1048,7 +1037,11 @@ fn tidy(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let gone_card = ui.card.as_ref().is_some_and(|card| {
         card.sheet == sheet && !is(card.cell, CommentKind::Thread) && !card.view.read(cx).composing
     });
-    let gone_sel = ui.note_sel.is_some_and(|cell| !is(cell, CommentKind::Note));
+    // A box stays selected while it has the keyboard. (A press on a zone
+    // hands the keyboard to the grid for the time of the drag; the box
+    // gets it back at the release.)
+    let has_keys = ui.drag.is_some() || ui.box_focus.as_ref().is_some_and(|handle| handle.is_focused(window));
+    let gone_sel = ui.note_sel.is_some_and(|cell| !is(cell, CommentKind::Note) || !has_keys);
     let gone_visit = ui.visited.is_some_and(|cell| !is(cell, CommentKind::Note));
     let gone_hover = ui.hover.cell.is_some_and(|cell| kind_at(app, sheet, cell).is_none());
     if !(gone_card || gone_sel || gone_visit || gone_hover || !ui.orphans.is_empty()) {

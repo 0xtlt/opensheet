@@ -756,3 +756,312 @@ fn cut_cells_take_their_comments_along(cx: &mut TestAppContext) {
     assert_eq!(note_text(&app, cx, (5, 2)).as_deref(), Some("on c"));
     assert_eq!(thread(&app, cx, (6, 2)).unwrap().first.text, "on a");
 }
+
+// ------------------------------------------------ menus, buttons, the views
+
+/// The centre of something a view named for the tests.
+fn middle(cx: &mut VisualTestContext, name: &'static str) -> Point<Pixels> {
+    cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is not drawn")).center()
+}
+
+/// The labels of the menu that is open, separators left out.
+fn menu(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<String> {
+    app.update(cx, |app, _| match app.popup.as_ref().map(|popup| &popup.kind) {
+        Some(crate::app::PopupKind::Menu(entries)) => {
+            entries.iter().filter(|entry| !entry.separator).map(|entry| entry.label.to_string()).collect()
+        }
+        _ => Vec::new(),
+    })
+}
+
+/// Choose an entry of the open menu by its label.
+fn choose(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, label: &str) {
+    app.update_in(cx, |app, window, cx| {
+        let Some(crate::app::PopupKind::Menu(entries)) = app.popup.take().map(|popup| popup.kind) else {
+            panic!("no menu is open");
+        };
+        let entry = entries.iter().find(|entry| entry.label.as_ref() == label).expect("the entry");
+        assert!(!entry.disabled, "{label} is greyed");
+        (entry.action.clone().expect("an action"))(app, window, cx);
+    });
+    redraw(cx);
+}
+
+#[gpui::test]
+fn the_card_is_used_with_the_mouse(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.add_comment(0, 2, 2, &bob(), 45_000.0, "Checked?");
+        wb.add_reply(0, 2, 2, &Person::new("Ada"), 45_000.1, "Not yet");
+    });
+    let on_cell = centre(&app, cx, (2, 2));
+    click(cx, on_cell);
+    // A click in the reply box puts the cursor there; Post sends the reply.
+    let field = middle(cx, "reply-field@C3");
+    click(cx, field);
+    cx.simulate_input("On it");
+    redraw(cx);
+    let post = middle(cx, "reply-field-accept@C3");
+    click(cx, post);
+    assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies[1].text, "On it");
+    assert_eq!(card(&app, cx), Some(((2, 2), true)));
+    // Cancel drops what was typed.
+    let field = middle(cx, "reply-field@C3");
+    click(cx, field);
+    cx.simulate_input("Forget it");
+    redraw(cx);
+    let cancel = middle(cx, "reply-field-cancel@C3");
+    click(cx, cancel);
+    assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies.len(), 2);
+    let view = ui(&app, cx, |ui| ui.card.as_ref().unwrap().view.clone());
+    assert!(!view.update(cx, |card, cx| card.has_draft(cx)));
+
+    // The "…" of the first comment: edit it, delete or resolve the thread.
+    let more = middle(cx, "post-menu-0@C3");
+    click(cx, more);
+    assert_eq!(menu(&app, cx), ["Edit comment", "Delete thread", "Resolve thread"]);
+    choose(&app, cx, "Edit comment");
+    cx.simulate_input("!");
+    redraw(cx);
+    let save = middle(cx, "edit-field-accept@C3");
+    click(cx, save);
+    assert_eq!(thread(&app, cx, (2, 2)).unwrap().first.text, "Checked?!");
+    // The "…" of a reply: edit or delete that reply.
+    let more = middle(cx, "post-menu-1@C3");
+    click(cx, more);
+    assert_eq!(menu(&app, cx), ["Edit comment", "Delete comment"]);
+    choose(&app, cx, "Delete comment");
+    let left = thread(&app, cx, (2, 2)).unwrap();
+    assert_eq!((left.replies.len(), left.replies[0].text.as_str()), (1, "On it"));
+    // Resolve: no reply box, no "…", but Reopen.
+    let more = middle(cx, "post-menu-0@C3");
+    click(cx, more);
+    choose(&app, cx, "Resolve thread");
+    assert!(thread(&app, cx, (2, 2)).unwrap().resolved);
+    let reopen = middle(cx, "reopen-thread@C3");
+    click(cx, reopen);
+    assert!(!thread(&app, cx, (2, 2)).unwrap().resolved);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Reopen thread"));
+    let more = middle(cx, "post-menu-0@C3");
+    click(cx, more);
+    choose(&app, cx, "Delete thread");
+    assert_eq!((thread(&app, cx, (2, 2)), card(&app, cx)), (None, None));
+}
+
+#[gpui::test]
+fn the_menu_of_a_cell_follows_what_it_carries(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.set_note(0, 1, 1, "Ada", "Ada:\nA note");
+        wb.add_comment(0, 3, 1, &bob(), 45_000.0, "A thread");
+    });
+    let mut menu_of = |cell: Cell, cx: &mut VisualTestContext| {
+        let at = centre(&app, cx, cell);
+        cx.simulate_mouse_down(at, MouseButton::Right, Modifiers::none());
+        cx.simulate_mouse_up(at, MouseButton::Right, Modifiers::none());
+        let labels = menu(&app, cx);
+        app.update(cx, |app, _| assert_eq!(app.active(), cell));
+        labels
+    };
+    let has = |labels: &[String], label: &str| labels.iter().any(|entry| entry == label);
+    let bare = menu_of((6, 1), cx);
+    assert!(has(&bare, "New Comment") && has(&bare, "New Note"));
+    assert!(!has(&bare, "Edit Note") && !has(&bare, "Delete Note") && !has(&bare, "Delete Comment"));
+    let noted = menu_of((1, 1), cx);
+    assert!(has(&noted, "Edit Note") && has(&noted, "Delete Note") && has(&noted, "Show/Hide Note"));
+    assert!(has(&noted, "New Comment") && !has(&noted, "New Note") && !has(&noted, "Delete Comment"));
+    let commented = menu_of((3, 1), cx);
+    assert!(has(&commented, "Reply to Comment") && has(&commented, "Delete Comment"));
+    assert!(!has(&commented, "New Note") && !has(&commented, "New Comment") && !has(&commented, "Edit Note"));
+    // The entries act on the cell that was pressed.
+    choose(&app, cx, "Delete Comment");
+    assert_eq!(thread(&app, cx, (3, 1)), None);
+    menu_of((1, 1), cx);
+    choose(&app, cx, "Show/Hide Note");
+    assert!(note(&app, cx, (1, 1)).unwrap().visible);
+    menu_of((1, 1), cx);
+    choose(&app, cx, "Edit Note");
+    assert_eq!(editing(&app, cx), Some((1, 1)));
+    cx.simulate_input(" edited");
+    cx.simulate_keystrokes("escape");
+    assert_eq!(note_text(&app, cx, (1, 1)).as_deref(), Some("Ada:\nA note edited"));
+    menu_of((6, 1), cx);
+    choose(&app, cx, "New Note");
+    assert_eq!(editing(&app, cx), Some((6, 1)));
+    cx.simulate_input("From the menu");
+    cx.simulate_keystrokes("escape");
+    assert_eq!(note_text(&app, cx, (6, 1)), Some(format!("{}:\nFrom the menu", user_name())));
+}
+
+#[gpui::test]
+fn the_notes_menu_of_the_review_tab(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.set_note(0, 1, 1, "Ada", "Ada:\nA note");
+    });
+    // The Review tab draws with its Comments group and its Notes button.
+    app.update(cx, |app, cx| {
+        app.ribbon_tab = 7;
+        cx.notify();
+    });
+    redraw(cx);
+    run(&app, cx, Cmd::NotesMenu);
+    assert_eq!(
+        menu(&app, cx),
+        ["New Note", "Previous Note", "Next Note", "Show/Hide Note", "Show All Notes", "Convert to Comments"]
+    );
+    choose(&app, cx, "New Note");
+    assert_eq!(editing(&app, cx), Some((0, 0)));
+    cx.simulate_keystrokes("escape");
+    // On a cell that has a note the first entry edits it.
+    select(&app, cx, (1, 1));
+    run(&app, cx, Cmd::NotesMenu);
+    assert_eq!(menu(&app, cx)[0], "Edit Note");
+    choose(&app, cx, "Show All Notes");
+    assert!(note(&app, cx, (0, 0)).unwrap().visible && note(&app, cx, (1, 1)).unwrap().visible);
+    run(&app, cx, Cmd::NotesMenu);
+    choose(&app, cx, "Next Note");
+    cx.simulate_keystrokes("enter");
+    app.update(cx, |app, _| assert_eq!(app.active(), (0, 0)));
+    // Home ▸ Clear ▸ Clear Comments and Notes empties the selection of them.
+    app.update(cx, |app, cx| app.select_rect(Rect::new(0, 0, 5, 5), cx));
+    run(&app, cx, Cmd::Clear);
+    assert_eq!((note(&app, cx, (0, 0)), note(&app, cx, (1, 1))), (None, None));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Clear Comments and Notes"));
+}
+
+#[gpui::test]
+fn the_pane_is_used_with_the_mouse(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.add_comment(0, 2, 2, &bob(), 45_000.0, "A thread");
+    });
+    run(&app, cx, Cmd::ShowPane);
+    // "New" writes a comment on the active cell.
+    select(&app, cx, (5, 0));
+    let new = middle(cx, "pane-new-comment");
+    click(cx, new);
+    cx.simulate_input("Started in the pane");
+    redraw(cx);
+    let post = middle(cx, "new-field-accept@A6");
+    click(cx, post);
+    assert_eq!(thread(&app, cx, (5, 0)).unwrap().first.text, "Started in the pane");
+    // The reply box of a card of the pane.
+    let first = cx.debug_bounds("pane-card-0").expect("the first card");
+    let field = middle(cx, "reply-field@C3");
+    assert!(first.contains(&field));
+    click(cx, field);
+    app.update(cx, |app, _| assert_eq!(app.active(), (2, 2)));
+    cx.simulate_input("Answer");
+    cx.simulate_keystrokes("cmd-enter");
+    assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies[0].text, "Answer");
+    // Resolving from the pane.
+    let more = middle(cx, "post-menu-0@C3");
+    click(cx, more);
+    choose(&app, cx, "Resolve thread");
+    assert!(thread(&app, cx, (2, 2)).unwrap().resolved);
+}
+
+#[gpui::test]
+fn the_views_of_page_layout_keep_boxes_beside_their_cells(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.set_note(0, 3, 2, "Ada", "Ada:\nShown");
+        wb.set_note_visible(0, 3, 2, true);
+        wb.add_comment(0, 5, 1, &bob(), 45_000.0, "A thread");
+    });
+    for mode in [
+        crate::features::ViewMode::Normal,
+        crate::features::ViewMode::PageLayout,
+        crate::features::ViewMode::PageBreakPreview,
+    ] {
+        app.update(cx, |app, cx| app.set_view_mode(mode, cx));
+        redraw(cx);
+        redraw(cx);
+        // Wherever the view puts the cell, the box is 15 zoomed pixels
+        // right of it and 10 above.
+        let (zoom, cell) = app.update(cx, |app, _| {
+            let layout = app.current_layout().unwrap();
+            (layout.zoom, layout.rect_px(Rect::cell(3, 2)))
+        });
+        let shown = app.update(cx, |app, _| {
+            let layout = app.current_layout().unwrap();
+            boxes(app, &layout).into_iter().find(|shown| shown.cell == (3, 2)).expect("the box").rect
+        });
+        assert!((shown.0 - (cell.2 + 15.0 * zoom)).abs() <= 1.0, "{mode:?}: {shown:?} beside {cell:?}");
+        assert!((shown.1 - (cell.1 - 10.0 * zoom)).abs() <= 1.0, "{mode:?}: {shown:?} beside {cell:?}");
+        // The card of a comment opens there too.
+        let on_comment = centre(&app, cx, (5, 1));
+        click(cx, on_comment);
+        assert_eq!(card(&app, cx), Some(((5, 1), true)), "{mode:?}");
+        assert!(cx.debug_bounds("comment-card").is_some(), "{mode:?}");
+        select(&app, cx, (0, 0));
+    }
+}
+
+#[gpui::test]
+fn odd_cases(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.add_comment(0, 2, 2, &bob(), 45_000.0, "A thread");
+        wb.set_note(0, 4, 2, "Ada", "Ada:\nA note");
+    });
+    // No comment on a hidden cell.
+    app.update(cx, |app, cx| {
+        app.select_cell(7, 1, cx);
+        app.hide_rows(true, cx);
+    });
+    app.update(cx, |app, _| assert!(app.wb.sheets[0].is_row_hidden(7)));
+    app.update_in(cx, |app, window, cx| {
+        // The selection left the hidden row: go back to it as Go To would.
+        app.views[0].sel = crate::grid::Selection::single(7, 1);
+        Cmd::NewComment.run(app, window, cx);
+        assert!(app.modal_open());
+    });
+    cx.simulate_keystrokes("enter");
+    assert_eq!(card(&app, cx), None);
+    // Undoing the post that made a thread puts its card away.
+    select(&app, cx, (9, 0));
+    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_input("Soon undone");
+    cx.simulate_keystrokes("cmd-enter");
+    assert_eq!(card(&app, cx), Some(((9, 0), true)));
+    cx.simulate_keystrokes("cmd-z");
+    redraw(cx);
+    assert_eq!((thread(&app, cx, (9, 0)), card(&app, cx)), (None, None));
+    // A note is not typed on a cell that has a comment: ⇧F2 does nothing.
+    select(&app, cx, (2, 2));
+    cx.simulate_keystrokes("shift-f2");
+    assert_eq!(editing(&app, cx), None);
+    // A double click on a cell with a comment is for the cell.
+    let on_comment = centre(&app, cx, (2, 2));
+    cx.simulate_event(gpui::MouseDownEvent {
+        position: on_comment,
+        modifiers: Modifiers::none(),
+        button: MouseButton::Left,
+        click_count: 2,
+        first_mouse: false,
+    });
+    app.update(cx, |app, _| assert!(app.is_editing()));
+    cx.simulate_keystrokes("escape");
+    // Moving a box at another zoom: the frame moves by sheet pixels.
+    edit(&app, cx, |wb| {
+        wb.set_note_visible(0, 4, 2, true);
+    });
+    app.update(cx, |app, cx| app.set_zoom(2.0, cx));
+    redraw(cx);
+    let before = app.update(cx, |app, _| app.wb.sheets[0].note_frame(4, 2).unwrap());
+    let (x0, y0, _, _) = box_of(&app, cx, (4, 2)).unwrap();
+    drag(cx, (x0 + 50.0, y0), (x0 + 110.0, y0 + 40.0));
+    let after = app.update(cx, |app, _| app.wb.sheets[0].note_frame(4, 2).unwrap());
+    assert_eq!((after.x - before.x, after.y - before.y), (30.0, 20.0));
+    // Escape lets go of the box; the arrows move the selection again.
+    assert_eq!(ui(&app, cx, |ui| ui.note_sel), Some((4, 2)));
+    redraw(cx);
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    assert_eq!(ui(&app, cx, |ui| ui.note_sel), None);
+    let active = app.update(cx, |app, _| app.active());
+    cx.simulate_keystrokes("down");
+    app.update(cx, |app, _| assert_eq!(app.active(), (active.0 + 1, active.1)));
+}

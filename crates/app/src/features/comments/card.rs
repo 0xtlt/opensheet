@@ -315,6 +315,8 @@ impl CommentCard {
         let focused = area.focus_handle(cx).is_focused(window);
         let empty = area.read(cx).text().trim().is_empty();
         let clicked = area.clone();
+        let cell = cell_name(self.cell.0, self.cell.1);
+        let (accept_name, cancel_name) = (format!("{id}-accept@{cell}"), format!("{id}-cancel@{cell}"));
         div()
             .flex()
             .flex_col()
@@ -322,6 +324,7 @@ impl CommentCard {
             .child(
                 div()
                     .id(id)
+                    .debug_selector(|| format!("{id}@{cell}"))
                     .px(px(8.))
                     .py(px(5.))
                     .rounded(px(4.))
@@ -344,16 +347,20 @@ impl CommentCard {
                         .justify_end()
                         .gap(px(6.))
                         .child(
-                            Button::new((id, 1usize), accept)
-                                .primary()
-                                .disabled(empty)
-                                .width(64.0)
-                                .on_click(cx.listener(move |card, _, window, cx| on_accept(card, window, cx))),
+                            div().debug_selector(|| accept_name).child(
+                                Button::new((id, 1usize), accept)
+                                    .primary()
+                                    .disabled(empty)
+                                    .width(64.0)
+                                    .on_click(cx.listener(move |card, _, window, cx| on_accept(card, window, cx))),
+                            ),
                         )
                         .child(
-                            Button::new((id, 2usize), t("Cancel", "Annuler"))
-                                .width(64.0)
-                                .on_click(cx.listener(|card, _, window, cx| card.cancel(window, cx))),
+                            div().debug_selector(|| cancel_name).child(
+                                Button::new((id, 2usize), t("Cancel", "Annuler"))
+                                    .width(64.0)
+                                    .on_click(cx.listener(|card, _, window, cx| card.cancel(window, cx))),
+                            ),
                         ),
                 )
             })
@@ -413,6 +420,7 @@ impl CommentCard {
                                             Some(_) => t("More comment actions", "Plus d’actions de commentaires"),
                                         },
                                     )
+                                    .debug_selector(|| format!("post-menu-{index}@{}", cell_name(row, col)))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(move |card, event: &MouseDownEvent, window, cx| {
@@ -457,7 +465,9 @@ impl CommentCard {
             .child(icon("check", 13.0, theme::TEXT_MUTED))
             .child(div().flex_1().child(t("Resolved", "Résolu")))
             .child(
-                icon_button("reopen", "comments-reopen", t("Reopen thread", "Rouvrir la conversation")).on_click(
+                icon_button("reopen", "comments-reopen", t("Reopen thread", "Rouvrir la conversation"))
+                    .debug_selector(|| format!("reopen-thread@{}", cell_name(cell.0, cell.1)))
+                    .on_click(
                     cx.listener(move |card, _, window, cx| {
                         card.tell_app(window, cx, move |app, _, cx| super::resolve(app, sheet, cell, false, cx))
                     }),

@@ -147,6 +147,7 @@ impl Render for CommentsPane {
                 div().flex_none().px(px(12.)).pb(px(8.)).flex().child(
                     div()
                         .id("new-comment")
+                        .debug_selector(|| "pane-new-comment".into())
                         .h(px(26.))
                         .px(px(10.))
                         .flex()
