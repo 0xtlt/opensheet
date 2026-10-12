@@ -1,14 +1,14 @@
 //! The parts of a package beside the worksheets, and what ties them to the
 //! sheets and to the workbook.
 //!
-//! Charts, notes and comments, tables are kept in parts of their own. A
-//! worksheet names such a part by the id of a relationship
+//! Charts, notes and comments, tables, PivotTables are kept in parts of
+//! their own. A worksheet names such a part by the id of a relationship
 //! (`<drawing r:id="rId1"/>`), its relationships part says which part that
 //! is, and `[Content_Types].xml` says what kind of part it is. A feature
 //! states here what it adds; the writer lays the package out from that.
 
 use super::chart::write::Drawing;
-use super::dxf::Dxfs;
+use super::stylerefs::StyleRefs;
 use super::theme;
 use super::write::{NS_DOC_REL, NS_PKG_REL};
 use super::xml::{XML_DECL, push_attr};
@@ -44,6 +44,8 @@ pub(crate) struct SheetLinks {
     pub threads: Option<usize>,
     /// The tables, in the order of `Sheet::tables` (`<tableParts>`).
     pub tables: Vec<usize>,
+    /// The PivotTables, in the order of `Sheet::pivots`; no element.
+    pub pivots: Vec<usize>,
 }
 
 impl SheetLinks {
@@ -65,6 +67,7 @@ impl SheetLinks {
             comments: id(annotated),
             threads: id(threaded),
             tables: sheet.tables.iter().filter_map(|_| id(true)).collect(),
+            pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
         }
     }
 
@@ -105,7 +108,10 @@ pub(crate) struct Extras {
     pub defaults: Vec<(&'static str, &'static str)>,
     /// What `xl/workbook.xml` relates to, beside its sheets and tables of
     /// styles and strings: (whole relationship type, target).
-    pub workbook_rels: Vec<(String, String)>,
+    workbook_rels: Vec<(String, String)>,
+    /// The pivot caches the workbook part lists: (`cacheId`, place of the
+    /// relationship in `workbook_rels`).
+    pivot_caches: Vec<(usize, usize)>,
     pub parts: Vec<Part>,
     /// The relationships of each worksheet so far, as elements.
     sheet_rels: Vec<String>,
@@ -114,12 +120,13 @@ pub(crate) struct Extras {
 impl Extras {
     /// What `wb` needs beside the parts of the worksheets, of the styles
     /// and of the strings; `drawings` are the charts, which the writer
-    /// stores itself. The formats these parts refer to are added to
-    /// `dxfs`.
-    pub fn of(wb: &Workbook, drawings: &[Drawing], dxfs: &mut Dxfs) -> Extras {
+    /// stores itself. The formats these parts refer to get their ids from
+    /// `refs`.
+    pub fn of(wb: &Workbook, drawings: &[Drawing], refs: &mut StyleRefs) -> Extras {
         let mut extras = Extras {
             defaults: Vec::new(),
             workbook_rels: Vec::new(),
+            pivot_caches: Vec::new(),
             parts: Vec::new(),
             sheet_rels: vec![String::new(); wb.sheets.len()],
         };
@@ -131,7 +138,8 @@ impl Extras {
             }
         }
         super::comments::add_parts(wb, &mut extras);
-        super::table::add_parts(wb, &mut extras, dxfs);
+        super::table::add_parts(wb, &mut extras, &mut refs.dxfs);
+        super::pivot::add_parts(wb, &mut extras, refs);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),
@@ -184,6 +192,43 @@ impl Extras {
     pub fn relate_workbook(&mut self, kind: &str, target: &str) {
         self.workbook_rels
             .push((kind.to_string(), target.to_string()));
+    }
+
+    /// Relate the workbook to the definition of a pivot cache, which the
+    /// workbook part also lists under `cache_id`.
+    pub fn add_pivot_cache(&mut self, cache_id: usize, target: &str) {
+        self.pivot_caches.push((cache_id, self.workbook_rels.len()));
+        self.relate_workbook(&format!("{NS_DOC_REL}/pivotCacheDefinition"), target);
+    }
+
+    /// The relationships of the workbook part to these parts, numbered
+    /// from `first`: the writer has given the ids before it to the sheets
+    /// and to its own parts.
+    pub fn workbook_relationships(&self, first: usize) -> String {
+        let mut x = String::new();
+        for (n, (kind, target)) in self.workbook_rels.iter().enumerate() {
+            push_relationship(&mut x, first + n, kind, target);
+        }
+        x
+    }
+
+    /// The elements of the workbook part that name these parts, under the
+    /// ids [`Extras::workbook_relationships`] gives them: `<pivotCaches>`,
+    /// which comes after the calculation properties.
+    pub fn workbook_elements(&self, first: usize) -> String {
+        let mut x = String::new();
+        if !self.pivot_caches.is_empty() {
+            x.push_str("<pivotCaches>");
+            for (cache_id, rel) in &self.pivot_caches {
+                w!(
+                    x,
+                    "<pivotCache cacheId=\"{cache_id}\" r:id=\"rId{}\"/>",
+                    first + rel
+                );
+            }
+            x.push_str("</pivotCaches>");
+        }
+        x
     }
 }
 

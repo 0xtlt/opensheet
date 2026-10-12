@@ -1412,7 +1412,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     let mut wb = Workbook::new(locale);
     let styles_xml = pkg.read(&part_of("styles", "styles.xml"))?;
     let styles = parse_styles(styles_xml.as_deref(), theme, locale, &mut wb.styles);
-    let dxf_colors = super::dxf::parse_colors(styles_xml.as_deref().unwrap_or(""), &styles.palette);
+    let style_lookup =
+        super::stylerefs::StyleLookup::read(styles_xml.as_deref(), &styles.palette, locale);
     drop(styles_xml);
     let strings = match pkg.read(&part_of("sharedStrings", "sharedStrings.xml"))? {
         Some(xml) => parse_shared_strings(&xml),
@@ -1484,8 +1485,10 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     if !sheets.is_empty() {
         wb.sheets = sheets;
         // What needs the whole workbook: tables have names and ids no
-        // other table of any sheet may have.
-        super::table::read_all(&mut pkg, &mut wb, &sheet_parts, &dxf_colors);
+        // other table of any sheet may have, PivotTables share caches and
+        // write their reports into the cells.
+        super::table::read_all(&mut pkg, &mut wb, &sheet_parts, &style_lookup.dxf_colors);
+        super::pivot::read_all(&mut pkg, &mut wb, &sheet_parts, &style_lookup);
     } else {
         loaded_as.clear();
     }

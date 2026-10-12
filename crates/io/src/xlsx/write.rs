@@ -1,10 +1,10 @@
 //! Writing a [`Workbook`] as an `.xlsx` package.
 
 use super::chart::write::{CT_CHART, CT_DRAWING, drawings};
-use super::dxf::Dxfs;
 use super::formula::{is_valid_name, needs_array_evaluation, to_file_text};
 use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
 use super::parts::{Extras, SheetLinks, push_relationship};
+use super::stylerefs::StyleRefs;
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
 use super::{px_to_col_width, px_to_points};
 use crate::Result;
@@ -767,7 +767,9 @@ impl SheetWriter<'_> {
 
 // ---- package -------------------------------------------------------------------
 
-fn workbook_xml(wb: &Workbook) -> String {
+/// `extra` is what comes after the calculation properties: the elements
+/// naming parts the workbook part relates to.
+fn workbook_xml(wb: &Workbook, extra: &str) -> String {
     let mut x = String::from(XML_DECL);
     w!(x, "<workbook xmlns=\"{NS_MAIN}\" xmlns:r=\"{NS_DOC_REL}\">");
     x.push_str("<workbookPr/>");
@@ -809,6 +811,7 @@ fn workbook_xml(wb: &Workbook) -> String {
     // Cached results are written, but the reader is asked to recalculate:
     // its functions are the reference.
     x.push_str("<calcPr calcId=\"191029\" fullCalcOnLoad=\"1\"/>");
+    x.push_str(extra);
     x.push_str("</workbook>");
     x
 }
@@ -848,8 +851,8 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
     let drawings = drawings(wb);
-    let mut dxfs = Dxfs::default();
-    let extras = Extras::of(wb, &drawings, &mut dxfs);
+    let mut style_refs = StyleRefs::of(&styles.xml, wb.locale);
+    let extras = Extras::of(wb, &drawings, &mut style_refs);
 
     let mut content_types = String::from(XML_DECL);
     content_types
@@ -933,12 +936,11 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let mut workbook_rels = String::from(XML_DECL);
     w!(workbook_rels, "<Relationships xmlns=\"{NS_PKG_REL}\">");
     let mut next_id = 1;
-    // `kind` is the whole type of the relationship.
-    let mut relate_as = |kind: &str, target: &str| {
-        push_relationship(&mut workbook_rels, next_id, kind, target);
+    let mut relate = |kind: &str, target: &str| {
+        let kind = format!("{NS_DOC_REL}/{kind}");
+        push_relationship(&mut workbook_rels, next_id, &kind, target);
         next_id += 1;
     };
-    let mut relate = |kind: &str, target: &str| relate_as(&format!("{NS_DOC_REL}/{kind}"), target);
     // Sheets first: `workbook.xml` refers to sheet n as rId n.
     for i in 1..=sheet_count {
         relate("worksheet", &format!("worksheets/sheet{i}.xml"));
@@ -948,9 +950,10 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     if dynamic_arrays {
         relate("sheetMetadata", "metadata.xml");
     }
-    for (kind, target) in &extras.workbook_rels {
-        relate_as(kind, target);
-    }
+    // The parts of the features are numbered after these; the workbook
+    // part names some of them by those ids.
+    let first_extra = next_id;
+    workbook_rels.push_str(&extras.workbook_relationships(first_extra));
     workbook_rels.push_str("</Relationships>");
 
     let app = format!(
@@ -972,12 +975,15 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     put("_rels/.rels", &root_rels)?;
     put("docProps/app.xml", &app)?;
     put("docProps/core.xml", &core)?;
-    put("xl/workbook.xml", &workbook_xml(wb))?;
+    put(
+        "xl/workbook.xml",
+        &workbook_xml(wb, &extras.workbook_elements(first_extra)),
+    )?;
     put("xl/_rels/workbook.xml.rels", &workbook_rels)?;
     for (i, xml) in sheets.iter().enumerate() {
         put(&format!("xl/worksheets/sheet{}.xml", i + 1), xml)?;
     }
-    put("xl/styles.xml", &dxfs.apply(&styles.xml))?;
+    put("xl/styles.xml", &style_refs.apply(&styles.xml))?;
     put("xl/sharedStrings.xml", &strings.xml())?;
     if dynamic_arrays {
         put("xl/metadata.xml", &format!("{XML_DECL}{METADATA_XML}"))?;
