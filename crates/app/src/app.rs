@@ -1208,9 +1208,10 @@ impl ExcelApp {
                 }
             }
             InputEvent::Enter { shift } => {
-                let dir = if *shift { Direction::Up } else { Direction::Down };
+                // Where Return leads is a preference; it may lead nowhere.
+                let dir = features::preferences::enter_direction(*shift);
                 let origin = self.tab_origin.take();
-                if self.commit_edit(Some(dir), window, cx) {
+                if self.commit_edit(dir, window, cx) {
                     // After a run of Tab entries, Enter goes back under the
                     // first one.
                     if let (Some(col), false, true) = (origin, *shift, self.sel().is_single_cell()) {
@@ -3338,7 +3339,12 @@ impl ExcelApp {
         self.advance(Direction::Left, cx);
     }
     pub fn on_enter_down(&mut self, _: &EnterDown, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Down, false, true, window, cx) {
+        // Where Return leads is a preference; it may lead nowhere.
+        let Some(dir) = features::preferences::enter_direction(false) else {
+            self.commit_edit(None, window, cx);
+            return;
+        };
+        if self.editing_key(dir, false, true, window, cx) {
             return;
         }
         // Enter with a copy marquee pastes, like Excel.
@@ -3349,17 +3355,21 @@ impl ExcelApp {
             return;
         }
         let origin = self.tab_origin.take();
-        self.advance(Direction::Down, cx);
+        self.advance(dir, cx);
         if let (Some(col), true) = (origin, self.sel().is_single_cell()) {
             let (r, _) = self.active();
             self.select_cell(r, col, cx);
         }
     }
     pub fn on_enter_up(&mut self, _: &EnterUp, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Up, false, true, window, cx) {
+        let Some(dir) = features::preferences::enter_direction(true) else {
+            self.commit_edit(None, window, cx);
+            return;
+        };
+        if self.editing_key(dir, false, true, window, cx) {
             return;
         }
-        self.advance(Direction::Up, cx);
+        self.advance(dir, cx);
     }
     pub fn on_edit_cell(&mut self, _: &EditCell, window: &mut Window, cx: &mut Context<Self>) {
         self.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);

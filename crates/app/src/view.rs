@@ -1334,10 +1334,8 @@ impl Render for ExcelApp {
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.pane_resize_move(ev, cx)))
             .when(!modal, |d| {
-                features::custom_views::key_actions(
-                    features::data_tools::key_actions(features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx), cx),
-                    cx,
-                )
+                let d = features::data_tools::key_actions(features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx), cx);
+                features::preferences::key_actions(features::custom_views::key_actions(d, cx), cx)
                     .on_action(cx.listener(Self::on_undo))
                     .on_action(cx.listener(Self::on_redo))
                     .on_action(cx.listener(Self::on_bold))
@@ -1396,7 +1394,8 @@ impl Render for ExcelApp {
                     .child(div().flex_1().min_w(px(0.)).h_full().flex().flex_col().child(grid))
                     .children(pane),
             )
-            .child(sheet_tabs)
+            // Preferences ▸ View can take the sheet tabs away.
+            .children(features::preferences::shows_sheet_tabs().then_some(sheet_tabs))
             .child(status)
             .children(find)
             .children(popup)

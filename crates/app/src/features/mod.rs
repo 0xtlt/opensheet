@@ -250,7 +250,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// Every feature, in the order hooks are called. Floating objects are
 /// drawn in this order too (the objects of later features on top).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 19] = [
+    static ALL: [&dyn Feature; 20] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -265,6 +265,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &drawings::Drawings,
         &ink::InkFeature,
         &custom_views::CustomViews,
+        &preferences::Preferences,
         &names::Names,
         &edit_tools::EditTools,
         &data_tools::DataTools,

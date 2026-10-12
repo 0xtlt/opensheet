@@ -31,6 +31,7 @@ fn bind_keys(cx: &mut App) {
     features::misc::bind_keys(cx);
     features::edit_tools::bind_keys(cx);
     features::data_tools::bind_keys(cx);
+    features::preferences::bind_keys(cx);
     let g = Some("Grid");
     let w = Some("Workbook");
     cx.bind_keys([
@@ -129,7 +130,11 @@ pub(crate) fn set_menus(cx: &mut App) {
     cx.set_menus(vec![
         Menu {
             name: "OpenSheet".into(),
-            items: vec![MenuItem::action(t("Quit OpenSheet", "Quitter OpenSheet"), Quit)],
+            items: vec![
+                MenuItem::action(t("Preferences…", "Préférences…"), features::preferences::OpenPreferences),
+                MenuItem::separator(),
+                MenuItem::action(t("Quit OpenSheet", "Quitter OpenSheet"), Quit),
+            ],
         },
         Menu {
             name: t("File", "Fichier").into(),

@@ -9,6 +9,7 @@
 //! to itself.
 
 use crate::features::ink::{Pen, default_pens};
+use opensheet_engine::ops::Direction;
 use std::cell::RefCell;
 use std::path::PathBuf;
 
@@ -16,22 +17,92 @@ use std::path::PathBuf;
 /// language (`i18n.rs`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
+    // ---- General
+    /// The name put on comments; empty: the name the system gives.
+    pub user_name: String,
+    /// Font of the cells of a new workbook; empty: the engine's own.
+    pub default_font: String,
+    /// Its size in points.
+    pub default_font_size: f32,
+    pub sheets_in_new_workbook: u32,
+    // ---- Edit
+    /// "After pressing Return, move selection".
+    pub move_after_return: bool,
+    pub move_direction: Direction,
+    /// "Automatically insert a decimal point".
+    pub fixed_decimal: bool,
+    /// How many places from the right the point goes (negative: zeros are
+    /// added instead).
+    pub decimal_places: i32,
+    // ---- View
+    pub show_sheet_tabs: bool,
+    // ---- Calculation
+    pub recalc_before_save: bool,
+    // ---- Error Checking
+    /// "Enable background error checking": the green corner on cells.
+    pub background_error_checking: bool,
+    /// The rule "Cells containing formulas that result in an error".
+    pub check_error_values: bool,
+    // ---- Draw
     /// The gallery of pens of the Draw tab, in order. Never empty.
     pub pens: Vec<Pen>,
 }
 
 impl Default for Settings {
     fn default() -> Settings {
-        Settings { pens: default_pens() }
+        Settings {
+            user_name: String::new(),
+            default_font: String::new(),
+            default_font_size: 11.0,
+            sheets_in_new_workbook: 1,
+            move_after_return: true,
+            move_direction: Direction::Down,
+            fixed_decimal: false,
+            decimal_places: 2,
+            show_sheet_tabs: true,
+            recalc_before_save: true,
+            background_error_checking: true,
+            check_error_values: true,
+            pens: default_pens(),
+        }
     }
+}
+
+fn direction_name(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Down => "down",
+        Direction::Right => "right",
+        Direction::Up => "up",
+        Direction::Left => "left",
+    }
+}
+
+fn direction_named(name: &str) -> Option<Direction> {
+    [Direction::Down, Direction::Right, Direction::Up, Direction::Left]
+        .into_iter()
+        .find(|direction| direction_name(*direction) == name)
 }
 
 impl Settings {
     /// The settings as the text of their file.
     pub fn to_text(&self) -> String {
+        let flag = |on: bool| if on { "yes" } else { "no" };
         let mut out = String::new();
+        let mut line = |name: &str, value: &str| out.push_str(&format!("{name} = {value}\n"));
+        line("user-name", &self.user_name);
+        line("default-font", &self.default_font);
+        line("default-font-size", &self.default_font_size.to_string());
+        line("sheets-in-new-workbook", &self.sheets_in_new_workbook.to_string());
+        line("move-after-return", flag(self.move_after_return));
+        line("move-direction", direction_name(self.move_direction));
+        line("fixed-decimal", flag(self.fixed_decimal));
+        line("decimal-places", &self.decimal_places.to_string());
+        line("show-sheet-tabs", flag(self.show_sheet_tabs));
+        line("recalculate-before-save", flag(self.recalc_before_save));
+        line("background-error-checking", flag(self.background_error_checking));
+        line("check-error-values", flag(self.check_error_values));
         for pen in &self.pens {
-            out.push_str(&format!("pen = {}\n", pen.to_setting()));
+            line("pen", &pen.to_setting());
         }
         out
     }
@@ -41,13 +112,48 @@ impl Settings {
     pub fn from_text(text: &str) -> Settings {
         let mut settings = Settings::default();
         let mut pens = Vec::new();
+        let flag = |value: &str| match value {
+            "yes" => Some(true),
+            "no" => Some(false),
+            _ => None,
+        };
         for line in text.lines() {
             let Some((name, value)) = line.split_once('=') else {
                 continue;
             };
             let value = value.trim();
-            if name.trim() == "pen" {
-                pens.extend(Pen::from_setting(value));
+            let set = |slot: &mut bool| {
+                if let Some(on) = flag(value) {
+                    *slot = on;
+                }
+            };
+            match name.trim() {
+                "user-name" => settings.user_name = value.to_string(),
+                "default-font" => settings.default_font = value.to_string(),
+                "default-font-size" => {
+                    if let Some(size) = value.parse::<f32>().ok().filter(|size| (1.0..=409.0).contains(size)) {
+                        settings.default_font_size = size;
+                    }
+                }
+                "sheets-in-new-workbook" => {
+                    if let Some(count) = value.parse::<u32>().ok().filter(|count| (1..=255).contains(count)) {
+                        settings.sheets_in_new_workbook = count;
+                    }
+                }
+                "move-after-return" => set(&mut settings.move_after_return),
+                "move-direction" => settings.move_direction = direction_named(value).unwrap_or(settings.move_direction),
+                "fixed-decimal" => set(&mut settings.fixed_decimal),
+                "decimal-places" => {
+                    if let Some(places) = value.parse::<i32>().ok().filter(|places| (-300..=300).contains(places)) {
+                        settings.decimal_places = places;
+                    }
+                }
+                "show-sheet-tabs" => set(&mut settings.show_sheet_tabs),
+                "recalculate-before-save" => set(&mut settings.recalc_before_save),
+                "background-error-checking" => set(&mut settings.background_error_checking),
+                "check-error-values" => set(&mut settings.check_error_values),
+                "pen" => pens.extend(Pen::from_setting(value)),
+                _ => {}
             }
         }
         if !pens.is_empty() {
@@ -124,10 +230,23 @@ mod tests {
             color: 0x00F900,
             mm: 8.0,
         });
+        settings.user_name = "Ada = Lovelace".to_string();
+        settings.default_font = "Helvetica Neue".to_string();
+        settings.default_font_size = 12.5;
+        settings.sheets_in_new_workbook = 3;
+        settings.move_after_return = false;
+        settings.move_direction = Direction::Right;
+        settings.fixed_decimal = true;
+        settings.decimal_places = -2;
+        settings.show_sheet_tabs = false;
+        settings.recalc_before_save = false;
+        settings.background_error_checking = false;
+        settings.check_error_values = false;
         assert_eq!(Settings::from_text(&settings.to_text()), settings);
-        // An empty or damaged file gives the defaults.
+        // An empty or damaged file gives the defaults, setting by setting.
         assert_eq!(Settings::from_text(""), Settings::default());
-        assert_eq!(Settings::from_text("pen = nonsense\nwhat\n= 3\n"), Settings::default());
+        let damaged = "pen = nonsense\nwhat\n= 3\nsheets-in-new-workbook = 0\ndecimal-places = 1000\nmove-direction = sideways\nfixed-decimal = maybe\n";
+        assert_eq!(Settings::from_text(damaged), Settings::default());
     }
 
     #[test]
