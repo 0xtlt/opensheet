@@ -35,35 +35,24 @@ fn name_is_free(pivot: &PivotTable, target: Target, name: &str) -> bool {
     }
 }
 
-/// Give a field or a value field a custom name. Returns false when the
-/// name was refused (and the user told).
-pub(super) fn rename_target(
-    app: &mut ExcelApp,
-    id: u32,
-    target: Target,
-    name: String,
-    window: &mut Window,
-    cx: &mut Cx,
-) -> bool {
-    let Some((_, pivot)) = app.wb.pivot(id) else {
-        return false;
+/// Give the field or the value field under the active cell a custom name
+/// (the "Active Field" box). A name already taken is refused with Excel's
+/// message.
+pub(super) fn rename_active_field(app: &mut ExcelApp, name: String, window: &mut Window, cx: &mut Cx) {
+    let (Some(pivot), Some(target)) = (active_pivot(app), active_target(app)) else {
+        return;
     };
+    let id = pivot.id;
     if !name_is_free(pivot, target, &name) {
         warn(app, logic::name_exists(), cx);
-        return false;
+        return;
     }
     update(app, id, t("Rename Field", "Renommer le champ"), window, cx, move |p| {
         match target {
             Target::Field(field) => p.set_field_caption(field, &name),
             Target::Data(data) => p.set_data_name(data, &name),
         };
-    }) != Outcome::Refused
-}
-
-pub(super) fn rename_active_field(app: &mut ExcelApp, name: String, window: &mut Window, cx: &mut Cx) {
-    if let (Some(id), Some(target)) = (active_pivot(app).map(|p| p.id), active_target(app)) {
-        rename_target(app, id, target, name, window, cx);
-    }
+    });
 }
 
 // ------------------------------------------------------- expand and collapse
