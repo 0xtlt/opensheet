@@ -465,7 +465,7 @@ fn parse_labels<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<DataLabels> {
 /// `<a:solidFill>` (or any element holding a colour): an RGB, theme or
 /// system colour, lightened or darkened by the adjustments nested in it.
 /// Transparency is ignored.
-fn parse_solid_fill<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<Color> {
+pub(crate) fn parse_solid_fill<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<Color> {
     let mut color = None;
     each_child(r, tag, |r, t| {
         let mut rgb = match t.name {

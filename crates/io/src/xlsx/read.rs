@@ -73,6 +73,11 @@ impl<R: Read + Seek> Package<R> {
     }
 
     pub(super) fn read(&mut self, part: &str) -> Result<Option<String>> {
+        Ok(self.read_bytes(part)?.map(decode_xml))
+    }
+
+    /// A part as it is stored: an image, or text before it is decoded.
+    pub(super) fn read_bytes(&mut self, part: &str) -> Result<Option<Vec<u8>>> {
         let Some(&i) = self.index.get(&normalize_part(part)) else {
             return Ok(None);
         };
@@ -83,7 +88,7 @@ impl<R: Read + Seek> Package<R> {
         if bytes.len() as u64 > MAX_PART_SIZE {
             return Err(IoError::Invalid(format!("the part {part} is too large")));
         }
-        Ok(Some(decode_xml(bytes)))
+        Ok(Some(bytes))
     }
 }
 
@@ -1544,6 +1549,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         &styles.palette,
         &wb.styles.get(ctx.style(0)).font,
     );
+    let mut drawings = super::drawing::Loader::new();
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),
@@ -1572,6 +1578,13 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             loaded.sheet.default_row_height,
         );
         super::comments::read_sheet(&mut pkg, &part, &mut loaded.sheet, default_sizes, &comments);
+        drawings.read_sheet(
+            &mut pkg,
+            &part,
+            loaded.drawing.as_deref(),
+            &mut loaded.sheet,
+            &styles.palette,
+        );
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
         sheet_parts.push(part);

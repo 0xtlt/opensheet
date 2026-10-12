@@ -26,6 +26,7 @@ mod color;
 mod comments;
 mod condfmt;
 mod defaults;
+mod drawing;
 mod dxf;
 mod filter;
 mod formula;

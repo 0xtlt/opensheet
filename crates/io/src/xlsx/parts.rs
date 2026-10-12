@@ -34,7 +34,8 @@ pub(crate) fn push_relationship(x: &mut String, id: usize, kind: &str, target: &
 /// because both ask here.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SheetLinks {
-    /// The drawing part holding the charts (`<drawing>`).
+    /// The drawing part holding the charts, the pictures and the shapes
+    /// (`<drawing>`).
     pub drawing: Option<usize>,
     /// The boxes of the notes, a VML drawing (`<legacyDrawing>`).
     pub vml: Option<usize>,
@@ -62,7 +63,7 @@ impl SheetLinks {
         let annotated = !sheet.comments.is_empty();
         let threaded = sheet.comments.values().any(|c| c.as_thread().is_some());
         SheetLinks {
-            drawing: id(!sheet.charts.is_empty()),
+            drawing: id(!sheet.charts.is_empty() || !sheet.drawings.is_empty()),
             vml: id(annotated),
             comments: id(annotated),
             threads: id(threaded),
@@ -122,7 +123,7 @@ impl Extras {
     /// and of the strings; `drawings` are the charts, which the writer
     /// stores itself. The formats these parts refer to get their ids from
     /// `dxfs`.
-    pub fn of(wb: &Workbook, drawings: &[Drawing], dxfs: &mut Dxfs) -> Extras {
+    pub fn of(wb: &Workbook, drawings: &mut Vec<Drawing>, dxfs: &mut Dxfs) -> Extras {
         let mut extras = Extras {
             defaults: Vec::new(),
             workbook_rels: Vec::new(),
@@ -130,7 +131,8 @@ impl Extras {
             parts: Vec::new(),
             sheet_rels: vec![String::new(); wb.sheets.len()],
         };
-        for drawing in drawings {
+        super::drawing::add_parts(wb, drawings, &mut extras);
+        for drawing in drawings.iter() {
             let links = wb.sheets.get(drawing.sheet).map(SheetLinks::of);
             if let Some(id) = links.and_then(|links| links.drawing) {
                 let target = format!("../drawings/drawing{}.xml", drawing.number);

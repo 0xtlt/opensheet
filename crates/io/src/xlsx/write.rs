@@ -968,8 +968,8 @@ pub(crate) fn write_workbook<W: Write + Seek>(
         .collect();
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
-    let drawings = drawings(wb);
-    let extras = Extras::of(wb, &drawings, &mut dxfs);
+    let mut drawings = drawings(wb);
+    let extras = Extras::of(wb, &mut drawings, &mut dxfs);
 
     let mut content_types = String::from(XML_DECL);
     content_types
