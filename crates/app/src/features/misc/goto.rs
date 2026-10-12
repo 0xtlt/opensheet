@@ -5,7 +5,7 @@ use super::links;
 use crate::app::ExcelApp;
 use crate::features::{self, Cx, names};
 use crate::grid::Selection;
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
@@ -506,7 +506,7 @@ impl Choice {
             Choice::Notes => t("Notes", "Notes"),
             Choice::Constants => t("Constants", "Constantes"),
             Choice::Formulas => t("Formulas", "Formules"),
-            Choice::Blanks => t("Blanks", "Vides"),
+            Choice::Blanks => t_ctx("special", "Blanks", "Vides"),
             Choice::CurrentRegion => t("Current region", "Zone active"),
             Choice::CurrentArray => t("Current array", "Tableau actif"),
             Choice::Objects => t("Objects", "Objets"),
@@ -702,7 +702,7 @@ impl Render for GoToSpecial {
             .child(indent(
                 RadioGroup::new(
                     "rules",
-                    vec![t("All", "Tous").into(), t("Same", "Identiques").into()],
+                    vec![t_ctx("rules", "All", "Tous").into(), t("Same", "Identiques").into()],
                     Some(self.same as usize),
                 )
                 .disabled(!rules)

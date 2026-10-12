@@ -5,7 +5,7 @@ use super::links;
 use crate::app::{EditMode, EditSource, ExcelApp};
 use crate::features::{Cx, PaintLayer, Painter};
 use crate::grid::{Axis, GridLayout};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::theme::{self, c};
 use crate::widgets::{Button, ListBox, dialog, label};
@@ -1021,7 +1021,7 @@ impl Render for Evaluate {
                     .into_any_element()
             })
             .collect();
-        dialog(&self.modal, t("Evaluate Formula", "Évaluation de formule"))
+        dialog(&self.modal, t_ctx("title", "Evaluate Formula", "Évaluation de formule"))
             .width(560.0)
             .on_ok(cx.listener(Self::evaluate))
             .child(

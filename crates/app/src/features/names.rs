@@ -150,7 +150,7 @@ pub(crate) fn name_error_message(error: NameError) -> &'static str {
 }
 
 pub(crate) fn invalid_reference() -> &'static str {
-    t("Reference isn't valid.", "La référence n'est pas valide.")
+    t("Reference isn't valid.", "La référence n’est pas valide.")
 }
 
 // ---------------------------------------------------------------- the list

@@ -9,7 +9,7 @@
 use super::fn_help::{self, FunctionHelp};
 use crate::app::{EditMode, EditSource, ExcelApp};
 use crate::features::{Cx, names};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use crate::shell::{Modal, RefStyle};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
@@ -210,11 +210,11 @@ const CATEGORIES: [Category; 9] = [
 
 fn category_name(category: Category) -> &'static str {
     match category {
-        Category::Financial => t("Financial", "Finances"),
-        Category::DateTime => t("Date & Time", "Date et Heure"),
-        Category::Math => t("Math & Trig", "Math et Trigo"),
+        Category::Financial => t_ctx("category", "Financial", "Finances"),
+        Category::DateTime => t_ctx("category", "Date & Time", "Date et Heure"),
+        Category::Math => t_ctx("category", "Math & Trig", "Math et Trigo"),
         Category::Statistical => t("Statistical", "Statistiques"),
-        Category::Lookup => t("Lookup & Reference", "Recherche & référence"),
+        Category::Lookup => t_ctx("category", "Lookup & Reference", "Recherche & référence"),
         Category::Text => t("Text", "Texte"),
         Category::Logical => t("Logical", "Logique"),
         Category::Information => t("Information", "Informations"),
@@ -394,7 +394,7 @@ impl Render for InsertFunction {
         let locale = self.locale;
         let mut categories: Vec<SharedString> = vec![
             t("Most Recently Used", "Les dernières utilisées").into(),
-            t("All", "Toutes").into(),
+            t_ctx("category", "All", "Toutes").into(),
         ];
         categories.extend(CATEGORIES.iter().map(|category| SharedString::from(category_name(*category))));
         if self.found.is_some() {
