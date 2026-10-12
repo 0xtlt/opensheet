@@ -82,9 +82,8 @@ pub fn after_change(app: &mut ExcelApp, cx: &mut Cx) {
              either directly or indirectly. This might cause them to calculate incorrectly.\n\n\
              Try removing or changing these references, or moving the formulas to different cells.",
             "Il existe une ou plusieurs références circulaires dans lesquelles une formule fait \
-             référence à sa propre cellule, directement ou indirectement. Cela peut entraîner un \
-             calcul incorrect.\n\nEssayez de supprimer ou de modifier ces références, ou de \
-             déplacer les formules vers d'autres cellules.",
+             référence à sa propre cellule, directement ou indirectement.\n\nEssayez de supprimer \
+             ou de modifier ces références, ou changez les formules de cellule.",
         );
         app.alert(Alert::new("OpenSheet", message).warning(), cx);
     }
