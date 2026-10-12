@@ -136,12 +136,32 @@ impl Sheet {
         self.col_widths.get(&col).copied().unwrap_or(DEFAULT_COL_WIDTH)
     }
 
-    /// Row height in pixels at 100 % (0 when hidden).
+    /// Row height in pixels at 100 % (0 when hidden by hand or by a filter).
     pub fn row_height(&self, row: u32) -> f32 {
-        if self.hidden_rows.contains(&row) {
+        if self.is_row_hidden(row) {
             return 0.0;
         }
         self.row_heights.get(&row).copied().unwrap_or(DEFAULT_ROW_HEIGHT)
+    }
+
+    /// True when the row is not shown: hidden by hand or by a filter.
+    pub fn is_row_hidden(&self, row: u32) -> bool {
+        self.hidden_rows.contains(&row) || self.filtered_rows.contains(&row)
+    }
+
+    /// The rows of `r0..=r1` that are shown, top to bottom.
+    pub fn visible_rows(&self, r0: u32, r1: u32) -> impl Iterator<Item = u32> + '_ {
+        (r0..=r1).filter(|r| !self.is_row_hidden(*r))
+    }
+
+    /// Every row that is not shown, hidden by hand or by a filter (what a
+    /// grid lays its rows out with).
+    pub fn rows_not_shown(&self) -> std::borrow::Cow<'_, BTreeSet<u32>> {
+        if self.filtered_rows.is_empty() {
+            std::borrow::Cow::Borrowed(&self.hidden_rows)
+        } else {
+            std::borrow::Cow::Owned(self.hidden_rows.union(&self.filtered_rows).copied().collect())
+        }
     }
 
     /// (max row, max col) of cells holding a constant or a formula, ignoring
@@ -978,7 +998,8 @@ impl Workbook {
         }
     }
 
-    /// Clear contents and / or formats in a rectangle.
+    /// Clear contents and / or formats in a rectangle. Rows hidden by a
+    /// filter are left alone, as in Excel.
     pub fn clear(&mut self, sheet: usize, rect: Rect, mode: ClearMode) {
         let Some(sh) = self.sheets.get(sheet) else {
             return;
@@ -986,7 +1007,7 @@ impl Workbook {
         let keys: Vec<(u32, u32)> = sh
             .cells
             .range((rect.r0, 0)..=(rect.r1, u32::MAX))
-            .filter(|((_, c), _)| *c >= rect.c0 && *c <= rect.c1)
+            .filter(|((r, c), _)| *c >= rect.c0 && *c <= rect.c1 && !sh.filtered_rows.contains(r))
             .map(|(k, _)| *k)
             .collect();
         for (r, c) in keys {
