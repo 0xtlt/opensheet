@@ -25,7 +25,7 @@ use super::{
     ZoneEvent, ZoneResponse,
 };
 use crate::app::{ExcelApp, MenuAction, MenuEntry};
-use crate::grid::GridLayout;
+use crate::grid::{Axis, GridLayout};
 use crate::i18n::t;
 use crate::shell::Alert;
 use crate::theme::{self, c};
@@ -825,6 +825,11 @@ impl Feature for Page {
     fn view_mode_changed(&self, app: &mut ExcelApp, cx: &mut Cx) {
         let mode = app.view_mode();
         let name = app.wb.sheets[app.sheet].name.clone();
+        // As last painted, in the view that is being left.
+        let corner = app
+            .layout
+            .as_ref()
+            .map(|l| (l.scrolled_rows().start, l.scrolled_cols().start));
         let before = app
             .ext_mut::<PageUi>()
             .last_mode
@@ -862,10 +867,23 @@ impl Feature for Page {
         }
         app.ext_mut::<PageUi>().last_mode.insert(name, mode);
         sync_zoom(app, cx);
-        if mode == ViewMode::PageLayout {
-            // The pages start at the top-left corner of the desk.
-            let (row, col) = app.active();
-            app.ensure_visible(row, col);
+        // The cells at the top-left corner of the window stay there: the
+        // same scroll offsets mean other cells once the pages are spread
+        // on the desk (or gathered again).
+        match (corner, app.current_layout()) {
+            (Some((row, col)), Some(layout)) => {
+                let offset = |axis: &Axis, index: u32, frozen: f32| match index {
+                    0 => 0.0,
+                    _ => (axis.end(index - 1) - frozen as f64).max(0.0),
+                };
+                let view = &mut app.views[app.sheet];
+                view.scroll_y = offset(&layout.rows, row, layout.frozen_h).min(layout.max_scroll_y());
+                view.scroll_x = offset(&layout.cols, col, layout.frozen_w).min(layout.max_scroll_x());
+            }
+            _ => {
+                let (row, col) = app.active();
+                app.ensure_visible(row, col);
+            }
         }
     }
 }
