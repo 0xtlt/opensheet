@@ -3,6 +3,7 @@
 use super::chart::write::{CT_CHART, CT_DRAWING, drawings};
 use super::formula::{is_valid_name, needs_array_evaluation, to_file_text};
 use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
+use super::parts::{Extras, SheetLinks, push_relationship};
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
 use super::{px_to_col_width, px_to_points};
 use crate::Result;
@@ -19,7 +20,7 @@ use std::fmt::Write as _;
 use std::io::{Seek, Write};
 use std::sync::Arc;
 
-const NS_MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+pub(crate) const NS_MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 pub(crate) const NS_DOC_REL: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 pub(crate) const NS_PKG_REL: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
@@ -363,7 +364,7 @@ impl SharedStrings {
 }
 
 /// Append a `<t>` element, asking readers to keep significant whitespace.
-fn push_t(x: &mut String, s: &str) {
+pub(crate) fn push_t(x: &mut String, s: &str) {
     let preserve = s.starts_with(char::is_whitespace)
         || s.ends_with(char::is_whitespace)
         || s.contains(['\n', '\t', '\r'])
@@ -754,10 +755,8 @@ impl SheetWriter<'_> {
             x.push_str("</mergeCells>");
         }
         x.push_str("<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/>");
-        if !sheet.charts.is_empty() {
-            // The drawing part is the only relationship of a sheet.
-            x.push_str("<drawing r:id=\"rId1\"/>");
-        }
+        // What lives in parts of its own: charts, the boxes of notes.
+        SheetLinks::of(sheet).push_elements(&mut x);
         x.push_str("</worksheet>");
         x
     }
@@ -846,12 +845,19 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
     let drawings = drawings(wb);
+    let extras = Extras::of(wb, &drawings);
 
     let mut content_types = String::from(XML_DECL);
     content_types
         .push_str("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
     content_types.push_str("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
     content_types.push_str("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
+    for (extension, content_type) in &extras.defaults {
+        w!(
+            content_types,
+            "<Default Extension=\"{extension}\" ContentType=\"{content_type}\"/>"
+        );
+    }
     let mut override_part = |part: &str, content_type: &str| {
         w!(
             content_types,
@@ -889,6 +895,11 @@ pub(crate) fn write_workbook<W: Write + Seek>(
             override_part(&format!("/xl/charts/chart{number}.xml"), CT_CHART);
         }
     }
+    for part in &extras.parts {
+        if let Some(content_type) = part.content_type {
+            override_part(&format!("/{}", part.name), content_type);
+        }
+    }
     override_part(
         "/docProps/core.xml",
         "application/vnd.openxmlformats-package.core-properties+xml",
@@ -918,13 +929,12 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let mut workbook_rels = String::from(XML_DECL);
     w!(workbook_rels, "<Relationships xmlns=\"{NS_PKG_REL}\">");
     let mut next_id = 1;
-    let mut relate = |kind: &str, target: &str| {
-        w!(
-            workbook_rels,
-            "<Relationship Id=\"rId{next_id}\" Type=\"{NS_DOC_REL}/{kind}\" Target=\"{target}\"/>"
-        );
+    // `kind` is the whole type of the relationship.
+    let mut relate_as = |kind: &str, target: &str| {
+        push_relationship(&mut workbook_rels, next_id, kind, target);
         next_id += 1;
     };
+    let mut relate = |kind: &str, target: &str| relate_as(&format!("{NS_DOC_REL}/{kind}"), target);
     // Sheets first: `workbook.xml` refers to sheet n as rId n.
     for i in 1..=sheet_count {
         relate("worksheet", &format!("worksheets/sheet{i}.xml"));
@@ -933,6 +943,9 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     relate("sharedStrings", "sharedStrings.xml");
     if dynamic_arrays {
         relate("sheetMetadata", "metadata.xml");
+    }
+    for (kind, target) in &extras.workbook_rels {
+        relate_as(kind, target);
     }
     workbook_rels.push_str("</Relationships>");
 
@@ -967,12 +980,6 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     }
     for drawing in &drawings {
         let n = drawing.number;
-        put(
-            &format!("xl/worksheets/_rels/sheet{}.xml.rels", drawing.sheet + 1),
-            &format!(
-                "{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{NS_DOC_REL}/drawing\" Target=\"../drawings/drawing{n}.xml\"/></Relationships>"
-            ),
-        )?;
         put(&format!("xl/drawings/drawing{n}.xml"), &drawing.xml)?;
         put(
             &format!("xl/drawings/_rels/drawing{n}.xml.rels"),
@@ -981,6 +988,10 @@ pub(crate) fn write_workbook<W: Write + Seek>(
         for (number, xml) in &drawing.charts {
             put(&format!("xl/charts/chart{number}.xml"), xml)?;
         }
+    }
+    // The relationships of the worksheets are among them.
+    for part in &extras.parts {
+        put(&part.name, &part.data)?;
     }
     Ok(zip.finish()?)
 }

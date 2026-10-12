@@ -3,7 +3,7 @@
 //! The reader and writer work directly on the package (a zip archive of XML
 //! parts) and map it to and from the engine's [`Workbook`] model. Parts the
 //! engine has no model for (images, conditional formatting, data validation,
-//! comments, pivot tables, ...) are ignored on load and therefore not written
+//! pivot tables, ...) are ignored on load and therefore not written
 //! back.
 //!
 //! [`Workbook`]: opensheet_engine::Workbook
@@ -17,8 +17,10 @@ macro_rules! w {
 
 mod chart;
 mod color;
+mod comments;
 mod formula;
 mod numfmt;
+mod parts;
 pub(crate) mod read;
 pub(crate) mod write;
 mod xml;
