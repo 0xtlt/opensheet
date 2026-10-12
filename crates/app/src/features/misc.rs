@@ -5,7 +5,7 @@
 //! Function Arguments, formula auditing (Show Formulas, tracer arrows,
 //! Error Checking, Evaluate Formula, the Watch Window) and the Calculation
 //! group. And the commands of the ribbon nobody wrote yet (sharing,
-//! proofing, themes, outlines, links, ...): they say they are not
+//! proofing, themes, links, ...): they say they are not
 //! available; a feature that takes one over moves it to its own module.
 
 mod audit;
@@ -70,10 +70,6 @@ commands! {
         CalcManual = "", t("Manual", "Manuel");
         CalcNow = "misc-calc-now", t("Calculate Now", "Calculer maintenant");
         CalcSheet = "misc-calc-sheet", t("Calculate Sheet", "Calculer la feuille");
-        // Data
-        GroupRows = "group-objects", t_ctx("outline", "Group", "Grouper");
-        UngroupRows = "group-objects", t_ctx("outline", "Ungroup", "Dissocier");
-        Subtotal = "calculator", t("Subtotal", "Sous-total");
         // Review
         Spelling = "spell", t("Spelling", "Orthographe");
         Thesaurus = "book", t("Thesaurus", "Dictionnaire des synonymes");

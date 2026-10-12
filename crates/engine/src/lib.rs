@@ -36,6 +36,7 @@ pub mod protect;
 pub mod recalc;
 pub mod refs;
 pub mod structured;
+pub mod subtotal;
 pub mod style;
 pub mod table;
 pub mod text_columns;

@@ -218,6 +218,11 @@ pub struct GridLayout {
     pub rows: Axis,
     pub header_w: f32,
     pub header_h: f32,
+    /// Room kept free left of the row headings and above the column
+    /// headings (the outline symbols go there); `header_w` and `header_h`
+    /// include it.
+    pub margin_w: f32,
+    pub margin_h: f32,
     pub scroll_x: f64,
     pub scroll_y: f64,
     pub frozen_rows: u32,
@@ -265,6 +270,8 @@ impl GridLayout {
             rows,
             header_w,
             header_h,
+            margin_w: 0.0,
+            margin_h: 0.0,
             scroll_x,
             scroll_y,
             frozen_rows: sheet.frozen_rows,
@@ -1367,8 +1374,9 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         });
     }
 
-    // Headers.
-    if hh > 0.0 {
+    // Headers, beside the margin a feature may have set aside.
+    let (mw, mh) = (layout.margin_w, layout.margin_h);
+    if hh > mh {
         let sel = input.selection;
         let font_size = (12.0 * layout.zoom).clamp(8.0, 20.0);
         let line_h = (font_size * 1.3).round();
@@ -1398,8 +1406,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
             }
         };
 
-        for (range, clip) in [(s_cols.clone(), (fx, 0.0, w, hh)), (f_cols.clone(), (hw, 0.0, fx, hh))] {
-            let mut items = vec![solid(layout, clip.0, 0.0, clip.2, hh, c(theme::HEADER_BG))];
+        for (range, clip) in [(s_cols.clone(), (fx, mh, w, hh)), (f_cols.clone(), (hw, mh, fx, hh))] {
+            let mut items = vec![solid(layout, clip.0, mh, clip.2, hh, c(theme::HEADER_BG))];
             for col in range {
                 let (x, cw) = (layout.col_x(col), layout.col_w(col));
                 if cw <= 0.0 {
@@ -1408,17 +1416,17 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
                 let state = col_state(col);
                 let (bg, fg) = colors(state);
                 if state > 0 {
-                    items.push(solid(layout, x, 0.0, x + cw, hh, bg));
+                    items.push(solid(layout, x, mh, x + cw, hh, bg));
                 }
-                items.push(solid(layout, x + cw - 1.0, 0.0, x + cw, hh, c(theme::HEADER_BORDER)));
+                items.push(solid(layout, x + cw - 1.0, mh, x + cw, hh, c(theme::HEADER_BORDER)));
                 let line = header_text(ts, col_to_letters(col), font_size, fg, state > 0);
                 let lw = f32::from(line.width);
                 if lw + 2.0 <= cw {
                     items.push(Draw::Text {
                         line,
-                        origin: layout.to_window(x + ((cw - lw) / 2.0).round(), ((hh - line_h) / 2.0).round()),
+                        origin: layout.to_window(x + ((cw - lw) / 2.0).round(), mh + ((hh - mh - line_h) / 2.0).round()),
                         line_height: px(line_h),
-                        clip: layout.bounds_px(x, 0.0, x + cw, hh),
+                        clip: layout.bounds_px(x, mh, x + cw, hh),
                     });
                 }
                 if state == 1 {
@@ -1431,8 +1439,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
                 items,
             });
         }
-        for (range, clip) in [(s_rows.clone(), (0.0, fy, hw, h)), (f_rows.clone(), (0.0, hh, hw, fy))] {
-            let mut items = vec![solid(layout, 0.0, clip.1, hw, clip.3, c(theme::HEADER_BG))];
+        for (range, clip) in [(s_rows.clone(), (mw, fy, hw, h)), (f_rows.clone(), (mw, hh, hw, fy))] {
+            let mut items = vec![solid(layout, mw, clip.1, hw, clip.3, c(theme::HEADER_BG))];
             for row in range {
                 let (y, rh) = (layout.row_y(row), layout.row_h(row));
                 if rh <= 0.0 {
@@ -1441,17 +1449,17 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
                 let state = row_state(row);
                 let (bg, fg) = colors(state);
                 if state > 0 {
-                    items.push(solid(layout, 0.0, y, hw, y + rh, bg));
+                    items.push(solid(layout, mw, y, hw, y + rh, bg));
                 }
-                items.push(solid(layout, 0.0, y + rh - 1.0, hw, y + rh, c(theme::HEADER_BORDER)));
+                items.push(solid(layout, mw, y + rh - 1.0, hw, y + rh, c(theme::HEADER_BORDER)));
                 if rh >= line_h * 0.7 {
                     let line = header_text(ts, (row + 1).to_string(), font_size, fg, state > 0);
                     let lw = f32::from(line.width);
                     items.push(Draw::Text {
                         line,
-                        origin: layout.to_window(((hw - lw) / 2.0).round(), y + ((rh - line_h) / 2.0).round()),
+                        origin: layout.to_window(mw + ((hw - mw - lw) / 2.0).round(), y + ((rh - line_h) / 2.0).round()),
                         line_height: px(line_h),
-                        clip: layout.bounds_px(0.0, y, hw, y + rh),
+                        clip: layout.bounds_px(mw, y, hw, y + rh),
                     });
                 }
                 if state == 1 {
@@ -1466,12 +1474,12 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         }
         // Select-all corner.
         let mut corner = vec![
-            solid(layout, 0.0, 0.0, hw, hh, c(theme::HEADER_BG)),
-            solid(layout, hw - 1.0, 0.0, hw, hh, c(theme::HEADER_BORDER)),
-            solid(layout, 0.0, hh - 1.0, hw, hh, c(theme::HEADER_BORDER)),
+            solid(layout, mw, mh, hw, hh, c(theme::HEADER_BG)),
+            solid(layout, hw - 1.0, mh, hw, hh, c(theme::HEADER_BORDER)),
+            solid(layout, mw, hh - 1.0, hw, hh, c(theme::HEADER_BORDER)),
         ];
         // Small triangle, drawn as stacked rows.
-        let t = (hh.min(hw) * 0.5).round();
+        let t = ((hh - mh).min(hw - mw) * 0.5).round();
         for i in 0..t as i32 {
             let i = i as f32;
             corner.push(solid(
@@ -1484,7 +1492,7 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
             ));
         }
         layers.push(Layer {
-            clip: layout.bounds_px(0.0, 0.0, hw, hh),
+            clip: layout.bounds_px(mw, mh, hw, hh),
             items: corner,
         });
     }

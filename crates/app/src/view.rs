@@ -1334,6 +1334,7 @@ impl Render for ExcelApp {
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.pane_resize_move(ev, cx)))
             .when(!modal, |d| {
+                let d = features::outline::key_actions(d, cx);
                 features::data_tools::key_actions(features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx), cx)
                     .on_action(cx.listener(Self::on_undo))
                     .on_action(cx.listener(Self::on_redo))
