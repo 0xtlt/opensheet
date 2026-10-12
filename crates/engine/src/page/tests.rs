@@ -669,3 +669,72 @@ fn dragging_a_page_break() {
     // Dragged before the start of the range, it stays where it was.
     assert!(!wb.move_page_break(0, BreakAxis::Rows, 5, 0, None));
 }
+
+#[test]
+fn pictures_and_shapes_take_room() {
+    use crate::drawing::{Frame, ShapeTool};
+    let mut wb = grid(2, 2);
+    // A rectangle 100 pixels in from column E and 30 down from row 71.
+    let frame = Frame::new(4.0 * 64.0 + 100.0, 70.0 * 20.0 + 30.0, 200.0, 90.0);
+    let id = wb.add_shape(0, ShapeTool::ALL[0], frame).unwrap();
+    wb.commit("shape");
+    let objects = floating_objects(&wb.sheets[0]);
+    assert_eq!(objects.len(), 1);
+    assert_eq!((objects[0].kind, objects[0].id), (ObjectKind::Drawing, id));
+    assert_eq!(objects[0].sheet_box(&wb.sheets[0]), (frame.x, frame.y, 200.0, 90.0));
+    assert_eq!(objects[0].cells(&wb.sheets[0]), Rect::new(71, 5, 75, 8));
+    assert_eq!(pages(&wb).ranges[0].rect, Rect::new(0, 0, 75, 8));
+    // "Print object" off: the shape is not on paper.
+    wb.update_drawing(0, id, |d| d.print = false);
+    wb.commit("no print");
+    assert!(floating_objects(&wb.sheets[0]).is_empty());
+    assert_eq!(pages(&wb).ranges[0].rect, Rect::new(0, 0, 1, 1));
+}
+
+#[test]
+fn whole_sheet_pages() {
+    // Letter portrait holds 10 default columns and 45 default rows.
+    let mut wb = grid(100, 12);
+    let all = sheet_pages(&wb, 0, &pages(&wb));
+    assert_eq!(all.paper, (612.0, 792.0));
+    assert_eq!(&all.col_starts[..4], &[0, 10, 20, 30]);
+    assert_eq!(&all.row_starts[..4], &[0, 45, 90, 135]);
+    // Every row and column is on a page, the last ones included.
+    assert_eq!(all.col_starts.len(), 1639);
+    assert_eq!(all.cols(1638), (16380, 16383));
+    assert_eq!(all.row_page(MAX_ROWS - 1), all.row_starts.len() - 1);
+    assert_eq!(all.rows(1), (45, 89));
+    assert_eq!((all.col_page(9), all.col_page(10)), (0, 1));
+
+    // A manual break, a tall row and a hidden row move the pages that
+    // follow; past them the pages repeat.
+    wb.insert_page_break(0, Some(20), Some(3));
+    wb.set_row_height(0, 30, Some(120.0));
+    wb.set_rows_hidden(0, 50, 52, true);
+    wb.commit("setup");
+    let p = pages(&wb);
+    let all = sheet_pages(&wb, 0, &p);
+    assert_eq!(&all.col_starts[..3], &[0, 3, 13]);
+    // 20 to 59: 36 rows of 20, one of 120 and three hidden ones make 840
+    // of the 912 pixels; three more rows fit.
+    assert_eq!(&all.row_starts[..4], &[0, 20, 63, 108]);
+    // The printed pages are the first of them.
+    assert_eq!(p.ranges[0].row_breaks.iter().map(|b| b.at).collect::<Vec<_>>(), vec![20, 63]);
+
+    // Print titles leave less room on the pages after them.
+    wb.reset_page_breaks(0);
+    wb.set_row_height(0, 30, None);
+    wb.set_rows_hidden(0, 50, 52, false);
+    wb.set_print_titles(0, Some((0, 4)), None);
+    wb.commit("titles");
+    let all = sheet_pages(&wb, 0, &pages(&wb));
+    assert_eq!(&all.row_starts[..4], &[0, 45, 85, 125]);
+
+    // Half the scale, twice the cells.
+    wb.set_print_titles(0, None, None);
+    wb.update_page_setup(0, |s| s.scale = 50);
+    wb.commit("scale");
+    let all = sheet_pages(&wb, 0, &pages(&wb));
+    assert_eq!(&all.col_starts[..3], &[0, 21, 42]);
+    assert_eq!(&all.row_starts[..3], &[0, 91, 182]);
+}
