@@ -646,6 +646,10 @@ pub fn apply(wb: &mut Workbook, op: &Op) {
                 type_cells(wb, std::slice::from_ref(cell));
                 wb.commit("type");
             }
+            // Now and then one of them is taken back.
+            if cells.len() == 3 {
+                wb.undo();
+            }
             if let Some(sheet) = sheet {
                 wb.calculate_sheet(*sheet);
             }

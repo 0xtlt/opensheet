@@ -388,7 +388,8 @@ struct RangeReaders {
     readers: u64,
 }
 
-/// Number of sheets, row levels and column levels packed in a bucket key.
+/// The square holding a cell in the grid of a size class (`level`: the
+/// squares are `2^level.0` rows by `2^level.1` columns), as a key.
 fn bucket(sheet: usize, level: (u8, u8), row: u32, col: u32) -> u64 {
     ((sheet as u64) << 43)
         | ((level.0 as u64) << 38)
@@ -428,7 +429,7 @@ pub(crate) struct DepGraph {
     volatile: FastSet<Pos>,
     dynamic: FastSet<Pos>,
     visibility: FastSet<Pos>,
-    /// Formulas when the graph was built, and formulas replaced since.
+    /// Formulas in the graph, and formulas replaced since it was built.
     formulas: usize,
     stale: usize,
     cell_edges: usize,
@@ -478,11 +479,14 @@ impl DepGraph {
         self.dynamic.remove(&at);
         self.visibility.remove(&at);
         if replaced {
+            // What the graph holds of the old formula stays behind.
             self.stale += 1;
+            self.formulas = self.formulas.saturating_sub(1);
         }
         let (sheet, row, col) = unpos(at);
         if let Some(Content::Formula(expr)) = wb.cell(sheet, row, col).map(|c| &c.content) {
             self.add(wb, sheet, row, col, expr);
+            self.formulas += 1;
         }
     }
 

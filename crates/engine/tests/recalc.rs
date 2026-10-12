@@ -718,3 +718,49 @@ fn formatting_calculates_nothing() {
     assert_ne!(value(&wb, 0, "A1"), before);
     assert_eq!(value(&wb, 0, "A2"), value(&wb, 0, "A1"));
 }
+
+#[test]
+fn many_changes_at_once() {
+    const N: u32 = 3000;
+    let mut wb = sheets(1);
+    let fill = |wb: &mut Workbook, factor: u32| {
+        for r in 0..N {
+            wb.set_cell_text(0, r, 0, &r.to_string()).unwrap();
+            wb.set_cell_text(0, r, 1, &format!("=A{}*{factor}", r + 1))
+                .unwrap();
+        }
+        wb.commit("fill");
+    };
+    fill(&mut wb, 1);
+    edit(&mut wb, 0, &[("D1", "=SUM(B:B)")]);
+    let sum = (N * (N - 1) / 2) as f64;
+    assert_eq!(value(&wb, 0, "D1"), num(sum));
+    // Every formula replaced, several times over: the graph is rebuilt on
+    // the way, and nothing shows.
+    for factor in 2..6 {
+        fill(&mut wb, factor);
+        assert_eq!(value(&wb, 0, "D1"), num(sum * factor as f64));
+    }
+    edit(&mut wb, 0, &[("A1", "10")]);
+    assert_eq!(value(&wb, 0, "D1"), num(sum * 5.0 + 50.0));
+    // A row inserted at the top of a sheet of numbers moves every cell:
+    // past a number of changes everything is calculated again. The edits
+    // that follow are incremental as before.
+    for r in 0..N {
+        for col in 4..7 {
+            wb.set_value(0, r, col, num(r as f64));
+        }
+    }
+    wb.commit("numbers");
+    let runs = wb.calc_runs();
+    wb.insert_rows(0, 0, 1);
+    wb.commit("insert");
+    assert_eq!(wb.calc_runs(), (runs.0 + 1, runs.1));
+    assert_eq!(value(&wb, 0, "D2"), num(sum * 5.0 + 50.0));
+    assert_eq!(value(&wb, 0, "B3001"), num(2999.0 * 5.0));
+    edit(&mut wb, 0, &[("A2", "0")]);
+    assert_eq!(value(&wb, 0, "D2"), num(sum * 5.0));
+    assert!(wb.undo() && wb.undo());
+    assert_eq!(value(&wb, 0, "D1"), num(sum * 5.0 + 50.0));
+    assert_eq!(wb.calc_runs().1, runs.1 + 2);
+}

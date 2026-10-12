@@ -358,6 +358,7 @@ impl Workbook {
     /// Change when formulas are calculated. Leaving manual calculation
     /// calculates what was waiting.
     pub fn set_calc_mode(&mut self, mode: CalcMode) {
+        self.modified |= self.calc.mode != mode;
         self.calc.mode = mode;
         if mode != CalcMode::Manual && self.calc.stale {
             self.calculate(Demand::Now);
@@ -376,6 +377,7 @@ impl Workbook {
             return;
         }
         self.calc.iterative = iterative;
+        self.modified = true;
         // Circular references are calculated in full every time.
         if self.calc.unsettled && self.calc.mode != CalcMode::Manual {
             self.calculate(Demand::Now);
@@ -389,6 +391,7 @@ impl Workbook {
     pub fn visibility_changed(&mut self, sheet: usize) {
         if sheet < self.sheets.len() {
             self.calc.visibility = true;
+            self.calc.stale |= self.calc.mode == CalcMode::Manual;
         }
     }
 
@@ -442,7 +445,11 @@ impl Workbook {
 
     fn calculate(&mut self, demand: Demand) {
         self.generation += 1;
+        // The state is taken out for the time of the calculation; the
+        // settings stay readable.
         let mut st = std::mem::take(&mut self.calc);
+        self.calc.mode = st.mode;
+        self.calc.iterative = st.iterative;
         let options = Options {
             iterate: st
                 .iterative
