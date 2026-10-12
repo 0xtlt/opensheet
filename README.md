@@ -138,7 +138,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Commentaires : pas de @mentions.
 - Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
 - Calcul : le calcul itératif est lu et enregistré dans le fichier, mais aucun réglage ne permet de l'activer depuis l'interface ; un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
-- Ruban : quand la fenêtre est trop étroite pour un onglet (par exemple Formules en allemand sous 1 500 points de large), le ruban défile horizontalement au lieu de replier ses groupes.
+- Ruban : quand la fenêtre est trop étroite pour un onglet (par exemple Formules en allemand dans une fenêtre de 1 390 points de large), le ruban défile horizontalement au lieu de replier ses groupes.
 
 ### Vitesse du recalcul
 
