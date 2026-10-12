@@ -594,26 +594,24 @@ impl Render for DropDown {
             ));
             top.push(Self::separator());
             y += 3.0 * ROW + SEPARATOR;
-        }
 
-        let clear = t("Clear Filter From \"{}\"", "Effacer le filtre de « {} »").replace("{}", &state.caption);
-        top.push(self.menu_row(
-            "clear",
-            Some("filter"),
-            clear.into(),
-            state.filtered,
-            false,
-            None,
-            cx,
-            |this, window, cx| {
-                let (id, field) = (this.pivot, this.state.field);
-                this.act(window, cx, move |app, window, cx| {
-                    actions::clear_field_filters(app, id, field, window, cx)
-                })
-            },
-        ));
-        y += ROW;
-        if !state.page {
+            let clear = t("Clear Filter From \"{}\"", "Effacer le filtre de « {} »").replace("{}", &state.caption);
+            top.push(self.menu_row(
+                "clear",
+                Some("filter"),
+                clear.into(),
+                state.filtered,
+                false,
+                None,
+                cx,
+                |this, window, cx| {
+                    let (id, field) = (this.pivot, this.state.field);
+                    this.act(window, cx, move |app, window, cx| {
+                        actions::clear_field_filters(app, id, field, window, cx)
+                    })
+                },
+            ));
+            y += ROW;
             sub_top[0] = y;
             top.push(self.menu_row(
                 "label-filters",
