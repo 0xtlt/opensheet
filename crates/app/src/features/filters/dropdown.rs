@@ -142,7 +142,7 @@ fn color_entries(
     }
     let mut out = vec![Entry::heading(heading)];
     for color in colors.iter().flatten() {
-        let Color(rgb) = *color;
+        let rgb = color.value();
         let name = format!("RGB({}, {}, {})", rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb & 0xFF);
         let mut entry = Entry::act(name, act(Some(*color))).checked(current == Some(Some(*color)));
         entry.swatch = Some(*color);
@@ -1091,13 +1091,13 @@ impl FilterMenu {
             (None, false) => mark,
         };
         let body = match entry.swatch {
-            Some(Color(rgb)) => div()
+            Some(color) => div()
                 .flex_1()
                 .child(
                     div()
                         .w(px(96.))
                         .h(px(14.))
-                        .bg(c(rgb))
+                        .bg(c(color.value()))
                         .border_1()
                         .border_color(c(theme::BORDER_STRONG)),
                 )

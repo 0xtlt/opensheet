@@ -32,6 +32,7 @@ fn bind_keys(cx: &mut App) {
     features::edit_tools::bind_keys(cx);
     features::data_tools::bind_keys(cx);
     features::preferences::bind_keys(cx);
+    features::outline::bind_keys(cx);
     let g = Some("Grid");
     let w = Some("Workbook");
     cx.bind_keys([

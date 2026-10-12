@@ -770,8 +770,10 @@ fn rules_from_excel() {
     // Theme colours: white text on accent 1, darker 25 %.
     let top = &rules[5].format;
     assert_eq!((top.bold, top.italic), (Some(true), Some(true)));
-    assert_eq!(top.font_color, Some(Some(Color(0xFFFFFF))));
-    assert_eq!(top.fill, Some(Some(Color(0x305496))));
+    let plain = |color: Option<Option<Color>>| color.flatten().map(Color::plain);
+    assert_eq!(plain(top.font_color), Some(Color(0xFFFFFF)));
+    assert_eq!(plain(top.fill), Some(Color(0x305496)));
+    assert!(top.fill.flatten().is_some_and(Color::is_themed));
     assert_eq!(
         [
             top.border_left,
@@ -790,7 +792,7 @@ fn rules_from_excel() {
     let Rule::ColorScale(scale) = &rules[7].rule else {
         panic!("{:?}", rules[7].rule);
     };
-    let colors: Vec<Color> = scale.stops.iter().map(|s| s.color).collect();
+    let colors: Vec<Color> = scale.stops.iter().map(|s| s.color.plain()).collect();
     assert_eq!(colors, [Color(0xF8696B), Color(0xFFFFFF), Color(0x8EA9DB)]);
     assert_eq!(scale.stops[1].at, Cfvo::percentile(50.0));
     assert_eq!(rules[8].rule, Rule::greater_than(f("2")));
@@ -804,7 +806,8 @@ fn rules_from_excel() {
         rules[11].format,
         StylePatch {
             bold: Some(true),
-            font_color: Some(Some(Color(0xED7D31))),
+            // The second accent of the theme, as a colour of the theme.
+            font_color: Some(Some(wb.theme().accent(2, 0.0))),
             fill: Some(Some(Color(0xFFFF00))),
             ..StylePatch::default()
         }

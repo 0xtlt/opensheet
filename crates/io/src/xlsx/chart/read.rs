@@ -11,9 +11,9 @@
 use super::{
     DASHES, DISPLAY_UNITS, EMU_PER_PT, EMU_PER_PX, FRAME_GREY, LABEL_POSITIONS, LEGACY_MARKER_SIZE,
     LEGACY_MARKERS, MARKERS, OUTLINE_WIDTH, Plot, SLICE_OUTLINE_WIDTH, TICK_LABELS, TICK_MARKS,
-    TREND_WIDTH, Track, foreign, innermost_level, is_stroked, list_separator, named, scheme_slot,
+    TREND_WIDTH, Track, innermost_level, is_stroked, list_separator, named, scheme_slot,
 };
-use crate::xlsx::color::{Palette, adjust_luminance, blend, parse_rgb};
+use crate::xlsx::color::{Palette, adjust_luminance, blend, parse_rgb, scheme_color};
 use crate::xlsx::formula::from_file_text;
 use crate::xlsx::xml::{Event, Reader, Tag, decode_cell_text};
 use opensheet_engine::ast::{Expr, RefExpr};
@@ -22,7 +22,7 @@ use opensheet_engine::chart::{
     DEFAULT_HOLE_SIZE, Dash, DataLabels, DataTable, DisplayUnit, ErrorAmount, ErrorBars,
     ErrorDirection, Family, Fill, ForeignChart, Grouping, LegendPos, Line, Marker, MarkerShape,
     PointFormat, Series, SeriesName, ShapeFormat, TickMark, TrendKind, Trendline, View3D,
-    palette_color,
+    palette_color_of,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
 use opensheet_engine::{Color, Locale};
@@ -468,12 +468,14 @@ fn parse_labels<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<DataLabels> {
 fn parse_solid_fill<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<Color> {
     let mut color = None;
     each_child(r, tag, |r, t| {
+        // The place in the theme of a colour that is given by it.
+        let slot = match t.name {
+            "schemeClr" => t.attr("val").and_then(|v| scheme_slot(&v)),
+            _ => None,
+        };
         let mut rgb = match t.name {
             "srgbClr" => t.attr("val").and_then(|v| parse_rgb(&v)),
-            "schemeClr" => t
-                .attr("val")
-                .and_then(|v| scheme_slot(&v))
-                .map(|slot| palette.theme[slot]),
+            "schemeClr" => slot.map(|slot| palette.theme[slot]),
             "sysClr" => t.attr("lastClr").and_then(|v| parse_rgb(&v)).or_else(|| {
                 match t.attr("val").as_deref() {
                     Some("windowText") => Some(0x000000),
@@ -486,6 +488,8 @@ fn parse_solid_fill<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) ->
         // Lightness is scaled, then shifted; both in thousandths of a
         // percent.
         let (mut scale, mut shift) = (1.0, 0.0);
+        // Nothing but that was done to the colour.
+        let mut plain_lightness = true;
         each_child(r, t, |r, adjustment| {
             let amount = adjustment
                 .attr_f64("val")
@@ -502,13 +506,19 @@ fn parse_solid_fill<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) ->
                     _ => {}
                 }
             }
+            plain_lightness &= matches!(adjustment.name, "lumMod" | "lumOff" | "alpha");
             r.skip(adjustment);
         });
+        // A colour of the theme, as it is or as a picker varies it, stays
+        // a colour of the theme.
+        let reference = slot
+            .filter(|_| plain_lightness)
+            .and_then(|slot| scheme_color(palette, slot, scale, shift));
         if (scale, shift) != (1.0, 0.0) {
             rgb = rgb.map(|base| adjust_luminance(base, scale, shift));
         }
         if color.is_none() {
-            color = rgb.map(Color);
+            color = reference.or(rgb.map(Color));
         }
     });
     color
@@ -641,7 +651,9 @@ fn line_of(stroke: Option<Stroke>, auto_shown: bool, auto_color: Color, auto_wid
             ..Line::default()
         };
     }
-    let color = stroke.paint.color().filter(|c| *c != auto_color);
+    // The automatic colour is the same whether the file says it by its
+    // value or by its place in the theme.
+    let color = stroke.paint.color().filter(|c| c.value() != auto_color.value());
     let width = stroke
         .width
         .filter(|w| (w - auto_width).abs() > WIDTH_TOLERANCE);
@@ -1030,9 +1042,8 @@ impl RawPlot {
     }
 
     /// `position` is the place of the series among those of the chart,
-    /// which decides its automatic colour.
-    fn looks(&self, s: &RawSeries, position: usize) -> Looks {
-        let automatic = palette_color(position);
+    /// and `automatic` the colour that place gives it when it states none.
+    fn looks(&self, s: &RawSeries, position: usize, automatic: Color) -> Looks {
         let none = Marker::new(MarkerShape::None);
         if self.approximate || !self.plot.is_line_like() {
             // Shapes: the colour is that of their fill. Lines of a kind
@@ -1111,7 +1122,9 @@ impl RawPlot {
         // when they are of one colour and the line of another, or when
         // there is no line. Whatever has another colour says so itself.
         let ink = match (line_color, inside, around) {
-            (Some(line), Some(inside), Some(around)) if inside == around && inside != line => {
+            (Some(line), Some(inside), Some(around))
+                if inside.value() == around.value() && inside.value() != line.value() =>
+            {
                 inside
             }
             (Some(line), ..) => line,
@@ -1119,7 +1132,7 @@ impl RawPlot {
             (None, None, Some(around)) => around,
             (None, None, None) => automatic,
         };
-        let own = |part: Option<Color>| part.filter(|color| *color != ink);
+        let own = |part: Option<Color>| part.filter(|color| color.value() != ink.value());
         let line = if line_shown {
             Line {
                 shown: None,
@@ -1409,10 +1422,16 @@ struct RawChart {
     legend: Option<Legend>,
     blanks: BlanksAs,
     chart_area: Shape,
+    /// The six accents of the theme of the workbook: the automatic
+    /// colours of the series.
+    accents: [u32; 6],
 }
 
 fn parse_raw(xml: &str, palette: &Palette) -> RawChart {
-    let mut raw = RawChart::default();
+    let mut raw = RawChart {
+        accents: std::array::from_fn(|n| palette.theme[4 + n]),
+        ..RawChart::default()
+    };
     let mut r = Reader::new(xml);
     loop {
         match r.next() {
@@ -1495,6 +1514,7 @@ impl RawChart {
         // What Excel counts, including the series there is no range to read.
         let series_in_file = plotted.len();
         let plots = &self.plots;
+        let accents = self.accents;
         let drawn: Vec<Drawn> = plotted
             .into_iter()
             // A series is its values; without a range to read them from
@@ -1502,7 +1522,7 @@ impl RawChart {
             .filter(|(_, s)| s.values.is_some())
             .enumerate()
             .map(|(position, (at, raw))| {
-                let looks = plots[at].looks(&raw, position);
+                let looks = plots[at].looks(&raw, position, palette_color_of(&accents, position));
                 let kind = plots[at].plot.kind(
                     looks.marker.shape != MarkerShape::None,
                     looks.line_shown,
@@ -1627,7 +1647,7 @@ impl RawChart {
                 name: d.raw.name,
                 categories: d.raw.categories.map(|c| innermost_level(&c, &values)),
                 // A colour that is the automatic one is no colour of its own.
-                color: Some(d.looks.ink).filter(|ink| *ink != palette_color(position)),
+                color: Some(d.looks.ink).filter(|ink| ink.value() != palette_color_of(&accents, position).value()),
                 kind: own_kind,
                 secondary: secondary[d.plot],
                 ..Series::new(values)
@@ -1664,7 +1684,8 @@ impl RawChart {
                 } else {
                     point.shape.fill.color()
                 };
-                let color = color.filter(|c| !varied || *c != palette_color(point.index as usize));
+                let color =
+                    color.filter(|c| !varied || c.value() != palette_color_of(&accents, point.index as usize).value());
                 let explosion = point.explosion.filter(|_| drawn_as.is_round());
                 if color.is_some() || explosion.is_some() {
                     series.points.push(PointFormat {
@@ -1773,7 +1794,8 @@ impl RawChart {
         // otherwise, the plot area nothing at all.
         chart.chart_area = ShapeFormat {
             fill: match self.chart_area.fill {
-                Paint::Automatic | Paint::Color(Color::WHITE) => Fill::Auto,
+                Paint::Automatic => Fill::Auto,
+                Paint::Color(color) if color.value() == Color::WHITE.value() => Fill::Auto,
                 Paint::Nothing => Fill::None,
                 Paint::Color(color) => Fill::Solid(color),
             },
@@ -1799,8 +1821,7 @@ impl RawChart {
 pub(crate) fn parse_chart(xml: &str, palette: &Palette, locale: &Locale) -> Option<Chart> {
     let mut chart = parse_raw(xml, palette).into_chart(&list_separator(locale))?;
     chart.foreign = Some(Arc::new(ForeignChart {
-        // The text will be read without the theme of this workbook.
-        xml: Arc::from(foreign::without_theme(xml, &palette.theme)),
+        xml: Arc::from(xml),
         as_read: chart.content(),
     }));
     Some(chart)

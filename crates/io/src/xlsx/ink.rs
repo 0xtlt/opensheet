@@ -126,7 +126,7 @@ fn push_ink(x: &mut String, sheet: &Sheet, ink: &Ink, id: usize) {
     push_path(x, ink);
     x.push_str("</a:pathLst></a:custGeom><a:noFill/>");
     let width = ink.width_in((frame.width as f32, frame.height as f32));
-    w!(x, "<a:ln w=\"{}\" cap=\"rnd\"><a:solidFill><a:srgbClr val=\"{:06X}\"", emu(width as f64), ink.color.0 & 0xFF_FFFF);
+    w!(x, "<a:ln w=\"{}\" cap=\"rnd\"><a:solidFill><a:srgbClr val=\"{:06X}\"", emu(width as f64), ink.color.value() & 0xFF_FFFF);
     let opacity = ink.kind.opacity();
     if opacity < 1.0 {
         w!(x, "><a:alpha val=\"{}\"/></a:srgbClr>", (opacity * 100_000.0).round() as u32);

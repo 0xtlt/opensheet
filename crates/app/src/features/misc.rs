@@ -5,7 +5,7 @@
 //! Function Arguments, formula auditing (Show Formulas, tracer arrows,
 //! Error Checking, Evaluate Formula, the Watch Window) and the Calculation
 //! group. And the commands of the ribbon nobody wrote yet (sharing,
-//! proofing, themes, outlines, links, ...): they say they are not
+//! proofing, links, ...): they say they are not
 //! available; a feature that takes one over moves it to its own module.
 
 mod audit;
@@ -17,6 +17,7 @@ mod links;
 
 pub use audit::{shown_formula, shows_formulas};
 pub use functions::function_arguments;
+#[cfg(test)]
 pub(crate) use audit::error_cells;
 pub(crate) use goto::{Kinds, Special, select_special};
 
@@ -25,7 +26,7 @@ use self::calc::CalcMode;
 use super::{Command, Cx, Feature, Painter, names};
 use crate::app::{ExcelApp, MenuEntry, NameManager};
 use crate::grid::GridLayout;
-use crate::i18n::{t, t_ctx};
+use crate::i18n::t;
 use crate::ribbon::{group, rows};
 use gpui::{AnyElement, App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*, px};
 use opensheet_engine::protect::Action;
@@ -40,13 +41,7 @@ commands! {
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert
-        Sparklines = "chart-line", t("Sparklines", "Graphiques sparkline");
         Equation = "function", t("Equation", "Équation");
-        // Page Layout
-        Themes = "cell-styles", t("Themes", "Thèmes");
-        ThemeColors = "fill", t("Colors", "Couleurs");
-        ThemeFonts = "font-grow", t("Fonts", "Polices");
-        ThemeEffects = "shapes", t("Effects", "Effets");
         // Formulas
         InsertFunction = "function", t("Insert Function", "Insérer une fonction");
         TracePrecedents = "misc-trace-precedents", t("Trace Precedents", "Repérer les antécédents");
@@ -67,10 +62,6 @@ commands! {
         CalcManual = "", t("Manual", "Manuel");
         CalcNow = "misc-calc-now", t("Calculate Now", "Calculer maintenant");
         CalcSheet = "misc-calc-sheet", t("Calculate Sheet", "Calculer la feuille");
-        // Data
-        GroupRows = "group-objects", t_ctx("outline", "Group", "Grouper");
-        UngroupRows = "group-objects", t_ctx("outline", "Ungroup", "Dissocier");
-        Subtotal = "calculator", t("Subtotal", "Sous-total");
         // Review
         Spelling = "spell", t("Spelling", "Orthographe");
         Thesaurus = "book", t("Thesaurus", "Dictionnaire des synonymes");

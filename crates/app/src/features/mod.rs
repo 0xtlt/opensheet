@@ -237,11 +237,14 @@ pub mod format_cells;
 pub mod ink;
 pub mod misc;
 pub mod names;
+pub mod outline;
 pub mod page;
 pub mod pivot;
 pub mod preferences;
 pub mod protection;
+pub mod sparklines;
 pub mod tables;
+pub mod themes;
 pub mod validation;
 
 /// The context every hook that may change the application receives.
@@ -250,7 +253,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// Every feature, in the order hooks are called. Floating objects are
 /// drawn in this order too (the objects of later features on top).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 20] = [
+    static ALL: [&dyn Feature; 23] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -269,6 +272,9 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &names::Names,
         &edit_tools::EditTools,
         &data_tools::DataTools,
+        &themes::Themes,
+        &outline::Outline,
+        &sparklines::Sparklines,
         &misc::Misc,
         &crate::widgets::gallery::GalleryMarks,
     ];

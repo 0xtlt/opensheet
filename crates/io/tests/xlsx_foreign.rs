@@ -213,7 +213,7 @@ fn sheets_names_and_views() {
 
     let first = &wb.sheets[0];
     assert_eq!(
-        first.tab_color,
+        first.tab_color.map(Color::plain),
         Some(Color(0x305496)),
         "accent 1, darker 25 %"
     );
@@ -343,7 +343,7 @@ fn values_and_formulas() {
             "{name} is not a constant"
         );
     }
-    assert_eq!(wb.style_at(0, 7, 3).fill, Some(Color(0xD9E1F2)));
+    assert_eq!(wb.style_at(0, 7, 3).fill.map(Color::plain), Some(Color(0xD9E1F2)));
     assert_eq!(wb.sheets[0].spills.len(), 1);
 
     assert_eq!(formula(&wb, 0, "E7").unwrap(), "XLOOKUP(20,A3:A5,B3:B5)");
@@ -436,10 +436,11 @@ fn styles() {
         b1.borders.top,
         Border {
             style: BorderStyle::Double,
-            color: Some(Color(0x112233))
+            color: Some(wb.theme().accent(2, 0.0))
         },
         "theme colour 5 is accent 2 of this file's theme"
     );
+    assert_eq!(b1.borders.top.color.map(|c| c.value()), Some(0x112233));
     assert_eq!(
         b1.borders.bottom,
         Border {
@@ -451,11 +452,11 @@ fn styles() {
 
     // Theme colours with tints.
     let e2 = style("E2");
-    assert_eq!(e2.font.color, Some(Color(0x305496)));
+    assert_eq!(e2.font.color.map(Color::plain), Some(Color(0x305496)));
     assert!(e2.font.italic);
     assert_eq!(e2.font.underline, Underline::Single);
     assert_eq!(
-        e2.fill,
+        e2.fill.map(Color::plain),
         Some(Color(0xD9E1F2)),
         "accent 1, lighter 80 %, as Excel shades it"
     );
@@ -478,7 +479,7 @@ fn styles() {
         Some(Color(0xABCDEF)),
         "indexed 10 is redefined by the file"
     );
-    assert_eq!(a3.fill, Some(Color(0xBFBFBF)), "white, darker 25 %");
+    assert_eq!(a3.fill.map(Color::plain), Some(Color(0xBFBFBF)), "white, darker 25 %");
     assert_eq!(
         (a3.h_align, a3.v_align),
         (HAlign::CenterAcross, VAlign::Center)

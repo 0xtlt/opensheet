@@ -156,7 +156,7 @@ impl Extras {
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),
-            theme::xml(),
+            theme::xml(wb.theme()),
         );
         extras.relate_workbook(&format!("{NS_DOC_REL}/theme"), "theme/theme1.xml");
 

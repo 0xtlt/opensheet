@@ -89,7 +89,7 @@ pub fn prepare_new_workbook(wb: &mut Workbook) {
     let settings = settings::get();
     let mut style: Style = wb.styles.default_style().clone();
     if !settings.default_font.is_empty() {
-        style.font.name = settings.default_font.as_str().into();
+        style.font.set_name(settings.default_font.as_str());
     }
     style.font.set_size_pt(settings.default_font_size);
     if style != *wb.styles.default_style() {

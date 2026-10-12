@@ -333,7 +333,7 @@ fn stroke_in(ink: &Ink, rect: (f32, f32, f32, f32), zoom: f32) -> (Vec<Pt>, f32)
 
 /// Paint a stroke: its line, with round ends when it is opaque.
 fn paint_line(p: &mut Painter, ink: &Ink, points: &[Pt], width: f32, alpha: f32) {
-    let color = ca(ink.color.0 & 0xFF_FFFF, alpha);
+    let color = ca(ink.color.value() & 0xFF_FFFF, alpha);
     match points {
         [] => {}
         [only] => p.disc(only.0, only.1, width / 2.0, color),

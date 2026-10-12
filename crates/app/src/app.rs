@@ -1745,8 +1745,11 @@ impl ExcelApp {
     }
 
     pub fn set_font_name(&mut self, name: &str, cx: &mut Context<Self>) {
+        // "Aptos Narrow (Body)" is the body font of the theme, whatever it
+        // becomes; any other name is that font.
         let name: Arc<str> = Arc::from(name);
-        self.apply_style(t("Font", "Police"), cx, move |s| s.font.name = name.clone());
+        let document = self.wb.theme_arc();
+        self.apply_style(t("Font", "Police"), cx, move |s| theme::set_font_choice(&mut s.font, &name, &document));
     }
 
     pub fn set_font_size(&mut self, pt: f32, cx: &mut Context<Self>) {

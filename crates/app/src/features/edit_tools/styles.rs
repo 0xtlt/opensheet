@@ -162,7 +162,7 @@ pub(super) fn save(app: &mut ExcelApp, purpose: &Purpose, name: &str, style: Sty
 // ------------------------------------------------------------------- drawing
 
 fn hsla(color: Option<Color>, default: u32) -> Hsla {
-    c(color.map_or(default, |color| color.0))
+    c(color.map_or(default, |color| color.value()))
 }
 
 fn line_width(style: BorderStyle) -> f32 {

@@ -13,7 +13,7 @@ use opensheet_engine::cell_style::StyleParts;
 use opensheet_engine::names::NameScope;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
-    Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, Underline, VAlign,
+    Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, ThemeFont, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
 use opensheet_engine::workbook::{Cell, Content, Sheet};
@@ -35,9 +35,7 @@ pub(crate) const MAX_COL_WIDTH_PX: f32 = 255.0 * 7.0 + 5.0;
 /// Tallest row Excel accepts, in points.
 pub(crate) const MAX_ROW_HEIGHT_PT: f64 = 409.5;
 
-fn push_rgb(x: &mut String, element: &str, color: Color) {
-    w!(x, "<{element} rgb=\"FF{:06X}\"/>", color.0 & 0xFF_FFFF);
-}
+use super::dxf::push_color as push_rgb;
 
 /// Append "A1" for a 0-based (row, col).
 fn push_cell_ref(x: &mut String, row: u32, col: u32) {
@@ -223,7 +221,14 @@ fn push_font(x: &mut String, f: &Font) {
     }
     x.push_str("<name val=\"");
     push_attr(x, &f.name);
-    x.push_str("\"/></font>");
+    x.push_str("\"/>");
+    // A font of the theme says which one after its name, as Excel does.
+    match f.theme {
+        Some(ThemeFont::Major) => x.push_str("<scheme val=\"major\"/>"),
+        Some(ThemeFont::Minor) => x.push_str("<scheme val=\"minor\"/>"),
+        None => {}
+    }
+    x.push_str("</font>");
 }
 
 fn push_border_side(x: &mut String, name: &str, b: &Border) {
@@ -497,6 +502,7 @@ fn push_sheet_views(x: &mut String, sheet: &Sheet, selected: bool) {
     if selected {
         x.push_str(" tabSelected=\"1\"");
     }
+    super::outline::push_view_attrs(x, sheet);
     x.push_str(" workbookViewId=\"0\"");
     let rows = sheet.frozen_rows.min(MAX_ROWS - 1);
     let cols = sheet.frozen_cols.min(MAX_COLS - 1);
@@ -531,6 +537,8 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defau
         width: Option<f32>,
         hidden: bool,
         xf: u32,
+        level: u8,
+        collapsed: bool,
     }
     let mut cols: BTreeMap<u32, Col> = BTreeMap::new();
     for (c, width) in &sheet.col_widths {
@@ -541,6 +549,12 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defau
     }
     for (c, style) in &sheet.col_styles {
         cols.entry(*c).or_default().xf = styles.xf(*style);
+    }
+    for (c, level) in &sheet.outline.cols.levels {
+        cols.entry(*c).or_default().level = *level;
+    }
+    for c in &sheet.outline.cols.collapsed {
+        cols.entry(*c).or_default().collapsed = true;
     }
     cols.retain(|c, col| *c < MAX_COLS && *col != Col::default());
     if cols.is_empty() {
@@ -579,6 +593,7 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defau
         if col.width.is_some() {
             x.push_str(" customWidth=\"1\"");
         }
+        super::outline::push_level(x, col.level, col.collapsed);
         x.push_str("/>");
     }
     x.push_str("</cols>");
@@ -736,6 +751,8 @@ impl SheetWriter<'_> {
             .chain(sheet.hidden_rows.iter())
             .chain(sheet.filtered_rows.iter())
             .chain(sheet.row_styles.keys())
+            .chain(sheet.outline.rows.levels.keys())
+            .chain(sheet.outline.rows.collapsed.iter())
             .copied()
             .filter(|r| *r < MAX_ROWS)
             .collect();
@@ -776,6 +793,7 @@ impl SheetWriter<'_> {
             if sheet.hidden_rows.contains(&row) || sheet.filtered_rows.contains(&row) {
                 x.push_str(" hidden=\"1\"");
             }
+            super::outline::push_attrs(x, &sheet.outline.rows, row);
             x.push('>');
             loop {
                 let cell_col = cells
@@ -879,14 +897,16 @@ impl SheetWriter<'_> {
         // Each element written has its step below, named after it; a new
         // one goes between its neighbours of the list.
 
-        // sheetPr: tabColor, then pageSetUpPr
+        // sheetPr: tabColor, outlinePr, then pageSetUpPr
         // filterMode: rows are hidden by an Advanced Filter.
         let filter_mode = sheet.advanced_filter.is_some();
-        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode {
+        let outline = super::outline::needs_sheet_pr(sheet);
+        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode || outline {
             x.push_str(if filter_mode { "<sheetPr filterMode=\"1\">" } else { "<sheetPr>" });
             if let Some(color) = sheet.tab_color {
                 push_rgb(&mut x, "tabColor", color);
             }
+            super::outline::push_sheet_pr(&mut x, sheet);
             page::push_sheet_pr(&mut x, &sheet.page);
             x.push_str("</sheetPr>");
         }
@@ -940,14 +960,16 @@ impl SheetWriter<'_> {
         // drawing, legacyDrawing, tableParts: what lives in parts of its
         // own (charts, pictures and shapes; the boxes of notes; tables).
         SheetLinks::of(sheet).push_elements(&mut x);
-        // extLst: one `<ext>` per feature, in the order Excel writes them
-        // (conditional formats, then data validations).
-        let mut extensions = String::new();
-        condfmt::write_ext(&mut extensions, sheet, index, self.wb, self.dxfs);
-        validation::write_ext(&mut extensions, sheet, self.wb);
-        if !extensions.is_empty() {
-            w!(x, "<extLst>{extensions}</extLst>");
-        }
+        // extLst: one `<ext>` per feature, put in the order Excel writes
+        // them by `SheetExtensions`.
+        let mut extensions = super::ext::SheetExtensions::default();
+        let mut ext = String::new();
+        condfmt::write_ext(&mut ext, sheet, index, self.wb, self.dxfs);
+        extensions.push(std::mem::take(&mut ext));
+        validation::write_ext(&mut ext, sheet, self.wb);
+        extensions.push(ext);
+        extensions.push(super::sparkline::ext(sheet));
+        extensions.write(&mut x);
         x.push_str("</worksheet>");
         x
     }
