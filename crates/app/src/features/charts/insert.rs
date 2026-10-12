@@ -270,7 +270,7 @@ pub fn insert_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
 
 /// The gallery of a button of the Insert tab: Excel's headings, a picture
 /// per type, and the way into the dialog.
-fn open_gallery(app: &mut ExcelApp, anchor: &'static str, page: Page, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_gallery(app: &mut ExcelApp, anchor: &'static str, page: Page, window: &mut Window, cx: &mut Cx) {
     use ChartKind::*;
     let kinds = |title: &'static str, kinds: &[ChartKind]| Section {
         title: title.into(),

@@ -15,6 +15,9 @@ pub(crate) mod elements;
 mod gallery;
 mod insert;
 
+#[cfg(test)]
+mod ui_tests;
+
 pub(crate) use data::{open_move_chart, open_select_data};
 pub(crate) use design::{label_positions, open_colors, open_quick_layouts, open_styles};
 pub use insert::insert_group;
@@ -92,7 +95,7 @@ pub(crate) struct ChartZone {
 }
 
 /// The buttons that float beside a selected chart.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FloatButton {
     Elements,
     Styles,
@@ -135,6 +138,8 @@ impl ExcelApp {
 
     pub fn select_chart_element(&mut self, element: ChartElement, cx: &mut Cx) {
         self.ext_mut::<ChartUi>().element = element;
+        // The Format pane is named after what it formats.
+        chart_format::selection_changed(self, cx);
         cx.notify();
     }
 
