@@ -25,6 +25,7 @@ pub mod names;
 pub mod ops;
 pub mod page;
 pub mod parser;
+pub mod paste_special;
 pub mod pivot;
 pub mod protect;
 pub mod recalc;

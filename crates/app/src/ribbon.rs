@@ -734,9 +734,28 @@ impl ExcelApp {
                 .flex()
                 .items_center()
                 .gap(px(2.))
-                .child(self.large("rb-paste", "paste", t("Paste", "Coller"), true, cx, |this, _, cx| {
-                    this.paste(PasteMode::All, cx)
-                }))
+                .child(
+                    // A split button: the picture pastes, the label and its
+                    // arrow open the choices.
+                    div()
+                        .relative()
+                        .child(self.large("rb-paste", "paste", t("Paste", "Coller"), true, cx, |this, _, cx| {
+                            this.paste(PasteMode::All, cx)
+                        }))
+                        .child(
+                            div()
+                                .id("rb-paste-menu")
+                                .absolute()
+                                .left_0()
+                                .bottom_0()
+                                .w_full()
+                                .h(px(24.))
+                                .occlude()
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.run_from("rb-paste", edit_tools::Cmd::PasteMenu, window, cx)
+                                })),
+                        ),
+                )
                 .child(rows(vec![
                     self.labeled("rb-cut", "cut", t("Cut", "Couper"), false, false, cx, |this, _, cx| {
                         this.copy(true, cx)

@@ -5,13 +5,16 @@
 //! hooks and the shortcuts.
 
 mod find;
+mod paste;
 #[cfg(test)]
 mod ui_tests;
 
 use super::misc::{self, Kinds, Special};
-use super::{Command, Cx, Feature};
-use crate::app::ExcelApp;
+use super::{Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget};
+use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
+use opensheet_engine::ops::PasteMode;
+use opensheet_engine::paste_special::{PasteSpecial, PasteWhat};
 use gpui::{App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*};
 
 pub use find::find_bar_next;
@@ -30,6 +33,20 @@ commands! {
         SelectConstants = "", t("Constants", "Constantes");
         SelectValidation = "", t("Data Validation", "Validation des données");
         SelectObjects = "", t("Select Objects", "Sélectionner les objets");
+        // Home ▸ Paste
+        PasteMenu = "paste", t("Paste", "Coller");
+        PasteSpecial = "", t("Paste Special…", "Collage spécial…");
+        PasteFormulas = "", t("Formulas", "Formules");
+        PasteFormulasNumbers = "", t("Formulas & Number Formatting", "Formules et format de nombre");
+        PasteKeepSource = "", t("Keep Source Formatting", "Conserver la mise en forme source");
+        PasteNoBorders = "", t("No Borders", "Aucune bordure");
+        PasteKeepWidths = "", t("Keep Source Column Widths", "Conserver les largeurs de colonnes sources");
+        PasteTranspose = "", t("Transpose", "Transposer");
+        PasteValues = "", t("Paste Values", "Coller les valeurs");
+        PasteValuesNumbers = "", t("Values & Number Formatting", "Valeurs et format de nombre");
+        PasteValuesSource = "", t("Values & Source Formatting", "Valeurs et format source");
+        PasteFormatting = "", t("Formatting", "Mise en forme");
+        PasteLink = "", t("Paste Link", "Coller avec liaison");
     }
 }
 
@@ -56,13 +73,93 @@ impl Command for Cmd {
             Cmd::SelectConstants => misc::select_special(app, Special::Constants(Kinds::ALL), cx),
             Cmd::SelectValidation => misc::select_special(app, Special::DataValidation { same: false }, cx),
             Cmd::SelectObjects => misc::select_special(app, Special::Objects, cx),
+            Cmd::PasteMenu => {
+                let mut entries = vec![
+                    MenuEntry::new(t("Paste", "Coller"), |a, _, cx| a.paste(PasteMode::All, cx)).icon("paste").shortcut("⌘V"),
+                    MenuEntry::separator(),
+                ];
+                entries.extend(PASTE_MENU.iter().map(|cmd| MenuEntry::command(*cmd, app)));
+                entries.push(MenuEntry::separator());
+                entries.push(MenuEntry::command(Cmd::PasteSpecial, app).shortcut("⌃⌘V"));
+                app.open_command_menu(entries, 330.0, window, cx);
+            }
+            Cmd::PasteSpecial => paste::open(app, window, cx),
+            Cmd::PasteLink => paste::paste_link(app, cx),
+            Cmd::PasteFormulas
+            | Cmd::PasteFormulasNumbers
+            | Cmd::PasteKeepSource
+            | Cmd::PasteNoBorders
+            | Cmd::PasteKeepWidths
+            | Cmd::PasteTranspose
+            | Cmd::PasteValues
+            | Cmd::PasteValuesNumbers
+            | Cmd::PasteValuesSource
+            | Cmd::PasteFormatting => {
+                if let Some(spec) = self.paste_spec() {
+                    paste::paste(app, spec, cx);
+                }
+            }
         }
+    }
+
+    fn enabled(self, app: &ExcelApp) -> bool {
+        match self {
+            // The choices of the drop-down are for cells that were copied
+            // (cut cells can only be moved).
+            Cmd::PasteLink => app.clip.as_ref().is_some_and(|state| !state.cut),
+            _ if self.paste_spec().is_some() => app.clip.as_ref().is_some_and(|state| !state.cut),
+            _ => true,
+        }
+    }
+}
+
+/// The entries of the Paste drop-down after "Paste", in Excel's order.
+const PASTE_MENU: [Cmd; 11] = [
+    Cmd::PasteFormulas,
+    Cmd::PasteFormulasNumbers,
+    Cmd::PasteKeepSource,
+    Cmd::PasteNoBorders,
+    Cmd::PasteKeepWidths,
+    Cmd::PasteTranspose,
+    Cmd::PasteValues,
+    Cmd::PasteValuesNumbers,
+    Cmd::PasteValuesSource,
+    Cmd::PasteFormatting,
+    Cmd::PasteLink,
+];
+
+impl Cmd {
+    /// What an entry of the Paste drop-down pastes.
+    fn paste_spec(self) -> Option<PasteSpecial> {
+        let what = match self {
+            Cmd::PasteFormulas => PasteWhat::Formulas,
+            Cmd::PasteFormulasNumbers => PasteWhat::FormulasAndNumberFormats,
+            Cmd::PasteKeepSource | Cmd::PasteTranspose => PasteWhat::All,
+            Cmd::PasteNoBorders => PasteWhat::AllExceptBorders,
+            Cmd::PasteKeepWidths => PasteWhat::KeepSourceColumnWidths,
+            Cmd::PasteValues => PasteWhat::Values,
+            Cmd::PasteValuesNumbers => PasteWhat::ValuesAndNumberFormats,
+            Cmd::PasteValuesSource => PasteWhat::ValuesAndSourceFormats,
+            Cmd::PasteFormatting => PasteWhat::Formats,
+            _ => return None,
+        };
+        Some(PasteSpecial {
+            what,
+            transpose: self == Cmd::PasteTranspose,
+            ..PasteSpecial::default()
+        })
     }
 }
 
 impl Feature for EditTools {
     fn name(&self) -> &'static str {
         "edit-tools"
+    }
+
+    fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
+        if matches!(target, MenuTarget::Cell(..) | MenuTarget::RowHeader(_) | MenuTarget::ColHeader(_)) {
+            menu.add(MenuSection::Clipboard, MenuEntry::command(Cmd::PasteSpecial, app).shortcut("⌃⌘V"));
+        }
     }
 }
 
@@ -73,16 +170,21 @@ fn named(name: &'static str, element: impl IntoElement) -> gpui::Div {
 
 // ---------------------------------------------------------------- shortcuts
 
-actions!(edit_tools, [FindDialog, Replace]);
+actions!(edit_tools, [FindDialog, Replace, PasteSpecialDialog]);
 
 /// The shortcuts of the editing tools.
 pub fn bind_keys(cx: &mut App) {
     let w = Some("Workbook");
-    cx.bind_keys([KeyBinding::new("ctrl-f", FindDialog, w), KeyBinding::new("ctrl-h", Replace, w)]);
+    cx.bind_keys([
+        KeyBinding::new("ctrl-f", FindDialog, w),
+        KeyBinding::new("ctrl-h", Replace, w),
+        KeyBinding::new("ctrl-cmd-v", PasteSpecialDialog, w),
+    ]);
 }
 
 /// Make the window answer the shortcuts of `bind_keys`.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
     root.on_action(cx.listener(|app, _: &FindDialog, window, cx| app.run_command(Cmd::Find, window, cx)))
         .on_action(cx.listener(|app, _: &Replace, window, cx| app.run_command(Cmd::Replace, window, cx)))
+        .on_action(cx.listener(|app, _: &PasteSpecialDialog, window, cx| app.run_command(Cmd::PasteSpecial, window, cx)))
 }

@@ -85,7 +85,6 @@ fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Stri
 }
 
 /// The labels of the menu that is open, separators left out.
-#[allow(dead_code)]
 fn menu(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<String> {
     app.update(cx, |app, _| match app.popup.as_ref().map(|popup| &popup.kind) {
         Some(PopupKind::Menu(entries)) => {
@@ -225,4 +224,98 @@ fn find_and_select_reaches_the_cells_of_a_kind(cx: &mut TestAppContext) {
     let mut found = app.update(cx, |app, _| app.sel().ranges.clone());
     found.sort_by_key(|range| (range.r0, range.c0));
     assert_eq!(found, vec![Rect::parse("A1").unwrap(), Rect::parse("B2").unwrap()]);
+}
+
+// ------------------------------------------------------------ paste special
+
+fn copy(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str) {
+    select(app, cx, range);
+    app.update(cx, |app, cx| app.copy(false, cx));
+}
+
+#[gpui::test]
+fn the_paste_special_dialog_transposes_and_operates(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| enter(wb, &[("A1", "1"), ("B1", "2"), ("C1", "=A1+B1"), ("E1", "x")]));
+    copy(&app, cx, "A1:C1");
+    select(&app, cx, "E1");
+    // Control-Command-V opens the dialog; Transpose, then Return.
+    cx.simulate_keystrokes("ctrl-cmd-v");
+    assert_eq!(dialogs(&app, cx), 1);
+    press(cx, "paste-transpose");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(dialogs(&app, cx), 0);
+    assert_eq!(value(&app, cx, "E2"), Value::Number(2.0));
+    assert_eq!(text(&app, cx, "E3"), "=E1+E2");
+    assert_eq!(app.update(cx, |app, _| app.sel().current()), Rect::parse("E1:E3").unwrap());
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Paste Special"));
+    // One step to undo.
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(value(&app, cx, "E1"), Value::text("x"));
+    assert_eq!(value(&app, cx, "E3"), Value::Empty);
+}
+
+#[gpui::test]
+fn the_paste_drop_down_pastes_each_kind(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        enter(wb, &[("A1", "=1/4")]);
+        wb.update_style(0, Rect::parse("A1").unwrap(), &|s| {
+            s.num_fmt = "0%".into();
+            s.font.bold = true;
+        });
+    });
+    // Nothing copied: the choices are greyed out.
+    assert!(!app.update(cx, |app, _| Cmd::PasteValues.enabled(app)));
+    copy(&app, cx, "A1");
+    run(&app, cx, Cmd::PasteMenu);
+    let entries = menu(&app, cx);
+    assert_eq!(entries.first().map(String::as_str), Some("Paste"));
+    assert_eq!(entries.last().map(String::as_str), Some("Paste Special…"));
+    assert_eq!(entries.len(), 13);
+    app.update(cx, |app, cx| {
+        app.popup = None;
+        cx.notify();
+    });
+    for (cell, cmd) in [
+        ("C1", Cmd::PasteValues),
+        ("D1", Cmd::PasteFormulas),
+        ("E1", Cmd::PasteValuesNumbers),
+        ("F1", Cmd::PasteFormatting),
+        ("G1", Cmd::PasteLink),
+        ("H1", Cmd::PasteValuesSource),
+    ] {
+        select(&app, cx, cell);
+        run(&app, cx, cmd);
+    }
+    assert_eq!(text(&app, cx, "C1"), "0.25");
+    assert_eq!(text(&app, cx, "D1"), "=1/4");
+    assert_eq!(text(&app, cx, "E1"), "25%");
+    assert!(!app.update(cx, |app, _| app.wb.style_at(0, 0, 4).font.bold));
+    assert_eq!(value(&app, cx, "F1"), Value::Empty);
+    assert!(app.update(cx, |app, _| app.wb.style_at(0, 0, 5).font.bold));
+    assert_eq!(text(&app, cx, "G1"), "=$A$1");
+    assert_eq!(text(&app, cx, "H1"), "25%");
+    assert!(app.update(cx, |app, _| app.wb.style_at(0, 0, 7).font.bold));
+    // A protected sheet refuses, whatever the kind.
+    edit(&app, cx, |wb| {
+        wb.protect_sheet(0, Default::default(), "");
+    });
+    select(&app, cx, "C3");
+    run(&app, cx, Cmd::PasteValues);
+    assert_eq!(value(&app, cx, "C3"), Value::Empty);
+    assert_eq!(dialogs(&app, cx), 1, "the message of protected sheets");
+}
+
+#[gpui::test]
+fn text_from_another_application_is_offered_as_text(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("a\tb\n1\t2".into()));
+    select(&app, cx, "B2");
+    run(&app, cx, Cmd::PasteSpecial);
+    assert_eq!(dialogs(&app, cx), 1);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(dialogs(&app, cx), 0);
+    assert_eq!(value(&app, cx, "C2"), Value::text("b"));
+    assert_eq!(value(&app, cx, "B3"), Value::Number(1.0));
 }

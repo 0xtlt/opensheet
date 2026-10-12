@@ -152,6 +152,7 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Copy", "Copier"), Copy),
                 MenuItem::action(t("Paste", "Coller"), Paste),
                 MenuItem::action(t("Paste Values", "Coller les valeurs"), PasteValues),
+                MenuItem::action(t("Paste Special…", "Collage spécial…"), features::edit_tools::PasteSpecialDialog),
                 MenuItem::separator(),
                 MenuItem::action(t("Select All", "Sélectionner tout"), SelectAll),
                 MenuItem::action(t("Find…", "Rechercher…"), Find),
