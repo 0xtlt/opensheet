@@ -228,9 +228,9 @@ fn build() -> Workbook {
             width: Some(1.5),
             ..Line::default()
         };
+        c.series[2].color = Some(Color(0x7F7F7F));
         c.series[2].line = Line {
             dash: Dash::RoundDot,
-            color: Some(Color(0x7F7F7F)),
             ..Line::default()
         };
     });
@@ -497,9 +497,9 @@ fn build() -> Workbook {
     g.add(depth, "Pie, elevation 60°, turned 120°", "A1:B6", ChartKind::Pie3D, |c| {
         c.view3d = Some(View3D {
             rot_x: 60,
-            rot_y: 120,
             ..View3D::for_kind(c.kind)
         });
+        c.first_slice_angle = 120;
         c.series[0].point_mut(0).explosion = Some(20);
     });
     g.add(depth, "3-D columns with labels and titles", "A1:C6", ChartKind::Column3D, |c| {

@@ -1049,91 +1049,6 @@ pub struct ChartData {
     pub title: Option<String>,
 }
 
-/// A value axis: bounds and the distance between gridlines.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct AxisScale {
-    pub min: f64,
-    pub max: f64,
-    pub step: f64,
-}
-
-impl AxisScale {
-    pub fn ticks(&self) -> Vec<f64> {
-        let mut out = Vec::new();
-        if self.step <= 0.0 || !self.step.is_finite() {
-            return vec![self.min, self.max];
-        }
-        let n = ((self.max - self.min) / self.step).round() as i64;
-        for i in 0..=n.clamp(1, 200) {
-            let v = self.min + self.step * i as f64;
-            // Remove float noise (0.30000000000000004).
-            out.push((v / self.step).round() * self.step);
-        }
-        out
-    }
-
-    /// Position of a value on the axis, 0 at `min` and 1 at `max`.
-    pub fn fraction(&self, v: f64) -> f64 {
-        if self.max == self.min {
-            0.0
-        } else {
-            (v - self.min) / (self.max - self.min)
-        }
-    }
-}
-
-/// A readable axis for data between `lo` and `hi`: bounds on round
-/// numbers, zero included unless the data sits far from it, and room above
-/// the largest value.
-pub fn nice_axis(lo: f64, hi: f64) -> AxisScale {
-    let (mut lo, mut hi) = if lo.is_finite() && hi.is_finite() && lo <= hi {
-        (lo, hi)
-    } else {
-        (0.0, 1.0)
-    };
-    // Like Excel, start at zero unless the values vary by less than a sixth
-    // of their size (then zooming in on them reads better).
-    if lo > 0.0 && (hi - lo) / hi > 1.0 / 6.0 {
-        lo = 0.0;
-    }
-    if hi < 0.0 && (hi - lo) / lo.abs() > 1.0 / 6.0 {
-        hi = 0.0;
-    }
-    if hi == lo {
-        if hi == 0.0 {
-            hi = 1.0;
-        } else if hi > 0.0 {
-            lo = 0.0;
-        } else {
-            hi = 0.0;
-        }
-    }
-    let raw = (hi - lo) / 5.0;
-    let mag = 10f64.powf(raw.log10().floor());
-    let norm = raw / mag;
-    let step = mag
-        * if norm <= 1.0 {
-            1.0
-        } else if norm <= 2.0 {
-            2.0
-        } else if norm <= 5.0 {
-            5.0
-        } else {
-            10.0
-        };
-    let min = (lo / step).floor() * step;
-    let mut max = (hi / step).ceil() * step;
-    // Keep the tallest point clear of the top edge.
-    if hi > 0.0 && max - hi < step * 0.05 {
-        max += step;
-    }
-    let mut min = min;
-    if lo < 0.0 && lo - min < step * 0.05 {
-        min -= step;
-    }
-    AxisScale { min, max, step }
-}
-
 fn abs_cell(row: u32, col: u32) -> CellRef {
     CellRef {
         row,
@@ -1890,20 +1805,6 @@ mod tests {
         assert_eq!(w.chart_from_range(0, Rect::parse("A1:D3").unwrap(), ChartKind::Pie3D).series.len(), 1);
         // Each series keeps the format of its own numbers.
         assert_eq!(data.series[0].format, "General");
-    }
-
-    #[test]
-    fn axis() {
-        assert_eq!(nice_axis(0.0, 2023.0), AxisScale { min: 0.0, max: 2500.0, step: 500.0 });
-        assert_eq!(nice_axis(5.0, 45.0), AxisScale { min: 0.0, max: 50.0, step: 10.0 });
-        assert_eq!(nice_axis(-20.0, 30.0).min, -20.0 - 10.0);
-        let a = nice_axis(0.0, 0.0);
-        assert!(a.max > a.min);
-        let a = nice_axis(98.0, 102.0);
-        assert!(a.min > 0.0 && a.min <= 98.0 && a.max >= 102.0);
-        // A value sitting exactly on a gridline gets one more step of headroom.
-        assert_eq!(nice_axis(0.0, 1.0).ticks().len(), 7);
-        assert_eq!(nice_axis(0.0, 0.9).ticks().len(), 6);
     }
 
     #[test]

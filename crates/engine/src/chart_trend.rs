@@ -1,7 +1,8 @@
 //! Trendlines, computed the way Excel computes them: least squares, on
 //! the data itself for linear and polynomial trends, on its logarithms for
 //! exponential, logarithmic and power trends (which is why those need
-//! positive values), with R² measured where the fit was made.
+//! positive values). The equations and R² values were checked against the
+//! labels Excel 365 prints on the same data.
 
 use crate::chart::TrendKind;
 use crate::format::format_general;
@@ -109,16 +110,27 @@ pub fn fit(kind: TrendKind, points: &[(f64, f64)], intercept: Option<f64>) -> Op
         c.insert(0, c0);
     }
     let predicted = |u: f64| c.iter().rev().fold(0.0, |acc, k| acc * u + k);
-    let sse: f64 = us.iter().zip(&ts).map(|(u, t)| (t - predicted(*u)).powi(2)).sum();
-    // Through a forced intercept the variation is measured from it, as
-    // LINEST does without a constant.
-    let sst: f64 = if fixed.is_some() {
-        targets.iter().map(|t| t * t).sum()
+    let r_squared = if fixed.is_some() {
+        // Through a forced intercept the variation is measured from it, as
+        // LINEST does without a constant.
+        let sse: f64 = us.iter().zip(&ts).map(|(u, t)| (t - predicted(*u)).powi(2)).sum();
+        let sst: f64 = targets.iter().map(|t| t * t).sum();
+        if sst > 0.0 { 1.0 - sse / sst } else { f64::NAN }
     } else {
-        let mean = ts.iter().sum::<f64>() / ts.len() as f64;
-        ts.iter().map(|t| (t - mean).powi(2)).sum()
+        // What Excel prints: the squared correlation of the values with
+        // the trend, in the units of the chart. For linear and polynomial
+        // trends that is the share of the variation the trend explains;
+        // for exponential and power trends it is not the R² of the line
+        // fitted through the logarithms.
+        let fitted: Vec<f64> = us.iter().map(|u| if log_y { predicted(*u).exp() } else { predicted(*u) }).collect();
+        let ys: Vec<f64> = points.iter().map(|(_, y)| *y).collect();
+        let n = ys.len() as f64;
+        let (my, mf) = (ys.iter().sum::<f64>() / n, fitted.iter().sum::<f64>() / n);
+        let cov: f64 = ys.iter().zip(&fitted).map(|(y, f)| (y - my) * (f - mf)).sum();
+        let (vy, vf): (f64, f64) =
+            (ys.iter().map(|y| (y - my).powi(2)).sum(), fitted.iter().map(|f| (f - mf).powi(2)).sum());
+        if vy > 0.0 && vf > 0.0 { cov * cov / (vy * vf) } else { f64::NAN }
     };
-    let r_squared = if sst > 0.0 { 1.0 - sse / sst } else { f64::NAN };
     if log_y {
         c[0] = c[0].exp();
     }
@@ -310,6 +322,19 @@ mod tests {
         let rate = (n * sxl - sx * sl) / (n * sxx - sx * sx);
         assert!(close(f.coefficients[1], rate));
         assert!(close(f.coefficients[0], ((sl - rate * sx) / n).exp()));
+
+        // The labels Excel prints for these seven points.
+        let pts = [(1.0, 2.1), (2.0, 3.9), (3.0, 6.2), (4.0, 7.8), (5.0, 10.5), (6.0, 11.6), (7.0, 14.4)];
+        let label = |kind: TrendKind, intercept: Option<f64>| {
+            let f = fit(kind, &pts, intercept).unwrap();
+            format!("{} / {}", text(&f.equation(Locale::en())), text(&f.r_squared_label(Locale::en())))
+        };
+        assert_eq!(label(TrendKind::Linear, None), "y = 2.0214x - 0.0143 / R² = 0.9946");
+        assert_eq!(label(TrendKind::Exponential, None), "y = 2.0335e^0.303x / R² = 0.9399");
+        assert_eq!(label(TrendKind::Logarithmic, None), "y = 6.1205ln(x) + 0.6174 / R² = 0.9163");
+        assert_eq!(label(TrendKind::Polynomial(3), None), "y = 0.0083x^3 - 0.0857x^2 + 2.2488x - 0.1429 / R² = 0.9949");
+        assert_eq!(label(TrendKind::Power, None), "y = 2.0514x^0.9879 / R² = 0.9945");
+        assert_eq!(label(TrendKind::Linear, Some(0.0)), "y = 2.0186x / R² = 0.9989");
 
         // No logarithm of zero or of a negative number.
         assert!(fit(TrendKind::Exponential, &[(1.0, 1.0), (2.0, -1.0), (3.0, 2.0)], None).is_none());

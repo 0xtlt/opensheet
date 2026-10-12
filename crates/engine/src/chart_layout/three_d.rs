@@ -4,7 +4,7 @@
 //! the back to the front, with walls, floor and gridlines behind.
 
 use super::cartesian::{Shape, shapes};
-use super::scale::Scale;
+use super::scale::{Fit, Scale};
 use super::{AXIS, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, groups, label_text, line_height, shade};
 use crate::chart::{Family, View3D};
 use crate::style::Color;
@@ -242,7 +242,15 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         lo = lo.min(0.0);
         hi = hi.max(0.0);
     }
-    let scale = Scale::new(&chart.axes.value, lo, hi, kind.is_percent());
+    // The length of the value axis is not known before the camera is set
+    // up: a first scale gives the labels their room, the final one follows.
+    let percent = kind.is_percent();
+    let fit = |room: usize| Fit {
+        percent,
+        room,
+        snug: false,
+    };
+    let scale = Scale::new(&chart.axes.value, lo, hi, fit(5));
 
     // Lines and plain areas stand one behind the other; everything else
     // shares a single row.
@@ -332,8 +340,8 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     // than its labels have room for.
     let (from, to) = if horizontal { (cam.at(0.0, 0.0, 0.0), cam.at(w, 0.0, 0.0)) } else { (cam.at(0.0, 0.0, 0.0), cam.at(0.0, h, 0.0)) };
     let length = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2)).sqrt();
-    let spacing = if horizontal { value_w + 8.0 * z } else { label_h * 1.1 };
-    let scale = scale.coarsen(value_axis, (length / spacing).floor().max(1.0) as usize + 1);
+    let spacing = if horizontal { (value_w + 12.0 * z).max(34.0 * z) } else { label_h * 1.25 };
+    let scale = Scale::new(value_axis, lo, hi, fit(Fit::along(length, spacing).room));
     let base = scale.crossing(value_axis.crossing);
     let ticks = scale.major_ticks();
     let value_labels = labels_of(p, &scale);

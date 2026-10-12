@@ -1,7 +1,7 @@
 //! Radar charts: one spoke per category, the values measured from the
 //! centre, each series a closed line (filled or not) around it.
 
-use super::scale::Scale;
+use super::scale::{Fit, Scale};
 use super::{GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, label_text};
 use crate::chart::ChartKind;
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -26,7 +26,6 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     if !hi.is_finite() {
         return;
     }
-    let scale = Scale::new(&chart.axes.value, lo, hi, false);
     let show_categories = chart.axes.category.visible;
     let names: Vec<(String, f32)> = (0..n)
         .map(|k| {
@@ -49,7 +48,7 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     };
 
     // Rings and spokes; no more rings than their labels have room for.
-    let scale = scale.coarsen(&chart.axes.value, (r / (label_h * 1.1)).floor().max(1.0) as usize + 1);
+    let scale = Scale::new(&chart.axes.value, lo, hi, Fit::along(r, label_h * 1.25));
     let grid = Stroke::new(GRIDLINE, 1.0);
     let ticks = scale.major_ticks();
     if chart.axes.value.major_gridlines {

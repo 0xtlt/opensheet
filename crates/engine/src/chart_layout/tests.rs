@@ -81,6 +81,11 @@ fn find_text<'a>(prims: &'a [Prim], text: &str) -> &'a TextRun {
     texts(prims).into_iter().find(|t| t.text == text).unwrap_or_else(|| panic!("no text {text:?}"))
 }
 
+/// The last text that reads `text`: data labels are written over the axes.
+fn find_label<'a>(prims: &'a [Prim], text: &str) -> &'a TextRun {
+    texts(prims).into_iter().rev().find(|t| t.text == text).unwrap_or_else(|| panic!("no label {text:?}"))
+}
+
 /// Filled rectangles of a colour: (x, y, w, h).
 fn rects(prims: &[Prim], color: u32) -> Vec<(f32, f32, f32, f32)> {
     prims
@@ -174,16 +179,17 @@ fn clustered_columns_keep_their_look() {
     let chart = chart_of(&w, "A1:D5", ChartKind::Column);
     let prims = lay(&w, &chart);
     assert_sane(&prims, SIZE, "column");
-    // The frame, then the plot: 12 bars, 5 gridlines (0 to 20 by 5).
+    // The frame, then the plot: 12 bars, 11 gridlines (0 to 20 by 2, the
+    // smallest unit whose labels fit up the axis).
     assert!(matches!(&prims[0], Prim::Rect { x, y, w, h, fill: Some(_), stroke: Some(_) } if (*x, *y, *w, *h) == (0.0, 0.0, 480.0, 288.0)));
     let north = rects(&prims, NORTH);
     // Four bars and the legend swatch.
     assert_eq!(north.len(), 5);
     assert_eq!(rects(&prims, SOUTH).len(), 5);
-    for label in ["0", "5", "10", "15", "20", "Jan", "Feb", "Mar", "Apr", "North", "South", "West", "Chart Title"] {
+    for label in ["0", "2", "10", "18", "20", "Jan", "Feb", "Mar", "Apr", "North", "South", "West", "Chart Title"] {
         assert!(has_text(&prims, label), "{label}");
     }
-    assert_eq!(lines(&prims, GRIDLINE).len(), 5);
+    assert_eq!(lines(&prims, GRIDLINE).len(), 11);
 
     // The geometry of the plot, as the chart was drawn before the layout
     // moved here: title 18.67 px, legend at the bottom, labels 12 px.
@@ -320,7 +326,7 @@ fn axis_options() {
     chart.axes.category.labels = TickLabels::None;
     let prims = lay(&w, &chart);
     assert!(!has_text(&prims, "20") && !has_text(&prims, "Jan"));
-    assert_eq!(lines(&prims, GRIDLINE).len(), 5);
+    assert_eq!(lines(&prims, GRIDLINE).len(), 11);
     assert_eq!(lines(&prims, GRIDLINE)[0].0, 10.0);
 
     // The category axis crossing at 10: bars go up and down from there.
@@ -336,7 +342,7 @@ fn axis_options() {
     let mut chart = chart_of(&big, "A1:B3", ChartKind::Column);
     chart.axes.value.display_unit = DisplayUnit::Thousands;
     let prims = lay(&big, &chart);
-    assert!(has_text(&prims, "Thousands") && has_text(&prims, "200") && !has_text(&prims, "200000"));
+    assert!(has_text(&prims, "Thousands") && has_text(&prims, "160") && !has_text(&prims, "160000"));
     chart.axes.value.display_unit = DisplayUnit::None;
     chart.axes.value.log_base = Some(10.0);
     let prims = lay(&big, &chart);
@@ -591,14 +597,14 @@ fn data_labels() {
     chart.data_labels = true;
     let prims = lay(&w, &chart);
     // Values over the bars.
-    let twelve = find_text(&prims, "12");
+    let twelve = find_label(&prims, "12");
     let bar = rects(&prims, NORTH).into_iter().find(|r| r.3 > 20.0).unwrap();
     assert_eq!(twelve.anchor, TextAnchor::Middle);
     assert!((twelve.x - (bar.0 + bar.2 / 2.0)).abs() < 0.01 && twelve.y < bar.1);
     // Inside, at the foot of the bar.
     chart.label_options.position = LabelPosition::InsideBase;
     let prims = lay(&w, &chart);
-    let twelve = find_text(&prims, "12");
+    let twelve = find_label(&prims, "12");
     assert!(twelve.y > bar.1 + bar.3 - 20.0 && twelve.y < bar.1 + bar.3);
 
     // What the labels say; a series may differ, or have none.
@@ -616,7 +622,7 @@ fn data_labels() {
     chart.data_labels = false;
     chart.series[1].labels = Some(DataLabels::default());
     let prims = lay(&w, &chart);
-    assert!(has_text(&prims, "14") && !has_text(&prims, "18"));
+    assert!(has_text(&prims, "11") && !has_text(&prims, "15"));
 
     // Pies: shares, inside when there is room, outside when asked.
     let mut pie = chart_of(&w, "A1:B5", ChartKind::Pie);
@@ -643,11 +649,11 @@ fn data_labels() {
     let mut line = chart_of(&w, "A1:B5", ChartKind::Line);
     line.data_labels = true;
     let prims = lay(&w, &line);
-    assert_eq!(find_text(&prims, "12").anchor, TextAnchor::Start);
+    assert_eq!(find_label(&prims, "12").anchor, TextAnchor::Start);
     line.label_options.position = LabelPosition::Above;
     let above = lay(&w, &line);
-    assert_eq!(find_text(&above, "12").anchor, TextAnchor::Middle);
-    assert!(find_text(&above, "12").y < find_text(&prims, "12").y);
+    assert_eq!(find_label(&above, "12").anchor, TextAnchor::Middle);
+    assert!(find_label(&above, "12").y < find_label(&prims, "12").y);
 }
 
 #[test]

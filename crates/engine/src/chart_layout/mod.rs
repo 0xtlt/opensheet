@@ -18,7 +18,7 @@ mod round;
 mod scale;
 mod three_d;
 
-pub use scale::Scale;
+pub use scale::{Fit, Scale};
 
 use crate::chart::{
     Chart, ChartData, ChartKind, ChartTitle, Dash, Family, Fill, LegendPos, Line, MarkerShape, Series, TrendKind,
@@ -685,7 +685,11 @@ impl Painter<'_> {
         });
         // Clustered bars are listed from the top one down, as Excel does:
         // the first series is the lowest bar of each cluster.
-        if chart.kind.family() == Family::Bar && !chart.kind.is_stacked() && !self.varied() {
+        if chart.kind.family() == Family::Bar
+            && !chart.kind.is_stacked()
+            && !chart.axes.category.reversed
+            && !self.varied()
+        {
             let series = chart.series.len().min(self.data.series.len()) as u32;
             let shown = (0..series).filter(|i| !chart.legend_hidden.contains(i)).count();
             entries[..shown].reverse();
@@ -704,7 +708,7 @@ impl Painter<'_> {
         match key {
             Key::Swatch(color) => {
                 let s = (7.0 * z).round().max(4.0);
-                self.rect(x, cy - s / 2.0, x + s, cy + s / 2.0, *color);
+                self.rect(x, cy - s / 2.0, x + mark_w.max(s), cy + s / 2.0, *color);
             }
             Key::Line(stroke, marker) => {
                 if let Some(stroke) = stroke {
@@ -768,10 +772,11 @@ impl Painter<'_> {
         // drawn after the plot when it lies over it.
         let entries = if chart.legend == LegendPos::None { Vec::new() } else { self.legend_entries() };
         let mut placed: Vec<(usize, f32, f32)> = Vec::new();
-        // A swatch for shapes, a piece of line for lines.
+        // A swatch for shapes, a piece of line for lines; next to lines a
+        // swatch is as wide as they are, as in Excel's legends.
         let swatch = (7.0 * z).round().max(4.0);
-        let marks: Vec<f32> =
-            entries.iter().map(|(_, key)| if matches!(key, Key::Line(..)) { 18.0 * z } else { swatch }).collect();
+        let lined = entries.iter().any(|(_, key)| matches!(key, Key::Line(..)));
+        let marks: Vec<f32> = entries.iter().map(|_| if lined { 18.0 * z } else { swatch }).collect();
         if !entries.is_empty() {
             let widths: Vec<f32> = entries.iter().map(|(name, _)| self.width(name, label_size)).collect();
             let entry_gap = 14.0 * z;

@@ -2,7 +2,7 @@
 //! combinations on a category axis, scatter and bubble charts on two
 //! scales; with secondary axes, trendlines, error bars and data labels.
 
-use super::scale::Scale;
+use super::scale::{Fit, Scale};
 use super::{
     AXIS, GRIDLINE, Group, Ink, MINOR_GRIDLINE, PT, Painter, Stroke, TEXT, TextAnchor, clip_polygon, clip_polyline,
     fmt_value, groups, label_text, line_height, smooth_points,
@@ -431,6 +431,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         }
     }
     let mut x_range = Range::empty();
+    let bubble_chart = chart.kind.family() == Family::Bubble;
     if xy {
         for (si, sd) in data.series.iter().enumerate().take(chart.series.len()) {
             for (k, x) in sd.x_values.iter().enumerate() {
@@ -452,10 +453,11 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         if x_range.is_empty() {
             return;
         }
-        // Bubbles reach beyond their centres.
-        if chart.kind.family() == Family::Bubble {
+        // Bubbles reach beyond their centres: like Excel, both scales
+        // get a quarter of the range of the data at each end (at full size).
+        if bubble_chart {
             let pad = |r: &mut Range| {
-                let d = ((r.hi - r.lo) * 0.1).max(r.hi.abs() * 0.05);
+                let d = (r.hi - r.lo) * 0.25 * chart.bubble_scale.min(300) as f64 / 100.0;
                 r.lo -= d;
                 r.hi += d;
             };
@@ -473,29 +475,71 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             _ => data.value_format.clone(),
         }
     };
-    // An axis shows as many gridlines as its labels have room for: about
-    // the plot is known before the labels are, well enough for that.
-    let room_up = ((bottom - top - 2.0 * label_h) / (label_h * 1.1)).floor().max(1.0) as usize + 1;
-    let across = (right - left - 60.0 * z).max(20.0);
-    let tuned = |p: &Painter, scale: Scale, axis: &Axis, code: &str, upright: bool| -> Scale {
-        let room = if upright {
-            room_up
-        } else {
-            let widest = scale_labels(p, axis, &scale, code).iter().map(|l| l.2).fold(0.0, f32::max);
-            (across / (widest + 8.0 * z)).floor().max(1.0) as usize + 1
+    // An axis shows as many gridlines as its labels have room for. Its
+    // length is not known before its labels are, but nearly: what the
+    // other axis and the titles take is.
+    let title_size = (13.33 * z).max(6.0);
+    let title_h = line_height(title_size);
+    let titled = |axis: &Axis, gap: f32| if axis.title.as_ref().is_some_and(|t| !t.is_empty()) { title_h + gap } else { 0.0 };
+    let labelled = |axis: &Axis| axis.visible && axis.labels != TickLabels::None;
+    let cat_axis = &chart.axes.category;
+    let up = if horizontal {
+        0.0
+    } else {
+        let under = match chart.data_table {
+            Some(_) if !xy => (label_h + 4.0 * z) * (chart.series.len() as f32 + 1.0) + 2.0 * z,
+            _ if labelled(cat_axis) => label_h + 6.0 * z,
+            _ => 0.0,
         };
-        scale.coarsen(axis, room)
+        // The categories written once more above the plot.
+        let far = &chart.axes.secondary_category;
+        let over = if has_secondary && !xy && far.visible {
+            (if far.labels == TickLabels::None { 0.0 } else { label_h + 6.0 * z }) + titled(far, 4.0 * z)
+        } else {
+            0.0
+        };
+        bottom - top - label_h / 2.0 - under - over - titled(cat_axis, 4.0 * z)
+    };
+    let across = if xy {
+        right - left - 8.0 * z - (label_size * 1.8 + 8.0 * z) - titled(&chart.axes.value, 6.0 * z)
+    } else {
+        let names = if labelled(cat_axis) {
+            let widest = data.categories.iter().take(n).map(|c| p.width(c, label_size)).fold(0.0, f32::max);
+            widest.min((right - left) * 0.4) + 8.0 * z
+        } else {
+            0.0
+        };
+        right - left - 8.0 * z - names - titled(cat_axis, 6.0 * z)
+    };
+    let fitted = |p: &Painter, axis: &Axis, lo: f64, hi: f64, code: &str, upright: bool, percent: bool| -> Scale {
+        let fit = if upright {
+            Fit::along(up, label_h * 1.25)
+        } else {
+            // Wide enough for the longest label and some air; Excel keeps
+            // the labels of a horizontal scale well apart even when short.
+            let divisor = axis.display_unit.divisor();
+            let code = axis.number_format.as_deref().unwrap_or(code);
+            let widest = [lo, hi].iter().map(|v| p.width(&fmt_value(v / divisor, code, locale), label_size)).fold(0.0, f32::max);
+            Fit::along(across, (widest + 12.0 * z).max(34.0 * z))
+        };
+        Scale::new(
+            axis,
+            lo,
+            hi,
+            Fit {
+                percent,
+                snug: bubble_chart,
+                ..fit
+            },
+        )
     };
     let scale_of = |p: &Painter, i: usize, axis: &Axis| {
         let r = ranges[i];
         let (lo, hi) = if r.is_empty() { (0.0, 1.0) } else { (r.lo, r.hi) };
-        tuned(p, Scale::new(axis, lo, hi, percent[i] && !xy), axis, &value_code(i), !horizontal)
+        fitted(p, axis, lo, hi, &value_code(i), !horizontal, percent[i] && !xy)
     };
     let scales = [scale_of(p, 0, &chart.axes.value), scale_of(p, 1, &chart.axes.secondary_value)];
-    let x_scale = xy.then(|| {
-        let axis = &chart.axes.category;
-        tuned(p, Scale::new(axis, x_range.lo, x_range.hi, false), axis, &data.x_format, false)
-    });
+    let x_scale = xy.then(|| fitted(p, &chart.axes.category, x_range.lo, x_range.hi, &data.x_format, false, false));
 
     // ---- axes, before the plot rectangle is known --------------------------
     let slots = n + extra_slots;
@@ -524,8 +568,6 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let category_at = scales[0].clamped(base_value);
     let base_secondary = scales[1].crossing(chart.axes.secondary_value.crossing);
 
-    let title_size = (13.33 * z).max(6.0);
-    let title_h = line_height(title_size);
     let scale_plan = |p: &Painter, axis: &Axis, scale: &Scale, code: &str, vertical: bool, line_at: f64, line: bool| {
         let side = label_side(axis, line_at);
         AxisPlan {
