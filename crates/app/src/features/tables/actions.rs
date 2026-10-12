@@ -614,6 +614,18 @@ mod tests {
         let name = wb.table(0, id).unwrap().name.clone();
         let headers = pointed_reference(&wb, 0, Rect::new(0, 0, 0, 1), Some((5, 5))).unwrap();
         assert_eq!(headers, format!("{name}[#En-têtes]"));
+        // Column names are kept as they are, accents and all; the separator
+        // between an item and a column is the workbook's.
+        assert_eq!(
+            pointed_reference(&wb, 0, Rect::cell(1, 1), Some((5, 5))),
+            Some(format!("{name}[Qté]"))
+        );
+        let header = pointed_reference(&wb, 0, Rect::cell(0, 1), Some((5, 5))).unwrap();
+        assert_eq!(header, format!("{name}[[#En-têtes];[Qté]]"));
+        assert_eq!(
+            go_to_target(&wb, 0, (5, 5), &header).map(|r| r.rect),
+            Some(Rect::cell(0, 1))
+        );
         // What is written reads back as the same cells.
         assert_eq!(
             go_to_target(&wb, 0, (5, 5), &headers).map(|r| r.rect),

@@ -96,9 +96,9 @@ struct TablesUi {
     auto: Option<AutoChange>,
     /// Tab was pressed and the move it asks for has not been made yet.
     tab: sheet::TabKey,
-    /// When the style gallery last closed: the click that closed it must
-    /// not open it again.
-    gallery_closed: Rc<Cell<Option<Instant>>>,
+    /// When the button of the open style gallery was pressed: the press
+    /// closes the gallery, and the click it starts must not open it again.
+    gallery_put_away: Rc<Cell<Option<Instant>>>,
 }
 
 /// How dialogs of tables write a range: `=$A$1:$C$9`, as Excel's do.
@@ -474,6 +474,10 @@ impl Feature for Tables {
 
     fn cells_changed(&self, app: &mut ExcelApp, _edit: &CellEdit, _cx: &mut Cx) {
         sheet::cells_changed(app);
+    }
+
+    fn selection_changed(&self, app: &mut ExcelApp, cx: &mut Cx) {
+        design::selection_changed(app, cx);
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {

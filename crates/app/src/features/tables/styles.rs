@@ -8,7 +8,10 @@ use crate::features::{Command, Cx};
 use crate::i18n::{t, t_ctx};
 use crate::theme::{self, c};
 use crate::widgets::{Sketch, icon, preview, tooltip};
-use gpui::{AnyElement, App, ClickEvent, Context, Div, Stateful, WeakEntity, Window, div, point, prelude::*, px};
+use gpui::{
+    AnyElement, App, Bounds, ClickEvent, Context, Div, MouseDownEvent, Pixels, Stateful, WeakEntity, Window, div,
+    point, prelude::*, px,
+};
 use opensheet_engine::style::Border;
 use opensheet_engine::table::{TableLook, TableStyle, builtin_table_styles};
 use std::cell::Cell;
@@ -30,6 +33,8 @@ const MORE_W: f32 = 16.0;
 /// The ribbon control the gallery of the Table Design tab hangs from. Its
 /// bounds also tell how many thumbnails fit on the tab.
 const STRIP: &str = "td-styles";
+/// The button at the end of that row, which opens the gallery.
+const MORE: &str = "td-styles-more";
 
 /// How one cell of a thumbnail is drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -271,13 +276,11 @@ struct Gallery {
     current: Option<Option<String>>,
     /// Opened from the Table Design tab: "Clear" is offered.
     design: bool,
-    closed: Rc<Cell<Option<Instant>>>,
-}
-
-impl Drop for Gallery {
-    fn drop(&mut self) {
-        self.closed.set(Some(Instant::now()));
-    }
+    /// Where the button that opened the gallery is in the window.
+    button: Option<Bounds<Pixels>>,
+    /// Set when that button is pressed while the gallery is open (see
+    /// `TablesUi::gallery_put_away`).
+    put_away: Rc<Cell<Option<Instant>>>,
 }
 
 /// A style was picked in the gallery: the table of the active cell takes
@@ -365,8 +368,17 @@ impl Render for Gallery {
                     .into_any_element(),
             );
         }
+        let (button, put_away) = (self.button, self.put_away.clone());
         div()
             .id("table-style-gallery")
+            // Any press outside the gallery closes it. One on its own
+            // button is remembered: the click it starts must not open the
+            // gallery again.
+            .on_mouse_down_out(move |ev: &MouseDownEvent, _, _| {
+                if button.is_some_and(|bounds| bounds.contains(&ev.position)) {
+                    put_away.set(Some(Instant::now()));
+                }
+            })
             .w(px(PER_ROW as f32 * ITEM_W + 28.0))
             .max_h(px(640.))
             .overflow_y_scroll()
@@ -385,19 +397,25 @@ impl Render for Gallery {
 /// Open the gallery under the control that asked for it. `design`: from
 /// the Table Design tab.
 pub(super) fn open_gallery(app: &mut ExcelApp, design: bool, window: &mut Window, cx: &mut Cx) {
-    let closed = app.ext_mut::<TablesUi>().gallery_closed.clone();
+    let put_away = app.ext_mut::<TablesUi>().gallery_put_away.clone();
     // The press of this very click closed the gallery: its button was
-    // pressed to put it away, not to open it again.
-    if closed
-        .take()
-        .is_some_and(|at| at.elapsed() < Duration::from_millis(250))
-    {
+    // pressed to put it away, not to open it again. (A press that old was
+    // not followed by its click.)
+    if put_away.take().is_some_and(|at| at.elapsed() < Duration::from_secs(2)) {
         return;
     }
     let table = active_table(app);
     let look = table.map_or_else(new_table_look, |table| thumb_look(table.look()));
     let current = table.map(|table| table.style.clone());
-    let anchor = app.command_anchor.and_then(|id| app.anchors.borrow().get(id).copied());
+    let bounds_of = |id: &'static str| app.anchors.borrow().get(id).copied();
+    let anchor = app.command_anchor.and_then(bounds_of);
+    // On the Table Design tab the gallery hangs from the row of styles; its
+    // button is the one at the end of the row.
+    let button = if app.command_anchor == Some(STRIP) {
+        bounds_of(MORE)
+    } else {
+        anchor
+    };
     let position = match anchor {
         Some(bounds) => point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)),
         None => window.mouse_position(),
@@ -408,7 +426,8 @@ pub(super) fn open_gallery(app: &mut ExcelApp, design: bool, window: &mut Window
         look,
         current,
         design,
-        closed,
+        button,
+        put_away,
     });
     app.open_popup_view(position, view, cx);
 }
@@ -462,7 +481,8 @@ pub(super) fn strip(app: &mut ExcelApp, cx: &mut Cx) -> AnyElement {
             .children(thumbs)
             .child(
                 div()
-                    .id("td-styles-more")
+                    .id(MORE)
+                    .relative()
                     .w(px(MORE_W))
                     .h(px(ITEM_H))
                     .flex()
@@ -477,7 +497,8 @@ pub(super) fn strip(app: &mut ExcelApp, cx: &mut Cx) -> AnyElement {
                         this.command_anchor = Some(STRIP);
                         Cmd::Styles.run(this, window, cx);
                         this.command_anchor = None;
-                    })),
+                    }))
+                    .child(app.anchor(MORE)),
             )
             .into_any_element()
     };

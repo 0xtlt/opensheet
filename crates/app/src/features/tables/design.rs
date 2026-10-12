@@ -89,6 +89,23 @@ fn on_name_event(app: &mut ExcelApp, ev: &InputEvent, window: &mut Window, cx: &
     }
 }
 
+/// The selection moved while a name was being typed in the Table Name box
+/// (a click on the sheet). The name is entered as when the box is left:
+/// now, because the box may be gone, or showing another table, before it
+/// learns that it lost the keyboard.
+pub(super) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {
+    let typing = app
+        .ext::<TablesUi>()
+        .and_then(|ui| ui.name_box.as_ref())
+        .is_some_and(|name_box| name_box.target.is_some());
+    if typing {
+        rename(app, false, cx);
+        if let Some(name_box) = &mut app.ext_mut::<TablesUi>().name_box {
+            name_box.target = None;
+        }
+    }
+}
+
 /// Give the table of the Table Name box the name typed there. `loud`:
 /// say why when the name is refused. Returns true when the table now has
 /// the name typed (or already had it).
