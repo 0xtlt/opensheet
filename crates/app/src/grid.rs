@@ -787,8 +787,24 @@ impl<'a> PaneCtx<'a> {
 
         self.feature_layer(PaintLayer::Under, visible, clip, &mut items);
 
-        // Gridlines.
-        if sheet.show_gridlines {
+        // Gridlines. Page Break Preview shows them only over what prints.
+        let gridline_areas = if sheet.show_gridlines {
+            features::page::gridline_areas(self.input.app)
+        } else {
+            None
+        };
+        for area in gridline_areas.iter().flatten().filter_map(|area| area.intersection(&visible)) {
+            let line = c(theme::GRIDLINE);
+            let (ax0, ay0, ax1, ay1) = layout.rect_px(area);
+            let (ax0, ay0, ax1, ay1) = (ax0.max(clip.0), ay0.max(clip.1), ax1.min(clip.2), ay1.min(clip.3));
+            for (_, y, h) in ys.iter().filter(|(row, _, _)| *row >= area.r0 && *row <= area.r1) {
+                items.push(solid(layout, ax0, y + h - self.hair, ax1, y + h, line));
+            }
+            for (_, x, w) in xs.iter().filter(|(col, _, _)| *col >= area.c0 && *col <= area.c1) {
+                items.push(solid(layout, x + w - self.hair, ay0, x + w, ay1, line));
+            }
+        }
+        if sheet.show_gridlines && gridline_areas.is_none() {
             let line = c(theme::GRIDLINE);
             for (_, y, h) in &ys {
                 items.push(solid(layout, clip.0, y + h - self.hair, clip.2, y + h, line));

@@ -1645,7 +1645,7 @@ impl ExcelApp {
                         self.cmd_check("pl-head-print", page::Cmd::PrintHeadings, cx),
                     ])),
                 Some(self.launcher("pl-sheet-launcher", t("Page Setup", "Mise en page"), cx, |this, window, cx| {
-                    page::Cmd::Setup.run(this, window, cx)
+                    page::Cmd::SetupSheet.run(this, window, cx)
                 })),
             )
             .into_any_element(),

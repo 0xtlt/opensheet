@@ -3649,6 +3649,7 @@ dependencies = [
  "gpui",
  "opensheet_engine",
  "opensheet_io",
+ "opensheet_print",
  "unicode-segmentation",
 ]
 

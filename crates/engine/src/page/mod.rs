@@ -15,8 +15,8 @@ pub use header_footer::{
     from_dialog_text, lines, plain_text, presets, to_dialog_text,
 };
 pub use paginate::{
-    CELL_PADDING, INDENT_WIDTH, PX_TO_PT, Page, PageBreak, PageLayout, PaginateOptions, Pagination, PrintRange, Span,
-    TextMeasure, axis_offset, paginate, visible_col_width, visible_row_height,
+    CELL_PADDING, INDENT_WIDTH, PX_TO_PT, Page, PageBreak, PageLayout, PaginateOptions, Pagination, PrintRange,
+    SheetPages, Span, TextMeasure, axis_offset, paginate, sheet_pages, visible_col_width, visible_row_height,
 };
 pub use paper::{PaperInfo, PaperSize};
 
@@ -500,17 +500,29 @@ impl FloatingObject {
     }
 }
 
-/// Where a picture or shape sits. The drawing model does not carry an
-/// anchor or a size yet, so drawings take no room on paper; this is the
-/// one place that has to read them from it.
-fn drawing_object(_drawing: &Drawing) -> Option<FloatingObject> {
-    None
+/// Where a picture or shape sits: its frame as the sheet lays it out now
+/// (a drawing pinned to cells at both corners follows their sizes). A
+/// drawing whose "Print object" is off takes no room on paper.
+fn drawing_object(sheet: &Sheet, drawing: &Drawing) -> Option<FloatingObject> {
+    if !drawing.print {
+        return None;
+    }
+    let frame = sheet.drawing_frame(drawing);
+    let ((anchor, offset), _) = sheet.drawing_corners(drawing);
+    Some(FloatingObject {
+        kind: ObjectKind::Drawing,
+        id: drawing.id,
+        anchor,
+        offset,
+        size: (frame.width as f32, frame.height as f32),
+    })
 }
 
-/// The charts, pictures and shapes of a sheet, in drawing order.
+/// The charts, pictures and shapes of a sheet that print, in drawing
+/// order.
 pub fn floating_objects(sheet: &Sheet) -> Vec<FloatingObject> {
     let mut out: Vec<FloatingObject> = sheet.charts.iter().map(FloatingObject::of_chart).collect();
-    out.extend(sheet.drawings.iter().filter_map(drawing_object));
+    out.extend(sheet.drawings.iter().filter_map(|drawing| drawing_object(sheet, drawing)));
     out
 }
 
