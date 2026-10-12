@@ -1567,7 +1567,7 @@ impl Render for PictureDialog {
                 NumberField::new("width", &self.width).width(80.0),
             ))
             .child(
-                Checkbox::new("lock", t("Lock aspect ratio", "Proportionnelle"), self.lock).on_change(cx.listener(
+                Checkbox::new("lock", t("Lock aspect ratio", "Garder les proportions"), self.lock).on_change(cx.listener(
                     |this, on: &bool, _, cx| {
                         this.lock = *on;
                         cx.notify();

@@ -194,7 +194,7 @@ impl Render for ColorPopup {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let outline = self.outline;
         let app = self.app.clone();
-        let none = if outline { t("No Outline", "Aucun contour") } else { t("No Fill", "Aucun remplissage") };
+        let none = if outline { t("No Outline", "Sans contour") } else { t("No Fill", "Aucun remplissage") };
         div().p(px(8.)).text_size(px(12.)).child(
             ColorGrid::new("shape-color", self.current)
                 .none_label(none)

@@ -57,7 +57,7 @@ commands! {
         Orientation = "page", t("Orientation", "Orientation");
         Portrait = "", t("Portrait", "Portrait");
         Landscape = "", t("Landscape", "Paysage");
-        Size = "page", t("Size", "Taille");
+        Size = "page", crate::i18n::t_ctx("paper", "Size", "Taille");
         MoreSizes = "", t("More Paper Sizes…", "Autres tailles de papier…");
         PrintArea = "print", t("Print Area", "ZoneImpr");
         SetPrintArea = "", t("Set Print Area", "Définir");
@@ -333,9 +333,9 @@ fn margins_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
             .into()
         };
         vec![
-            pair(t("Top", "Haut"), m.top, t("Bottom", "Bas"), m.bottom),
+            pair(crate::i18n::t_ctx("margin", "Top", "Haut"), m.top, crate::i18n::t_ctx("margin", "Bottom", "Bas"), m.bottom),
             pair(
-                t("Left", "Gauche"),
+                crate::i18n::t_ctx("margin", "Left", "Gauche"),
                 m.left,
                 crate::i18n::t_ctx("margin", "Right", "Droite"),
                 m.right,

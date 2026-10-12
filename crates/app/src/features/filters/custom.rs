@@ -361,7 +361,7 @@ impl Top10Dialog {
 
 impl Render for Top10Dialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ends: Vec<SharedString> = vec![t("Top", "Haut").into(), t("Bottom", "Bas").into()];
+        let ends: Vec<SharedString> = vec![crate::i18n::t_ctx("top10", "Top", "Haut").into(), crate::i18n::t_ctx("top10", "Bottom", "Bas").into()];
         let units: Vec<SharedString> = vec![t("Items", "Éléments").into(), t("Percent", "Pourcentage").into()];
         dialog(&self.modal, t("Top 10 AutoFilter", "Filtre automatique des 10 premiers"))
             .width(360.0)

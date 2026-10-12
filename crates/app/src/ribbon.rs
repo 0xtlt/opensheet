@@ -945,7 +945,7 @@ impl ExcelApp {
                     self.icon_btn(
                         "rb-center",
                         "align-center",
-                        t("Center", "Centrer"),
+                        crate::i18n::t_ctx("button", "Center", "Centrer"),
                         style.h_align == HAlign::Center,
                         cx,
                         |this, _, cx| this.set_h_align(HAlign::Center, cx),
@@ -997,7 +997,7 @@ impl ExcelApp {
 
         // Number
         let number = launcher_group(
-            t("Number", "Nombre"),
+            crate::i18n::t_ctx("group", "Number", "Nombre"),
             rows(vec![
                 row(vec![self.combo(
                     "rb-numfmt",
@@ -1189,10 +1189,10 @@ impl ExcelApp {
                             this.open_menu("rb-sum", entries, 180.0, window, cx);
                         }),
                     ]),
-                    self.labeled("rb-fill-series", "fill-down", t("Fill", "Remplissage"), true, false, cx, |this, window, cx| {
+                    self.labeled("rb-fill-series", "fill-down", crate::i18n::t_ctx("command", "Fill", "Remplissage"), true, false, cx, |this, window, cx| {
                         let entries = vec![
                             MenuEntry::new(t("Down", "En bas"), |a, _, cx| a.fill(Direction::Down, cx)).shortcut("⌘D"),
-                            MenuEntry::new(t("Right", "À droite"), |a, _, cx| a.fill(Direction::Right, cx)).shortcut("⌘R"),
+                            MenuEntry::new(crate::i18n::t_ctx("fill", "Right", "À droite"), |a, _, cx| a.fill(Direction::Right, cx)).shortcut("⌘R"),
                         ];
                         this.open_menu("rb-fill-series", entries, 180.0, window, cx);
                     }),
@@ -1780,7 +1780,7 @@ impl ExcelApp {
             )
             .into_any_element(),
             group(
-                t("Outline", "Plan"),
+                crate::i18n::t_ctx("group", "Outline", "Plan"),
                 row(vec![
                     self.cmd_large("dt-group", misc::Cmd::GroupRows, true, cx),
                     self.cmd_large("dt-ungroup", misc::Cmd::UngroupRows, true, cx),
@@ -1902,7 +1902,7 @@ pub fn chart_kind_name(kind: ChartKind) -> &'static str {
         ChartKind::Column3D => t("3-D Clustered Column", "Histogramme 3D groupé"),
         ChartKind::StackedColumn3D => t("3-D Stacked Column", "Histogramme 3D empilé"),
         ChartKind::PercentStackedColumn3D => t("3-D 100% Stacked Column", "Histogramme 3D empilé 100 %"),
-        ChartKind::Line => t("Line", "Courbes"),
+        ChartKind::Line => crate::i18n::t_ctx("chart", "Line", "Courbes"),
         ChartKind::StackedLine => t("Stacked Line", "Courbes empilées"),
         ChartKind::PercentStackedLine => t("100% Stacked Line", "Courbes empilées 100 %"),
         ChartKind::LineMarkers => t("Line with Markers", "Courbes avec marques"),

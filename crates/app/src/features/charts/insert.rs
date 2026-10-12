@@ -42,7 +42,7 @@ impl Page {
     fn name(self) -> &'static str {
         match self {
             Page::Column => t("Column", "Histogramme"),
-            Page::Line => t("Line", "Courbes"),
+            Page::Line => crate::i18n::t_ctx("chart", "Line", "Courbes"),
             Page::Pie => t("Pie", "Secteurs"),
             Page::Bar => t("Bar", "Barres"),
             Page::Area => t("Area", "Aires"),
