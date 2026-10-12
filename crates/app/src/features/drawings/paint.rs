@@ -4,7 +4,7 @@
 
 use super::geometry::{self, Placed, Polyline, Pt};
 use super::picture;
-use super::text::{self, TextLook};
+use super::text::TextLook;
 use crate::grid::{Draw, FontResolver, GridLayout, Layer, pt_to_px};
 use crate::theme::{c, engine_color};
 use gpui::{
@@ -293,16 +293,17 @@ fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush
     if let Some(fonts) = text.filter(|_| !shape.text.is_empty() && !shape.preset.is_line()) {
         let look = text_look(shape, brush.zoom, fonts);
         let (x0, y0, x1, y1) = text_box(shape, placed, natural, brush.zoom);
-        let laid = text::lay_out(&shape.text, &look, x1 - x0, y1 - y0, None, brush.ts);
-        let line_height = px(laid.line_height);
-        for line in laid.lines {
-            out.push(Draw::Text {
-                origin: brush.at(((x0 + line.x).round(), y0 + line.y)),
-                line: line.shaped,
-                line_height,
-                clip: brush.clip,
-            });
-        }
+        let (lines, rows) = look.wrap(&shape.text, x1 - x0, brush.ts);
+        let origin = brush.at((x0, y0 + look.top(rows, y1 - y0)));
+        // Lines are aligned in the width of the box; a text too tall for
+        // it shows above and below as far as the pane goes.
+        out.push(Draw::Wrapped {
+            lines,
+            origin,
+            line_height: look.line_height(),
+            align: look.align(),
+            bounds: Bounds::new(point(origin.x, brush.clip.origin.y), size(px(x1 - x0), brush.clip.size.height)),
+        });
     }
 }
 

@@ -12,7 +12,8 @@
 //! * `geometry.rs`: flips, rotation, outlines, handles: plain numbers.
 //! * `paint.rs`: where a drawing is in each pane, and what draws it.
 //! * `picture.rs`: the bitmaps of pictures.
-//! * `text.rs`: the text of shapes and the field that types it.
+//! * `text.rs`: the text of shapes as it is drawn (it is typed in
+//!   `widgets::text_area`, placed over the shape).
 //! * `tool.rs`: drawing a shape by dragging, the handles, bringing
 //!   pictures in.
 //! * `tabs.rs`: the two ribbon tabs, the gallery and the drop-downs.
@@ -41,15 +42,15 @@ use crate::grid::{Draw, GridLayout};
 use crate::i18n::t;
 use geometry::normalise_angle;
 use gpui::{
-    AnyElement, ClipboardEntry, ClipboardItem, CursorStyle, Entity, ExternalPaths, Focusable, Pixels, Point,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, ClipboardEntry, ClipboardItem, CursorStyle, Entity, EntityInputHandler, ExternalPaths, Focusable,
+    MouseButton, MouseDownEvent, Pixels, Point, Subscription, Window, div, prelude::*, px,
 };
 use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, ImageFormat, Shape, ShapeTool, TextAlign, TextAnchor, ZOrder};
 use opensheet_engine::style::{HAlign, Style, VAlign};
 use paint::Grip;
 use std::any::Any;
 use std::rc::Rc;
-use text::{TextArea, TextAreaEvent};
+use crate::widgets::text_area::{AreaEvent, TextArea};
 
 pub struct Drawings;
 
@@ -420,31 +421,26 @@ fn begin_text_edit(app: &mut ExcelApp, id: u32, start: TextStart, window: &mut W
     let Some(shape) = app.wb.drawing(app.sheet, id).and_then(Drawing::as_shape) else {
         return;
     };
-    let look = paint::text_look(shape, app.zoom, &app.fonts);
     let content = shape.text.clone();
-    // A double click puts the caret where it was made.
-    let caret = match &start {
-        TextStart::At(position) => text_index_at(app, id, *position, window),
-        _ => None,
-    };
-    let area = cx.new(|cx| TextArea::new(content, look, cx));
+    let area = cx.new(|cx| {
+        let mut area = TextArea::new(cx);
+        area.set_text(content, cx);
+        area
+    });
     area.update(cx, |area, cx| match start {
-        TextStart::Typed(typed) => area.insert(&typed, cx),
-        TextStart::At(_) => {
-            if let Some(index) = caret {
-                area.set_caret(index, cx);
-            }
-        }
+        TextStart::Typed(typed) => area.replace_text_in_range(None, &typed, window, cx),
+        // A double click puts the caret where it was made.
+        TextStart::At(position) => area.caret_at_next_paint(position),
         TextStart::End => {}
     });
-    let subscription = cx.subscribe_in(&area, window, |app, _, event: &TextAreaEvent, window, cx| match event {
+    let subscription = cx.subscribe_in(&area, window, |app, _, event: &AreaEvent, window, cx| match event {
         // Escape leaves the text and keeps the shape selected.
-        TextAreaEvent::Escape => {
+        AreaEvent::Escape => {
             end_text_edit(app, cx);
             window.focus(&app.grid_focus);
         }
-        TextAreaEvent::Blurred => end_text_edit(app, cx),
-        TextAreaEvent::Changed => {}
+        AreaEvent::Blurred => end_text_edit(app, cx),
+        _ => {}
     });
     window.focus(&area.read(cx).focus_handle(cx));
     app.ext_mut::<DrawingUi>().text = Some(TextEdit {
@@ -453,22 +449,6 @@ fn begin_text_edit(app: &mut ExcelApp, id: u32, start: TextStart, window: &mut W
         _subscription: subscription,
     });
     cx.notify();
-}
-
-/// Where in the text of a shape a point of the window falls.
-fn text_index_at(app: &ExcelApp, id: u32, position: Point<Pixels>, window: &Window) -> Option<usize> {
-    let layout = app.current_layout()?;
-    let sheet = &app.wb.sheets[app.sheet];
-    let drawing = app.wb.drawing(app.sheet, id)?;
-    let shape = drawing.as_shape()?;
-    let (x, y) = layout.local(position);
-    let pane = paint::pane_at(&layout, x, y)?;
-    let frame = sheet.drawing_frame(drawing);
-    let placed = paint::placed(&layout, sheet, drawing, &pane);
-    let (x0, y0, x1, y1) = paint::text_box(shape, &placed, (frame.width as f32, frame.height as f32), layout.zoom);
-    let look = paint::text_look(shape, layout.zoom, &app.fonts);
-    let laid = text::lay_out(&shape.text, &look, x1 - x0, y1 - y0, None, window.text_system());
-    Some(laid.index_at(x - x0, y - y0))
 }
 
 /// Stop typing in a shape: what was typed becomes its text, as one undo
@@ -520,11 +500,13 @@ fn text_overlay(app: &ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyE
     // The font follows the shape (bold from the Home tab) and the zoom.
     let look = paint::text_look(shape, layout.zoom, &app.fonts);
     edit.area.update(cx, |area, cx| {
-        if area.look != look {
-            area.look = look;
+        if area.align != look.align() || area.caret_color != Some(look.color) {
+            area.align = look.align();
+            area.caret_color = Some(look.color);
             cx.notify();
         }
     });
+    let area = edit.area.clone();
     let (cx0, cy0, cx1, cy1) = pane.clip;
     Some(
         div()
@@ -541,8 +523,26 @@ fn text_overlay(app: &ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyE
                     .top(px(y0 - cy0))
                     .w(px(x1 - x0))
                     .h(px(y1 - y0))
+                    .flex()
+                    .flex_col()
+                    .map(|d| match look.anchor {
+                        TextAnchor::Top => d.justify_start(),
+                        TextAnchor::Middle => d.justify_center(),
+                        TextAnchor::Bottom => d.justify_end(),
+                    })
+                    .font_family(look.font.family.clone())
+                    .font_weight(look.font.weight)
+                    .when(look.font.style == gpui::FontStyle::Italic, |d| d.italic())
+                    .text_size(px(look.size))
+                    .line_height(look.line_height())
+                    .text_color(look.color)
                     .occlude()
-                    .child(edit.area.clone()),
+                    // A click beside the text still lands in it.
+                    .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, window, cx| {
+                        window.focus(&area.read(cx).focus_handle(cx));
+                        area.update(cx, |area, cx| area.caret_to_point(event.position, cx));
+                    })
+                    .child(div().flex_none().w_full().child(edit.area.clone())),
             )
             .into_any_element(),
     )

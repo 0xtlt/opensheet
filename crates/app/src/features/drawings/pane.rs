@@ -4,7 +4,7 @@
 
 use super::geometry::normalise_angle;
 use super::tabs::{self, dashes, in_units, length_field, set_side};
-use super::text::{TextArea, TextAreaEvent, TextLook};
+use crate::widgets::text_area::{AreaEvent, TextArea};
 use super::{Cmd, Drawings, DrawingUi, edit, edit_shape, is_picture, reset_picture, selected};
 use crate::app::ExcelApp;
 use crate::features::{self, Command, Cx, ObjectId, ZMove};
@@ -15,9 +15,10 @@ use crate::widgets::{
     self, Button, Checkbox, ColorButton, GroupBox, ListBox, NumberField, RadioGroup, Select, TabStrip, labeled,
 };
 use gpui::{
-    AnyElement, Context, Entity, Focusable, SharedString, Subscription, WeakEntity, Window, div, prelude::*, px,
+    AnyElement, Context, Entity, Focusable, MouseButton, MouseDownEvent, SharedString, Subscription, WeakEntity, Window,
+    div, prelude::*, px,
 };
-use opensheet_engine::drawing::{Drawing, LineEnd, Placement, TextAlign, TextAnchor};
+use opensheet_engine::drawing::{Drawing, LineEnd, Placement, TextAnchor};
 use opensheet_engine::style::Color;
 
 const FORMAT: &str = "drawing-format";
@@ -39,21 +40,18 @@ pub(super) enum Section {
     Size,
 }
 
-/// The look of the text typed in a pane.
-fn pane_text() -> TextLook {
-    TextLook {
-        font: widgets::ui_font(),
-        size: 12.0,
-        color: c(theme::TEXT),
-        underline: false,
-        strike: false,
-        align: TextAlign::Left,
-        anchor: TextAnchor::Top,
-    }
+/// A box of several lines for a pane; it scrolls past `height`.
+fn description_area<V: 'static>(height: f32, cx: &mut Context<V>) -> Entity<TextArea> {
+    cx.new(|cx| {
+        let mut area = TextArea::field(cx);
+        area.max_height = Some(height - 12.0);
+        area
+    })
 }
 
 /// The box in which a description is typed.
 fn description_box(area: &Entity<TextArea>, height: f32) -> gpui::Div {
+    let field = area.clone();
     div()
         .h(px(height))
         .w_full()
@@ -62,7 +60,13 @@ fn description_box(area: &Entity<TextArea>, height: f32) -> gpui::Div {
         .border_1()
         .border_color(c(0xABABAB))
         .rounded(px(3.))
+        .line_height(px(17.))
         .overflow_hidden()
+        // A click below the text still lands in the box.
+        .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, window, cx| {
+            window.focus(&field.read(cx).focus_handle(cx));
+            field.update(cx, |field, cx| field.caret_to_point(event.position, cx));
+        })
         .child(area.clone())
 }
 
@@ -136,12 +140,12 @@ impl FormatPane {
         let width = widgets::number_input(cx, None, 0.0, limit, 0.1);
         let rotation = widgets::number_input(cx, None, -3600.0, 3600.0, 1.0);
         let line_width = widgets::number_input(cx, None, 0.0, 1584.0, 0.25);
-        let alt_text = cx.new(|cx| TextArea::new("", pane_text(), cx));
+        let alt_text = description_area(84.0, cx);
         let mut subscriptions = vec![
             // The pane shows the selected drawing as it is now.
             cx.observe(&app, |_, _, cx| cx.notify()),
-            cx.subscribe(&alt_text, |this, _, event: &TextAreaEvent, cx| {
-                if *event == TextAreaEvent::Blurred {
+            cx.subscribe(&alt_text, |this, _, event: &AreaEvent, cx| {
+                if *event == AreaEvent::Blurred {
                     this.apply_alt_text(cx);
                 }
             }),
@@ -673,11 +677,11 @@ impl Render for AltTextPane {
 pub(super) fn open_alt_text(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let entity = cx.entity();
     let view = cx.new(|cx| {
-        let text = cx.new(|cx| TextArea::new("", pane_text(), cx));
+        let text = description_area(140.0, cx);
         let subscriptions = vec![
             cx.observe(&entity, |_, _, cx| cx.notify()),
-            cx.subscribe(&text, |this: &mut AltTextPane, _, event: &TextAreaEvent, cx| {
-                if *event == TextAreaEvent::Blurred {
+            cx.subscribe(&text, |this: &mut AltTextPane, _, event: &AreaEvent, cx| {
+                if *event == AreaEvent::Blurred {
                     this.apply(cx);
                 }
             }),

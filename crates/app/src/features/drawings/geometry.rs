@@ -1,11 +1,9 @@
 //! Where a picture or a shape is on screen and what its outline looks
 //! like: flips and rotation, the outlines of the presets as polylines,
-//! arrowheads, the handles and what dragging them does, and the wrapping
-//! of the text of a shape. Plain numbers only, so that all of it is tested
-//! without a window.
+//! arrowheads, the handles and what dragging them does. Plain numbers
+//! only, so that all of it is tested without a window.
 
 use opensheet_engine::drawing::{Frame, LineEnd, PathCommand};
-use std::ops::Range;
 
 pub type Pt = (f32, f32);
 
@@ -436,62 +434,6 @@ pub fn drag_angle(centre: Pt, at: Pt, snap: bool) -> f32 {
     normalise_angle((angle / step).round() * step)
 }
 
-/// Break a paragraph into lines no wider than `width`. `x_at` gives where
-/// a byte offset falls when the paragraph is laid out on one line. The
-/// ranges follow each other and cover the whole text; a line breaks after
-/// the blanks that end it, and a word wider than a line is cut where it
-/// has to be.
-pub fn wrap(text: &str, width: f32, x_at: &dyn Fn(usize) -> f32) -> Vec<Range<usize>> {
-    let len = text.len();
-    // Where a line may start: at a word that follows a blank.
-    let mut breaks: Vec<usize> = Vec::new();
-    let mut after_blank = false;
-    for (index, ch) in text.char_indices() {
-        if after_blank && !ch.is_whitespace() {
-            breaks.push(index);
-        }
-        after_blank = ch.is_whitespace();
-    }
-    breaks.push(len);
-    let fits = |start: usize, end: usize| {
-        let shown = start + text[start..end].trim_end().len();
-        x_at(shown) - x_at(start) <= width
-    };
-    let mut lines = Vec::new();
-    let mut start = 0;
-    while start < len {
-        let mut end = None;
-        for candidate in breaks.iter().copied().filter(|b| *b > start) {
-            if fits(start, candidate) {
-                end = Some(candidate);
-            } else {
-                break;
-            }
-        }
-        let end = end.unwrap_or_else(|| {
-            // The first word alone is too wide: as many characters as fit,
-            // and one at least.
-            let word_end = breaks.iter().copied().find(|b| *b > start).unwrap_or(len);
-            let mut boundaries = text[start..word_end].char_indices().map(|(i, c)| start + i + c.len_utf8());
-            let mut cut = boundaries.next().unwrap_or(word_end);
-            for boundary in boundaries {
-                if x_at(boundary) - x_at(start) <= width {
-                    cut = boundary;
-                } else {
-                    break;
-                }
-            }
-            cut
-        });
-        lines.push(start..end);
-        start = end;
-    }
-    if lines.is_empty() {
-        lines.push(0..0);
-    }
-    lines
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -664,31 +606,5 @@ mod tests {
         assert_eq!(drag_angle((0.0, 0.0), (50.0, 0.0), false), 90.0);
         assert_eq!(drag_angle((0.0, 0.0), (-50.0, 1.0), false), 269.0);
         assert_eq!(drag_angle((0.0, 0.0), (50.0, 10.0), true), 105.0);
-    }
-
-    #[test]
-    fn text_wraps_at_blanks() {
-        // Every character is 10 wide.
-        let x_at = |i: usize| i as f32 * 10.0;
-        let lines = |text: &str, width: f32| -> Vec<String> {
-            wrap(text, width, &x_at).into_iter().map(|r| text[r].to_string()).collect()
-        };
-        assert_eq!(lines("one two three", 80.0), vec!["one two ", "three"]);
-        // The blank that ends a line does not count in its width.
-        assert_eq!(lines("one two three", 70.0), vec!["one two ", "three"]);
-        assert_eq!(lines("one two three", 60.0), vec!["one ", "two ", "three"]);
-        assert_eq!(lines("one two three", 1000.0), vec!["one two three"]);
-        // A word too long for a line is cut, and never to nothing.
-        assert_eq!(lines("abcdefgh ij", 30.0), vec!["abc", "def", "gh ", "ij"]);
-        assert_eq!(lines("abc", 1.0), vec!["a", "b", "c"]);
-        assert_eq!(wrap("", 50.0, &x_at), vec![0..0]);
-        // Ranges follow each other, whatever the text.
-        let text = "  leading and   several blanks  ";
-        let ranges = wrap(text, 55.0, &x_at);
-        assert_eq!(ranges.first().unwrap().start, 0);
-        assert_eq!(ranges.last().unwrap().end, text.len());
-        assert!(ranges.windows(2).all(|pair| pair[0].end == pair[1].start));
-        // Accented text is cut between characters, not inside them.
-        assert_eq!(lines("éééé", 20.0), vec!["é", "é", "é", "é"]);
     }
 }
