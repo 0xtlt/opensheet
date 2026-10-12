@@ -1182,7 +1182,11 @@ pub(super) fn selection_rows(app: &ExcelApp) -> Vec<Row> {
         rows.push(Row {
             id,
             object: Some(object),
-            name: app.wb.object_name(sheet, object).unwrap_or_default().to_string().into(),
+            name: match app.wb.object_name(sheet, object) {
+                // A chart of a file that named none.
+                Some("") | None => t("Chart", "Graphique").into(),
+                Some(name) => name.to_string().into(),
+            },
             hidden: app.wb.object_hidden(sheet, object).unwrap_or(false),
             selected: app.is_object_selected(id),
         });
