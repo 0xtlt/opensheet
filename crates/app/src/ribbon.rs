@@ -5,7 +5,7 @@
 //! the feature they belong to, with the helpers of this file.
 
 use crate::app::*;
-use crate::features::{
+use crate::features::{data_tools,
     self, Command, ViewMode, charts, comments, condfmt, drawings, filters, format_cells, misc, names, page, pivot,
     protection, tables, validation,
 };
@@ -1766,7 +1766,7 @@ impl ExcelApp {
             group(
                 t("Data Tools", "Outils de données"),
                 row(vec![
-                    self.cmd_large("dt-ttc", misc::Cmd::TextToColumns, false, cx),
+                    self.cmd_large("dt-ttc", data_tools::Cmd::TextToColumns, false, cx),
                     self.cmd_large("dt-flash", misc::Cmd::FlashFill, false, cx),
                     self.cmd_large("dt-dup", filters::Cmd::RemoveDuplicates, false, cx),
                     self.cmd_large("dt-valid", validation::Cmd::Menu, true, cx),

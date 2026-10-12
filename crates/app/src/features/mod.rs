@@ -228,6 +228,7 @@ pub mod chart_format;
 pub mod charts;
 pub mod comments;
 pub mod condfmt;
+pub mod data_tools;
 pub mod drawings;
 pub mod filters;
 pub mod format_cells;
@@ -245,7 +246,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// Every feature, in the order hooks are called. Floating objects are
 /// drawn in this order too (the objects of later features on top).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 15] = [
+    static ALL: [&dyn Feature; 16] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -259,6 +260,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &chart_format::ChartFormat,
         &drawings::Drawings,
         &names::Names,
+        &data_tools::DataTools,
         &misc::Misc,
         &crate::widgets::gallery::GalleryMarks,
     ];

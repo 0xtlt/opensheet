@@ -77,7 +77,6 @@ commands! {
         // Data
         GetData = "data", t("Get Data", "Obtenir des données");
         RefreshAll = "refresh", t("Refresh All", "Actualiser tout");
-        TextToColumns = "columns", t("Text to Columns", "Convertir");
         FlashFill = "fill-down", t("Flash Fill", "Remplissage instantané");
         Consolidate = "grid", t("Consolidate", "Consolider");
         WhatIf = "calculator", t("What-If Analysis", "Analyse de scénarios");
