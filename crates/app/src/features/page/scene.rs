@@ -54,7 +54,11 @@ fn crc32(bytes: &[u8]) -> u32 {
     for byte in bytes {
         crc ^= *byte as u32;
         for _ in 0..8 {
-            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
         }
     }
     !crc
@@ -185,13 +189,25 @@ impl Brush<'_> {
             return None;
         }
         let corners: Vec<(f64, f64)> = match path.segments.as_slice() {
-            [Segment::MoveTo(x0, y0), Segment::LineTo(x1, y1), Segment::LineTo(x2, y2), Segment::LineTo(x3, y3), Segment::Close] => {
+            [
+                Segment::MoveTo(x0, y0),
+                Segment::LineTo(x1, y1),
+                Segment::LineTo(x2, y2),
+                Segment::LineTo(x3, y3),
+                Segment::Close,
+            ] => {
                 vec![(*x0, *y0), (*x1, *y1), (*x2, *y2), (*x3, *y3)]
             }
             _ => return None,
         };
-        let square = (corners[0].1 == corners[1].1 && corners[1].0 == corners[2].0 && corners[2].1 == corners[3].1 && corners[3].0 == corners[0].0)
-            || (corners[0].0 == corners[1].0 && corners[1].1 == corners[2].1 && corners[2].0 == corners[3].0 && corners[3].1 == corners[0].1);
+        let square = (corners[0].1 == corners[1].1
+            && corners[1].0 == corners[2].0
+            && corners[2].1 == corners[3].1
+            && corners[3].0 == corners[0].0)
+            || (corners[0].0 == corners[1].0
+                && corners[1].1 == corners[2].1
+                && corners[2].0 == corners[3].0
+                && corners[3].1 == corners[0].1);
         square.then(|| Bounds::from_corners(self.at(corners[0].0, corners[0].1), self.at(corners[2].0, corners[2].1)))
     }
 
@@ -206,9 +222,15 @@ impl Brush<'_> {
             ink.a *= (width / device).clamp(0.35, 1.0);
         }
         let bounds = if from.y == to.y {
-            Bounds::new(point(from.x.min(to.x), from.y - px(thick / 2.0)), size((to.x - from.x).abs(), px(thick)))
+            Bounds::new(
+                point(from.x.min(to.x), from.y - px(thick / 2.0)),
+                size((to.x - from.x).abs(), px(thick)),
+            )
         } else {
-            Bounds::new(point(from.x - px(thick / 2.0), from.y.min(to.y)), size(px(thick), (to.y - from.y).abs()))
+            Bounds::new(
+                point(from.x - px(thick / 2.0), from.y.min(to.y)),
+                size(px(thick), (to.y - from.y).abs()),
+            )
         };
         self.masked(|window| window.paint_quad(fill(bounds, ink)));
     }
@@ -241,7 +263,9 @@ impl Brush<'_> {
                 .collect();
             let straight = points.len() >= 2
                 && points.len() + matches!(path.segments.last(), Some(Segment::Close)) as usize == path.segments.len()
-                && points.windows(2).all(|pair| pair[0].x == pair[1].x || pair[0].y == pair[1].y);
+                && points
+                    .windows(2)
+                    .all(|pair| pair[0].x == pair[1].x || pair[0].y == pair[1].y);
             if straight {
                 let closed = matches!(path.segments.last(), Some(Segment::Close));
                 for pair in points.windows(2) {
@@ -256,7 +280,11 @@ impl Brush<'_> {
         let mut builder = PathBuilder::stroke(px(width.max(0.5)));
         if !stroke.dash.is_empty() {
             let stretch = self.stretch();
-            let dashes: Vec<Pixels> = stroke.dash.iter().map(|d| px(((d * stretch) as f32).max(1.0))).collect();
+            let dashes: Vec<Pixels> = stroke
+                .dash
+                .iter()
+                .map(|d| px(((d * stretch) as f32).max(1.0)))
+                .collect();
             builder = builder.dash_array(&dashes);
         }
         self.trace(&mut builder, path);
@@ -266,7 +294,16 @@ impl Brush<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn text(&mut self, face: &opensheet_print::Face, font_size: f64, x: f64, y: f64, text: &str, paint: &Paint, cx: &mut App) {
+    fn text(
+        &mut self,
+        face: &opensheet_print::Face,
+        font_size: f64,
+        x: f64,
+        y: f64,
+        text: &str,
+        paint: &Paint,
+        cx: &mut App,
+    ) {
         let ink = color(paint);
         let pixels = (font_size * self.stretch()) as f32;
         if pixels < 0.5 || text.is_empty() {
@@ -276,8 +313,16 @@ impl Brush<'_> {
             family: SharedString::from(face.family().to_string()),
             features: Default::default(),
             fallbacks: None,
-            weight: if face.bold() { FontWeight::BOLD } else { FontWeight::NORMAL },
-            style: if face.italic() { FontStyle::Italic } else { FontStyle::Normal },
+            weight: if face.bold() {
+                FontWeight::BOLD
+            } else {
+                FontWeight::NORMAL
+            },
+            style: if face.italic() {
+                FontStyle::Italic
+            } else {
+                FontStyle::Normal
+            },
         };
         let shown: SharedString = text.replace(['\n', '\r'], " ").into();
         let run = TextRun {
@@ -288,7 +333,10 @@ impl Brush<'_> {
             underline: None,
             strikethrough: None,
         };
-        let line = self.window.text_system().shape_line(shown.clone(), px(pixels), &[run], None);
+        let line = self
+            .window
+            .text_system()
+            .shape_line(shown.clone(), px(pixels), &[run], None);
         let start = self.at(x, y);
         let [a, b, ..] = self.state.matrix;
         // Clockwise on the screen, where y grows downwards.
@@ -400,10 +448,16 @@ mod tests {
         let double = [2.0, 0.0, 0.0, 2.0, 0.0, 0.0];
         // Scale first, then shift: (3, 4) → (6, 8) → (16, 28).
         let m = compose(shift, double);
-        assert_eq!((m[0] * 3.0 + m[2] * 4.0 + m[4], m[1] * 3.0 + m[3] * 4.0 + m[5]), (16.0, 28.0));
+        assert_eq!(
+            (m[0] * 3.0 + m[2] * 4.0 + m[4], m[1] * 3.0 + m[3] * 4.0 + m[5]),
+            (16.0, 28.0)
+        );
         // The other way round: (3, 4) → (13, 24) → (26, 48).
         let m = compose(double, shift);
-        assert_eq!((m[0] * 3.0 + m[2] * 4.0 + m[4], m[1] * 3.0 + m[3] * 4.0 + m[5]), (26.0, 48.0));
+        assert_eq!(
+            (m[0] * 3.0 + m[2] * 4.0 + m[4], m[1] * 3.0 + m[3] * 4.0 + m[5]),
+            (26.0, 48.0)
+        );
     }
 
     #[test]
@@ -419,7 +473,10 @@ mod tests {
         assert_eq!(image.pixels, opensheet_print::Pixels::Rgb(vec![255, 0, 0, 0, 0, 255]));
         let file = png(1, 2, 4, &[1, 2, 3, 4, 5, 6, 7, 8]);
         let image = Image::from_file_bytes(&file).unwrap();
-        assert_eq!(image.pixels, opensheet_print::Pixels::Rgba(vec![1, 2, 3, 4, 5, 6, 7, 8]));
+        assert_eq!(
+            image.pixels,
+            opensheet_print::Pixels::Rgba(vec![1, 2, 3, 4, 5, 6, 7, 8])
+        );
         // The checksum of the standard test vector.
         assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
     }

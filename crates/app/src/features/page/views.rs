@@ -113,8 +113,12 @@ fn all_pages(app: &ExcelApp) -> Option<Rc<SheetPages>> {
 pub(crate) fn file_names(app: &ExcelApp) -> (String, String) {
     match &app.path {
         Some(path) => (
-            path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| app.title.clone()),
-            path.parent().map(|dir| format!("{}{}", dir.to_string_lossy(), std::path::MAIN_SEPARATOR)).unwrap_or_default(),
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| app.title.clone()),
+            path.parent()
+                .map(|dir| format!("{}{}", dir.to_string_lossy(), std::path::MAIN_SEPARATOR))
+                .unwrap_or_default(),
         ),
         None => (app.title.clone(), String::new()),
     }
@@ -158,7 +162,10 @@ fn paint_normal(p: &mut Painter) {
     }
     let app = p.app;
     let sheet = &app.wb.sheets[app.sheet];
-    if !app.ext::<PageUi>().is_some_and(|ui| ui.breaks_shown.contains(&sheet.name)) {
+    if !app
+        .ext::<PageUi>()
+        .is_some_and(|ui| ui.breaks_shown.contains(&sheet.name))
+    {
         return;
     }
     let Some(pagination) = pagination(app) else {
@@ -236,7 +243,13 @@ impl Handle {
     fn vertical(&self) -> bool {
         matches!(
             self,
-            Handle::Break { axis: BreakAxis::Cols, .. } | Handle::Edge { edge: Edge::Left | Edge::Right, .. }
+            Handle::Break {
+                axis: BreakAxis::Cols,
+                ..
+            } | Handle::Edge {
+                edge: Edge::Left | Edge::Right,
+                ..
+            }
         )
     }
 }
@@ -305,7 +318,12 @@ fn paint_preview(p: &mut Painter) {
                 let size = ((x1 - x0).min(y1 - y0) * 0.2).clamp(9.0, 64.0);
                 let line = p.shape(&format!("{word} {}", page.index + 1), size, c(0xA6A6A6), true);
                 let width = f32::from(line.width);
-                p.put(line, x0 + (x1 - x0 - width) / 2.0, y0 + (y1 - y0 - size * 1.25) / 2.0, size);
+                p.put(
+                    line,
+                    x0 + (x1 - x0 - width) / 2.0,
+                    y0 + (y1 - y0 - size * 1.25) / 2.0,
+                    size,
+                );
             }
         }
         PaintLayer::Over => {
@@ -322,10 +340,21 @@ fn paint_preview(p: &mut Painter) {
                     if b.manual {
                         rule(p, (x - 1.0, y0), (x - 1.0, y1), 2.0, blue);
                     } else {
-                        p.dashed((x - 1.0, y0.max(clip.1)), (x - 1.0, y1.min(clip.3)), 2.0, 7.0, 5.0, blue);
+                        p.dashed(
+                            (x - 1.0, y0.max(clip.1)),
+                            (x - 1.0, y1.min(clip.3)),
+                            2.0,
+                            7.0,
+                            5.0,
+                            blue,
+                        );
                     }
-                    let handle = Handle::Break { axis: BreakAxis::Cols, at: b.at };
-                    p.zone((x - grab, y0, x + grab, y1), handle).cursor(CursorStyle::ResizeLeftRight);
+                    let handle = Handle::Break {
+                        axis: BreakAxis::Cols,
+                        at: b.at,
+                    };
+                    p.zone((x - grab, y0, x + grab, y1), handle)
+                        .cursor(CursorStyle::ResizeLeftRight);
                 }
                 for b in &range.row_breaks {
                     if b.at < visible.r0 || b.at > visible.r1 + 1 {
@@ -335,10 +364,21 @@ fn paint_preview(p: &mut Painter) {
                     if b.manual {
                         rule(p, (x0, y - 1.0), (x1, y - 1.0), 2.0, blue);
                     } else {
-                        p.dashed((x0.max(clip.0), y - 1.0), (x1.min(clip.2), y - 1.0), 2.0, 7.0, 5.0, blue);
+                        p.dashed(
+                            (x0.max(clip.0), y - 1.0),
+                            (x1.min(clip.2), y - 1.0),
+                            2.0,
+                            7.0,
+                            5.0,
+                            blue,
+                        );
                     }
-                    let handle = Handle::Break { axis: BreakAxis::Rows, at: b.at };
-                    p.zone((x0, y - grab, x1, y + grab), handle).cursor(CursorStyle::ResizeUpDown);
+                    let handle = Handle::Break {
+                        axis: BreakAxis::Rows,
+                        at: b.at,
+                    };
+                    p.zone((x0, y - grab, x1, y + grab), handle)
+                        .cursor(CursorStyle::ResizeUpDown);
                 }
                 // The outline: each edge is drawn (and can be dragged) by
                 // the pane that shows it.
@@ -357,12 +397,14 @@ fn paint_preview(p: &mut Painter) {
                         Edge::Left | Edge::Right => {
                             let x = if edge == Edge::Left { x0 - 2.0 } else { x1 - 2.0 };
                             rule(p, (x, y0 - 2.0), (x, y1 + 1.0), 3.0, blue);
-                            p.zone((x - grab, y0, x + 3.0 + grab, y1), handle).cursor(CursorStyle::ResizeLeftRight);
+                            p.zone((x - grab, y0, x + 3.0 + grab, y1), handle)
+                                .cursor(CursorStyle::ResizeLeftRight);
                         }
                         Edge::Top | Edge::Bottom => {
                             let y = if edge == Edge::Top { y0 - 2.0 } else { y1 - 2.0 };
                             rule(p, (x0 - 2.0, y), (x1 + 1.0, y), 3.0, blue);
-                            p.zone((x0, y - grab, x1, y + 3.0 + grab), handle).cursor(CursorStyle::ResizeUpDown);
+                            p.zone((x0, y - grab, x1, y + 3.0 + grab), handle)
+                                .cursor(CursorStyle::ResizeUpDown);
                         }
                     }
                 }
@@ -390,7 +432,11 @@ fn paint_preview(p: &mut Painter) {
 fn drop_line(app: &mut ExcelApp, drag: BreakDrag, cx: &mut Cx) {
     match drag.handle {
         Handle::Break { axis, at } => {
-            if drag.to != at && app.wb.move_page_break(app.sheet, axis, at, drag.to, Some(FontDb::system())) {
+            if drag.to != at
+                && app
+                    .wb
+                    .move_page_break(app.sheet, axis, at, drag.to, Some(FontDb::system()))
+            {
                 app.commit(t("Move Page Break", "Déplacer le saut de page"), cx);
             }
         }
@@ -401,7 +447,10 @@ fn drop_line(app: &mut ExcelApp, drag: BreakDrag, cx: &mut Cx) {
             let ranges: Vec<Rect> = pagination.ranges.iter().map(|r| r.rect).collect();
             let moved = moved_edge(&ranges, range, edge, drag.to);
             if moved != ranges && app.wb.set_print_area(app.sheet, &moved) {
-                app.commit(t("Set Print Area", "Définir la zone d'impression"), cx);
+                app.commit(
+                    crate::i18n::t_ctx("undo", "Set Print Area", "Définir la zone d'impression"),
+                    cx,
+                );
             }
         }
     }
@@ -467,27 +516,6 @@ impl Desk {
         })
     }
 
-    /// The room to leave before the first track of every page along one
-    /// axis: what is left of the page before, its margin, the desk and
-    /// the margin of the page itself.
-    fn gaps(&self, axis: &Axis, starts: &[u32], count: u32, paper: f32, before: f32, after: f32, folded: bool) -> Vec<(u32, f32)> {
-        let room = (paper - before - after).max(0.0);
-        let mut out = Vec::with_capacity(starts.len() + 1);
-        out.push((0, self.gap + if folded { 0.0 } else { before }));
-        let left_over = |first: u32, next: u32| (room - (axis.start(next) - axis.start(first)) as f32).max(0.0);
-        for pair in starts.windows(2) {
-            let gap = if folded {
-                FOLD
-            } else {
-                left_over(pair[0], pair[1]) + after + self.gap + before
-            };
-            out.push((pair[1], gap));
-        }
-        let last = starts.last().copied().unwrap_or(0);
-        out.push((count, if folded { self.gap } else { left_over(last, count) + after + self.gap }));
-        out
-    }
-
     fn page_box(&self, layout: &GridLayout, row_page: usize, col_page: usize) -> PageBox {
         let rows = self.pages.rows(row_page);
         let cols = self.pages.cols(col_page);
@@ -515,8 +543,16 @@ impl Desk {
     fn shown(&self, visible: Rect) -> (std::ops::RangeInclusive<usize>, std::ops::RangeInclusive<usize>) {
         let around = |first: usize, last: usize, count: usize| first.saturating_sub(1)..=(last + 1).min(count - 1);
         (
-            around(self.pages.row_page(visible.r0), self.pages.row_page(visible.r1), self.pages.row_starts.len()),
-            around(self.pages.col_page(visible.c0), self.pages.col_page(visible.c1), self.pages.col_starts.len()),
+            around(
+                self.pages.row_page(visible.r0),
+                self.pages.row_page(visible.r1),
+                self.pages.row_starts.len(),
+            ),
+            around(
+                self.pages.col_page(visible.c0),
+                self.pages.col_page(visible.c1),
+                self.pages.col_starts.len(),
+            ),
         )
     }
 
@@ -557,6 +593,45 @@ impl Desk {
     }
 }
 
+/// The room to leave before the first track of every page along one axis
+/// (and after the last one): what is left of the page before, its far
+/// margin, the desk and the near margin of the page itself. `margins` are
+/// the near and far margins of the paper; `folded` leaves only a thin
+/// strip between the pages.
+fn page_gaps(
+    axis: &Axis,
+    starts: &[u32],
+    count: u32,
+    paper: f32,
+    margins: (f32, f32),
+    desk: f32,
+    folded: bool,
+) -> Vec<(u32, f32)> {
+    let (before, after) = margins;
+    let room = (paper - before - after).max(0.0);
+    let left_over = |first: u32, next: u32| (room - (axis.start(next) - axis.start(first)) as f32).max(0.0);
+    let mut out = Vec::with_capacity(starts.len() + 1);
+    out.push((0, desk + if folded { 0.0 } else { before }));
+    for pair in starts.windows(2) {
+        let gap = if folded {
+            FOLD
+        } else {
+            left_over(pair[0], pair[1]) + after + desk + before
+        };
+        out.push((pair[1], gap));
+    }
+    let last = starts.last().copied().unwrap_or(0);
+    out.push((
+        count,
+        if folded {
+            desk
+        } else {
+            left_over(last, count) + after + desk
+        },
+    ));
+    out
+}
+
 pub(crate) fn adjust_layout(app: &ExcelApp, layout: &mut GridLayout) {
     if app.view_mode() != ViewMode::PageLayout {
         return;
@@ -564,9 +639,25 @@ pub(crate) fn adjust_layout(app: &ExcelApp, layout: &mut GridLayout) {
     let Some(desk) = Desk::of(app, layout.zoom) else {
         return;
     };
-    let (m, paper) = (desk.margin, desk.paper);
-    let cols = desk.gaps(&layout.cols, &desk.pages.col_starts, MAX_COLS, paper.0, m.0, m.2, false);
-    let rows = desk.gaps(&layout.rows, &desk.pages.row_starts, MAX_ROWS, paper.1, m.1, m.3, desk.folded);
+    let (m, paper, pages) = (desk.margin, desk.paper, &desk.pages);
+    let cols = page_gaps(
+        &layout.cols,
+        &pages.col_starts,
+        MAX_COLS,
+        paper.0,
+        (m.0, m.2),
+        desk.gap,
+        false,
+    );
+    let rows = page_gaps(
+        &layout.rows,
+        &pages.row_starts,
+        MAX_ROWS,
+        paper.1,
+        (m.1, m.3),
+        desk.gap,
+        desk.folded,
+    );
     layout.cols.set_gaps(&cols);
     layout.rows.set_gaps(&rows);
     // The rulers run along the headings.
@@ -631,8 +722,16 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
     // The desk shows wherever there are no cells: in the strips left
     // between the columns of pages, then between the rows of pages.
     for j in *col_pages.start()..=col_pages.end() + 1 {
-        let from = if j == 0 { clip.0 } else { desk.page_box(layout, 0, j - 1).cells.2 };
-        let to = if j < n_cols { desk.page_box(layout, 0, j).cells.0 } else { clip.2 };
+        let from = if j == 0 {
+            clip.0
+        } else {
+            desk.page_box(layout, 0, j - 1).cells.2
+        };
+        let to = if j < n_cols {
+            desk.page_box(layout, 0, j).cells.0
+        } else {
+            clip.2
+        };
         let (from, to) = (from.max(clip.0), to.min(clip.2));
         if to > from {
             p.rect(from, clip.1, to, clip.3, desk_color);
@@ -640,13 +739,24 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
         }
     }
     for i in *row_pages.start()..=row_pages.end() + 1 {
-        let from = if i == 0 { clip.1 } else { desk.page_box(layout, i - 1, 0).cells.3 };
-        let to = if i < n_rows { desk.page_box(layout, i, 0).cells.1 } else { clip.3 };
+        let from = if i == 0 {
+            clip.1
+        } else {
+            desk.page_box(layout, i - 1, 0).cells.3
+        };
+        let to = if i < n_rows {
+            desk.page_box(layout, i, 0).cells.1
+        } else {
+            clip.3
+        };
         let (from, to) = (from.max(clip.1), to.min(clip.3));
         if to > from {
             p.rect(clip.0, from, clip.2, to, desk_color);
             let between = i > 0 && i < n_rows;
-            let zone = p.zone((clip.0, from, clip.2, to), if between { DeskZone::Between } else { DeskZone::Inert });
+            let zone = p.zone(
+                (clip.0, from, clip.2, to),
+                if between { DeskZone::Between } else { DeskZone::Inert },
+            );
             if between {
                 zone.tooltip(if desk.folded {
                     t("Show White Space", "Afficher les espaces")
@@ -682,7 +792,12 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
                 // says what to do with it.
                 p.rect(cx0, cy0, cx1, cy1, ca(0xF0F0F0, 0.55));
                 let cells = Rect::new(page.rows.0, page.cols.0, page.rows.1, page.cols.1);
-                if !desk.pagination.ranges.iter().any(|range| range.rect.intersects(&cells)) && !sheet.cells.range((cells.r0, 0)..=(cells.r1, u32::MAX)).any(|((_, col), _)| *col >= cells.c0 && *col <= cells.c1) {
+                if !desk.pagination.ranges.iter().any(|range| range.rect.intersects(&cells))
+                    && !sheet
+                        .cells
+                        .range((cells.r0, 0)..=(cells.r1, u32::MAX))
+                        .any(|((_, col), _)| *col >= cells.c0 && *col <= cells.c1)
+                {
                     let size = (13.0 * p.zoom()).clamp(8.0, 20.0);
                     let line = p.shape(
                         t("Click to add data", "Cliquez ici pour ajouter des données"),
@@ -692,7 +807,12 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
                     );
                     let width = f32::from(line.width);
                     let (mx0, mx1) = (cx0.max(px0), cx1.min(px1));
-                    p.put(line, mx0 + (mx1 - mx0 - width) / 2.0, cy0 + (cy1.min(py1) - cy0) * 0.45, size);
+                    p.put(
+                        line,
+                        mx0 + (mx1 - mx0 - width) / 2.0,
+                        cy0 + (cy1.min(py1) - cy0) * 0.45,
+                        size,
+                    );
                 }
             }
             if desk.folded {
@@ -708,9 +828,14 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
                 let sections = HfSections::parse(code);
                 for section in [HfSection::Left, HfSection::Center, HfSection::Right] {
                     let bounds = desk.section_box(&page, hf, footer, section);
-                    let zone = HfZone { footer, section, page: (i, j) };
+                    let zone = HfZone {
+                        footer,
+                        section,
+                        page: (i, j),
+                    };
                     p.zone(bounds, zone).cursor(CursorStyle::IBeam);
-                    let being_typed = edit.is_some_and(|e| e.footer == footer && e.section == section && e.page == (i, j));
+                    let being_typed =
+                        edit.is_some_and(|e| e.footer == footer && e.section == section && e.page == (i, j));
                     if being_typed {
                         continue;
                     }
@@ -724,7 +849,11 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
                             let size = (12.0 * p.zoom()).clamp(7.0, 18.0);
                             let line = p.shape(hint, size, c(0xA6A6A6), false);
                             let width = f32::from(line.width);
-                            let y = if footer { bounds.1 + 2.0 } else { bounds.3 - size * 1.25 - 2.0 };
+                            let y = if footer {
+                                bounds.1 + 2.0
+                            } else {
+                                bounds.3 - size * 1.25 - 2.0
+                            };
                             p.put(line, (bounds.0 + bounds.2 - width) / 2.0, y, size);
                         }
                         continue;
@@ -755,7 +884,11 @@ fn paint_section(
     let app = p.app;
     let default_font = app.wb.styles.get(opensheet_engine::StyleId(0)).font.name.clone();
     // Header text keeps its size on paper unless it scales with the sheet.
-    let scale = if hf.scale_with_doc { desk.pagination.scale() as f32 } else { 1.0 };
+    let scale = if hf.scale_with_doc {
+        desk.pagination.scale() as f32
+    } else {
+        1.0
+    };
     let mut laid: Vec<(Vec<(gpui::ShapedLine, f32)>, f32)> = Vec::new();
     for line in lines(expand(source, context)) {
         let mut pieces = Vec::new();
@@ -771,8 +904,16 @@ fn paint_section(
                 family: app.fonts.resolve(&family),
                 features: Default::default(),
                 fallbacks: None,
-                weight: if format.bold { FontWeight::BOLD } else { FontWeight::NORMAL },
-                style: if format.italic { FontStyle::Italic } else { FontStyle::Normal },
+                weight: if format.bold {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::NORMAL
+                },
+                style: if format.italic {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                },
             };
             let color = format.color.map(theme::engine_color).unwrap_or(c(0x000000));
             height = height.max((size * 1.22).round());
@@ -817,7 +958,10 @@ fn paint_rulers(p: &mut Painter, desk: &Desk) {
     let line_h = (font_size * 1.3).round();
     // Ruler units: inches where Excel is in English, centimetres elsewhere.
     let unit = 72.0 * desk.px_per_pt / if metric(app.wb.locale) { 2.54 } else { 1.0 };
-    let every = [1u32, 2, 5, 10].into_iter().find(|n| *n as f32 * unit >= 16.0).unwrap_or(20);
+    let every = [1u32, 2, 5, 10]
+        .into_iter()
+        .find(|n| *n as f32 * unit >= 16.0)
+        .unwrap_or(20);
     let ink = c(0x8A8A8A);
     let paper = c(0xFFFFFF);
     let margin_shade = c(0xBDBDBD);
@@ -866,7 +1010,13 @@ fn paint_rulers(p: &mut Painter, desk: &Desk) {
                     if cw <= 0.0 || x + cw <= hw {
                         continue;
                     }
-                    let state = sel.ranges.iter().filter(|range| col >= range.c0 && col <= range.c1).map(|range| if range.is_whole_cols() { 2 } else { 1 }).max().unwrap_or(0);
+                    let state = sel
+                        .ranges
+                        .iter()
+                        .filter(|range| col >= range.c0 && col <= range.c1)
+                        .map(|range| if range.is_whole_cols() { 2 } else { 1 })
+                        .max()
+                        .unwrap_or(0);
                     let (bg, fg) = state_colors(state);
                     let left = x.max(hw);
                     p.rect(left, r, x + cw, hh, bg);
@@ -874,7 +1024,12 @@ fn paint_rulers(p: &mut Painter, desk: &Desk) {
                     let label = p.shape(&col_to_letters(col), font_size, fg, state > 0);
                     let width = f32::from(label.width);
                     if width + 2.0 <= cw && x + (cw - width) / 2.0 >= hw {
-                        p.put(label, x + ((cw - width) / 2.0).round(), r + ((hh - r - line_h) / 2.0).round(), font_size);
+                        p.put(
+                            label,
+                            x + ((cw - width) / 2.0).round(),
+                            r + ((hh - r - line_h) / 2.0).round(),
+                            font_size,
+                        );
                     }
                     if state == 1 {
                         p.rect(left, hh - 2.0, x + cw, hh, c(theme::SELECTION));
@@ -926,7 +1081,13 @@ fn paint_rulers(p: &mut Painter, desk: &Desk) {
                     if rh <= 0.0 || y + rh <= hh {
                         continue;
                     }
-                    let state = sel.ranges.iter().filter(|range| row >= range.r0 && row <= range.r1).map(|range| if range.is_whole_rows() { 2 } else { 1 }).max().unwrap_or(0);
+                    let state = sel
+                        .ranges
+                        .iter()
+                        .filter(|range| row >= range.r0 && row <= range.r1)
+                        .map(|range| if range.is_whole_rows() { 2 } else { 1 })
+                        .max()
+                        .unwrap_or(0);
                     let (bg, fg) = state_colors(state);
                     let top = y.max(hh);
                     p.rect(r, top, hw, y + rh, bg);
@@ -934,7 +1095,12 @@ fn paint_rulers(p: &mut Painter, desk: &Desk) {
                     if rh >= line_h * 0.7 && y + (rh - line_h) / 2.0 >= hh - 2.0 {
                         let label = p.shape(&(row + 1).to_string(), font_size, fg, state > 0);
                         let width = f32::from(label.width);
-                        p.put(label, r + ((hw - r - width) / 2.0).round(), y + ((rh - line_h) / 2.0).round(), font_size);
+                        p.put(
+                            label,
+                            r + ((hw - r - width) / 2.0).round(),
+                            y + ((rh - line_h) / 2.0).round(),
+                            font_size,
+                        );
                     }
                     if state == 1 {
                         p.rect(hw - 2.0, top, hw, y + rh, c(theme::SELECTION));
@@ -1013,24 +1179,40 @@ fn section_code(hf: &HeaderFooter, variant: HfVariant, footer: bool, section: Hf
 
 /// Replace one section of a header or footer.
 fn set_section(hf: &mut HeaderFooter, variant: HfVariant, footer: bool, section: HfSection, code: &str) {
-    let target = if footer { hf.footer_mut(variant) } else { hf.header_mut(variant) };
+    let target = if footer {
+        hf.footer_mut(variant)
+    } else {
+        hf.header_mut(variant)
+    };
     let mut sections = HfSections::parse(target);
     *sections.get_mut(section) = code.to_string();
     *target = sections.to_code();
 }
 
 /// Start typing a section of the header or footer of a page.
-fn begin_edit(app: &mut ExcelApp, footer: bool, section: HfSection, page: (usize, usize), window: &mut Window, cx: &mut Cx) {
+fn begin_edit(
+    app: &mut ExcelApp,
+    footer: bool,
+    section: HfSection,
+    page: (usize, usize),
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     // What was being typed elsewhere is kept.
     store_edit(app, cx);
     if app.is_editing() && !app.commit_edit(None, window, cx) {
         return;
     }
     let variant = variant_of(app, page);
-    let text = typed_text(&section_code(&setup(app).header_footer, variant, footer, section), app.wb.locale);
+    let text = typed_text(
+        &section_code(&setup(app).header_footer, variant, footer, section),
+        app.wb.locale,
+    );
     let input = cx.new(TextInput::new);
     input.update(cx, |input, cx| input.set_text(text, cx));
-    let subscription = cx.subscribe_in(&input, window, |app, _, ev, window, cx| on_edit_event(app, ev, window, cx));
+    let subscription = cx.subscribe_in(&input, window, |app, _, ev, window, cx| {
+        on_edit_event(app, ev, window, cx)
+    });
     window.focus(&input.read(cx).focus_handle(cx));
     app.ext_mut::<PageUi>().hf = Some(HfEdit {
         footer,
@@ -1078,8 +1260,10 @@ fn on_edit_event(app: &mut ExcelApp, ev: &InputEvent, window: &mut Window, cx: &
         }
         InputEvent::Tab { shift } => {
             // On to the next section; past the last one, back to the cells.
-            let Some((footer, section, page)) =
-                app.ext::<PageUi>().and_then(|ui| ui.hf.as_ref()).map(|e| (e.footer, e.section, e.page))
+            let Some((footer, section, page)) = app
+                .ext::<PageUi>()
+                .and_then(|ui| ui.hf.as_ref())
+                .map(|e| (e.footer, e.section, e.page))
             else {
                 return;
             };
@@ -1132,7 +1316,11 @@ pub(crate) fn insert_header_footer(app: &mut ExcelApp, window: &mut Window, cx: 
 
 /// Insert a field (`&P`, `&D`...) where the caret is.
 pub(crate) fn insert_field(app: &mut ExcelApp, code: &str, window: &mut Window, cx: &mut Cx) {
-    let Some(input) = app.ext::<PageUi>().and_then(|ui| ui.hf.as_ref()).map(|e| e.input.clone()) else {
+    let Some(input) = app
+        .ext::<PageUi>()
+        .and_then(|ui| ui.hf.as_ref())
+        .map(|e| e.input.clone())
+    else {
         return;
     };
     let text = to_dialog_text(code, app.wb.locale);
@@ -1144,7 +1332,11 @@ pub(crate) fn insert_field(app: &mut ExcelApp, code: &str, window: &mut Window, 
 /// "Go to Header" / "Go to Footer": the same section, at the other end
 /// of the page.
 pub(crate) fn go_to(app: &mut ExcelApp, footer: bool, window: &mut Window, cx: &mut Cx) {
-    let Some((section, page)) = app.ext::<PageUi>().and_then(|ui| ui.hf.as_ref()).map(|e| (e.section, e.page)) else {
+    let Some((section, page)) = app
+        .ext::<PageUi>()
+        .and_then(|ui| ui.hf.as_ref())
+        .map(|e| (e.section, e.page))
+    else {
         return;
     };
     if let (Some(pages), Some(layout)) = (all_pages(app), app.current_layout()) {
@@ -1156,7 +1348,10 @@ pub(crate) fn go_to(app: &mut ExcelApp, footer: bool, window: &mut Window, cx: &
             let view = &mut app.views[app.sheet];
             if footer {
                 let bottom = layout.rows.end(rows.1) + desk.margin.3 as f64 + desk.gap as f64;
-                view.scroll_y = view.scroll_y.max(bottom - layout.view_h() as f64).min(layout.max_scroll_y());
+                view.scroll_y = view
+                    .scroll_y
+                    .max(bottom - layout.view_h() as f64)
+                    .min(layout.max_scroll_y());
             } else {
                 let top = layout.rows.start(rows.0) - (desk.margin.1 + desk.gap) as f64;
                 view.scroll_y = view.scroll_y.min(top.max(0.0));
@@ -1169,7 +1364,9 @@ pub(crate) fn go_to(app: &mut ExcelApp, footer: bool, window: &mut Window, cx: &
 /// One of the options of the Header & Footer tab.
 pub(crate) fn toggle_option(app: &mut ExcelApp, cx: &mut Cx, f: impl FnOnce(&mut HeaderFooter)) {
     store_edit(app, cx);
-    change(app, t("Header/Footer", "En-tête/Pied de page"), cx, |s| f(&mut s.header_footer));
+    change(app, t("Header/Footer", "En-tête/Pied de page"), cx, |s| {
+        f(&mut s.header_footer)
+    });
     // The page being typed may now use another header.
     let Some((footer, section, page, input)) = app
         .ext::<PageUi>()
@@ -1179,7 +1376,10 @@ pub(crate) fn toggle_option(app: &mut ExcelApp, cx: &mut Cx, f: impl FnOnce(&mut
         return;
     };
     let variant = variant_of(app, page);
-    let text = typed_text(&section_code(&setup(app).header_footer, variant, footer, section), app.wb.locale);
+    let text = typed_text(
+        &section_code(&setup(app).header_footer, variant, footer, section),
+        app.wb.locale,
+    );
     input.update(cx, |input, cx| input.set_text(text, cx));
     if let Some(edit) = app.ext_mut::<PageUi>().hf.as_mut() {
         edit.variant = variant;
@@ -1189,7 +1389,12 @@ pub(crate) fn toggle_option(app: &mut ExcelApp, cx: &mut Cx, f: impl FnOnce(&mut
 /// The built-in headers (or footers) of the Header & Footer tab.
 pub(crate) fn preset_menu(app: &ExcelApp, footer: bool) -> Vec<MenuEntry> {
     let names = file_names(app);
-    let context = hf_context(app, &names, 1, pagination(app).map_or(1, |p| p.pages.len().max(1) as u32));
+    let context = hf_context(
+        app,
+        &names,
+        1,
+        pagination(app).map_or(1, |p| p.pages.len().max(1) as u32),
+    );
     presets(app.wb.locale, &user_name())
         .into_iter()
         .map(|code| {
@@ -1205,12 +1410,19 @@ pub(crate) fn preset_menu(app: &ExcelApp, footer: bool) -> Vec<MenuEntry> {
                 let code = code.clone();
                 change(app, t("Header/Footer", "En-tête/Pied de page"), cx, |s| {
                     let hf = &mut s.header_footer;
-                    *(if footer { hf.footer_mut(variant) } else { hf.header_mut(variant) }) = code;
+                    *(if footer {
+                        hf.footer_mut(variant)
+                    } else {
+                        hf.header_mut(variant)
+                    }) = code;
                 });
                 // The section being typed shows its new text.
                 if let Some((edited_footer, section, input)) = shown {
                     if edited_footer == footer {
-                        let text = typed_text(&section_code(&setup(app).header_footer, variant, footer, section), app.wb.locale);
+                        let text = typed_text(
+                            &section_code(&setup(app).header_footer, variant, footer, section),
+                            app.wb.locale,
+                        );
                         input.update(cx, |input, cx| input.set_text(text, cx));
                     }
                 }
@@ -1261,7 +1473,10 @@ pub(crate) fn place_picture(app: &mut ExcelApp, slot: HfSlot, data: Vec<u8>, cx:
         app.alert(
             Alert::new(
                 "OpenSheet",
-                t("This file is not a picture OpenSheet can read.", "Ce fichier n'est pas une image lisible par OpenSheet."),
+                t(
+                    "This file is not a picture OpenSheet can read.",
+                    "Ce fichier n'est pas une image lisible par OpenSheet.",
+                ),
             )
             .warning(),
             cx,
@@ -1275,15 +1490,20 @@ pub(crate) fn place_picture(app: &mut ExcelApp, slot: HfSlot, data: Vec<u8>, cx:
         // Pixels at 96 per inch, kept in points.
         size: (width * 0.75, height * 0.75),
     };
-    change(app, t("Header/Footer Picture", "Image d'en-tête/de pied de page"), cx, |s| {
-        let hf = &mut s.header_footer;
-        hf.pictures.retain(|p| p.slot != slot);
-        hf.pictures.push(picture);
-        let code = section_code(hf, slot.variant, slot.footer, slot.section);
-        if !code.contains("&G") {
-            set_section(hf, slot.variant, slot.footer, slot.section, &format!("{code}&G"));
-        }
-    });
+    change(
+        app,
+        t("Header/Footer Picture", "Image d'en-tête/de pied de page"),
+        cx,
+        |s| {
+            let hf = &mut s.header_footer;
+            hf.pictures.retain(|p| p.slot != slot);
+            hf.pictures.push(picture);
+            let code = section_code(hf, slot.variant, slot.footer, slot.section);
+            if !code.contains("&G") {
+                set_section(hf, slot.variant, slot.footer, slot.section, &format!("{code}&G"));
+            }
+        },
+    );
 }
 
 /// The size of the picture of a section, in the unit of the locale.
@@ -1324,8 +1544,14 @@ impl Render for PictureDialog {
         dialog(&self.modal, t("Format Picture", "Format de l'image"))
             .width(300.0)
             .on_ok(cx.listener(Self::ok))
-            .child(labeled(t("Height:", "Hauteur :"), NumberField::new("height", &self.height).width(80.0)))
-            .child(labeled(t("Width:", "Largeur :"), NumberField::new("width", &self.width).width(80.0)))
+            .child(labeled(
+                t("Height:", "Hauteur :"),
+                NumberField::new("height", &self.height).width(80.0),
+            ))
+            .child(labeled(
+                t("Width:", "Largeur :"),
+                NumberField::new("width", &self.width).width(80.0),
+            ))
             .child(
                 Checkbox::new("lock", t("Lock aspect ratio", "Proportionnelle"), self.lock).on_change(cx.listener(
                     |this, on: &bool, _, cx| {
@@ -1427,13 +1653,22 @@ pub(crate) fn overlay_elements(app: &mut ExcelApp, layout: &GridLayout) -> Vec<A
     let hf = &setup(app).header_footer;
     let page = desk.page_box(layout, edit.page.0, edit.page.1);
     let (x0, y0, x1, y1) = desk.section_box(&page, hf, edit.footer, edit.section);
-    let size = (11.0 * if hf.scale_with_doc { desk.pagination.scale() as f32 } else { 1.0 } * desk.px_per_pt).clamp(8.0, 28.0);
+    let size = (11.0
+        * if hf.scale_with_doc {
+            desk.pagination.scale() as f32
+        } else {
+            1.0
+        }
+        * desk.px_per_pt)
+        .clamp(8.0, 28.0);
     let line_h = (size * 1.3).round();
     let height = (y1 - y0).max(line_h + 4.0);
     // The header's field hangs from the header margin, the footer's
     // stands on the footer margin.
     let top = if edit.footer { y1 - height } else { y0 };
-    let font = app.fonts.resolve(&app.wb.styles.get(opensheet_engine::StyleId(0)).font.name);
+    let font = app
+        .fonts
+        .resolve(&app.wb.styles.get(opensheet_engine::StyleId(0)).font.name);
     vec![
         div()
             .absolute()
@@ -1460,7 +1695,13 @@ pub(crate) fn overlay_elements(app: &mut ExcelApp, layout: &GridLayout) -> Vec<A
 
 // ------------------------------------------------------------------ mouse
 
-pub(crate) fn zone_mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+pub(crate) fn zone_mouse_down(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> ZoneResponse {
     if let Some(handle) = zone.payload::<Handle>() {
         // The right button opens the menu of the cell under the line.
         if ev.button != MouseButton::Left {
@@ -1586,5 +1827,30 @@ mod tests {
     #[test]
     fn status_text() {
         assert_eq!(page_of_text(2, 5), "Page: 2 of 5");
+    }
+    #[test]
+    fn pages_are_spaced_on_the_desk() {
+        // Tracks of 20 pixels; the third one is 50 wide.
+        let axis = Axis::new(20.0, 1000, [(2u32, 50.0f32)].into_iter());
+        // Paper of 300 with margins of 30 and 40 holds 230; pages start at
+        // tracks 0, 10 and 20; the desk shows 16 pixels between pages.
+        let gaps = page_gaps(&axis, &[0, 10, 20], 1000, 300.0, (30.0, 40.0), 16.0, false);
+        assert_eq!(gaps[0], (0, 46.0));
+        // The first page holds 9 × 20 + 50 = 230: nothing is left over.
+        assert_eq!(gaps[1], (10, 40.0 + 16.0 + 30.0));
+        // The second holds 200: 30 are left before its margin.
+        assert_eq!(gaps[2], (20, 30.0 + 40.0 + 16.0 + 30.0));
+        // After the last page (too long for its paper): margin and desk.
+        assert_eq!(gaps[3], (1000, 56.0));
+        // Folded: no margins, a thin strip between the pages.
+        let folded = page_gaps(&axis, &[0, 10, 20], 1000, 300.0, (30.0, 40.0), 16.0, true);
+        assert_eq!(folded, vec![(0, 16.0), (10, FOLD), (20, FOLD), (1000, 16.0)]);
+        // The grid finds the cells again through the gaps.
+        let mut axis = axis;
+        axis.set_gaps(&gaps);
+        assert_eq!(axis.start(0), 46.0);
+        assert_eq!(axis.start(10), 46.0 + 230.0 + 86.0);
+        assert_eq!(axis.index_at(46.0 + 230.0 + 10.0), 10);
+        assert_eq!(axis.index_at(45.0), 0);
     }
 }

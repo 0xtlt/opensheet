@@ -23,8 +23,9 @@ use gpui::{
 use opensheet_engine::datetime;
 use opensheet_engine::drawing::image_info;
 use opensheet_engine::page::{
-    HeaderFooter, HfContext, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant, Margins, Orientation, PageOrder,
-    PageSetup, PaperSize, PrintComments, PrintErrors, expand, from_dialog_text, plain_text, presets, to_dialog_text,
+    HeaderFooter, HfContext, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant, Margins, Orientation,
+    PageOrder, PageSetup, PaperSize, PrintComments, PrintErrors, expand, from_dialog_text, plain_text, presets,
+    to_dialog_text,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
 use opensheet_engine::{Locale, Rect};
@@ -61,7 +62,9 @@ pub(crate) fn open(app: &mut ExcelApp, tab: usize, window: &mut Window, cx: &mut
         locale: app.wb.locale,
     };
     let setup = app.wb.sheets[app.sheet].page.clone();
-    app.open_modal(window, cx, move |modal, _, cx| SetupDialog::new(modal, tab, setup, around, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        SetupDialog::new(modal, tab, setup, around, cx)
+    });
 }
 
 // ---------------------------------------------------- what the user types
@@ -209,7 +212,13 @@ impl SetupDialog {
     /// The margins typed in the fields, in inches.
     fn typed_margins(&self, cx: &App) -> Option<Margins> {
         let locale = self.around.locale;
-        let read = |i: usize| self.margins[i].read(cx).number().filter(|v| *v >= 0.0).map(|v| from_unit(v, locale));
+        let read = |i: usize| {
+            self.margins[i]
+                .read(cx)
+                .number()
+                .filter(|v| *v >= 0.0)
+                .map(|v| from_unit(v, locale))
+        };
         Some(Margins {
             top: read(0)?,
             bottom: read(1)?,
@@ -221,7 +230,8 @@ impl SetupDialog {
     }
 
     fn refuse(&self, message: &'static str, cx: &mut Context<Self>) {
-        self.modal.update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+        self.modal
+            .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
     }
 
     /// What the dialog says the page setup is; `None` (after telling
@@ -249,7 +259,10 @@ impl SetupDialog {
             }
         }
         // A blank count is "as many pages as needed".
-        match (whole(&self.fit_width, 0.0, 32767.0, cx), whole(&self.fit_height, 0.0, 32767.0, cx)) {
+        match (
+            whole(&self.fit_width, 0.0, 32767.0, cx),
+            whole(&self.fit_height, 0.0, 32767.0, cx),
+        ) {
             (Ok(width), Ok(height)) => {
                 setup.fit_width = width.unwrap_or(0);
                 setup.fit_height = height.unwrap_or(0);
@@ -273,7 +286,13 @@ impl SetupDialog {
             Some(m) if (m.left + m.right) * 72.0 < paper.0 && (m.top + m.bottom) * 72.0 < paper.1 => {
                 // Fields show two decimals: margins nobody retyped keep
                 // their exact value.
-                let near = |typed: f64, old: f64| if (to_unit(typed, locale) - to_unit(old, locale)).abs() < 0.006 { old } else { typed };
+                let near = |typed: f64, old: f64| {
+                    if (to_unit(typed, locale) - to_unit(old, locale)).abs() < 0.006 {
+                        old
+                    } else {
+                        typed
+                    }
+                };
                 let old = setup.margins;
                 setup.margins = Margins {
                     top: near(m.top, old.top),
@@ -286,7 +305,13 @@ impl SetupDialog {
             }
             _ => {
                 self.tab = TAB_MARGINS;
-                self.refuse(t("Margins do not fit page size.", "Marges non valides pour ce format de page."), cx);
+                self.refuse(
+                    t(
+                        "Margins do not fit page size.",
+                        "Marges non valides pour ce format de page.",
+                    ),
+                    cx,
+                );
                 return None;
             }
         }
@@ -335,7 +360,8 @@ impl SetupDialog {
         let (sheet, tab) = (self.around.sheet, self.tab);
         self.modal.update_app(cx, |app, cx| {
             let margins = setup.margins;
-            let custom = margins.preset().is_none() && app.wb.sheets.get(sheet).is_some_and(|s| s.page.margins != margins);
+            let custom =
+                margins.preset().is_none() && app.wb.sheets.get(sheet).is_some_and(|s| s.page.margins != margins);
             let ui = app.ext_mut::<PageUi>();
             ui.setup_tab = tab;
             if custom {
@@ -369,7 +395,14 @@ impl SetupDialog {
         });
     }
 
-    fn check(&self, id: &'static str, text: &'static str, on: bool, cx: &mut Context<Self>, set: impl Fn(&mut PageSetup, bool) + 'static) -> Checkbox {
+    fn check(
+        &self,
+        id: &'static str,
+        text: &'static str,
+        on: bool,
+        cx: &mut Context<Self>,
+        set: impl Fn(&mut PageSetup, bool) + 'static,
+    ) -> Checkbox {
         Checkbox::new(id, text, on).on_change(cx.listener(move |this, on: &bool, _, cx| {
             set(&mut this.setup, *on);
             cx.notify();
@@ -386,7 +419,11 @@ impl SetupDialog {
         let paper = self.setup.paper_size(locale);
         let paper_names: Vec<SharedString> = papers.iter().map(|info| info.size.name(locale).into()).collect();
         let mut qualities: Vec<SharedString> = vec![t("Automatic", "Automatique").into()];
-        qualities.extend(QUALITIES.iter().map(|dpi| SharedString::from(format!("{dpi} {}", t("dpi", "ppp")))));
+        qualities.extend(
+            QUALITIES
+                .iter()
+                .map(|dpi| SharedString::from(format!("{dpi} {}", t("dpi", "ppp")))),
+        );
         let quality = match self.setup.horizontal_dpi {
             None => Some(0),
             Some(dpi) => QUALITIES.iter().position(|q| *q == dpi).map(|i| i + 1),
@@ -397,7 +434,14 @@ impl SetupDialog {
             let (x, y) = ((s.width - w) / 2.0, (s.height - h) / 2.0);
             s.rect(x, y, x + w, y + h, c(0xFFFFFF));
             s.frame(x, y, x + w, y + h, 1.0, c(0x808080));
-            s.text("A", x + w / 2.0 - 5.0, y + h / 2.0 - 9.0, &widgets::ui_font(), 14.0, c(0x404040));
+            s.text(
+                "A",
+                x + w / 2.0 - 5.0,
+                y + h / 2.0 - 9.0,
+                &widgets::ui_font(),
+                14.0,
+                c(0x404040),
+            );
         });
         div()
             .flex()
@@ -413,7 +457,11 @@ impl SetupDialog {
                         )
                         .horizontal()
                         .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                            this.setup.orientation = if *ix == 0 { Orientation::Portrait } else { Orientation::Landscape };
+                            this.setup.orientation = if *ix == 0 {
+                                Orientation::Portrait
+                            } else {
+                                Orientation::Landscape
+                            };
                             cx.notify();
                         })),
                     ),
@@ -427,11 +475,15 @@ impl SetupDialog {
                             .items_center()
                             .gap(px(8.))
                             .child(
-                                RadioGroup::new("adjust", vec![t("Adjust to:", "Réduire/agrandir à :").into()], (!fit).then_some(0))
-                                    .on_change(cx.listener(|this, _: &usize, _, cx| {
-                                        this.setup.fit_to_page = false;
-                                        cx.notify();
-                                    })),
+                                RadioGroup::new(
+                                    "adjust",
+                                    vec![t("Adjust to:", "Réduire/agrandir à :").into()],
+                                    (!fit).then_some(0),
+                                )
+                                .on_change(cx.listener(|this, _: &usize, _, cx| {
+                                    this.setup.fit_to_page = false;
+                                    cx.notify();
+                                })),
                             )
                             .child(NumberField::new("scale", &self.scale).width(64.0))
                             .child(label(t("% normal size", "% de la taille normale"))),
@@ -442,12 +494,11 @@ impl SetupDialog {
                             .items_center()
                             .gap(px(8.))
                             .child(
-                                RadioGroup::new("fit", vec![t("Fit to:", "Ajuster :").into()], fit.then_some(0)).on_change(
-                                    cx.listener(|this, _: &usize, _, cx| {
+                                RadioGroup::new("fit", vec![t("Fit to:", "Ajuster :").into()], fit.then_some(0))
+                                    .on_change(cx.listener(|this, _: &usize, _, cx| {
                                         this.setup.fit_to_page = true;
                                         cx.notify();
-                                    }),
-                                ),
+                                    })),
                             )
                             .child(NumberField::new("fit-width", &self.fit_width).width(56.0))
                             .child(label(t("page(s) wide by", "page(s) en largeur sur")))
@@ -473,14 +524,14 @@ impl SetupDialog {
                     ))
                     .child(labeled(
                         t("Print quality:", "Qualité d'impression :"),
-                        Select::new("quality", qualities, quality).width(140.0).on_change(cx.listener(
-                            |this, ix: &usize, _, cx| {
+                        Select::new("quality", qualities, quality)
+                            .width(140.0)
+                            .on_change(cx.listener(|this, ix: &usize, _, cx| {
                                 let dpi = ix.checked_sub(1).and_then(|i| QUALITIES.get(i).copied());
                                 this.setup.horizontal_dpi = dpi;
                                 this.setup.vertical_dpi = dpi;
                                 cx.notify();
-                            },
-                        )),
+                            })),
                     ))
                     .child(labeled(
                         t("First page number:", "Commencer la numérotation à :"),
@@ -587,12 +638,18 @@ impl SetupDialog {
                     .items_center()
                     .gap(px(16.))
                     .child(label(t("Center on page:", "Centrer sur la page :")))
-                    .child(self.check("centre-h", t("Horizontally", "Horizontalement"), centre_h, cx, |s, on| {
-                        s.center_horizontally = on
-                    }))
-                    .child(self.check("centre-v", t("Vertically", "Verticalement"), centre_v, cx, |s, on| {
-                        s.center_vertically = on
-                    }))
+                    .child(self.check(
+                        "centre-h",
+                        t("Horizontally", "Horizontalement"),
+                        centre_h,
+                        cx,
+                        |s, on| s.center_horizontally = on,
+                    ))
+                    .child(
+                        self.check("centre-v", t("Vertically", "Verticalement"), centre_v, cx, |s, on| {
+                            s.center_vertically = on
+                        }),
+                    )
                     .child(div().flex_1())
                     .child(label(format!("({unit})")).text_color(c(theme::TEXT_MUTED))),
             )
@@ -642,14 +699,19 @@ impl SetupDialog {
                 text.lines().map(str::to_string).collect()
             })
             .collect();
-        div().bg(c(0xFFFFFF)).border_1().border_color(c(theme::BORDER_STRONG)).child(preview(
-            528.0,
-            48.0,
-            move |s: &mut Sketch| {
+        div()
+            .bg(c(0xFFFFFF))
+            .border_1()
+            .border_color(c(theme::BORDER_STRONG))
+            .child(preview(528.0, 48.0, move |s: &mut Sketch| {
                 let font = widgets::ui_font();
                 for (k, lines) in texts.iter().enumerate() {
                     // Headers hang from the top, footers stand on the bottom.
-                    let mut y = if footer { s.height - 4.0 - 14.0 * lines.len() as f32 } else { 4.0 };
+                    let mut y = if footer {
+                        s.height - 4.0 - 14.0 * lines.len() as f32
+                    } else {
+                        4.0
+                    };
                     for line in lines {
                         let width = s.measure(line, &font, 11.0);
                         let x = match k {
@@ -661,13 +723,17 @@ impl SetupDialog {
                         y += 14.0;
                     }
                 }
-            },
-        ))
+            }))
     }
 
     fn header_footer_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let hf = &self.setup.header_footer;
-        let (odd_even, first, scale, align) = (hf.different_odd_even, hf.different_first, hf.scale_with_doc, hf.align_with_margins);
+        let (odd_even, first, scale, align) = (
+            hf.different_odd_even,
+            hf.different_first,
+            hf.scale_with_doc,
+            hf.align_with_margins,
+        );
         let (header_codes, header_names, header) = self.preset_list(false);
         let (footer_codes, footer_names, footer) = self.preset_list(true);
         div()
@@ -677,14 +743,14 @@ impl SetupDialog {
             .child(self.sample(false))
             .child(labeled(
                 t("Header:", "En-tête :"),
-                Select::new("header", header_names, header).width(440.0).on_change(cx.listener(
-                    move |this, ix: &usize, _, cx| {
+                Select::new("header", header_names, header)
+                    .width(440.0)
+                    .on_change(cx.listener(move |this, ix: &usize, _, cx| {
                         if let Some(code) = header_codes.get(*ix) {
                             this.setup.header_footer.odd_header = code.clone();
                             cx.notify();
                         }
-                    },
-                )),
+                    })),
             ))
             .child(
                 div()
@@ -703,14 +769,14 @@ impl SetupDialog {
             )
             .child(labeled(
                 t("Footer:", "Pied de page :"),
-                Select::new("footer", footer_names, footer).width(440.0).on_change(cx.listener(
-                    move |this, ix: &usize, _, cx| {
+                Select::new("footer", footer_names, footer)
+                    .width(440.0)
+                    .on_change(cx.listener(move |this, ix: &usize, _, cx| {
                         if let Some(code) = footer_codes.get(*ix) {
                             this.setup.header_footer.odd_footer = code.clone();
                             cx.notify();
                         }
-                    },
-                )),
+                    })),
             ))
             .child(self.sample(true))
             .child(
@@ -726,12 +792,20 @@ impl SetupDialog {
                         cx,
                         |s, on| s.header_footer.different_odd_even = on,
                     ))
-                    .child(self.check("first", t("Different first page", "Première page différente"), first, cx, |s, on| {
-                        s.header_footer.different_first = on
-                    }))
-                    .child(self.check("scale-doc", t("Scale with document", "Mettre à l'échelle du document"), scale, cx, |s, on| {
-                        s.header_footer.scale_with_doc = on
-                    }))
+                    .child(self.check(
+                        "first",
+                        t("Different first page", "Première page différente"),
+                        first,
+                        cx,
+                        |s, on| s.header_footer.different_first = on,
+                    ))
+                    .child(self.check(
+                        "scale-doc",
+                        t("Scale with document", "Mettre à l'échelle du document"),
+                        scale,
+                        cx,
+                        |s, on| s.header_footer.scale_with_doc = on,
+                    ))
                     .child(self.check(
                         "align-margins",
                         t("Align with page margins", "Aligner sur les marges de page"),
@@ -749,7 +823,9 @@ impl SetupDialog {
         let hf = self.setup.header_footer.clone();
         let locale = self.around.locale;
         self.modal.update_app(cx, |app, cx| {
-            app.open_modal(window, cx, move |modal, _, cx| HfDialog::new(modal, parent, footer, hf, locale, cx));
+            app.open_modal(window, cx, move |modal, _, cx| {
+                HfDialog::new(modal, parent, footer, hf, locale, cx)
+            });
         });
     }
 
@@ -795,7 +871,10 @@ impl SetupDialog {
             .flex()
             .flex_col()
             .gap(px(10.))
-            .child(labeled(t("Print area:", "Zone d'impression :"), RefEdit::new(&self.print_area, &self.modal)))
+            .child(labeled(
+                t("Print area:", "Zone d'impression :"),
+                RefEdit::new(&self.print_area, &self.modal),
+            ))
             .child(
                 GroupBox::new(t("Print titles", "Titres à imprimer"))
                     .child(labeled(
@@ -817,11 +896,27 @@ impl SetupDialog {
                                 .flex()
                                 .flex_col()
                                 .gap(px(5.))
-                                .child(self.check("gridlines", t("Gridlines", "Quadrillage"), gridlines, cx, |s, on| s.gridlines = on))
-                                .child(self.check("mono", t("Black and white", "En noir et blanc"), mono, cx, |s, on| {
-                                    s.black_and_white = on
-                                }))
-                                .child(self.check("draft", t("Draft quality", "Qualité brouillon"), draft, cx, |s, on| s.draft = on))
+                                .child(self.check(
+                                    "gridlines",
+                                    t("Gridlines", "Quadrillage"),
+                                    gridlines,
+                                    cx,
+                                    |s, on| s.gridlines = on,
+                                ))
+                                .child(self.check(
+                                    "mono",
+                                    t("Black and white", "En noir et blanc"),
+                                    mono,
+                                    cx,
+                                    |s, on| s.black_and_white = on,
+                                ))
+                                .child(self.check(
+                                    "draft",
+                                    t("Draft quality", "Qualité brouillon"),
+                                    draft,
+                                    cx,
+                                    |s, on| s.draft = on,
+                                ))
                                 .child(self.check(
                                     "headings",
                                     t("Row and column headings", "En-têtes des lignes et des colonnes"),
@@ -847,14 +942,16 @@ impl SetupDialog {
                                         Some(comments),
                                     )
                                     .width(190.0)
-                                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                        this.setup.comments = match *ix {
-                                            1 => PrintComments::AtEnd,
-                                            2 => PrintComments::AsDisplayed,
-                                            _ => PrintComments::None,
-                                        };
-                                        cx.notify();
-                                    })),
+                                    .on_change(cx.listener(
+                                        |this, ix: &usize, _, cx| {
+                                            this.setup.comments = match *ix {
+                                                1 => PrintComments::AtEnd,
+                                                2 => PrintComments::AsDisplayed,
+                                                _ => PrintComments::None,
+                                            };
+                                            cx.notify();
+                                        },
+                                    )),
                                 ))
                                 .child(labeled(
                                     t("Cell errors as:", "Erreurs de cellule comme :"),
@@ -864,15 +961,17 @@ impl SetupDialog {
                                         Some(errors),
                                     )
                                     .width(120.0)
-                                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                        this.setup.errors = match *ix {
-                                            1 => PrintErrors::Blank,
-                                            2 => PrintErrors::Dash,
-                                            3 => PrintErrors::NA,
-                                            _ => PrintErrors::Displayed,
-                                        };
-                                        cx.notify();
-                                    })),
+                                    .on_change(cx.listener(
+                                        |this, ix: &usize, _, cx| {
+                                            this.setup.errors = match *ix {
+                                                1 => PrintErrors::Blank,
+                                                2 => PrintErrors::Dash,
+                                                3 => PrintErrors::NA,
+                                                _ => PrintErrors::Displayed,
+                                            };
+                                            cx.notify();
+                                        },
+                                    )),
                                 )),
                         ),
                 ),
@@ -893,7 +992,11 @@ impl SetupDialog {
                                 Some(over_first as usize),
                             )
                             .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                this.setup.page_order = if *ix == 1 { PageOrder::OverThenDown } else { PageOrder::DownThenOver };
+                                this.setup.page_order = if *ix == 1 {
+                                    PageOrder::OverThenDown
+                                } else {
+                                    PageOrder::DownThenOver
+                                };
                                 cx.notify();
                             })),
                         )
@@ -924,10 +1027,12 @@ impl Render for SetupDialog {
         dialog(&self.modal, t("Page Setup", "Mise en page"))
             .width(580.0)
             .on_ok(cx.listener(Self::ok))
-            .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
-                this.tab = *ix;
-                cx.notify();
-            })))
+            .child(
+                TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
+                    this.tab = *ix;
+                    cx.notify();
+                })),
+            )
             .child(div().h(px(352.)).flex().flex_col().child(body))
             .child(
                 div()
@@ -966,7 +1071,14 @@ struct HfDialog {
 }
 
 impl HfDialog {
-    fn new(modal: Modal, parent: WeakEntity<SetupDialog>, footer: bool, hf: HeaderFooter, locale: &'static Locale, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        parent: WeakEntity<SetupDialog>,
+        footer: bool,
+        hf: HeaderFooter,
+        locale: &'static Locale,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut variants = vec![HfVariant::Odd];
         if hf.different_first {
             variants.push(HfVariant::First);
@@ -977,7 +1089,11 @@ impl HfDialog {
         let texts: Vec<[String; 3]> = variants
             .iter()
             .map(|variant| {
-                let sections = HfSections::parse(if footer { hf.footer(*variant) } else { hf.header(*variant) });
+                let sections = HfSections::parse(if footer {
+                    hf.footer(*variant)
+                } else {
+                    hf.header(*variant)
+                });
                 [&sections.left, &sections.center, &sections.right].map(|code| to_dialog_text(code, locale))
             })
             .collect();
@@ -1083,7 +1199,9 @@ impl HfDialog {
         let locale = self.locale;
         self.modal.update_app(cx, |app, cx| {
             let family = app.wb.styles.get(opensheet_engine::StyleId(0)).font.name.to_string();
-            app.open_modal(window, cx, move |modal, _, cx| FontDialog::new(modal, parent, family, locale, cx));
+            app.open_modal(window, cx, move |modal, _, cx| {
+                FontDialog::new(modal, parent, family, locale, cx)
+            });
         });
     }
 
@@ -1104,7 +1222,11 @@ impl HfDialog {
             .update(cx, |parent, cx| {
                 let hf = &mut parent.setup.header_footer;
                 for (variant, code) in codes {
-                    *(if footer { hf.footer_mut(variant) } else { hf.header_mut(variant) }) = code;
+                    *(if footer {
+                        hf.footer_mut(variant)
+                    } else {
+                        hf.header_mut(variant)
+                    }) = code;
                 }
                 hf.pictures = pictures;
                 cx.notify();
@@ -1131,8 +1253,13 @@ impl Render for HfDialog {
                 .child(icon(icon_name, 15.0, theme::TEXT))
                 .tooltip(tooltip(tip))
         };
-        let field = |cx: &mut Context<Self>, id: &'static str, icon_name: &'static str, tip: &'static str, code: &'static str| {
-            tool(id, icon_name, tip).on_click(cx.listener(move |this, _, window, cx| this.insert_field(code, window, cx)))
+        let field = |cx: &mut Context<Self>,
+                     id: &'static str,
+                     icon_name: &'static str,
+                     tip: &'static str,
+                     code: &'static str| {
+            tool(id, icon_name, tip)
+                .on_click(cx.listener(move |this, _, window, cx| this.insert_field(code, window, cx)))
         };
         let tools = div()
             .flex()
@@ -1141,13 +1268,49 @@ impl Render for HfDialog {
                 tool("font", "page-font", t("Format Text", "Mettre le texte en forme"))
                     .on_click(cx.listener(|this, _, window, cx| this.format_text(window, cx))),
             )
-            .child(field(cx, "page", "page-number", t("Insert Page Number", "Insérer le numéro de page"), "&P"))
-            .child(field(cx, "pages", "page-count", t("Insert Number of Pages", "Insérer le nombre de pages"), "&N"))
-            .child(field(cx, "date", "page-date", t("Insert Date", "Insérer la date"), "&D"))
+            .child(field(
+                cx,
+                "page",
+                "page-number",
+                t("Insert Page Number", "Insérer le numéro de page"),
+                "&P",
+            ))
+            .child(field(
+                cx,
+                "pages",
+                "page-count",
+                t("Insert Number of Pages", "Insérer le nombre de pages"),
+                "&N",
+            ))
+            .child(field(
+                cx,
+                "date",
+                "page-date",
+                t("Insert Date", "Insérer la date"),
+                "&D",
+            ))
             .child(field(cx, "time", "clock", t("Insert Time", "Insérer l'heure"), "&T"))
-            .child(field(cx, "path", "folder", t("Insert File Path", "Insérer le chemin du fichier"), "&Z&F"))
-            .child(field(cx, "file", "book", t("Insert File Name", "Insérer le nom du fichier"), "&F"))
-            .child(field(cx, "tab", "table", t("Insert Sheet Name", "Insérer le nom de la feuille"), "&A"))
+            .child(field(
+                cx,
+                "path",
+                "folder",
+                t("Insert File Path", "Insérer le chemin du fichier"),
+                "&Z&F",
+            ))
+            .child(field(
+                cx,
+                "file",
+                "book",
+                t("Insert File Name", "Insérer le nom du fichier"),
+                "&F",
+            ))
+            .child(field(
+                cx,
+                "tab",
+                "table",
+                t("Insert Sheet Name", "Insérer le nom de la feuille"),
+                "&A",
+            ))
             .child(
                 tool("picture", "picture", t("Insert Picture", "Insérer une image"))
                     .on_click(cx.listener(|this, _, window, cx| this.insert_picture(window, cx))),
@@ -1158,12 +1321,18 @@ impl Render for HfDialog {
             .map(|variant| {
                 let (header, footer) = match variant {
                     HfVariant::Odd if self.variants.len() == 1 => (t("Header", "En-tête"), t("Footer", "Pied de page")),
-                    HfVariant::Odd => (t("Odd Page Header", "En-tête de page impaire"), t("Odd Page Footer", "Pied de page impaire")),
+                    HfVariant::Odd => (
+                        t("Odd Page Header", "En-tête de page impaire"),
+                        t("Odd Page Footer", "Pied de page impaire"),
+                    ),
                     HfVariant::First => (
                         t("First Page Header", "En-tête de première page"),
                         t("First Page Footer", "Pied de page de première page"),
                     ),
-                    HfVariant::Even => (t("Even Page Header", "En-tête de page paire"), t("Even Page Footer", "Pied de page paire")),
+                    HfVariant::Even => (
+                        t("Even Page Header", "En-tête de page paire"),
+                        t("Even Page Footer", "Pied de page paire"),
+                    ),
                 };
                 SharedString::from(if self.footer { footer } else { header })
             })
@@ -1177,7 +1346,11 @@ impl Render for HfDialog {
                 .child(label(text))
                 .child(TextField::new(&this.fields[k]))
         };
-        let title = if self.footer { t("Footer", "Pied de page") } else { t("Header", "En-tête") };
+        let title = if self.footer {
+            t("Footer", "Pied de page")
+        } else {
+            t("Header", "En-tête")
+        };
         dialog(&self.modal, title)
             .width(620.0)
             .on_ok(cx.listener(Self::ok))
@@ -1220,7 +1393,14 @@ fn style_names(locale: &Locale) -> [&'static str; 4] {
 
 /// The codes that set a font in a header or footer:
 /// `&"Arial,Bold"&14&U`.
-pub(crate) fn font_code(family: &str, style: &str, size: Option<u32>, underline: usize, strike: bool, script: usize) -> String {
+pub(crate) fn font_code(
+    family: &str,
+    style: &str,
+    size: Option<u32>,
+    underline: usize,
+    strike: bool,
+    script: usize,
+) -> String {
     let mut code = format!("&\"{},{}\"", family.replace('"', ""), style);
     if let Some(size) = size {
         code.push_str(&format!("&{size}"));
@@ -1258,13 +1438,23 @@ struct FontDialog {
 }
 
 impl FontDialog {
-    fn new(modal: Modal, parent: WeakEntity<HfDialog>, family: String, locale: &'static Locale, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        parent: WeakEntity<HfDialog>,
+        family: String,
+        locale: &'static Locale,
+        cx: &mut Context<Self>,
+    ) -> Self {
         FontDialog {
             modal,
             parent,
             locale,
             family: widgets::input(cx, family),
-            families: FontDb::system().families().into_iter().map(SharedString::from).collect(),
+            families: FontDb::system()
+                .families()
+                .into_iter()
+                .map(SharedString::from)
+                .collect(),
             style: 0,
             size: widgets::number_input(cx, Some(11.0), 1.0, 409.0, 1.0),
             underline: 0,
@@ -1284,7 +1474,9 @@ impl FontDialog {
             self.script,
         );
         self.modal.close(window, cx);
-        self.parent.update(cx, |parent, cx| parent.insert(&code, window, cx)).ok();
+        self.parent
+            .update(cx, |parent, cx| parent.insert(&code, window, cx))
+            .ok();
     }
 }
 
@@ -1311,14 +1503,19 @@ impl Render for FontDialog {
                             .child(ComboBox::new("family", &self.family, self.families.clone()).width(180.0)),
                     )
                     .child(
-                        div().flex().flex_col().gap(px(3.)).child(label(t("Font style:", "Style :"))).child(
-                            Select::new("style", names(&style_names(self.locale)), Some(self.style))
-                                .width(120.0)
-                                .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                    this.style = *ix;
-                                    cx.notify();
-                                })),
-                        ),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(3.))
+                            .child(label(t("Font style:", "Style :")))
+                            .child(
+                                Select::new("style", names(&style_names(self.locale)), Some(self.style))
+                                    .width(120.0)
+                                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                                        this.style = *ix;
+                                        cx.notify();
+                                    })),
+                            ),
                     )
                     .child(
                         div()
@@ -1344,24 +1541,30 @@ impl Render for FontDialog {
             ))
             .child(
                 GroupBox::new(t("Effects", "Effets"))
-                    .child(Checkbox::new("strike", t("Strikethrough", "Barré"), self.strike).on_change(cx.listener(
-                        |this, on: &bool, _, cx| {
-                            this.strike = *on;
-                            cx.notify();
-                        },
-                    )))
-                    .child(Checkbox::new("super", t("Superscript", "Exposant"), self.script == 1).on_change(cx.listener(
-                        |this, on: &bool, _, cx| {
-                            this.script = if *on { 1 } else { 0 };
-                            cx.notify();
-                        },
-                    )))
-                    .child(Checkbox::new("sub", t("Subscript", "Indice"), self.script == 2).on_change(cx.listener(
-                        |this, on: &bool, _, cx| {
-                            this.script = if *on { 2 } else { 0 };
-                            cx.notify();
-                        },
-                    ))),
+                    .child(
+                        Checkbox::new("strike", t("Strikethrough", "Barré"), self.strike).on_change(cx.listener(
+                            |this, on: &bool, _, cx| {
+                                this.strike = *on;
+                                cx.notify();
+                            },
+                        )),
+                    )
+                    .child(
+                        Checkbox::new("super", t("Superscript", "Exposant"), self.script == 1).on_change(cx.listener(
+                            |this, on: &bool, _, cx| {
+                                this.script = if *on { 1 } else { 0 };
+                                cx.notify();
+                            },
+                        )),
+                    )
+                    .child(
+                        Checkbox::new("sub", t("Subscript", "Indice"), self.script == 2).on_change(cx.listener(
+                            |this, on: &bool, _, cx| {
+                                this.script = if *on { 2 } else { 0 };
+                                cx.notify();
+                            },
+                        )),
+                    ),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -1415,10 +1618,19 @@ mod tests {
     #[test]
     fn font_codes() {
         assert_eq!(font_code("Arial", "Bold", Some(14), 0, false, 0), "&\"Arial,Bold\"&14");
-        assert_eq!(font_code("Calibri", "Gras italique", None, 2, true, 1), "&\"Calibri,Gras italique\"&E&S&X");
-        assert_eq!(font_code("Times", "Regular", Some(9), 1, false, 2), "&\"Times,Regular\"&9&U&Y");
+        assert_eq!(
+            font_code("Calibri", "Gras italique", None, 2, true, 1),
+            "&\"Calibri,Gras italique\"&E&S&X"
+        );
+        assert_eq!(
+            font_code("Times", "Regular", Some(9), 1, false, 2),
+            "&\"Times,Regular\"&9&U&Y"
+        );
         // The engine reads what the dialog writes.
-        let code = format!("{}Total", font_code("Arial", style_names(Locale::fr())[3], Some(14), 0, false, 0));
+        let code = format!(
+            "{}Total",
+            font_code("Arial", style_names(Locale::fr())[3], Some(14), 0, false, 0)
+        );
         let context = HfContext {
             page: 1,
             pages: 1,

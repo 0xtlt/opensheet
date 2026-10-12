@@ -64,7 +64,9 @@ fn paint_of(ink: Ink) -> Paint {
 fn stroke_of(stroke: &chart_layout::Stroke) -> Stroke {
     let width = stroke.width as f64;
     let dash: Vec<f64> = stroke.dash.pattern().iter().map(|d| *d as f64 * width).collect();
-    Stroke::solid(paint_of(stroke.ink), width).dashed(&dash).join(LineJoin::Round)
+    Stroke::solid(paint_of(stroke.ink), width)
+        .dashed(&dash)
+        .join(LineJoin::Round)
 }
 
 fn path_of(segs: &[Seg]) -> Path {
@@ -96,6 +98,16 @@ impl PaperPainter {
         let svg = cx.svg_renderer();
         PaperPainter {
             decode: Box::new(move |image| image.to_image_data(svg.clone()).ok()),
+            images: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// A painter for where there is no window (tests): pictures the print
+    /// crate cannot read by itself are left out.
+    #[cfg(test)]
+    pub(crate) fn headless() -> PaperPainter {
+        PaperPainter {
+            decode: Box::new(|_| None),
             images: RefCell::new(HashMap::new()),
         }
     }
@@ -147,7 +159,14 @@ impl ObjectPainter for PaperPainter {
         };
         for prim in layout_chart(chart, &data, (size.0 as f32, size.1 as f32), &options, &measure) {
             match prim {
-                Prim::Rect { x, y, w, h, fill, stroke } => {
+                Prim::Rect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    fill,
+                    stroke,
+                } => {
                     let rect = RectF::new(x as f64, y as f64, w as f64, h as f64);
                     if let Some(fill) = fill {
                         canvas.fill_rect(rect, paint_of(fill));
@@ -203,7 +222,10 @@ impl ObjectPainter for PaperPainter {
                 canvas.rotate(-drawing.rotation as f64);
             }
             if flips {
-                canvas.scale(if drawing.flip_h { -1.0 } else { 1.0 }, if drawing.flip_v { -1.0 } else { 1.0 });
+                canvas.scale(
+                    if drawing.flip_h { -1.0 } else { 1.0 },
+                    if drawing.flip_v { -1.0 } else { 1.0 },
+                );
             }
             canvas.translate(-w / 2.0, -h / 2.0);
         };
@@ -328,18 +350,28 @@ fn line_end(outline: &Outline, end: LineEnd, tip: (f64, f64), from: (f64, f64), 
             canvas.fill_path(Path::polyline(&points).close(), outline.color);
         }
         LineEnd::Diamond => {
-            let points = [at(-reach / 2.0, 0.0), at(0.0, reach / 2.0), at(reach / 2.0, 0.0), at(0.0, -reach / 2.0)];
+            let points = [
+                at(-reach / 2.0, 0.0),
+                at(0.0, reach / 2.0),
+                at(reach / 2.0, 0.0),
+                at(0.0, -reach / 2.0),
+            ];
             canvas.fill_path(Path::polyline(&points).close(), outline.color);
         }
         LineEnd::Oval => {
             let r = reach / 2.0;
-            canvas.fill_path(Path::ellipse(RectF::new(tip.0 - r, tip.1 - r, reach, reach)), outline.color);
+            canvas.fill_path(
+                Path::ellipse(RectF::new(tip.0 - r, tip.1 - r, reach, reach)),
+                outline.color,
+            );
         }
         LineEnd::Open => {
             let points = [at(reach, reach / 2.0), tip, at(reach, -reach / 2.0)];
             canvas.stroke_path(
                 Path::polyline(&points),
-                Stroke::solid(outline.color, width).cap(LineCap::Round).join(LineJoin::Round),
+                Stroke::solid(outline.color, width)
+                    .cap(LineCap::Round)
+                    .join(LineJoin::Round),
             );
         }
     }
@@ -351,7 +383,11 @@ fn wrap(canvas: &Canvas, text: &str, style: &TextStyle, max_width: f64) -> Vec<S
     for paragraph in text.split('\n') {
         let mut line = String::new();
         for word in paragraph.trim_end_matches('\r').split(' ') {
-            let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+            let candidate = if line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{line} {word}")
+            };
             if !line.is_empty() && canvas.text_width(&candidate, style) > max_width {
                 out.push(std::mem::replace(&mut line, word.to_string()));
             } else {
@@ -365,11 +401,21 @@ fn wrap(canvas: &Canvas, text: &str, style: &TextStyle, max_width: f64) -> Vec<S
 
 fn paint_shape_text(wb: &Workbook, shape: &Shape, w: f64, h: f64, canvas: &mut Canvas) {
     let [left, top, right, bottom] = shape.preset.text_rect(w as f32, h as f32);
-    let (x0, x1) = (left as f64 * w + TEXT_MARGIN.0 as f64, right as f64 * w - TEXT_MARGIN.0 as f64);
-    let (y0, y1) = (top as f64 * h + TEXT_MARGIN.1 as f64, bottom as f64 * h - TEXT_MARGIN.1 as f64);
+    let (x0, x1) = (
+        left as f64 * w + TEXT_MARGIN.0 as f64,
+        right as f64 * w - TEXT_MARGIN.0 as f64,
+    );
+    let (y0, y1) = (
+        top as f64 * h + TEXT_MARGIN.1 as f64,
+        bottom as f64 * h - TEXT_MARGIN.1 as f64,
+    );
     let size = shape.font.size_pt() as f64 * PX_PER_PT;
     let default = wb.styles.get(StyleId(0)).font.name.clone();
-    let family: &str = if shape.font.name.is_empty() { &default } else { &shape.font.name };
+    let family: &str = if shape.font.name.is_empty() {
+        &default
+    } else {
+        &shape.font.name
+    };
     let style = TextStyle {
         family,
         bold: shape.font.bold,
@@ -474,7 +520,10 @@ fn arrow(canvas: &mut Canvas, s: f64, degrees: f64, color: Color) {
 }
 
 fn disc(canvas: &mut Canvas, s: f64, inset: f64, color: Color) {
-    canvas.fill_path(Path::ellipse(RectF::new(inset, inset, s - 2.0 * inset, s - 2.0 * inset)), color);
+    canvas.fill_path(
+        Path::ellipse(RectF::new(inset, inset, s - 2.0 * inset, s - 2.0 * inset)),
+        color,
+    );
 }
 
 fn ring(canvas: &mut Canvas, s: f64, color: Color) {
@@ -487,9 +536,16 @@ fn ring(canvas: &mut Canvas, s: f64, color: Color) {
 /// A mark drawn with strokes: a check, a cross or an exclamation mark.
 fn mark(canvas: &mut Canvas, s: f64, kind: u8, color: Color, heavy: bool) {
     let u = s / 16.0;
-    let stroke = || Stroke::solid(color, if heavy { 2.6 * u } else { 2.0 * u }).cap(LineCap::Round).join(LineJoin::Round);
+    let stroke = || {
+        Stroke::solid(color, if heavy { 2.6 * u } else { 2.0 * u })
+            .cap(LineCap::Round)
+            .join(LineJoin::Round)
+    };
     match kind {
-        0 => canvas.stroke_path(Path::polyline(&[(4.0 * u, 8.5 * u), (7.0 * u, 11.5 * u), (12.0 * u, 4.5 * u)]), stroke()),
+        0 => canvas.stroke_path(
+            Path::polyline(&[(4.0 * u, 8.5 * u), (7.0 * u, 11.5 * u), (12.0 * u, 4.5 * u)]),
+            stroke(),
+        ),
         1 => {
             canvas.line(4.5 * u, 4.5 * u, 11.5 * u, 11.5 * u, stroke());
             canvas.line(11.5 * u, 4.5 * u, 4.5 * u, 11.5 * u, stroke());
@@ -611,7 +667,12 @@ fn paint_icon(icon: Icon, x: f64, y: f64, s: f64, canvas: &mut Canvas) {
         }
         YellowDash => canvas.fill_rect(RectF::new(2.0 * u, 6.5 * u, 12.0 * u, 3.0 * u), YELLOW),
         RedDiamond => {
-            let points = [(8.0 * u, 1.5 * u), (14.5 * u, 8.0 * u), (8.0 * u, 14.5 * u), (1.5 * u, 8.0 * u)];
+            let points = [
+                (8.0 * u, 1.5 * u),
+                (14.5 * u, 8.0 * u),
+                (8.0 * u, 14.5 * u),
+                (1.5 * u, 8.0 * u),
+            ];
             canvas.fill_path(Path::polyline(&points).close(), RED);
         }
         GreenCheckSymbol => {
@@ -640,7 +701,10 @@ fn paint_icon(icon: Icon, x: f64, y: f64, s: f64, canvas: &mut Canvas) {
             for k in 0..4 {
                 let height = (4.0 + 3.0 * k as f64) * u;
                 let color = if k < filled { Color(0x4472C4) } else { Color(0xC8C8C8) };
-                canvas.fill_rect(RectF::new((1.5 + 3.5 * k as f64) * u, 14.5 * u - height, 2.6 * u, height), color);
+                canvas.fill_rect(
+                    RectF::new((1.5 + 3.5 * k as f64) * u, 14.5 * u - height, 2.6 * u, height),
+                    color,
+                );
             }
         }
         GoldStar => star(canvas, s, Some(GOLD), false),
@@ -705,7 +769,16 @@ mod tests {
         assert_eq!(path.segments[2], opensheet_print::Segment::LineTo(52.0, 18.0));
         // A gradient bar is painted in strips.
         let mut canvas = Canvas::new(&fonts);
-        paint_bar(&Bar { gradient: true, border: None, axis: None, ..bar }, (104.0, 20.0), &mut canvas);
+        paint_bar(
+            &Bar {
+                gradient: true,
+                border: None,
+                axis: None,
+                ..bar
+            },
+            (104.0, 20.0),
+            &mut canvas,
+        );
         assert_eq!(canvas.into_ops().len(), 24);
     }
 
@@ -754,5 +827,136 @@ mod tests {
             .collect();
         assert!(lines.len() > 1, "the text is wrapped: {lines:?}");
         assert_eq!(lines.join(" "), shape.text);
+    }
+    /// A report with everything the application paints on paper: a chart,
+    /// a shape with text, a picture, data bars and icons, and notes.
+    /// Set `OPENSHEET_PRINT_OUT` to a directory to keep the PDF and the
+    /// workbook (to look at them, and to open the workbook in the app).
+    #[test]
+    fn a_whole_report_prints() {
+        use opensheet_engine::chart::ChartKind;
+        use opensheet_engine::condfmt::{BarColor, CondFormat, DataBar, IconRule, IconSet, Rule};
+        use opensheet_engine::drawing::{Frame, ShapeTool};
+        use opensheet_engine::page::PrintComments;
+        use opensheet_engine::{Locale, Rect};
+        use opensheet_print::{PrintJob, PrintWhat, plan, print_pdf, render_page};
+
+        let mut wb = Workbook::new(Locale::fr());
+        let products = [
+            "Clavier", "Souris", "Écran", "Webcam", "Casque", "Station", "Câble", "Tapis",
+        ];
+        let _ = wb.set_cell_text(0, 0, 0, "Produit");
+        let _ = wb.set_cell_text(0, 0, 1, "Ventes");
+        let _ = wb.set_cell_text(0, 0, 2, "Marge");
+        let _ = wb.set_cell_text(0, 0, 3, "Évolution");
+        for row in 1..=70u32 {
+            let name = format!("{} {}", products[(row as usize - 1) % products.len()], row);
+            let _ = wb.set_cell_text(0, row, 0, &name);
+            let _ = wb.set_cell_text(0, row, 1, &(120 + (row * 37) % 400).to_string());
+            let _ = wb.set_cell_text(0, row, 2, &(((row * 13) % 60) as i64 - 20).to_string());
+            let _ = wb.set_cell_text(0, row, 3, &((row * 7) % 10).to_string());
+        }
+        wb.update_style(0, Rect::new(0, 0, 0, 3), &|s| {
+            s.font.bold = true;
+            s.fill = Some(Color(0xDDEBF7));
+        });
+        wb.add_cond_format(
+            0,
+            CondFormat::new(
+                vec![Rect::new(1, 1, 70, 1)],
+                Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+            ),
+        );
+        wb.add_cond_format(
+            0,
+            CondFormat::new(
+                vec![Rect::new(1, 2, 70, 2)],
+                Rule::DataBar(DataBar::preset(BarColor::Green, false)),
+            ),
+        );
+        wb.add_cond_format(
+            0,
+            CondFormat::new(
+                vec![Rect::new(1, 3, 70, 3)],
+                Rule::IconSet(IconRule::preset(IconSet::ThreeArrows)),
+            ),
+        );
+        let mut chart = wb.chart_from_range(0, Rect::new(0, 0, 8, 1), ChartKind::Column);
+        chart.anchor = (2, 5);
+        wb.add_chart(0, chart);
+        let shape = wb
+            .add_shape(0, ShapeTool::ALL[1], Frame::new(400.0, 420.0, 220.0, 90.0))
+            .unwrap();
+        wb.update_drawing(0, shape, |d| {
+            if let Some(shape) = d.as_shape_mut() {
+                shape.text = "À valider avant la clôture du trimestre".into();
+            }
+        });
+        let arrow = ShapeTool::ALL
+            .iter()
+            .copied()
+            .find(|tool| tool.preset().is_line())
+            .unwrap();
+        wb.add_shape(0, arrow, Frame::new(400.0, 540.0, 200.0, 60.0));
+        // A picture: 40 × 20 pixels, half red, half blue.
+        let mut pixels = Vec::new();
+        for _ in 0..20 {
+            for x in 0..40 {
+                pixels.extend_from_slice(if x < 20 { &[220, 40, 40] } else { &[40, 80, 200] });
+            }
+        }
+        let picture = wb
+            .add_picture(0, crate::features::page::scene::png(40, 20, 3, &pixels), (30, 5))
+            .unwrap();
+        wb.update_drawing(0, picture, |d| d.size = (160.0, 80.0));
+        wb.set_note(0, 3, 1, "Ana", "Ana:\nChiffre à confirmer.");
+        wb.set_note_visible(0, 3, 1, true);
+        wb.update_page_setup(0, |s| {
+            s.header_footer.odd_header = "&L&\"Arial,Bold\"&14Rapport des ventes&R&D".into();
+            s.header_footer.odd_footer = "&CPage &P de &N".into();
+            s.comments = PrintComments::AsDisplayed;
+            s.gridlines = true;
+        });
+        wb.commit("report");
+
+        let fonts = FontDb::standard_only();
+        let painter = PaperPainter::headless();
+        let mut job = PrintJob::new(PrintWhat::Sheet(0));
+        job.fonts = Some(&fonts);
+        job.painter = Some(&painter);
+        job.file_name = "Rapport.xlsx".into();
+        let p = plan(&wb, &job);
+        // Two pages down; the chart reaches onto a second page across.
+        assert!(p.pages.len() >= 2);
+        let first = render_page(&wb, &job, &p, 0).unwrap();
+        let texts: Vec<&str> = first
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        // The chart (its title and an axis label), the shape's text, the
+        // header and the note are all on the first page.
+        assert!(texts.contains(&"Ventes"), "{texts:?}");
+        assert!(texts.iter().any(|t| t.starts_with("À valider")));
+        assert!(texts.contains(&"Rapport des ventes"));
+        assert!(texts.contains(&"Chiffre à confirmer."));
+        assert!(first.ops.iter().any(|op| matches!(op, Op::Image { .. })));
+        // Bars and icons: many more filled shapes than the cells alone.
+        let fills = first.ops.iter().filter(|op| matches!(op, Op::Fill { .. })).count();
+        assert!(fills > 300, "{fills} fills");
+        let pdf = print_pdf(&wb, &job);
+        assert!(pdf.starts_with(b"%PDF-1.7"));
+        if let Some(out) = std::env::var_os("OPENSHEET_PRINT_OUT") {
+            let out = std::path::PathBuf::from(out);
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join("report.pdf"), &pdf).unwrap();
+            // The same with the fonts of this machine, as the app prints.
+            job.fonts = None;
+            std::fs::write(out.join("report-system-fonts.pdf"), print_pdf(&wb, &job)).unwrap();
+            opensheet_io::save(&wb, 0, &out.join("report.xlsx")).unwrap();
+        }
     }
 }

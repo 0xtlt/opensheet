@@ -50,7 +50,7 @@ commands! {
         SetupSheet = "page", t("Sheet Options", "Options de la feuille de calcul");
         Margins = "margins", t("Margins", "Marges");
         MarginsLast = "", t("Last Custom Setting", "Dernier paramètre personnalisé");
-        MarginsNormal = "", t("Normal", "Normales");
+        MarginsNormal = "", crate::i18n::t_ctx("margins", "Normal", "Normales");
         MarginsWide = "", t("Wide", "Larges");
         MarginsNarrow = "", t("Narrow", "Étroites");
         CustomMargins = "", t("Custom Margins…", "Marges personnalisées…");
@@ -229,7 +229,12 @@ impl Render for Gallery {
                     .rounded(px(4.))
                     .when(item.checked, |d| d.bg(c(theme::TOGGLED)))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(div().w(px(18.)).pt(px(1.)).when(item.checked, |d| d.child(icon("check", 14.0, theme::ACCENT))))
+                    .child(
+                        div()
+                            .w(px(18.))
+                            .pt(px(1.))
+                            .when(item.checked, |d| d.child(icon("check", 14.0, theme::ACCENT))),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -329,7 +334,12 @@ fn margins_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
         };
         vec![
             pair(t("Top", "Haut"), m.top, t("Bottom", "Bas"), m.bottom),
-            pair(t("Left", "Gauche"), m.left, t("Right", "Droite"), m.right),
+            pair(
+                t("Left", "Gauche"),
+                m.left,
+                crate::i18n::t_ctx("margin", "Right", "Droite"),
+                m.right,
+            ),
             pair(t("Header", "En-tête"), m.header, t("Footer", "Pied de page"), m.footer),
         ]
     };
@@ -392,7 +402,11 @@ fn fit_menu(app: &ExcelApp, width: bool) -> Vec<MenuEntry> {
         MenuEntry::new(label, move |app: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
             change(app, t("Scale to Fit", "Mise à l'échelle"), cx, |s| {
                 // Both counts are automatic until "Fit to" is on.
-                let (mut w, mut h) = if s.fit_to_page { (s.fit_width, s.fit_height) } else { (0, 0) };
+                let (mut w, mut h) = if s.fit_to_page {
+                    (s.fit_width, s.fit_height)
+                } else {
+                    (0, 0)
+                };
                 if width {
                     w = pages;
                 } else {
@@ -408,13 +422,18 @@ fn fit_menu(app: &ExcelApp, width: bool) -> Vec<MenuEntry> {
     };
     let mut entries = vec![entry(t("Automatic", "Automatique").to_string(), 0)];
     for pages in 1..=9u16 {
-        let word = if pages == 1 { t("page", "page") } else { t("pages", "pages") };
+        let word = if pages == 1 {
+            t("page", "page")
+        } else {
+            t("pages", "pages")
+        };
         entries.push(entry(format!("{pages} {word}"), pages));
     }
     entries.push(MenuEntry::separator());
-    entries.push(MenuEntry::new(t("More Pages…", "Autres pages…"), |app, window, cx| {
-        setup::open(app, setup::TAB_PAGE, window, cx)
-    }));
+    entries.push(MenuEntry::new(
+        t("More Pages…", "Autres pages…"),
+        |app, window, cx| setup::open(app, setup::TAB_PAGE, window, cx),
+    ));
     entries
 }
 
@@ -431,9 +450,12 @@ fn scale_menu(app: &ExcelApp) -> Vec<MenuEntry> {
     let mut entries: Vec<MenuEntry> = values
         .into_iter()
         .map(|percent| {
-            MenuEntry::new(format!("{percent} %"), move |app: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
-                change(app, t("Scale", "Échelle"), cx, |s| s.scale = percent);
-            })
+            MenuEntry::new(
+                format!("{percent} %"),
+                move |app: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
+                    change(app, t("Scale", "Échelle"), cx, |s| s.scale = percent);
+                },
+            )
             .checked(!fit && percent == current)
             .disabled(fit)
         })
@@ -451,10 +473,17 @@ fn set_print_area(app: &mut ExcelApp, cx: &mut Cx) {
     let apply = move |app: &mut ExcelApp, cx: &mut Cx| {
         if app.wb.set_print_area(app.sheet, &ranges) {
             show_breaks(app, app.sheet);
-            app.commit(t("Set Print Area", "Définir la zone d'impression"), cx);
+            app.commit(
+                crate::i18n::t_ctx("undo", "Set Print Area", "Définir la zone d'impression"),
+                cx,
+            );
         }
     };
-    if app.sel().is_single_cell() && app.wb.sheets[app.sheet].merge_at(app.active().0, app.active().1).is_none() {
+    if app.sel().is_single_cell()
+        && app.wb.sheets[app.sheet]
+            .merge_at(app.active().0, app.active().1)
+            .is_none()
+    {
         // Excel asks before printing a single cell.
         app.alert(
             Alert::new(
@@ -518,7 +547,9 @@ impl Command for Cmd {
         match self {
             Cmd::PrintGridlines => s.gridlines,
             Cmd::PrintHeadings => s.headings,
-            Cmd::Ruler => app.view_mode() == ViewMode::PageLayout && !app.ext::<PageUi>().is_some_and(|ui| ui.ruler_hidden),
+            Cmd::Ruler => {
+                app.view_mode() == ViewMode::PageLayout && !app.ext::<PageUi>().is_some_and(|ui| ui.ruler_hidden)
+            }
             Cmd::Portrait => s.orientation == Orientation::Portrait,
             Cmd::Landscape => s.orientation == Orientation::Landscape,
             Cmd::MarginsNormal => s.margins.preset() == Some(MarginPreset::Normal),
@@ -541,7 +572,10 @@ impl Command for Cmd {
         };
         match self {
             Cmd::Print => print::open(app, window, cx),
-            Cmd::Setup | Cmd::PageSetupMenu => {
+            // The launcher of the ribbon group opens on Page; the menu
+            // entry comes back to the tab the dialog was left on.
+            Cmd::Setup => setup::open(app, setup::TAB_PAGE, window, cx),
+            Cmd::PageSetupMenu => {
                 let tab = app.ext::<PageUi>().map_or(setup::TAB_PAGE, |ui| ui.setup_tab);
                 setup::open(app, tab, window, cx)
             }
@@ -562,8 +596,14 @@ impl Command for Cmd {
                 app.open_command_menu(entries, 200.0, window, cx);
             }
             Cmd::Portrait | Cmd::Landscape => {
-                let orientation = if self == Cmd::Portrait { Orientation::Portrait } else { Orientation::Landscape };
-                change(app, t("Orientation", "Orientation"), cx, |s| s.orientation = orientation);
+                let orientation = if self == Cmd::Portrait {
+                    Orientation::Portrait
+                } else {
+                    Orientation::Landscape
+                };
+                change(app, t("Orientation", "Orientation"), cx, |s| {
+                    s.orientation = orientation
+                });
             }
             Cmd::Size => size_gallery(app, window, cx),
             Cmd::PrintArea => {
@@ -577,7 +617,10 @@ impl Command for Cmd {
             Cmd::SetPrintArea => set_print_area(app, cx),
             Cmd::ClearPrintArea | Cmd::ResetPrintArea => {
                 if app.wb.clear_print_area(app.sheet) {
-                    app.commit(t("Clear Print Area", "Annuler la zone d'impression"), cx);
+                    app.commit(
+                        crate::i18n::t_ctx("undo", "Clear Print Area", "Annuler la zone d'impression"),
+                        cx,
+                    );
                 }
             }
             Cmd::AddToPrintArea => {
@@ -618,10 +661,14 @@ impl Command for Cmd {
                 app.open_command_menu(entries, 290.0, window, cx);
             }
             Cmd::PrintGridlines => {
-                change(app, t("Print Gridlines", "Imprimer le quadrillage"), cx, |s| s.gridlines = !s.gridlines);
+                change(app, t("Print Gridlines", "Imprimer le quadrillage"), cx, |s| {
+                    s.gridlines = !s.gridlines
+                });
             }
             Cmd::PrintHeadings => {
-                change(app, t("Print Headings", "Imprimer les en-têtes"), cx, |s| s.headings = !s.headings);
+                change(app, t("Print Headings", "Imprimer les en-têtes"), cx, |s| {
+                    s.headings = !s.headings
+                });
             }
             Cmd::Ruler => {
                 let ui = app.ext_mut::<PageUi>();
@@ -649,9 +696,7 @@ impl Command for Cmd {
                 views::toggle_option(app, cx, |hf| hf.different_odd_even = !hf.different_odd_even)
             }
             Cmd::HfScaleWithDoc => views::toggle_option(app, cx, |hf| hf.scale_with_doc = !hf.scale_with_doc),
-            Cmd::HfAlignMargins => {
-                views::toggle_option(app, cx, |hf| hf.align_with_margins = !hf.align_with_margins)
-            }
+            Cmd::HfAlignMargins => views::toggle_option(app, cx, |hf| hf.align_with_margins = !hf.align_with_margins),
             // Greyed out (see `enabled`); custom views are not part of
             // page setup and have no model.
             Cmd::Background | Cmd::CustomViews => app.not_implemented(self.label(), cx),
@@ -708,11 +753,24 @@ impl Feature for Page {
         views::adjust_layout(app, layout);
     }
 
-    fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, _window: &mut Window, _cx: &mut Cx) -> Vec<AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        layout: &GridLayout,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         views::overlay_elements(app, layout)
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         views::zone_mouse_down(app, zone, ev, window, cx)
     }
 
@@ -751,7 +809,7 @@ impl Feature for Page {
             // In this menu the print area commands are spelled out.
             let entry = match cmd {
                 Cmd::SetPrintArea => MenuEntry {
-                    label: t("Set Print Area", "Définir la zone d'impression").into(),
+                    label: crate::i18n::t_ctx("undo", "Set Print Area", "Définir la zone d'impression").into(),
                     ..entry
                 },
                 _ => entry,
@@ -767,7 +825,12 @@ impl Feature for Page {
     fn view_mode_changed(&self, app: &mut ExcelApp, cx: &mut Cx) {
         let mode = app.view_mode();
         let name = app.wb.sheets[app.sheet].name.clone();
-        let before = app.ext_mut::<PageUi>().last_mode.get(&name).copied().unwrap_or_default();
+        let before = app
+            .ext_mut::<PageUi>()
+            .last_mode
+            .get(&name)
+            .copied()
+            .unwrap_or_default();
         views::drop_header_footer_edit(app, cx);
         let sheet = &app.wb.sheets[app.sheet];
         if mode == ViewMode::PageLayout && (sheet.frozen_rows > 0 || sheet.frozen_cols > 0) {

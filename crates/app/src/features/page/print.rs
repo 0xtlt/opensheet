@@ -13,8 +13,8 @@ use crate::text_input::TextInput;
 use crate::theme::{self, c, ca};
 use crate::widgets::{self, Button, Checkbox, NumberField, ScrollArea, Select, dialog, label};
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Render, SharedString, Window, canvas, div, fill, point,
-    prelude::*, px, size,
+    AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Render, SharedString, Window, canvas, div, fill,
+    point, prelude::*, px, size,
 };
 use opensheet_engine::page::{MarginPreset, Margins, Orientation, PageSetup, PaperSize};
 use opensheet_engine::{Locale, Rect};
@@ -59,7 +59,12 @@ fn printers() -> (Vec<String>, Option<String>) {
 
 /// The arguments of `lp` for a job.
 pub(crate) fn lp_arguments(printer: &str, copies: u32, collate: bool, title: &str, file: &str) -> Vec<String> {
-    let mut args = vec!["-d".to_string(), printer.to_string(), "-n".to_string(), copies.max(1).to_string()];
+    let mut args = vec![
+        "-d".to_string(),
+        printer.to_string(),
+        "-n".to_string(),
+        copies.max(1).to_string(),
+    ];
     if copies > 1 {
         args.extend(["-o".to_string(), format!("collate={collate}")]);
     }
@@ -93,9 +98,16 @@ pub(crate) fn apply_scaling(setup: &mut PageSetup, index: usize) {
 
 /// A file name without what a file system refuses.
 fn file_stem(title: &str) -> String {
-    let clean: String = title.chars().map(|ch| if matches!(ch, '/' | ':' | '\\' | '\0') { '-' } else { ch }).collect();
+    let clean: String = title
+        .chars()
+        .map(|ch| if matches!(ch, '/' | ':' | '\\' | '\0') { '-' } else { ch })
+        .collect();
     let clean = clean.trim().trim_end_matches(".xlsx").to_string();
-    if clean.is_empty() { "OpenSheet".to_string() } else { clean }
+    if clean.is_empty() {
+        "OpenSheet".to_string()
+    } else {
+        clean
+    }
 }
 
 /// What the preview shows of.
@@ -203,7 +215,11 @@ impl PrintDialog {
                 what,
                 ignore_area,
                 page,
-                selection: if what == 2 { app.sel().ranges.clone() } else { Vec::new() },
+                selection: if what == 2 {
+                    app.sel().ranges.clone()
+                } else {
+                    Vec::new()
+                },
             };
             if current.as_ref() == Some(&key) {
                 return None;
@@ -263,7 +279,11 @@ impl PrintDialog {
         })?;
         if made.is_none() {
             self.tell(
-                t("We didn't find anything to print.", "Désolé... Nous n'avons trouvé aucun contenu à imprimer.").into(),
+                t(
+                    "We didn't find anything to print.",
+                    "Désolé... Nous n'avons trouvé aucun contenu à imprimer.",
+                )
+                .into(),
                 cx,
             );
         }
@@ -271,7 +291,8 @@ impl PrintDialog {
     }
 
     fn tell(&self, message: SharedString, cx: &mut Context<Self>) {
-        self.modal.update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+        self.modal
+            .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
     }
 
     /// Write the PDF where the system's tools can read it.
@@ -346,7 +367,11 @@ impl PrintDialog {
             }
             this.update_in(cx, |this, window, cx| match std::fs::write(&path, &pdf) {
                 Ok(()) => {
-                    let status = format!("{} {}", t("Saved as PDF:", "Enregistré au format PDF :"), path.display());
+                    let status = format!(
+                        "{} {}",
+                        t("Saved as PDF:", "Enregistré au format PDF :"),
+                        path.display()
+                    );
                     this.finish(status, window, cx);
                 }
                 Err(err) => this.tell(format!("{}\n\n{err}", path.display()).into(), cx),
@@ -382,9 +407,21 @@ impl PrintDialog {
 
     // ------------------------------------------------------------- drawing
 
-    fn settings(&mut self, setup: &PageSetup, locale: &'static Locale, last_margins: Option<Margins>, cx: &mut Context<Self>) -> AnyElement {
+    fn settings(
+        &mut self,
+        setup: &PageSetup,
+        locale: &'static Locale,
+        last_margins: Option<Margins>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let names = |list: &[&'static str]| -> Vec<SharedString> { list.iter().map(|name| (*name).into()).collect() };
-        let heading = |text: &'static str| div().pt(px(4.)).font_weight(FontWeight::SEMIBOLD).text_size(px(13.)).child(text);
+        let heading = |text: &'static str| {
+            div()
+                .pt(px(4.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(px(13.))
+                .child(text)
+        };
         let wide = 290.0;
 
         let mut targets: Vec<SharedString> = self.printers.iter().map(|name| name.replace('_', " ").into()).collect();
@@ -409,7 +446,13 @@ impl PrintDialog {
         ]);
         let mut margin_values = vec![Some(Margins::NORMAL), Some(Margins::WIDE), Some(Margins::NARROW)];
         if let Some(last) = last_margins.filter(|m| m.preset().is_none()) {
-            margin_names.push(t("Last Custom Margins Setting", "Dernier paramètre de marges personnalisé").into());
+            margin_names.push(
+                t(
+                    "Last Custom Margins Setting",
+                    "Dernier paramètre de marges personnalisé",
+                )
+                .into(),
+            );
             margin_values.push(Some(last));
         }
         let mut margin_index = match setup.margins.preset() {
@@ -489,13 +532,16 @@ impl PrintDialog {
                 })),
             )
             .child(
-                Checkbox::new("ignore-area", t("Ignore Print Area", "Ignorer la zone d'impression"), self.ignore_area).on_change(
-                    cx.listener(|this, on: &bool, _, cx| {
-                        this.ignore_area = *on;
-                        this.page = 0;
-                        cx.notify();
-                    }),
-                ),
+                Checkbox::new(
+                    "ignore-area",
+                    t("Ignore Print Area", "Ignorer la zone d'impression"),
+                    self.ignore_area,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    this.ignore_area = *on;
+                    this.page = 0;
+                    cx.notify();
+                })),
             )
             .child(
                 div()
@@ -529,12 +575,22 @@ impl PrintDialog {
                         t("Portrait Orientation", "Orientation Portrait"),
                         t("Landscape Orientation", "Orientation Paysage"),
                     ]),
-                    Some(if setup.orientation == Orientation::Portrait { 0 } else { 1 }),
+                    Some(if setup.orientation == Orientation::Portrait {
+                        0
+                    } else {
+                        1
+                    }),
                 )
                 .width(wide)
                 .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                    let orientation = if *ix == 0 { Orientation::Portrait } else { Orientation::Landscape };
-                    this.set(t("Orientation", "Orientation"), cx, move |s| s.orientation = orientation);
+                    let orientation = if *ix == 0 {
+                        Orientation::Portrait
+                    } else {
+                        Orientation::Landscape
+                    };
+                    this.set(t("Orientation", "Orientation"), cx, move |s| {
+                        s.orientation = orientation
+                    });
                 })),
             )
             .child(
@@ -549,9 +605,11 @@ impl PrintDialog {
             .child(
                 Select::new("margins", margin_names, margin_index)
                     .width(wide)
-                    .on_change(cx.listener(move |this, ix: &usize, window, cx| match margin_values.get(*ix).copied().flatten() {
-                        Some(margins) => this.set(t("Margins", "Marges"), cx, move |s| s.margins = margins),
-                        None => this.open_setup(setup::TAB_MARGINS, window, cx),
+                    .on_change(cx.listener(move |this, ix: &usize, window, cx| {
+                        match margin_values.get(*ix).copied().flatten() {
+                            Some(margins) => this.set(t("Margins", "Marges"), cx, move |s| s.margins = margins),
+                            None => this.open_setup(setup::TAB_MARGINS, window, cx),
+                        }
                     })),
             )
             .child(
@@ -562,7 +620,9 @@ impl PrintDialog {
                         if index == scaling_options {
                             this.open_setup(setup::TAB_PAGE, window, cx);
                         } else if index < 4 {
-                            this.set(t("Scale to Fit", "Mise à l'échelle"), cx, move |s| apply_scaling(s, index));
+                            this.set(t("Scale to Fit", "Mise à l'échelle"), cx, move |s| {
+                                apply_scaling(s, index)
+                            });
                         }
                     })),
             )
@@ -619,7 +679,10 @@ impl PrintDialog {
                 .items_center()
                 .justify_center()
                 .text_color(c(theme::TEXT_MUTED))
-                .child(t("We didn't find anything to print.", "Désolé... Nous n'avons trouvé aucun contenu à imprimer."))
+                .child(t(
+                    "We didn't find anything to print.",
+                    "Désolé... Nous n'avons trouvé aucun contenu à imprimer.",
+                ))
                 .into_any_element();
         };
         // The whole page in the area, or the page at its real size.
@@ -631,7 +694,10 @@ impl PrintDialog {
             |_, _, _| {},
             move |bounds: Bounds<Pixels>, _, window, cx| {
                 // The paper and its shadow.
-                window.paint_quad(fill(Bounds::new(bounds.origin + point(px(2.), px(2.)), bounds.size), ca(0x000000, 0.18)));
+                window.paint_quad(fill(
+                    Bounds::new(bounds.origin + point(px(2.), px(2.)), bounds.size),
+                    ca(0x000000, 0.18),
+                ));
                 window.paint_quad(fill(bounds, c(0xFFFFFF)));
                 scene::paint(&scene, bounds, window, cx);
                 let Some(m) = margins else {
@@ -641,7 +707,11 @@ impl PrintDialog {
                 let k = f32::from(bounds.size.width) / paper.0 as f32;
                 let ink = ca(0x000000, 0.55);
                 let dashes = |window: &mut Window, vertical: bool, at: f32| {
-                    let length = f32::from(if vertical { bounds.size.height } else { bounds.size.width });
+                    let length = f32::from(if vertical {
+                        bounds.size.height
+                    } else {
+                        bounds.size.width
+                    });
                     let mut done = 0.0;
                     while done < length {
                         let piece = 4.0f32.min(length - done);
@@ -667,7 +737,11 @@ impl PrintDialog {
         .h(px(h))
         .flex_none();
         if self.whole_page {
-            area.flex().items_center().justify_center().child(sheet).into_any_element()
+            area.flex()
+                .items_center()
+                .justify_center()
+                .child(sheet)
+                .into_any_element()
         } else {
             area.child(ScrollArea::new("page-scroll", AREA.1 - 2.0).child(div().p(px(16.)).child(sheet)))
                 .into_any_element()
@@ -700,13 +774,20 @@ impl PrintDialog {
                 .justify_center()
                 .rounded(px(4.))
                 .when(enabled, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                .child(widgets::icon(icon_name, 12.0, if enabled { theme::TEXT } else { theme::TEXT_DISABLED }))
+                .child(widgets::icon(
+                    icon_name,
+                    12.0,
+                    if enabled { theme::TEXT } else { theme::TEXT_DISABLED },
+                ))
         };
         div()
             .flex()
             .items_center()
             .gap(px(6.))
-            .child(arrow("page-prev", "chevron-left", self.page > 0).on_click(cx.listener(|this, _, _, cx| this.step(-1, cx))))
+            .child(
+                arrow("page-prev", "chevron-left", self.page > 0)
+                    .on_click(cx.listener(|this, _, _, cx| this.step(-1, cx))),
+            )
             .child(
                 div()
                     .min_w(px(34.))
@@ -719,7 +800,11 @@ impl PrintDialog {
                     .border_1()
                     .border_color(c(theme::BORDER_STRONG))
                     .rounded(px(3.))
-                    .child(if count == 0 { "0".to_string() } else { (self.page + 1).to_string() }),
+                    .child(if count == 0 {
+                        "0".to_string()
+                    } else {
+                        (self.page + 1).to_string()
+                    }),
             )
             .child(format!("{} {count}", t("of", "sur")))
             .child(
@@ -728,12 +813,15 @@ impl PrintDialog {
             )
             .child(div().flex_1())
             .child(
-                toggle("show-margins", t("Show Margins", "Afficher les marges"), self.show_margins).on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.show_margins = !this.show_margins;
-                        cx.notify();
-                    },
-                )),
+                toggle(
+                    "show-margins",
+                    t("Show Margins", "Afficher les marges"),
+                    self.show_margins,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.show_margins = !this.show_margins;
+                    cx.notify();
+                })),
             )
             .child(
                 toggle("zoom-page", t("Zoom to Page", "Zoom sur la page"), !self.whole_page).on_click(cx.listener(
@@ -752,7 +840,11 @@ impl Render for PrintDialog {
         self.refresh(cx);
         let state = self.modal.read_app(cx, |app| {
             // The settings are those of the sheet whose page is shown.
-            let sheet = self.preview.as_ref().and_then(|p| p.plan.sheet_of(self.page)).unwrap_or(app.sheet);
+            let sheet = self
+                .preview
+                .as_ref()
+                .and_then(|p| p.plan.sheet_of(self.page))
+                .unwrap_or(app.sheet);
             let sheet = sheet.min(app.wb.sheets.len() - 1);
             (
                 app.wb.sheets[sheet].page.clone(),
