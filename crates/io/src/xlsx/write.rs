@@ -837,6 +837,8 @@ impl SheetWriter<'_> {
         if let Some(protection) = &sheet.protection {
             protection::write_sheet(&mut x, protection);
         }
+        // autoFilter (the rows it hides are hidden rows of sheetData)
+        super::filter::write_sheet(&mut x, self.wb, index, self.dxfs);
         // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {
@@ -900,8 +902,11 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         .into_iter()
         .filter(|(_, def)| is_valid_name(&def.name))
         .collect();
-    if !names.is_empty() || page::has_names(wb) {
+    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) {
         x.push_str("<definedNames>");
+        // The ranges of the sheets' filters, which Excel keeps as hidden
+        // names beside the filters themselves.
+        super::filter::push_names(&mut x, wb);
         // The print areas and print titles of the sheets, which are names
         // only in files.
         page::push_names(&mut x, wb);

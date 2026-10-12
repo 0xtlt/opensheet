@@ -779,6 +779,8 @@ struct Ctx<'c> {
     palette: &'c Palette,
     /// The differential formats of the workbook, by `dxfId`.
     dxfs: &'c [StylePatch],
+    /// The colours filters and sorts go by, by `dxfId`.
+    filter_colors: &'c [super::filter::DxfColors],
     locale: &'c Locale,
     /// The sizes that follow from the workbook's default font.
     defaults: Defaults,
@@ -917,6 +919,10 @@ impl<'c> SheetReader<'c> {
                     "sheetProtection" => {
                         this.sheet.protection = protection::read_sheet(&t);
                         r.skip(&t);
+                    }
+                    "autoFilter" => {
+                        this.sheet.auto_filter =
+                            super::filter::parse_auto_filter(&mut r, &t, ctx.filter_colors)
                     }
                     "mergeCells" => this.merges(&mut r, &t),
                     "conditionalFormatting" => {
@@ -1531,6 +1537,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         strings: &strings,
         palette: &styles.palette,
         dxfs: &styles.dxfs,
+        filter_colors: &style_lookup.dxf_colors,
         locale,
         defaults: styles.defaults,
         shift_dates: info.date1904.then_some(&date_styles),

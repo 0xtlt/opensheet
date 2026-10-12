@@ -3,7 +3,10 @@
 //! through it (`sortState`).
 //!
 //! The element is the same in a worksheet and in a table part; both call
-//! [`push_auto_filter`] and [`parse_auto_filter`].
+//! [`push_auto_filter`] and [`parse_auto_filter`]. The rows a filter hides
+//! are hidden rows in the file; the filter of a sheet also has a hidden
+//! defined name there, `_xlnm._FilterDatabase` ([`push_names`]), which is
+//! not needed to read it back.
 //!
 //! Kept: every form of criterion the engine has (checked values and dates,
 //! one or two comparisons, top and bottom N, the dynamic filters, a cell
@@ -164,6 +167,49 @@ fn font_color_id(dxfs: &mut Dxfs, color: Option<Color>) -> u32 {
         font_color: Some(color),
         ..StylePatch::default()
     })
+}
+
+/// Append the `<autoFilter>` of a sheet's own filter, if it has one.
+pub(crate) fn write_sheet(x: &mut String, wb: &Workbook, sheet: usize, dxfs: &mut Dxfs) {
+    push_auto_filter(x, wb, sheet, FilterScope::Sheet, dxfs);
+}
+
+/// Whether any sheet has a filter of its own, which a file also names
+/// (see [`push_names`]).
+pub(crate) fn has_names(wb: &Workbook) -> bool {
+    wb.sheets.iter().any(|sheet| sheet.auto_filter.is_some())
+}
+
+/// Append the hidden defined names Excel keeps beside the filters of the
+/// sheets (children of `<definedNames>`): `_xlnm._FilterDatabase`, the
+/// range of the filter with its header row.
+pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
+    for (index, sheet) in wb.sheets.iter().enumerate() {
+        let Some(filter) = &sheet.auto_filter else {
+            continue;
+        };
+        let mut text = String::new();
+        opensheet_engine::ast::write_sheet_name(&sheet.name, &mut text);
+        text.push('!');
+        let range = filter.range;
+        for (n, (row, col)) in [(range.r0, range.c0), (range.r1, range.c1)]
+            .into_iter()
+            .enumerate()
+        {
+            if n == 1 {
+                text.push(':');
+            }
+            let name = cell_name(row, col);
+            let letters = name.trim_end_matches(|c: char| c.is_ascii_digit());
+            w!(text, "${letters}${}", row + 1);
+        }
+        w!(
+            x,
+            "<definedName name=\"_xlnm._FilterDatabase\" localSheetId=\"{index}\" hidden=\"1\">"
+        );
+        push_cell_text(x, &text);
+        x.push_str("</definedName>");
+    }
 }
 
 fn finite(n: f64) -> f64 {

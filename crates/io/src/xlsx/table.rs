@@ -264,6 +264,8 @@ pub(crate) fn read_all<R: Read + Seek>(
                 let _ = wb.insert_table(index, table);
             }
         }
+        // The rows the filters of the sheet hide, its own and those of
+        // its tables, are hidden rows in the file.
         wb.adopt_filtered_rows(index);
     }
 }
