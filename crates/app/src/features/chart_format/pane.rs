@@ -683,18 +683,25 @@ impl FormatPane {
                 let input = this.input(field, shown, window, cx);
                 let state: AnyElement = if set {
                     Button::new(("axis-reset", field as usize), t("Reset", "Rétablir"))
-                        .width(64.0)
+                        .width(84.0)
                         .on_click(cx.listener(move |this, _, _, cx| this.apply(undo, cx, |chart, _| edit(chart, &reset))))
                         .into_any_element()
                 } else {
-                    div().w(px(64.)).text_color(c(theme::TEXT_MUTED)).child(t("Auto", "Automatique")).into_any_element()
+                    // Wide enough for the French word on one line.
+                    div()
+                        .w(px(84.))
+                        .flex_none()
+                        .whitespace_nowrap()
+                        .text_color(c(theme::TEXT_MUTED))
+                        .child(t("Auto", "Automatique"))
+                        .into_any_element()
                 };
                 div()
                     .flex()
                     .items_center()
                     .gap(px(6.))
                     .child(div().flex_1().child(label))
-                    .child(TextField::new(&input).width(76.0))
+                    .child(TextField::new(&input).width(68.0))
                     .child(state)
                     .into_any_element()
             };
