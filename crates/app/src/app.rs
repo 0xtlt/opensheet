@@ -99,6 +99,7 @@ actions!(
         NewNote,
         NameManager,
         InsertLink,
+        OpenDropDown,
     ]
 );
 
@@ -1917,27 +1918,6 @@ impl ExcelApp {
         self.commit(t("Hide Columns", "Masquer les colonnes"), cx);
     }
 
-    pub fn sort(&mut self, ascending: bool, cx: &mut Context<Self>) {
-        let (row, col) = self.active();
-        let cur = self.sel().current();
-        let region = if cur.is_single() {
-            self.wb.current_region(self.sheet, row, col)
-        } else {
-            self.wb.clamp_to_used(self.sheet, cur)
-        };
-        if region.rows() < 2 || !self.may(Intent::Sort(region), cx) {
-            return;
-        }
-        // A first row of labels above non-labels is treated as a header.
-        let sheet = &self.wb.sheets[self.sheet];
-        let is_text = |r: u32, c: u32| matches!(sheet.value_at(r, c), opensheet_engine::Value::Text(_));
-        let header = (region.c0..=region.c1).all(|c| is_text(region.r0, c) || sheet.is_blank(region.r0, c))
-            && (region.c0..=region.c1).any(|c| !is_text(region.r0 + 1, c) && !sheet.is_blank(region.r0 + 1, c));
-        let key = col.clamp(region.c0, region.c1);
-        self.wb.sort_rows(self.sheet, region, key, ascending, header);
-        self.commit(t("Sort", "Trier"), cx);
-    }
-
     pub fn auto_sum(&mut self, function: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.editing.is_some() {
             return;
@@ -2958,9 +2938,6 @@ impl ExcelApp {
                     a.delete_cols(cx)
                 }));
                 add(clear());
-                let mut add = |entry: MenuEntry| menu.add(MenuSection::Data, entry);
-                add(MenuEntry::new(t("Sort A to Z", "Trier de A à Z"), |a, _, cx| a.sort(true, cx)).icon("sort-asc"));
-                add(MenuEntry::new(t("Sort Z to A", "Trier de Z à A"), |a, _, cx| a.sort(false, cx)).icon("sort-desc"));
                 menu.add(
                     MenuSection::Format,
                     MenuEntry::new(t("Merge / Unmerge Cells", "Fusionner / annuler la fusion"), |a, _, cx| {
@@ -3527,6 +3504,12 @@ impl ExcelApp {
     }
     pub fn on_name_manager(&mut self, _: &NameManager, window: &mut Window, cx: &mut Context<Self>) {
         self.run_command(features::names::Cmd::Manager, window, cx);
+    }
+    /// Alt+Down: the drop-down a feature hangs from the active cell.
+    pub fn on_open_drop_down(&mut self, _: &OpenDropDown, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editing.is_none() {
+            features::cell_drop_down(self, window, cx);
+        }
     }
     pub fn on_insert_link(&mut self, _: &InsertLink, window: &mut Window, cx: &mut Context<Self>) {
         self.run_command(features::misc::Cmd::Link, window, cx);

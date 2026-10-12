@@ -83,6 +83,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-=", InsertRows, g),
         KeyBinding::new("ctrl--", DeleteRows, g),
         KeyBinding::new("escape", Cancel, g),
+        KeyBinding::new("alt-down", OpenDropDown, g),
         // Window-wide
         KeyBinding::new("cmd-z", Undo, w),
         KeyBinding::new("cmd-shift-z", Redo, w),
