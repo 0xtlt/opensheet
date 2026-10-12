@@ -30,12 +30,11 @@ fn load(bytes: &[u8]) -> Workbook {
     read_xlsx(Cursor::new(bytes), Locale::en()).expect("the package loads")
 }
 
-/// Set `OPENSHEET_TABLE_SAMPLES` to a directory to keep the packages these
-/// tests build, to open them in Excel.
+/// Keep a package these tests build, to open it in Excel (see
+/// `common::keep_sample`).
 fn keep(name: &str, bytes: &[u8]) {
-    if let Some(dir) = std::env::var_os("OPENSHEET_TABLE_SAMPLES") {
-        std::fs::write(std::path::Path::new(&dir).join(name), bytes).unwrap();
-    }
+    common::keep_sample(name, bytes);
+}
 }
 
 fn rect(name: &str) -> Rect {
