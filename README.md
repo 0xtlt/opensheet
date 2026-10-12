@@ -66,7 +66,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Saisie directe, F2, double-clic, barre de formule ; Entrée / Tab / Échap ; reconnaissance des nombres, pourcentages, montants, dates et heures.
 - Formules : références relatives / absolues, autres feuilles, plages colorées pendant la saisie, sélection des références à la souris ou au clavier, fermeture automatique des parenthèses.
 - Sélection à la souris et au clavier (Maj, ⌘ pour les sélections multiples, ⌘+flèches, lignes et colonnes entières), Atteindre et Sélectionner les cellules (formules, vides, antécédents…).
-- Copier / couper / coller avec le collage spécial (valeurs, formats, largeurs de colonnes, validation, commentaires…), échange avec les autres applications en texte tabulé.
+- Copier / couper / coller (formules décalées, valeurs seules, mise en forme seule), échange avec les autres applications en texte tabulé.
 - Poignée de recopie avec séries (nombres, dates, « Article 1 », jours, mois), double-clic pour recopier vers le bas, ⌘D / ⌘R.
 - Annuler / rétablir sur toutes les opérations.
 
@@ -121,7 +121,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Hors périmètre** : les macros (VBA) et les scripts.
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
-- Remplacer, liens hypertexte, graphiques sparkline, styles de cellules, thèmes.
+- Remplacer, boîte Collage spécial, liens hypertexte, graphiques sparkline, styles de cellules, thèmes.
 - Convertir (texte en colonnes), remplissage instantané, consolider, analyse de scénarios, grouper / dissocier (plan), sous-total, filtre avancé, données externes.
 - Segments, chronologies, champs calculés et graphiques croisés dynamiques.
 - Orthographe, traduction, statistiques du classeur, vérification d'accessibilité, onglet Dessin, équations, symboles, SmartArt, WordArt, icônes.
