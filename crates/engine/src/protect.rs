@@ -12,6 +12,7 @@
 //! attackers: the cells are not encrypted.
 
 use crate::ast::StructuralEdit;
+use crate::features::CellShift;
 use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
 use crate::style::StyleId;
@@ -1143,6 +1144,17 @@ pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
 /// See `features::on_sheet_duplicated`: the copy of a protected sheet is
 /// protected with the same password, which the clone already is.
 pub(crate) fn on_sheet_duplicated(_wb: &mut Workbook, _copy: usize, _original: &str) {}
+
+/// See `features::on_sheet_deleted`: the protection of a sheet goes with
+/// it (whether the sheet may be deleted is asked before, see `permits`).
+pub(crate) fn on_sheet_deleted(_wb: &mut Workbook, _deleted: &Sheet, _order: &[&str]) {}
+
+/// See `features::on_sheet_moved`: protection is kept on the sheet.
+pub(crate) fn on_sheet_moved(_wb: &mut Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+
+/// See `features::on_cells_shifted`: protection covers the whole sheet,
+/// and whether a cell is locked is part of its format, which moved with it.
+pub(crate) fn on_cells_shifted(_wb: &mut Workbook, _sheet: usize, _shift: CellShift) {}
 
 #[cfg(test)]
 mod tests {

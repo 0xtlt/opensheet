@@ -154,6 +154,24 @@ impl Sheet {
         (r0..=r1).filter(|r| !self.is_row_hidden(*r))
     }
 
+    /// The parts of `rect` a filter does not hide, top to bottom: what
+    /// formatting, clearing and filling act on when a selection runs over
+    /// filtered rows, as in Excel. Rows hidden by hand are part of them.
+    pub fn shown_parts(&self, rect: Rect) -> Vec<Rect> {
+        let mut parts = Vec::new();
+        let mut start = rect.r0;
+        for &row in self.filtered_rows.range(rect.r0..=rect.r1) {
+            if row > start {
+                parts.push(Rect::new(start, rect.c0, row - 1, rect.c1));
+            }
+            start = row + 1;
+        }
+        if start <= rect.r1 {
+            parts.push(Rect::new(start, rect.c0, rect.r1, rect.c1));
+        }
+        parts
+    }
+
     /// Every row that is not shown, hidden by hand or by a filter (what a
     /// grid lays its rows out with).
     pub fn rows_not_shown(&self) -> std::borrow::Cow<'_, BTreeSet<u32>> {
@@ -359,8 +377,12 @@ struct UndoEntry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClearMode {
     Contents,
+    /// Formatting, merged cells and conditional formats.
     Formats,
+    /// Contents, formats, notes and comments, and data validation.
     All,
+    /// Notes and comments only.
+    Comments,
 }
 
 pub struct Workbook {
@@ -912,11 +934,14 @@ impl Workbook {
 
     /// Apply a formatting change to every cell of a rectangle. Whole-column
     /// and whole-row selections are stored on the column / row so the sheet
-    /// does not fill up with empty cells.
+    /// does not fill up with empty cells. Rows hidden by a filter keep
+    /// their formatting, as in Excel.
     pub fn update_style(&mut self, sheet: usize, rect: Rect, f: &dyn Fn(&mut Style)) {
         if sheet >= self.sheets.len() {
             return;
         }
+        let filtered: Vec<u32> = self.sheets[sheet].filtered_rows.range(rect.r0..=rect.r1).copied().collect();
+        let is_filtered = |row: u32| filtered.binary_search(&row).is_ok();
         let mut memo: HashMap<StyleId, StyleId> = HashMap::new();
         let mut map = |wb: &mut Workbook, id: StyleId| -> StyleId {
             if let Some(n) = memo.get(&id) {
@@ -933,10 +958,29 @@ impl Workbook {
         let whole_rows = rect.is_whole_rows();
         if whole_cols || whole_rows {
             if whole_cols {
+                // The cells of filtered rows that have no formatting of
+                // their own, in the columns that hold something: they must
+                // not take the new formatting of their column.
+                let last = self.sheets[sheet].used_rect().map_or(rect.c0, |used| used.c1.min(rect.c1));
+                let mut kept: Vec<(u32, u32, StyleId)> = Vec::new();
+                for &row in &filtered {
+                    let sh = &self.sheets[sheet];
+                    if sh.row_styles.contains_key(&row) {
+                        continue;
+                    }
+                    for col in rect.c0..=last {
+                        if !sh.cells.contains_key(&(row, col)) {
+                            kept.push((row, col, sh.inherited_style(row, col)));
+                        }
+                    }
+                }
                 for col in rect.c0..=rect.c1 {
                     let cur = self.sheets[sheet].col_styles.get(&col).copied().unwrap_or_default();
                     let new = map(self, cur);
                     self.set_col_style(sheet, col, Some(new));
+                }
+                for (row, col, style) in kept {
+                    self.set_style_id(sheet, row, col, style);
                 }
             }
             if whole_rows && !whole_cols {
@@ -945,7 +989,7 @@ impl Workbook {
                 // real cell before the row style takes precedence.
                 let cols: Vec<(u32, StyleId)> = self.sheets[sheet].col_styles.iter().map(|(c, s)| (*c, *s)).collect();
                 for row in rect.r0..=rect.r1 {
-                    if self.sheets[sheet].row_styles.contains_key(&row) {
+                    if self.sheets[sheet].row_styles.contains_key(&row) || is_filtered(row) {
                         continue;
                     }
                     for (col, col_style) in &cols {
@@ -955,7 +999,7 @@ impl Workbook {
                         }
                     }
                 }
-                for row in rect.r0..=rect.r1 {
+                for row in (rect.r0..=rect.r1).filter(|r| !is_filtered(*r)) {
                     let cur = self.sheets[sheet].row_styles.get(&row).copied().unwrap_or_default();
                     let new = map(self, cur);
                     self.set_row_style(sheet, row, Some(new));
@@ -965,7 +1009,7 @@ impl Workbook {
             let keys: Vec<((u32, u32), StyleId)> = self.sheets[sheet]
                 .cells
                 .iter()
-                .filter(|((r, c), _)| rect.contains(*r, *c))
+                .filter(|((r, c), _)| rect.contains(*r, *c) && !is_filtered(*r))
                 .map(|(k, cell)| (*k, cell.style))
                 .collect();
             for ((r, c), id) in keys {
@@ -975,7 +1019,7 @@ impl Workbook {
             // Row-styled rows crossing a formatted column need real cells.
             if whole_cols && !whole_rows {
                 let rows: Vec<u32> = self.sheets[sheet].row_styles.keys().copied().collect();
-                for r in rows {
+                for r in rows.into_iter().filter(|r| !is_filtered(*r)) {
                     for c in rect.c0..=rect.c1 {
                         if !self.sheets[sheet].cells.contains_key(&(r, c)) {
                             let cur = self.sheets[sheet].inherited_style(r, c);
@@ -987,7 +1031,7 @@ impl Workbook {
             }
             return;
         }
-        for r in rect.r0..=rect.r1 {
+        for r in (rect.r0..=rect.r1).filter(|r| !is_filtered(*r)) {
             for c in rect.c0..=rect.c1 {
                 let cur = self.sheets[sheet].style_id_at(r, c);
                 let new = map(self, cur);
@@ -998,39 +1042,35 @@ impl Workbook {
         }
     }
 
-    /// Clear contents and / or formats in a rectangle. Rows hidden by a
-    /// filter are left alone, as in Excel.
+    /// Clear what the cells of a rectangle hold, as the Clear menu does:
+    /// contents, formats (with merged cells and conditional formats),
+    /// notes and comments, or everything (data validation included). Rows
+    /// hidden by a filter are left alone, as in Excel.
     pub fn clear(&mut self, sheet: usize, rect: Rect, mode: ClearMode) {
         let Some(sh) = self.sheets.get(sheet) else {
             return;
         };
-        let keys: Vec<(u32, u32)> = sh
-            .cells
-            .range((rect.r0, 0)..=(rect.r1, u32::MAX))
-            .filter(|((r, c), _)| *c >= rect.c0 && *c <= rect.c1 && !sh.filtered_rows.contains(r))
-            .map(|(k, _)| *k)
-            .collect();
+        let contents = matches!(mode, ClearMode::Contents | ClearMode::All);
+        let formats = matches!(mode, ClearMode::Formats | ClearMode::All);
+        let keys: Vec<(u32, u32)> = if contents || formats {
+            sh.cells
+                .range((rect.r0, 0)..=(rect.r1, u32::MAX))
+                .filter(|((r, c), _)| *c >= rect.c0 && *c <= rect.c1 && !sh.filtered_rows.contains(r))
+                .map(|(k, _)| *k)
+                .collect()
+        } else {
+            Vec::new()
+        };
         for (r, c) in keys {
             let cell = self.sheets[sheet].cells[&(r, c)].clone();
-            let new = match mode {
-                ClearMode::Contents => Cell {
-                    content: Content::Empty,
-                    value: Value::Empty,
-                    style: cell.style,
-                },
-                ClearMode::Formats => Cell {
-                    style: StyleId(0),
-                    ..cell
-                },
-                ClearMode::All => Cell {
-                    content: Content::Empty,
-                    value: Value::Empty,
-                    style: StyleId(0),
-                },
+            let new = Cell {
+                content: if contents { Content::Empty } else { cell.content },
+                value: if contents { Value::Empty } else { cell.value },
+                style: if formats { StyleId(0) } else { cell.style },
             };
             self.put_cell(sheet, r, c, Some(new));
         }
-        if mode != ClearMode::Contents {
+        if formats {
             if rect.is_whole_cols() {
                 for col in rect.c0..=rect.c1 {
                     self.set_col_style(sheet, col, None);
@@ -1041,13 +1081,24 @@ impl Workbook {
                     self.set_row_style(sheet, row, None);
                 }
             }
-            if mode == ClearMode::All || mode == ClearMode::Formats {
-                let had = self.sheets[sheet].merges.iter().any(|m| rect.intersects(m));
-                if had {
-                    self.snapshot();
-                    self.sheets[sheet].merges.retain(|m| !rect.intersects(m));
-                }
+            let had = self.sheets[sheet].merges.iter().any(|m| rect.intersects(m));
+            if had {
+                self.snapshot();
+                self.sheets[sheet].merges.retain(|m| !rect.intersects(m));
             }
+        }
+        // What the features keep on the cells goes as Excel has it:
+        // conditional formats with the formats, notes and comments on
+        // request, validation only with everything.
+        let shown = self.sheets[sheet].shown_parts(rect);
+        if formats {
+            self.clear_cond_formats_in_bands(sheet, &shown);
+        }
+        if mode == ClearMode::All {
+            self.clear_validation_in_bands(sheet, &shown);
+        }
+        if matches!(mode, ClearMode::All | ClearMode::Comments) {
+            self.delete_comments(sheet, &shown);
         }
     }
 
@@ -1127,13 +1178,14 @@ impl Workbook {
         self.snapshot();
         let order: Vec<String> = self.sheets.iter().map(|s| s.name.clone()).collect();
         let order: Vec<&str> = order.iter().map(|s| s.as_str()).collect();
-        let deleted = self.sheets.remove(index).name;
-        self.map_all_formulas(&|e| e.with_sheet_deleted(&deleted, &order));
+        let removed = self.sheets.remove(index);
+        let deleted = removed.name.as_str();
+        self.map_all_formulas(&|e| e.with_sheet_deleted(deleted, &order));
         for sh in &mut self.sheets {
             for chart in &mut sh.charts {
                 chart.map_refs(&mut |r| {
                     let mut r = r.clone();
-                    let gone = |s: &str| crate::ast::same_name(s, &deleted);
+                    let gone = |s: &str| crate::ast::same_name(s, deleted);
                     if r.sheet.as_deref().is_some_and(gone) {
                         r.sheet = Some(Arc::from(crate::ast::DELETED_SHEET));
                     }
@@ -1141,6 +1193,7 @@ impl Workbook {
                 });
             }
         }
+        crate::features::on_sheet_deleted(self, &removed, &order);
         true
     }
 
@@ -1220,6 +1273,15 @@ impl Workbook {
         // Charts on the copy plot the copy's own cells, with fresh ids.
         let mut next_id = self.sheets.iter().flat_map(|s| s.charts.iter().map(|c| c.id)).max().unwrap_or(0);
         let new_name = copy.name.clone();
+        // Formulas that named the original sheet in full read the copy.
+        for cell in copy.cells.values_mut() {
+            if let Content::Formula(e) = &cell.content {
+                let renamed = e.with_sheet_renamed(&base, &new_name);
+                if renamed != **e {
+                    cell.content = Content::Formula(Arc::new(renamed));
+                }
+            }
+        }
         // The names scoped to the copy stand for the copy's own cells.
         for def in copy.names.values_mut() {
             def.expr = Arc::new(def.expr.with_sheet_renamed(&base, &new_name));
@@ -1249,6 +1311,7 @@ impl Workbook {
         let after: Vec<&str> = after.iter().map(String::as_str).collect();
         let moved = before[from];
         self.map_all_formulas(&|e| e.with_sheet_moved(moved, &before, &after));
+        crate::features::on_sheet_moved(self, moved, &before, &after);
     }
 
     pub fn set_tab_color(&mut self, index: usize, color: Option<Color>) {
