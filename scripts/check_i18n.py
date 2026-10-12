@@ -295,7 +295,7 @@ def style_notes(key, value):
     for mark in ("…", ":", "?"):
         if core_key.endswith(mark) != core_value.endswith(mark):
             notes.append(f"final {mark!r} differs from the English text")
-    if "..." in value:
+    if "..." in value and "..." not in key:
         notes.append("three dots instead of the ellipsis character …")
     for symbol in KEEP_SYMBOLS:
         if key.count(symbol) != value.count(symbol):
