@@ -342,6 +342,29 @@ fn captions_in_every_language() {
 }
 
 #[test]
+fn deleting_the_source_sheet_leaves_nothing_to_refresh_from() {
+    let (mut wb, id) = region_by_year(Locale::en());
+    let before = shown(&wb, id);
+    assert!(wb.delete_sheet(0));
+    wb.commit("delete");
+    // The report stays as it was, on what is now the first sheet.
+    let (si, p) = wb.pivot(id).unwrap();
+    assert_eq!((si, &p.source), (0, &PivotSource::Invalid));
+    assert_eq!(shown(&wb, id), before);
+    assert_eq!(wb.pivot_refresh(id, false), Err(PivotError::InvalidSource));
+    // A new sheet taking the name of the old one is not the source.
+    let added = wb.add_sheet(0);
+    assert!(wb.rename_sheet(added, "Sheet1"));
+    wb.commit("add");
+    assert_eq!(wb.pivot_refresh(id, false), Err(PivotError::InvalidSource));
+    // Undo brings the sheet and the source back together.
+    wb.undo();
+    wb.undo();
+    assert!(matches!(wb.pivot(id).unwrap().1.source, PivotSource::Range { .. }));
+    assert_eq!(wb.pivot_refresh(id, false), Ok(()));
+}
+
+#[test]
 fn compact_form_nests_the_labels_in_one_column() {
     let (wb, id) = region_product(Locale::en());
     assert_report(
