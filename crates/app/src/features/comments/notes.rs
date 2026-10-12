@@ -180,6 +180,8 @@ pub(super) struct ShownBox {
     pub state: BoxState,
     /// It reacts to the mouse (a box the pointer only made appear does not).
     pub solid: bool,
+    /// How far it was pushed from its place to stay in view, in pixels.
+    pub pushed: (f32, f32),
 }
 
 /// The cells area of the grid: all of it, or what scrolls right of and
@@ -214,6 +216,7 @@ fn shown(layout: &GridLayout, sheet: &Sheet, cell: (u32, u32), frame: Frame, sta
             clip: pane_area(layout, Some(place.anchor)),
             state,
             solid: true,
+            pushed: (0.0, 0.0),
         };
     }
     let area = pane_area(layout, None);
@@ -223,12 +226,14 @@ fn shown(layout: &GridLayout, sheet: &Sheet, cell: (u32, u32), frame: Frame, sta
         area.2 - theme::SCROLLBAR - BAND,
         area.3 - theme::SCROLLBAR - BAND,
     );
+    let kept = kept_in_view(rect, cell_px(layout, sheet, cell), room);
     ShownBox {
         cell,
-        rect: kept_in_view(rect, cell_px(layout, sheet, cell), room),
+        rect: kept,
         clip: area,
         state,
         solid: state != BoxState::Plain,
+        pushed: (kept.0 - rect.0, kept.1 - rect.1),
     }
 }
 
@@ -278,19 +283,6 @@ pub(super) fn shown_boxes(app: &ExcelApp, layout: &GridLayout) -> Vec<ShownBox> 
         out.push(shown(layout, sheet, edit.cell, frame, false, BoxState::Editing));
     }
     out
-}
-
-/// The frame a box shown at `rect` has on the sheet, in pixels at 100 %
-/// from the corner of A1.
-pub(super) fn frame_at(layout: &GridLayout, rect: Px) -> Frame {
-    let z = layout.zoom as f64;
-    let (col, row) = (layout.col_at(rect.0), layout.row_at(rect.1));
-    Frame {
-        x: layout.cols.start(col) / z + ((rect.0 - layout.col_x(col)) as f64 / z).max(0.0),
-        y: layout.rows.start(row) / z + ((rect.1 - layout.row_y(row)) as f64 / z).max(0.0),
-        width: (rect.2 - rect.0) as f64 / z,
-        height: (rect.3 - rect.1) as f64 / z,
-    }
 }
 
 // ------------------------------------------------------------------ drawing

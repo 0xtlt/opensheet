@@ -438,14 +438,17 @@ fn start_drag(app: &mut ExcelApp, cell: (u32, u32), grip: Grip, ev: &ZoneEvent, 
     };
     // A box that only shows for now may have been pushed back into view:
     // it starts from where it is seen.
-    let origin = if stays {
-        app.wb.sheets[app.sheet].note_frame(cell.0, cell.1)
-    } else {
-        notes::shown_boxes(app, &layout)
+    let pushed = match stays {
+        true => (0.0, 0.0),
+        false => notes::shown_boxes(app, &layout)
             .iter()
             .find(|shown| shown.cell == cell)
-            .map(|shown| notes::frame_at(&layout, shown.rect))
+            .map_or((0.0, 0.0), |shown| shown.pushed),
     };
+    let z = layout.zoom as f64;
+    let origin = app.wb.sheets[app.sheet]
+        .note_frame(cell.0, cell.1)
+        .map(|frame| notes::dragged(frame, Grip::Move, pushed.0 as f64 / z, pushed.1 as f64 / z));
     if let Some(origin) = origin {
         app.ext_mut::<Ui>().drag = Some(BoxDrag {
             cell,
