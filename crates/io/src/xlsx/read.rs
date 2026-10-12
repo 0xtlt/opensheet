@@ -157,7 +157,9 @@ fn parse_rels(xml: &str, base_dir: &str) -> Vec<Rel> {
 struct RawName {
     name: String,
     text: String,
-    sheet_scoped: bool,
+    comment: String,
+    /// For a sheet-scoped name, the position of its sheet in the file.
+    local_sheet: Option<usize>,
 }
 
 #[derive(Default)]
@@ -190,12 +192,14 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
                 }
                 "definedName" => {
                     let name = t.attr("name").map(Cow::into_owned).unwrap_or_default();
-                    let sheet_scoped = t.attr("localSheetId").is_some();
+                    let local_sheet = t.attr_u32("localSheetId").map(|i| i as usize);
+                    let comment = t.attr("comment").map(Cow::into_owned).unwrap_or_default();
                     let text = r.text(&t).into_owned();
                     out.names.push(RawName {
                         name,
                         text,
-                        sheet_scoped,
+                        comment,
+                        local_sheet,
                     });
                 }
                 _ => r.skip(&t),
@@ -1434,6 +1438,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     };
 
     let mut sheets: Vec<Sheet> = Vec::new();
+    // Where each sheet of the file ended up (`None` when it was not loaded).
+    let mut loaded_as: Vec<Option<usize>> = vec![None; info.sheets.len()];
     // Chart ids are unique in the workbook; files have no such thing.
     let mut next_chart_id = 1;
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
@@ -1456,32 +1462,45 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             &styles.palette,
             &mut next_chart_id,
         );
+        loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
     }
     if !sheets.is_empty() {
         wb.sheets = sheets;
+    } else {
+        loaded_as.clear();
     }
 
-    // Workbook-scoped names first, so they win over sheet-scoped names of
-    // the same spelling (the engine only has workbook scope).
+    // Workbook-scoped names first: a name scoped to a sheet that was not
+    // loaded (a chart sheet) is kept for the workbook, where it may only
+    // take a spelling that is still free.
     let mut names = info.names;
-    names.sort_by_key(|n| n.sheet_scoped);
+    names.sort_by_key(|n| n.local_sheet.is_some());
     for raw in names {
         let key = raw.name.to_uppercase();
         // `_xlnm.` names are print areas, filter ranges and the like.
-        if raw.name.is_empty() || key.starts_with("_XLNM.") || wb.names.contains_key(&key) {
+        if raw.name.is_empty() || key.starts_with("_XLNM.") {
             continue;
         }
-        if let Some(expr) = from_file_text(&raw.text) {
-            wb.names.insert(
-                key,
-                DefinedName {
-                    name: raw.name,
-                    expr: Arc::new(expr),
-                },
-            );
-        }
+        let Some(expr) = from_file_text(&raw.text) else {
+            continue;
+        };
+        let scope = raw
+            .local_sheet
+            .and_then(|i| loaded_as.get(i).copied().flatten());
+        let names = match scope {
+            Some(sheet) => &mut wb.sheets[sheet].names,
+            None => &mut wb.names,
+        };
+        names.entry(key).or_insert(DefinedName {
+            name: raw.name,
+            expr: Arc::new(expr),
+            comment: raw.comment,
+        });
     }
+
+    // Formulas the engine cannot calculate keep their cached result.
+    super::formula::keep_cached_results(&mut wb);
 
     wb.recalc();
     wb.clear_history();

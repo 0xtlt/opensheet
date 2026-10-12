@@ -764,6 +764,12 @@ impl Workbook {
         }
         for sh in &mut self.sheets {
             let own = sh.name.clone();
+            for def in sh.names.values_mut() {
+                def.expr = Arc::new(def.expr.adjusted(edit, &edited_name, &own));
+            }
+        }
+        for sh in &mut self.sheets {
+            let own = sh.name.clone();
             for chart in &mut sh.charts {
                 chart.adjust(edit, &edited_name, &own);
             }

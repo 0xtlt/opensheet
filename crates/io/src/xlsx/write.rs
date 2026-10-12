@@ -6,6 +6,7 @@ use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
 use super::{px_to_col_width, px_to_points};
 use crate::Result;
+use opensheet_engine::names::NameScope;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
     Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, Underline, VAlign,
@@ -777,17 +778,27 @@ fn workbook_xml(wb: &Workbook) -> String {
     }
     x.push_str("</sheets>");
     // Names Excel would reject are left out rather than spoiling the file.
+    // Sheet-scoped names say which sheet they belong to.
     let names: Vec<_> = wb
-        .names
-        .values()
-        .filter(|def| is_valid_name(&def.name))
+        .all_names()
+        .into_iter()
+        .filter(|(_, def)| is_valid_name(&def.name))
         .collect();
     if !names.is_empty() {
         x.push_str("<definedNames>");
-        for def in names {
+        for (scope, def) in names {
             x.push_str("<definedName name=\"");
             push_attr(&mut x, &def.name);
-            x.push_str("\">");
+            x.push('"');
+            if !def.comment.is_empty() {
+                x.push_str(" comment=\"");
+                push_attr(&mut x, &def.comment);
+                x.push('"');
+            }
+            if let NameScope::Sheet(sheet) = scope {
+                w!(x, " localSheetId=\"{sheet}\"");
+            }
+            x.push('>');
             push_text(&mut x, &to_file_text(&def.expr, wb));
             x.push_str("</definedName>");
         }

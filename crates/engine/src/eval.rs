@@ -5,7 +5,7 @@
 //! workbook once the pass is done. [`EvalCtx`] is the handle functions use
 //! to evaluate their arguments.
 
-use crate::ast::{BinaryOp, Expr, RefExpr, UnaryOp};
+use crate::ast::{BinaryOp, CellRef, Expr, RefExpr, RefKind, UnaryOp};
 use crate::functions::{self, FunctionDef, Kind};
 use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect, Reference};
@@ -41,6 +41,29 @@ pub struct CalcResult {
 
 const MAX_DEPTH: u32 = 20_000;
 
+/// How deep defined names may refer to one another. A name defined in
+/// terms of itself would otherwise never finish evaluating.
+const MAX_NAME_DEPTH: u32 = 64;
+
+/// Functions that treat all their arguments (from the given index on) as
+/// one pool of cells. A reference with several areas — a union such as
+/// `(A1:A3,C1:C3)`, a 3-D reference such as `Sheet1:Sheet3!A1` — can stand
+/// there, and is handed over as one argument per area. Anywhere else such
+/// a reference is `#VALUE!`, except in the functions reading a whole
+/// argument through `EvalCtx::numbers` / `flatten` (`SMALL`, `RANK`, ...).
+fn takes_areas(name: &str) -> Option<usize> {
+    match name {
+        "SUM" | "SUMSQ" | "PRODUCT" | "AVERAGE" | "AVERAGEA" | "COUNT" | "COUNTA" | "MAX"
+        | "MAXA" | "MIN" | "MINA" | "MEDIAN" | "MODE" | "MODE.SNGL" | "MODE.MULT" | "STDEV"
+        | "STDEV.S" | "STDEV.P" | "STDEVP" | "STDEVA" | "STDEVPA" | "VAR" | "VAR.S" | "VAR.P"
+        | "VARP" | "VARA" | "VARPA" | "AVEDEV" | "DEVSQ" | "GEOMEAN" | "HARMEAN" | "KURT"
+        | "SKEW" | "SKEW.P" | "AND" | "OR" | "XOR" | "CONCAT" | "HSTACK" | "VSTACK" => Some(0),
+        "NPV" | "SUBTOTAL" => Some(1),
+        "TEXTJOIN" => Some(2),
+        _ => None,
+    }
+}
+
 pub struct Calc<'a> {
     wb: &'a Workbook,
     cache: RefCell<HashMap<CellKey, Slot>>,
@@ -54,6 +77,7 @@ pub struct Calc<'a> {
     range_cache: RefCell<HashMap<Reference, Arc<Array>>>,
     circular: Cell<bool>,
     depth: Cell<u32>,
+    name_depth: Cell<u32>,
     now: f64,
 }
 
@@ -75,6 +99,7 @@ impl<'a> Calc<'a> {
             range_cache: RefCell::new(HashMap::new()),
             circular: Cell::new(false),
             depth: Cell::new(0),
+            name_depth: Cell::new(0),
             now,
         }
     }
@@ -159,7 +184,10 @@ impl<'a> Calc<'a> {
                     }
                 }
                 for sp in &sh.spills {
-                    cache.insert((si, sp.row, sp.col), Slot::Done(Value::Array(sp.array.clone())));
+                    cache.insert(
+                        (si, sp.row, sp.col),
+                        Slot::Done(Value::Array(sp.array.clone())),
+                    );
                     spills[si].push(SpillRect {
                         anchor: (sp.row, sp.col),
                         rect: Rect::new(
@@ -332,7 +360,12 @@ impl<'a> Calc<'a> {
             return rect;
         }
         let (er, ec) = self.extents.borrow()[reference.sheet];
-        Rect::new(rect.r0, rect.c0, rect.r1.min(er.max(rect.r0)), rect.c1.min(ec.max(rect.c0)))
+        Rect::new(
+            rect.r0,
+            rect.c0,
+            rect.r1.min(er.max(rect.r0)),
+            rect.c1.min(ec.max(rect.c0)),
+        )
     }
 
     /// Materialise a range, clamped to the part of the sheet holding data.
@@ -352,7 +385,9 @@ impl<'a> Calc<'a> {
 
         let mut fill = |r: u32, c: u32, content: &Content| {
             let v = match content {
-                Content::Formula(expr) => self.formula_value(reference.sheet, r, c, expr).into_scalar(),
+                Content::Formula(expr) => self
+                    .formula_value(reference.sheet, r, c, expr)
+                    .into_scalar(),
                 Content::Value(v) => v.clone(),
                 Content::Empty => return,
             };
@@ -410,7 +445,9 @@ impl<'a> Calc<'a> {
         // Only cache when nothing is mid-computation (no cycle in flight), so
         // a partial view is never reused.
         if !self.circular.get() {
-            self.range_cache.borrow_mut().insert(*reference, arr.clone());
+            self.range_cache
+                .borrow_mut()
+                .insert(*reference, arr.clone());
         }
         arr
     }
@@ -463,9 +500,34 @@ impl<'a> EvalCtx<'a> {
                 Err(err) => Value::Error(err),
                 Ok(reference) => self.deref(&reference),
             },
-            Expr::Name(name) => match self.calc.wb.defined_name(name) {
-                Some(expr) => self.eval(expr),
-                None => Value::Error(ErrorKind::Name),
+            Expr::Table(_) | Expr::Spill(_) => match self.eval_ref(e) {
+                Err(err) => Value::Error(err),
+                Ok(reference) => self.deref(&reference),
+            },
+            Expr::Ref3D(_) | Expr::Union(_) | Expr::Intersect(..) => {
+                match self.eval_areas(e).as_deref() {
+                    Err(err) => Value::Error(*err),
+                    Ok([reference]) => self.deref(reference),
+                    // Several areas have no value as a whole.
+                    Ok(_) => Value::Error(ErrorKind::Value),
+                }
+            }
+            Expr::RefError(_) => Value::Error(ErrorKind::Ref),
+            Expr::Name(name) => {
+                wrap(self.with_name(self.sheet, name, |ctx, def| Ok(ctx.eval(def))))
+            }
+            Expr::SheetName(sheet, name) => wrap(match self.calc.wb.sheet_index(sheet) {
+                Some(from) => self.with_name(from, name, |ctx, def| Ok(ctx.eval(def))),
+                None => Err(ErrorKind::Ref),
+            }),
+            Expr::Implicit(inner) => match self.eval_ref(inner) {
+                // Of a range, the cell on the formula's row or column.
+                Ok(reference) => match self.implicit_cell(&reference) {
+                    Ok(cell) => self.deref(&cell),
+                    Err(err) => Value::Error(err),
+                },
+                // Of an array, the first value.
+                Err(_) => self.eval(inner).into_scalar(),
             },
             Expr::Unary(op, inner) => {
                 let v = self.eval(inner);
@@ -517,10 +579,23 @@ impl<'a> EvalCtx<'a> {
         match e {
             Expr::Ref(r) => self.resolve(r),
             Expr::Paren(inner) => self.eval_ref(inner),
-            Expr::Name(name) => match self.calc.wb.defined_name(name) {
-                Some(expr) => self.eval_ref(expr),
-                None => Err(ErrorKind::Name),
-            },
+            Expr::Name(name) => self.with_name(self.sheet, name, |ctx, def| ctx.eval_ref(def)),
+            Expr::SheetName(sheet, name) => {
+                let from = self.calc.wb.sheet_index(sheet).ok_or(ErrorKind::Ref)?;
+                self.with_name(from, name, |ctx, def| ctx.eval_ref(def))
+            }
+            Expr::Table(t) => {
+                crate::structured::resolve(self.calc.wb, t, self.sheet, self.row, self.col)
+            }
+            Expr::Spill(anchor) => self.spilled_ref(anchor),
+            Expr::Implicit(inner) => self.implicit_cell(&self.eval_ref(inner)?),
+            Expr::Ref3D(_) | Expr::Union(_) | Expr::Intersect(..) => {
+                match self.eval_areas(e)?.as_slice() {
+                    [reference] => Ok(*reference),
+                    _ => Err(ErrorKind::Value),
+                }
+            }
+            Expr::RefError(_) => Err(ErrorKind::Ref),
             Expr::Func(name, args) => match functions::lookup(name) {
                 Some(def) => match def.ref_func {
                     Some(f) => f(self, args),
@@ -531,6 +606,185 @@ impl<'a> EvalCtx<'a> {
             Expr::Error(err) => Err(*err),
             _ => Err(ErrorKind::Value),
         }
+    }
+
+    /// Evaluate an argument that must be a reference, which may be made of
+    /// several areas: a union (`(A1:A3,C1:C3)`), a 3-D reference (one area
+    /// per sheet), an intersection. `#NULL!` when an intersection is empty,
+    /// `#VALUE!` for a union across sheets.
+    pub fn eval_areas(&self, e: &Expr) -> R<Vec<Reference>> {
+        match e {
+            Expr::Paren(inner) => self.eval_areas(inner),
+            Expr::Ref3D(r) => {
+                let wb = self.calc.wb;
+                let first = wb.sheet_index(&r.first).ok_or(ErrorKind::Ref)?;
+                let last = wb.sheet_index(&r.last).ok_or(ErrorKind::Ref)?;
+                let rect = r.cells.rect();
+                Ok((first.min(last)..=first.max(last))
+                    .map(|sheet| Reference { sheet, rect })
+                    .collect())
+            }
+            Expr::Union(items) => {
+                let mut areas: Vec<Reference> = Vec::new();
+                for item in items {
+                    areas.extend(self.eval_areas(item)?);
+                }
+                // As in Excel, the areas of a union lie on one sheet.
+                if areas.iter().any(|area| area.sheet != areas[0].sheet) {
+                    return Err(ErrorKind::Value);
+                }
+                Ok(areas)
+            }
+            Expr::Intersect(a, b) => {
+                let left = self.eval_areas(a)?;
+                let right = self.eval_areas(b)?;
+                let mut areas = Vec::new();
+                for x in &left {
+                    for y in right.iter().filter(|y| y.sheet == x.sheet) {
+                        if let Some(rect) = x.rect.intersection(&y.rect) {
+                            areas.push(Reference {
+                                sheet: x.sheet,
+                                rect,
+                            });
+                        }
+                    }
+                }
+                if areas.is_empty() {
+                    return Err(ErrorKind::Null);
+                }
+                Ok(areas)
+            }
+            Expr::Name(name) => self.with_name(self.sheet, name, |ctx, def| ctx.eval_areas(def)),
+            Expr::SheetName(sheet, name) => {
+                let from = self.calc.wb.sheet_index(sheet).ok_or(ErrorKind::Ref)?;
+                self.with_name(from, name, |ctx, def| ctx.eval_areas(def))
+            }
+            _ => Ok(vec![self.eval_ref(e)?]),
+        }
+    }
+
+    /// True when the expression may be a reference with several areas
+    /// (told from its shape, without evaluating anything).
+    fn may_have_areas(&self, e: &Expr) -> bool {
+        fn shape(e: &Expr) -> bool {
+            match e {
+                Expr::Ref3D(_) | Expr::Union(_) | Expr::Intersect(..) => true,
+                Expr::Paren(inner) => shape(inner),
+                _ => false,
+            }
+        }
+        let wb = self.calc.wb;
+        match e {
+            Expr::Paren(inner) => self.may_have_areas(inner),
+            Expr::Name(name) => wb
+                .lookup_name(self.sheet, name)
+                .is_some_and(|(_, def)| shape(&def.expr)),
+            Expr::SheetName(sheet, name) => wb
+                .sheet_index(sheet)
+                .and_then(|from| wb.lookup_name(from, name))
+                .is_some_and(|(_, def)| shape(&def.expr)),
+            other => shape(other),
+        }
+    }
+
+    /// What an aggregate reads from one argument: its value, or one value
+    /// per area when it is a reference with several areas.
+    fn area_values(&self, arg: &Expr) -> Vec<Value> {
+        if !self.may_have_areas(arg) {
+            return vec![self.eval(arg)];
+        }
+        match self.eval_areas(arg) {
+            Ok(areas) => areas.iter().map(|area| self.deref(area)).collect(),
+            Err(err) => vec![Value::Error(err)],
+        }
+    }
+
+    /// A resolved area as an expression (absolute, with its sheet name).
+    fn area_expr(&self, area: &Reference) -> Expr {
+        let corner = |row: u32, col: u32| CellRef {
+            row,
+            col,
+            abs_row: true,
+            abs_col: true,
+        };
+        let rect = area.rect;
+        Expr::Ref(RefExpr {
+            sheet: self
+                .calc
+                .wb
+                .sheets
+                .get(area.sheet)
+                .map(|s| Arc::from(s.name.as_str())),
+            start: corner(rect.r0, rect.c0),
+            end: (!rect.is_single()).then(|| corner(rect.r1, rect.c1)),
+            kind: RefKind::Cells,
+        })
+    }
+
+    /// Evaluate with `f` what `name` stands for in a formula on `sheet`:
+    /// the definition of the sheet's own name, else of the workbook's, else
+    /// the data rows of the table by that name. `#NAME?` when there is
+    /// none. The relative references of a name are taken from the cell
+    /// being calculated.
+    fn with_name<T>(
+        &self,
+        sheet: usize,
+        name: &str,
+        f: impl FnOnce(&EvalCtx<'a>, &Expr) -> R<T>,
+    ) -> R<T> {
+        let calc = self.calc;
+        let ctx = EvalCtx { sheet, ..*self };
+        if let Some((_, def)) = calc.wb.lookup_name(sheet, name) {
+            if calc.name_depth.get() >= MAX_NAME_DEPTH {
+                return Err(ErrorKind::Name);
+            }
+            calc.name_depth.set(calc.name_depth.get() + 1);
+            let out = if def.expr.has_relative_refs() {
+                f(&ctx, &def.expr_at(self.row, self.col))
+            } else {
+                f(&ctx, &def.expr)
+            };
+            calc.name_depth.set(calc.name_depth.get() - 1);
+            return out;
+        }
+        if let Some((table_sheet, table)) = calc.wb.table_by_name(name) {
+            let data = table.data_range().ok_or(ErrorKind::Ref)?;
+            return f(&ctx, &self.area_expr(&Reference::new(table_sheet, data)));
+        }
+        Err(ErrorKind::Name)
+    }
+
+    /// `A1#`: the range filled by the array spilling from a cell. `#REF!`
+    /// when nothing spills from it.
+    fn spilled_ref(&self, anchor: &Expr) -> R<Reference> {
+        let cell = self.eval_ref(anchor)?;
+        if !cell.is_single() {
+            return Err(ErrorKind::Ref);
+        }
+        let (sheet, row, col) = (cell.sheet, cell.rect.r0, cell.rect.c0);
+        // The anchor must have been calculated for its spill to be known.
+        self.calc.cell_value(sheet, row, col);
+        match self.calc.spill_at(sheet, row, col) {
+            Some(spill) if spill.anchor == (row, col) => Ok(Reference::new(sheet, spill.rect)),
+            _ => Err(ErrorKind::Ref),
+        }
+    }
+
+    /// The cell `@` picks out of a range: the one on the row of the formula
+    /// for cells in a column, on its column for cells in a row. `#VALUE!`
+    /// when the formula is not level with the range.
+    fn implicit_cell(&self, reference: &Reference) -> R<Reference> {
+        let rect = reference.rect;
+        if rect.is_single() {
+            return Ok(*reference);
+        }
+        if rect.cols() == 1 && self.row >= rect.r0 && self.row <= rect.r1 {
+            return Ok(Reference::cell(reference.sheet, self.row, rect.c0));
+        }
+        if rect.rows() == 1 && self.col >= rect.c0 && self.col <= rect.c1 {
+            return Ok(Reference::cell(reference.sheet, rect.r0, self.col));
+        }
+        Err(ErrorKind::Value)
     }
 
     /// Resolve a reference as written in a formula to sheet coordinates.
@@ -573,7 +827,15 @@ impl<'a> EvalCtx<'a> {
 
     /// The formula stored in a cell, if any.
     pub fn formula_at(&self, sheet: usize, row: u32, col: u32) -> Option<&'a Expr> {
-        match &self.calc.wb.sheets.get(sheet)?.cells.get(&(row, col))?.content {
+        match &self
+            .calc
+            .wb
+            .sheets
+            .get(sheet)?
+            .cells
+            .get(&(row, col))?
+            .content
+        {
             Content::Formula(e) => Some(e.as_ref()),
             _ => None,
         }
@@ -586,7 +848,11 @@ impl<'a> EvalCtx<'a> {
             .or_else(|_| crate::parser::parse_formula(text.trim(), Locale::en()))
             .map_err(|_| ErrorKind::Ref)?;
         match &expr {
-            Expr::Ref(_) | Expr::Name(_) => self.eval_ref(&expr).map_err(|_| ErrorKind::Ref),
+            Expr::Ref(_)
+            | Expr::Name(_)
+            | Expr::SheetName(..)
+            | Expr::Table(_)
+            | Expr::Spill(_) => self.eval_ref(&expr).map_err(|_| ErrorKind::Ref),
             _ => Err(ErrorKind::Ref),
         }
     }
@@ -596,6 +862,24 @@ impl<'a> EvalCtx<'a> {
             || (def.max_args != u8::MAX && args.len() > def.max_args as usize)
         {
             return Value::Error(ErrorKind::Value);
+        }
+        if def.kind == Kind::Raw
+            && args.iter().any(|a| self.may_have_areas(a))
+            && let Some(first) = takes_areas(def.name)
+        {
+            // One argument per area: `SUM((A1:A3,C1:C3))` is `SUM(A1:A3,C1:C3)`.
+            let mut expanded: Vec<Expr> = Vec::with_capacity(args.len());
+            for (i, arg) in args.iter().enumerate() {
+                if i < first || !self.may_have_areas(arg) {
+                    expanded.push(arg.clone());
+                    continue;
+                }
+                match self.eval_areas(arg) {
+                    Ok(areas) => expanded.extend(areas.iter().map(|area| self.area_expr(area))),
+                    Err(err) => expanded.push(Expr::Error(err)),
+                }
+            }
+            return wrap((def.func)(self, &expanded));
         }
         match def.kind {
             Kind::Raw => wrap((def.func)(self, args)),
@@ -764,7 +1048,9 @@ impl<'a> EvalCtx<'a> {
             Value::Empty => Ok(0.0),
             Value::Number(n) => Ok(*n),
             Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
-            Value::Text(s) => crate::input::parse_numeric_text(s, self.locale()).ok_or(ErrorKind::Value),
+            Value::Text(s) => {
+                crate::input::parse_numeric_text(s, self.locale()).ok_or(ErrorKind::Value)
+            }
             Value::Error(e) => Err(*e),
             Value::Array(a) => self.to_number(a.get(0, 0)),
         }
@@ -853,32 +1139,30 @@ impl<'a> EvalCtx<'a> {
     pub fn numbers(&self, args: &[Expr]) -> R<Vec<f64>> {
         let mut out = Vec::new();
         for arg in args {
-            match self.eval(arg) {
-                Value::Array(a) => {
-                    for v in a.iter() {
-                        match v {
-                            Value::Number(n) => out.push(*n),
-                            Value::Error(e) => return Err(*e),
-                            _ => {}
+            for value in self.area_values(arg) {
+                match value {
+                    Value::Array(a) => {
+                        for v in a.iter() {
+                            match v {
+                                Value::Number(n) => out.push(*n),
+                                Value::Error(e) => return Err(*e),
+                                _ => {}
+                            }
                         }
                     }
-                }
-                Value::Empty => {
-                    // A reference to a blank cell contributes nothing; an
-                    // omitted argument counts as 0.
-                    if matches!(arg, Expr::Missing) {
-                        out.push(0.0);
+                    Value::Empty => {
+                        // A reference to a blank cell contributes nothing; an
+                        // omitted argument counts as 0.
+                        if matches!(arg, Expr::Missing) {
+                            out.push(0.0);
+                        }
                     }
-                }
-                Value::Number(n) => out.push(n),
-                Value::Error(e) => return Err(e),
-                v => {
-                    if is_reference(arg) {
-                        // Text / boolean read from a single cell is skipped,
-                        // exactly like inside a range.
-                        continue;
-                    }
-                    out.push(self.to_number(&v)?);
+                    Value::Number(n) => out.push(n),
+                    Value::Error(e) => return Err(e),
+                    // Text / boolean read from a single cell is skipped,
+                    // exactly like inside a range.
+                    _ if is_reference(arg) => {}
+                    v => out.push(self.to_number(&v)?),
                 }
             }
         }
@@ -890,9 +1174,11 @@ impl<'a> EvalCtx<'a> {
     pub fn flatten(&self, args: &[Expr]) -> Vec<Value> {
         let mut out = Vec::new();
         for arg in args {
-            match self.eval(arg) {
-                Value::Array(a) => out.extend(a.iter().cloned()),
-                v => out.push(v),
+            for value in self.area_values(arg) {
+                match value {
+                    Value::Array(a) => out.extend(a.iter().cloned()),
+                    v => out.push(v),
+                }
             }
         }
         out
@@ -903,8 +1189,15 @@ impl<'a> EvalCtx<'a> {
 /// content" rather than a literal typed into the formula).
 pub fn is_reference(e: &Expr) -> bool {
     match e {
-        Expr::Ref(_) | Expr::Name(_) => true,
-        Expr::Paren(inner) => is_reference(inner),
+        Expr::Ref(_)
+        | Expr::Ref3D(_)
+        | Expr::Name(_)
+        | Expr::SheetName(..)
+        | Expr::Table(_)
+        | Expr::Spill(_)
+        | Expr::Intersect(..)
+        | Expr::Union(_) => true,
+        Expr::Paren(inner) | Expr::Implicit(inner) => is_reference(inner),
         // OFFSET, INDIRECT, INDEX... hand back cells too.
         Expr::Func(name, _) => functions::lookup(name).is_some_and(|def| def.ref_func.is_some()),
         _ => false,
