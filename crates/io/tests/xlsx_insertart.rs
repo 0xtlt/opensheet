@@ -84,3 +84,59 @@ fn wordart_keeps_the_look_of_its_letters() {
     // Written again, nothing moves.
     assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
 }
+
+/// The header of a GIF image: enough for a picture to know its size.
+fn gif(width: u16, height: u16) -> Vec<u8> {
+    let mut bytes = b"GIF89a".to_vec();
+    bytes.extend_from_slice(&width.to_le_bytes());
+    bytes.extend_from_slice(&height.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0, 0]);
+    bytes
+}
+
+#[test]
+fn vector_pictures_keep_their_document_beside_an_image() {
+    use opensheet_engine::drawing::Picture;
+    let star = br##"<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5-6.5-4.5-6.5 4.5 2-7.5L2 9h7z"/></svg>"##;
+    let mut wb = Workbook::new(Locale::en());
+    let picture = Picture::vector(star.to_vec(), gif(192, 192)).expect("a vector picture");
+    // Inserted at the size the document asks for, not that of its image.
+    let mut first = Drawing::picture(picture.clone());
+    assert_eq!(first.size, (96.0, 96.0));
+    first.offset = (30.0, 20.0);
+    let first = wb.add_drawing(0, first).unwrap();
+    assert_eq!(wb.drawing(0, first).unwrap().name, "Graphic 1");
+    // The same icon again, and a plain picture of the same image.
+    let mut second = Drawing::picture(picture);
+    second.offset = (200.0, 20.0);
+    second.rotation = 90.0;
+    wb.add_drawing(0, second).unwrap();
+    wb.add_picture(0, gif(192, 192), (10, 1)).unwrap();
+    wb.commit("pictures");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("opensheet-icons.xlsx", &bytes);
+
+    // One image and one document, however many pictures show them.
+    let names = common::part_names(&bytes);
+    assert_eq!(names.iter().filter(|name| name.starts_with("xl/media/")).count(), 2, "{names:?}");
+    assert_eq!(part(&bytes, "xl/media/image2.svg").as_bytes(), star);
+    let types = part(&bytes, "[Content_Types].xml");
+    assert!(types.contains("<Default Extension=\"svg\" ContentType=\"image/svg+xml\"/>"), "{types}");
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    assert_eq!(xml.matches("<asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"rId2\"/>").count(), 2, "{xml}");
+    assert_eq!(xml.matches("r:embed=\"rId1\"").count(), 3);
+    assert!(xml.contains("<a:ext uri=\"{96DAC541-7B7A-43D3-8B79-37D633B846F1}\">"));
+    let rels = part(&bytes, "xl/drawings/_rels/drawing1.xml.rels");
+    assert!(rels.contains("Target=\"../media/image1.gif\"") && rels.contains("Target=\"../media/image2.svg\""), "{rels}");
+    assert_eq!(rels.matches("relationships/image\"").count(), 2);
+
+    let back = load(&bytes);
+    let pictures: Vec<&Picture> = back.sheets[0].drawings.iter().map(|drawing| drawing.as_picture().unwrap()).collect();
+    assert_eq!(pictures[0].svg.as_deref(), Some(&star[..]));
+    assert_eq!(pictures[1].svg.as_deref(), Some(&star[..]));
+    assert!(pictures[2].svg.is_none());
+    assert_eq!(back.sheets[0].drawings[1].rotation, 90.0);
+    assert_eq!(back.drawing_frame(0, back.sheets[0].drawings[0].id).unwrap().width, 96.0);
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+}

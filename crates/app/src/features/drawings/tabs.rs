@@ -166,7 +166,7 @@ pub(super) fn length_field(id: &'static str, label: &'static str, field: &Entity
         .child(div().text_color(c(theme::TEXT_MUTED)).child(length_unit().0))
 }
 
-fn size_group(app: &mut ExcelApp, crop: bool, window: &mut Window, cx: &mut Cx) -> gpui::Div {
+pub(super) fn size_group(app: &mut ExcelApp, crop: bool, window: &mut Window, cx: &mut Cx) -> gpui::Div {
     let fields: Vec<AnyElement> = size_fields(app, window, cx)
         .map(|(height, width)| {
             vec![
@@ -207,7 +207,7 @@ fn split(app: &ExcelApp, id: &'static str, caret: &'static str, menu: [Cmd; 2], 
 }
 
 /// The Arrange group of the two tabs.
-fn arrange_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
+pub(super) fn arrange_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
     group(
         t("Arrange", "Organiser"),
         div()
@@ -227,7 +227,7 @@ fn arrange_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
     )
 }
 
-fn accessibility_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
+pub(super) fn accessibility_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
     group(
         t("Accessibility", "Accessibilité"),
         row(vec![app.cmd_large("dw-alt", Cmd::AltText, false, cx)]),

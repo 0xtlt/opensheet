@@ -137,3 +137,159 @@ fn formatting_reaches_the_selected_characters_of_a_shape(cx: &mut TestAppContext
     });
     assert!(!drawing(&app, cx, id).as_shape().unwrap().font.italic);
 }
+
+// -------------------------------------------------- icons and SVG pictures
+
+/// The pixels of an image file: red, green, blue, alpha.
+fn decoded(bytes: &[u8]) -> image::RgbaImage {
+    image::load_from_memory(bytes).expect("an image").into_rgba8()
+}
+
+#[gpui::test]
+fn icons_are_inserted_as_vector_pictures(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    // The command opens the dialog, which draws its icons.
+    run(&app, cx, Cmd::Icons);
+    assert!(app.update(cx, |app, _| app.modal_open()));
+    app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+    let dialog = app.update_in(cx, |app, window, cx| icons::open_dialog(app, false, window, cx)).expect("the dialog");
+    redraw(cx);
+    // Search narrows what is shown; two icons are ticked, one of them
+    // twice (which unticks it), then a third.
+    let found = dialog.update(cx, |dialog, cx| dialog.search_for("heart", cx));
+    assert_eq!(found.len(), 1);
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| {
+        dialog.toggle(found[0], cx);
+        dialog.toggle(0, cx);
+        dialog.toggle(0, cx);
+        dialog.toggle(5, cx);
+    });
+    dialog.update_in(cx, |dialog, window, cx| dialog.insert(&(), window, cx));
+    redraw(cx);
+    assert!(!app.update(cx, |app, _| app.modal_open()));
+    let all = ids(&app, cx);
+    assert_eq!(all.len(), 2);
+    let heart = drawing(&app, cx, all[0]);
+    let picture = heart.as_picture().expect("a picture");
+    assert!(picture.svg.is_some() && icons::is_graphic(&heart));
+    assert_eq!((heart.name.as_str(), heart.alt_text.as_str(), heart.size), ("Graphic 1", "Heart", (96.0, 96.0)));
+    // The image kept beside the document: twice its size, and drawn.
+    let image = decoded(&picture.data);
+    assert_eq!(image.dimensions(), (192, 192));
+    assert!(image.pixels().any(|pixel| pixel[3] == 255) && image.pixels().any(|pixel| pixel[3] == 0));
+    // The last one is selected and its tab shows.
+    assert_eq!(app.update(cx, |app, _| (selected(app).map(|d| d.id), app.context_tab)), (Some(all[1]), Some(GRAPHICS_TAB)));
+    assert_eq!(app.update(cx, |app, _| crate::features::context_tabs(app)[0].1.title), "Graphics Format");
+    for cmd in [Cmd::GraphicsFill, Cmd::GraphicsOutline, Cmd::ChangeGraphic] {
+        assert!(app.update(cx, |app, _| cmd.enabled(app)), "{cmd:?}");
+        run(&app, cx, cmd);
+        assert!(app.update(cx, |app, _| app.popup.take().is_some()), "{cmd:?}");
+    }
+    assert!(!app.update(cx, |app, _| Cmd::ConvertToShape.enabled(app)));
+    // Graphics Fill repaints the document and the image made of it.
+    let red = opensheet_engine::svg::Repaint::Fill(Some(Color(0xC00000)));
+    assert!(app.update(cx, |app, cx| icons::repaint_selected(app, "Graphics Fill", red, cx)));
+    redraw(cx);
+    let painted = drawing(&app, cx, all[1]);
+    let picture = painted.as_picture().unwrap();
+    assert!(std::str::from_utf8(picture.svg.as_deref().unwrap()).unwrap().contains("fill=\"#C00000\""));
+    assert!(decoded(&picture.data).pixels().any(|pixel| pixel.0 == [0xC0, 0, 0, 255]));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Graphics Fill"));
+    undo(&app, cx);
+    assert!(!decoded(&drawing(&app, cx, all[1]).as_picture().unwrap().data).pixels().any(|pixel| pixel[0] > 0x80));
+    // Another icon in its frame.
+    app.update(cx, |app, cx| {
+        app.wb.set_drawing_frame(app.sheet, all[1], Frame::new(300.0, 100.0, 48.0, 48.0));
+        app.commit("setup", cx);
+    });
+    let dialog = app.update_in(cx, |app, window, cx| icons::open_dialog(app, true, window, cx)).expect("the dialog");
+    dialog.update(cx, |dialog, cx| {
+        dialog.toggle(3, cx);
+        dialog.toggle(7, cx);
+    });
+    dialog.update_in(cx, |dialog, window, cx| dialog.insert(&(), window, cx));
+    redraw(cx);
+    let changed = drawing(&app, cx, all[1]);
+    assert_eq!((ids(&app, cx).len(), changed.size), (2, (48.0, 48.0)));
+    assert_ne!(changed.as_picture().unwrap().svg, painted.as_picture().unwrap().svg);
+    // The insertion was one step for both icons.
+    undo(&app, cx);
+    undo(&app, cx);
+    undo(&app, cx);
+    assert!(ids(&app, cx).is_empty());
+}
+
+#[gpui::test]
+fn svg_files_come_in_as_pictures_and_are_drawn_at_any_turn(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let file = br##"<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 12 6"><rect width="6" height="6" fill="#0070C0"/><text x="7" y="5" font-size="5">A</text></svg>"##;
+    app.update(cx, |app, cx| tool::insert_pictures(app, vec![file.to_vec(), b"no picture".to_vec()], None, cx));
+    redraw(cx);
+    let all = ids(&app, cx);
+    assert_eq!(all.len(), 1);
+    let inserted = drawing(&app, cx, all[0]);
+    assert_eq!((inserted.size, inserted.lock_aspect), ((120.0, 60.0), true));
+    let picture = inserted.as_picture().unwrap();
+    assert_eq!(picture.svg.as_deref(), Some(&file[..]));
+    // The left half of its image is the blue square.
+    let image = decoded(&picture.data);
+    assert_eq!(image.dimensions(), (240, 120));
+    assert_eq!(image.get_pixel(60, 60).0, [0x00, 0x70, 0xC0, 255]);
+    // Upright, on its side, flipped and at an odd angle, zoomed: each is
+    // painted (from the document or, turned oddly, from the image).
+    for (rotation, flip, zoom) in [(0.0, false, 1.0f32), (90.0, true, 2.5), (30.0, false, 1.0), (270.0, false, 0.4)] {
+        app.update(cx, |app, cx| {
+            app.wb.update_drawing(app.sheet, all[0], |drawing| {
+                drawing.rotation = rotation;
+                drawing.flip_h = flip;
+            });
+            app.commit("setup", cx);
+            app.set_zoom(zoom, cx);
+        });
+        redraw(cx);
+        let placed = app.update(cx, |app, _| {
+            let layout = app.current_layout().unwrap();
+            let pane = *paint::panes(&layout).last().unwrap();
+            paint::placed(&layout, &app.wb.sheets[app.sheet], selected(app).unwrap(), &pane)
+        });
+        let vector = icons::image_for(inserted.as_picture().unwrap(), &placed, 2.0);
+        assert_eq!(vector.is_some(), rotation != 30.0, "{rotation}");
+        if let Some((image, _)) = vector {
+            let (w, h) = (image.size(0).width.0, image.size(0).height.0);
+            // Drawn at the size it is shown: sharper as the zoom grows.
+            let expected = (120.0 * zoom * 2.0).round() as i32;
+            // (To a pixel or two: frames end on cell edges.)
+            let drawn = if rotation == 0.0 { w } else { h };
+            assert!((drawn - expected).abs() <= 2, "{rotation} {zoom}: {drawn}");
+        }
+    }
+}
+
+/// Every icon of the gallery on one sheet, written where
+/// `OPENSHEET_SAMPLES` says: to look at what was drawn.
+#[gpui::test]
+fn the_icons_draw(cx: &mut TestAppContext) {
+    let (_app, cx) = open(cx);
+    cx.update(|_, cx| svg::install(cx));
+    let all = icon_set::icons();
+    let (side, columns) = (72u32, 9u32);
+    let rows = (all.len() as u32).div_ceil(columns);
+    let mut sheet = image::RgbaImage::from_pixel(columns * side, rows * side, image::Rgba([255, 255, 255, 255]));
+    for (i, icon) in all.iter().enumerate() {
+        let sized = opensheet_engine::svg::resized(icon.svg().as_bytes(), 56.0, 56.0).unwrap();
+        let bitmap = svg::rasterize(&sized).unwrap_or_else(|| panic!("{} does not draw", icon.english));
+        // Something is drawn, and not everything.
+        let inked = bitmap.data.chunks_exact(4).filter(|pixel| pixel[3] > 128).count();
+        assert!(inked > 150 && inked < 56 * 56 * 9 / 10, "{}: {inked}", icon.english);
+        let (x0, y0) = ((i as u32 % columns) * side + 8, (i as u32 / columns) * side + 8);
+        for (at, pixel) in bitmap.data.chunks_exact(4).enumerate() {
+            let (x, y) = (x0 + at as u32 % bitmap.width, y0 + at as u32 / bitmap.width);
+            let shade = 255 - pixel[3];
+            sheet.put_pixel(x, y, image::Rgba([shade, shade, shade, 255]));
+        }
+    }
+    if let Some(directory) = std::env::var_os("OPENSHEET_SAMPLES") {
+        sheet.save(std::path::Path::new(&directory).join("opensheet-icons.png")).expect("the sheet of icons");
+    }
+}

@@ -60,6 +60,7 @@ const MAX_PX: f64 = 600_000_000.0;
 const ROOT_END: &str = "</xdr:wsDr>";
 const RELS_END: &str = "</Relationships>";
 
+mod svg;
 mod wordart;
 
 // ---- writing -------------------------------------------------------------------
@@ -277,22 +278,29 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     x.push_str("</xdr:sp>");
 }
 
-/// `image` is the relationship of the drawing part to the image file.
-fn push_picture(x: &mut String, drawing: &Drawing, id: usize, frame: Frame, image: usize) {
+/// `image` is the relationship of the drawing part to the image file,
+/// `vector` the one to the SVG document of a vector picture.
+fn push_picture(x: &mut String, drawing: &Drawing, id: usize, frame: Frame, image: usize, vector: Option<usize>) {
     x.push_str("<xdr:pic><xdr:nvPicPr>");
     push_identity(x, drawing, id);
     push_non_visual(x, "cNvPicPr", "", "picLocks", drawing);
-    w!(
-        x,
-        "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr>"
-    );
+    w!(x, "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\"");
+    match vector {
+        Some(vector) => {
+            x.push('>');
+            svg::push_extension(x, vector);
+            x.push_str("</a:blip>");
+        }
+        None => x.push_str("/>"),
+    }
+    x.push_str("<a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr>");
     push_xfrm(x, drawing, frame);
     x.push_str("<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>");
 }
 
 /// One anchor with its object. `id` is the object's own in the part,
 /// `image` the relationship to the image of a picture.
-fn push_anchor(x: &mut String, sheet: &Sheet, drawing: &Drawing, id: usize, image: Option<usize>) {
+fn push_anchor(x: &mut String, sheet: &Sheet, drawing: &Drawing, id: usize, image: Option<(usize, Option<usize>)>) {
     // Excel anchors everything by two cells and says apart how the
     // object follows them.
     x.push_str("<xdr:twoCellAnchor");
@@ -306,7 +314,7 @@ fn push_anchor(x: &mut String, sheet: &Sheet, drawing: &Drawing, id: usize, imag
     let frame = sheet.drawing_frame(drawing);
     match (&drawing.kind, image) {
         (DrawingKind::Shape(shape), _) => push_shape(x, drawing, shape, id, frame),
-        (DrawingKind::Picture(_), Some(image)) => push_picture(x, drawing, id, frame, image),
+        (DrawingKind::Picture(_), Some((image, vector))) => push_picture(x, drawing, id, frame, image, vector),
         (DrawingKind::Picture(_), None) => {}
     }
     x.push_str("<xdr:clientData");
@@ -336,18 +344,22 @@ struct Media(Vec<(Arc<[u8]>, String)>);
 impl Media {
     /// The file of a picture, stored once however many pictures show it.
     fn name(&mut self, picture: &Picture, extras: &mut Extras) -> String {
+        self.file(&picture.data, picture.format.extension(), picture.format.mime(), extras)
+    }
+
+    /// A media file of the package, stored once.
+    fn file(&mut self, bytes: &Arc<[u8]>, extension: &'static str, mime: &'static str, extras: &mut Extras) -> String {
         let known = self
             .0
             .iter()
-            .find(|(data, _)| Arc::ptr_eq(data, &picture.data) || **data == *picture.data);
+            .find(|(data, name)| name.ends_with(extension) && (Arc::ptr_eq(data, bytes) || **data == **bytes));
         if let Some((_, name)) = known {
             return name.clone();
         }
-        let extension = picture.format.extension();
         let name = format!("image{}.{extension}", self.0.len() + 1);
-        extras.add_default(extension, picture.format.mime());
-        extras.add_part(format!("xl/media/{name}"), None, picture.data.to_vec());
-        self.0.push((picture.data.clone(), name.clone()));
+        extras.add_default(extension, mime);
+        extras.add_part(format!("xl/media/{name}"), None, bytes.to_vec());
+        self.0.push((bytes.clone(), name.clone()));
         name
     }
 }
@@ -382,14 +394,21 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
         let mut anchors = String::new();
         let mut images: Vec<String> = Vec::new();
         for (k, drawing) in sheet.drawings.iter().enumerate() {
-            let image = drawing.as_picture().map(|picture| {
-                let name = media.name(picture, extras);
+            let mut related = |name: String| {
                 let place = images.iter().position(|known| *known == name);
                 let place = place.unwrap_or_else(|| {
                     images.push(name);
                     images.len() - 1
                 });
                 charts + 1 + place
+            };
+            let image = drawing.as_picture().map(|picture| {
+                let image = related(media.name(picture, extras));
+                let vector = picture
+                    .svg
+                    .as_ref()
+                    .map(|document| related(media.file(document, "svg", "image/svg+xml", extras)));
+                (image, vector)
             });
             push_anchor(&mut anchors, sheet, drawing, charts + 2 + k, image);
         }
@@ -740,8 +759,9 @@ fn printable(text: &str, lines: bool) -> String {
 
 /// What an anchor holds, as its part says it.
 enum RawKind {
-    /// The relationship of the drawing part to the image.
-    Picture(String),
+    /// The relationships of the drawing part to the image and, for a
+    /// vector picture, to its SVG document.
+    Picture(String, Option<String>),
     Shape(Shape),
 }
 
@@ -804,8 +824,9 @@ impl RawObject {
 }
 
 fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawObject> {
-    let mut object = RawObject::new(RawKind::Picture(String::new()));
+    let mut object = RawObject::new(RawKind::Picture(String::new(), None));
     let mut embed = None;
+    let mut vector = None;
     each_child(r, tag, |r, t| match t.name {
         "nvPicPr" => {
             object.parse_identity(r, t);
@@ -813,8 +834,10 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawObject> {
         "blipFill" => each_child(r, t, |r, c| {
             if c.name == "blip" {
                 embed = c.attr_local("embed").map(|id| id.into_owned());
+                vector = svg::parse_extension(r, c);
+            } else {
+                r.skip(c);
             }
-            r.skip(c);
         }),
         "spPr" => each_child(r, t, |r, c| match c.name {
             "xfrm" => object.parse_xfrm(r, c),
@@ -823,14 +846,14 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawObject> {
         _ => r.skip(t),
     });
     // A picture that is only linked has no image in the file.
-    object.kind = RawKind::Picture(embed.filter(|id| !id.is_empty())?);
+    object.kind = RawKind::Picture(embed.filter(|id| !id.is_empty())?, vector);
     Some(object)
 }
 
 fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObject {
     let palette = theme.palette;
     let connector = tag.name == "cxnSp";
-    let mut object = RawObject::new(RawKind::Picture(String::new()));
+    let mut object = RawObject::new(RawKind::Picture(String::new(), None));
     let mut text_box = false;
     let mut preset = None;
     let mut fill = Paint::Unset;
@@ -1016,6 +1039,8 @@ pub(crate) struct Loader {
     /// The image files read so far, by part name; `None` for those that
     /// are missing or not images the engine shows.
     images: HashMap<String, Option<Picture>>,
+    /// The SVG documents of vector pictures, by part name.
+    vectors: HashMap<String, Option<Arc<[u8]>>>,
     /// The widths of the line styles of the workbook's theme, in points.
     line_widths: [f32; 3],
 }
@@ -1031,6 +1056,7 @@ impl Loader {
         Loader {
             next_id: 1,
             images: HashMap::new(),
+            vectors: HashMap::new(),
             line_widths: theme.map_or(LINE_WIDTHS, |xml| parse_line_widths(&xml)),
         }
     }
@@ -1076,21 +1102,26 @@ impl Loader {
             };
             let mut drawing = match object.kind {
                 RawKind::Shape(shape) => Drawing::shape(shape, (0.0, 0.0)),
-                RawKind::Picture(embed) => {
-                    let Some(target) = rels
-                        .iter()
-                        .find(|rel| rel.id == embed && rel.kind == "image")
-                        .map(|rel| rel.target.clone())
-                    else {
+                RawKind::Picture(embed, vector) => {
+                    let image_of = |id: &str| rels.iter().find(|rel| rel.id == id && rel.kind == "image").map(|rel| rel.target.clone());
+                    let Some(target) = image_of(&embed) else {
                         continue;
                     };
                     let image = self.images.entry(target).or_insert_with_key(|target| {
                         pkg.read_bytes(target).ok().flatten().and_then(Picture::new)
                     });
-                    match image {
-                        Some(picture) => Drawing::picture(picture.clone()),
-                        None => continue,
+                    let Some(mut picture) = image.clone() else {
+                        continue;
+                    };
+                    // A vector picture: its document, shared like images.
+                    if let Some(target) = vector.and_then(|id| image_of(&id)) {
+                        let document = self.vectors.entry(target).or_insert_with_key(|target| {
+                            let bytes = pkg.read_bytes(target).ok().flatten()?;
+                            opensheet_engine::svg::is_svg(&bytes).then(|| Arc::from(bytes))
+                        });
+                        picture.svg = document.clone();
                     }
+                    Drawing::picture(picture)
                 }
             };
             drawing.placement = anchor.placement;

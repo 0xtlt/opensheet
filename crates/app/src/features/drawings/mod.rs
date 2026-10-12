@@ -24,6 +24,8 @@
 //! drawing sized with its cells follows them without being touched.
 
 pub(crate) mod geometry;
+mod icon_set;
+mod icons;
 mod paint;
 mod pane;
 mod picture;
@@ -60,6 +62,7 @@ pub struct Drawings;
 
 const PICTURE_TAB: &str = "picture-format";
 const SHAPE_TAB: &str = "shape-format";
+const GRAPHICS_TAB: &str = "graphics-format";
 
 commands! {
     /// What the user can ask of pictures and shapes.
@@ -114,6 +117,13 @@ commands! {
         TextOutline = "borders", t("Text Outline", "Contour du texte");
         TextEffects = "wordart", t("Text Effects", "Effets du texte");
         WordArtStyles = "wordart", t("Quick Styles", "Styles rapides");
+        // Graphics Format
+        ChangeGraphic = "picture", t("Change Graphic", "Changer d'image");
+        ChangeGraphicFromIcons = "shapes", t("From Icons…", "À partir d'icônes…");
+        ConvertToShape = "shapes", t("Convert to Shape", "Convertir en forme");
+        GraphicsFill = "fill", t("Graphics Fill", "Remplissage d'image");
+        GraphicsOutline = "borders", t("Graphics Outline", "Contour d'image");
+        GraphicsEffects = "shapes", t("Graphics Effects", "Effets d'image");
         // Both
         AltText = "comment", t("Alt Text", "Texte de remplacement");
         ViewAltText = "comment", t("View Alt Text…", "Afficher le texte de remplacement…");
@@ -143,6 +153,12 @@ impl Command for Cmd {
             }
             // One object is selected at a time: there is nothing to group.
             Cmd::Group | Cmd::EditPoints => false,
+            Cmd::ChangeGraphic | Cmd::ChangeGraphicFromIcons | Cmd::GraphicsFill | Cmd::GraphicsOutline => {
+                drawing.is_some_and(icons::is_graphic)
+            }
+            // The outlines of a document cannot become a shape of the
+            // gallery, and graphics have no effects here.
+            Cmd::ConvertToShape | Cmd::GraphicsEffects => false,
             Cmd::Rotate
             | Cmd::RotateRight
             | Cmd::RotateLeft
@@ -220,6 +236,21 @@ impl Command for Cmd {
             Cmd::ShapeFill => tabs::open_fill(app, tabs::Paint::Fill, window, cx),
             Cmd::TextFill => tabs::open_fill(app, tabs::Paint::Text, window, cx),
             Cmd::ShapeOutline => tabs::open_outline(app, window, cx),
+            Cmd::Icons => {
+                icons::open_dialog(app, false, window, cx);
+            }
+            Cmd::ChangeGraphic => {
+                let entries = vec![
+                    MenuEntry::command(Cmd::ChangePictureFromFile, app),
+                    MenuEntry::command(Cmd::ChangeGraphicFromIcons, app),
+                ];
+                app.open_command_menu(entries, 220.0, window, cx);
+            }
+            Cmd::ChangeGraphicFromIcons => {
+                icons::open_dialog(app, true, window, cx);
+            }
+            Cmd::GraphicsFill => icons::open_paint(app, icons::Part::Fill, window, cx),
+            Cmd::GraphicsOutline => icons::open_paint(app, icons::Part::Outline, window, cx),
             Cmd::WordArt => wordart::open_gallery(app, false, window, cx),
             Cmd::WordArtStyles => wordart::open_gallery(app, true, window, cx),
             Cmd::TextOutline => wordart::open_outline(app, window, cx),
@@ -365,11 +396,7 @@ fn flip(app: &mut ExcelApp, horizontal: bool, cx: &mut Cx) {
 
 /// The size a picture has when it is inserted, in pixels at 100 %.
 fn natural_size(drawing: &Drawing) -> Option<(f32, f32)> {
-    let picture = drawing.as_picture()?;
-    Some(
-        opensheet_engine::drawing::image_info(&picture.data)
-            .map_or((picture.pixels.0 as f32, picture.pixels.1 as f32), |info| info.natural_size()),
-    )
+    Some(drawing.as_picture()?.natural_size())
 }
 
 /// "Reset Picture": upright and unflipped again; with `size`, back to the
@@ -577,6 +604,10 @@ impl Feature for Drawings {
 
     fn context_tabs(&self, app: &ExcelApp) -> Vec<ContextTab> {
         match selected(app) {
+            Some(drawing) if icons::is_graphic(drawing) => vec![ContextTab {
+                id: GRAPHICS_TAB,
+                title: t("Graphics Format", "Format du graphique"),
+            }],
             Some(drawing) if is_picture(drawing) => vec![ContextTab {
                 id: PICTURE_TAB,
                 title: t("Picture Format", "Format de l'image"),
@@ -590,7 +621,9 @@ impl Feature for Drawings {
     }
 
     fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        if tab == PICTURE_TAB {
+        if tab == GRAPHICS_TAB {
+            icons::graphics_tab(app, window, cx)
+        } else if tab == PICTURE_TAB {
             tabs::picture_tab(app, window, cx)
         } else {
             tabs::shape_tab(app, window, cx)
@@ -799,7 +832,7 @@ impl Feature for Drawings {
             return;
         };
         if is_picture(drawing) {
-            app.context_tab = Some(PICTURE_TAB);
+            app.context_tab = Some(if icons::is_graphic(drawing) { GRAPHICS_TAB } else { PICTURE_TAB });
             cx.notify();
         } else if drawing.as_shape().is_some_and(|shape| shape.preset.is_line()) {
             app.context_tab = Some(SHAPE_TAB);

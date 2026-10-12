@@ -211,6 +211,10 @@ pub struct Picture {
     pub data: Arc<[u8]>,
     /// Width and height of the image in pixels.
     pub pixels: (u32, u32),
+    /// A vector picture (an icon, an SVG file): the SVG document. `data`
+    /// is then the PNG image of it a file keeps beside it for
+    /// applications that cannot draw vectors, and what is printed.
+    pub svg: Option<Arc<[u8]>>,
 }
 
 impl Picture {
@@ -222,7 +226,30 @@ impl Picture {
             format: info.format,
             data,
             pixels: info.pixels,
+            svg: None,
         })
+    }
+
+    /// A vector picture: an SVG document and the image that stands for
+    /// it where vectors cannot be drawn. `None` when either is not what
+    /// it should be.
+    pub fn vector(svg: impl Into<Arc<[u8]>>, fallback: impl Into<Arc<[u8]>>) -> Option<Picture> {
+        let svg = svg.into();
+        crate::svg::svg_size(&svg)?;
+        Some(Picture {
+            svg: Some(svg),
+            ..Picture::new(fallback)?
+        })
+    }
+
+    /// The size the picture has when inserted, in pixels at 100 %: the
+    /// size a vector picture asks for, the physical size of a bitmap.
+    pub fn natural_size(&self) -> (f32, f32) {
+        self.svg
+            .as_deref()
+            .and_then(crate::svg::svg_size)
+            .or_else(|| image_info(&self.data).map(|info| info.natural_size()))
+            .unwrap_or((self.pixels.0 as f32, self.pixels.1 as f32))
     }
 }
 
@@ -941,6 +968,11 @@ fn picture_name(locale: &Locale) -> &'static str {
     localized(locale, ["Picture", "Image", "Imagen", "Bild", "Immagine"])
 }
 
+/// The name Excel gives a vector picture, before its number.
+fn graphic_name(locale: &Locale) -> &'static str {
+    localized(locale, ["Graphic", "Graphique", "Gráfico", "Grafik", "Elemento grafico"])
+}
+
 // ---- drawings ------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1045,8 +1077,7 @@ impl Drawing {
     /// A picture at its natural size, as Excel inserts it: it moves with
     /// its cell without being sized with it, and keeps its proportions.
     pub fn picture(picture: Picture) -> Drawing {
-        let size =
-            image_info(&picture.data).map_or((picture.pixels.0 as f32, picture.pixels.1 as f32), |i| i.natural_size());
+        let size = picture.natural_size();
         Drawing::new(DrawingKind::Picture(picture), size, Placement::MoveOnly, true)
     }
 
@@ -1379,6 +1410,7 @@ impl Workbook {
         let sh = &mut self.sheets[sheet];
         if drawing.name.is_empty() {
             let base = match &drawing.kind {
+                DrawingKind::Picture(picture) if picture.svg.is_some() => graphic_name(self.locale),
                 DrawingKind::Picture(_) => picture_name(self.locale),
                 DrawingKind::Shape(shape) => {
                     let tool = ShapeTool::ALL.into_iter().find(|tool| {

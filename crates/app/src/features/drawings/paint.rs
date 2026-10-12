@@ -370,7 +370,9 @@ fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f
 pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     match &drawing.kind {
         DrawingKind::Shape(shape) => draw_shape(shape, placed, natural, brush, text, out),
-        DrawingKind::Picture(picture) => match picture::image_for(picture, placed, brush.scale) {
+        DrawingKind::Picture(picture) => match super::icons::image_for(picture, placed, brush.scale)
+            .or_else(|| picture::image_for(picture, placed, brush.scale))
+        {
             Some((image, (x0, y0, x1, y1))) => out.push(Draw::Image {
                 image,
                 bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),

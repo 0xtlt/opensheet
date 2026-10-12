@@ -23,6 +23,9 @@ pub const MAX_SIDE: f32 = 4096.0;
 /// How many repaints a bitmap that is no longer drawn is kept for.
 const KEPT_FOR: u64 = 300;
 
+/// How many bitmaps are kept at most.
+const MAX_KEPT: usize = 64;
+
 struct Shown {
     image: Arc<RenderImage>,
     used: u64,
@@ -136,6 +139,16 @@ pub fn sweep(window: &mut Window, cx: &mut App) {
             None => *repaint % KEPT_FOR != 0,
             _ => true,
         });
+        // A picture being resized is drawn at a new size at every
+        // repaint: only the latest sizes are kept.
+        while images.len() > MAX_KEPT {
+            let Some(oldest) = images.iter().min_by_key(|(_, entry)| entry.as_ref().map_or(0, |shown| shown.used)).map(|(key, _)| *key) else {
+                break;
+            };
+            if let Some(Some(shown)) = images.remove(&oldest) {
+                retired.push(shown.image);
+            }
+        }
         std::mem::take(retired)
     });
     for image in retired {
@@ -161,48 +174,13 @@ pub fn escape(text: &str) -> String {
     out
 }
 
-fn base64(data: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
-    for chunk in data.chunks(3) {
-        let bits = (chunk[0] as u32) << 16 | (*chunk.get(1).unwrap_or(&0) as u32) << 8 | *chunk.get(2).unwrap_or(&0) as u32;
-        for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
-            if i <= chunk.len() {
-                out.push(ALPHABET[(bits >> shift) as usize & 63] as char);
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
-}
-
-/// A document that shows another one stretched over `width` × `height`
-/// pixels: how a picture of any proportions is drawn in its frame.
-pub fn stretched(svg: &[u8], width: f32, height: f32) -> String {
-    let fit = (MAX_SIDE / width.max(height).max(1.0)).min(1.0);
-    let (width, height) = ((width * fit).round().max(1.0), (height * fit).round().max(1.0));
-    format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{width}" height="{height}" viewBox="0 0 {width} {height}"><image width="{width}" height="{height}" preserveAspectRatio="none" xlink:href="data:image/svg+xml;base64,{}"/></svg>"#,
-        base64(svg)
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn documents_are_wrapped_and_escaped() {
-        assert_eq!(base64(b""), "");
-        assert_eq!(base64(b"f"), "Zg==");
-        assert_eq!(base64(b"fo"), "Zm8=");
-        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    fn text_is_escaped_and_bitmaps_are_told_apart() {
         assert_eq!(escape("a<b & \"c\"\n"), "a&lt;b &amp; &quot;c&quot; ");
-        let wrapped = stretched(b"<svg/>", 200.4, 50.0);
-        assert!(wrapped.contains(r#"width="200" height="50""#) && wrapped.contains("base64,PHN2Zy8+"));
-        // A frame larger than any screen is drawn from fewer pixels.
-        assert!(stretched(b"<svg/>", 8192.0, 1024.0).contains(r#"width="4096" height="512""#));
         assert_ne!(key("a", (false, false, 0)), key("a", (true, false, 0)));
     }
 }
