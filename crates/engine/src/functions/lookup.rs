@@ -32,15 +32,11 @@ const MAX_CELLS: usize = 1 << 24;
 
 // ---- arguments -----------------------------------------------------------
 
-/// True when the expression may denote cells: a reference, a name, or a call
-/// to a function able to return a reference (`OFFSET`, `INDEX`, ...).
+/// True when the expression may denote cells: a reference of any kind, a
+/// name, or a call to a function able to return a reference (`OFFSET`,
+/// `INDEX`, ...).
 fn may_be_ref(e: &Expr) -> bool {
-    match e {
-        Expr::Ref(_) | Expr::Name(_) => true,
-        Expr::Paren(inner) => may_be_ref(inner),
-        Expr::Func(name, _) => super::lookup(name).is_some_and(|d| d.ref_func.is_some()),
-        _ => false,
-    }
+    crate::eval::is_reference(e)
 }
 
 /// An evaluated array argument together with its true dimensions.
@@ -1029,12 +1025,18 @@ fn index_pos(
     Ok((pick(r, rows), pick(c, cols)))
 }
 
-/// `area_num` can only be 1: references here are always a single area.
-fn index_area(ctx: &EvalCtx, args: &[Expr]) -> R<()> {
-    match opt_num(ctx, args, 3)? {
-        Some(n) if n.trunc() != 1.0 => Err(ErrorKind::Ref),
-        _ => Ok(()),
+/// The area of a reference that `area_num` selects (the first one when
+/// the argument is absent): `INDEX((A1:B2,D1:E2),1,1,2)` reads `D1`.
+/// `#REF!` when there is no such area.
+fn index_area(ctx: &EvalCtx, args: &[Expr], areas: &[Reference]) -> R<Reference> {
+    let n = match opt_num(ctx, args, 3)? {
+        Some(n) => n.trunc(),
+        None => 1.0,
+    };
+    if n < 1.0 || n > areas.len() as f64 {
+        return Err(ErrorKind::Ref);
     }
+    Ok(areas[n as usize - 1])
 }
 
 fn index_numbers(ctx: &EvalCtx, row: &Value, col: Option<&Value>) -> R<(f64, Option<f64>)> {
@@ -1078,14 +1080,22 @@ fn index_args(ctx: &EvalCtx, args: &[Expr]) -> (Value, Option<Value>) {
 }
 
 fn f_index(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
-    index_area(ctx, args)?;
+    let areas = if may_be_ref(&args[0]) {
+        ctx.eval_areas(&args[0]).ok()
+    } else {
+        None
+    };
+    let base = match areas {
+        Some(areas) => Some(index_area(ctx, args, &areas)?),
+        // An array is a single area.
+        None => match opt_num(ctx, args, 3)? {
+            Some(n) if n.trunc() != 1.0 => return Err(ErrorKind::Ref),
+            _ => None,
+        },
+    };
     let (row, col) = index_args(ctx, args);
     let lifted = row.dims() != (1, 1) || col.as_ref().is_some_and(|c| c.dims() != (1, 1));
 
-    let mut base = None;
-    if may_be_ref(&args[0]) {
-        base = ctx.eval_ref(&args[0]).ok();
-    }
     let grid = match base {
         // Scalar positions into a reference select cells: only those are
         // read, exactly as if they had been referred to directly.
@@ -1130,8 +1140,8 @@ fn f_index(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
 }
 
 fn r_index(ctx: &EvalCtx, args: &[Expr]) -> R<Reference> {
-    let base = ctx.eval_ref(&args[0])?;
-    index_area(ctx, args)?;
+    let areas = ctx.eval_areas(&args[0])?;
+    let base = index_area(ctx, args, &areas)?;
     let (row, col) = index_args(ctx, args);
     index_ref(ctx, base, &row, col.as_ref())
 }
@@ -1248,8 +1258,7 @@ fn f_columns(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
 }
 
 fn f_areas(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
-    ctx.eval_ref(&args[0])?;
-    Ok(Value::Number(1.0))
+    Ok(Value::Number(ctx.eval_areas(&args[0])?.len() as f64))
 }
 
 // ---- OFFSET, INDIRECT, ADDRESS ----------------------------------------------
@@ -1472,6 +1481,29 @@ fn f_formulatext(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
         }
     }
     finish(out)
+}
+
+// ---- GETPIVOTDATA -------------------------------------------------------------
+
+/// `GETPIVOTDATA(data_field, pivot_table, [field1, item1], ...)`: the value
+/// a PivotTable shows for a value field at the given items. `#REF!` when the
+/// reference is not in a PivotTable, or when the report shows no such value.
+fn f_getpivotdata(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
+    if !args.len().is_multiple_of(2) {
+        return Err(ErrorKind::Ref);
+    }
+    let data_field = ctx.text(&args[0])?;
+    let reference = ctx.eval_ref(&args[1]).map_err(|_| ErrorKind::Ref)?;
+    let mut pairs = Vec::with_capacity(args.len() / 2 - 1);
+    for pair in args[2..].chunks(2) {
+        let field = ctx.text(&pair[0])?;
+        match ctx.eval_scalar(&pair[1]) {
+            Value::Error(e) => return Err(e),
+            item => pairs.push((field, item)),
+        }
+    }
+    let at = (reference.sheet, reference.rect.r0, reference.rect.c0);
+    crate::pivot::get_pivot_data(ctx.workbook(), at, &data_field, &pairs)
 }
 
 // ---- dynamic arrays -----------------------------------------------------------
@@ -1964,6 +1996,7 @@ pub const FUNCTIONS: &[FunctionDef] = &[
     FunctionDef::new("ADDRESS", 2, 5, Kind::Scalar, Category::Lookup, f_address),
     FunctionDef::new("HYPERLINK", 1, 2, Kind::Scalar, Category::Lookup, f_hyperlink),
     FunctionDef::new("FORMULATEXT", 1, 1, Kind::Raw, Category::Lookup, f_formulatext),
+    FunctionDef::new("GETPIVOTDATA", 2, VAR, Kind::Raw, Category::Lookup, f_getpivotdata),
     FunctionDef::new("TRANSPOSE", 1, 1, Kind::Raw, Category::Lookup, f_transpose),
     FunctionDef::new("FILTER", 2, 3, Kind::Raw, Category::Lookup, f_filter),
     FunctionDef::new("SORT", 1, 4, Kind::Raw, Category::Lookup, f_sort),

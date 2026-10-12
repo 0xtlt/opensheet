@@ -71,7 +71,7 @@ fn f_isodd(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
 }
 
 fn f_isref(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
-    Ok(Value::Bool(ctx.eval_ref(&args[0]).is_ok()))
+    Ok(Value::Bool(ctx.eval_areas(&args[0]).is_ok()))
 }
 
 /// `ISFORMULA(reference)`: element-wise over a multi-cell reference.
@@ -132,8 +132,11 @@ fn f_sheet(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
         None | Some(Expr::Missing) => return Ok(Value::Number(ctx.sheet as f64 + 1.0)),
         Some(e) => e,
     };
-    if let Ok(reference) = ctx.eval_ref(arg) {
-        return Ok(Value::Number(reference.sheet as f64 + 1.0));
+    // Of a 3-D reference, the first sheet.
+    if let Ok(areas) = ctx.eval_areas(arg)
+        && let Some(sheet) = areas.iter().map(|area| area.sheet).min()
+    {
+        return Ok(Value::Number(sheet as f64 + 1.0));
     }
     // Otherwise the argument names a sheet.
     match ctx.eval_scalar(arg) {
@@ -150,12 +153,15 @@ fn f_sheets(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     match args.first() {
         None | Some(Expr::Missing) => Ok(Value::Number(ctx.workbook().sheets.len() as f64)),
         Some(e) => {
-            // A reference always lies on exactly one sheet (no 3-D ranges).
-            ctx.eval_ref(e).map_err(|err| match err {
+            // One sheet, unless the reference is 3-D (`Sheet1:Sheet3!A1`).
+            let areas = ctx.eval_areas(e).map_err(|err| match err {
                 ErrorKind::Value => ErrorKind::Ref,
                 other => other,
             })?;
-            Ok(Value::Number(1.0))
+            let mut sheets: Vec<usize> = areas.iter().map(|area| area.sheet).collect();
+            sheets.sort_unstable();
+            sheets.dedup();
+            Ok(Value::Number(sheets.len() as f64))
         }
     }
 }

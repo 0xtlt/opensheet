@@ -49,6 +49,13 @@ pub struct Locale {
     pub accounting_format: &'static str,
     /// Default name prefix for new sheets ("Sheet", "Feuil").
     pub sheet_prefix: &'static str,
+    /// Default name prefix for new tables ("Table", "Tableau").
+    pub table_prefix: &'static str,
+    /// Default name prefix for table columns without a header ("Column",
+    /// "Colonne").
+    pub column_prefix: &'static str,
+    /// Label written in the first cell of a table's totals row.
+    pub total_label: &'static str,
     /// Separator accepted in typed dates besides `/` and `-` (`.` in German).
     pub date_sep: char,
     /// Letters standing for day and year in number-format codes written in
@@ -57,6 +64,14 @@ pub struct Locale {
     pub fmt_year: char,
     /// Name of the language in that language.
     pub display_name: &'static str,
+    /// Item specifiers of structured references (`Table1[#All]`), in
+    /// `TableItem::ALL` order: all, data, headers, totals, this row.
+    pub table_items: [&'static str; 5],
+    /// Other spellings of the item specifiers accepted when typed.
+    pub table_item_aliases: &'static [(&'static str, usize)],
+    /// Row and column letters of the R1C1 notation (`L1C1` in French),
+    /// uppercase: a defined name may not look like such a reference.
+    pub r1c1: (char, char),
     fn_pairs: &'static [(&'static str, &'static str)],
     maps: OnceLock<(HashMap<&'static str, &'static str>, HashMap<&'static str, &'static str>)>,
 }
@@ -144,6 +159,22 @@ impl Locale {
             }
         }
         ErrorKind::from_str(&up)
+    }
+
+    /// Index (in `TableItem::ALL` order) of a structured-reference item
+    /// specifier such as `#Headers`, in this locale or in English, compared
+    /// without case.
+    pub fn parse_table_item(&self, s: &str) -> Option<usize> {
+        let wanted = s.trim().to_lowercase();
+        let find = |names: &[&str; 5]| names.iter().position(|n| n.to_lowercase() == wanted);
+        find(&self.table_items)
+            .or_else(|| find(&EN.table_items))
+            .or_else(|| {
+                self.table_item_aliases
+                    .iter()
+                    .find(|(alias, _)| alias.to_lowercase() == wanted)
+                    .map(|(_, index)| *index)
+            })
     }
 
     pub fn bool_name(&self, b: bool) -> &'static str {
@@ -388,10 +419,16 @@ static EN: Locale = Locale {
     currency_format: "$#,##0.00",
     accounting_format: "_($* #,##0.00_);_($* (#,##0.00);_($* \"-\"??_);_(@_)",
     sheet_prefix: "Sheet",
+    table_prefix: "Table",
+    column_prefix: "Column",
+    total_label: "Total",
     date_sep: '/',
     fmt_day: 'd',
     fmt_year: 'y',
     display_name: "English",
+    table_items: ["#All", "#Data", "#Headers", "#Totals", "#This Row"],
+    table_item_aliases: &[],
+    r1c1: ('R', 'C'),
     fn_pairs: &[],
     maps: OnceLock::new(),
 };
@@ -435,10 +472,16 @@ static FR: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Feuil",
+    table_prefix: "Tableau",
+    column_prefix: "Colonne",
+    total_label: "Total",
     date_sep: '/',
     fmt_day: 'j',
     fmt_year: 'a',
     display_name: "Français",
+    table_items: ["#Tout", "#Données", "#En-têtes", "#Totaux", "#Cette ligne"],
+    table_item_aliases: &[],
+    r1c1: ('L', 'C'),
     fn_pairs: names_fr::FUNCTIONS,
     maps: OnceLock::new(),
 };
@@ -500,10 +543,16 @@ static ES: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Hoja",
+    table_prefix: "Tabla",
+    column_prefix: "Columna",
+    total_label: "Total",
     date_sep: '/',
     fmt_day: 'd',
     fmt_year: 'a',
     display_name: "Español",
+    table_items: ["#Todo", "#Datos", "#Encabezados", "#Totales", "#Esta fila"],
+    table_item_aliases: &[("#Todas", 0)],
+    r1c1: ('F', 'C'),
     fn_pairs: names_es::FUNCTIONS,
     maps: OnceLock::new(),
 };
@@ -563,10 +612,22 @@ static DE: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Tabelle",
+    table_prefix: "Tabelle",
+    column_prefix: "Spalte",
+    total_label: "Ergebnis",
     date_sep: '.',
     fmt_day: 't',
     fmt_year: 'j',
     display_name: "Deutsch",
+    table_items: [
+        "#Alle",
+        "#Daten",
+        "#Kopfzeilen",
+        "#Ergebnisse",
+        "#Diese Zeile",
+    ],
+    table_item_aliases: &[],
+    r1c1: ('Z', 'S'),
     fn_pairs: names_de::FUNCTIONS,
     maps: OnceLock::new(),
 };
@@ -627,10 +688,22 @@ static IT: Locale = Locale {
     currency_format: "#,##0.00 €",
     accounting_format: "_-* #,##0.00 €_-;-* #,##0.00 €_-;_-* \"-\"?? €_-;_-@_-",
     sheet_prefix: "Foglio",
+    table_prefix: "Tabella",
+    column_prefix: "Colonna",
+    total_label: "Totale",
     date_sep: '/',
     fmt_day: 'g',
     fmt_year: 'a',
     display_name: "Italiano",
+    table_items: [
+        "#Tutti",
+        "#Dati",
+        "#Intestazioni",
+        "#Totali",
+        "#Questa riga",
+    ],
+    table_item_aliases: &[],
+    r1c1: ('R', 'C'),
     fn_pairs: names_it::FUNCTIONS,
     maps: OnceLock::new(),
 };

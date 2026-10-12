@@ -89,6 +89,10 @@ pub struct Sheet {
     pub pivots: Vec<crate::pivot::PivotTable>,
     /// Pictures and shapes floating over the cells, see `drawing.rs`.
     pub drawings: Vec<crate::drawing::Drawing>,
+    /// Defined names whose scope is this sheet, keyed by uppercase name
+    /// (see `names.rs`). They travel with the sheet when it is moved,
+    /// copied or deleted.
+    pub names: BTreeMap<String, DefinedName>,
 }
 
 impl Sheet {
@@ -120,6 +124,7 @@ impl Sheet {
             page: crate::page::PageSetup::default(),
             pivots: Vec::new(),
             drawings: Vec::new(),
+            names: BTreeMap::new(),
         }
     }
 
@@ -131,12 +136,32 @@ impl Sheet {
         self.col_widths.get(&col).copied().unwrap_or(DEFAULT_COL_WIDTH)
     }
 
-    /// Row height in pixels at 100 % (0 when hidden).
+    /// Row height in pixels at 100 % (0 when hidden by hand or by a filter).
     pub fn row_height(&self, row: u32) -> f32 {
-        if self.hidden_rows.contains(&row) {
+        if self.is_row_hidden(row) {
             return 0.0;
         }
         self.row_heights.get(&row).copied().unwrap_or(DEFAULT_ROW_HEIGHT)
+    }
+
+    /// True when the row is not shown: hidden by hand or by a filter.
+    pub fn is_row_hidden(&self, row: u32) -> bool {
+        self.hidden_rows.contains(&row) || self.filtered_rows.contains(&row)
+    }
+
+    /// The rows of `r0..=r1` that are shown, top to bottom.
+    pub fn visible_rows(&self, r0: u32, r1: u32) -> impl Iterator<Item = u32> + '_ {
+        (r0..=r1).filter(|r| !self.is_row_hidden(*r))
+    }
+
+    /// Every row that is not shown, hidden by hand or by a filter (what a
+    /// grid lays its rows out with).
+    pub fn rows_not_shown(&self) -> std::borrow::Cow<'_, BTreeSet<u32>> {
+        if self.filtered_rows.is_empty() {
+            std::borrow::Cow::Borrowed(&self.hidden_rows)
+        } else {
+            std::borrow::Cow::Owned(self.hidden_rows.union(&self.filtered_rows).copied().collect())
+        }
     }
 
     /// (max row, max col) of cells holding a constant or a formula, ignoring
@@ -258,10 +283,27 @@ impl Sheet {
     }
 }
 
-#[derive(Clone, Debug)]
+/// A defined name. Its scope is where it is stored: `Workbook::names` for
+/// the whole workbook, `Sheet::names` for one sheet (see `names.rs`).
+#[derive(Clone, Debug, PartialEq)]
 pub struct DefinedName {
     pub name: String,
+    /// What the name stands for: a reference, a constant or any formula,
+    /// as it reads from cell A1. Relative references are relative to the
+    /// cell using the name (`DefinedName::expr_at`).
     pub expr: Arc<Expr>,
+    /// The note shown in the Name Manager.
+    pub comment: String,
+}
+
+impl DefinedName {
+    pub fn new(name: impl Into<String>, expr: Expr) -> DefinedName {
+        DefinedName {
+            name: name.into(),
+            expr: Arc::new(expr),
+            comment: String::new(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -324,7 +366,8 @@ pub enum ClearMode {
 pub struct Workbook {
     pub sheets: Vec<Sheet>,
     pub styles: StyleTable,
-    /// Defined names, keyed by uppercase name.
+    /// Defined names of workbook scope, keyed by uppercase name. Those
+    /// scoped to a sheet are in `Sheet::names`.
     pub names: BTreeMap<String, DefinedName>,
     pub locale: &'static Locale,
     /// Set by `recalc` when a circular reference was found.
@@ -413,18 +456,29 @@ impl Workbook {
             return String::new();
         };
         match sh.cells.get(&(row, col)) {
-            Some(cell) => {
-                let style = self.styles.get(cell.style);
-                input::edit_text(&cell.content, &style.num_fmt, self.locale)
-            }
+            Some(cell) => match self.formula_text(sheet, row, col) {
+                Some(text) => text,
+                None => {
+                    let style = self.styles.get(cell.style);
+                    input::edit_text(&cell.content, &style.num_fmt, self.locale)
+                }
+            },
             None => String::new(),
         }
     }
 
     /// Formula text (with leading `=`) of a cell, if it holds a formula.
+    /// Inside a table, references to that table are shown without its name
+    /// (`=[@Qty]*2`), as Excel does.
     pub fn formula_text(&self, sheet: usize, row: u32, col: u32) -> Option<String> {
         match &self.cell(sheet, row, col)?.content {
-            Content::Formula(e) => Some(format!("={}", e.to_text(self.locale))),
+            Content::Formula(e) => Some(match self.table_at(sheet, row, col) {
+                Some(table) if e.has_table_refs() => {
+                    let shown = e.with_table_unqualified(&table.name);
+                    format!("={}", shown.to_text(self.locale))
+                }
+                _ => format!("={}", e.to_text(self.locale)),
+            }),
             _ => None,
         }
     }
@@ -767,7 +821,13 @@ impl Workbook {
             self.set_content(sheet, row, col, Content::Value(Value::text(text)));
             return Ok(());
         }
-        let parsed = input::parse_input(text, self.locale)?;
+        let mut parsed = input::parse_input(text, self.locale)?;
+        if let Content::Formula(e) = &parsed.content
+            && e.has_table_refs()
+        {
+            let qualified = self.qualify_table_refs(e, sheet, row, col)?;
+            parsed.content = Content::Formula(Arc::new(qualified));
+        }
         let mut new_style = style_id;
         if let Some(fmt) = &parsed.num_fmt {
             if style.is_general() {
@@ -938,7 +998,8 @@ impl Workbook {
         }
     }
 
-    /// Clear contents and / or formats in a rectangle.
+    /// Clear contents and / or formats in a rectangle. Rows hidden by a
+    /// filter are left alone, as in Excel.
     pub fn clear(&mut self, sheet: usize, rect: Rect, mode: ClearMode) {
         let Some(sh) = self.sheets.get(sheet) else {
             return;
@@ -946,7 +1007,7 @@ impl Workbook {
         let keys: Vec<(u32, u32)> = sh
             .cells
             .range((rect.r0, 0)..=(rect.r1, u32::MAX))
-            .filter(|((_, c), _)| *c >= rect.c0 && *c <= rect.c1)
+            .filter(|((r, c), _)| *c >= rect.c0 && *c <= rect.c1 && !sh.filtered_rows.contains(r))
             .map(|(k, _)| *k)
             .collect();
         for (r, c) in keys {
@@ -1054,13 +1115,57 @@ impl Workbook {
     }
 
     /// Delete a sheet (the last remaining sheet cannot be deleted).
+    ///
+    /// As in Excel, what referred to the sheet is left pointing nowhere:
+    /// formulas, defined names and chart series read `#REF!A1`, and 3-D
+    /// references ending on the sheet shrink. The names scoped to the
+    /// sheet go with it.
     pub fn delete_sheet(&mut self, index: usize) -> bool {
         if self.sheets.len() <= 1 || index >= self.sheets.len() {
             return false;
         }
         self.snapshot();
-        self.sheets.remove(index);
+        let order: Vec<String> = self.sheets.iter().map(|s| s.name.clone()).collect();
+        let order: Vec<&str> = order.iter().map(|s| s.as_str()).collect();
+        let deleted = self.sheets.remove(index).name;
+        self.map_all_formulas(&|e| e.with_sheet_deleted(&deleted, &order));
+        for sh in &mut self.sheets {
+            for chart in &mut sh.charts {
+                chart.map_refs(&mut |r| {
+                    let mut r = r.clone();
+                    let gone = |s: &str| crate::ast::same_name(s, &deleted);
+                    if r.sheet.as_deref().is_some_and(gone) {
+                        r.sheet = Some(Arc::from(crate::ast::DELETED_SHEET));
+                    }
+                    Some(r)
+                });
+            }
+        }
         true
+    }
+
+    /// Replace every formula of the workbook (cells and defined names)
+    /// with `f(formula)`. The caller has taken the snapshot.
+    pub(crate) fn map_all_formulas(&mut self, f: &dyn Fn(&Expr) -> Expr) {
+        let apply = |expr: &mut Arc<Expr>| {
+            let new = f(expr);
+            if new != **expr {
+                *expr = Arc::new(new);
+            }
+        };
+        for sh in &mut self.sheets {
+            for cell in sh.cells.values_mut() {
+                if let Content::Formula(e) = &mut cell.content {
+                    apply(e);
+                }
+            }
+            for def in sh.names.values_mut() {
+                apply(&mut def.expr);
+            }
+        }
+        for def in self.names.values_mut() {
+            apply(&mut def.expr);
+        }
     }
 
     /// Rename a sheet, rewriting references to it. Fails when the name is
@@ -1085,19 +1190,7 @@ impl Workbook {
         }
         self.snapshot();
         self.sheets[index].name = new_name.to_string();
-        for sh in &mut self.sheets {
-            for cell in sh.cells.values_mut() {
-                if let Content::Formula(e) = &cell.content {
-                    let renamed = e.with_sheet_renamed(&old, new_name);
-                    if renamed != **e {
-                        cell.content = Content::Formula(Arc::new(renamed));
-                    }
-                }
-            }
-        }
-        for def in self.names.values_mut() {
-            def.expr = Arc::new(def.expr.with_sheet_renamed(&old, new_name));
-        }
+        self.map_all_formulas(&|e| e.with_sheet_renamed(&old, new_name));
         for sh in &mut self.sheets {
             for chart in &mut sh.charts {
                 chart.rename_sheet(&old, new_name);
@@ -1127,6 +1220,10 @@ impl Workbook {
         // Charts on the copy plot the copy's own cells, with fresh ids.
         let mut next_id = self.sheets.iter().flat_map(|s| s.charts.iter().map(|c| c.id)).max().unwrap_or(0);
         let new_name = copy.name.clone();
+        // The names scoped to the copy stand for the copy's own cells.
+        for def in copy.names.values_mut() {
+            def.expr = Arc::new(def.expr.with_sheet_renamed(&base, &new_name));
+        }
         for chart in &mut copy.charts {
             next_id += 1;
             chart.id = next_id;
@@ -1142,8 +1239,16 @@ impl Workbook {
             return;
         }
         self.snapshot();
+        let before: Vec<String> = self.sheets.iter().map(|s| s.name.clone()).collect();
         let s = self.sheets.remove(from);
         self.sheets.insert(to, s);
+        // 3-D references follow their end sheets, except an end carried
+        // past the other one.
+        let after: Vec<String> = self.sheets.iter().map(|s| s.name.clone()).collect();
+        let before: Vec<&str> = before.iter().map(String::as_str).collect();
+        let after: Vec<&str> = after.iter().map(String::as_str).collect();
+        let moved = before[from];
+        self.map_all_formulas(&|e| e.with_sheet_moved(moved, &before, &after));
     }
 
     pub fn set_tab_color(&mut self, index: usize, color: Option<Color>) {
@@ -1161,14 +1266,14 @@ impl Workbook {
         }
     }
 
+    /// Define (or redefine) a workbook-scoped name without checking it.
+    /// The Name Manager goes through `add_name` / `edit_name` (`names.rs`),
+    /// which validate the name as Excel does. `expr` is in stored form:
+    /// its relative references are offsets from the cell using the name,
+    /// written as they read from A1 (see `parse_name_formula`).
     pub fn define_name(&mut self, name: &str, expr: Expr) {
         self.snapshot();
-        self.names.insert(
-            name.to_uppercase(),
-            DefinedName {
-                name: name.to_string(),
-                expr: Arc::new(expr),
-            },
-        );
+        let key = name.to_uppercase();
+        self.names.insert(key, DefinedName::new(name, expr));
     }
 }
