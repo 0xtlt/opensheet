@@ -301,7 +301,7 @@ impl Render for SelectData {
         let has = self.selected.is_some();
         let small = |id: &'static str, label: &'static str| Button::new(id, label).width(74.0);
         widgets::dialog(&self.modal, t("Select Data Source", "Sélectionner la source de données"))
-            .width(620.0)
+            .width(660.0)
             .on_ok(cx.listener(Self::ok))
             .child(widgets::labeled(
                 t("Chart data range:", "Plage de données du graphique :"),

@@ -27,6 +27,14 @@ pub struct FormatPane {
     /// Sections the user folded, by title.
     folded: HashSet<&'static str>,
     fields: HashMap<Field, Entity<TextInput>>,
+    /// What every field shows for the chart as it is: a field left as it
+    /// reads changes nothing (its value may be an automatic one).
+    reads: HashMap<Field, String>,
+    /// The chart and the element the fields were last filled for.
+    shown_for: Option<(u32, ChartElement)>,
+    /// The selection just changed: fields show the new element even if
+    /// one of them still has the keyboard.
+    refill: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -141,6 +149,9 @@ impl FormatPane {
             tab: 0,
             folded: HashSet::new(),
             fields: HashMap::new(),
+            reads: HashMap::new(),
+            shown_for: None,
+            refill: false,
             _subscriptions: subscriptions,
         }
     }
@@ -174,10 +185,18 @@ impl FormatPane {
         let Some(text) = self.fields.get(&field).map(|input| input.read(cx).text().to_string()) else {
             return;
         };
+        if self.reads.get(&field) == Some(&text) {
+            return;
+        }
+        // What was typed belongs to the element the field was showing: a
+        // click on another element of the chart takes the keyboard away
+        // before the pane has shown that element.
+        let Some((shown_chart, element)) = self.shown_for else {
+            return;
+        };
         self.app
             .update(cx, |app, cx| {
-                let Some(chart) = app.selected_chart() else { return };
-                let element = app.chart_element();
+                let Some(chart) = app.selected_chart().filter(|chart| chart.id == shown_chart) else { return };
                 let mut changed = chart.clone();
                 if fields::set(&mut changed, element, field, &text, app.wb.locale) && changed != *chart {
                     app.edit_chart(t("Format Chart", "Mise en forme du graphique"), cx, |chart| *chart = changed);
@@ -226,11 +245,12 @@ impl FormatPane {
         let text = fields::value(&shown.chart, shown.element, field, shown.scale.as_ref(), shown.locale);
         let stale = {
             let input = input.read(cx);
-            !input.focus_handle(cx).is_focused(window) && input.text() != text
+            (self.refill || !input.focus_handle(cx).is_focused(window)) && input.text() != text
         };
         if stale {
-            input.update(cx, |input, cx| input.set_text(text, cx));
+            input.update(cx, |input, cx| input.set_text(text.clone(), cx));
         }
+        self.reads.insert(field, text);
         input
     }
 
@@ -1415,7 +1435,11 @@ impl Render for FormatPane {
                 .child(t("Select a chart to format it.", "Sélectionnez un graphique pour le mettre en forme."))
                 .into_any_element();
         };
+        let key = (shown.chart.id, shown.element);
+        self.refill = self.shown_for != Some(key);
+        self.shown_for = Some(key);
         let tabs = self.tabs(&shown, window, cx);
+        self.refill = false;
         let tab = self.tab.min(tabs.len().saturating_sub(1));
         let titles: Vec<SharedString> = tabs.iter().map(|(title, _)| (*title).into()).collect();
         let sections = tabs.into_iter().nth(tab).map(|(_, sections)| sections).unwrap_or_default();

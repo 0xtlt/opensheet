@@ -232,7 +232,9 @@ fn on_size_event(app: &mut ExcelApp, field: Field, input: &Entity<TextInput>, ev
     let text = input.read(cx).text().to_string();
     if let Some(chart) = app.selected_chart() {
         let mut changed = chart.clone();
-        if fields::set(&mut changed, ChartElement::ChartArea, field, &text, app.wb.locale) && changed.size != chart.size {
+        // A field left as it reads is not a new size (it shows a rounded one).
+        let reads = fields::value(chart, ChartElement::ChartArea, field, None, app.wb.locale);
+        if text != reads && fields::set(&mut changed, ChartElement::ChartArea, field, &text, app.wb.locale) && changed.size != chart.size {
             let size = changed.size;
             app.edit_chart(t("Resize Chart", "Redimensionner le graphique"), cx, move |chart| chart.size = size);
         }

@@ -266,3 +266,33 @@ fn the_format_tab_acts_on_the_selected_element(cx: &mut TestAppContext) {
     assert_eq!(chart(&app, cx).size, (576.0, 288.0));
     assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Resize Chart"));
 }
+
+#[gpui::test]
+fn a_field_never_writes_to_another_element_nor_for_nothing(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Line);
+    select(&app, cx, ChartElement::ChartArea);
+    let field_text = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        pane(app, cx).update(cx, |pane, cx| pane.field_input(Field::LineWidth).map(|i| i.read(cx).text().to_string()))
+    };
+    // A width typed for the border of the chart, then a click on a series
+    // before the field is left: the series does not get it.
+    pane(&app, cx).update(cx, |pane, cx| {
+        let input = pane.field_input(Field::LineWidth).expect("the width of the border");
+        input.update(cx, |input, cx| input.set_text("3", cx));
+    });
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::Series(0), cx));
+    redraw(cx);
+    pane(&app, cx).update(cx, |pane, cx| pane.commit_field(Field::LineWidth, cx));
+    redraw(cx);
+    assert_eq!(chart(&app, cx).series[0].line.width, None);
+    // The field now reads the automatic width of the line; leaving it as
+    // it reads is not a change.
+    assert_eq!(field_text(&app, cx).as_deref(), Some("2.25 pt"));
+    pane(&app, cx).update(cx, |pane, cx| pane.commit_field(Field::LineWidth, cx));
+    assert_eq!(chart(&app, cx).series[0].line.width, None);
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Insert Chart"));
+    type_in(&app, cx, Field::LineWidth, "1.5");
+    let c = chart(&app, cx);
+    assert_eq!((c.chart_area.border.width, c.series[0].line.width), (None, Some(1.5)));
+}
