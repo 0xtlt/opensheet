@@ -329,7 +329,7 @@ fn find_and_replace_pass_over_rows_that_are_not_shown() {
     wb.commit("formulas");
     let values = FindOptions::default();
     let formulas = FindOptions {
-        in_formulas: true,
+        look_in: opensheet_engine::find::LookIn::Formulas,
         ..Default::default()
     };
     // Rows a filter hides are never searched.

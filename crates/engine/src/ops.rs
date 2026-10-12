@@ -269,13 +269,7 @@ impl SelectionStats {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct FindOptions {
-    pub match_case: bool,
-    pub whole_cell: bool,
-    /// Search formula text instead of displayed values.
-    pub in_formulas: bool,
-}
+pub use crate::find::FindOptions;
 
 fn shift_keys<V: Clone>(map: &BTreeMap<u32, V>, insert: bool, at: u32, count: u32, max: u32) -> BTreeMap<u32, V> {
     let mut out = BTreeMap::new();
@@ -2088,98 +2082,6 @@ impl Workbook {
         }
         st
     }
-
-    // ---- find -----------------------------------------------------------
-
-    /// Whether Find looks at a cell: never in a row a filter hides, and
-    /// only when looking in formulas in a row or a column hidden by hand,
-    /// as in Excel.
-    fn is_searched(&self, sheet: usize, row: u32, col: u32, opts: &FindOptions) -> bool {
-        let sh = &self.sheets[sheet];
-        !sh.filtered_rows.contains(&row)
-            && (opts.in_formulas || !(sh.hidden_rows.contains(&row) || sh.hidden_cols.contains(&col)))
-    }
-
-    fn cell_matches(&self, sheet: usize, row: u32, col: u32, needle: &str, opts: &FindOptions) -> bool {
-        if !self.is_searched(sheet, row, col, opts) {
-            return false;
-        }
-        let hay = if opts.in_formulas {
-            self.edit_text(sheet, row, col)
-        } else {
-            self.display_text(sheet, row, col).text
-        };
-        let (hay, needle) = if opts.match_case {
-            (hay, needle.to_string())
-        } else {
-            (hay.to_lowercase(), needle.to_lowercase())
-        };
-        if opts.whole_cell {
-            hay == needle
-        } else {
-            hay.contains(&needle)
-        }
-    }
-
-    /// Next cell after `from` (reading order, wrapping) whose text matches.
-    /// Cells that are not shown are passed over as Excel does: those of
-    /// rows a filter hides always, those hidden by hand unless the search
-    /// looks in formulas.
-    pub fn find_next(&self, sheet: usize, from: (u32, u32), needle: &str, opts: &FindOptions) -> Option<(u32, u32)> {
-        if needle.is_empty() {
-            return None;
-        }
-        let sh = self.sheets.get(sheet)?;
-        let after = sh
-            .cells
-            .range((from.0, from.1 + 1)..)
-            .map(|(k, _)| *k)
-            .chain(sh.cells.range(..=(from.0, from.1)).map(|(k, _)| *k));
-        for (r, c) in after {
-            if self.cell_matches(sheet, r, c, needle, opts) {
-                return Some((r, c));
-            }
-        }
-        None
-    }
-
-    /// Every cell whose text matches, in reading order.
-    pub fn find_all(&self, sheet: usize, needle: &str, opts: &FindOptions) -> Vec<(u32, u32)> {
-        let Some(sh) = self.sheets.get(sheet) else {
-            return Vec::new();
-        };
-        if needle.is_empty() {
-            return Vec::new();
-        }
-        sh.cells
-            .keys()
-            .filter(|(r, c)| self.cell_matches(sheet, *r, *c, needle, opts))
-            .copied()
-            .collect()
-    }
-
-    /// Replace occurrences in constants and formulas. Returns the number of
-    /// cells changed. Rows a filter hides are left alone, as in Excel.
-    pub fn replace_all(&mut self, sheet: usize, needle: &str, replacement: &str, opts: &FindOptions) -> usize {
-        let mut o = opts.clone();
-        o.in_formulas = true;
-        let hits = self.find_all(sheet, needle, &o);
-        let mut changed = 0;
-        for (r, c) in hits {
-            let text = self.edit_text(sheet, r, c);
-            let new = if opts.whole_cell {
-                replacement.to_string()
-            } else if opts.match_case {
-                text.replace(needle, replacement)
-            } else {
-                replace_ignore_case(&text, needle, replacement)
-            };
-            if new != text && self.set_cell_text(sheet, r, c, &new).is_ok() {
-                changed += 1;
-            }
-        }
-        changed
-    }
 }
 
 /// Runs of rows being deleted together: where the rows that stay end up.
@@ -2353,23 +2255,6 @@ pub fn collate(a: &str, b: &str, case_sensitive: bool) -> Ordering {
                 None => Ordering::Equal,
             }
         })
-}
-
-fn replace_ignore_case(text: &str, needle: &str, replacement: &str) -> String {
-    let lower = text.to_lowercase();
-    let needle = needle.to_lowercase();
-    if needle.is_empty() || lower.len() != text.len() {
-        return text.replace(&needle, replacement);
-    }
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0;
-    while let Some(pos) = lower[i..].find(&needle) {
-        out.push_str(&text[i..i + pos]);
-        out.push_str(replacement);
-        i += pos + needle.len();
-    }
-    out.push_str(&text[i..]);
-    out
 }
 
 fn shift_content(content: &Content, d_row: i64, d_col: i64) -> Content {

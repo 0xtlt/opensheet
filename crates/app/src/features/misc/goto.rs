@@ -444,7 +444,7 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
 }
 
 /// Go To Special: select the cells of a kind, or say there are none.
-fn select_special(app: &mut ExcelApp, what: Special, cx: &mut Cx) {
+pub(crate) fn select_special(app: &mut ExcelApp, what: Special, cx: &mut Cx) {
     if what == Special::Objects {
         match features::objects(app, app.sheet).first() {
             Some((id, _)) => app.select_object(Some(*id), cx),

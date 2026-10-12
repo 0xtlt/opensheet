@@ -29,6 +29,7 @@ fn bind_keys(cx: &mut App) {
     widgets::bind_keys(cx);
     features::comments::bind_keys(cx);
     features::misc::bind_keys(cx);
+    features::edit_tools::bind_keys(cx);
     let g = Some("Grid");
     let w = Some("Workbook");
     cx.bind_keys([
@@ -154,6 +155,7 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::separator(),
                 MenuItem::action(t("Select All", "Sélectionner tout"), SelectAll),
                 MenuItem::action(t("Find…", "Rechercher…"), Find),
+                MenuItem::action(t("Replace…", "Remplacer…"), features::edit_tools::Replace),
             ],
         },
         Menu {

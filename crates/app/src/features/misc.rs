@@ -17,6 +17,7 @@ mod links;
 
 pub use audit::{shown_formula, shows_formulas};
 pub use functions::function_arguments;
+pub(crate) use goto::{Kinds, Special, select_special};
 
 use self::audit::Trace;
 use self::calc::CalcMode;
@@ -37,7 +38,6 @@ commands! {
         // Home
         CellStyles = "cell-styles", t("Cell Styles", "Styles de cellules");
         ClearHyperlinks = "", t("Clear Hyperlinks", "Effacer les liens hypertexte");
-        Replace = "", t("Replace…", "Remplacer…");
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert

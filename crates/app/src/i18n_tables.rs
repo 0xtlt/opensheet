@@ -14,6 +14,25 @@
 pub static ES: &[(&str, &str)] = &[
     // ---- Ribbon tabs ----
     ("File", "Archivo"),
+    // ---- Editing tools ----
+    ("OpenSheet cannot find the data you're searching for. If you are certain the data exists in the current sheet, check what you typed and try again.", "OpenSheet no encuentra los datos que busca. Si está seguro de que los datos existen en la hoja actual, compruebe la entrada y vuelva a intentarlo."),
+    ("OpenSheet cannot find matching data to replace. No cell in the selection contains what you typed, or no records match the criteria.", "OpenSheet no encuentra datos coincidentes para reemplazar. No existen celdas que contengan lo que ha escrito o no hay registros que coincidan con los criterios."),
+    ("Replace", "Reemplazar"),
+    ("Replace All", "Reemplazar todo"),
+    ("All done. We made {} replacements.", "Ya está. Hemos hecho {} reemplazos."),
+    ("By Rows", "Por filas"),
+    ("By Columns", "Por columnas"),
+    ("Match case", "Coincidir mayúsculas y minúsculas"),
+    ("Find entire cells only", "Buscar solo celdas completas"),
+    ("Find Next", "Buscar siguiente"),
+    ("Find & Replace", "Buscar y reemplazar"),
+    ("Find what:", "Buscar:"),
+    ("Replace with:", "Reemplazar con:"),
+    ("Within:", "Dentro de:"),
+    ("Search:", "Buscar:"),
+    ("Look in:", "Buscar dentro de:"),
+    ("Select Objects", "Seleccionar objetos"),
+    // ---- end of editing tools ----
     ("Home", "Inicio"),
     ("Insert", "Insertar"),
     ("Draw", "Dibujar"),
@@ -2592,6 +2611,25 @@ pub static ES: &[(&str, &str)] = &[
 pub static DE: &[(&str, &str)] = &[
     // ---- Ribbon tabs ----
     ("File", "Datei"),
+    // ---- Editing tools ----
+    ("OpenSheet cannot find the data you're searching for. If you are certain the data exists in the current sheet, check what you typed and try again.", "OpenSheet kann keine übereinstimmenden Daten finden. Überprüfen Sie die Eingabe und versuchen Sie es erneut, wenn Sie sicher sind, dass bestimmte Daten in dem aktuellen Blatt vorhanden sind."),
+    ("OpenSheet cannot find matching data to replace. No cell in the selection contains what you typed, or no records match the criteria.", "OpenSheet kann keine übereinstimmenden Daten zum Ersetzen finden. Keine Zelle der Markierung enthält den Suchbegriff, oder kein Datensatz entspricht dem Kriterium."),
+    ("Replace", "Ersetzen"),
+    ("Replace All", "Alle ersetzen"),
+    ("All done. We made {} replacements.", "Alles erledigt. Wir haben {} Stellen geändert."),
+    ("By Rows", "In Zeilen"),
+    ("By Columns", "In Spalten"),
+    ("Match case", "Groß-/Kleinschreibung beachten"),
+    ("Find entire cells only", "Nur ganze Zellen suchen"),
+    ("Find Next", "Weitersuchen"),
+    ("Find & Replace", "Suchen und Ersetzen"),
+    ("Find what:", "Suchen nach:"),
+    ("Replace with:", "Ersetzen durch:"),
+    ("Within:", "Suchen:"),
+    ("Search:", "Suchreihenfolge:"),
+    ("Look in:", "Suchen in:"),
+    ("Select Objects", "Objekte auswählen"),
+    // ---- end of editing tools ----
     ("Home", "Start"),
     ("Insert", "Einfügen"),
     ("Draw", "Zeichnen"),
@@ -5158,6 +5196,25 @@ pub static DE: &[(&str, &str)] = &[
 pub static IT: &[(&str, &str)] = &[
     // ---- Ribbon tabs ----
     ("File", "File"),
+    // ---- Editing tools ----
+    ("OpenSheet cannot find the data you're searching for. If you are certain the data exists in the current sheet, check what you typed and try again.", "OpenSheet non può trovare i dati cercati. Se si è certi dell'esistenza dei dati nel foglio corrente, verificare l'ortografia della stringa digitata e riprovare."),
+    ("OpenSheet cannot find matching data to replace. No cell in the selection contains what you typed, or no records match the criteria.", "OpenSheet non può trovare dati da sostituire corrispondenti ai criteri specificati. Nessuna cella della selezione contiene la stringa digitata o nessun record corrisponde ai criteri."),
+    ("Replace", "Sostituisci"),
+    ("Replace All", "Sostituisci tutto"),
+    ("All done. We made {} replacements.", "Fatto. Sono state effettuate {} sostituzioni."),
+    ("By Rows", "Per righe"),
+    ("By Columns", "Per colonne"),
+    ("Match case", "Maiuscole/minuscole"),
+    ("Find entire cells only", "Solo celle intere"),
+    ("Find Next", "Trova successivo"),
+    ("Find & Replace", "Trova e sostituisci"),
+    ("Find what:", "Trova:"),
+    ("Replace with:", "Sostituisci con:"),
+    ("Within:", "In:"),
+    ("Search:", "Cerca:"),
+    ("Look in:", "Cerca in:"),
+    ("Select Objects", "Seleziona oggetti"),
+    // ---- end of editing tools ----
     ("Home", "Home"),
     ("Insert", "Inserisci"),
     // Tab name; the Draw tab's button of the same English text is "Disegna" in Excel.

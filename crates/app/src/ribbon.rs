@@ -6,7 +6,7 @@
 
 use crate::app::*;
 use crate::features::{
-    self, Command, ViewMode, charts, comments, condfmt, drawings, filters, format_cells, misc, names, page, pivot,
+    self, Command, ViewMode, charts, comments, condfmt, drawings, edit_tools, filters, format_cells, misc, names, page, pivot,
     protection, tables, validation,
 };
 use crate::i18n::t;
@@ -1238,13 +1238,18 @@ impl ExcelApp {
                     cx,
                     |this, window, cx| {
                         let entries = vec![
-                            MenuEntry::new(t("Find…", "Rechercher…"), |a, window, cx| a.toggle_find(window, cx))
-                                .icon("search")
-                                .shortcut("⌘F"),
-                            MenuEntry::command(misc::Cmd::Replace, this),
+                            MenuEntry::command(edit_tools::Cmd::Find, this).shortcut("⌃F"),
+                            MenuEntry::command(edit_tools::Cmd::Replace, this).shortcut("⌃H"),
                             MenuEntry::command(misc::Cmd::GoTo, this),
                             MenuEntry::command(misc::Cmd::GoToSpecial, this),
                             MenuEntry::separator(),
+                            MenuEntry::command(edit_tools::Cmd::SelectFormulas, this),
+                            MenuEntry::command(edit_tools::Cmd::SelectNotes, this),
+                            MenuEntry::command(edit_tools::Cmd::SelectCondFormats, this),
+                            MenuEntry::command(edit_tools::Cmd::SelectConstants, this),
+                            MenuEntry::command(edit_tools::Cmd::SelectValidation, this),
+                            MenuEntry::separator(),
+                            MenuEntry::command(edit_tools::Cmd::SelectObjects, this),
                             MenuEntry::command(drawings::Cmd::SelectionPane, this),
                         ];
                         this.open_menu("rb-find", entries, 240.0, window, cx);

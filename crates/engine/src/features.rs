@@ -594,8 +594,10 @@ impl Workbook {
                     return Ok(());
                 }
                 // Only the cells that would change count.
-                let mut in_formulas = options.clone();
-                in_formulas.in_formulas = true;
+                let in_formulas = FindOptions {
+                    look_in: crate::find::LookIn::Formulas,
+                    ..options.clone()
+                };
                 let hits: Vec<Rect> = self
                     .find_all(sheet, needle, &in_formulas)
                     .into_iter()
