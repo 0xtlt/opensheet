@@ -1962,6 +1962,7 @@ fn a_table_or_a_name_can_be_the_source() {
         header_row: true,
         totals_row: false,
         columns: Vec::new(),
+        ..Default::default()
     });
     let source = PivotSource::parse("sales", 1, &wb).unwrap();
     assert_eq!(source, PivotSource::Name("sales".to_string()));
