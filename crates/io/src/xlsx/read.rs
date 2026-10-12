@@ -11,7 +11,9 @@ use super::numfmt::{builtin_code, shows_date};
 use super::xml::{Event, Reader, Tag, decode_cell_text, parse_bool};
 use super::{col_width_to_px, page, points_to_px, protection, validation};
 use crate::{IoError, Result, decode_utf16};
+use super::cell_style::RawCellStyle;
 use opensheet_engine::ast::Expr;
+use opensheet_engine::cell_style::{CellStyle, StyleParts};
 use opensheet_engine::chart::Chart;
 use opensheet_engine::datetime::date_to_serial;
 use opensheet_engine::protect::WorkbookProtection;
@@ -294,6 +296,11 @@ struct RawXf {
     rotation: i16,
     locked: bool,
     hidden: bool,
+    /// The cell style of a cell format (`xfId`).
+    xf_id: usize,
+    /// For the format of a cell style: the parts it includes (those not
+    /// switched off by an `apply…="0"`).
+    parts: StyleParts,
 }
 
 /// Parse the `item` children of a list element such as `<fonts>`.
@@ -461,6 +468,15 @@ fn parse_xf<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawXf {
         rotation: 0,
         locked: true,
         hidden: false,
+        xf_id: tag.attr_u32("xfId").unwrap_or(0) as usize,
+        parts: StyleParts {
+            number: tag.attr_bool("applyNumberFormat").unwrap_or(true),
+            alignment: tag.attr_bool("applyAlignment").unwrap_or(true),
+            font: tag.attr_bool("applyFont").unwrap_or(true),
+            border: tag.attr_bool("applyBorder").unwrap_or(true),
+            fill: tag.attr_bool("applyFill").unwrap_or(true),
+            protection: tag.attr_bool("applyProtection").unwrap_or(true),
+        },
     };
     if tag.empty {
         return xf;
@@ -578,6 +594,8 @@ struct StylesPart {
     defaults: Defaults,
     /// The differential formats, by `dxfId`.
     dxfs: Vec<StylePatch>,
+    /// The cell styles the workbook keeps (see `cell_style.rs`).
+    cell_styles: Vec<CellStyle>,
 }
 
 // `Style` values are built field by field so the engine can add fields.
@@ -600,6 +618,7 @@ fn parse_styles(
     let mut style_xfs: Vec<RawXf> = Vec::new();
     // `xfId` of the cell style called Normal.
     let mut normal_xf = 0usize;
+    let mut cell_styles: Vec<RawCellStyle> = Vec::new();
     // The differential formats use colours, which may be redefined after
     // them in the part: they are read once everything else is.
     let mut dxfs_at: Option<(&str, Tag)> = None;
@@ -630,13 +649,17 @@ fn parse_styles(
                 "cellStyleXfs" => style_xfs = parse_list(&mut r, &t, "xf", parse_xf),
                 "cellXfs" => xfs = parse_list(&mut r, &t, "xf", parse_xf),
                 "cellStyles" => {
-                    let normal = parse_list(&mut r, &t, "cellStyle", |r, style| {
-                        let is_normal = style.attr_u32("builtinId") == Some(0);
-                        let xf = style.attr_u32("xfId").unwrap_or(0) as usize;
+                    cell_styles = parse_list(&mut r, &t, "cellStyle", |r, style| {
+                        let raw = RawCellStyle {
+                            name: style.attr("name").map(Cow::into_owned).unwrap_or_default(),
+                            xf: style.attr_u32("xfId").unwrap_or(0) as usize,
+                            builtin: style.attr_u32("builtinId"),
+                        };
                         r.skip(style);
-                        is_normal.then_some(xf)
+                        raw
                     });
-                    normal_xf = normal.into_iter().flatten().next().unwrap_or(0);
+                    let normal = cell_styles.iter().find(|style| style.builtin == Some(0));
+                    normal_xf = normal.map_or(0, |style| style.xf);
                 }
                 "dxfs" => {
                     dxfs_at = Some((r.rest(), t));
@@ -705,9 +728,7 @@ fn parse_styles(
         .unwrap_or(&table.default_style().font);
     let defaults = Defaults::of(normal_font);
 
-    let mut out: Vec<StyleId> = xfs
-        .iter()
-        .map(|xf| {
+    let to_style = |xf: &RawXf| {
             let code: Cow<str> = match num_fmts.get(&xf.num_fmt) {
                 Some(code) => Cow::Borrowed(code.as_str()),
                 None => builtin_code(xf.num_fmt, locale).unwrap_or(Cow::Borrowed("General")),
@@ -730,6 +751,15 @@ fn parse_styles(
             style.borders = borders.get(xf.border).copied().unwrap_or_default();
             style.locked = xf.locked;
             style.hidden = xf.hidden;
+            style
+    };
+    let style_formats: Vec<(Style, StyleParts)> = style_xfs.iter().map(|xf| (to_style(xf), xf.parts)).collect();
+    let loaded = super::cell_style::load(cell_styles, &style_formats, table.default_style());
+    let mut out: Vec<StyleId> = xfs
+        .iter()
+        .map(|xf| {
+            let mut style = to_style(xf);
+            style.cell_style = loaded.names.get(xf.xf_id).cloned().flatten().map(|name| Arc::from(name.as_str()));
             table.intern(style)
         })
         .collect();
@@ -747,6 +777,7 @@ fn parse_styles(
         palette,
         defaults,
         dxfs,
+        cell_styles: loaded.kept,
     }
 }
 
@@ -1533,7 +1564,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     let mut wb = Workbook::new(locale);
     wb.protection = info.protection;
     let styles_xml = pkg.read(&part_of("styles", "styles.xml"))?;
-    let styles = parse_styles(styles_xml.as_deref(), theme, locale, &mut wb.styles);
+    let mut styles = parse_styles(styles_xml.as_deref(), theme, locale, &mut wb.styles);
+    wb.cell_styles = std::mem::take(&mut styles.cell_styles);
     let style_lookup =
         super::stylerefs::StyleLookup::read(styles_xml.as_deref(), &styles.palette, locale);
     drop(styles_xml);

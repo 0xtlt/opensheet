@@ -9,6 +9,7 @@ use super::parts::{Extras, SheetLinks, push_relationship};
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
 use super::{condfmt, page, protection, px_to_col_width, px_to_points, validation};
 use crate::Result;
+use opensheet_engine::cell_style::StyleParts;
 use opensheet_engine::names::NameScope;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
@@ -16,7 +17,7 @@ use opensheet_engine::style::{
 };
 use opensheet_engine::value::{ErrorKind, Value};
 use opensheet_engine::workbook::{Cell, Content, Sheet};
-use opensheet_engine::{CalcMode, Color, IterativeCalc, Workbook};
+use opensheet_engine::{CalcMode, Color, IterativeCalc, Locale, Workbook};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::io::{Seek, Write};
@@ -73,6 +74,118 @@ pub(crate) fn push_number(x: &mut String, n: f64) {
 }
 
 // ---- styles ------------------------------------------------------------------
+
+/// The tables of `styles.xml` the cell formats index into.
+struct Components<'a> {
+    fonts: Vec<&'a Font>,
+    font_ids: HashMap<&'a Font, u32>,
+    fills: Vec<Color>,
+    borders: Vec<Borders>,
+    /// The number formats that are not built into the file format.
+    formats: Vec<&'a str>,
+}
+
+impl<'a> Components<'a> {
+    /// The ids of the number format, the font, the fill and the borders
+    /// of a format, added to the tables when they are new.
+    fn ids(&mut self, style: &'a Style, locale: &Locale) -> [u32; 4] {
+        let next_font = self.fonts.len() as u32;
+        let font = *self.font_ids.entry(&style.font).or_insert_with(|| {
+            self.fonts.push(&style.font);
+            next_font
+        });
+        let fill = match style.fill {
+            None => 0,
+            Some(color) => {
+                let pos = self.fills.iter().position(|c| *c == color).unwrap_or_else(|| {
+                    self.fills.push(color);
+                    self.fills.len() - 1
+                });
+                pos as u32 + 2
+            }
+        };
+        let border = self.borders.iter().position(|b| *b == style.borders).unwrap_or_else(|| {
+            self.borders.push(style.borders);
+            self.borders.len() - 1
+        }) as u32;
+        let num_fmt = builtin_id(&style.num_fmt, locale).unwrap_or_else(|| {
+            let code: &str = &style.num_fmt;
+            let pos = self.formats.iter().position(|c| *c == code).unwrap_or_else(|| {
+                self.formats.push(code);
+                self.formats.len() - 1
+            });
+            FIRST_CUSTOM_ID + pos as u32
+        });
+        [num_fmt, font, fill, border]
+    }
+}
+
+/// Append one `<xf>`: a cell format naming its cell style (`xf_id`), or
+/// the format of a cell style with the parts it includes (`includes`).
+fn push_xf(xfs: &mut String, style: &Style, ids: [u32; 4], xf_id: Option<u32>, includes: Option<StyleParts>) {
+    let [num_fmt, font, fill, border] = ids;
+    w!(
+        xfs,
+        "<xf numFmtId=\"{num_fmt}\" fontId=\"{font}\" fillId=\"{fill}\" borderId=\"{border}\""
+    );
+    if let Some(xf_id) = xf_id {
+        w!(xfs, " xfId=\"{xf_id}\"");
+    }
+    let alignment = alignment_attrs(style);
+    // Cells are locked and show their formula unless told otherwise.
+    let protection = !style.locked || style.hidden;
+    match includes {
+        // A cell format says which parts it sets; a style, which of its
+        // parts it leaves out.
+        None => {
+            for (name, set) in [
+                ("applyNumberFormat", num_fmt != 0),
+                ("applyFont", font != 0),
+                ("applyFill", fill != 0),
+                ("applyBorder", border != 0),
+                ("applyAlignment", !alignment.is_empty()),
+                ("applyProtection", protection),
+            ] {
+                if set {
+                    w!(xfs, " {name}=\"1\"");
+                }
+            }
+        }
+        Some(parts) => {
+            for (name, included) in [
+                ("applyNumberFormat", parts.number),
+                ("applyFont", parts.font),
+                ("applyFill", parts.fill),
+                ("applyBorder", parts.border),
+                ("applyAlignment", parts.alignment),
+                ("applyProtection", parts.protection),
+            ] {
+                if !included {
+                    w!(xfs, " {name}=\"0\"");
+                }
+            }
+        }
+    }
+    if alignment.is_empty() && !protection {
+        xfs.push_str("/>");
+        return;
+    }
+    xfs.push('>');
+    if !alignment.is_empty() {
+        w!(xfs, "<alignment{alignment}/>");
+    }
+    if protection {
+        xfs.push_str("<protection");
+        if !style.locked {
+            xfs.push_str(" locked=\"0\"");
+        }
+        if style.hidden {
+            xfs.push_str(" hidden=\"1\"");
+        }
+        xfs.push_str("/>");
+    }
+    xfs.push_str("</xf>");
+}
 
 struct StyleBook {
     /// `styles.xml` in three pieces. Between the first two go the custom
@@ -202,97 +315,38 @@ impl StyleBook {
             }
         }
 
+        // The cell styles written: Normal, those the workbook defines and
+        // the built-in ones its cells have.
+        let named = super::cell_style::written(wb, &used);
+
         // Component tables. Fill 0 (none) and 1 (gray125) are reserved by
         // the format; border 0 is "no borders".
-        let mut fonts: Vec<&Font> = Vec::new();
-        let mut font_ids: HashMap<&Font, u32> = HashMap::new();
-        let mut fills: Vec<Color> = Vec::new();
-        let mut borders: Vec<Borders> = vec![Borders::default()];
-        let mut formats: Vec<&str> = Vec::new();
+        let mut tables = Components {
+            fonts: Vec::new(),
+            font_ids: HashMap::new(),
+            fills: Vec::new(),
+            borders: vec![Borders::default()],
+            formats: Vec::new(),
+        };
+        // The formats of the styles come first: font 0 is the font of
+        // Normal, which is what the widths of the columns count in.
+        let mut style_xfs = String::new();
+        for style in &named {
+            let ids = tables.ids(&style.style, wb.locale);
+            push_xf(&mut style_xfs, &style.style, ids, None, Some(style.includes));
+        }
 
         let mut xf_of = vec![0u32; used.len()];
         let mut xfs = String::new();
         let mut xf_count = 0u32;
         for (i, _) in used.iter().enumerate().filter(|(_, used)| **used) {
             let style = wb.styles.get(StyleId(i as u32));
-            let next_font = fonts.len() as u32;
-            let font = *font_ids.entry(&style.font).or_insert_with(|| {
-                fonts.push(&style.font);
-                next_font
-            });
-            let fill = match style.fill {
-                None => 0,
-                Some(color) => {
-                    let pos = fills.iter().position(|c| *c == color).unwrap_or_else(|| {
-                        fills.push(color);
-                        fills.len() - 1
-                    });
-                    pos as u32 + 2
-                }
-            };
-            let border = borders
-                .iter()
-                .position(|b| *b == style.borders)
-                .unwrap_or_else(|| {
-                    borders.push(style.borders);
-                    borders.len() - 1
-                }) as u32;
-            let num_fmt = builtin_id(&style.num_fmt, wb.locale).unwrap_or_else(|| {
-                let code: &str = &style.num_fmt;
-                let pos = formats.iter().position(|c| *c == code).unwrap_or_else(|| {
-                    formats.push(code);
-                    formats.len() - 1
-                });
-                FIRST_CUSTOM_ID + pos as u32
-            });
-
+            let ids = tables.ids(style, wb.locale);
             xf_of[i] = xf_count;
             xf_count += 1;
-            w!(
-                xfs,
-                "<xf numFmtId=\"{num_fmt}\" fontId=\"{font}\" fillId=\"{fill}\" borderId=\"{border}\" xfId=\"0\""
-            );
-            if num_fmt != 0 {
-                xfs.push_str(" applyNumberFormat=\"1\"");
-            }
-            if font != 0 {
-                xfs.push_str(" applyFont=\"1\"");
-            }
-            if fill != 0 {
-                xfs.push_str(" applyFill=\"1\"");
-            }
-            if border != 0 {
-                xfs.push_str(" applyBorder=\"1\"");
-            }
-            let alignment = alignment_attrs(style);
-            if !alignment.is_empty() {
-                xfs.push_str(" applyAlignment=\"1\"");
-            }
-            // Cells are locked and show their formula unless told otherwise.
-            let protection = !style.locked || style.hidden;
-            if protection {
-                xfs.push_str(" applyProtection=\"1\"");
-            }
-            if alignment.is_empty() && !protection {
-                xfs.push_str("/>");
-            } else {
-                xfs.push('>');
-                if !alignment.is_empty() {
-                    w!(xfs, "<alignment{alignment}/>");
-                }
-                if protection {
-                    xfs.push_str("<protection");
-                    if !style.locked {
-                        xfs.push_str(" locked=\"0\"");
-                    }
-                    if style.hidden {
-                        xfs.push_str(" hidden=\"1\"");
-                    }
-                    xfs.push_str("/>");
-                }
-                xfs.push_str("</xf>");
-            }
+            push_xf(&mut xfs, style, ids, Some(super::cell_style::xf_id(&named, style)), None);
         }
+        let Components { fonts, fills, borders, formats, .. } = tables;
 
         let mut head = String::from(XML_DECL);
         w!(head, "<styleSheet xmlns=\"{NS_MAIN}\">");
@@ -321,9 +375,9 @@ impl StyleBook {
             x.push_str("<diagonal/></border>");
         }
         x.push_str("</borders>");
-        x.push_str("<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>");
+        w!(x, "<cellStyleXfs count=\"{}\">{style_xfs}</cellStyleXfs>", named.len());
         w!(x, "<cellXfs count=\"{xf_count}\">{xfs}</cellXfs>");
-        x.push_str("<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>");
+        super::cell_style::write(&mut x, &named);
         let tail = concat!(
             "<tableStyles count=\"0\" defaultTableStyle=\"TableStyleMedium9\" defaultPivotStyle=\"PivotStyleLight16\"/>",
             "</styleSheet>"
