@@ -1,8 +1,11 @@
 #!/bin/sh
 # Wrap the built binary in a minimal macOS .app bundle.
 # Usage: scripts/bundle.sh [debug|release]
+# OPENSHEET_BUNDLE_ID gives the bundle another identifier, so that a copy
+# driven by automated tests is never mistaken for the one the user has open.
 set -e
 PROFILE="${1:-debug}"
+BUNDLE_ID="${OPENSHEET_BUNDLE_ID:-org.opensheet.OpenSheet}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$ROOT/target/$PROFILE/opensheet"
 APP="$ROOT/target/$PROFILE/OpenSheet.app"
@@ -17,7 +20,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleName</key><string>OpenSheet</string>
   <key>CFBundleDisplayName</key><string>OpenSheet</string>
-  <key>CFBundleIdentifier</key><string>org.opensheet.OpenSheet</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>opensheet</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
