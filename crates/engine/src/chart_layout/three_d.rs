@@ -5,7 +5,10 @@
 
 use super::cartesian::{Shape, shapes};
 use super::scale::{Fit, Scale};
-use super::{AXIS, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, groups, label_text, line_height, shade};
+use super::{
+    AXIS, AxisId, ChartElement, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, groups, label_text, line_height,
+    shade,
+};
 use crate::chart::{Family, View3D};
 use crate::style::Color;
 
@@ -342,6 +345,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let length = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2)).sqrt();
     let spacing = if horizontal { (value_w + 12.0 * z).max(34.0 * z) } else { label_h * 1.25 };
     let scale = Scale::new(value_axis, lo, hi, fit(Fit::along(length, spacing).room));
+    p.scale(AxisId::Value, &scale);
     let base = scale.crossing(value_axis.crossing);
     let ticks = scale.major_ticks();
     let value_labels = labels_of(p, &scale);
@@ -361,12 +365,16 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         p.polygon(&pts, None, Some(edge));
     };
     // Like Excel, only the floor has an edge; the walls show by their gridlines.
+    p.tag(ChartElement::PlotArea);
+    p.area(ChartElement::PlotArea, (px0, py0, px1, py1));
     if horizontal {
         outline(p, [(far_x, 0.0, 0.0), (far_x, 0.0, d), (far_x, h, d), (far_x, h, 0.0)]);
     } else {
         outline(p, [(0.0, far_y, 0.0), (w, far_y, 0.0), (w, far_y, d), (0.0, far_y, d)]);
     }
     if value_axis.major_gridlines {
+        let element = ChartElement::MajorGridlines(AxisId::Value);
+        p.tag(element);
         for v in &ticks {
             let f = scale.clamped(*v) as f32;
             // Across the back wall, then forward along the wall beside it.
@@ -377,6 +385,8 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             };
             let (a2, b2) = (cam.at(a.0, a.1, a.2), cam.at(b.0, b.1, b.2));
             p.line(a2.0, a2.1, b2.0, b2.1, grid);
+            p.anchor(element, a2.0, a2.1);
+            p.anchor(element, b2.0, b2.1);
             let near = if horizontal { (f * w, far_y, d) } else { (far_x, f * h, d) };
             let (n2, c2) = (cam.at(near.0, near.1, near.2), cam.at(c.0, c.1, c.2));
             p.line(n2.0, n2.1, c2.0, c2.1, grid);
@@ -385,7 +395,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
 
     // ---- the series --------------------------------------------------------
     let fb = scale.clamped(base) as f32;
-    let mut texts: Vec<(String, f32, f32, TextAnchor)> = Vec::new();
+    let mut texts: Vec<(usize, String, f32, f32, TextAnchor)> = Vec::new();
     let labelled = |si: usize| chart.labels_for(&chart.series[si]);
     match family {
         Family::Column | Family::Bar => {
@@ -427,7 +437,14 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             };
             solids.sort_by(|a, b| order(&a.0).partial_cmp(&order(&b.0)).unwrap_or(std::cmp::Ordering::Equal));
             for (solid, si, k) in &solids {
+                let element = ChartElement::Point(*si as u32, *k as u32);
+                p.tag(element);
                 paint_solid(p, &cam, solid);
+                // Handles on the corners of the face that looks at the viewer.
+                for (x, y) in [(solid.x.0, solid.y.0), (solid.x.1, solid.y.0), (solid.x.1, solid.y.1), (solid.x.0, solid.y.1)] {
+                    let (x, y) = cam.at(x, y, solid.z.0);
+                    p.anchor(element, x, y);
+                }
                 if let Some(labels) = labelled(*si) {
                     let text = label_text(p, *si, *k, None, labels);
                     if text.is_empty() {
@@ -435,10 +452,10 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     }
                     if horizontal {
                         let (x, y) = cam.at(solid.x.1, (solid.y.0 + solid.y.1) / 2.0, z0);
-                        texts.push((text, x + 4.0 * z, y - label_h / 2.0, TextAnchor::Start));
+                        texts.push((*si, text, x + 4.0 * z, y - label_h / 2.0, TextAnchor::Start));
                     } else {
                         let (x, y) = cam.at((solid.x.0 + solid.x.1) / 2.0, solid.y.1, z0);
-                        texts.push((text, x, y - label_h - 2.0 * z, TextAnchor::Middle));
+                        texts.push((*si, text, x, y - label_h - 2.0 * z, TextAnchor::Middle));
                     }
                 }
             }
@@ -457,6 +474,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 let (z0, z1) = (row * row_d + (row_d - thick) / 2.0, row * row_d + (row_d + thick) / 2.0);
                 let color = data.series[si].color;
                 let centre = |k: usize| if on_ticks { k as f32 } else { k as f32 + 0.5 };
+                p.tag(ChartElement::Series(si as u32));
                 // Runs of points without a gap.
                 let mut runs: Vec<Vec<(f32, f32, f32)>> = vec![Vec::new()];
                 for k in 0..n {
@@ -469,6 +487,11 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     }
                 }
                 for run in runs.iter().filter(|r| r.len() >= 2) {
+                    for pt in run {
+                        let (x, y, depth) = pos(pt.0, pt.1, z0);
+                        let (x, y) = cam.at(x, y, depth);
+                        p.anchor(ChartElement::Series(si as u32), x, y);
+                    }
                     let mut pieces: Vec<usize> = (0..run.len() - 1).collect();
                     if !cam.sees_right() {
                         pieces.reverse();
@@ -521,7 +544,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         }
                         let (x, y, depth) = pos(centre(k), scale.clamped(v) as f32, z0);
                         let (x, y) = cam.at(x, y, depth);
-                        texts.push((text, x, y - label_h - 2.0 * z, TextAnchor::Middle));
+                        texts.push((si, text, x, y - label_h - 2.0 * z, TextAnchor::Middle));
                     }
                 }
             }
@@ -533,16 +556,20 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     // The category axis runs along the front edge of the floor (or of the
     // side wall, for bars), at the value where it crosses the scale.
     let (a, b) = (pos(0.0, fb, 0.0), pos(slots, fb, 0.0));
+    let (value_id, category_id) = (ChartElement::Axis(AxisId::Value), ChartElement::Axis(AxisId::Category));
+    p.tag(category_id);
     if chart.axes.category.visible {
         let (a2, b2) = (cam.at(a.0, a.1, a.2), cam.at(b.0, b.1, b.2));
         p.line(a2.0, a2.1, b2.0, b2.1, Stroke::new(AXIS, 1.0));
     }
     let centre = |k: usize| if on_ticks { k as f32 } else { k as f32 + 0.5 };
     if horizontal {
+        p.tag(value_id);
         for (f, label, _) in &value_labels {
             let (x, y) = cam.at(*f as f32 * w, 0.0, 0.0);
             p.text(label, x.round(), y + 5.0 * z, label_size, text, TextAnchor::Middle);
         }
+        p.tag(category_id);
         let step = ((label_h / (cam.scale * h / slots.max(1.0)).max(1.0)).ceil() as usize).max(1);
         for (k, (label, lw)) in cat_labels.iter().enumerate() {
             if k % step != 0 {
@@ -552,10 +579,12 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             p.text(label, x - 6.0 * z - lw.min(side_w), y - label_h / 2.0, label_size, text, TextAnchor::Start);
         }
     } else {
+        p.tag(value_id);
         for (f, label, _) in &value_labels {
             let (x, y) = cam.at(0.0, *f as f32 * h, 0.0);
             p.text(label, x - 6.0 * z, y.round() - label_h / 2.0, label_size, text, TextAnchor::End);
         }
+        p.tag(category_id);
         let slot_px = cam.scale * w / slots.max(1.0);
         let step = (((widest(&cat_labels) + 6.0 * z) / slot_px.max(1.0)).ceil() as usize).max(1);
         for (k, (label, lw)) in cat_labels.iter().enumerate() {
@@ -567,17 +596,22 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         }
     }
     // Rows are named along the edge of the floor that runs into the depth.
+    p.tag(ChartElement::PlotArea);
     for (row, (label, _)) in row_labels.iter().enumerate() {
         let (x, y) = cam.at(w, 0.0, (row as f32 + 0.5) * row_d);
         p.text(label, x + 6.0 * z, y - label_h / 2.0, label_size, text, TextAnchor::Start);
     }
+    let (side_id, foot_id) = if horizontal { (AxisId::Category, AxisId::Value) } else { (AxisId::Value, AxisId::Category) };
     if let Some(title) = side_title.filter(|t| !t.is_empty()) {
+        p.tag(ChartElement::AxisTitle(side_id));
         p.text_rotated(title, left + title_h / 2.0, (py0 + py1) / 2.0, title_size, text, -90.0);
     }
     if let Some(title) = foot_title.filter(|t| !t.is_empty()) {
+        p.tag(ChartElement::AxisTitle(foot_id));
         p.text(title, (px0 + px1) / 2.0, py1 + foot_h + 2.0 * z, title_size, text, TextAnchor::Middle);
     }
-    for (label, x, y, anchor) in texts {
+    for (si, label, x, y, anchor) in texts {
+        p.tag(ChartElement::DataLabels(si as u32));
         p.text(&label, x, y, label_size, text, anchor);
     }
 }

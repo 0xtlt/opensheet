@@ -6,8 +6,8 @@
 
 use crate::app::*;
 use crate::features::{
-    self, Command, ViewMode, comments, condfmt, drawings, filters, format_cells, misc, names, page, pivot, protection,
-    tables, validation,
+    self, Command, ViewMode, charts, comments, condfmt, drawings, filters, format_cells, misc, names, page, pivot,
+    protection, tables, validation,
 };
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -1423,111 +1423,7 @@ impl ExcelApp {
                 ]),
             )
             .into_any_element(),
-            group(
-                t("Charts", "Graphiques"),
-                row(vec![
-                    self.large(
-                        "in-chart-rec",
-                        "chart-bar",
-                        t("Recommended Charts", "Graphiques recommandés"),
-                        false,
-                        cx,
-                        |this, window, cx| this.insert_chart(ChartKind::Column, window, cx),
-                    ),
-                    self.large("in-chart-col", "chart-bar", t("Column", "Histogramme"), true, cx, |this, window, cx| {
-                        this.open_chart_menu(
-                            "in-chart-col",
-                            &[
-                                ChartKind::Column,
-                                ChartKind::StackedColumn,
-                                ChartKind::PercentStackedColumn,
-                                ChartKind::Column3D,
-                                ChartKind::StackedColumn3D,
-                                ChartKind::PercentStackedColumn3D,
-                            ],
-                            window,
-                            cx,
-                        )
-                    }),
-                    self.large("in-chart-barh", "chart-bar-h", t("Bar", "Barres"), true, cx, |this, window, cx| {
-                        this.open_chart_menu(
-                            "in-chart-barh",
-                            &[
-                                ChartKind::Bar,
-                                ChartKind::StackedBar,
-                                ChartKind::PercentStackedBar,
-                                ChartKind::Bar3D,
-                                ChartKind::StackedBar3D,
-                                ChartKind::PercentStackedBar3D,
-                            ],
-                            window,
-                            cx,
-                        )
-                    }),
-                    self.large("in-chart-line", "chart-line", t("Line", "Courbes"), true, cx, |this, window, cx| {
-                        this.open_chart_menu(
-                            "in-chart-line",
-                            &[
-                                ChartKind::Line,
-                                ChartKind::StackedLine,
-                                ChartKind::PercentStackedLine,
-                                ChartKind::LineMarkers,
-                                ChartKind::StackedLineMarkers,
-                                ChartKind::PercentStackedLineMarkers,
-                                ChartKind::Line3D,
-                            ],
-                            window,
-                            cx,
-                        )
-                    }),
-                    self.large("in-chart-area", "chart-area", t("Area", "Aires"), true, cx, |this, window, cx| {
-                        this.open_chart_menu(
-                            "in-chart-area",
-                            &[
-                                ChartKind::Area,
-                                ChartKind::StackedArea,
-                                ChartKind::PercentStackedArea,
-                                ChartKind::Area3D,
-                                ChartKind::StackedArea3D,
-                                ChartKind::PercentStackedArea3D,
-                            ],
-                            window,
-                            cx,
-                        )
-                    }),
-                    self.large("in-chart-pie", "chart-pie", t("Pie", "Secteurs"), true, cx, |this, window, cx| {
-                        this.open_chart_menu(
-                            "in-chart-pie",
-                            &[ChartKind::Pie, ChartKind::Pie3D, ChartKind::Doughnut],
-                            window,
-                            cx,
-                        )
-                    }),
-                    self.large(
-                        "in-chart-scatter",
-                        "chart-scatter",
-                        t("Scatter", "Nuage de points"),
-                        true,
-                        cx,
-                        |this, window, cx| {
-                            this.open_chart_menu(
-                                "in-chart-scatter",
-                                &[
-                                    ChartKind::Scatter,
-                                    ChartKind::ScatterSmoothMarkers,
-                                    ChartKind::ScatterSmooth,
-                                    ChartKind::ScatterLinesMarkers,
-                                    ChartKind::ScatterLines,
-                                    ChartKind::Bubble,
-                                ],
-                                window,
-                                cx,
-                            )
-                        },
-                    ),
-                ]),
-            )
-            .into_any_element(),
+            group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
                 t("Sparklines", "Graphiques sparkline"),
                 row(vec![self.cmd_large("in-sparklines", misc::Cmd::Sparklines, true, cx)]),
@@ -1570,18 +1466,6 @@ impl ExcelApp {
             .border_r_0()
             .into_any_element(),
         ]
-    }
-
-    /// Drop-down offering the given chart types for insertion.
-    fn open_chart_menu(&mut self, anchor: &'static str, kinds: &[ChartKind], window: &mut Window, cx: &mut Cx) {
-        let entries = kinds
-            .iter()
-            .map(|kind| {
-                let kind = *kind;
-                MenuEntry::new(chart_kind_name(kind), move |a, window, cx| a.insert_chart(kind, window, cx))
-            })
-            .collect();
-        self.open_menu(anchor, entries, 330.0, window, cx);
     }
 
     fn layout_tab(&mut self, cx: &mut Cx) -> Vec<AnyElement> {

@@ -13,11 +13,13 @@
 //! chart style.
 
 mod cartesian;
+mod elements;
 mod radar;
 mod round;
 mod scale;
 mod three_d;
 
+pub use elements::{AxisId, ChartElement, ChartLayout, Outline};
 pub use scale::{Fit, Scale};
 
 use crate::chart::{
@@ -186,6 +188,19 @@ pub fn layout_chart(
     options: &LayoutOptions,
     measure: &dyn TextMeasure,
 ) -> Vec<Prim> {
+    layout_chart_elements(chart, data, size, options, measure).prims
+}
+
+/// Lay a chart out and keep track of the element every primitive belongs
+/// to, for pointing at the parts of the chart (`ChartLayout::hit`) and for
+/// showing which one is selected (`ChartLayout::outline`).
+pub fn layout_chart_elements(
+    chart: &Chart,
+    data: &ChartData,
+    size: (f32, f32),
+    options: &LayoutOptions,
+    measure: &dyn TextMeasure,
+) -> ChartLayout {
     let z = options.scale;
     let label_size = (12.0 * z).max(6.0);
     let mut p = Painter {
@@ -197,9 +212,10 @@ pub fn layout_chart(
         out: Vec::new(),
         label_size,
         label_h: line_height(label_size),
+        tagger: elements::Tagger::default(),
     };
     p.draw(size.0, size.1);
-    p.out
+    p.tagger.finish(p.out, size, measure)
 }
 
 /// How a series is drawn, automatic choices resolved.
@@ -240,6 +256,7 @@ pub(crate) struct Painter<'a> {
     /// Size of axis labels, legend entries and data labels (9 pt).
     pub label_size: f32,
     pub label_h: f32,
+    tagger: elements::Tagger,
 }
 
 /// Points of a circle, for shapes that are clipped or mixed with straight
@@ -400,6 +417,32 @@ pub(crate) fn smooth_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
 impl Painter<'_> {
     pub fn width(&self, text: &str, size: f32) -> f32 {
         self.measure.width(text, size, false)
+    }
+
+    /// What is drawn from now on belongs to `element`.
+    pub fn tag(&mut self, element: ChartElement) {
+        self.tagger.tag(self.out.len(), element);
+    }
+
+    /// An element fills this box whatever is drawn in it (the plot area).
+    pub fn area(&mut self, element: ChartElement, rect: (f32, f32, f32, f32)) {
+        self.tagger.area(element, rect);
+    }
+
+    /// A selected `element` shows a handle here.
+    pub fn anchor(&mut self, element: ChartElement, x: f32, y: f32) {
+        self.tagger.anchor(element, x, y, false);
+    }
+
+    /// An axis measures numbers on this scale.
+    pub fn scale(&mut self, axis: AxisId, scale: &Scale) {
+        self.tagger.scale(axis, scale);
+    }
+
+    /// Like `anchor`, for a point that can be picked there although
+    /// nothing is drawn for it alone (a point of a line without markers).
+    pub fn pick(&mut self, element: ChartElement, x: f32, y: f32) {
+        self.tagger.anchor(element, x, y, true);
     }
 
     /// Fill a rectangle given by two opposite corners.
@@ -648,8 +691,9 @@ impl Painter<'_> {
         self.stroke(&auto, true, color, 1.5).unwrap_or(Stroke::new(color, 2.0 * self.z))
     }
 
-    /// The entries of the legend, those removed from it left out.
-    fn legend_entries(&self) -> Vec<(String, Key)> {
+    /// The entries of the legend, those removed from it left out, each
+    /// with its number (what `Chart::legend_hidden` holds).
+    fn legend_entries(&self) -> Vec<(String, Key, u32)> {
         let chart = self.chart;
         let mut entries: Vec<(String, Key)> = Vec::new();
         if self.varied() {
@@ -678,11 +722,12 @@ impl Painter<'_> {
                 }
             }
         }
-        let mut index = 0u32;
-        entries.retain(|_| {
-            index += 1;
-            !chart.legend_hidden.contains(&(index - 1))
-        });
+        let mut entries: Vec<(String, Key, u32)> = entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, (name, key))| (name, key, i as u32))
+            .filter(|(_, _, i)| !chart.legend_hidden.contains(i))
+            .collect();
         // Clustered bars are listed from the top one down, as Excel does:
         // the first series is the lowest bar of each cluster.
         if chart.kind.family() == Family::Bar
@@ -775,10 +820,10 @@ impl Painter<'_> {
         // A swatch for shapes, a piece of line for lines; next to lines a
         // swatch is as wide as they are, as in Excel's legends.
         let swatch = (7.0 * z).round().max(4.0);
-        let lined = entries.iter().any(|(_, key)| matches!(key, Key::Line(..)));
+        let lined = entries.iter().any(|(_, key, _)| matches!(key, Key::Line(..)));
         let marks: Vec<f32> = entries.iter().map(|_| if lined { 18.0 * z } else { swatch }).collect();
         if !entries.is_empty() {
-            let widths: Vec<f32> = entries.iter().map(|(name, _)| self.width(name, label_size)).collect();
+            let widths: Vec<f32> = entries.iter().map(|(name, ..)| self.width(name, label_size)).collect();
             let entry_gap = 14.0 * z;
             let entry_w = |i: usize| widths[i] + marks[i] + 4.0 * z;
             let reserve = !chart.legend_overlay;
@@ -878,13 +923,16 @@ impl Painter<'_> {
         }
 
         if let Some((title, x, y, size)) = title_run {
+            self.tag(ChartElement::Title);
             self.text(&title, x, y, size, text, TextAnchor::Start);
         }
         for (i, x, y) in placed {
-            let (name, key) = &entries[i];
+            let (name, key, number) = &entries[i];
+            self.tag(ChartElement::LegendEntry(*number));
             self.draw_key(key, x, y + label_h / 2.0, marks[i]);
             self.label(name, x + marks[i] + 4.0 * z, y, text);
         }
+        self.tag(ChartElement::ChartArea);
     }
 }
 

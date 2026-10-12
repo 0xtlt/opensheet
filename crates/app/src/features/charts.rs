@@ -1,39 +1,149 @@
 //! Charts as floating objects: where they sit, how they are inserted,
-//! moved, copied and deleted, the "Chart Design" tab, the chart context
-//! menu and the in-place editing of the title. Drawing a chart is
-//! `chart_view.rs`; formatting its parts is `chart_format.rs`.
+//! moved, copied and deleted, selecting the elements of a chart with the
+//! mouse and the keyboard, typing titles in place, and the two buttons
+//! that float beside a selected chart.
+//!
+//! The rest of what a user can do to a chart is in the modules below
+//! (`elements`: names, deleting, context menus; `design`: the "Chart
+//! Design" tab; `insert`: the galleries and the Insert Chart dialog;
+//! `data`: Select Data and Move Chart). Drawing a chart is `chart_view.rs`;
+//! formatting its parts is `chart_format.rs`.
+
+mod data;
+mod design;
+pub(crate) mod elements;
+mod gallery;
+mod insert;
+
+#[cfg(test)]
+mod ui_tests;
+
+pub(crate) use data::{open_move_chart, open_select_data};
+pub(crate) use design::{label_positions, open_colors, open_quick_layouts, open_styles};
+pub use insert::insert_group;
 
 use super::{
-    ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, ObjectInfo, ObjectVerb, PaintLayer, Painter,
-    Placement, ZMove, ZoneEvent, chart_format, object_id,
+    Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuTarget, ObjectInfo, ObjectVerb, PaintLayer, Painter,
+    Placement, ZMove, Zone, ZoneEvent, ZoneResponse, chart_format, object_id,
 };
-use crate::app::{ExcelApp, MenuEntry};
-use crate::chart_view;
+use crate::app::{Cancel, ClearContents, ExcelApp, MoveDown, MoveLeft, MoveRight, MoveUp, Popup, PopupKind};
+use crate::chart_view::{self, ChartStyle};
 use crate::grid::GridLayout;
 use crate::i18n::t;
-use crate::ribbon::{chart_kind_name, group, row};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
-use gpui::{AnyElement, Entity, Focusable, Subscription, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, AnyView, CursorStyle, Entity, FocusHandle, Focusable, SharedString, Subscription, Window, div, point,
+    prelude::*, px,
+};
 use opensheet_engine::chart::{Chart, ChartKind, ChartTitle, LegendPos};
+use opensheet_engine::chart_layout::{ChartElement, ChartLayout};
 use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
 
 pub struct Charts;
 
-const DESIGN_TAB: &str = "chart-design";
+pub(crate) const DESIGN_TAB: &str = "chart-design";
 
-/// The title being typed over a chart.
-struct TitleEdit {
+commands! {
+    /// What the user can ask of a chart as a whole.
+    pub enum Cmd {
+        Recommended = "chart-bar", t("Recommended Charts", "Graphiques recommandés");
+        AddElement = "charts-add-element", t("Add Chart Element", "Ajouter un élément de graphique");
+        SwitchRowColumn = "charts-switch", t("Switch Row/Column", "Intervertir les lignes/colonnes");
+        ChangeType = "charts-change-type", t("Change Chart Type", "Modifier le type de graphique");
+    }
+}
+
+impl Command for Cmd {
+    fn label(self) -> &'static str {
+        self.face().1
+    }
+
+    fn icon(self) -> &'static str {
+        self.face().0
+    }
+
+    fn run(self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+        match self {
+            Cmd::Recommended => insert::open_insert_dialog(app, None, window, cx),
+            Cmd::AddElement => {
+                let entries = design::add_element_menu(app);
+                app.open_command_menu(entries, 250.0, window, cx);
+            }
+            Cmd::SwitchRowColumn => app.switch_chart_rows_columns(cx),
+            Cmd::ChangeType => insert::open_change_type_dialog(app, window, cx),
+        }
+    }
+
+    fn enabled(self, app: &ExcelApp) -> bool {
+        match self {
+            Cmd::Recommended => true,
+            _ => app.selected_chart().is_some(),
+        }
+    }
+}
+
+/// What the zone over a chart carries: the chart as it was last painted,
+/// to tell which of its elements lies under the pointer.
+pub(crate) struct ChartZone {
+    pub chart: u32,
+    /// Corner of the chart in grid-element coordinates.
+    pub origin: (f32, f32),
+    pub layout: Rc<ChartLayout>,
+}
+
+/// The buttons that float beside a selected chart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FloatButton {
+    Elements,
+    Styles,
+}
+
+/// A title being typed over a chart.
+struct TextEdit {
     chart: u32,
+    element: ChartElement,
     input: Entity<TextInput>,
     _subscription: Subscription,
 }
 
+/// The legend being dragged to another side of its chart.
+struct LegendDrag {
+    /// Where the press landed, in grid-element coordinates.
+    start: (f32, f32),
+    /// The pointer left the spot: a drag, not a click.
+    moved: bool,
+}
+
+/// The side of a chart a legend dropped at (`x`, `y`) docks to: the edge
+/// the point is nearest to, seen from the middle of the chart; the top
+/// right corner is a place of its own.
+pub(crate) fn legend_dock(rect: (f32, f32, f32, f32), x: f32, y: f32) -> LegendPos {
+    let (w, h) = ((rect.2 - rect.0).max(1.0), (rect.3 - rect.1).max(1.0));
+    let dx = (x - (rect.0 + rect.2) / 2.0) / w;
+    let dy = (y - (rect.1 + rect.3) / 2.0) / h;
+    if dx > 0.25 && dy < -0.25 {
+        LegendPos::TopRight
+    } else if dx.abs() > dy.abs() {
+        if dx > 0.0 { LegendPos::Right } else { LegendPos::Left }
+    } else if dy > 0.0 {
+        LegendPos::Bottom
+    } else {
+        LegendPos::Top
+    }
+}
+
 #[derive(Default)]
-struct ChartUi {
-    title: Option<TitleEdit>,
+pub(crate) struct ChartUi {
+    edit: Option<TextEdit>,
+    legend_drag: Option<LegendDrag>,
+    /// The selected element of the selected chart.
+    element: ChartElement,
+    /// Holds the keyboard while an element other than the chart area is
+    /// selected: Delete then removes that element, not the chart.
+    keys: Option<FocusHandle>,
 }
 
 impl ExcelApp {
@@ -43,15 +153,49 @@ impl ExcelApp {
         self.wb.chart(self.sheet, id.id)
     }
 
+    /// The selected element of the selected chart (the chart area when
+    /// nothing else is, or when what was selected no longer exists).
+    pub fn chart_element(&self) -> ChartElement {
+        let element = self.ext::<ChartUi>().map(|ui| ui.element).unwrap_or_default();
+        match self.selected_chart() {
+            Some(chart) if elements::exists(chart, element) => element,
+            _ => ChartElement::ChartArea,
+        }
+    }
+
+    pub fn select_chart_element(&mut self, element: ChartElement, cx: &mut Cx) {
+        self.ext_mut::<ChartUi>().element = element;
+        // The Format pane is named after what it formats.
+        chart_format::selection_changed(self, cx);
+        cx.notify();
+    }
+
+    /// The font charts are drawn in.
+    pub fn chart_font(&self) -> SharedString {
+        self.fonts.resolve(&Arc::from(opensheet_engine::style::DEFAULT_FONT))
+    }
+
+    pub fn chart_style(&self) -> ChartStyle {
+        ChartStyle {
+            font: self.chart_font(),
+            locale: self.wb.locale,
+        }
+    }
+
     /// Insert a chart of the selected data, centred in the window.
     pub fn insert_chart(&mut self, kind: ChartKind, window: &mut Window, cx: &mut Cx) {
+        let chart = self.wb.chart_from_range(self.sheet, self.sel().current(), kind);
+        self.insert_built_chart(chart, window, cx);
+    }
+
+    /// Put a chart built from the selection on the sheet and select it.
+    pub(crate) fn insert_built_chart(&mut self, mut chart: Chart, window: &mut Window, cx: &mut Cx) {
         if self.editing.is_some() && !self.commit_edit(None, window, cx) {
             return;
         }
         if !self.may(Intent::EditObject(None), cx) {
             return;
         }
-        let mut chart = self.wb.chart_from_range(self.sheet, self.sel().current(), kind);
         if chart.series.is_empty() {
             self.set_status(
                 t(
@@ -73,7 +217,7 @@ impl ExcelApp {
         self.refresh(cx);
     }
 
-    /// Apply a change to the selected chart.
+    /// Apply a change to the selected chart, as one undo step.
     pub fn edit_chart(&mut self, label: &str, cx: &mut Cx, f: impl FnOnce(&mut Chart)) {
         let Some(id) = self.selected_chart().map(|chart| chart.id) else {
             return;
@@ -91,64 +235,108 @@ impl ExcelApp {
         };
         if chart.switch_row_column(&self.wb, self.sheet) {
             let series = chart.series;
-            self.edit_chart(t("Switch Row/Column", "Intervertir les lignes/colonnes"), cx, move |c| {
-                c.series = series
-            });
+            self.edit_chart(Cmd::SwitchRowColumn.label(), cx, move |c| c.series = series);
         }
+    }
+
+    /// The chart as it was last painted, when it is on screen.
+    pub(crate) fn painted_chart(&self, id: u32) -> Option<&ChartZone> {
+        self.zones.iter().find_map(|zone| zone.payload::<ChartZone>().filter(|z| z.chart == id))
     }
 }
 
-/// Edit the title of a chart in place (double-click on the chart).
-fn begin_title_edit(app: &mut ExcelApp, id: u32, window: &mut Window, cx: &mut Cx) {
-    if !app.may(Intent::EditObject(Some(object_id(&Charts, id))), cx) {
-        return;
+/// Drop a view down from a ribbon control (`None`: at the pointer).
+pub(crate) fn open_ribbon_view(app: &mut ExcelApp, anchor: Option<&'static str>, view: impl Into<AnyView>, window: &mut Window, cx: &mut Cx) {
+    let held = anchor.and_then(|a| app.anchors.borrow().get(a).copied());
+    let pos = match held {
+        Some(b) => point(b.origin.x, b.origin.y + b.size.height + px(2.)),
+        None => window.mouse_position(),
+    };
+    let mut popup = Popup::new(PopupKind::View(view.into()), pos, 0.0).max_height(640.0);
+    if let Some(anchor) = anchor {
+        popup = popup.anchored(anchor);
     }
+    app.popup = Some(popup);
+    cx.notify();
+}
+
+// ------------------------------------------------------------ titles in place
+
+/// Type the chart title or an axis title where it stands.
+pub(crate) fn begin_text_edit(app: &mut ExcelApp, id: u32, element: ChartElement, window: &mut Window, cx: &mut Cx) {
     let Some(chart) = app.wb.chart(app.sheet, id) else {
         return;
     };
-    let current = app
-        .wb
-        .chart_data(app.sheet, chart)
-        .title
-        .unwrap_or_else(|| t("Chart Title", "Titre du graphique").to_string());
+    let current = match element {
+        ChartElement::Title => app
+            .wb
+            .chart_data(app.sheet, chart)
+            .title
+            .unwrap_or_else(|| t("Chart Title", "Titre du graphique").to_string()),
+        ChartElement::AxisTitle(axis) => axis.of(&chart.axes).title.clone().unwrap_or_default(),
+        _ => return,
+    };
+    if !app.may(Intent::EditObject(Some(object_id(&Charts, id))), cx) {
+        return;
+    }
     let input = cx.new(TextInput::new);
     input.update(cx, |input, cx| {
         input.set_text(current, cx);
         input.select_all_text(cx);
     });
-    let subscription = cx.subscribe_in(&input, window, |app, _, ev, window, cx| on_title_event(app, ev, window, cx));
+    let subscription = cx.subscribe_in(&input, window, |app, _, ev, window, cx| on_text_event(app, ev, window, cx));
     window.focus(&input.read(cx).focus_handle(cx));
-    app.ext_mut::<ChartUi>().title = Some(TitleEdit {
+    app.ext_mut::<ChartUi>().edit = Some(TextEdit {
         chart: id,
+        element,
         input,
         _subscription: subscription,
     });
     cx.notify();
 }
 
-fn on_title_event(app: &mut ExcelApp, ev: &InputEvent, window: &mut Window, cx: &mut Cx) {
-    match ev {
-        InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => {
-            let Some(edit) = app.ext_mut::<ChartUi>().title.take() else {
-                return;
-            };
-            let text = edit.input.read(cx).text().trim().to_string();
-            let title = if text.is_empty() {
-                ChartTitle::None
-            } else {
-                ChartTitle::Text(text)
-            };
-            if app.wb.chart(app.sheet, edit.chart).is_some_and(|c| c.title != title) {
+/// Store the title being typed, if any.
+fn finish_text_edit(app: &mut ExcelApp, cx: &mut Cx) {
+    let Some(edit) = app.ext_mut::<ChartUi>().edit.take() else {
+        return;
+    };
+    let text = edit.input.read(cx).text().trim().to_string();
+    let Some(chart) = app.wb.chart(app.sheet, edit.chart) else {
+        return;
+    };
+    match edit.element {
+        ChartElement::Title => {
+            let title = if text.is_empty() { ChartTitle::None } else { ChartTitle::Text(text) };
+            // Leaving an automatic title as it reads keeps it automatic.
+            let shown = app.wb.chart_data(app.sheet, chart).title;
+            let unchanged = chart.title == title || matches!(&title, ChartTitle::Text(text) if chart.title == ChartTitle::Auto && shown.as_deref().unwrap_or(t("Chart Title", "Titre du graphique")) == text);
+            if !unchanged {
                 app.wb.update_chart(app.sheet, edit.chart, |c| c.title = title);
                 app.wb.commit(t("Chart Title", "Titre du graphique"));
             }
+        }
+        ChartElement::AxisTitle(axis) => {
+            let title = (!text.is_empty()).then_some(text);
+            if axis.of(&chart.axes).title != title {
+                app.wb.update_chart(app.sheet, edit.chart, |c| axis.of_mut(&mut c.axes).title = title);
+                app.wb.commit(t("Axis Title", "Titre de l'axe"));
+            }
+        }
+        _ => {}
+    }
+    app.refresh(cx);
+}
+
+fn on_text_event(app: &mut ExcelApp, ev: &InputEvent, window: &mut Window, cx: &mut Cx) {
+    match ev {
+        InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => {
+            finish_text_edit(app, cx);
             if !matches!(ev, InputEvent::Blurred) {
                 window.focus(&app.grid_focus);
             }
-            app.refresh(cx);
         }
         InputEvent::Escape => {
-            app.ext_mut::<ChartUi>().title = None;
+            app.ext_mut::<ChartUi>().edit = None;
             window.focus(&app.grid_focus);
             cx.notify();
         }
@@ -156,129 +344,44 @@ fn on_title_event(app: &mut ExcelApp, ev: &InputEvent, window: &mut Window, cx: 
     }
 }
 
-/// The groups of the "Chart Design" tab.
-fn design_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
-    vec![
-        group(
-            t("Chart Layouts", "Dispositions du graphique"),
-            row(vec![
-                app.large(
-                    "ch-elements",
-                    "chart-bar",
-                    t("Add Chart Element", "Ajouter un élément de graphique"),
-                    true,
-                    cx,
-                    |this, window, cx| {
-                        let Some(chart) = this.selected_chart() else {
-                            return;
-                        };
-                        let has_title = chart.title != ChartTitle::None;
-                        let labels = chart.data_labels;
-                        let legend = chart.legend;
-                        let mut entries = vec![
-                            MenuEntry::new(t("Chart Title", "Titre du graphique"), move |a, _, cx| {
-                                a.edit_chart(t("Chart Title", "Titre du graphique"), cx, move |c| {
-                                    c.title = if has_title { ChartTitle::None } else { ChartTitle::Auto }
-                                })
-                            })
-                            .checked(has_title),
-                            MenuEntry::new(t("Data Labels", "Étiquettes de données"), move |a, _, cx| {
-                                a.edit_chart(t("Data Labels", "Étiquettes de données"), cx, move |c| {
-                                    c.data_labels = !labels
-                                })
-                            })
-                            .checked(labels),
-                            MenuEntry::separator(),
-                        ];
-                        for (pos, name) in [
-                            (LegendPos::None, t("No Legend", "Aucune légende")),
-                            (LegendPos::Right, t("Legend at Right", "Légende à droite")),
-                            (LegendPos::Top, t("Legend at Top", "Légende en haut")),
-                            (LegendPos::Left, t("Legend at Left", "Légende à gauche")),
-                            (LegendPos::Bottom, t("Legend at Bottom", "Légende en bas")),
-                        ] {
-                            entries.push(
-                                MenuEntry::new(name, move |a, _, cx| {
-                                    a.edit_chart(t("Legend", "Légende"), cx, move |c| c.legend = pos)
-                                })
-                                .checked(legend == pos),
-                            );
-                        }
-                        this.open_menu("ch-elements", entries, 240.0, window, cx);
-                    },
-                ),
-                app.cmd_large("ch-quick-layout", chart_format::Cmd::QuickLayout, true, cx),
-            ]),
-        )
-        .into_any_element(),
-        group(
-            t("Chart Styles", "Styles du graphique"),
-            row(vec![
-                app.cmd_large("ch-colors", chart_format::Cmd::ChangeColors, true, cx),
-                app.cmd_large("ch-styles", chart_format::Cmd::Styles, true, cx),
-            ]),
-        )
-        .into_any_element(),
-        group(
-            t("Data", "Données"),
-            row(vec![
-                app.large(
-                    "ch-switch",
-                    "table",
-                    t("Switch Row/Column", "Intervertir les lignes/colonnes"),
-                    false,
-                    cx,
-                    |this, _, cx| this.switch_chart_rows_columns(cx),
-                ),
-                app.cmd_large("ch-select-data", chart_format::Cmd::SelectData, false, cx),
-            ]),
-        )
-        .into_any_element(),
-        group(
-            t("Type", "Type"),
-            row(vec![app.large(
-                "ch-type",
-                "chart-pie",
-                t("Change Chart Type", "Modifier le type de graphique"),
-                true,
-                cx,
-                |this, window, cx| {
-                    let current = this.selected_chart().map(|c| c.kind);
-                    let entries = ChartKind::ALL
-                        .iter()
-                        .map(|kind| {
-                            let kind = *kind;
-                            MenuEntry::new(chart_kind_name(kind), move |a, _, cx| {
-                                a.edit_chart(t("Change Chart Type", "Modifier le type de graphique"), cx, move |c| {
-                                    c.set_kind(kind)
-                                })
-                            })
-                            .checked(current == Some(kind))
-                        })
-                        .collect();
-                    this.open_menu("ch-type", entries, 220.0, window, cx);
-                },
-            )]),
-        )
-        .into_any_element(),
-        group(
-            t("Location", "Emplacement"),
-            row(vec![
-                app.cmd_large("ch-move", chart_format::Cmd::MoveChart, false, cx),
-                app.large(
-                    "ch-delete",
-                    "trash",
-                    t("Delete Chart", "Supprimer le graphique"),
-                    false,
-                    cx,
-                    |this, _, cx| this.delete_selected_object(cx),
-                ),
-            ]),
-        )
-        .border_r_0()
-        .into_any_element(),
-    ]
+// ----------------------------------------------------------------- keyboard
+
+/// Delete / Backspace while an element of a chart is selected.
+fn delete_selected_element(app: &mut ExcelApp, cx: &mut Cx) {
+    let element = app.chart_element();
+    if element == ChartElement::ChartArea {
+        app.delete_selected_object(cx);
+        return;
+    }
+    app.edit_chart(t("Delete", "Supprimer"), cx, move |chart| {
+        elements::delete(chart, element);
+    });
+    app.select_chart_element(ChartElement::ChartArea, cx);
 }
+
+/// The arrow keys walk the elements of the chart, as in Excel; Left and
+/// Right walk the points of a series once one of them is selected.
+fn step_element(app: &mut ExcelApp, forward: bool, sideways: bool, cx: &mut Cx) {
+    let Some(chart) = app.selected_chart() else {
+        return;
+    };
+    let current = app.chart_element();
+    let data = app.wb.chart_data(app.sheet, chart);
+    if let (ChartElement::Point(s, k), true) = (current, sideways) {
+        let count = data.series.get(s as usize).map_or(0, |sd| sd.values.len()) as u32;
+        if count > 0 {
+            let next = if forward { (k + 1) % count } else { (k + count - 1) % count };
+            app.select_chart_element(ChartElement::Point(s, next), cx);
+        }
+        return;
+    }
+    let all = elements::listed(chart, &data);
+    let at = all.iter().position(|e| *e == current.parent()).unwrap_or(0);
+    let next = if forward { (at + 1) % all.len() } else { (at + all.len() - 1) % all.len() };
+    app.select_chart_element(all[next], cx);
+}
+
+// ------------------------------------------------------------------ feature
 
 impl Feature for Charts {
     fn name(&self) -> &'static str {
@@ -296,7 +399,7 @@ impl Feature for Charts {
     }
 
     fn render_tab(&self, app: &mut ExcelApp, _tab: &'static str, _window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        design_tab(app, cx)
+        design::design_tab(app, cx)
     }
 
     /// A selected chart shows which cells it plots, coloured by role like
@@ -318,26 +421,72 @@ impl Feature for Charts {
         }
     }
 
-    /// The field shown over a chart while its title is being typed.
-    fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, _window: &mut Window, _cx: &mut Cx) -> Vec<AnyElement> {
-        let Some(edit) = app.ext::<ChartUi>().and_then(|ui| ui.title.as_ref()) else {
-            return Vec::new();
+    /// The field shown over a chart while a title is being typed, and what
+    /// holds the keyboard while one of its elements is selected.
+    fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+        let mut out = Vec::new();
+        let element = app.chart_element();
+        let editing = app.ext::<ChartUi>().is_some_and(|ui| ui.edit.is_some());
+        if app.selected_chart().is_some() || app.ext::<ChartUi>().is_some_and(|ui| ui.keys.is_some()) {
+            let keys = match &app.ext_mut::<ChartUi>().keys {
+                Some(keys) => keys.clone(),
+                None => {
+                    let keys = cx.focus_handle();
+                    app.ext_mut::<ChartUi>().keys = Some(keys.clone());
+                    keys
+                }
+            };
+            // The keys of the grid act on the chart as a whole: they come
+            // here instead while one of its elements is selected.
+            let wanted = element != ChartElement::ChartArea && !editing && !app.is_editing();
+            if wanted && app.grid_focus.is_focused(window) {
+                window.focus(&keys);
+            } else if !wanted && keys.is_focused(window) {
+                window.focus(&app.grid_focus);
+            }
+            out.push(
+                div()
+                    .absolute()
+                    .size_0()
+                    .track_focus(&keys)
+                    .on_action(cx.listener(|app, _: &ClearContents, _, cx| delete_selected_element(app, cx)))
+                    .on_action(cx.listener(|app, _: &Cancel, _, cx| app.select_chart_element(ChartElement::ChartArea, cx)))
+                    .on_action(cx.listener(|app, _: &MoveRight, _, cx| step_element(app, true, true, cx)))
+                    .on_action(cx.listener(|app, _: &MoveLeft, _, cx| step_element(app, false, true, cx)))
+                    .on_action(cx.listener(|app, _: &MoveDown, _, cx| step_element(app, true, false, cx)))
+                    .on_action(cx.listener(|app, _: &MoveUp, _, cx| step_element(app, false, false, cx)))
+                    .into_any_element(),
+            );
+        }
+
+        let Some(edit) = app.ext::<ChartUi>().and_then(|ui| ui.edit.as_ref()) else {
+            return out;
         };
         let Some(chart) = app.wb.chart(app.sheet, edit.chart) else {
-            return Vec::new();
+            return out;
         };
         let (x0, y0, x1, _) = chart_view::chart_rect(layout, chart);
         let z = app.zoom;
-        let size = (18.67 * z).max(8.0);
+        let title = edit.element == ChartElement::Title;
+        let size = ((if title { 18.67 } else { 13.33 }) * z).max(8.0);
         let line_h = (size * 1.25).round();
-        let pad = (10.0 * z).round();
-        let font = app.fonts.resolve(&Arc::from(opensheet_engine::style::DEFAULT_FONT));
-        vec![
+        // Where the text stands on the chart, when it is drawn there.
+        let bounds = app.painted_chart(edit.chart).and_then(|zone| zone.layout.bounds(edit.element));
+        let (left, top, width) = match bounds {
+            Some(b) if title => (x0 + 10.0 * z, y0 + b[1] - 2.0, x1 - x0 - 20.0 * z),
+            Some(b) => {
+                let width = (b[2] - b[0]).max(160.0 * z);
+                let centre = (b[0] + b[2]) / 2.0;
+                ((x0 + centre - width / 2.0).max(x0 + 4.0), y0 + (b[1] + b[3]) / 2.0 - line_h / 2.0 - 2.0, width)
+            }
+            None => (x0 + 10.0 * z, y0 + 6.0 * z, x1 - x0 - 20.0 * z),
+        };
+        out.push(
             div()
                 .absolute()
-                .left(px(x0 + pad))
-                .top(px(y0 + pad - 4.0 * z))
-                .w(px((x1 - x0 - 2.0 * pad).max(40.0)))
+                .left(px(left))
+                .top(px(top))
+                .w(px(width.max(40.0)))
                 .h(px(line_h + 4.0))
                 .occlude()
                 .bg(c(0xFFFFFF))
@@ -346,13 +495,105 @@ impl Feature for Charts {
                 .px(px(4.0))
                 .flex()
                 .items_center()
-                .font_family(font)
+                .font_family(app.chart_font())
                 .text_size(px(size))
                 .line_height(px(line_h))
                 .text_color(c(0x595959))
                 .child(edit.input.clone())
                 .into_any_element(),
-        ]
+        );
+        out
+    }
+
+    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+        if let Some(button) = zone.payload::<FloatButton>() {
+            if ev.button != gpui::MouseButton::Left {
+                return ZoneResponse::Handled;
+            }
+            // The list opens beside its button.
+            let pos = match app.current_layout() {
+                Some(layout) => layout.to_window(zone.bounds.2 + 6.0, zone.bounds.1),
+                None => ev.position,
+            };
+            match button {
+                FloatButton::Elements => {
+                    let view = design::elements_flyout(app, cx);
+                    app.open_popup_view(pos, view, cx);
+                }
+                FloatButton::Styles => {
+                    let view = design::styles_flyout(app, cx);
+                    app.open_popup_view(pos, view, cx);
+                }
+            }
+            return ZoneResponse::Handled;
+        }
+        let Some(hit) = zone.payload::<ChartZone>() else {
+            return ZoneResponse::Ignored;
+        };
+        // What is being typed is stored before anything else happens.
+        if app.ext::<ChartUi>().is_some_and(|ui| ui.edit.is_some()) {
+            finish_text_edit(app, cx);
+        }
+        if app.editing.is_some() && !app.commit_edit(None, window, cx) {
+            return ZoneResponse::Handled;
+        }
+        let id = object_id(self, hit.chart);
+        let current = if app.object_sel == Some(id) { app.chart_element() } else { ChartElement::ChartArea };
+        let under = hit.layout.hit(ev.x - hit.origin.0, ev.y - hit.origin.1);
+        // A click on a series selects the series; a click on one of its
+        // points once the series is selected selects that point.
+        let target = match under {
+            ChartElement::Point(s, _) if current.series() == Some(s as usize) && matches!(current, ChartElement::Series(_) | ChartElement::Point(..)) => under,
+            ChartElement::LegendEntry(_) if matches!(current, ChartElement::Legend | ChartElement::LegendEntry(_)) => under,
+            other => other.parent(),
+        };
+        app.select_object(Some(id), cx);
+        app.select_chart_element(target, cx);
+        if ev.button != gpui::MouseButton::Left || target == ChartElement::ChartArea {
+            // The chart itself: selected, moved and given its menu like
+            // any other object.
+            return ZoneResponse::Ignored;
+        }
+        app.popup = None;
+        if ev.click_count >= 2 {
+            chart_format::open_pane(app, window, cx);
+        } else if current == target && matches!(target, ChartElement::Title | ChartElement::AxisTitle(_)) {
+            begin_text_edit(app, hit.chart, target, window, cx);
+        } else if let Some(keys) = app.ext::<ChartUi>().and_then(|ui| ui.keys.clone()) {
+            window.focus(&keys);
+        }
+        if ev.click_count == 1 && matches!(target, ChartElement::Legend | ChartElement::LegendEntry(_)) {
+            // The legend can be dragged to another side of the chart.
+            app.ext_mut::<ChartUi>().legend_drag = Some(LegendDrag {
+                start: (ev.x, ev.y),
+                moved: false,
+            });
+            return ZoneResponse::Capture;
+        }
+        ZoneResponse::Handled
+    }
+
+    fn zone_drag(&self, app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) {
+        if let Some(drag) = &mut app.ext_mut::<ChartUi>().legend_drag {
+            drag.moved |= (ev.x - drag.start.0).abs() > 4.0 || (ev.y - drag.start.1).abs() > 4.0;
+        }
+    }
+
+    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+        let (Some(drag), Some(hit)) = (app.ext_mut::<ChartUi>().legend_drag.take(), zone.payload::<ChartZone>()) else {
+            return;
+        };
+        let Some(chart) = app.wb.chart(app.sheet, hit.chart).filter(|_| drag.moved) else {
+            return;
+        };
+        // The model has no free position for a legend: it docks to the
+        // side it was dropped on.
+        let z = app.zoom;
+        let rect = (hit.origin.0, hit.origin.1, hit.origin.0 + chart.size.0 * z, hit.origin.1 + chart.size.1 * z);
+        let side = legend_dock(rect, ev.x, ev.y);
+        if side != chart.legend {
+            app.edit_chart(t("Legend", "Légende"), cx, move |chart| chart.legend = side);
+        }
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
@@ -362,37 +603,9 @@ impl Feature for Charts {
         if id.owner != super::index_of(self) {
             return;
         }
-        menu.add(
-            MenuSection::Data,
-            MenuEntry::new(t("Switch Row/Column", "Intervertir les lignes/colonnes"), |a, _, cx| {
-                a.switch_chart_rows_columns(cx)
-            })
-            .icon("table"),
-        );
-        let current = app.wb.chart(app.sheet, id.id).map(|c| c.kind);
-        let kinds = ChartKind::ALL
-            .iter()
-            .map(|kind| {
-                let kind = *kind;
-                MenuEntry::new(chart_kind_name(kind), move |a, _, cx| {
-                    a.edit_chart(t("Change Chart Type", "Modifier le type de graphique"), cx, move |c| {
-                        c.set_kind(kind)
-                    })
-                })
-                .checked(current == Some(kind))
-            })
-            .collect();
-        menu.add(
-            MenuSection::Data,
-            MenuEntry::submenu(t("Change Chart Type", "Modifier le type de graphique"), kinds),
-        );
-        menu.add(
-            MenuSection::Edit,
-            MenuEntry::new(t("Delete Chart", "Supprimer le graphique"), |a, _, cx| {
-                a.delete_selected_object(cx)
-            })
-            .icon("trash"),
-        );
+        if let Some(chart) = app.wb.chart(app.sheet, id.id) {
+            elements::context_menu(app, chart, app.chart_element(), menu);
+        }
     }
 
     fn objects(&self, app: &ExcelApp, sheet: usize) -> Vec<ObjectInfo> {
@@ -412,18 +625,31 @@ impl Feature for Charts {
             .collect()
     }
 
-    fn paint_object(&self, p: &mut Painter, object: &ObjectInfo, _rect: (f32, f32, f32, f32)) {
+    fn paint_object(&self, p: &mut Painter, object: &ObjectInfo, rect: (f32, f32, f32, f32)) {
         let Some(chart) = p.app.wb.chart(p.app.sheet, object.id) else {
             return;
         };
-        let style = chart_view::ChartStyle {
-            font: p.app.fonts.resolve(&Arc::from(opensheet_engine::style::DEFAULT_FONT)),
-            placeholder_title: t("Chart Title", "Titre du graphique"),
-            series_prefix: t("Series", "Série"),
-            locale: p.app.wb.locale,
-        };
+        let style = p.app.chart_style();
         let data = p.app.wb.chart_data(p.app.sheet, chart);
-        p.extend(chart_view::build_chart(chart, &data, p.layout, p.ts, &style, false));
+        let (layout, items) = chart_view::build_chart(chart, &data, p.layout, rect, p.ts, &style);
+        p.extend(items);
+        if p.app.object_sel == Some(object_id(self, object.id)) {
+            let element = p.app.chart_element();
+            if element != ChartElement::ChartArea {
+                let origin = p.layout.to_window(rect.0, rect.1);
+                p.extend(chart_view::outline_draws(&layout.outline(element), origin, p.ts));
+            }
+            paint_float_buttons(p, rect);
+        }
+        // The handles on the frame stay those of the object.
+        p.zone(
+            (rect.0 + 6.0, rect.1 + 6.0, rect.2 - 6.0, rect.3 - 6.0),
+            ChartZone {
+                chart: object.id,
+                origin: (rect.0, rect.1),
+                layout: Rc::new(layout),
+            },
+        );
     }
 
     fn place_object(&self, app: &mut ExcelApp, id: u32, place: Placement) {
@@ -480,7 +706,53 @@ impl Feature for Charts {
         }
     }
 
-    fn object_double_click(&self, app: &mut ExcelApp, id: u32, _ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
-        begin_title_edit(app, id, window, cx);
+    /// A double click on the chart itself opens "Format Chart Area".
+    fn object_double_click(&self, app: &mut ExcelApp, _id: u32, _ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+        chart_format::open_pane(app, window, cx);
+    }
+
+    fn object_selected(&self, app: &mut ExcelApp, id: Option<u32>, cx: &mut Cx) {
+        if id.is_none() {
+            if app.ext::<ChartUi>().is_some_and(|ui| ui.edit.is_some()) {
+                finish_text_edit(app, cx);
+            }
+            app.ext_mut::<ChartUi>().element = ChartElement::ChartArea;
+        }
+        chart_format::selection_changed(app, cx);
+    }
+}
+
+/// The "+" and the brush beside a selected chart: Chart Elements and Chart
+/// Styles. They stand right of the chart, left of it when the window ends
+/// there.
+fn paint_float_buttons(p: &mut Painter, rect: (f32, f32, f32, f32)) {
+    const SIZE: f32 = 24.0;
+    let x = if rect.2 + 10.0 + SIZE > p.clip.2 { rect.0 - 10.0 - SIZE } else { rect.2 + 10.0 };
+    let ink = c(theme::ACCENT);
+    for (i, (button, tip)) in [
+        (FloatButton::Elements, t("Chart Elements", "Éléments de graphique")),
+        (FloatButton::Styles, t("Chart Styles", "Styles du graphique")),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let y = rect.1 + i as f32 * (SIZE + 6.0);
+        if x < p.clip.0 || y + SIZE > rect.3 {
+            continue;
+        }
+        p.rounded(x, y, x + SIZE, y + SIZE, 4.0, c(0xFFFFFF), Some(c(theme::BORDER_STRONG)));
+        let (mx, my) = (x + SIZE / 2.0, y + SIZE / 2.0);
+        match button {
+            FloatButton::Elements => {
+                p.rect(mx - 6.0, my - 1.0, mx + 6.0, my + 1.0, ink);
+                p.rect(mx - 1.0, my - 6.0, mx + 1.0, my + 6.0, ink);
+            }
+            FloatButton::Styles => {
+                // A brush: the handle, then the tuft.
+                p.polyline(&[(mx + 6.0, my - 6.5), (mx - 0.5, my + 0.5)], 2.5, ink);
+                p.polygon(&[(mx - 0.5, my - 1.5), (mx + 2.0, my + 1.0), (mx - 3.0, my + 5.5), (mx - 6.5, my + 6.5), (mx - 5.0, my + 3.0)], ink);
+            }
+        }
+        p.zone((x, y, x + SIZE, y + SIZE), button).cursor(CursorStyle::PointingHand).tooltip(tip);
     }
 }
