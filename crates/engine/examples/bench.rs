@@ -97,6 +97,31 @@ fn full_and_graph(wb: &mut Workbook) -> (Duration, Duration) {
 }
 
 fn timings() {
+    // The measurement asked for: one cell changed among 100 000 formulas.
+    let mut wb = typical(50_000);
+    let first = timed(|| {
+        wb.commit("fill");
+    });
+    println!("100 000 formulas");
+    println!("  first calculation, graph included   {first:?}");
+    println!(
+        "  change a cell nothing reads         {:?}",
+        edit(&mut wb, 0, 25, 9)
+    );
+    println!(
+        "  change a cell two formulas read     {:?}",
+        edit(&mut wb, 25_000, 0, 9)
+    );
+    println!(
+        "  change a cell every formula reads   {:?}",
+        edit(&mut wb, 0, 0, 5)
+    );
+    wb.set_incremental(false);
+    println!(
+        "  the same without the graph          {:?}",
+        edit(&mut wb, 25_000, 0, 5)
+    );
+
     let mut wb = typical(100_000);
     let first = timed(|| {
         wb.commit("fill");
