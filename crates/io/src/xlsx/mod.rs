@@ -1,10 +1,15 @@
 //! Office Open XML spreadsheets (`.xlsx`).
 //!
 //! The reader and writer work directly on the package (a zip archive of XML
-//! parts) and map it to and from the engine's [`Workbook`] model. Parts the
-//! engine has no model for (images, conditional formatting, data validation,
-//! pivot tables, ...) are ignored on load and therefore not written
+//! parts) and map it to and from the engine's [`Workbook`] model. What the
+//! engine has no model for is ignored on load and therefore not written
 //! back.
+//!
+//! `read.rs` and `write.rs` hold the package, the workbook part, the styles
+//! and the cells. Each feature stored inside the worksheet or the workbook
+//! part has a file of its own with a `read` / `write` pair (`validation.rs`,
+//! `protection.rs`, `defaults.rs`); the reader and the writer only call
+//! them, at the place the schema gives their elements.
 //!
 //! [`Workbook`]: opensheet_engine::Workbook
 
@@ -18,27 +23,29 @@ macro_rules! w {
 mod chart;
 mod color;
 mod comments;
+mod defaults;
 mod formula;
 mod numfmt;
 mod parts;
+mod protection;
 pub(crate) mod read;
+mod validation;
 pub(crate) mod write;
 mod xml;
 
-/// Width in pixels of the widest digit of the default font at 100 % zoom.
-/// Column widths in files are expressed in this unit.
-const MAX_DIGIT_WIDTH: f64 = 7.0;
-
 /// Column width as stored in a file → pixels at 100 %.
 ///
-/// The stored width already includes the 5 pixels of cell padding, so a
-/// column shown as "8.43 characters" in Excel (8.43 × 7 + 5 = 64 px) is
-/// stored as 64 / 7 = 9.14. Excel truncates stored widths to 1/256 of a
-/// character; values that land just below a whole pixel are snapped to it.
-pub(crate) fn col_width_to_px(width: f64) -> f32 {
-    let px = (width * MAX_DIGIT_WIDTH).max(0.0);
+/// Files count in characters: `digit_width` is the width in pixels of the
+/// widest digit of the workbook's default font (7 for Calibri 11, see
+/// `defaults.rs`). The stored width already includes the 5 pixels of cell
+/// padding, so a column shown as "8.43 characters" in Excel (8.43 × 7 + 5
+/// = 64 px) is stored as 64 / 7 = 9.14. Excel truncates stored widths to
+/// 1/256 of a character; values that land just below a whole pixel are
+/// snapped to it.
+pub(crate) fn col_width_to_px(width: f64, digit_width: f64) -> f32 {
+    let px = (width * digit_width).max(0.0);
     let nearest = px.round();
-    if (nearest - px).abs() < 0.05 {
+    if (nearest - px).abs() < digit_width / 256.0 + 0.02 {
         nearest as f32
     } else {
         ((px * 100.0).round() / 100.0) as f32
@@ -46,8 +53,11 @@ pub(crate) fn col_width_to_px(width: f64) -> f32 {
 }
 
 /// Pixels at 100 % → column width as stored in a file.
-pub(crate) fn px_to_col_width(px: f32) -> f64 {
-    ((px.max(0.0) as f64 / MAX_DIGIT_WIDTH) * 1e8).round() / 1e8
+pub(crate) fn px_to_col_width(px: f32, digit_width: f64) -> f64 {
+    // Widths are kept to 1/100 of a pixel; what an `f32` carries beyond
+    // that is noise ("88.41" is not 88.41000366).
+    let px = (px.max(0.0) as f64 * 100.0).round() / 100.0;
+    ((px / digit_width) * 1e8).round() / 1e8
 }
 
 /// Row height in points → pixels at 100 % (96 dpi).
@@ -67,14 +77,28 @@ mod tests {
 
     #[test]
     fn column_widths() {
-        // Values written by Excel for 64, 61, 145 and 100 pixel columns.
-        assert_eq!(col_width_to_px(9.140625), 64.0);
-        assert_eq!(col_width_to_px(8.7109375), 61.0);
-        assert_eq!(col_width_to_px(20.7109375), 145.0);
-        assert_eq!(col_width_to_px(14.28515625), 100.0);
-        assert_eq!(col_width_to_px(0.0), 0.0);
-        for px in [0.0f32, 1.0, 12.0, 64.0, 64.5, 77.25, 100.0, 255.0, 1800.0] {
-            assert_eq!(col_width_to_px(px_to_col_width(px)), px);
+        // Values written by Excel for 64, 61, 145 and 100 pixel columns of
+        // a workbook in Calibri 11 (digits 7 pixels wide).
+        assert_eq!(col_width_to_px(9.140625, 7.0), 64.0);
+        assert_eq!(col_width_to_px(8.7109375, 7.0), 61.0);
+        assert_eq!(col_width_to_px(20.7109375, 7.0), 145.0);
+        assert_eq!(col_width_to_px(14.28515625, 7.0), 100.0);
+        assert_eq!(col_width_to_px(0.0, 7.0), 0.0);
+        // The same in Calibri 12 (8 pixels): 72 and 100 pixels.
+        assert_eq!(col_width_to_px(9.0, 8.0), 72.0);
+        assert_eq!(col_width_to_px(12.5, 8.0), 100.0);
+        // A width from Excel for Mac, which does not count in whole pixels.
+        assert_eq!(col_width_to_px(10.83203125, 8.0), 86.66);
+        for digit in [5.0, 7.0, 8.0, 11.0, 19.0] {
+            for px in [0.0f32, 1.0, 12.0, 64.0, 64.5, 77.25, 100.0, 255.0, 1800.0] {
+                let width = px_to_col_width(px, digit);
+                assert_eq!(col_width_to_px(width, digit), px, "{px} px, digit {digit}");
+                // As Excel would store it: cut to 1/256 of a character.
+                if px.fract() == 0.0 {
+                    let stored = (width * 256.0).floor() / 256.0;
+                    assert_eq!(col_width_to_px(stored, digit), px, "{px} px, digit {digit}");
+                }
+            }
         }
     }
 

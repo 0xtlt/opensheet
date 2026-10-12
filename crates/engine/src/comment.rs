@@ -8,11 +8,13 @@
 use crate::ast::StructuralEdit;
 use crate::datetime::{date_to_serial, serial_to_ymd, time_to_serial};
 use crate::drawing::{Corner, Frame, columns, moved_corner, rows};
+use crate::features::{CellShift, tiled};
 use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
 use crate::style::Font;
 use crate::validation::localized;
 use crate::workbook::{Sheet, Workbook};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
@@ -564,8 +566,14 @@ impl Workbook {
         let Some(sh) = self.sheets.get(sheet) else {
             return 0;
         };
-        let inside = |cell: &(u32, u32)| ranges.iter().any(|r| r.contains(cell.0, cell.1));
-        let doomed: Vec<(u32, u32)> = sh.comments.keys().filter(|cell| inside(cell)).copied().collect();
+        // Range by range: there may be thousands (the rows a filter shows).
+        let doomed: BTreeSet<(u32, u32)> = ranges
+            .iter()
+            .flat_map(|r| {
+                let rows = sh.comments.range((r.r0, 0)..=(r.r1, u32::MAX));
+                rows.map(|(cell, _)| *cell).filter(|(_, col)| r.c0 <= *col && *col <= r.c1)
+            })
+            .collect();
         if !doomed.is_empty() {
             self.snapshot();
             for cell in &doomed {
@@ -758,36 +766,19 @@ impl Workbook {
 
     // ---- with their cells ------------------------------------------------
 
-    /// Take the notes and comments of the block `src` to the block of the
-    /// same size at (`dest_row`, `dest_col`), replacing those found
-    /// there. With `take` they leave the source (cut and paste, dragging
-    /// cells), else they are copied (copy and paste, filling).
-    fn carry_comments(
-        &mut self,
-        src_sheet: usize,
-        src: Rect,
-        dest_sheet: usize,
-        dest_row: u32,
-        dest_col: u32,
-        take: bool,
-    ) {
-        if src_sheet >= self.sheets.len()
-            || dest_sheet >= self.sheets.len()
-            || dest_row >= MAX_ROWS
-            || dest_col >= MAX_COLS
-        {
+    /// Take the notes and comments of the block `src` to each of `dests`,
+    /// replacing those found there. A destination is a block of the same
+    /// size or, for a copy, one holding several copies of `src` (one cell
+    /// pasted over a selection, a row filled down), which each get them.
+    /// With `take` they leave the source (cut and paste, dragging cells),
+    /// else they are copied (copy and paste, filling).
+    fn carry_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dests: &[Rect], take: bool) {
+        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return;
         }
-        let (d_row, d_col) = (dest_row as i64 - src.r0 as i64, dest_col as i64 - src.c0 as i64);
-        if src_sheet == dest_sheet && d_row == 0 && d_col == 0 {
+        if src_sheet == dest_sheet && dests == [src] {
             return;
         }
-        let dest = Rect::new(
-            dest_row,
-            dest_col,
-            (dest_row as u64 + src.rows() as u64 - 1).min(MAX_ROWS as u64 - 1) as u32,
-            (dest_col as u64 + src.cols() as u64 - 1).min(MAX_COLS as u64 - 1) as u32,
-        );
         let within = |sheet: &Sheet, rect: &Rect| -> Vec<(u32, u32)> {
             let cells = sheet.comments.range((rect.r0, 0)..=(rect.r1, u32::MAX));
             cells
@@ -796,7 +787,10 @@ impl Workbook {
                 .collect()
         };
         let carried = within(&self.sheets[src_sheet], &src);
-        let replaced = within(&self.sheets[dest_sheet], &dest);
+        let replaced: Vec<(u32, u32)> = dests
+            .iter()
+            .flat_map(|dest| within(&self.sheets[dest_sheet], dest))
+            .collect();
         if carried.is_empty() && replaced.is_empty() {
             return;
         }
@@ -814,32 +808,99 @@ impl Workbook {
         for cell in replaced {
             self.sheets[dest_sheet].comments.remove(&cell);
         }
-        for ((row, col), mut comment) in comments {
-            let target = ((row as i64 + d_row) as u32, (col as i64 + d_col) as u32);
-            if !dest.contains(target.0, target.1) {
-                continue;
+        for ((row, col), comment) in comments {
+            let copies = dests.iter().flat_map(|dest| tiled(Rect::cell(row, col), &src, dest));
+            let cells = copies.flat_map(|copy| (copy.r0..=copy.r1).flat_map(move |r| (copy.c0..=copy.c1).map(move |c| (r, c))));
+            for target in cells {
+                let (d_row, d_col) = (target.0 as i64 - row as i64, target.1 as i64 - col as i64);
+                let mut comment = comment.clone();
+                // A box that was placed by hand keeps its place relative
+                // to the cell.
+                if let Comment::Note(note) = &mut comment {
+                    note.frame = note.frame.map(|frame| shifted_box(frame, d_row, d_col));
+                }
+                self.sheets[dest_sheet].comments.insert(target, comment);
             }
-            // A box that was placed by hand keeps its place relative to
-            // the cell.
-            if let Comment::Note(note) = &mut comment {
-                note.frame = note.frame.map(|frame| shifted_box(frame, d_row, d_col));
-            }
-            self.sheets[dest_sheet].comments.insert(target, comment);
         }
     }
 
-    /// Notes and comments follow cells that are moved (cut and paste,
-    /// dragging a selection): call next to `move_range`, with the same
-    /// arguments. Those of the destination are replaced.
-    pub fn move_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
-        self.carry_comments(src_sheet, src, dest_sheet, dest_row, dest_col, true);
+    /// The block of the size of `src` at (`dest_row`, `dest_col`), cut at
+    /// the edges of the sheet; `None` when it starts off the sheet.
+    fn block_at(src: Rect, dest_row: u32, dest_col: u32) -> Option<Rect> {
+        (dest_row < MAX_ROWS && dest_col < MAX_COLS).then(|| {
+            Rect::new(
+                dest_row,
+                dest_col,
+                (dest_row as u64 + src.rows() as u64 - 1).min(MAX_ROWS as u64 - 1) as u32,
+                (dest_col as u64 + src.cols() as u64 - 1).min(MAX_COLS as u64 - 1) as u32,
+            )
+        })
     }
 
-    /// Notes and comments are copied with their cells (Paste, Paste
-    /// Special ▸ Comments and Notes): the block at (`dest_row`,
-    /// `dest_col`) gets those of `src`, and loses its own.
+    /// Notes and comments follow cells that are moved (cut and paste,
+    /// dragging a selection): `move_range` calls this, with its own
+    /// arguments. Those of the destination are replaced.
+    pub fn move_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
+        if let Some(dest) = Self::block_at(src, dest_row, dest_col) {
+            self.carry_comments(src_sheet, src, dest_sheet, &[dest], true);
+        }
+    }
+
+    /// Notes and comments are copied with their cells (`paste` does it
+    /// for Paste and for Paste Special ▸ Comments and Notes): the block at
+    /// (`dest_row`, `dest_col`) gets those of `src`, and loses its own.
     pub fn copy_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
-        self.carry_comments(src_sheet, src, dest_sheet, dest_row, dest_col, false);
+        if let Some(dest) = Self::block_at(src, dest_row, dest_col) {
+            self.carry_comments(src_sheet, src, dest_sheet, &[dest], false);
+        }
+    }
+
+    /// As `copy_comments`, laying `src` over each of `dests`: a
+    /// destination holds a whole number of copies of `src` (one cell
+    /// pasted over a selection, a row filled down) or one copy cut short,
+    /// and every copy gets the notes and comments of `src`. Several
+    /// destinations are the blocks of rows a filter leaves shown.
+    pub(crate) fn tile_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dests: &[Rect]) {
+        self.carry_comments(src_sheet, src, dest_sheet, dests, false);
+    }
+
+    /// Notes and comments follow the lines of `rect` that a sort or
+    /// Remove Duplicates moves: `moves` lists (from, to) rows, or columns
+    /// when `by_rows` is false. Those found on the lines written over
+    /// are replaced.
+    pub(crate) fn reorder_comments(&mut self, sheet: usize, rect: Rect, by_rows: bool, moves: &[(u32, u32)]) {
+        let Some(sh) = self.sheets.get(sheet).filter(|sh| !sh.comments.is_empty()) else {
+            return;
+        };
+        let line = |cell: &(u32, u32)| if by_rows { cell.0 } else { cell.1 };
+        let landing: HashMap<u32, u32> = moves.iter().copied().collect();
+        let written: HashSet<u32> = moves.iter().map(|(_, to)| *to).collect();
+        let touched: Vec<(u32, u32)> = sh
+            .comments
+            .range((rect.r0, 0)..=(rect.r1, u32::MAX))
+            .map(|(cell, _)| *cell)
+            .filter(|cell| rect.contains(cell.0, cell.1))
+            .filter(|cell| landing.contains_key(&line(cell)) || written.contains(&line(cell)))
+            .collect();
+        if touched.is_empty() {
+            return;
+        }
+        self.snapshot();
+        let comments = &mut self.sheets[sheet].comments;
+        let mut lifted = Vec::new();
+        for cell in touched {
+            let comment = comments.remove(&cell);
+            let to = landing.get(&line(&cell)).copied();
+            lifted.extend(comment.zip(to).map(|(comment, to)| (cell, to, comment)));
+        }
+        for ((row, col), to, mut comment) in lifted {
+            let target = if by_rows { (to, col) } else { (row, to) };
+            if let Comment::Note(note) = &mut comment {
+                let (d_row, d_col) = (target.0 as i64 - row as i64, target.1 as i64 - col as i64);
+                note.frame = note.frame.map(|frame| shifted_box(frame, d_row, d_col));
+            }
+            comments.insert(target, comment);
+        }
     }
 }
 
@@ -891,6 +952,23 @@ pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
 /// See `features::on_sheet_duplicated`: the copy keeps the notes and
 /// comments of the original, which cloning the sheet already gave it.
 pub(crate) fn on_sheet_duplicated(_wb: &mut Workbook, _copy: usize, _original: &str) {}
+
+/// See `features::on_sheet_deleted`: the notes and comments of a sheet go
+/// with it.
+pub(crate) fn on_sheet_deleted(_wb: &mut Workbook, _deleted: &Sheet, _order: &[&str]) {}
+
+/// See `features::on_sheet_moved`: notes and comments are kept on their
+/// sheet, whose place only matters to `next_comment`, which reads it.
+pub(crate) fn on_sheet_moved(_wb: &mut Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+
+/// See `features::on_cells_shifted`: notes and comments follow the cells
+/// that moved and disappear with those that went.
+pub(crate) fn on_cells_shifted(wb: &mut Workbook, sheet: usize, shift: CellShift) {
+    wb.delete_comments(sheet, &[shift.removed()]);
+    if let Some((from, to)) = shift.carried() {
+        wb.move_comments(sheet, from, sheet, to.r0, to.c0);
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1203,9 +1281,7 @@ mod tests {
         w.set_note_frame(0, 0, 0, Some(Frame::new(100.0, 0.0, 50.0, 50.0)));
         w.commit("setup");
         // Cut A1:A3 and paste on C5: the cells and what is attached to them move.
-        let src = rect("A1:A3");
-        w.move_range(0, src, 0, 4, 2);
-        w.move_comments(0, src, 0, 4, 2);
+        w.move_range(0, rect("A1:A3"), 0, 4, 2);
         w.commit("move");
         assert_eq!(w.sheets[0].comment_cells(None), [cell("C5"), cell("C6"), cell("J10")]);
         assert_eq!(note_text(&w, "C5").as_deref(), Some("on A1"));

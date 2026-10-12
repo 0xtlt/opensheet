@@ -2,10 +2,15 @@
 
 mod common;
 
-use common::{assert_well_formed, at, enter, formula, part, part_names, value};
+use common::{
+    assert_well_formed, assert_workbook_order, assert_worksheet_order, at, enter, formula, part,
+    part_names, value,
+};
 use opensheet_engine::parser::parse_formula;
+use opensheet_engine::protect::{Permission, SheetProtection};
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
 use opensheet_engine::style::{Border, BorderStyle, HAlign, Style, Underline, VAlign};
+use opensheet_engine::validation::{Operator, Validation, ValidationKind};
 use opensheet_engine::workbook::Content;
 use opensheet_engine::{Color, ErrorKind, Locale, Rect, Value, Workbook};
 use opensheet_io::{load, load_xlsx, read_xlsx, save, save_xlsx, write_xlsx};
@@ -122,6 +127,7 @@ fn sample() -> Workbook {
         s.rotation = -30;
         s.shrink_to_fit = true;
         s.h_align = HAlign::CenterAcross;
+        s.hidden = true;
     });
     style(&mut wb, 0, "A3:B4", &|s| {
         s.borders.left = Border::thin();
@@ -195,7 +201,39 @@ fn sample() -> Workbook {
         "Newer",
         parse_formula("CONCAT(Data!$B$1,\"<&>\")", en).unwrap(),
     );
+
+    // Default sizes of a sheet.
+    wb.sheets[1].default_col_width = 90.0;
+    wb.sheets[1].default_row_height = 24.0;
+
+    // Data validation: a rule about the sheet itself, and one that reads
+    // another sheet.
+    let mut whole = Validation {
+        kind: ValidationKind::Whole,
+        operator: Operator::GreaterOrEqual,
+        error_message: "At least <1> & no \"text\"".into(),
+        ..Validation::default()
+    };
+    whole.set_operands("1", "", en).unwrap();
+    let cells = [Rect::parse("C8:C12").unwrap(), Rect::parse("E8").unwrap()];
+    assert!(wb.set_validation(0, &cells, (7, 2), whole));
+    let mut list = Validation {
+        kind: ValidationKind::List,
+        ..Validation::default()
+    };
+    list.set_operands("=Data!$B$1:$B$5", "", en).unwrap();
+    assert!(wb.set_validation(0, &[Rect::parse("F8:F12").unwrap()], (7, 5), list));
     wb.commit("setup");
+
+    // Protection (which, as in Excel, is not something to undo).
+    let protection = SheetProtection::allowing(&[
+        Permission::SelectLockedCells,
+        Permission::SelectUnlockedCells,
+        Permission::FormatCells,
+        Permission::Sort,
+    ]);
+    assert!(wb.protect_sheet(1, protection, "s3cret"));
+    wb.protect_workbook(true, false, "");
     wb
 }
 
@@ -209,6 +247,13 @@ fn assert_same(a: &Workbook, b: &Workbook) {
         assert_eq!(sa.name, sb.name);
         assert_eq!(sa.col_widths, sb.col_widths, "{name}: column widths");
         assert_eq!(sa.row_heights, sb.row_heights, "{name}: row heights");
+        assert_eq!(
+            (sa.default_col_width, sa.default_row_height),
+            (sb.default_col_width, sb.default_row_height),
+            "{name}: default sizes"
+        );
+        assert_eq!(sa.validations, sb.validations, "{name}: data validation");
+        assert_eq!(sa.protection, sb.protection, "{name}: protection");
         assert_eq!(sa.hidden_cols, sb.hidden_cols, "{name}: hidden columns");
         assert_eq!(sa.hidden_rows, sb.hidden_rows, "{name}: hidden rows");
         assert_eq!(sa.merges, sb.merges, "{name}: merges");
@@ -289,6 +334,12 @@ fn assert_same(a: &Workbook, b: &Workbook) {
         };
         assert_eq!(spills(a), spills(b), "{name}: spilled arrays");
     }
+    assert_eq!(a.protection, b.protection, "workbook protection");
+    assert_eq!(
+        a.styles.default_style(),
+        b.styles.default_style(),
+        "default style"
+    );
     assert_eq!(
         a.names.keys().collect::<Vec<_>>(),
         b.names.keys().collect::<Vec<_>>(),
@@ -395,6 +446,7 @@ fn everything_round_trips() {
 #[test]
 fn package_is_a_valid_zip_of_well_formed_parts() {
     let bytes = to_bytes(&sample());
+    common::keep_sample("everything.xlsx", &bytes);
     let names = part_names(&bytes);
     assert_eq!(
         names[0], "[Content_Types].xml",
@@ -415,7 +467,12 @@ fn package_is_a_valid_zip_of_well_formed_parts() {
     }
     for name in &names {
         assert_well_formed(name, &part(&bytes, name));
+        // Excel refuses parts whose elements are out of order.
+        if name.starts_with("xl/worksheets/sheet") {
+            assert_worksheet_order(name, &part(&bytes, name));
+        }
     }
+    assert_workbook_order(&part(&bytes, "xl/workbook.xml"));
     // Every part is declared and every relationship target exists.
     let types = part(&bytes, "[Content_Types].xml");
     for name in names
@@ -489,7 +546,29 @@ fn package_is_a_valid_zip_of_well_formed_parts() {
     // Row 15 is formatted and crosses the formatted columns G:H, which gives
     // those two cells formatting of their own.
     assert!(sheet.contains("<dimension ref=\"A1:H15\"/>"), "{sheet}");
+    // What sits between the cells and the page setup, each in its place.
+    let from = sheet.find("</sheetData>").unwrap();
+    assert!(
+        sheet[from..].starts_with(concat!(
+            "</sheetData><mergeCells count=\"2\"><mergeCell ref=\"A17:C18\"/><mergeCell ref=\"B19:E19\"/></mergeCells>",
+            "<dataValidations count=\"1\"><dataValidation type=\"whole\" operator=\"greaterThanOrEqual\" ",
+            "allowBlank=\"1\" showInputMessage=\"1\" showErrorMessage=\"1\" ",
+            "error=\"At least &lt;1&gt; &amp; no &quot;text&quot;\" sqref=\"C8:C12 E8\"><formula1>1</formula1></dataValidation></dataValidations>",
+            "<pageMargins "
+        )),
+        "{}",
+        &sheet[from..]
+    );
+    assert!(sheet.ends_with(concat!(
+        "<x14:formula1><xm:f>Data!$B$1:$B$5</xm:f></x14:formula1><xm:sqref>F8:F12</xm:sqref>",
+        "</x14:dataValidation></x14:dataValidations></ext></extLst></worksheet>"
+    )));
     let sheet2 = part(&bytes, "xl/worksheets/sheet2.xml");
+    assert!(sheet2.contains(
+        "<sheetFormatPr defaultColWidth=\"12.85714286\" defaultRowHeight=\"18\" customHeight=\"1\"/>"
+    ));
+    assert!(sheet2.contains("\" spinCount=\"100000\" sheet=\"1\" objects=\"1\" scenarios=\"1\" formatCells=\"0\" sort=\"0\"/>"));
+    assert!(workbook.contains("<workbookPr/><workbookProtection lockStructure=\"1\"/><bookViews>"));
     assert!(sheet2.contains("showGridLines=\"0\""));
     assert!(sheet2.contains(
         "<pane ySplit=\"3\" topLeftCell=\"A4\" activePane=\"bottomLeft\" state=\"frozen\"/>"
@@ -516,6 +595,8 @@ fn package_is_a_valid_zip_of_well_formed_parts() {
         "the locale's short date is the built-in date format"
     );
     assert!(styles.contains("numFmtId=\"4\"") && styles.contains("numFmtId=\"49\""));
+    assert!(styles.contains("<protection locked=\"0\"/>"));
+    assert!(styles.contains("<protection hidden=\"1\"/>"));
 
     // Each distinct string is stored once.
     let strings = part(&bytes, "xl/sharedStrings.xml");
@@ -715,8 +796,14 @@ fn files_stay_valid_for_excel() {
     assert_eq!(value(&wb, 0, "A1"), Value::Error(ErrorKind::Ref));
 
     let bytes = to_bytes(&wb);
+    common::keep_sample("deleted-sheet.xlsx", &bytes);
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
-    // Excel reports a file as damaged when a formula names a missing sheet.
+    // Excel reports a file as damaged when a formula names a missing
+    // sheet. It also does when one holds `#REF!A1`, the way the formula
+    // bar shows the cells of a deleted sheet (checked with Excel 16 for
+    // Mac, for a cell and for a defined name): in a file such a reference
+    // is `#REF!` and nothing more, as in the files Microsoft ships (the
+    // Solver add-in has hundreds of names that read `#REF!`).
     assert!(sheet.contains("<f>#REF!+1</f><v>#REF!</v>"), "{sheet}");
     assert!(sheet.contains("<f>SUM(#REF!,B2)</f>"));
     assert!(
@@ -733,6 +820,7 @@ fn files_stay_valid_for_excel() {
 
     let loaded = read_xlsx(Cursor::new(&bytes), en).unwrap();
     assert_eq!(formula(&loaded, 0, "A1").unwrap(), "#REF!+1");
+    assert_eq!(formula(&loaded, 0, "A2").unwrap(), "SUM(#REF!,B2)");
     assert_eq!(value(&loaded, 0, "A1"), Value::Error(ErrorKind::Ref));
     assert_eq!(
         loaded.names.keys().map(|k| k.as_str()).collect::<Vec<_>>(),
