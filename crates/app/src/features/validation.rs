@@ -395,6 +395,24 @@ mod tests {
     }
 
     #[test]
+    fn the_note_shows_only_for_a_cell_on_screen() {
+        use gpui::{Bounds, point, px, size};
+        let mut wb = Workbook::new(Locale::en());
+        wb.set_frozen(0, 2, 1);
+        let bounds = Bounds::new(point(px(0.), px(0.)), size(px(800.), px(400.)));
+        // Scrolled 40 rows down and far to the right.
+        let layout = GridLayout::new(&wb.sheets[0], bounds, 1.0, 2000.0, 800.0);
+        let first = layout.scrolled_rows().start;
+        assert!(first > 10);
+        // The frozen rows and column stay, what was scrolled past is gone.
+        assert!(cell_shown(&layout, 0, 0) && cell_shown(&layout, 1, 0));
+        assert!(!cell_shown(&layout, 5, 0) && !cell_shown(&layout, 0, 3));
+        assert!(cell_shown(&layout, first, 0));
+        assert!(cell_shown(&layout, first, layout.scrolled_cols().start));
+        assert!(!cell_shown(&layout, first + 500, 0));
+    }
+
+    #[test]
     fn the_arrow_sits_at_the_foot_of_the_cell() {
         assert_eq!(arrow_box((10.0, 20.0, 74.0, 40.0)), (74.0, 23.0, 91.0, 40.0));
         // A tall (merged) cell keeps it at the bottom, a low row squeezes it.

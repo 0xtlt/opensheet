@@ -15,7 +15,8 @@
 //!   run them (`Cmd::Toggle.run(app, window, cx)`); a command that is not
 //!   written yet ends in `app.not_implemented(self.label(), cx)`. A command
 //!   that opens a drop-down builds a `Vec<MenuEntry>` (`MenuEntry::command`,
-//!   `MenuEntry::submenu`) and calls `app.open_command_menu`.
+//!   `MenuEntry::submenu`) and calls `app.open_command_menu`. A label that
+//!   follows the workbook ("Unprotect Sheet") is given by `label_in`.
 //!
 //! State a feature keeps between events lives in `app.ext_mut::<MyState>()`
 //! (any `Default` type, created on first use, dropped when another workbook
@@ -39,6 +40,7 @@
 //! | Real elements over the grid (a note being typed) | [`Feature::overlay_elements`] |
 //! | Refusing a change (protection, pivot cells) | [`Feature::guard`] with an [`Intent`]; a feature asks before its own changes with `app.may(intent, cx)` |
 //! | Refusing a selection (protection) | [`Feature::can_select`] |
+//! | Where the arrows, Tab and Enter lead (a protected sheet walks its unlocked cells) | [`Feature::next_cell`] |
 //! | Checking an entry (validation) | [`Feature::may_commit`] → [`Verdict`]; the alert's buttons call `app.commit_edit_unchecked`, `app.focus_editor` or `app.cancel_edit` |
 //! | Following edits | [`Feature::cells_written`] (same undo step), [`Feature::cells_changed`] (afterwards), [`Feature::selection_changed`] |
 //! | Alt+Down on a cell | [`Feature::cell_drop_down`] |
