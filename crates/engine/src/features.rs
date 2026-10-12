@@ -106,10 +106,12 @@ impl Workbook {
         // own: its fill, font colour and borders win over the table's.
         let mut style = Cow::Borrowed(base);
         if !patch.is_empty() {
-            let mut s = Style::default();
+            // "No formatting of its own" is measured against the workbook's
+            // default style, which a file may set to another font.
+            let d = self.styles.default_style();
+            let mut s = d.clone();
             patch.apply(&mut s);
             let own = base;
-            let d = Style::default();
             if own.fill != d.fill {
                 s.fill = own.fill;
             }

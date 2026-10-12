@@ -390,6 +390,26 @@ pub(crate) fn push_cell_text(out: &mut String, s: &str) {
     }
 }
 
+/// Append user text (a title, a message) as an attribute value, without
+/// the surrounding quotes. Such attributes follow the `_xHHHH_` convention
+/// of cell text for what an attribute cannot carry as it is: line breaks,
+/// tabs and control characters.
+pub(crate) fn push_xstring_attr(out: &mut String, s: &str) {
+    for (i, c) in s.char_indices() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '_' if looks_like_escape(&s[i + 1..]) => out.push_str("_x005F_"),
+            c if is_illegal(c) || matches!(c, '\n' | '\r' | '\t') => {
+                out.push_str(&format!("_x{:04X}_", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+}
+
 /// Decode the `_xHHHH_` escapes of SpreadsheetML strings.
 pub(crate) fn decode_cell_text(s: &str) -> Cow<'_, str> {
     if !s.contains("_x") {
@@ -515,5 +535,26 @@ mod tests {
             assert_eq!(decode_cell_text(&unescape(&enc)), s, "{enc}");
         }
         assert_eq!(decode_cell_text("a_x000D__x000A_b"), "a\r\nb");
+    }
+
+    #[test]
+    fn text_attributes() {
+        for s in [
+            "plain",
+            "two\nlines\r\nand\ta tab",
+            "\"quoted\" <&>",
+            "_x000A_ literal",
+            "bell\u{7}",
+        ] {
+            let mut enc = String::new();
+            push_xstring_attr(&mut enc, s);
+            assert!(!enc.contains(['\n', '\r', '\t', '"', '<']), "{enc}");
+            assert_eq!(decode_cell_text(&unescape(&enc)), s, "{enc}");
+        }
+        let mut enc = String::new();
+        push_xstring_attr(&mut enc, "a\nb");
+        assert_eq!(enc, "a_x000A_b");
+        // Excel writes the escapes in lower case.
+        assert_eq!(decode_cell_text("a_x000a_b"), "a\nb");
     }
 }
