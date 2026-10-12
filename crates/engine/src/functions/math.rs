@@ -724,7 +724,10 @@ fn f_multinomial(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
 
 #[derive(Clone, Copy)]
 struct Ignore {
+    /// Rows hidden by hand.
     hidden_rows: bool,
+    /// Rows hidden by a filter (`Sheet::filtered_rows`).
+    filtered_rows: bool,
     errors: bool,
     nested: bool,
 }
@@ -752,10 +755,12 @@ fn gather(ctx: &EvalCtx, args: &[Expr], ignore: Ignore) -> Vec<Value> {
         match ctx.eval_ref(arg) {
             Ok(r) => {
                 let values = ctx.range_values(&r);
-                let hidden = ctx.workbook().sheets.get(r.sheet).map(|s| &s.hidden_rows);
+                let sheet = ctx.workbook().sheets.get(r.sheet);
+                let hidden = sheet.map(|s| &s.hidden_rows).filter(|h| ignore.hidden_rows && !h.is_empty());
+                let filtered = sheet.map(|s| &s.filtered_rows).filter(|f| ignore.filtered_rows && !f.is_empty());
                 for i in 0..values.rows {
                     let row = r.rect.r0 + i as u32;
-                    if ignore.hidden_rows && hidden.is_some_and(|h| h.contains(&row)) {
+                    if hidden.is_some_and(|h| h.contains(&row)) || filtered.is_some_and(|f| f.contains(&row)) {
                         continue;
                     }
                     for j in 0..values.cols {
@@ -839,8 +844,11 @@ fn f_subtotal(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     } else {
         return Err(ErrorKind::Value);
     };
+    // Rows a filter hides never count; rows hidden by hand only drop out
+    // of the 101-111 variants.
     let ignore = Ignore {
         hidden_rows,
+        filtered_rows: true,
         errors: false,
         nested: true,
     };
@@ -854,8 +862,10 @@ fn f_aggregate(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
         return Err(ErrorKind::Value);
     }
     let (func, option) = (func as u32, option as u32);
+    // "Ignore hidden rows" covers both rows hidden by hand and by a filter.
     let ignore = Ignore {
         hidden_rows: matches!(option, 1 | 3 | 5 | 7),
+        filtered_rows: matches!(option, 1 | 3 | 5 | 7),
         errors: matches!(option, 2 | 3 | 6 | 7),
         nested: option <= 3,
     };
@@ -1858,6 +1868,14 @@ mod tests {
         assert_eq!(cell(&w, "C1"), 8.0);
         assert_eq!(cell(&w, "C2"), 4.0);
         assert_eq!(cell(&w, "C3"), 8.0 / 3.0);
+        // A filter hides row 3: every variant skips it, plain functions
+        // do not.
+        w.sheets[0].filtered_rows.insert(2);
+        w.recalc();
+        assert_eq!(cell(&w, "A6"), 7.0);
+        assert_eq!(cell(&w, "B4"), 4.0);
+        assert_eq!(cell(&w, "C1"), 5.0);
+        assert_eq!(cell(&w, "C7"), 17.0);
     }
 
     #[test]
@@ -1932,6 +1950,13 @@ mod tests {
         assert_eq!(cell(&w, "B1"), 16.0);
         assert_eq!(cell(&w, "B19"), 8.0);
         assert_eq!(cell(&w, "B20"), 8.0);
+        // They also skip the rows a filter hides; the other options keep
+        // them.
+        w.sheets[0].filtered_rows.insert(2);
+        w.recalc();
+        assert_eq!(cell(&w, "B1"), 16.0);
+        assert_eq!(cell(&w, "B19"), 5.0);
+        assert_eq!(cell(&w, "B20"), 5.0);
     }
 
     #[test]
