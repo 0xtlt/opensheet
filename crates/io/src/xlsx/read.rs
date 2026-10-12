@@ -815,7 +815,7 @@ impl Ctx<'_> {
 }
 
 /// Parse an A1-style cell reference into 0-based (row, col).
-fn parse_cell_ref(s: &str) -> Option<(u32, u32)> {
+pub(crate) fn parse_cell_ref(s: &str) -> Option<(u32, u32)> {
     let mut col = 0u32;
     let mut row = 0u32;
     let mut letters = 0;
@@ -940,6 +940,7 @@ impl<'c> SheetReader<'c> {
                         this.sheet.protection = protection::read_sheet(&t);
                         r.skip(&t);
                     }
+                    "scenarios" => super::datatools::read_scenarios(&mut r, &t, &mut this.sheet, ctx.locale),
                     "autoFilter" => {
                         this.sheet.auto_filter =
                             super::filter::parse_auto_filter(&mut r, &t, ctx.filter_colors)
@@ -1290,9 +1291,9 @@ impl<'c> SheetReader<'c> {
                         self.arrays.push((range, (row, col)));
                     }
                 }
-                // What-if data tables have no formula the engine could run;
-                // their cached results are kept as constants.
-                Some("dataTable") => {}
+                // A what-if data table: its results are constants the
+                // engine works out again, see `whatif.rs`.
+                Some("dataTable") => super::datatools::read_table(&f, &mut self.sheet),
                 _ => expr = from_file_text(&text),
             }
         }

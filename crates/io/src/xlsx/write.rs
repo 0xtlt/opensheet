@@ -769,7 +769,23 @@ impl SheetWriter<'_> {
                                 array,
                             );
                         }
-                        Content::Value(value) => self.push_constant(x, row, col, xf, value),
+                        // The first result of a data table carries its formula.
+                        Content::Value(value) => match super::datatools::table_formula(sheet, row, col) {
+                            Some(table) => {
+                                x.push_str("<c r=\"");
+                                push_cell_ref(x, row, col);
+                                x.push('"');
+                                if xf != 0 {
+                                    w!(x, " s=\"{xf}\"");
+                                }
+                                x.push_str(value_type(value));
+                                x.push('>');
+                                x.push_str(&table);
+                                push_v(x, value);
+                                x.push_str("</c>");
+                            }
+                            None => self.push_constant(x, row, col, xf, value),
+                        },
                         // A formatted but empty cell may sit under a spill.
                         Content::Empty => {
                             self.push_constant(x, row, col, xf, spill.unwrap_or(&Value::Empty))
@@ -839,6 +855,8 @@ impl SheetWriter<'_> {
         if let Some(protection) = &sheet.protection {
             protection::write_sheet(&mut x, protection);
         }
+        // scenarios
+        super::datatools::write_scenarios(&mut x, sheet, self.wb.locale);
         // autoFilter (the rows it hides are hidden rows of sheetData)
         super::filter::write_sheet(&mut x, self.wb, index, self.dxfs);
         // dataConsolidate
