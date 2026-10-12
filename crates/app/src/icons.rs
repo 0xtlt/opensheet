@@ -162,6 +162,13 @@ const ICONS: &[(&str, &str)] = &[
     ("condfmt-clear", r#"<rect x="2.5" y="2.5" width="8" height="8"/><path d="M2.5 5.2h8M2.5 7.8h8M6 2.5v8"/><path d="M10.2 10.2l4.3 4.3M14.5 10.2l-4.3 4.3" stroke-width="1.4"/>"#),
     ("condfmt-manage", r#"<rect x="2.5" y="2.5" width="11" height="11"/><path d="M2.5 6.2h11M2.5 9.8h11"/><path d="M4.4 4.4h1.2M4.4 8h1.2M4.4 11.6h1.2" stroke-width="1.6"/><path d="M7.5 4.4h4M7.5 8h4M7.5 11.6h4" stroke-width="0.9"/>"#),
     ("filters-clear", r#"<path d="M1.500 2.500h9L7.300 6.800v4.700l-2.600 1.300V6.800z"/><path d="M10.500 9.500l4 4M14.500 9.500l-4 4"/>"#),
+    ("ink-select", r#"<path d="M4 2.2v10.4l2.7-2.5 1.8 4 1.7-.8-1.8-3.9 3.6-.2z"/>"#),
+    ("ink-lasso", r#"<ellipse cx="8" cy="6.2" rx="5.5" ry="3.7" stroke-dasharray="2 1.4"/><path d="M5.2 9.4c-1.5 1-1.2 2.6.3 2.6 1.3 0 1.7-1.3.6-1.9M6 12c.2 1 .9 1.8 2 2.2"/>"#),
+    ("ink-pen", r#"<path d="M10.8 2.2 13.8 5.2 6 13l-3.6.6L3 10z"/><path d="M9.2 3.8l3 3"/>"#),
+    ("ink-pencil", r#"<path d="M11 2.2 13.8 5 5.5 13.3 2.2 13.8 2.7 10.5z"/><path d="M4.2 9l2.8 2.8M2.7 10.5l2.8 2.8"/>"#),
+    ("ink-highlighter", r#"<path d="M9.5 2.5 13.5 6.5 8 12H5.2L4 10.8V8z"/><path d="M5.2 12 4 13.5H7.5L8 12M2 14.5h12"/>"#),
+    ("ink-add-pen", r#"<path d="M8.8 2.2 11.8 5.2 5 12l-3.1.6L2.5 9.5z"/><path d="M12.5 9.5v5M10 12h5"/>"#),
+    ("ink-replay", r#"<path d="M2.5 8a5.5 5.5 0 1 0 1.8-4.1"/><path d="M2.2 2.2v2.6h2.6"/><path d="M6.8 5.6v4.8L10.8 8z"/>"#),
 ];
 
 pub struct Assets;

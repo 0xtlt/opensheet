@@ -229,11 +229,12 @@ pub fn smooth(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
     if points.len() < 3 {
         return points.to_vec();
     }
-    // Each inner point moves towards the middle of its neighbours.
+    // Each inner point moves a little towards the middle of its
+    // neighbours: enough to quiet the hand, not enough to dull a corner.
     let mut out = Vec::with_capacity(points.len());
     out.push(points[0]);
     for w in points.windows(3) {
-        out.push(((w[0].0 + 2.0 * w[1].0 + w[2].0) / 4.0, (w[0].1 + 2.0 * w[1].1 + w[2].1) / 4.0));
+        out.push(((w[0].0 + 6.0 * w[1].0 + w[2].0) / 8.0, (w[0].1 + 6.0 * w[1].1 + w[2].1) / 8.0));
     }
     out.push(points[points.len() - 1]);
     simplify(&out, 0.35)

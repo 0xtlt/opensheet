@@ -41,10 +41,6 @@ commands! {
         // Insert
         Sparklines = "chart-line", t("Sparklines", "Graphiques sparkline");
         Equation = "function", t("Equation", "Équation");
-        // Draw
-        Draw = "brush", t_ctx("button", "Draw", "Dessiner");
-        Eraser = "clear", t("Eraser", "Gomme");
-        InkToShape = "shapes", t("Ink to Shape", "Entrée manuscrite en forme");
         // Page Layout
         Themes = "cell-styles", t("Themes", "Thèmes");
         ThemeColors = "fill", t("Colors", "Couleurs");

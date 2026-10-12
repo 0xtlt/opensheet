@@ -590,7 +590,7 @@ impl ExcelApp {
         let groups: Vec<AnyElement> = match (owner, self.ribbon_tab) {
             (Some((owner, id)), _) => features::all()[owner].render_tab(self, id, window, cx),
             (None, 2) => self.insert_tab(cx),
-            (None, 3) => self.draw_tab(cx),
+            (None, 3) => features::ink::draw_tab(self, cx),
             (None, 4) => self.layout_tab(cx),
             (None, 5) => self.formulas_tab(cx),
             (None, 6) => self.data_tab(cx),
@@ -616,21 +616,6 @@ impl ExcelApp {
                 .px(px(2.))
                 .children(groups),
         )
-    }
-
-    fn draw_tab(&self, cx: &mut Cx) -> Vec<AnyElement> {
-        vec![
-            group(
-                t("Tools", "Outils"),
-                row(vec![
-                    self.cmd_large("dr-draw", misc::Cmd::Draw, false, cx),
-                    self.cmd_large("dr-eraser", misc::Cmd::Eraser, false, cx),
-                    self.cmd_large("dr-ink-shape", misc::Cmd::InkToShape, false, cx),
-                ]),
-            )
-            .border_r_0()
-            .into_any_element(),
-        ]
     }
 
     fn automate_tab(&self, cx: &mut Cx) -> Vec<AnyElement> {
