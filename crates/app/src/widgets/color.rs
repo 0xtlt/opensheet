@@ -338,7 +338,7 @@ impl RenderOnce for ColorButton {
             Some(Some(color)) => div()
                 .flex_1()
                 .h(px(12.))
-                .bg(c(color.0))
+                .bg(c(color.value()))
                 .border_1()
                 .border_color(c(0xD0D0D0))
                 .into_any_element(),
@@ -475,7 +475,7 @@ impl Render for MoreColors {
                         .h(px(32.))
                         .border_1()
                         .border_color(c(theme::BORDER_STRONG))
-                        .when_some(color, |d, color| d.bg(c(color.0))),
+                        .when_some(color, |d, color| d.bg(c(color.value()))),
                 )
         };
         let modal = self.modal.clone();

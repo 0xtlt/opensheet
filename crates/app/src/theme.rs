@@ -13,7 +13,7 @@ pub fn ca(hex: u32, alpha: f32) -> Hsla {
 }
 
 pub fn engine_color(color: opensheet_engine::Color) -> Hsla {
-    c(color.0)
+    c(color.value())
 }
 
 // Brand

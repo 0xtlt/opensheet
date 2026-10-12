@@ -868,7 +868,7 @@ impl ExcelApp {
                     self.color_button(
                         "rb-fill",
                         icon("fill", 15.0, theme::TEXT),
-                        self.last_fill.map(|col| col.0),
+                        self.last_fill.map(|col| col.value()),
                         t("Fill Color", "Couleur de remplissage"),
                         cx,
                         |this, _, cx| {
@@ -885,7 +885,7 @@ impl ExcelApp {
                     self.color_button(
                         "rb-font-color",
                         div().text_size(px(13.)).line_height(px(13.)).font_weight(FontWeight::SEMIBOLD).child("A"),
-                        self.last_font_color.map(|col| col.0),
+                        self.last_font_color.map(|col| col.value()),
                         t("Font Color", "Couleur de police"),
                         cx,
                         |this, _, cx| {

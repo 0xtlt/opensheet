@@ -112,7 +112,7 @@ fn a_workbook_in_calibri() {
     common::keep_sample("defaults-calibri-11.xlsx", &saved);
     let styles = part(&saved, "xl/styles.xml");
     assert!(
-        styles.contains("<fonts count=\"2\"><font><sz val=\"11\"/><name val=\"Calibri\"/></font>"),
+        styles.contains("<fonts count=\"2\"><font><sz val=\"11\"/><name val=\"Calibri\"/><scheme val=\"minor\"/></font>"),
         "{styles}"
     );
     let sheet = part(&saved, "xl/worksheets/sheet1.xml");
@@ -442,7 +442,7 @@ fn our_own_workbooks_are_unchanged() {
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     assert!(sheet.contains("<sheetFormatPr defaultRowHeight=\"15\"/><cols><col min=\"2\" max=\"2\" width=\"14.28571429\" customWidth=\"1\"/></cols>"), "{sheet}");
     assert!(part(&bytes, "xl/styles.xml").contains(
-        "<fonts count=\"1\"><font><sz val=\"11\"/><name val=\"Aptos Narrow\"/></font></fonts>"
+        "<fonts count=\"1\"><font><sz val=\"11\"/><name val=\"Aptos Narrow\"/><scheme val=\"minor\"/></font></fonts>"
     ));
     let loaded = load(&bytes);
     assert_eq!(loaded.styles.default_style(), wb.styles.default_style());

@@ -2,7 +2,7 @@
 
 use super::chart::Track;
 use super::chart::read::{parse_chart, parse_drawing};
-use super::color::{Palette, RawColor, blend, parse_rgb, parse_theme};
+use super::color::{Palette, RawColor, blend, parse_rgb};
 use super::condfmt::{self, CondFormats};
 use super::defaults::{self, Defaults};
 use super::dxf::read_dxf;
@@ -21,11 +21,11 @@ use opensheet_engine::{CalcMode, IterativeCalc};
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
     Border, BorderStyle, Borders, DEFAULT_FONT, DEFAULT_FONT_SIZE, Font, HAlign, Style, StyleId,
-    StylePatch, StyleTable, Underline, VAlign,
+    StylePatch, StyleTable, ThemeFont, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
 use opensheet_engine::workbook::{Cell, Content, DefinedName, Sheet};
-use opensheet_engine::{Color, Locale, Workbook};
+use opensheet_engine::{Color, Locale, Theme, Workbook};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
@@ -265,6 +265,8 @@ struct RawFont {
     strike: bool,
     underline: Underline,
     color: Option<RawColor>,
+    /// `<scheme>`: the font is the heading or the body font of the theme.
+    theme: Option<ThemeFont>,
 }
 
 #[derive(Default)]
@@ -347,6 +349,13 @@ fn parse_font<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawFont {
                     }
                     "sz" => f.size = t.attr_f64("val"),
                     "name" => f.name = t.attr("val").map(Cow::into_owned),
+                    "scheme" => {
+                        f.theme = match t.attr("val").as_deref() {
+                            Some("major") => Some(ThemeFont::Major),
+                            Some("minor") => Some(ThemeFont::Minor),
+                            _ => None,
+                        }
+                    }
                     "color" => f.color = Some(RawColor::from_tag(&t)),
                     _ => {}
                 }
@@ -547,8 +556,8 @@ fn resolve_fill(f: &RawFill, palette: &Palette) -> Option<Color> {
                 _ => 0.25,
             };
             Some(Color(blend(
-                fg.map_or(0x000000, |c| c.0),
-                bg.map_or(0xFFFFFF, |c| c.0),
+                fg.map_or(0x000000, |c| c.value()),
+                bg.map_or(0xFFFFFF, |c| c.value()),
                 density,
             )))
         }
@@ -557,14 +566,14 @@ fn resolve_fill(f: &RawFill, palette: &Palette) -> Option<Color> {
 
 // Built field by field so the engine can add fields to `Font` freely.
 #[allow(clippy::field_reassign_with_default)]
-fn resolve_font(f: &RawFont, palette: &Palette) -> Font {
+fn resolve_font(f: &RawFont, palette: &Palette, theme: &Theme) -> Font {
     let color = f.color.and_then(|c| {
-        let rgb = c.resolve(palette)?;
+        let color = c.resolve(palette)?;
         // Plain "text 1" black is what the engine calls automatic.
-        if c.is_default_text() && rgb == Color::BLACK {
+        if c.is_default_text() && color.value() == 0 {
             None
         } else {
-            Some(rgb)
+            Some(color)
         }
     });
     let mut font = Font::default();
@@ -574,6 +583,14 @@ fn resolve_font(f: &RawFont, palette: &Palette) -> Font {
             .filter(|n| !n.is_empty())
             .unwrap_or(DEFAULT_FONT),
     );
+    // A font of the theme, as long as the file names it as the theme
+    // does. (Where it does not, the name is what the file was seen in:
+    // Excel names the font the theme has for the script of its language,
+    // which for Japanese or Chinese is not the Latin one kept here.)
+    font.theme = f.theme.filter(|role| theme.font(*role).eq_ignore_ascii_case(&font.name));
+    if let Some(role) = font.theme {
+        font.name = theme.font(role).clone();
+    }
     font.size = match f.size {
         Some(pt) => (pt * 2.0).round().clamp(2.0, 818.0) as u16,
         None => DEFAULT_FONT_SIZE,
@@ -600,14 +617,11 @@ struct StylesPart {
 
 // `Style` values are built field by field so the engine can add fields.
 #[allow(clippy::field_reassign_with_default)]
-fn parse_styles(
-    xml: Option<&str>,
-    theme: [u32; 12],
-    locale: &Locale,
-    table: &mut StyleTable,
-) -> StylesPart {
+fn parse_styles(xml: Option<&str>, locale: &Locale, table: &mut StyleTable) -> StylesPart {
+    // The theme of the workbook, which the table already has.
+    let theme = table.theme().clone();
     let mut palette = Palette {
-        theme,
+        theme: theme.colors.part_order(),
         ..Palette::default()
     };
     let mut num_fmts: HashMap<u32, String> = HashMap::new();
@@ -685,7 +699,7 @@ fn parse_styles(
         }
     }
 
-    let fonts: Vec<Font> = fonts.iter().map(|f| resolve_font(f, &palette)).collect();
+    let fonts: Vec<Font> = fonts.iter().map(|f| resolve_font(f, &palette, &theme)).collect();
     let fills: Vec<Option<Color>> = fills.iter().map(|f| resolve_fill(f, &palette)).collect();
     let borders: Vec<Borders> = borders
         .iter()
@@ -1562,14 +1576,17 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             .map_or_else(|| format!("{base}{fallback}"), |r| r.target.clone())
     };
 
+    // A file without a theme part is in the Office theme of the years
+    // such files were made in.
     let theme = match pkg.read(&part_of("theme", "theme/theme1.xml"))? {
-        Some(xml) => parse_theme(&xml),
-        None => super::color::OFFICE_THEME,
+        Some(xml) => super::theme::parse(&xml),
+        None => Theme::office_2013(),
     };
     let mut wb = Workbook::new(locale);
+    wb.init_theme(theme);
     wb.protection = info.protection;
     let styles_xml = pkg.read(&part_of("styles", "styles.xml"))?;
-    let mut styles = parse_styles(styles_xml.as_deref(), theme, locale, &mut wb.styles);
+    let mut styles = parse_styles(styles_xml.as_deref(), locale, &mut wb.styles);
     wb.cell_styles = std::mem::take(&mut styles.cell_styles);
     let style_lookup =
         super::stylerefs::StyleLookup::read(styles_xml.as_deref(), &styles.palette, locale);

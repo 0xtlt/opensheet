@@ -38,6 +38,7 @@ pub mod structured;
 pub mod style;
 pub mod table;
 pub mod text_columns;
+pub mod theme;
 pub mod validation;
 pub mod value;
 pub mod whatif;
@@ -49,6 +50,7 @@ pub use locale::Locale;
 pub use recalc::{CalcMode, IterativeCalc};
 pub use refs::{Rect, Reference, MAX_COLS, MAX_ROWS};
 pub use style::{Color, Style, StyleId};
+pub use theme::Theme;
 pub use value::{Array, ErrorKind, Value, R};
 pub use workbook::{Cell, Content, Sheet, Workbook};
 

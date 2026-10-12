@@ -24,7 +24,6 @@ pub use scale::{Fit, Scale};
 
 use crate::chart::{
     Chart, ChartData, ChartKind, ChartTitle, Dash, Family, Fill, LegendPos, Line, MarkerShape, Series, TrendKind,
-    palette_color,
 };
 use crate::format;
 use crate::locale::Locale;
@@ -612,7 +611,7 @@ impl Painter<'_> {
     pub fn look(&self, index: usize) -> Look {
         let series = &self.chart.series[index];
         let kind = self.chart.series_kind(series);
-        let color = self.data.series.get(index).map_or_else(|| palette_color(index), |s| s.color);
+        let color = self.data.series.get(index).map_or_else(|| self.data.palette_color(index), |s| s.color);
         let lined = matches!(kind.family(), Family::Line | Family::Scatter | Family::Radar);
         let line = if lined && series.line_shown(kind) {
             // Lines never get thinner than a pixel and a half on screen.
@@ -659,9 +658,9 @@ impl Painter<'_> {
             return color;
         }
         if self.varied() {
-            return palette_color(point);
+            return self.data.palette_color(point);
         }
-        self.data.series.get(series).map_or_else(|| palette_color(series), |s| s.color)
+        self.data.series.get(series).map_or_else(|| self.data.palette_color(series), |s| s.color)
     }
 
     pub fn trend_name(&self, series: usize, kind: TrendKind, name: &Option<String>) -> String {
@@ -683,7 +682,7 @@ impl Painter<'_> {
     /// The stroke of a trendline: the colour of its series, 1.5 pt, round
     /// dots, unless it says otherwise.
     pub fn trend_stroke(&self, series: usize, line: &Line) -> Stroke {
-        let color = self.data.series.get(series).map_or_else(|| palette_color(series), |s| s.color);
+        let color = self.data.series.get(series).map_or_else(|| self.data.palette_color(series), |s| s.color);
         let auto = Line {
             dash: if *line == Line::default() { Dash::RoundDot } else { line.dash },
             ..line.clone()

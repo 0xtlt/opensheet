@@ -1,8 +1,12 @@
 //! Colour resolution: SpreadsheetML colours are RGB, theme (+ tint),
-//! indexed (legacy palette) or automatic; the engine only stores RGB.
+//! indexed (legacy palette) or automatic. A theme colour stays one in the
+//! engine (`Color::theme`), with the value it has in the theme of the
+//! file; the others are plain colours.
 
-use super::xml::{Event, Reader, Tag};
+use super::xml::Tag;
 use opensheet_engine::Color;
+use opensheet_engine::style::ThemeSlot;
+use opensheet_engine::theme::ThemeColors;
 
 /// The default Office theme, in the order the colours appear in a theme
 /// part: dk1, lt1, dk2, lt2, accent1..6, hlink, folHlink.
@@ -82,7 +86,7 @@ impl RawColor {
         c
     }
 
-    /// RGB value; `None` means automatic.
+    /// The colour; `None` means automatic.
     pub fn resolve(&self, palette: &Palette) -> Option<Color> {
         if self.auto {
             return None;
@@ -90,16 +94,11 @@ impl RawColor {
         let base = if let Some(rgb) = self.rgb {
             rgb
         } else if let Some(t) = self.theme {
-            // SpreadsheetML swaps the first two pairs: 0 = lt1, 1 = dk1,
-            // 2 = lt2, 3 = dk2.
-            let slot = match t {
-                0 => 1,
-                1 => 0,
-                2 => 3,
-                3 => 2,
-                n => n as usize,
-            };
-            *palette.theme.get(slot)?
+            // SpreadsheetML counts the colours as the engine does: 0 =
+            // lt1, 1 = dk1, 2 = lt2, 3 = dk2, where a theme part has the
+            // dark ones first.
+            let slot = ThemeSlot::from_index(t as usize)?;
+            return Some(ThemeColors::from_part_order("", palette.theme).color(slot, self.tint));
         } else {
             *palette.indexed.get(self.indexed? as usize)?
         };
@@ -248,6 +247,84 @@ pub(crate) fn adjust_luminance(rgb: u32, scale: f64, shift: f64) -> u32 {
     (byte(r) << 16) | (byte(g) << 8) | byte(b)
 }
 
+/// The names charts and shapes call the colours of a theme by, in the
+/// order cell colours number them.
+const SCHEME_NAMES: [&str; 12] = [
+    "bg1", "tx1", "bg2", "tx2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink",
+    "folHlink",
+];
+
+/// The colour of the theme a chart or a shape names (`<a:schemeClr>`, by
+/// its place in the palette), its lightness scaled then shifted by
+/// `lumMod` and `lumOff`: a reference to the theme when that is what a
+/// variant of a colour picker is written as ("60 % lighter" is `lumMod`
+/// 40 %, `lumOff` 60 %; "25 % darker" is `lumMod` 75 %). `None` for any
+/// other adjustment: the colour is then a colour of its own.
+///
+/// A reference has the value cells give it (see [`apply_tint`]), which
+/// can be a unit or two away from what the plain HSL arithmetic of
+/// charts gives ([`adjust_luminance`]).
+pub(crate) fn scheme_color(palette: &Palette, part_slot: usize, scale: f64, shift: f64) -> Option<Color> {
+    // A theme part has the dark colours before the light ones.
+    let index = match part_slot {
+        0 => 1,
+        1 => 0,
+        2 => 3,
+        3 => 2,
+        other => other,
+    };
+    let slot = ThemeSlot::from_index(index)?;
+    let tint = if shift == 0.0 && scale > 0.0 && scale <= 1.0 {
+        scale - 1.0
+    } else if shift > 0.0 && (scale + shift - 1.0).abs() < 5e-4 {
+        shift
+    } else {
+        return None;
+    };
+    Some(ThemeColors::from_part_order("", palette.theme).color(slot, tint))
+}
+
+/// Append the colour of a chart or a shape, the content of an
+/// `<a:solidFill>`: a colour of the theme by its name and its lightness,
+/// as Excel writes the variants of its pickers; any other colour by its
+/// value. `alpha` is the opacity in thousandths of a percent, if not full.
+pub(crate) fn push_drawing_color(x: &mut String, color: Color, alpha: Option<u32>) {
+    let (open, close) = match color.theme() {
+        Some(reference) => {
+            let mut open = format!("<a:schemeClr val=\"{}\"", SCHEME_NAMES[reference.slot.index()]);
+            // Whole tenths of a percent, as the pickers have them.
+            let amount = (reference.tint.abs() * 1000.0).round() as u32 * 100;
+            let adjustments = match amount {
+                0 => String::new(),
+                _ if reference.tint < 0.0 => format!("<a:lumMod val=\"{}\"/>", 100_000 - amount),
+                _ => format!("<a:lumMod val=\"{}\"/><a:lumOff val=\"{amount}\"/>", 100_000 - amount),
+            };
+            if adjustments.is_empty() && alpha.is_none() {
+                open.push_str("/>");
+                x.push_str(&open);
+                return;
+            }
+            open.push('>');
+            open.push_str(&adjustments);
+            (open, "</a:schemeClr>")
+        }
+        None => {
+            let open = format!("<a:srgbClr val=\"{:06X}\"", color.value() & 0xFF_FFFF);
+            if alpha.is_none() {
+                x.push_str(&open);
+                x.push_str("/>");
+                return;
+            }
+            (open + ">", "</a:srgbClr>")
+        }
+    };
+    x.push_str(&open);
+    if let Some(alpha) = alpha {
+        x.push_str(&format!("<a:alpha val=\"{alpha}\"/>"));
+    }
+    x.push_str(close);
+}
+
 /// Mix two colours: `amount` of `fg` over `bg`.
 pub(crate) fn blend(fg: u32, bg: u32, amount: f64) -> u32 {
     let mix = |shift: u32| {
@@ -258,59 +335,11 @@ pub(crate) fn blend(fg: u32, bg: u32, amount: f64) -> u32 {
     mix(16) | mix(8) | mix(0)
 }
 
-/// Read the colour scheme of a theme part.
-pub(crate) fn parse_theme(xml: &str) -> [u32; 12] {
-    const SLOTS: [&str; 12] = [
-        "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5",
-        "accent6", "hlink", "folHlink",
-    ];
-    let mut colors = OFFICE_THEME;
-    let mut r = Reader::new(xml);
-    let mut slot: Option<usize> = None;
-    let mut in_scheme = false;
-    loop {
-        match r.next() {
-            Event::Open(t) => match t.name {
-                "clrScheme" => in_scheme = !t.empty,
-                "srgbClr" if in_scheme => {
-                    if let (Some(i), Some(rgb)) = (slot, t.attr("val").and_then(|v| parse_rgb(&v)))
-                    {
-                        colors[i] = rgb;
-                    }
-                }
-                "sysClr" if in_scheme => {
-                    if let Some(i) = slot {
-                        let rgb = t
-                            .attr("lastClr")
-                            .and_then(|v| parse_rgb(&v))
-                            .or_else(|| match t.attr("val").as_deref() {
-                                Some("windowText") => Some(0x000000),
-                                Some("window") => Some(0xFFFFFF),
-                                _ => None,
-                            });
-                        if let Some(rgb) = rgb {
-                            colors[i] = rgb;
-                        }
-                    }
-                }
-                name if in_scheme => {
-                    if let Some(i) = SLOTS.iter().position(|s| *s == name) {
-                        slot = Some(i);
-                    }
-                }
-                _ => {}
-            },
-            Event::Close("clrScheme") | Event::Eof => break,
-            _ => {}
-        }
-    }
-    colors
-}
-
 #[cfg(test)]
 #[allow(clippy::excessive_precision)]
 mod tests {
     use super::*;
+    use crate::xlsx::xml::{Event, Reader};
 
     // The tints Excel writes for the five shades of a palette column,
     // digit for digit as they appear in files.
@@ -488,7 +517,7 @@ mod tests {
             <a:dk2><a:srgbClr val="0E2841"/></a:dk2><a:lt2><a:srgbClr val="E8E8E8"/></a:lt2>
             <a:accent1><a:srgbClr val="156082"/></a:accent1>
             </a:clrScheme><a:fontScheme><a:srgbClr val="FF0000"/></a:fontScheme></a:themeElements></a:theme>"#;
-        let theme = parse_theme(xml);
+        let theme = crate::xlsx::theme::parse(xml).colors.part_order();
         assert_eq!(
             &theme[..5],
             &[0x111111, 0xFFFFFF, 0x0E2841, 0xE8E8E8, 0x156082]
@@ -504,10 +533,15 @@ mod tests {
             let Event::Open(t) = r.next() else { panic!() };
             RawColor::from_tag(&t).resolve(&palette)
         };
-        assert_eq!(color("theme=\"0\""), Some(Color(0xFFFFFF)));
-        assert_eq!(color("theme=\"1\""), Some(Color(0x111111)));
-        assert_eq!(color("theme=\"3\""), Some(Color(0x0E2841)));
-        assert_eq!(color("theme=\"4\""), Some(Color(0x156082)));
+        // Colours of the theme stay references, with their value.
+        let themed = |s: &str| color(s).map(|c| (c.value(), c.theme().map(|t| t.slot)));
+        assert_eq!(themed("theme=\"0\""), Some((0xFFFFFF, Some(ThemeSlot::Light1))));
+        assert_eq!(themed("theme=\"1\""), Some((0x111111, Some(ThemeSlot::Dark1))));
+        assert_eq!(themed("theme=\"3\""), Some((0x0E2841, Some(ThemeSlot::Dark2))));
+        assert_eq!(themed("theme=\"4\""), Some((0x156082, Some(ThemeSlot::Accent1))));
+        let lighter = color("theme=\"4\" tint=\"0.39997558519241921\"").unwrap();
+        assert_eq!(lighter.theme().unwrap().tint, 0.39997558519241921);
+        assert_eq!(lighter.value(), apply_tint(0x156082, 0.39997558519241921));
         assert_eq!(color("rgb=\"FF00B050\""), Some(Color(0x00B050)));
         assert_eq!(color("indexed=\"10\""), Some(Color(0xFF0000)));
         assert_eq!(color("indexed=\"64\""), None);

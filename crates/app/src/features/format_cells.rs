@@ -1063,7 +1063,7 @@ impl Dialog {
                     .row(move |i, _| {
                         let (text, color) = samples[i].clone();
                         div()
-                            .when_some(color, |d, color| d.text_color(c(color.0)))
+                            .when_some(color, |d, color| d.text_color(c(color.value())))
                             .child(text)
                             .into_any_element()
                     })
@@ -1363,7 +1363,7 @@ impl Dialog {
         let style = self.preview_style(cx);
         let font = cell_font(&style, &self.fonts);
         let font_px = pt_to_px(style.font.size_pt());
-        let color = style.font.color.map(|col| c(col.0)).unwrap_or(c(0x000000));
+        let color = style.font.color.map(|col| c(col.value())).unwrap_or(c(0x000000));
         let (underline, strike) = (style.font.underline != Underline::None, style.font.strike);
         let sample = preview(300.0, 64.0, move |s: &mut Sketch| {
             let text = "AaBbCcYyZz";
@@ -1598,7 +1598,7 @@ impl Dialog {
                     s.line(from, to, 3.0, c(0xC8C8C8));
                     return;
                 };
-                let color = c(border.color.map(|col| col.0).unwrap_or(0x000000));
+                let color = c(border.color.map(|col| col.value()).unwrap_or(0x000000));
                 let solid = |offset: f32, width: f32, s: &mut Sketch| {
                     if horizontal {
                         s.rect(from.0, from.1 + offset, to.0, from.1 + offset + width, color);
@@ -1916,7 +1916,7 @@ impl Dialog {
                             .h(px(60.))
                             .border_1()
                             .border_color(c(theme::BORDER_STRONG))
-                            .bg(c(shown.flatten().map(|col| col.0).unwrap_or(0xFFFFFF))),
+                            .bg(c(shown.flatten().map(|col| col.value()).unwrap_or(0xFFFFFF))),
                     ),
                 ),
             )

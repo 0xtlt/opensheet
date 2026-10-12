@@ -13,7 +13,7 @@ use opensheet_engine::cell_style::StyleParts;
 use opensheet_engine::names::NameScope;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
-    Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, Underline, VAlign,
+    Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, ThemeFont, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
 use opensheet_engine::workbook::{Cell, Content, Sheet};
@@ -35,9 +35,7 @@ pub(crate) const MAX_COL_WIDTH_PX: f32 = 255.0 * 7.0 + 5.0;
 /// Tallest row Excel accepts, in points.
 pub(crate) const MAX_ROW_HEIGHT_PT: f64 = 409.5;
 
-fn push_rgb(x: &mut String, element: &str, color: Color) {
-    w!(x, "<{element} rgb=\"FF{:06X}\"/>", color.0 & 0xFF_FFFF);
-}
+use super::dxf::push_color as push_rgb;
 
 /// Append "A1" for a 0-based (row, col).
 fn push_cell_ref(x: &mut String, row: u32, col: u32) {
@@ -223,7 +221,14 @@ fn push_font(x: &mut String, f: &Font) {
     }
     x.push_str("<name val=\"");
     push_attr(x, &f.name);
-    x.push_str("\"/></font>");
+    x.push_str("\"/>");
+    // A font of the theme says which one after its name, as Excel does.
+    match f.theme {
+        Some(ThemeFont::Major) => x.push_str("<scheme val=\"major\"/>"),
+        Some(ThemeFont::Minor) => x.push_str("<scheme val=\"minor\"/>"),
+        None => {}
+    }
+    x.push_str("</font>");
 }
 
 fn push_border_side(x: &mut String, name: &str, b: &Border) {

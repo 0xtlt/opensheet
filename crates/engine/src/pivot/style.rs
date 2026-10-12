@@ -7,7 +7,8 @@
 //! the parts a cell belongs to over one another.
 
 use super::compute::{Line, LineKind, Report};
-use crate::style::{Border, BorderStyle, Color, StylePatch};
+use crate::style::{Border, BorderStyle, Color, StylePatch, ThemeSlot};
+use crate::theme::Theme;
 use crate::workbook::Workbook;
 
 /// The style of a PivotTable and the "PivotTable Style Options"
@@ -54,6 +55,12 @@ impl PivotStyle {
     /// what a thumbnail of the styles gallery draws; an unknown style gives
     /// empty patches.
     pub fn sample(&self) -> Vec<Vec<StylePatch>> {
+        self.sample_in(&Theme::office())
+    }
+
+    /// [`PivotStyle::sample`] in the colours of `theme`.
+    pub fn sample_in(&self, theme: &Theme) -> Vec<Vec<StylePatch>> {
+        let accents = accents_of(theme);
         use LineKind::{Grand, Group, Header, Item};
         let rows = [Header, Group, Item, Item, Group, Item, Item, Grand];
         let cols = [Header, Item, Item, Item];
@@ -72,17 +79,20 @@ impl PivotStyle {
         (0..report.rows)
             .map(|r| {
                 (0..report.cols)
-                    .map(|c| patch(self, &report, r, c).unwrap_or_default())
+                    .map(|c| patch(self, &report, &accents, r, c).unwrap_or_default())
                     .collect()
             })
             .collect()
     }
 }
 
-/// Accent colours of the Office theme, and the dark colour the neutral
-/// style of each row is built on.
-const ACCENTS: [u32; 6] = [0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93, 0x4EA72E];
+/// The dark colour the neutral style of each row is built on; the others
+/// are built on the six accents of the theme.
 const NEUTRAL: u32 = 0x404040;
+
+fn accents_of(theme: &Theme) -> [u32; 6] {
+    ThemeSlot::ACCENTS.map(|slot| theme.rgb(slot))
+}
 
 /// Office's tint: positive values lighten towards white, negative ones
 /// darken towards black, on the lightness of the colour.
@@ -200,7 +210,7 @@ fn line(style: BorderStyle, color: Color) -> Option<Border> {
 }
 
 /// The looks of "PivotStyle<family><number>".
-fn builtin(name: &str) -> Option<Built> {
+fn builtin(name: &str, accents: &[u32; 6]) -> Option<Built> {
     let rest = name.strip_prefix("PivotStyle")?;
     let (family, number) = ["Light", "Medium", "Dark"]
         .iter()
@@ -208,7 +218,7 @@ fn builtin(name: &str) -> Option<Built> {
         .find_map(|(k, f)| rest.strip_prefix(f).map(|n| (k, n)))?;
     let number: usize = number.parse().ok().filter(|n| (1..=28).contains(n))?;
     let (variant, column) = ((number - 1) / 7, (number - 1) % 7);
-    let base = if column == 0 { NEUTRAL } else { ACCENTS[column - 1] };
+    let base = if column == 0 { NEUTRAL } else { accents[column - 1] };
     let solid = Color(base);
     let (t80, t60, t40) = (tint(base, 0.8), tint(base, 0.6), tint(base, 0.4));
     let (s25, s50) = (tint(base, -0.25), tint(base, -0.5));
@@ -426,8 +436,8 @@ fn builtin(name: &str) -> Option<Built> {
 
 /// The looks of the parts the cell (`r`, `c`) of a report belongs to, the
 /// more specific over the more general.
-fn patch(style: &PivotStyle, report: &Report, r: u32, c: u32) -> Option<StylePatch> {
-    let built = builtin(&style.name)?;
+fn patch(style: &PivotStyle, report: &Report, accents: &[u32; 6], r: u32, c: u32) -> Option<StylePatch> {
+    let built = builtin(&style.name, accents)?;
     let (rows, cols) = report.size();
     if report.placeholder || r >= rows || c >= cols {
         return None;
@@ -479,7 +489,7 @@ pub fn style_patch_at(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option
         .pivots
         .iter()
         .find_map(|p| p.location.filter(|b| b.contains(row, col)).map(|b| (p, b)))?;
-    patch(&p.style, &p.report, row - body.r0, col - body.c0)
+    patch(&p.style, &p.report, &accents_of(wb.theme()), row - body.r0, col - body.c0)
 }
 
 #[cfg(test)]
@@ -503,7 +513,7 @@ mod tests {
         assert_eq!((sample.len(), sample[0].len()), (8, 4));
         // Light 16: a pale header and grand total, bold items above their
         // detail, plain detail rows.
-        let pale = Some(Some(tint(ACCENTS[0], 0.8)));
+        let pale = Some(Some(tint(accents_of(&Theme::office())[0], 0.8)));
         assert_eq!(sample[0][2].fill, pale);
         assert_eq!(sample[7][0].fill, pale);
         assert_eq!(sample[1][0].bold, Some(true));
@@ -522,9 +532,10 @@ mod tests {
     fn every_built_in_style_exists() {
         let names = PivotStyle::builtin_names();
         assert_eq!(names.len(), 84);
-        assert!(names.iter().all(|n| builtin(n).is_some()));
-        assert!(builtin("PivotStyleLight29").is_none());
-        assert!(builtin("TableStyleMedium2").is_none());
-        assert!(builtin("").is_none());
+        let accents = accents_of(&Theme::office());
+        assert!(names.iter().all(|n| builtin(n, &accents).is_some()));
+        assert!(builtin("PivotStyleLight29", &accents).is_none());
+        assert!(builtin("TableStyleMedium2", &accents).is_none());
+        assert!(builtin("", &accents).is_none());
     }
 }

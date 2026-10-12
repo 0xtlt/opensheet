@@ -286,7 +286,7 @@ fn push_run(x: &mut String, run: &NoteRun) {
     w!(x, "<sz val=\"{}\"/>", font.size.max(2) as f64 / 2.0);
     match font.color {
         Some(color) => {
-            w!(x, "<color rgb=\"FF{:06X}\"/>", color.0 & 0xFF_FFFF);
+            w!(x, "<color rgb=\"FF{:06X}\"/>", color.value() & 0xFF_FFFF);
         }
         None => {
             w!(x, "<color indexed=\"{INDEXED_NOTE_TEXT}\"/>");
@@ -671,8 +671,11 @@ fn parse_run_font<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, context: &Context) -> F
                         // The tooltip colour is beyond the palette and so
                         // automatic, like the black of plain text.
                         let raw = RawColor::from_tag(&t);
+                        // The text of a note does not follow the theme: a
+                        // colour of the theme is read as the colour it is.
                         font.color = raw
                             .resolve(context.palette)
+                            .map(Color::plain)
                             .filter(|color| !(raw.is_default_text() && *color == Color::BLACK));
                     }
                     _ => {}
