@@ -17,7 +17,7 @@ use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS};
 use crate::style::{Color, Font};
 use crate::validation::localized;
-use crate::workbook::{DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, Sheet, Workbook};
+use crate::workbook::{Sheet, Workbook};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -1209,7 +1209,7 @@ impl Track<'_> {
 
 pub(crate) fn columns(sheet: &Sheet) -> Track<'_> {
     Track {
-        default: DEFAULT_COL_WIDTH as f64,
+        default: sheet.default_col_width as f64,
         sizes: &sheet.col_widths,
         hidden: [&sheet.hidden_cols, &NO_CELLS],
         count: MAX_COLS,
@@ -1218,7 +1218,7 @@ pub(crate) fn columns(sheet: &Sheet) -> Track<'_> {
 
 pub(crate) fn rows(sheet: &Sheet) -> Track<'_> {
     Track {
-        default: DEFAULT_ROW_HEIGHT as f64,
+        default: sheet.default_row_height as f64,
         sizes: &sheet.row_heights,
         hidden: [&sheet.hidden_rows, &sheet.filtered_rows],
         count: MAX_ROWS,

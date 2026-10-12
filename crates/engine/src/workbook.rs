@@ -12,9 +12,11 @@ use crate::value::{Array, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-/// Default column width in pixels at 100 % zoom.
+/// Default column width in pixels at 100 % zoom, in a new workbook. A
+/// sheet read from a file may have another: `Sheet::default_col_width`.
 pub const DEFAULT_COL_WIDTH: f32 = 64.0;
-/// Default row height in pixels at 100 % zoom.
+/// Default row height in pixels at 100 % zoom, in a new workbook. A sheet
+/// read from a file may have another: `Sheet::default_row_height`.
 pub const DEFAULT_ROW_HEIGHT: f32 = 20.0;
 
 const MAX_UNDO: usize = 100;
@@ -53,6 +55,11 @@ pub struct Sheet {
     pub col_widths: BTreeMap<u32, f32>,
     /// Explicit row heights (pixels at 100 %).
     pub row_heights: BTreeMap<u32, f32>,
+    /// Width of the columns that have none of their own and height of the
+    /// rows that have none (pixels at 100 %). They follow from the default
+    /// font of the workbook, or were set for the sheet ("Default Width").
+    pub default_col_width: f32,
+    pub default_row_height: f32,
     pub hidden_cols: BTreeSet<u32>,
     pub hidden_rows: BTreeSet<u32>,
     /// Formatting applied to whole columns / rows (inherited by new cells).
@@ -102,6 +109,8 @@ impl Sheet {
             cells: BTreeMap::new(),
             col_widths: BTreeMap::new(),
             row_heights: BTreeMap::new(),
+            default_col_width: DEFAULT_COL_WIDTH,
+            default_row_height: DEFAULT_ROW_HEIGHT,
             hidden_cols: BTreeSet::new(),
             hidden_rows: BTreeSet::new(),
             col_styles: BTreeMap::new(),
@@ -133,7 +142,7 @@ impl Sheet {
         if self.hidden_cols.contains(&col) {
             return 0.0;
         }
-        self.col_widths.get(&col).copied().unwrap_or(DEFAULT_COL_WIDTH)
+        self.col_widths.get(&col).copied().unwrap_or(self.default_col_width)
     }
 
     /// Row height in pixels at 100 % (0 when hidden).
@@ -141,7 +150,7 @@ impl Sheet {
         if self.hidden_rows.contains(&row) {
             return 0.0;
         }
-        self.row_heights.get(&row).copied().unwrap_or(DEFAULT_ROW_HEIGHT)
+        self.row_heights.get(&row).copied().unwrap_or(self.default_row_height)
     }
 
     /// (max row, max col) of cells holding a constant or a formula, ignoring
@@ -1089,7 +1098,14 @@ impl Workbook {
         self.snapshot();
         let name = self.next_sheet_name();
         let index = index.min(self.sheets.len());
-        self.sheets.insert(index, Sheet::new(name));
+        let mut sheet = Sheet::new(name);
+        // The default sizes follow from the default font of the workbook:
+        // a new sheet has those of the sheets already there.
+        if let Some(first) = self.sheets.first() {
+            sheet.default_col_width = first.default_col_width;
+            sheet.default_row_height = first.default_row_height;
+        }
+        self.sheets.insert(index, sheet);
         index
     }
 

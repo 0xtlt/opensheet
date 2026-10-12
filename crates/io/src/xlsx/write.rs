@@ -1,10 +1,11 @@
 //! Writing a [`Workbook`] as an `.xlsx` package.
 
 use super::chart::write::{CT_CHART, CT_DRAWING, drawings};
+use super::defaults::{self, Defaults};
 use super::formula::{is_valid_name, needs_array_evaluation, to_file_text};
 use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
-use super::{px_to_col_width, px_to_points};
+use super::{protection, px_to_col_width, px_to_points, validation};
 use crate::Result;
 use opensheet_engine::names::NameScope;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
@@ -12,7 +13,7 @@ use opensheet_engine::style::{
     Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
-use opensheet_engine::workbook::{Cell, Content, DEFAULT_COL_WIDTH, Sheet};
+use opensheet_engine::workbook::{Cell, Content, Sheet};
 use opensheet_engine::{Color, Workbook};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
@@ -25,7 +26,8 @@ pub(crate) const NS_DOC_REL: &str =
 pub(crate) const NS_PKG_REL: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CT_SHEET: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml";
 
-/// Widest column Excel accepts: 255 characters.
+/// Widest column Excel accepts: 255 characters, here of a font whose
+/// digits are 7 pixels wide (see `Defaults::max_col_width`).
 pub(crate) const MAX_COL_WIDTH_PX: f32 = 255.0 * 7.0 + 5.0;
 /// Tallest row Excel accepts, in points.
 pub(crate) const MAX_ROW_HEIGHT_PT: f64 = 409.5;
@@ -51,7 +53,7 @@ fn push_cell_ref(x: &mut String, row: u32, col: u32) {
 }
 
 /// Append "A1" or "A1:B2" (always with explicit corners).
-fn push_range(x: &mut String, rect: Rect) {
+pub(crate) fn push_range(x: &mut String, rect: Rect) {
     push_cell_ref(x, rect.r0, rect.c0);
     if !rect.is_single() {
         x.push(':');
@@ -256,18 +258,27 @@ impl StyleBook {
             if !alignment.is_empty() {
                 xfs.push_str(" applyAlignment=\"1\"");
             }
-            if !style.locked {
+            // Cells are locked and show their formula unless told otherwise.
+            let protection = !style.locked || style.hidden;
+            if protection {
                 xfs.push_str(" applyProtection=\"1\"");
             }
-            if alignment.is_empty() && style.locked {
+            if alignment.is_empty() && !protection {
                 xfs.push_str("/>");
             } else {
                 xfs.push('>');
                 if !alignment.is_empty() {
                     w!(xfs, "<alignment{alignment}/>");
                 }
-                if !style.locked {
-                    xfs.push_str("<protection locked=\"0\"/>");
+                if protection {
+                    xfs.push_str("<protection");
+                    if !style.locked {
+                        xfs.push_str(" locked=\"0\"");
+                    }
+                    if style.hidden {
+                        xfs.push_str(" hidden=\"1\"");
+                    }
+                    xfs.push_str("/>");
                 }
                 xfs.push_str("</xf>");
             }
@@ -418,7 +429,7 @@ fn push_sheet_views(x: &mut String, sheet: &Sheet, selected: bool) {
     w!(x, "<selection pane=\"{active}\"/></sheetView></sheetViews>");
 }
 
-fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook) {
+fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defaults) {
     #[derive(Clone, Copy, Default, PartialEq)]
     struct Col {
         width: Option<f32>,
@@ -451,7 +462,12 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook) {
             last += 1;
             iter.next();
         }
-        let width = px_to_col_width(col.width.unwrap_or(DEFAULT_COL_WIDTH).min(MAX_COL_WIDTH_PX));
+        let width = px_to_col_width(
+            col.width
+                .unwrap_or(sheet.default_col_width)
+                .min(defaults.max_col_width()),
+            defaults.digit_width,
+        );
         w!(
             x,
             "<col min=\"{}\" max=\"{}\" width=\"{width}\"",
@@ -513,6 +529,8 @@ fn push_v(x: &mut String, value: &Value) {
 struct SheetWriter<'a> {
     wb: &'a Workbook,
     styles: &'a StyleBook,
+    /// The sizes that follow from the workbook's default font.
+    defaults: Defaults,
     strings: &'a mut SharedStrings,
     /// Set when a dynamic array formula was written (the package then needs
     /// the metadata part that marks such formulas).
@@ -728,21 +746,48 @@ impl SheetWriter<'_> {
             x,
             "<worksheet xmlns=\"{NS_MAIN}\" xmlns:r=\"{NS_DOC_REL}\">"
         );
+        // The children of a worksheet come in the order of the schema
+        // (CT_Worksheet); Excel refuses a part that departs from it:
+        //
+        //   sheetPr, dimension, sheetViews, sheetFormatPr, cols, sheetData,
+        //   sheetCalcPr, sheetProtection, protectedRanges, scenarios,
+        //   autoFilter, sortState, dataConsolidate, customSheetViews,
+        //   mergeCells, phoneticPr, conditionalFormatting, dataValidations,
+        //   hyperlinks, printOptions, pageMargins, pageSetup, headerFooter,
+        //   rowBreaks, colBreaks, customProperties, cellWatches,
+        //   ignoredErrors, smartTags, drawing, legacyDrawing,
+        //   legacyDrawingHF, drawingHF, picture, oleObjects, controls,
+        //   webPublishItems, tableParts, extLst
+        //
+        // Each element written has its step below, named after it; a new
+        // one goes between its neighbours of the list.
+
+        // sheetPr
         if let Some(color) = sheet.tab_color {
             x.push_str("<sheetPr>");
             push_rgb(&mut x, "tabColor", color);
             x.push_str("</sheetPr>");
         }
+        // dimension
         x.push_str("<dimension ref=\"");
         match sheet.used_rect() {
             Some(rect) => push_range(&mut x, rect),
             None => x.push_str("A1"),
         }
         x.push_str("\"/>");
+        // sheetViews
         push_sheet_views(&mut x, sheet, selected);
-        x.push_str("<sheetFormatPr defaultRowHeight=\"15\"/>");
-        push_cols(&mut x, sheet, self.styles);
+        // sheetFormatPr
+        defaults::write(&mut x, sheet, &self.defaults);
+        // cols
+        push_cols(&mut x, sheet, self.styles, &self.defaults);
+        // sheetData
         self.push_sheet_data(&mut x, sheet);
+        // sheetProtection
+        if let Some(protection) = &sheet.protection {
+            protection::write_sheet(&mut x, protection);
+        }
+        // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {
             w!(x, "<mergeCells count=\"{}\">", merges.len());
@@ -753,10 +798,21 @@ impl SheetWriter<'_> {
             }
             x.push_str("</mergeCells>");
         }
+        // dataValidations
+        validation::write(&mut x, sheet, self.wb);
+        // pageMargins
         x.push_str("<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/>");
+        // drawing
         if !sheet.charts.is_empty() {
             // The drawing part is the only relationship of a sheet.
             x.push_str("<drawing r:id=\"rId1\"/>");
+        }
+        // extLst: one `<ext>` per feature, in the order Excel writes them
+        // (conditional formats, then data validations).
+        let mut extensions = String::new();
+        validation::write_ext(&mut extensions, sheet, self.wb);
+        if !extensions.is_empty() {
+            w!(x, "<extLst>{extensions}</extLst>");
         }
         x.push_str("</worksheet>");
         x
@@ -768,7 +824,13 @@ impl SheetWriter<'_> {
 fn workbook_xml(wb: &Workbook) -> String {
     let mut x = String::from(XML_DECL);
     w!(x, "<workbook xmlns=\"{NS_MAIN}\" xmlns:r=\"{NS_DOC_REL}\">");
+    // The children of the workbook, in the order of the schema
+    // (CT_Workbook): fileVersion, fileSharing, workbookPr,
+    // workbookProtection, bookViews, sheets, functionGroups,
+    // externalReferences, definedNames, calcPr, oleSize,
+    // customWorkbookViews, pivotCaches, ..., extLst.
     x.push_str("<workbookPr/>");
+    protection::write_workbook(&mut x, &wb.protection);
     x.push_str("<bookViews><workbookView xWindow=\"0\" yWindow=\"0\" windowWidth=\"28800\" windowHeight=\"17600\"/></bookViews>");
     x.push_str("<sheets>");
     for (i, sheet) in wb.sheets.iter().enumerate() {
@@ -834,6 +896,7 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let mut writer = SheetWriter {
         wb,
         styles: &styles,
+        defaults: Defaults::of(&wb.styles.default_style().font),
         strings: &mut strings,
         dynamic_arrays: false,
     };

@@ -16,7 +16,7 @@ use opensheet_engine::chart::{
     Chart, ChartKind, ChartTitle, DEFAULT_CHART_SIZE, LegendPos, Series, SeriesName,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
-use opensheet_engine::workbook::{Content, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT};
+use opensheet_engine::workbook::Content;
 use opensheet_engine::{Color, Value, Workbook};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -59,14 +59,14 @@ pub(crate) fn drawings(wb: &Workbook) -> Vec<Drawing> {
         }
         // The geometry Excel will see: the sizes as they are written.
         let cols = Track {
-            default: DEFAULT_COL_WIDTH,
+            default: sheet.default_col_width,
             sizes: &sheet.col_widths,
             hidden: &sheet.hidden_cols,
             max: MAX_COL_WIDTH_PX,
             count: MAX_COLS,
         };
         let rows = Track {
-            default: DEFAULT_ROW_HEIGHT,
+            default: sheet.default_row_height,
             sizes: &sheet.row_heights,
             hidden: &sheet.hidden_rows,
             max: points_to_px(MAX_ROW_HEIGHT_PT),
