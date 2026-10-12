@@ -1060,6 +1060,15 @@ fn gridlines_give_way_to_text_and_merged_cells() {
     enter(&mut wb, "B4", "merged");
     wb.merge(0, Rect::parse("B4:C5").unwrap());
     enter(&mut wb, "E6", "end");
+    wb.apply_borders(
+        0,
+        Rect::parse("A2").unwrap(),
+        BorderPreset::Bottom,
+        Border {
+            style: BorderStyle::Double,
+            color: None,
+        },
+    );
     wb.update_page_setup(0, |p| p.gridlines = true);
     wb.commit("cells");
     let fonts = FontDb::standard_only();
@@ -1102,6 +1111,13 @@ fn gridlines_give_way_to_text_and_merged_cells() {
     assert!(horizontal_at(col(0.5), row(4.0)) && horizontal_at(col(3.5), row(4.0)));
     assert!(vertical_at(col(1.0), row(3.5)) && vertical_at(col(3.0), row(4.5)));
     assert!(horizontal_at(col(1.5), row(3.0)) && horizontal_at(col(1.5), row(5.0)));
+    // A border takes the place of the gridline on its edge: the double
+    // line under A2 keeps its gap.
+    assert!(!horizontal_at(col(0.5), row(2.0)) && horizontal_at(col(1.5), row(2.0)));
+    let double = lines_of(&scene, 0.5);
+    assert_eq!(double.len(), 2);
+    assert!(double.iter().all(|l| (l.0, l.2) == (col(0.0), col(1.0))));
+    assert!((double[0].1 - (row(2.0) - 0.5)).abs() < 1e-9 && (double[1].1 - (row(2.0) + 0.5)).abs() < 1e-9);
     // Draft quality leaves the gridlines out.
     wb.update_page_setup(0, |p| p.draft = true);
     assert!(lines_of(&render_page(&wb, &job, &plan, 0).unwrap(), 0.25).is_empty());

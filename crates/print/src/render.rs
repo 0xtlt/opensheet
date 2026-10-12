@@ -17,7 +17,7 @@ use opensheet_engine::page::{
     PageSetup, Pagination, PrintErrors, Script, Span, axis_offset, visible_col_width,
 };
 use opensheet_engine::refs::{MAX_COLS, Rect, col_to_letters};
-use opensheet_engine::style::{Border, BorderStyle, Color, HAlign, Style, StyleId, Underline, VAlign};
+use opensheet_engine::style::{Border, BorderStyle, Borders, Color, HAlign, Style, StyleId, Underline, VAlign};
 use opensheet_engine::value::Value;
 use opensheet_engine::workbook::{Content, Sheet, Workbook};
 use std::collections::HashSet;
@@ -676,15 +676,71 @@ impl<'a> Renderer<'a> {
         }
         canvas.restore();
 
+        // The border on every edge of the pane's grid. An edge shared by
+        // two cells shows the heavier of their two borders (the cell just
+        // outside the pane counts too); edges inside a merged area show
+        // none.
         let same_merge = |a: Option<usize>, b: Option<usize>| a.is_some() && a == b;
+        let outside = |row: Option<u32>, col: Option<u32>| -> Borders {
+            match (row, col) {
+                (Some(row), Some(col)) => self.display(row, col).style.borders,
+                _ => Borders::default(),
+            }
+        };
+        // Horizontal edges: `across[i * nc + j]` runs above row i (below
+        // the last row for i = nr) along column j.
+        let mut across: Vec<Border> = vec![Border::NONE; (nr + 1) * nc];
+        for i in 0..=nr {
+            for j in 0..nc {
+                if i > 0 && i < nr && same_merge(cell(i - 1, j).1, cell(i, j).1) {
+                    continue;
+                }
+                let above = if i > 0 {
+                    cell(i - 1, j).0.style.borders.bottom
+                } else {
+                    outside(rows[0].index.checked_sub(1), Some(cols[j].index)).bottom
+                };
+                let below = if i < nr {
+                    cell(i, j).0.style.borders.top
+                } else {
+                    outside(Some(rows[nr - 1].index + 1), Some(cols[j].index)).top
+                };
+                across[i * nc + j] = heavier(above, below);
+            }
+        }
+        // Vertical edges: `down[i * (nc + 1) + j]` runs left of column j
+        // (right of the last column for j = nc) along row i.
+        let mut down: Vec<Border> = vec![Border::NONE; nr * (nc + 1)];
+        for i in 0..nr {
+            for j in 0..=nc {
+                if j > 0 && j < nc && same_merge(cell(i, j - 1).1, cell(i, j).1) {
+                    continue;
+                }
+                let left = if j > 0 {
+                    cell(i, j - 1).0.style.borders.right
+                } else {
+                    outside(Some(rows[i].index), cols[0].index.checked_sub(1)).right
+                };
+                let right = if j < nc {
+                    cell(i, j).0.style.borders.left
+                } else {
+                    outside(Some(rows[i].index), Some(cols[nc - 1].index + 1)).left
+                };
+                down[i * (nc + 1) + j] = heavier(left, right);
+            }
+        }
+
+        // Gridlines, where no border takes their place: not inside merged
+        // areas, not across text flowing over its neighbours.
         if self.setup.gridlines && !self.setup.draft {
             let stroke = || Stroke::solid(Color::BLACK, GRIDLINE_WIDTH * self.scale);
-            // Horizontal lines: above every row and below the last.
             for i in 0..=nr {
                 let y = if i < nr { rows[i].pos } else { bounds.bottom() };
                 let mut start: Option<usize> = None;
                 for j in 0..=nc {
-                    let hidden = j == nc || (i > 0 && i < nr && same_merge(cell(i - 1, j).1, cell(i, j).1));
+                    let hidden = j == nc
+                        || !across[i * nc + j].is_none()
+                        || (i > 0 && i < nr && same_merge(cell(i - 1, j).1, cell(i, j).1));
                     match (hidden, start) {
                         (false, None) => start = Some(j),
                         (true, Some(s)) => {
@@ -695,12 +751,12 @@ impl<'a> Renderer<'a> {
                     }
                 }
             }
-            // Vertical lines: left of every column and right of the last.
             for j in 0..=nc {
                 let x = if j < nc { cols[j].pos } else { bounds.right() };
                 let mut start: Option<usize> = None;
                 for i in 0..=nr {
                     let hidden = i == nr
+                        || !down[i * (nc + 1) + j].is_none()
                         || (j > 0
                             && j < nc
                             && (same_merge(cell(i, j - 1).1, cell(i, j).1) || crossed.contains(&(i, j - 1))));
@@ -716,40 +772,17 @@ impl<'a> Renderer<'a> {
             }
         }
 
-        // Borders. An edge shared by two cells shows the heavier of
-        // their two borders; edges inside a merged area do not show.
-        let outside = |row: Option<u32>, col: Option<u32>| -> Option<CellDisplay<'a>> {
-            Some(self.display(row?, col?)).filter(|d| !d.style.borders.is_none())
-        };
+        // Borders: neighbouring edges with the same border are drawn as
+        // one line (border, x0, y0, x1, y1).
         let mut edges: Vec<(Border, f64, f64, f64, f64)> = Vec::new();
         for i in 0..=nr {
             let y = if i < nr { rows[i].pos } else { bounds.bottom() };
-            // A run of segments with one border: border, first column.
             let mut run: Option<(Border, usize)> = None;
             for j in 0..=nc {
-                let mut border = Border::NONE;
-                if j < nc {
-                    let above = if i > 0 {
-                        cell(i - 1, j).0.style.borders.bottom
-                    } else {
-                        outside(rows[0].index.checked_sub(1), Some(cols[j].index))
-                            .map_or(Border::NONE, |d| d.style.borders.bottom)
-                    };
-                    let below = if i < nr {
-                        cell(i, j).0.style.borders.top
-                    } else {
-                        outside(Some(rows[nr - 1].index + 1), Some(cols[j].index))
-                            .map_or(Border::NONE, |d| d.style.borders.top)
-                    };
-                    if !(i > 0 && i < nr && same_merge(cell(i - 1, j).1, cell(i, j).1)) {
-                        border = heavier(above, below);
-                    }
-                }
-                if let Some((b, s)) = run {
-                    if b != border {
-                        edges.push((b, cols[s].pos, y, cols[j - 1].pos + cols[j - 1].size, y));
-                        run = None;
-                    }
+                let border = if j < nc { across[i * nc + j] } else { Border::NONE };
+                if let Some((b, s)) = run.filter(|(b, _)| *b != border) {
+                    edges.push((b, cols[s].pos, y, cols[j - 1].pos + cols[j - 1].size, y));
+                    run = None;
                 }
                 if run.is_none() && !border.is_none() {
                     run = Some((border, j));
@@ -760,29 +793,10 @@ impl<'a> Renderer<'a> {
             let x = if j < nc { cols[j].pos } else { bounds.right() };
             let mut run: Option<(Border, usize)> = None;
             for i in 0..=nr {
-                let mut border = Border::NONE;
-                if i < nr {
-                    let left = if j > 0 {
-                        cell(i, j - 1).0.style.borders.right
-                    } else {
-                        outside(Some(rows[i].index), cols[0].index.checked_sub(1))
-                            .map_or(Border::NONE, |d| d.style.borders.right)
-                    };
-                    let right = if j < nc {
-                        cell(i, j).0.style.borders.left
-                    } else {
-                        outside(Some(rows[i].index), Some(cols[nc - 1].index + 1))
-                            .map_or(Border::NONE, |d| d.style.borders.left)
-                    };
-                    if !(j > 0 && j < nc && same_merge(cell(i, j - 1).1, cell(i, j).1)) {
-                        border = heavier(left, right);
-                    }
-                }
-                if let Some((b, s)) = run {
-                    if b != border {
-                        edges.push((b, x, rows[s].pos, x, rows[i - 1].pos + rows[i - 1].size));
-                        run = None;
-                    }
+                let border = if i < nr { down[i * (nc + 1) + j] } else { Border::NONE };
+                if let Some((b, s)) = run.filter(|(b, _)| *b != border) {
+                    edges.push((b, x, rows[s].pos, x, rows[i - 1].pos + rows[i - 1].size));
+                    run = None;
                 }
                 if run.is_none() && !border.is_none() {
                     run = Some((border, i));
