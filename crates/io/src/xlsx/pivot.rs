@@ -333,19 +333,6 @@ fn parent_field(cache: &PivotCache, field: usize) -> Option<usize> {
     cache.group_children(field).last().copied()
 }
 
-/// The numbers a range grouping groups: the distinct values of its field.
-fn grouped_numbers(cache: &PivotCache, field: usize, group: &FieldGroup) -> Vec<f64> {
-    let base = group.base.filter(|base| *base != field).unwrap_or(field);
-    let values = cache.fields.get(base).map_or(&[][..], |f| &f.shared[..]);
-    values
-        .iter()
-        .filter_map(|v| match v {
-            Value::Number(n) => Some(*n),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Append the `<fieldGroup>` of a field that groups, or is grouped.
 fn push_field_group(x: &mut String, cache: &PivotCache, index: usize) {
     let field = &cache.fields[index];
@@ -370,22 +357,7 @@ fn push_field_group(x: &mut String, cache: &PivotCache, index: usize) {
             auto_start,
             auto_end,
         } => {
-            // Bounds that follow the data are the data's: Excel finds the
-            // group of a value from them.
-            let numbers = grouped_numbers(cache, index, group);
-            let min = numbers.iter().copied().fold(f64::INFINITY, f64::min);
-            let max = numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-            let whole = |n: f64| if *by == GroupBy::Range { n } else { n.floor() };
-            let start = if *auto_start && min.is_finite() {
-                whole(min)
-            } else {
-                *start
-            };
-            let end = if *auto_end && max.is_finite() {
-                whole(max)
-            } else {
-                *end
-            };
+            let (start, end) = (*start, *end);
             x.push_str("<rangePr");
             if !auto_start {
                 x.push_str(" autoStart=\"0\"");
@@ -1499,29 +1471,6 @@ fn read_cache<R: Read + Seek>(
         rows,
     };
     cache.complete_groups(locale);
-    // Bounds that follow the data are worked out again at every refresh:
-    // the engine keeps none for them.
-    for field in &mut cache.fields {
-        if let Some(FieldGroup {
-            kind:
-                GroupKind::Range {
-                    start,
-                    end,
-                    auto_start,
-                    auto_end,
-                    ..
-                },
-            ..
-        }) = &mut field.group
-        {
-            if *auto_start {
-                *start = 0.0;
-            }
-            if *auto_end {
-                *end = 0.0;
-            }
-        }
-    }
     cache.is_valid().then(|| (Arc::new(cache), raw.source))
 }
 
