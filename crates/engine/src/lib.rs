@@ -5,16 +5,26 @@
 
 pub mod ast;
 pub mod chart;
+pub mod comment;
+pub mod condfmt;
 pub mod datetime;
+pub mod drawing;
 pub mod eval;
+pub mod features;
+pub mod filter;
 pub mod format;
 pub mod functions;
 pub mod input;
 pub mod locale;
 pub mod ops;
+pub mod page;
 pub mod parser;
+pub mod pivot;
+pub mod protect;
 pub mod refs;
 pub mod style;
+pub mod table;
+pub mod validation;
 pub mod value;
 pub mod workbook;
 

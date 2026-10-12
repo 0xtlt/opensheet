@@ -68,7 +68,7 @@ pub fn parse_cell_name(s: &str) -> Option<(u32, u32)> {
 }
 
 /// An inclusive rectangle of cells, 0-based.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Rect {
     pub r0: u32,
     pub c0: u32,

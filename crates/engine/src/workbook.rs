@@ -68,6 +68,27 @@ pub struct Sheet {
     pub spills: Vec<Spill>,
     /// Charts floating over the cells, in drawing order (last on top).
     pub charts: Vec<crate::chart::Chart>,
+    /// The sheet's filter buttons (Data > Filter), see `filter.rs`.
+    pub auto_filter: Option<crate::filter::AutoFilter>,
+    /// Rows hidden by a filter (of the sheet or of a table), kept apart
+    /// from the rows the user hid by hand.
+    pub filtered_rows: BTreeSet<u32>,
+    /// Tables ("Format as Table"), see `table.rs`.
+    pub tables: Vec<crate::table::Table>,
+    /// Conditional formats, in priority order, see `condfmt.rs`.
+    pub cond_formats: Vec<crate::condfmt::CondFormat>,
+    /// Data validation rules, see `validation.rs`.
+    pub validations: Vec<crate::validation::Validation>,
+    /// Notes and comments by cell, see `comment.rs`.
+    pub comments: BTreeMap<(u32, u32), crate::comment::Comment>,
+    /// Sheet protection, see `protect.rs`.
+    pub protection: Option<crate::protect::SheetProtection>,
+    /// Page setup for printing, see `page.rs`.
+    pub page: crate::page::PageSetup,
+    /// Pivot tables, see `pivot.rs`.
+    pub pivots: Vec<crate::pivot::PivotTable>,
+    /// Pictures and shapes floating over the cells, see `drawing.rs`.
+    pub drawings: Vec<crate::drawing::Drawing>,
 }
 
 impl Sheet {
@@ -89,6 +110,16 @@ impl Sheet {
             tab_color: None,
             spills: Vec::new(),
             charts: Vec::new(),
+            auto_filter: None,
+            filtered_rows: BTreeSet::new(),
+            tables: Vec::new(),
+            cond_formats: Vec::new(),
+            validations: Vec::new(),
+            comments: BTreeMap::new(),
+            protection: None,
+            page: crate::page::PageSetup::default(),
+            pivots: Vec::new(),
+            drawings: Vec::new(),
         }
     }
 
@@ -300,6 +331,13 @@ pub struct Workbook {
     pub circular: bool,
     /// True when there are unsaved changes.
     pub modified: bool,
+    /// Protection of the workbook structure, see `protect.rs`.
+    pub protection: crate::protect::WorkbookProtection,
+    /// Incremented by every recalculation: anything derived from cell
+    /// values can be cached against it.
+    pub generation: u64,
+    /// Caches of the features that live in their own modules.
+    pub caches: crate::features::Caches,
     undo_stack: Vec<UndoEntry>,
     redo_stack: Vec<UndoEntry>,
     pending: Vec<Change>,
@@ -315,6 +353,9 @@ impl Workbook {
             locale,
             circular: false,
             modified: false,
+            protection: crate::protect::WorkbookProtection::default(),
+            generation: 0,
+            caches: crate::features::Caches::default(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             pending: Vec::new(),
@@ -645,6 +686,7 @@ impl Workbook {
         let Some(result) = result else {
             return;
         };
+        self.generation += 1;
         self.circular = result.circular;
         for ((si, r, c), v) in result.values {
             if let Some(cell) = self.sheets.get_mut(si).and_then(|s| s.cells.get_mut(&(r, c))) {
@@ -1060,6 +1102,7 @@ impl Workbook {
             for chart in &mut sh.charts {
                 chart.rename_sheet(&old, new_name);
             }
+            crate::features::on_sheet_renamed(sh, &old, new_name);
         }
         true
     }
@@ -1090,6 +1133,7 @@ impl Workbook {
             chart.rename_sheet(&base, &new_name);
         }
         self.sheets.insert(index + 1, copy);
+        crate::features::on_sheet_duplicated(self, index + 1, &base);
         Some(index + 1)
     }
 

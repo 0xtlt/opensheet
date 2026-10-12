@@ -767,6 +767,7 @@ impl Workbook {
             for chart in &mut sh.charts {
                 chart.adjust(edit, &edited_name, &own);
             }
+            crate::features::on_structural_edit(sh, edit, &edited_name);
         }
     }
 

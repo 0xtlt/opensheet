@@ -179,7 +179,10 @@ pub struct Style {
     /// canonical (English/US) syntax.
     pub num_fmt: Arc<str>,
     pub borders: Borders,
+    /// Protection: the cell cannot be edited while its sheet is protected.
     pub locked: bool,
+    /// Protection: the formula is not shown while the sheet is protected.
+    pub hidden: bool,
 }
 
 impl Default for Style {
@@ -196,7 +199,94 @@ impl Default for Style {
             num_fmt: Arc::from("General"),
             borders: Borders::default(),
             locked: true,
+            hidden: false,
         }
+    }
+}
+
+/// A partial style laid over a cell's own formatting: what a table style or
+/// a conditional format changes. `None` leaves the property alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct StylePatch {
+    pub font_name: Option<Arc<str>>,
+    /// Half points.
+    pub font_size: Option<u16>,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+    pub underline: Option<Underline>,
+    pub strike: Option<bool>,
+    /// `Some(None)` = automatic colour.
+    pub font_color: Option<Option<Color>>,
+    /// `Some(None)` = no fill.
+    pub fill: Option<Option<Color>>,
+    pub border_left: Option<Border>,
+    pub border_right: Option<Border>,
+    pub border_top: Option<Border>,
+    pub border_bottom: Option<Border>,
+    pub num_fmt: Option<Arc<str>>,
+}
+
+impl StylePatch {
+    pub fn is_empty(&self) -> bool {
+        *self == StylePatch::default()
+    }
+
+    /// Change `style` by what this patch sets.
+    pub fn apply(&self, style: &mut Style) {
+        if let Some(v) = &self.font_name {
+            style.font.name = v.clone();
+        }
+        if let Some(v) = self.font_size {
+            style.font.size = v;
+        }
+        if let Some(v) = self.bold {
+            style.font.bold = v;
+        }
+        if let Some(v) = self.italic {
+            style.font.italic = v;
+        }
+        if let Some(v) = self.underline {
+            style.font.underline = v;
+        }
+        if let Some(v) = self.strike {
+            style.font.strike = v;
+        }
+        if let Some(v) = self.font_color {
+            style.font.color = v;
+        }
+        if let Some(v) = self.fill {
+            style.fill = v;
+        }
+        if let Some(v) = self.border_left {
+            style.borders.left = v;
+        }
+        if let Some(v) = self.border_right {
+            style.borders.right = v;
+        }
+        if let Some(v) = self.border_top {
+            style.borders.top = v;
+        }
+        if let Some(v) = self.border_bottom {
+            style.borders.bottom = v;
+        }
+        if let Some(v) = &self.num_fmt {
+            style.num_fmt = v.clone();
+        }
+    }
+
+    /// Lay `over` on top of this patch: what `over` sets wins.
+    pub fn merge(&mut self, over: &StylePatch) {
+        macro_rules! take {
+            ($($f:ident),*) => {$(
+                if over.$f.is_some() {
+                    self.$f = over.$f.clone();
+                }
+            )*};
+        }
+        take!(
+            font_name, font_size, bold, italic, underline, strike, font_color, fill, border_left, border_right,
+            border_top, border_bottom, num_fmt
+        );
     }
 }
 
