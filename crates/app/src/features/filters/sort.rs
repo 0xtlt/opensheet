@@ -361,6 +361,9 @@ const LABEL_W: f32 = 64.0;
 const KEY_W: f32 = 186.0;
 const BASIS_W: f32 = 186.0;
 const ORDER_W: f32 = 280.0;
+/// The box of the colour of a colour level (wide enough for "Aucune
+/// couleur de cellule").
+const COLOR_W: f32 = 176.0;
 const FIELD_BORDER: u32 = 0xABABAB;
 
 struct SortDialog {
@@ -563,7 +566,7 @@ impl SortDialog {
         let button = div()
             .id(("sort-color", index))
             .h(px(CONTROL_H))
-            .w(px(132.))
+            .w(px(COLOR_W))
             .flex()
             .items_center()
             .justify_between()
@@ -613,7 +616,7 @@ impl SortDialog {
                             .id("sort-colors")
                             .occlude()
                             .mt(px(1.))
-                            .w(px(132.))
+                            .w(px(COLOR_W))
                             .py(px(2.))
                             .bg(c(0xFFFFFF))
                             .border_1()
@@ -651,7 +654,7 @@ impl SortDialog {
                 .child(self.color_select(index, cx))
                 .child(
                     Select::new(("sort-side", index), sides, Some(level.descending as usize))
-                        .width(ORDER_W - 138.0)
+                        .width(ORDER_W - COLOR_W - 6.0)
                         .on_change(cx.listener(move |this, at: &usize, _, cx| {
                             this.setup.levels[index].descending = *at == 1;
                             cx.notify();
