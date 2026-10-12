@@ -41,7 +41,6 @@ commands! {
         // Insert
         Sparklines = "chart-line", t("Sparklines", "Graphiques sparkline");
         Equation = "function", t("Equation", "Équation");
-        Symbol = "more", t("Symbol", "Symbole");
         // Draw
         Draw = "brush", t_ctx("button", "Draw", "Dessiner");
         Eraser = "clear", t("Eraser", "Gomme");

@@ -639,3 +639,30 @@ fn a_new_style_is_made_modified_duplicated_and_deleted(cx: &mut TestAppContext) 
     app.update(cx, |app, cx| app.undo(cx));
     assert_eq!(style_name(&app, cx, "A2"), "Blue box");
 }
+
+// -------------------------------------------------------------------- symbol
+
+#[gpui::test]
+fn a_symbol_goes_into_the_cell_being_edited(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| enter(wb, &[("B2", "Price ")]));
+    select(&app, cx, "B2");
+    // The command opens the cell (and, on a Mac, the Emoji & Symbols
+    // viewer); what the viewer sends is typed like any text.
+    app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
+    redraw(cx);
+    assert!(app.update(cx, |app, _| app.is_editing()));
+    cx.simulate_input("€");
+    // Asked again while typing, the entry stays open.
+    app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
+    cx.simulate_input("→");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(value(&app, cx, "B2"), Value::text("Price €→"));
+    // A locked cell of a protected sheet is not opened.
+    edit(&app, cx, |wb| {
+        wb.protect_sheet(0, Default::default(), "");
+    });
+    select(&app, cx, "B2");
+    app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
+    assert!(!app.update(cx, |app, _| app.is_editing()));
+}

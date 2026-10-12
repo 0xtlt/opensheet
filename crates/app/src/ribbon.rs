@@ -1485,7 +1485,7 @@ impl ExcelApp {
                 t("Symbols", "Symboles"),
                 row(vec![
                     self.cmd_large("in-equation", misc::Cmd::Equation, false, cx),
-                    self.cmd_large("in-symbol", misc::Cmd::Symbol, false, cx),
+                    self.cmd_large("in-symbol", edit_tools::Cmd::Symbol, false, cx),
                 ]),
             )
             .border_r_0()

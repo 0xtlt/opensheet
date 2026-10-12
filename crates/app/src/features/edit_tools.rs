@@ -15,7 +15,7 @@ use super::misc::{self, Kinds, Special};
 use super::{
     CellEdit, Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, Painter, Zone, ZoneEvent, ZoneResponse,
 };
-use crate::app::{ExcelApp, MenuEntry};
+use crate::app::{EditMode, EditSource, ExcelApp, MenuEntry};
 use crate::i18n::t;
 use opensheet_engine::ops::PasteMode;
 use opensheet_engine::paste_special::{PasteSpecial, PasteWhat};
@@ -61,6 +61,8 @@ commands! {
         // Home ▸ Cell Styles
         CellStyles = "cell-styles", t("Cell Styles", "Styles de cellules");
         NewCellStyle = "", t("New Cell Style…", "Nouveau style de cellule…");
+        // Insert ▸ Symbol
+        Symbol = "more", t("Symbol", "Symbole");
     }
 }
 
@@ -74,11 +76,13 @@ impl Command for Cmd {
     }
 
     fn run(self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-        // The tools work on the sheet, once the entry in progress is stored.
-        if app.is_editing() && !app.commit_edit(None, window, cx) {
+        // A symbol goes into the entry being typed; the other tools work
+        // on the sheet, once that entry is stored.
+        if self != Cmd::Symbol && app.is_editing() && !app.commit_edit(None, window, cx) {
             return;
         }
         match self {
+            Cmd::Symbol => insert_symbol(app, window, cx),
             Cmd::Find => find::open(app, false, window, cx),
             Cmd::Replace => find::open(app, true, window, cx),
             Cmd::SelectFormulas => misc::select_special(app, Special::Formulas(Kinds::ALL), cx),
@@ -138,6 +142,23 @@ impl Command for Cmd {
             _ => true,
         }
     }
+}
+
+/// Insert ▸ Symbol: the Emoji & Symbols viewer of the system, as in Excel
+/// for Mac. What is picked there is typed into the cell being edited; a
+/// cell that was only selected is opened for it.
+fn insert_symbol(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    if !app.is_editing() {
+        app.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
+    }
+    if !app.is_editing() {
+        // The cell may not be changed (a protected sheet said so).
+        return;
+    }
+    app.focus_editor(window, cx);
+    // The headless window of the tests has no such viewer.
+    #[cfg(not(test))]
+    window.show_character_palette();
 }
 
 /// The entries of the Paste drop-down after "Paste", in Excel's order.
