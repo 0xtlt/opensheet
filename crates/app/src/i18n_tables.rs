@@ -124,7 +124,6 @@ pub static ES: &[(&str, &str)] = &[
     ("The selected style has formatting for the following properties:", "El siguiente estilo tiene formato para las siguientes propiedades:"),
     ("style part|Fill", "Rellenar"),
     ("New Cell Style…", "Nuevo estilo de celda…"),
-    // ---- end of editing tools ----
     ("Home", "Inicio"),
     ("Insert", "Insertar"),
     ("Draw", "Dibujar"),
@@ -2813,7 +2812,6 @@ pub static DE: &[(&str, &str)] = &[
     ("The selected style has formatting for the following properties:", "Die ausgewählte Formatvorlage weist Formatierungen für die folgenden Eigenschaften auf:"),
     ("style part|Fill", "Ausfüllen"),
     ("New Cell Style…", "Neue Zellenformatvorlage…"),
-    // ---- end of editing tools ----
     ("Home", "Start"),
     ("Insert", "Einfügen"),
     ("Draw", "Zeichnen"),
@@ -5490,7 +5488,6 @@ pub static IT: &[(&str, &str)] = &[
     ("The selected style has formatting for the following properties:", "Lo stile selezionato dispone della formattazione per le seguenti proprietà:"),
     ("style part|Fill", "Riempimento"),
     ("New Cell Style…", "Nuovo stile cella…"),
-    // ---- end of editing tools ----
     ("Home", "Home"),
     ("Insert", "Inserisci"),
     // Tab name; the Draw tab's button of the same English text is "Disegna" in Excel.
