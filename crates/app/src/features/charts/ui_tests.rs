@@ -475,3 +475,79 @@ fn charts_follow_the_sheet_in_every_view(cx: &mut TestAppContext) {
         assert_eq!(element(&app, cx), ChartElement::Title, "{mode:?}");
     }
 }
+
+#[gpui::test]
+fn the_legend_docks_where_it_is_dropped(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    assert_eq!(chart(&app, cx, id).legend, LegendPos::Bottom);
+    let drag_to = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, to: (f32, f32)| {
+        let from = middle(app, cx, id, ChartElement::Legend);
+        // A place on the chart, as fractions of its width and height.
+        let to = app.update(cx, |app, _| {
+            let zone = app.painted_chart(id).unwrap();
+            let size = app.wb.chart(app.sheet, id).unwrap().size;
+            app.current_layout().unwrap().to_window(zone.origin.0 + size.0 * to.0, zone.origin.1 + size.1 * to.1)
+        });
+        let half = point((from.x + to.x) / 2.0, (from.y + to.y) / 2.0);
+        cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+        cx.simulate_mouse_move(half, MouseButton::Left, Modifiers::none());
+        cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
+        cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+        redraw(cx);
+    };
+    drag_to(&app, cx, (0.05, 0.5));
+    assert_eq!(chart(&app, cx, id).legend, LegendPos::Left);
+    assert_eq!(element(&app, cx), ChartElement::Legend);
+    drag_to(&app, cx, (0.95, 0.08));
+    assert_eq!(chart(&app, cx, id).legend, LegendPos::TopRight);
+    drag_to(&app, cx, (0.5, 0.04));
+    assert_eq!(chart(&app, cx, id).legend, LegendPos::Top);
+    // The chart itself stayed where it was, and a plain click changes nothing.
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Legend"));
+    click_on(&app, cx, id, ChartElement::Legend);
+    assert_eq!(chart(&app, cx, id).legend, LegendPos::Top);
+    assert_eq!(legend_dock((0.0, 0.0, 400.0, 200.0), 390.0, 100.0), LegendPos::Right);
+    assert_eq!(legend_dock((0.0, 0.0, 400.0, 200.0), 200.0, 190.0), LegendPos::Bottom);
+}
+
+#[gpui::test]
+fn a_right_click_opens_the_menu_of_the_element(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    let menu = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, on: ChartElement| -> Vec<String> {
+        let at = middle(app, cx, id, on);
+        cx.simulate_mouse_down(at, MouseButton::Right, Modifiers::none());
+        cx.simulate_mouse_up(at, MouseButton::Right, Modifiers::none());
+        redraw(cx);
+        let labels = app.update(cx, |app, _| match app.popup.as_ref().map(|p| &p.kind) {
+            Some(PopupKind::Menu(entries)) => entries.iter().filter(|e| !e.separator).map(|e| e.label.to_string()).collect(),
+            _ => panic!("a context menu on {on:?}"),
+        });
+        app.update_in(cx, |app, window, cx| app.close_popup(window, cx));
+        redraw(cx);
+        labels
+    };
+    let series = menu(&app, cx, ChartElement::Point(0, 0));
+    assert_eq!(element(&app, cx), ChartElement::Series(0));
+    for wanted in ["Delete", "Reset to Match Style", "Change Series Chart Type…", "Select Data…", "Add Data Labels", "Add Trendline…", "Format Data Series…"] {
+        assert!(series.iter().any(|l| l == wanted), "{wanted} in {series:?}");
+    }
+    let title = menu(&app, cx, ChartElement::Title);
+    assert!(title.iter().any(|l| l == "Edit Text") && title.iter().any(|l| l == "Format Chart Title…"), "{title:?}");
+    let axis = menu(&app, cx, ChartElement::Axis(AxisId::Value));
+    assert!(axis.iter().any(|l| l == "Add Minor Gridlines") && axis.iter().any(|l| l == "Format Axis…"), "{axis:?}");
+    // The chart area: the chart as an object, and its own entries.
+    let corner = app.update(cx, |app, _| {
+        let zone = app.painted_chart(id).unwrap();
+        app.current_layout().unwrap().to_window(zone.origin.0 + 12.0, zone.origin.1 + 12.0)
+    });
+    cx.simulate_mouse_down(corner, MouseButton::Right, Modifiers::none());
+    redraw(cx);
+    let area: Vec<String> = app.update(cx, |app, _| match app.popup.as_ref().map(|p| &p.kind) {
+        Some(PopupKind::Menu(entries)) => entries.iter().map(|e| e.label.to_string()).collect(),
+        _ => panic!("a context menu"),
+    });
+    assert!(area.iter().any(|l| l == "Move Chart…") && area.iter().any(|l| l == "Format Chart Area…"), "{area:?}");
+    assert!(!area.iter().any(|l| l == "Delete"), "{area:?}");
+}

@@ -36,7 +36,7 @@ use gpui::{
     AnyElement, AnyView, CursorStyle, Entity, FocusHandle, Focusable, SharedString, Subscription, Window, div, point,
     prelude::*, px,
 };
-use opensheet_engine::chart::{Chart, ChartKind, ChartTitle};
+use opensheet_engine::chart::{Chart, ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::chart_layout::{ChartElement, ChartLayout};
 use std::any::Any;
 use std::rc::Rc;
@@ -109,9 +109,36 @@ struct TextEdit {
     _subscription: Subscription,
 }
 
+/// The legend being dragged to another side of its chart.
+struct LegendDrag {
+    /// Where the press landed, in grid-element coordinates.
+    start: (f32, f32),
+    /// The pointer left the spot: a drag, not a click.
+    moved: bool,
+}
+
+/// The side of a chart a legend dropped at (`x`, `y`) docks to: the edge
+/// the point is nearest to, seen from the middle of the chart; the top
+/// right corner is a place of its own.
+pub(crate) fn legend_dock(rect: (f32, f32, f32, f32), x: f32, y: f32) -> LegendPos {
+    let (w, h) = ((rect.2 - rect.0).max(1.0), (rect.3 - rect.1).max(1.0));
+    let dx = (x - (rect.0 + rect.2) / 2.0) / w;
+    let dy = (y - (rect.1 + rect.3) / 2.0) / h;
+    if dx > 0.25 && dy < -0.25 {
+        LegendPos::TopRight
+    } else if dx.abs() > dy.abs() {
+        if dx > 0.0 { LegendPos::Right } else { LegendPos::Left }
+    } else if dy > 0.0 {
+        LegendPos::Bottom
+    } else {
+        LegendPos::Top
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct ChartUi {
     edit: Option<TextEdit>,
+    legend_drag: Option<LegendDrag>,
     /// The selected element of the selected chart.
     element: ChartElement,
     /// Holds the keyboard while an element other than the chart area is
@@ -535,7 +562,38 @@ impl Feature for Charts {
         } else if let Some(keys) = app.ext::<ChartUi>().and_then(|ui| ui.keys.clone()) {
             window.focus(&keys);
         }
+        if ev.click_count == 1 && matches!(target, ChartElement::Legend | ChartElement::LegendEntry(_)) {
+            // The legend can be dragged to another side of the chart.
+            app.ext_mut::<ChartUi>().legend_drag = Some(LegendDrag {
+                start: (ev.x, ev.y),
+                moved: false,
+            });
+            return ZoneResponse::Capture;
+        }
         ZoneResponse::Handled
+    }
+
+    fn zone_drag(&self, app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) {
+        if let Some(drag) = &mut app.ext_mut::<ChartUi>().legend_drag {
+            drag.moved |= (ev.x - drag.start.0).abs() > 4.0 || (ev.y - drag.start.1).abs() > 4.0;
+        }
+    }
+
+    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+        let (Some(drag), Some(hit)) = (app.ext_mut::<ChartUi>().legend_drag.take(), zone.payload::<ChartZone>()) else {
+            return;
+        };
+        let Some(chart) = app.wb.chart(app.sheet, hit.chart).filter(|_| drag.moved) else {
+            return;
+        };
+        // The model has no free position for a legend: it docks to the
+        // side it was dropped on.
+        let z = app.zoom;
+        let rect = (hit.origin.0, hit.origin.1, hit.origin.0 + chart.size.0 * z, hit.origin.1 + chart.size.1 * z);
+        let side = legend_dock(rect, ev.x, ev.y);
+        if side != chart.legend {
+            app.edit_chart(t("Legend", "Légende"), cx, move |chart| chart.legend = side);
+        }
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
