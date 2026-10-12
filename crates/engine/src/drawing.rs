@@ -1311,6 +1311,27 @@ impl Sheet {
         (((r0, c0), (dx0, dy0)), ((r1, c1), (dx1, dy1)))
     }
 
+    /// The cell holding a point of the sheet (pixels at 100 % from the
+    /// corner of A1) and the offset of the point inside it. A screen
+    /// places a frame through the cells of its corners, so that its edges
+    /// fall on the cell edges at any zoom.
+    pub fn corner_at(&self, x: f64, y: f64) -> Corner {
+        let (col, dx) = columns(self).locate(x);
+        let (row, dy) = rows(self).locate(y);
+        ((row, col), (dx, dy))
+    }
+
+    /// Where a corner is on the sheet: the reverse of `corner_at`. An
+    /// offset that runs past its cell is taken as it is (a point being
+    /// dragged over the sheet is not held back by the cell it started in).
+    pub fn corner_point(&self, corner: Corner) -> (f64, f64) {
+        let ((row, col), (dx, dy)) = corner;
+        (
+            columns(self).span(0, col.min(MAX_COLS - 1)) + dx as f64,
+            rows(self).span(0, row.min(MAX_ROWS - 1)) + dy as f64,
+        )
+    }
+
     /// A name no drawing of the sheet has yet: "Rectangle 3".
     fn drawing_name(&self, base: &str) -> String {
         let mut number = self.drawings.len() + self.charts.len() + 1;
@@ -1892,6 +1913,25 @@ mod tests {
         // The id cannot be changed by an update.
         w.update_drawing(0, id, |d| d.id = 77);
         assert!(w.drawing(0, id).is_some());
+    }
+
+    #[test]
+    fn points_and_corners() {
+        let mut w = wb(&[]);
+        w.set_col_width(0, 1, Some(100.0));
+        w.set_rows_hidden(0, 1, 1, true);
+        let sheet = &w.sheets[0];
+        // Column B is 100 wide and row 2 takes no room.
+        assert_eq!(sheet.corner_at(0.0, 0.0), ((0, 0), (0.0, 0.0)));
+        assert_eq!(sheet.corner_at(70.0, 25.0), ((2, 1), (6.0, 5.0)));
+        assert_eq!(sheet.corner_at(164.0, 20.0), ((2, 2), (0.0, 0.0)));
+        assert_eq!(sheet.corner_at(-5.0, -5.0), ((0, 0), (0.0, 0.0)));
+        for point in [(0.0, 0.0), (70.0, 25.0), (164.0, 20.0), (1000.5, 333.25)] {
+            assert_eq!(sheet.corner_point(sheet.corner_at(point.0, point.1)), point);
+        }
+        // An offset larger than its cell is not held back.
+        assert_eq!(sheet.corner_point(((0, 0), (300.0, 50.0))), (300.0, 50.0));
+        assert_eq!(sheet.corner_point(((3, 2), (1.0, 2.0))), (165.0, 42.0));
     }
 
     #[test]
