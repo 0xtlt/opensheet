@@ -3,23 +3,23 @@
 use super::chart::Track;
 use super::chart::read::{parse_chart, parse_drawing};
 use super::color::{Palette, RawColor, blend, parse_rgb, parse_theme};
+use super::defaults::{self, Defaults};
 use super::formula::from_file_text;
 use super::numfmt::{builtin_code, shows_date};
 use super::xml::{Event, Reader, Tag, decode_cell_text, parse_bool};
-use super::{col_width_to_px, points_to_px};
+use super::{col_width_to_px, points_to_px, protection, validation};
 use crate::{IoError, Result, decode_utf16};
 use opensheet_engine::ast::Expr;
 use opensheet_engine::chart::Chart;
 use opensheet_engine::datetime::date_to_serial;
+use opensheet_engine::protect::WorkbookProtection;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
     Border, BorderStyle, Borders, DEFAULT_FONT, DEFAULT_FONT_SIZE, Font, HAlign, Style, StyleId,
     StyleTable, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
-use opensheet_engine::workbook::{
-    Cell, Content, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, DefinedName, Sheet,
-};
+use opensheet_engine::workbook::{Cell, Content, DefinedName, Sheet};
 use opensheet_engine::{Color, Locale, Workbook};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -35,7 +35,7 @@ const DATE_1904_OFFSET: f64 = 1462.0;
 
 // ---- package ---------------------------------------------------------------
 
-struct Package<R: Read + Seek> {
+pub(super) struct Package<R: Read + Seek> {
     zip: zip::ZipArchive<R>,
     /// Normalised part name → index in the archive.
     index: HashMap<String, usize>,
@@ -70,7 +70,7 @@ impl<R: Read + Seek> Package<R> {
         Ok(Package { zip, index })
     }
 
-    fn read(&mut self, part: &str) -> Result<Option<String>> {
+    pub(super) fn read(&mut self, part: &str) -> Result<Option<String>> {
         let Some(&i) = self.index.get(&normalize_part(part)) else {
             return Ok(None);
         };
@@ -85,12 +85,12 @@ impl<R: Read + Seek> Package<R> {
     }
 }
 
-struct Rel {
-    id: String,
+pub(super) struct Rel {
+    pub(super) id: String,
     /// Last segment of the relationship type ("worksheet", "styles", ...).
-    kind: String,
+    pub(super) kind: String,
     /// Part name, resolved against the source part.
-    target: String,
+    pub(super) target: String,
 }
 
 fn dir_of(part: &str) -> &str {
@@ -152,6 +152,15 @@ fn parse_rels(xml: &str, base_dir: &str) -> Vec<Rel> {
     out
 }
 
+/// The relationships of a part; none when it has no relationships part or
+/// that part cannot be read.
+pub(super) fn relationships<R: Read + Seek>(pkg: &mut Package<R>, part: &str) -> Vec<Rel> {
+    match pkg.read(&rels_part(part)) {
+        Ok(Some(xml)) => parse_rels(&xml, dir_of(part)),
+        _ => Vec::new(),
+    }
+}
+
 // ---- workbook part -----------------------------------------------------------
 
 struct RawName {
@@ -168,6 +177,7 @@ struct WorkbookPart {
     sheets: Vec<(String, String)>,
     names: Vec<RawName>,
     date1904: bool,
+    protection: WorkbookProtection,
 }
 
 fn parse_workbook_part(xml: &str) -> WorkbookPart {
@@ -179,6 +189,10 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
                 "workbook" | "sheets" | "definedNames" => {}
                 "workbookPr" => {
                     out.date1904 = t.attr_bool("date1904").unwrap_or(false);
+                    r.skip(&t);
+                }
+                "workbookProtection" => {
+                    out.protection = protection::read_workbook(&t);
                     r.skip(&t);
                 }
                 "sheet" => {
@@ -252,6 +266,7 @@ struct RawXf {
     indent: u8,
     rotation: i16,
     locked: bool,
+    hidden: bool,
 }
 
 /// Parse the `item` children of a list element such as `<fonts>`.
@@ -418,6 +433,7 @@ fn parse_xf<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawXf {
         indent: 0,
         rotation: 0,
         locked: true,
+        hidden: false,
     };
     if tag.empty {
         return xf;
@@ -452,7 +468,10 @@ fn parse_xf<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawXf {
                             _ => 0,
                         };
                     }
-                    "protection" => xf.locked = t.attr_bool("locked").unwrap_or(true),
+                    "protection" => {
+                        xf.locked = t.attr_bool("locked").unwrap_or(true);
+                        xf.hidden = t.attr_bool("hidden").unwrap_or(false);
+                    }
                     _ => {}
                 }
                 r.skip(&t);
@@ -528,6 +547,8 @@ struct StylesPart {
     /// Engine style of every `cellXfs` entry.
     xfs: Vec<StyleId>,
     palette: Palette,
+    /// The sizes that follow from the workbook's default font.
+    defaults: Defaults,
 }
 
 // `Style` values are built field by field so the engine can add fields.
@@ -547,6 +568,9 @@ fn parse_styles(
     let mut fills: Vec<RawFill> = Vec::new();
     let mut borders: Vec<RawBorder> = Vec::new();
     let mut xfs: Vec<RawXf> = Vec::new();
+    let mut style_xfs: Vec<RawXf> = Vec::new();
+    // `xfId` of the cell style called Normal.
+    let mut normal_xf = 0usize;
 
     let mut r = Reader::new(xml.unwrap_or(""));
     loop {
@@ -571,7 +595,17 @@ fn parse_styles(
                 "fonts" => fonts = parse_list(&mut r, &t, "font", parse_font),
                 "fills" => fills = parse_list(&mut r, &t, "fill", parse_fill),
                 "borders" => borders = parse_list(&mut r, &t, "border", parse_border),
+                "cellStyleXfs" => style_xfs = parse_list(&mut r, &t, "xf", parse_xf),
                 "cellXfs" => xfs = parse_list(&mut r, &t, "xf", parse_xf),
+                "cellStyles" => {
+                    let normal = parse_list(&mut r, &t, "cellStyle", |r, style| {
+                        let is_normal = style.attr_u32("builtinId") == Some(0);
+                        let xf = style.attr_u32("xfId").unwrap_or(0) as usize;
+                        r.skip(style);
+                        is_normal.then_some(xf)
+                    });
+                    normal_xf = normal.into_iter().flatten().next().unwrap_or(0);
+                }
                 "colors" => {}
                 "indexedColors" => {
                     let custom = parse_list(&mut r, &t, "rgbColor", |r, c| {
@@ -617,6 +651,24 @@ fn parse_styles(
         })
         .collect();
 
+    // The first cell format is the format of every cell that was given
+    // none; its font is the default font of the workbook. (Whatever else
+    // it sets, which is next to never anything, stays with the cells that
+    // name it.)
+    if let Some(font) = xfs.first().and_then(|xf| fonts.get(xf.font)) {
+        let mut default = Style::default();
+        default.font = font.clone();
+        table.set_default(default);
+    }
+    // Column widths count in digits of the font of the Normal style, which
+    // is the same font in any file a spreadsheet application made.
+    let normal_font = style_xfs
+        .get(normal_xf)
+        .or(style_xfs.first())
+        .and_then(|xf| fonts.get(xf.font))
+        .unwrap_or(&table.default_style().font);
+    let defaults = Defaults::of(normal_font);
+
     let mut out: Vec<StyleId> = xfs
         .iter()
         .map(|xf| {
@@ -641,13 +693,18 @@ fn parse_styles(
             style.num_fmt = Arc::from(code);
             style.borders = borders.get(xf.border).copied().unwrap_or_default();
             style.locked = xf.locked;
+            style.hidden = xf.hidden;
             table.intern(style)
         })
         .collect();
     if out.is_empty() {
         out.push(StyleId(0));
     }
-    StylesPart { xfs: out, palette }
+    StylesPart {
+        xfs: out,
+        palette,
+        defaults,
+    }
 }
 
 // ---- shared strings ------------------------------------------------------------
@@ -697,6 +754,8 @@ struct Ctx<'c> {
     xfs: &'c [StyleId],
     strings: &'c [Arc<str>],
     palette: &'c Palette,
+    /// The sizes that follow from the workbook's default font.
+    defaults: Defaults,
     /// In a 1904-based workbook: the styles whose values are dates.
     shift_dates: Option<&'c HashSet<StyleId>>,
 }
@@ -781,13 +840,9 @@ struct SheetReader<'c> {
     shared: HashMap<u32, Option<(u32, u32, Expr)>>,
     /// Multi-cell array formulas: covered range and anchor cell.
     arrays: Vec<(Rect, (u32, u32))>,
-    /// Sheet-wide default column width in pixels, when it is not the
-    /// engine's.
-    default_col_width: Option<f32>,
-    max_col: Option<u32>,
-    /// Sizes the file gives to columns and rows without one of their own.
-    file_col_width: f32,
-    file_row_height: f32,
+    /// The default row height exactly as the file states it, in pixels
+    /// (the sheet keeps it in whole pixels).
+    stated_row_height: f32,
     /// Relationship id of the drawing part.
     drawing: Option<String>,
 }
@@ -797,44 +852,50 @@ struct LoadedSheet {
     sheet: Sheet,
     /// Relationship id of the drawing part (charts, pictures, shapes).
     drawing: Option<String>,
-    /// Size, in pixels, of the columns and rows the file gives no size.
-    /// The engine has defaults of its own; drawings are laid out against
-    /// those of the file.
-    col_width: f32,
-    row_height: f32,
 }
 
 impl<'c> SheetReader<'c> {
     fn read(xml: &str, name: String, ctx: &'c Ctx<'c>) -> LoadedSheet {
+        // Until its `sheetFormatPr` says otherwise, the sheet has the
+        // sizes of the workbook's default font.
+        let mut sheet = Sheet::new(name);
+        sheet.default_col_width = ctx.defaults.col_width;
+        sheet.default_row_height = ctx.defaults.row_height;
         let mut this = SheetReader {
             ctx,
-            sheet: Sheet::new(name),
+            stated_row_height: sheet.default_row_height,
+            sheet,
             shared: HashMap::new(),
             arrays: Vec::new(),
-            default_col_width: None,
-            max_col: None,
-            file_col_width: DEFAULT_COL_WIDTH,
-            file_row_height: DEFAULT_ROW_HEIGHT,
             drawing: None,
         };
         let mut r = Reader::new(xml);
         loop {
             match r.next() {
+                // The children of `worksheet`, in the order of the schema.
                 Event::Open(t) => match t.name {
                     "worksheet" => {}
                     "sheetPr" => this.sheet_pr(&mut r, &t),
                     "sheetViews" => this.sheet_views(&mut r, &t),
                     "sheetFormatPr" => {
-                        this.sheet_format(&t);
+                        if let Some(px) = defaults::read(&t, &ctx.defaults, &mut this.sheet) {
+                            this.stated_row_height = px;
+                        }
                         r.skip(&t);
                     }
                     "cols" => this.cols(&mut r, &t),
                     "sheetData" => this.sheet_data(&mut r, &t),
+                    "sheetProtection" => {
+                        this.sheet.protection = protection::read_sheet(&t);
+                        r.skip(&t);
+                    }
                     "mergeCells" => this.merges(&mut r, &t),
+                    "dataValidations" => validation::read(&mut r, &t, &mut this.sheet),
                     "drawing" => {
                         this.drawing = t.attr_local("id").map(Cow::into_owned);
                         r.skip(&t);
                     }
+                    "extLst" => this.extensions(&mut r, &t),
                     _ => r.skip(&t),
                 },
                 Event::Eof => break,
@@ -842,6 +903,32 @@ impl<'c> SheetReader<'c> {
             }
         }
         this.finish()
+    }
+
+    /// The extension list of the worksheet: what later versions of the
+    /// format added to features that already had an element of their own.
+    /// Each `<ext>` holds one element.
+    fn extensions<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
+        if tag.empty {
+            return;
+        }
+        loop {
+            match r.next() {
+                Event::Open(ext) if ext.name == "ext" && !ext.empty => loop {
+                    match r.next() {
+                        Event::Open(t) => match t.name {
+                            "dataValidations" => validation::read(r, &t, &mut self.sheet),
+                            _ => r.skip(&t),
+                        },
+                        Event::Close(_) | Event::Eof => break,
+                        _ => {}
+                    }
+                },
+                Event::Open(t) => r.skip(&t),
+                Event::Close(_) | Event::Eof => break,
+                _ => {}
+            }
+        }
     }
 
     fn sheet_pr<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
@@ -910,31 +997,6 @@ impl<'c> SheetReader<'c> {
         }
     }
 
-    fn sheet_format(&mut self, tag: &Tag) {
-        // `defaultColWidth` is in the same unit as `<col width>`;
-        // `baseColWidth` is a number of characters, from which Excel derives
-        // the default width rounded up to a multiple of 8 pixels.
-        let px = match (
-            tag.attr_f64("defaultColWidth"),
-            tag.attr_f64("baseColWidth"),
-        ) {
-            (Some(width), _) => Some(col_width_to_px(width)),
-            (None, Some(chars)) => Some((((chars * 7.0 + 5.0) / 8.0).ceil() * 8.0) as f32),
-            (None, None) => None,
-        };
-        self.default_col_width = px.filter(|px| (px - DEFAULT_COL_WIDTH).abs() > 1.0 && *px > 0.0);
-        if let Some(px) = px.filter(|px| *px > 0.0) {
-            self.file_col_width = px;
-        }
-        if let Some(px) = tag
-            .attr_f64("defaultRowHeight")
-            .map(points_to_px)
-            .filter(|px| *px > 0.0)
-        {
-            self.file_row_height = px;
-        }
-    }
-
     fn cols<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
         if tag.empty {
             return;
@@ -962,16 +1024,15 @@ impl<'c> SheetReader<'c> {
             return;
         }
         let hidden = t.attr_bool("hidden").unwrap_or(false);
-        // With a sheet-wide default of its own, every stated width counts.
-        let custom =
-            t.attr_bool("customWidth").unwrap_or(false) || self.default_col_width.is_some();
+        let custom = t.attr_bool("customWidth").unwrap_or(false);
+        let default = self.sheet.default_col_width;
         let width = t
             .attr_f64("width")
-            .map(col_width_to_px)
+            .map(|width| col_width_to_px(width, self.ctx.defaults.digit_width))
             // A hidden column stored with no width gets the default one
             // back when it is unhidden.
             .filter(|px| !(hidden && *px < 0.5))
-            .filter(|px| custom || (px - DEFAULT_COL_WIDTH).abs() > 0.5);
+            .filter(|px| custom || (px - default).abs() > 0.5);
         let style = t
             .attr_u32("style")
             .map(|xf| self.ctx.style(xf))
@@ -1037,7 +1098,9 @@ impl<'c> SheetReader<'c> {
             // Heights without `customHeight` are auto-fit results; they are
             // kept when they differ from the default so the sheet looks the
             // same as where it was saved.
-            if !(hidden && px < 0.5) && (custom || (px - DEFAULT_ROW_HEIGHT).abs() > 0.5) {
+            let is_default = (px - self.stated_row_height).abs() <= 0.5
+                || (px - self.sheet.default_row_height).abs() <= 0.5;
+            if !(hidden && px < 0.5) && (custom || !is_default) {
                 self.sheet.row_heights.insert(row, px.min(546.0));
             }
         }
@@ -1173,7 +1236,6 @@ impl<'c> SheetReader<'c> {
         if matches!(content, Content::Empty) && style == self.sheet.inherited_style(row, col) {
             return;
         }
-        self.max_col = Some(self.max_col.map_or(col, |m| m.max(col)));
         self.sheet.cells.insert(
             (row, col),
             Cell {
@@ -1237,20 +1299,9 @@ impl<'c> SheetReader<'c> {
                 }
             }
         }
-        // The engine has one fixed default column width. When the sheet
-        // declares another one, give it explicitly to the columns in use.
-        if let (Some(px), Some(max_col)) = (self.default_col_width, self.max_col) {
-            for c in 0..=max_col {
-                if !self.sheet.hidden_cols.contains(&c) {
-                    self.sheet.col_widths.entry(c).or_insert(px.min(1800.0));
-                }
-            }
-        }
         LoadedSheet {
             sheet: self.sheet,
             drawing: self.drawing,
-            col_width: self.file_col_width,
-            row_height: self.file_row_height,
         }
     }
 }
@@ -1265,14 +1316,9 @@ fn read_charts<R: Read + Seek>(
     sheet_part: &str,
     loaded: &LoadedSheet,
     palette: &Palette,
+    locale: &Locale,
     next_id: &mut u32,
 ) -> Vec<Chart> {
-    fn relationships<R: Read + Seek>(pkg: &mut Package<R>, part: &str) -> Vec<Rel> {
-        match pkg.read(&rels_part(part)) {
-            Ok(Some(xml)) => parse_rels(&xml, dir_of(part)),
-            _ => Vec::new(),
-        }
-    }
     let Some(drawing_id) = &loaded.drawing else {
         return Vec::new();
     };
@@ -1294,14 +1340,14 @@ fn read_charts<R: Read + Seek>(
 
     let sheet = &loaded.sheet;
     let cols = Track {
-        default: loaded.col_width,
+        default: sheet.default_col_width,
         sizes: &sheet.col_widths,
         hidden: &sheet.hidden_cols,
         max: f32::INFINITY,
         count: MAX_COLS,
     };
     let rows = Track {
-        default: loaded.row_height,
+        default: sheet.default_row_height,
         sizes: &sheet.row_heights,
         hidden: &sheet.hidden_rows,
         max: f32::INFINITY,
@@ -1318,21 +1364,15 @@ fn read_charts<R: Read + Seek>(
             let Ok(Some(xml)) = pkg.read(&rel.target) else {
                 continue;
             };
-            let Some(content) = parse_chart(&xml, palette) else {
+            let Some(mut chart) = parse_chart(&xml, palette, locale) else {
                 continue;
             };
             let place = frame.placement(&cols, &rows);
-            charts.push(Chart {
-                id: *next_id,
-                kind: content.kind,
-                title: content.title,
-                legend: content.legend,
-                series: content.series,
-                data_labels: content.data_labels,
-                anchor: place.anchor,
-                offset: place.offset,
-                size: place.size,
-            });
+            chart.id = *next_id;
+            chart.anchor = place.anchor;
+            chart.offset = place.offset;
+            chart.size = place.size;
+            charts.push(chart);
             *next_id += 1;
         }
     }
@@ -1412,6 +1452,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         None => super::color::OFFICE_THEME,
     };
     let mut wb = Workbook::new(locale);
+    wb.protection = info.protection;
     let styles_xml = pkg.read(&part_of("styles", "styles.xml"))?;
     let styles = parse_styles(styles_xml.as_deref(), theme, locale, &mut wb.styles);
     drop(styles_xml);
@@ -1434,6 +1475,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         xfs: &styles.xfs,
         strings: &strings,
         palette: &styles.palette,
+        defaults: styles.defaults,
         shift_dates: info.date1904.then_some(&date_styles),
     };
 
@@ -1442,6 +1484,12 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     let mut loaded_as: Vec<Option<usize>> = vec![None; info.sheets.len()];
     // Chart ids are unique in the workbook; files have no such thing.
     let mut next_chart_id = 1;
+    let comments = super::comments::Context::read(
+        &mut pkg,
+        &rels,
+        &styles.palette,
+        &wb.styles.get(ctx.style(0)).font,
+    );
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),
@@ -1460,8 +1508,13 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             &part,
             &loaded,
             &styles.palette,
+            locale,
             &mut next_chart_id,
         );
+        // Note boxes are placed with the sizes the file gives its columns
+        // and rows.
+        let default_sizes = (loaded.sheet.default_col_width, loaded.sheet.default_row_height);
+        super::comments::read_sheet(&mut pkg, &part, &mut loaded.sheet, default_sizes, &comments);
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
     }
