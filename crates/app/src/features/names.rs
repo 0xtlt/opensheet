@@ -490,27 +490,56 @@ pub(crate) fn selection_formula(app: &ExcelApp) -> String {
     format!("={}", areas.join(&app.wb.locale.arg_sep.to_string()))
 }
 
+/// What Return in the Name Box does with the text typed there.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum NameBoxAction {
+    /// Select these cells (a reference, a name or a table was typed).
+    GoTo(Vec<Reference>),
+    /// Give this new name to the selection.
+    Define(String),
+    /// Neither a place to go to nor a name that can be given.
+    Refuse,
+}
+
+/// Decide what the text typed in the Name Box means, seen from the active
+/// cell of `sheet`.
+pub(crate) fn name_box_action(wb: &Workbook, sheet: usize, active: (u32, u32), text: &str) -> NameBoxAction {
+    let text = text.trim();
+    if let Some(areas) = wb.reference_areas(sheet, active.0, active.1, text) {
+        // A selection lives on one sheet.
+        let one_sheet = areas.iter().all(|area| area.sheet == areas[0].sheet);
+        return if one_sheet { NameBoxAction::GoTo(areas) } else { NameBoxAction::Refuse };
+    }
+    // A name that exists without standing for cells (a constant) is not
+    // redefined from here.
+    let unknown = wb.lookup_name(sheet, text).is_none();
+    if unknown && wb.check_name(NameScope::Workbook, text, None).is_ok() {
+        NameBoxAction::Define(text.to_string())
+    } else {
+        NameBoxAction::Refuse
+    }
+}
+
 /// Return was pressed in the Name Box (or one of its names was picked): go
 /// to the reference, the name or the table typed there; a new name is
 /// given to the selection. Returns whether something was done.
 pub fn name_box_entered(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
-    let text = text.trim();
-    if text.is_empty() || app.is_editing() {
+    if text.trim().is_empty() || app.is_editing() {
         return false;
     }
     let (row, col) = app.active();
-    if let Some(areas) = app.wb.reference_areas(app.sheet, row, col, text) {
-        return select_areas(app, &areas, cx);
-    }
-    let unknown = app.wb.lookup_name(app.sheet, text).is_none();
-    if !(unknown && app.wb.check_name(NameScope::Workbook, text, None).is_ok()) {
-        let message = t(
-            "You must enter a valid reference you want to go to, or type a valid name for the selection.",
-            "Vous devez taper une référence valide, ou taper un nom pour la sélection.",
-        );
-        app.alert(Alert::new("OpenSheet", message).warning(), cx);
-        return false;
-    }
+    let name = match name_box_action(&app.wb, app.sheet, (row, col), text) {
+        NameBoxAction::GoTo(areas) => return select_areas(app, &areas, cx),
+        NameBoxAction::Define(name) => name,
+        NameBoxAction::Refuse => {
+            let message = t(
+                "You must enter a valid reference you want to go to, or type a valid name for the selection.",
+                "Vous devez taper une référence valide, ou taper un nom pour la sélection.",
+            );
+            app.alert(Alert::new("OpenSheet", message).warning(), cx);
+            return false;
+        }
+    };
     if let Some(message) = locked(app) {
         app.alert(Alert::new("OpenSheet", message).warning(), cx);
         return false;
@@ -518,7 +547,7 @@ pub fn name_box_entered(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
     let Ok(expr) = app.wb.parse_name_formula(&selection_formula(app), app.sheet, row, col) else {
         return false;
     };
-    if app.wb.add_name(NameScope::Workbook, text, expr, "").is_err() {
+    if app.wb.add_name(NameScope::Workbook, &name, expr, "").is_err() {
         return false;
     }
     app.commit(t("Define Name", "Définir un nom"), cx);
@@ -920,6 +949,35 @@ mod tests {
         assert_eq!(selection_name(&wb, 1, &select(vec![Rect::cell(0, 0)])), Some("qty".to_string()));
         assert_eq!(selection_name(&wb, 1, &select(vec![Rect::new(2, 2, 3, 3)])), Some("Zone".to_string()));
         assert_eq!(selection_name(&wb, 0, &select(vec![Rect::new(1, 1, 2, 1), Rect::cell(5, 5)])), None);
+    }
+
+    #[test]
+    fn the_name_box_goes_to_places_and_names_the_selection() {
+        let mut wb = workbook();
+        define(&mut wb, NameScope::Workbook, "Qty", "=Sheet1!$B$2:$B$3", "");
+        define(&mut wb, NameScope::Workbook, "Rate", "=0.2", "");
+        define(&mut wb, NameScope::Workbook, "Split", "=(Sheet1!$A$1,Sheet2!$A$1)", "");
+        define(&mut wb, NameScope::Sheet(1), "Local", "=Sheet2!$C$3", "");
+        wb.add_table(0, Rect::new(0, 4, 1, 5), true).unwrap();
+        wb.commit("table");
+        let table = wb.sheets[0].tables[0].name.clone();
+        let act = |sheet: usize, text: &str| name_box_action(&wb, sheet, (0, 0), text);
+        let go = |sheet: usize, range: &str| NameBoxAction::GoTo(vec![Reference::new(sheet, Rect::parse(range).unwrap())]);
+
+        assert_eq!(act(0, " b2:c3 "), go(0, "B2:C3"));
+        assert_eq!(act(0, "Sheet2!D4"), go(1, "D4"));
+        assert_eq!(act(0, "qty"), go(0, "B2:B3"));
+        assert_eq!(act(0, &table), go(0, "E2:F2"));
+        assert_eq!(act(0, &format!("{table}[#All]")), go(0, "E1:F2"));
+        assert_eq!(act(1, "Local"), go(1, "C3"));
+        // A new name is given to the selection; from another sheet, the
+        // sheet's own name is a new one too.
+        assert_eq!(act(0, "Unit_price"), NameBoxAction::Define("Unit_price".to_string()));
+        assert_eq!(act(0, "Local"), NameBoxAction::Define("Local".to_string()));
+        // Constants, names over two sheets and what is not a name.
+        for text in ["Rate", "Split", "my name", "2x", "TRUE", "Sheet9!A1", "=1+1"] {
+            assert_eq!(act(0, text), NameBoxAction::Refuse, "{text}");
+        }
     }
 
     #[test]

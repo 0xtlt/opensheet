@@ -14,7 +14,7 @@ use crate::widgets::{self, Button, Checkbox, ListBox, RefEdit, Select, TextField
 use gpui::{Context, Entity, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::names::{NameError, NameScope};
 use opensheet_engine::table::TableError;
-use opensheet_engine::{Expr, MAX_COLS, MAX_ROWS, Rect, Value};
+use opensheet_engine::{Expr, MAX_COLS, MAX_ROWS, Rect, Value, Workbook};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -125,20 +125,41 @@ pub(super) fn open_edit_name(app: &mut ExcelApp, row: &NameRow, window: &mut Win
     app.open_modal(window, cx, move |modal, _, cx| NameDialog::new(modal, init, cx));
 }
 
-/// Store what the dialog holds. Returns false, after saying why, when
-/// Excel would refuse it.
-fn store_name(app: &mut ExcelApp, target: &Target, scope: usize, name: &str, refers: &str, comment: &str, cx: &mut Cx) -> bool {
+/// Why the dialog cannot store what it holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Refusal {
+    Name(NameError),
+    /// "Refers to" is not a formula.
+    Reference,
+}
+
+impl Refusal {
+    fn message(self) -> &'static str {
+        match self {
+            Refusal::Name(error) => name_error_message(error),
+            Refusal::Reference => invalid_reference(),
+        }
+    }
+}
+
+/// Store what the dialog holds, as entered while `cell` (sheet, row,
+/// column) is active: a new name, an edited one, or a table called
+/// otherwise. Returns the label of the undo step (the caller commits), or
+/// why Excel would refuse; the name is looked at before the reference.
+fn define(
+    wb: &mut Workbook,
+    cell: (usize, u32, u32),
+    target: &Target,
+    scope: usize,
+    name: &str,
+    refers: &str,
+    comment: &str,
+) -> Result<&'static str, Refusal> {
     if let Target::Table(sheet, id) = target {
-        return match app.wb.rename_table(*sheet, *id, name) {
-            Ok(()) => {
-                app.commit(t("Rename Table", "Renommer le tableau"), cx);
-                true
-            }
-            Err(error) => {
-                let error = if error == TableError::NameTaken { NameError::Duplicate } else { NameError::Invalid };
-                refuse(app, name_error_message(error), cx);
-                false
-            }
+        return match wb.rename_table(*sheet, *id, name) {
+            Ok(()) => Ok(t("Rename Table", "Renommer le tableau")),
+            Err(TableError::NameTaken) => Err(Refusal::Name(NameError::Duplicate)),
+            Err(_) => Err(Refusal::Name(NameError::Invalid)),
         };
     }
     // The scope of an existing name cannot change.
@@ -146,30 +167,36 @@ fn store_name(app: &mut ExcelApp, target: &Target, scope: usize, name: &str, ref
         Target::Name(scope, old) => (*scope, Some(old.as_str())),
         _ => (scope_at(scope), None),
     };
-    if let Err(error) = app.wb.check_name(scope, name, replacing) {
-        refuse(app, name_error_message(error), cx);
-        return false;
-    }
-    let (row, col) = app.active();
+    wb.check_name(scope, name, replacing).map_err(Refusal::Name)?;
+    // A sheet's own name is written from that sheet.
     let from = match scope {
         NameScope::Sheet(sheet) => sheet,
-        NameScope::Workbook => app.sheet,
+        NameScope::Workbook => cell.0,
     };
-    let Ok(expr) = app.wb.parse_name_formula(refers, from, row, col) else {
-        refuse(app, invalid_reference(), cx);
-        return false;
-    };
-    let (stored, label) = match replacing {
-        Some(old) => (app.wb.edit_name(scope, old, name, expr, comment), t("Edit Name", "Modifier le nom")),
-        None => (app.wb.add_name(scope, name, expr, comment), t("Define Name", "Définir un nom")),
-    };
-    match stored {
-        Ok(()) => {
+    let expr = wb.parse_name_formula(refers, from, cell.1, cell.2).map_err(|_| Refusal::Reference)?;
+    match replacing {
+        Some(old) => {
+            wb.edit_name(scope, old, name, expr, comment).map_err(Refusal::Name)?;
+            Ok(t("Edit Name", "Modifier le nom"))
+        }
+        None => {
+            wb.add_name(scope, name, expr, comment).map_err(Refusal::Name)?;
+            Ok(t("Define Name", "Définir un nom"))
+        }
+    }
+}
+
+/// `define` for the application: commit, or say why not. Returns whether
+/// the dialog can close.
+fn store_name(app: &mut ExcelApp, target: &Target, scope: usize, name: &str, refers: &str, comment: &str, cx: &mut Cx) -> bool {
+    let (row, col) = app.active();
+    match define(&mut app.wb, (app.sheet, row, col), target, scope, name, refers, comment) {
+        Ok(label) => {
             app.commit(label, cx);
             true
         }
-        Err(error) => {
-            refuse(app, name_error_message(error), cx);
+        Err(refusal) => {
+            refuse(app, refusal.message(), cx);
             false
         }
     }
@@ -530,5 +557,117 @@ impl Render for ApplyNames {
                 ),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opensheet_engine::Locale;
+
+    fn workbook() -> Workbook {
+        let mut wb = Workbook::new(Locale::en());
+        wb.add_sheet(1);
+        for (cell, text) in [("A1", "Item"), ("B1", "Qty"), ("A2", "Pens"), ("B2", "12"), ("C2", "=B2*2")] {
+            let (row, col) = opensheet_engine::refs::parse_cell_name(cell).unwrap();
+            wb.set_cell_text(0, row, col, text).unwrap();
+        }
+        wb.commit("cells");
+        wb
+    }
+
+    /// The name as the Name Manager would list it: (refers to, comment).
+    fn listed(wb: &Workbook, scope: NameScope, name: &str) -> Option<(String, String)> {
+        wb.name_in(scope, name).map(|def| (def.refers_to(wb.locale, 0, 0), def.comment.clone()))
+    }
+
+    #[test]
+    fn new_names_are_stored_in_their_scope() {
+        let mut wb = workbook();
+        let cell = (0, 0, 0);
+        assert!(define(&mut wb, cell, &Target::New, 0, "Qty", "=Sheet1!$B$2", "units").is_ok());
+        wb.commit("name");
+        assert_eq!(listed(&wb, NameScope::Workbook, "qty"), Some(("=Sheet1!$B$2".to_string(), "units".to_string())));
+        // Scope 2 of the list is the second sheet; a reference without a
+        // sheet is on the sheet of the name.
+        assert!(define(&mut wb, cell, &Target::New, 2, "Qty", "=$D$4", "").is_ok());
+        wb.commit("name");
+        assert_eq!(listed(&wb, NameScope::Sheet(1), "Qty").unwrap().0, "=Sheet2!$D$4");
+        // Constants and formulas are names too; the "=" may be left out.
+        assert!(define(&mut wb, cell, &Target::New, 0, "Rate", "0.2", "").is_ok());
+        wb.commit("name");
+        assert_eq!(listed(&wb, NameScope::Workbook, "Rate").unwrap().0, "=0.2");
+        assert!(wb.can_undo());
+    }
+
+    #[test]
+    fn excel_refusals_come_back_with_their_message() {
+        let mut wb = workbook();
+        let cell = (0, 0, 0);
+        define(&mut wb, cell, &Target::New, 0, "Qty", "=Sheet1!$B$2", "").unwrap();
+        wb.commit("name");
+        let refused = |wb: &mut Workbook, name: &str, refers: &str| define(wb, cell, &Target::New, 0, name, refers, "").unwrap_err();
+        assert_eq!(refused(&mut wb, "QTY", "=1"), Refusal::Name(NameError::Duplicate));
+        for name in ["", "my name", "A1", "2nd", "TRUE"] {
+            assert_eq!(refused(&mut wb, name, "=1"), Refusal::Name(NameError::Invalid), "{name}");
+        }
+        // The name is looked at first, then what it refers to.
+        assert_eq!(refused(&mut wb, "my name", "=SUM("), Refusal::Name(NameError::Invalid));
+        assert_eq!(refused(&mut wb, "Fine", "=SUM("), Refusal::Reference);
+        assert_eq!(refused(&mut wb, "Fine", ""), Refusal::Reference);
+        // Nothing was stored, and the messages are told apart.
+        assert_eq!(wb.all_names().len(), 1);
+        assert_ne!(Refusal::Name(NameError::Duplicate).message(), Refusal::Name(NameError::Invalid).message());
+        assert_eq!(Refusal::Reference.message(), invalid_reference());
+        // The same name can live on a sheet.
+        assert!(define(&mut wb, cell, &Target::New, 1, "Qty", "=1", "").is_ok());
+    }
+
+    #[test]
+    fn editing_renames_redefines_and_keeps_the_scope() {
+        let mut wb = workbook();
+        let cell = (0, 0, 0);
+        define(&mut wb, cell, &Target::New, 0, "Qty", "=Sheet1!$B$2", "").unwrap();
+        define(&mut wb, cell, &Target::New, 0, "Other", "=1", "").unwrap();
+        wb.set_cell_text(0, 5, 0, "=Qty*2").unwrap();
+        wb.commit("setup");
+        let target = Target::Name(NameScope::Workbook, "Qty".to_string());
+        // The Scope list is disabled while editing: whatever it says, the
+        // name stays where it is.
+        assert!(define(&mut wb, cell, &target, 2, "Quantity", "=Sheet1!$B$2:$B$3", "all of them").is_ok());
+        wb.commit("edit");
+        assert_eq!(listed(&wb, NameScope::Workbook, "Qty"), None);
+        assert_eq!(
+            listed(&wb, NameScope::Workbook, "Quantity"),
+            Some(("=Sheet1!$B$2:$B$3".to_string(), "all of them".to_string()))
+        );
+        assert!(wb.name_in(NameScope::Sheet(1), "Quantity").is_none());
+        // Formulas follow the new spelling.
+        assert_eq!(wb.formula_text(0, 5, 0).as_deref(), Some("=Quantity*2"));
+        // Keeping its own spelling is no duplicate; taking another's is.
+        let target = Target::Name(NameScope::Workbook, "Quantity".to_string());
+        assert!(define(&mut wb, cell, &target, 0, "quantity", "=1", "").is_ok());
+        assert_eq!(define(&mut wb, cell, &target, 0, "Other", "=1", ""), Err(Refusal::Name(NameError::Duplicate)));
+    }
+
+    #[test]
+    fn a_table_is_only_renamed() {
+        let mut wb = workbook();
+        let id = wb.add_table(0, Rect::new(0, 0, 1, 1), true).unwrap();
+        define(&mut wb, (0, 0, 0), &Target::New, 0, "Taken", "=1", "").unwrap();
+        wb.commit("table");
+        let target = Target::Table(0, id);
+        assert!(define(&mut wb, (0, 0, 0), &target, 0, "Stock", "ignored", "ignored").is_ok());
+        wb.commit("rename");
+        assert_eq!(wb.sheets[0].tables[0].name, "Stock");
+        assert_eq!(define(&mut wb, (0, 0, 0), &target, 0, "Taken", "", ""), Err(Refusal::Name(NameError::Duplicate)));
+        assert_eq!(define(&mut wb, (0, 0, 0), &target, 0, "not a name", "", ""), Err(Refusal::Name(NameError::Invalid)));
+    }
+
+    #[test]
+    fn the_scope_list_is_the_workbook_then_the_sheets() {
+        assert_eq!(scope_at(0), NameScope::Workbook);
+        assert_eq!(scope_at(1), NameScope::Sheet(0));
+        assert_eq!(scope_at(3), NameScope::Sheet(2));
     }
 }
