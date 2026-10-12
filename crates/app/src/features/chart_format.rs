@@ -26,7 +26,7 @@ use opensheet_engine::style::Color;
 pub struct ChartFormat;
 
 const FORMAT_TAB: &str = "chart-format";
-const PANE: &str = "chart-format";
+pub(crate) const PANE: &str = "chart-format";
 
 commands! {
     /// What the user can ask of chart formatting.
@@ -152,7 +152,16 @@ pub(crate) fn open_pane(app: &mut ExcelApp, _window: &mut Window, cx: &mut Cx) {
 }
 
 /// The selected chart or element changed: the pane is named after it.
+/// There is one Format pane: the one of a picture or a shape that was
+/// open turns into the chart's when a chart is selected.
 pub(crate) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {
+    if app.selected_chart().is_some() && app.pane_open(super::drawings::FORMAT_PANE) {
+        app.close_pane(super::drawings::FORMAT_PANE, cx);
+        let weak = cx.weak_entity();
+        let view = cx.new(|cx| pane::FormatPane::new(weak, cx));
+        app.open_pane(PANE, elements::pane_title(app.chart_element()), view, cx);
+        return;
+    }
     let title = elements::pane_title(app.chart_element());
     if let Some(pane) = app.panes.iter_mut().find(|pane| pane.id == PANE) {
         if pane.title != title {

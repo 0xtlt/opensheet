@@ -1203,3 +1203,38 @@ fn corrections_colours_transparency_and_effects(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| pane::open_format(app, pane::Section::Effects, window, cx));
     redraw(cx);
 }
+
+#[gpui::test]
+fn the_format_pane_follows_the_kind_of_object(cx: &mut TestAppContext) {
+    use crate::features::chart_format;
+    let (app, cx) = open(cx);
+    let shape = add(&app, cx, ShapeTool::Rectangle, (100.0, 60.0, 100.0, 60.0));
+    let chart = add_chart(&app, cx, (300.0, 60.0), (300.0, 200.0));
+    let open_panes = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| (app.pane_open(chart_format::PANE), app.pane_open(pane::FORMAT)))
+    };
+    let title = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| app.panes.get(app.active_pane).map(|pane| pane.title.to_string()))
+    };
+    // The pane of the chart, opened on the chart.
+    click_at(&app, cx, 450.0, 160.0);
+    app.update_in(cx, |app, window, cx| chart_format::open_pane(app, window, cx));
+    redraw(cx);
+    assert_eq!(open_panes(&app, cx), (true, false));
+    // A shape is selected: the pane is the shape's, with its pages.
+    click_at(&app, cx, 150.0, 90.0);
+    assert_eq!(selection(&app, cx), Some(shape));
+    assert_eq!(open_panes(&app, cx), (false, true));
+    assert_eq!(title(&app, cx).as_deref(), Some("Format Shape"));
+    // A picture: Format Picture.
+    let picture = add_picture(&app, cx);
+    assert_eq!(selection(&app, cx), Some(picture));
+    assert_eq!(title(&app, cx).as_deref(), Some("Format Picture"));
+    // And back to the chart.
+    click_at(&app, cx, 450.0, 220.0);
+    assert_eq!(app.update(cx, |app, _| app.selected_chart().map(|c| c.id)), Some(chart));
+    assert_eq!(open_panes(&app, cx), (true, false));
+    // With nothing selected the pane stays as it is.
+    click_at(&app, cx, 700.0, 400.0);
+    assert_eq!(open_panes(&app, cx), (true, false));
+}

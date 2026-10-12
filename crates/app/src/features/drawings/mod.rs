@@ -63,6 +63,9 @@ use crate::widgets::text_area::{AreaEvent, TextArea};
 
 pub struct Drawings;
 
+/// The id of the Format Shape / Format Picture pane.
+pub(crate) const FORMAT_PANE: &str = pane::FORMAT;
+
 const PICTURE_TAB: &str = "picture-format";
 const SHAPE_TAB: &str = "shape-format";
 

@@ -315,7 +315,7 @@ struct FormatPane {
 }
 
 impl FormatPane {
-    fn new(app: Entity<ExcelApp>, section: Section, window: &mut Window, cx: &mut Context<Self>) -> FormatPane {
+    fn new(app: Entity<ExcelApp>, section: Section, cx: &mut Context<Self>) -> FormatPane {
         let limit = 5000.0 / tabs::length_unit().1;
         let height = widgets::number_input(cx, None, 0.0, limit, 0.1);
         let width = widgets::number_input(cx, None, 0.0, limit, 0.1);
@@ -346,8 +346,8 @@ impl FormatPane {
         ];
         fields.extend(Look::ALL.iter().zip(&looks).map(|(look, input)| (Field::Look(*look), input)));
         for (field, input) in fields {
-            subscriptions.push(cx.subscribe_in(input, window, move |this, input, event: &InputEvent, _, cx| {
-                this.on_field(field, input, event, cx)
+            subscriptions.push(cx.subscribe(input, move |this, input, event: &InputEvent, cx| {
+                this.on_field(field, &input, event, cx)
             }));
         }
         FormatPane {
@@ -962,7 +962,11 @@ impl Render for FormatPane {
 
 /// Open the Format pane on a page ("Format Shape…", the launcher of the
 /// Size group, "More Rotation Options…").
-pub(super) fn open_format(app: &mut ExcelApp, section: Section, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_format(app: &mut ExcelApp, section: Section, _window: &mut Window, cx: &mut Cx) {
+    show_format(app, section, cx);
+}
+
+fn show_format(app: &mut ExcelApp, section: Section, cx: &mut Cx) {
     let title = title_for(app);
     let existing = app.ext_mut::<DrawingUi>().panes.format.clone().filter(|_| app.pane_open(FORMAT));
     let view = match existing {
@@ -975,7 +979,7 @@ pub(super) fn open_format(app: &mut ExcelApp, section: Section, window: &mut Win
         }
         None => {
             let entity = cx.entity();
-            let view = cx.new(|cx| FormatPane::new(entity, section, window, cx));
+            let view = cx.new(|cx| FormatPane::new(entity, section, cx));
             app.ext_mut::<DrawingUi>().panes.format = Some(view.clone());
             view
         }
@@ -986,9 +990,19 @@ pub(super) fn open_format(app: &mut ExcelApp, section: Section, window: &mut Win
 }
 
 /// The selection changed: the Format pane is named after what is selected
-/// now.
+/// now. There is one Format pane: the one of a chart that was open turns
+/// into this one when a picture or a shape is selected.
 pub(super) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {
-    if !app.pane_open(FORMAT) || selected(app).is_none() {
+    let Some(drawing) = selected(app) else {
+        return;
+    };
+    if app.pane_open(features::chart_format::PANE) {
+        let section = Section::of(drawing)[0];
+        app.close_pane(features::chart_format::PANE, cx);
+        show_format(app, section, cx);
+        return;
+    }
+    if !app.pane_open(FORMAT) {
         return;
     }
     let title = title_for(app);
