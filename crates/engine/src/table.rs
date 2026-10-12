@@ -1133,6 +1133,10 @@ fn column_formula(sheet: &Sheet, column: Rect, skip: Option<u32>) -> Option<Expr
 /// `at` down to `last` (the table's last data row before the change) move
 /// with them, without the criteria being looked at again.
 fn shift_filtered_rows(sheet: &mut Sheet, at: u32, last: u32, count: u32, insert: bool) {
+    // Rows added under the last one: nothing below them to move.
+    if at > last {
+        return;
+    }
     let rows: Vec<u32> = sheet.filtered_rows.range(at..=last).copied().collect();
     for row in &rows {
         sheet.filtered_rows.remove(row);

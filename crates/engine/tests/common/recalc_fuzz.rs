@@ -13,10 +13,11 @@
 //! that spill and get blocked, volatile functions, errors, circular
 //! references.
 
+use opensheet_engine::filter::{Criteria, FilterScope, Top10, ValueFilter};
 use opensheet_engine::names::NameScope;
-use opensheet_engine::ops::PasteMode;
+use opensheet_engine::ops::{PasteMode, SortLevel, SortSpec};
 use opensheet_engine::refs::cell_name;
-use opensheet_engine::table::{Table, TableColumn};
+use opensheet_engine::table::TableOption;
 use opensheet_engine::workbook::ClearMode;
 use opensheet_engine::{CalcMode, Content, IterativeCalc, Locale, Rect, Value, Workbook};
 
@@ -52,6 +53,37 @@ impl Rng {
     }
 }
 
+/// What is done to the table of the workbook (the first one found), or to
+/// make one. Places are counted from the table's corner.
+#[derive(Clone, Debug)]
+pub enum TableOp {
+    Add(usize, Rect),
+    /// More or fewer rows and columns.
+    Resize(i32, i32),
+    InsertRows(u32, u32),
+    DeleteRows(u32, u32),
+    InsertCols(u32, u32),
+    DeleteCols(u32, u32),
+    Totals(bool),
+    Headers(bool),
+    Rename(String),
+    ToRange,
+    Delete,
+}
+
+/// What is done to the filter of a sheet, or of the table when the
+/// column is negative.
+#[derive(Clone, Debug)]
+pub enum FilterOp {
+    Set(Rect),
+    /// Keep the rows showing one of these values in a column.
+    Values(u32, Vec<String>, bool),
+    Top(u32, bool, u32),
+    Clear,
+    Remove,
+    Reapply,
+}
+
 /// One step. Everything random is decided when the step is drawn, so that
 /// both workbooks do exactly the same thing.
 #[derive(Clone, Debug)]
@@ -61,7 +93,14 @@ pub enum Op {
     Batch(Vec<(usize, u32, u32, String)>),
     /// Cells typed, then the transaction dropped.
     Rollback(Vec<(usize, u32, u32, String)>),
-    Clear(usize, Rect, bool),
+    /// Contents, everything, formats, comments.
+    Clear(usize, Rect, u8),
+    /// A sort on several keys, perhaps left to right.
+    SortRange(usize, Rect, Vec<(u32, bool)>, bool, bool),
+    RemoveDuplicates(usize, Rect, bool),
+    Table(TableOp),
+    Filter(usize, FilterOp),
+    Note(usize, u32, u32),
     Paste(usize, Rect, usize, Rect, u8),
     PasteText(usize, u32, u32, String),
     FillDown(usize, Rect),
@@ -371,14 +410,55 @@ pub fn draw(rng: &mut Rng, wb: &Workbook) -> Op {
         return Op::Undo(rng.below(3) + 1);
     }
     match rng.below(1000) {
-        0..=479 => {
+        0..=409 => {
             let (sheet, row, col, text) = typed(rng, wb);
             Op::Set(sheet, row, col, text)
         }
+        410..=424 => {
+            let area = rect(rng);
+            let keys = (0..rng.below(2) + 1)
+                .map(|_| (rng.below(3), rng.chance(50)))
+                .collect();
+            Op::SortRange(s, area, keys, rng.chance(40), rng.chance(20))
+        }
+        425..=434 => Op::RemoveDuplicates(s, rect(rng), rng.chance(40)),
+        435..=459 => Op::Table(match rng.below(14) {
+            0 | 1 => TableOp::Add(s, rect(rng)),
+            2 | 3 => TableOp::Resize(rng.below(3) as i32 - 1, rng.below(3) as i32 - 1),
+            4 | 5 => TableOp::InsertRows(rng.below(4), rng.below(2) + 1),
+            6 => TableOp::DeleteRows(rng.below(4), rng.below(2) + 1),
+            7 => TableOp::InsertCols(rng.below(3), 1),
+            8 => TableOp::DeleteCols(rng.below(3), 1),
+            9 | 10 => TableOp::Totals(rng.chance(60)),
+            11 => TableOp::Headers(rng.chance(60)),
+            12 => match rng.below(3) {
+                0 => TableOp::ToRange,
+                1 => TableOp::Delete,
+                _ => TableOp::Rename(rng.pick(&["Sales", "Orders"]).to_string()),
+            },
+            _ => TableOp::Rename("Sales".to_string()),
+        }),
+        460..=474 => {
+            let values = (0..rng.below(3) + 1)
+                .map(|_| rng.below(9).to_string())
+                .collect();
+            Op::Filter(
+                s,
+                match rng.below(8) {
+                    0 | 1 => FilterOp::Set(rect(rng)),
+                    2 | 3 => FilterOp::Values(rng.below(3), values, rng.chance(30)),
+                    4 => FilterOp::Top(rng.below(3), rng.chance(50), rng.below(3) + 1),
+                    5 => FilterOp::Clear,
+                    6 => FilterOp::Remove,
+                    _ => FilterOp::Reapply,
+                },
+            )
+        }
+        475..=479 => Op::Note(s, rng.below(ROWS), rng.below(COLS)),
         480..=529 => Op::Batch(typed_cells(rng, wb, 5)),
         530..=544 => Op::Rollback(typed_cells(rng, wb, 3)),
-        545..=589 => Op::Clear(s, rect(rng), rng.chance(30)),
-        590..=639 => Op::Paste(s, rect(rng), other, rect(rng), rng.below(4) as u8),
+        545..=589 => Op::Clear(s, rect(rng), [0, 0, 0, 1, 1, 2, 3][rng.below(7) as usize]),
+        590..=639 => Op::Paste(s, rect(rng), other, rect(rng), rng.below(10) as u8),
         640..=649 => {
             let (row, col) = any_cell(rng);
             let above = match row {
@@ -472,11 +552,105 @@ fn type_cells(wb: &mut Workbook, cells: &[(usize, u32, u32, String)]) {
     }
 }
 
+fn table_step(wb: &mut Workbook, op: &TableOp) {
+    let found = wb
+        .sheets
+        .iter()
+        .enumerate()
+        .find_map(|(si, sh)| sh.tables.first().map(|t| (si, t.id, t.range)));
+    let Some((sheet, id, range)) = found else {
+        if let TableOp::Add(sheet, rect) = op
+            && let Ok(id) = wb.add_table(*sheet, *rect, true)
+        {
+            let _ = wb.rename_table(*sheet, id, "Sales");
+        }
+        return;
+    };
+    let grown = |by: i32, from: u32, least: u32| (from as i32 + by).max(least as i32) as u32;
+    match op {
+        TableOp::Add(..) => {}
+        TableOp::Resize(rows, cols) => {
+            let to = Rect::new(
+                range.r0,
+                range.c0,
+                grown(*rows, range.r1, range.r0 + 1),
+                grown(*cols, range.c1, range.c0),
+            );
+            let _ = wb.resize_table(sheet, id, to);
+        }
+        TableOp::InsertRows(at, count) => {
+            let _ = wb.table_insert_rows(sheet, id, (range.r0 + 1 + at).min(range.r1 + 1), *count);
+        }
+        TableOp::DeleteRows(at, count) => {
+            let _ = wb.table_delete_rows(sheet, id, (range.r0 + 1 + at).min(range.r1), *count);
+        }
+        TableOp::InsertCols(at, count) => {
+            let _ = wb.table_insert_cols(sheet, id, (range.c0 + at).min(range.c1 + 1), *count);
+        }
+        TableOp::DeleteCols(at, count) => {
+            let _ = wb.table_delete_cols(sheet, id, (range.c0 + at).min(range.c1), *count);
+        }
+        TableOp::Totals(on) => {
+            let _ = wb.set_table_option(sheet, id, TableOption::TotalsRow, *on);
+        }
+        TableOp::Headers(on) => {
+            let _ = wb.set_table_option(sheet, id, TableOption::HeaderRow, *on);
+        }
+        TableOp::Rename(name) => {
+            let _ = wb.rename_table(sheet, id, name);
+        }
+        TableOp::ToRange => {
+            wb.convert_table_to_range(sheet, id);
+        }
+        TableOp::Delete => {
+            wb.delete_table(sheet, id);
+        }
+    }
+}
+
+fn filter_step(wb: &mut Workbook, sheet: usize, op: &FilterOp) {
+    // The table's own filter when the sheet has a table and no filter.
+    let scope = match (
+        &wb.sheets[sheet].auto_filter,
+        wb.sheets[sheet].tables.first(),
+    ) {
+        (None, Some(table)) => FilterScope::Table(table.id),
+        _ => FilterScope::Sheet,
+    };
+    match op {
+        FilterOp::Set(range) => {
+            let _ = wb.set_auto_filter(sheet, *range);
+        }
+        FilterOp::Values(col, values, blanks) => {
+            let wanted = ValueFilter {
+                values: values.clone(),
+                blanks: *blanks,
+                ..ValueFilter::default()
+            };
+            wb.set_filter_criteria(sheet, scope, *col, Some(Criteria::Values(wanted)));
+        }
+        FilterOp::Top(col, top, count) => {
+            let wanted = Top10::new(*top, false, *count as f64);
+            wb.set_filter_criteria(sheet, scope, *col, Some(Criteria::Top10(wanted)));
+        }
+        FilterOp::Clear => {
+            wb.clear_filters(sheet, scope);
+        }
+        FilterOp::Remove => {
+            wb.remove_auto_filter(sheet);
+        }
+        FilterOp::Reapply => wb.reapply_filters(sheet),
+    }
+}
+
 /// Do one step.
 pub fn apply(wb: &mut Workbook, op: &Op) {
     match op {
         Op::Set(sheet, row, col, text) => {
             type_cells(wb, &[(*sheet, *row, *col, text.clone())]);
+            // As the grid does: a table grows over what is typed next to
+            // it, a formula fills its column.
+            wb.tables_after_edit(*sheet, Rect::cell(*row, *col));
             wb.commit("type");
         }
         Op::Batch(cells) => {
@@ -487,16 +661,14 @@ pub fn apply(wb: &mut Workbook, op: &Op) {
             type_cells(wb, cells);
             wb.rollback();
         }
-        Op::Clear(sheet, rect, all) => {
-            wb.clear(
-                *sheet,
-                *rect,
-                if *all {
-                    ClearMode::All
-                } else {
-                    ClearMode::Contents
-                },
-            );
+        Op::Clear(sheet, rect, mode) => {
+            let mode = [
+                ClearMode::Contents,
+                ClearMode::All,
+                ClearMode::Formats,
+                ClearMode::Comments,
+            ][*mode as usize];
+            wb.clear(*sheet, *rect, mode);
             wb.commit("clear");
         }
         Op::Paste(from, source, to, dest, mode) => {
@@ -506,9 +678,45 @@ pub fn apply(wb: &mut Workbook, op: &Op) {
                 PasteMode::Values,
                 PasteMode::Formulas,
                 PasteMode::Formats,
+                PasteMode::Comments,
+                PasteMode::Validation,
+                PasteMode::AllExceptBorders,
+                PasteMode::ColumnWidths,
+                PasteMode::FormulasAndNumberFormats,
+                PasteMode::ValuesAndNumberFormats,
             ][*mode as usize];
             wb.paste(*to, *dest, &clip, mode);
             wb.commit("paste");
+        }
+        Op::SortRange(sheet, rect, keys, header, sideways) => {
+            let levels = keys
+                .iter()
+                .map(|(key, descending)| SortLevel::values(*key, *descending))
+                .collect();
+            let spec = SortSpec {
+                levels,
+                has_header: *header,
+                left_to_right: *sideways,
+                ..SortSpec::default()
+            };
+            let _ = wb.sort_range(*sheet, *rect, &spec);
+            wb.commit("sort");
+        }
+        Op::RemoveDuplicates(sheet, rect, header) => {
+            let _ = wb.remove_duplicates(*sheet, *rect, &[], *header);
+            wb.commit("duplicates");
+        }
+        Op::Table(op) => {
+            table_step(wb, op);
+            wb.commit("table");
+        }
+        Op::Filter(sheet, op) => {
+            filter_step(wb, *sheet, op);
+            wb.commit("filter");
+        }
+        Op::Note(sheet, row, col) => {
+            wb.set_note(*sheet, *row, *col, "fuzz", "a note");
+            wb.commit("note");
         }
         Op::PasteText(sheet, row, col, text) => {
             wb.paste_text(*sheet, *row, *col, text);
@@ -600,12 +808,9 @@ pub fn apply(wb: &mut Workbook, op: &Op) {
             }
         }
         Op::ResizeTable(by, transaction) => {
-            let Some((sheet, _)) = wb.table_by_name("Sales") else {
+            let Some(sheet) = wb.sheets.iter().position(|s| !s.tables.is_empty()) else {
                 return;
             };
-            if wb.sheets[sheet].tables.len() != 1 {
-                return;
-            }
             if *transaction {
                 wb.snapshot();
             }
@@ -708,22 +913,10 @@ pub fn build(rng: &mut Rng) -> Vec<Op> {
 /// What `build` cannot do through steps: the table and a name of sheet
 /// scope.
 fn furnish(wb: &mut Workbook) {
-    wb.snapshot();
-    wb.sheets[0].tables.push(Table {
-        id: 1,
-        name: "Sales".to_string(),
-        range: Rect::new(1, 1, 4, 3),
-        header_row: true,
-        totals_row: false,
-        columns: ["Item", "Qty", "Price"]
-            .iter()
-            .map(|name| TableColumn {
-                name: name.to_string(),
-                ..Default::default()
-            })
-            .collect(),
-        ..Default::default()
-    });
+    if let Ok(id) = wb.add_table(0, Rect::new(1, 1, 4, 3), true) {
+        let _ = wb.rename_table(0, id, "Sales");
+    }
+    wb.set_note(0, 2, 2, "fuzz", "a note");
     let local = wb
         .parse_name_formula("Sheet1!$A$1+1", 1, 0, 0)
         .expect("a formula");
