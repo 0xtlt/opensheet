@@ -1601,8 +1601,11 @@ impl ExcelApp {
 
     pub fn clear(&mut self, mode: ClearMode, cx: &mut Context<Self>) {
         let allowed = match mode {
+            ClearMode::Contents => self.may_all(Intent::EditCells, cx),
             ClearMode::Formats => self.may_all(Intent::FormatCells, cx),
-            _ => self.may_all(Intent::EditCells, cx),
+            ClearMode::Comments => self.may(Intent::EditComment, cx),
+            // Clear All takes the formats away with the contents.
+            ClearMode::All => self.may_all(Intent::EditCells, cx) && self.may_all(Intent::FormatCells, cx),
         };
         if !allowed {
             return;

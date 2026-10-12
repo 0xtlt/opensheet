@@ -17,6 +17,7 @@ use crate::theme::{self, c};
 use crate::widgets::{Button, Checkbox, RefEdit, ScrollArea, Select, dialog, labeled};
 use gpui::{AnyElement, Context, Entity, FontWeight, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::condfmt::{Bar, CondFormat, Rule, parse_ranges, ranges_text};
+use opensheet_engine::protect::Action;
 use opensheet_engine::style::StylePatch;
 use opensheet_engine::{Locale, Rect};
 use std::rc::Rc;
@@ -267,6 +268,23 @@ impl Manager {
             return false;
         }
         let rules = self.rules.clone();
+        // The manager reaches every sheet: one that is protected keeps its
+        // rules unless it lets its cells be formatted.
+        let denied = self
+            .modal
+            .read_app(cx, |app| {
+                rules.iter().enumerate().find_map(|(sheet, rules)| {
+                    let changed = app.wb.sheets.get(sheet).is_some_and(|sh| sh.cond_formats != *rules);
+                    let answer = app.wb.permits(&Action::FormatCells { sheet });
+                    answer.err().filter(|_| changed).map(|denied| denied.message(app.wb.locale))
+                })
+            })
+            .flatten();
+        if let Some(message) = denied {
+            self.modal
+                .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+            return false;
+        }
         self.modal.update_app(cx, |app, cx| {
             let mut changed = false;
             for (sheet, rules) in rules.into_iter().enumerate() {
