@@ -15,8 +15,8 @@ use crate::widgets::{
     label, ok_cancel,
 };
 use gpui::{
-    AnyElement, Bounds, Context, Entity, Focusable, MouseButton, Pixels, SharedString, WeakEntity, Window, canvas, div,
-    prelude::*, px,
+    AnyElement, Bounds, Context, Entity, Focusable, MouseButton, Pixels, Point, SharedString, WeakEntity, Window, canvas,
+    div, prelude::*, px,
 };
 use opensheet_engine::pivot::{Area, FilterKind, PivotTable, SortOrder, Top10By};
 use opensheet_engine::{Locale, Rect};
@@ -114,6 +114,8 @@ pub(super) struct DropDown {
     state: FieldState,
     search: Entity<TextInput>,
     sub: Option<Sub>,
+    /// Where the drop-down hangs from (the corner of its cell).
+    anchor: Point<Pixels>,
     /// Where the drop-down was painted, to choose the side of a submenu.
     bounds: Rc<Cell<Bounds<Pixels>>>,
     /// Set when a press lands outside the drop-down (which closes it).
@@ -148,6 +150,7 @@ pub(super) fn toggle_drop_down(app: &mut ExcelApp, id: u32, row: u32, col: u32, 
     };
     let state = FieldState::of(pivot, first, locale);
     let weak = cx.weak_entity();
+    let anchor = app.cell_anchor(Rect::cell(row, col));
     let view = cx.new(|cx| {
         let search = widgets::input(cx, "");
         search.update(cx, |field, _| field.placeholder = t("Search", "Rechercher").into());
@@ -158,6 +161,7 @@ pub(super) fn toggle_drop_down(app: &mut ExcelApp, id: u32, row: u32, col: u32, 
             state,
             search,
             sub: None,
+            anchor,
             bounds: Rc::default(),
             closed,
         }
@@ -165,7 +169,7 @@ pub(super) fn toggle_drop_down(app: &mut ExcelApp, id: u32, row: u32, col: u32, 
     // The keyboard goes to the search box, as typing narrows the list.
     let focus = view.read(cx).search.read(cx).focus_handle(cx);
     window.focus(&focus);
-    app.open_popup_view(app.cell_anchor(Rect::cell(row, col)), view, cx);
+    app.open_popup_view(anchor, view, cx);
 }
 
 impl DropDown {
@@ -319,18 +323,20 @@ impl DropDown {
             .into_any_element()
     }
 
-    /// One line of a submenu. It acts on the press: the press also closes
-    /// the drop-down the submenu sticks out of.
+    /// One line of a submenu. Submenus hang outside the drop-down, so a
+    /// press on them closes it before anything else hears of the press:
+    /// the line acts on the press itself and through the application, not
+    /// through a listener of this view (which may be gone by then).
     fn sub_row(
         &self,
         id: (&'static str, usize),
         text: &'static str,
         enabled: bool,
         ticked: bool,
-        cx: &mut Context<Self>,
-        on_press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+        on_press: impl Fn(&mut ExcelApp, &mut Window, &mut Cx) + 'static,
     ) -> AnyElement {
         let fg = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
+        let app = self.app.clone();
         div()
             .id(id)
             .h(px(ROW))
@@ -351,15 +357,16 @@ impl DropDown {
                     .when(ticked, |d| d.child(icon("check", 14.0, theme::ACCENT))),
             )
             .child(div().flex_1().truncate().child(text))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, window, cx| {
-                    if enabled {
-                        on_press(this, window, cx);
-                    }
+            .when(enabled, |d| {
+                d.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    app.update(cx, |app, cx| {
+                        app.close_popup(window, cx);
+                        on_press(app, window, cx);
+                    })
+                    .ok();
                     cx.stop_propagation();
-                }),
-            )
+                })
+            })
             .into_any_element()
     }
 
@@ -383,13 +390,10 @@ impl DropDown {
                     t("Clear Filter", "Effacer le filtre"),
                     self.state.label_test.is_some(),
                     false,
-                    cx,
-                    move |this, window, cx| {
-                        this.act(window, cx, move |app, window, cx| {
-                            update(app, id, t("Clear Filter", "Effacer le filtre"), window, cx, move |p| {
-                                p.set_label_filter(field, None)
-                            });
-                        })
+                    move |app, window, cx| {
+                        update(app, id, t("Clear Filter", "Effacer le filtre"), window, cx, move |p| {
+                            p.set_label_filter(field, None)
+                        });
                     },
                 ));
                 for (g, tests) in LabelTest::MENU.iter().enumerate() {
@@ -401,12 +405,7 @@ impl DropDown {
                             test.menu_label(),
                             true,
                             self.state.label_test == Some(test),
-                            cx,
-                            move |this, window, cx| {
-                                this.act(window, cx, move |app, window, cx| {
-                                    open_label_filter(app, id, field, Some(test), window, cx)
-                                })
-                            },
+                            move |app, window, cx| open_label_filter(app, id, field, Some(test), window, cx),
                         ));
                     }
                 }
@@ -417,13 +416,10 @@ impl DropDown {
                     t("Clear Filter", "Effacer le filtre"),
                     self.state.value_filter.is_some(),
                     false,
-                    cx,
-                    move |this, window, cx| {
-                        this.act(window, cx, move |app, window, cx| {
-                            update(app, id, t("Clear Filter", "Effacer le filtre"), window, cx, move |p| {
-                                p.set_value_filter(field, None)
-                            });
-                        })
+                    move |app, window, cx| {
+                        update(app, id, t("Clear Filter", "Effacer le filtre"), window, cx, move |p| {
+                            p.set_value_filter(field, None)
+                        });
                     },
                 ));
                 rows.push(Self::separator());
@@ -437,12 +433,7 @@ impl DropDown {
                         test.menu_label(),
                         true,
                         self.state.value_filter == Some(Some(test)),
-                        cx,
-                        move |this, window, cx| {
-                            this.act(window, cx, move |app, window, cx| {
-                                open_value_filter(app, id, field, Some(test), window, cx)
-                            })
-                        },
+                        move |app, window, cx| open_value_filter(app, id, field, Some(test), window, cx),
                     ));
                 }
                 rows.push(Self::separator());
@@ -451,13 +442,22 @@ impl DropDown {
                     t("Top 10...", "10 premiers..."),
                     true,
                     self.state.value_filter == Some(None),
-                    cx,
-                    move |this, window, cx| {
-                        this.act(window, cx, move |app, window, cx| open_top10(app, id, field, window, cx))
-                    },
+                    move |app, window, cx| open_top10(app, id, field, window, cx),
                 ));
             }
         }
+        // A press in the submenu that runs no entry (a line, a greyed
+        // entry) has closed the drop-down like any press outside it: put
+        // it back as it was.
+        let (app, view, anchor) = (self.app.clone(), cx.entity(), self.anchor);
+        let keep_open = move |_: &gpui::MouseDownEvent, _: &mut Window, cx: &mut gpui::App| {
+            app.update(cx, |app, cx| {
+                if app.popup.is_none() {
+                    app.open_popup_view(anchor, view.clone(), cx);
+                }
+            })
+            .ok();
+        };
         // On the right when there is room, else on the left.
         let bounds = self.bounds.get();
         let room = f32::from(window.viewport_size().width) - f32::from(bounds.right());
@@ -473,6 +473,7 @@ impl DropDown {
             .border_color(c(theme::BORDER_STRONG))
             .rounded(px(6.))
             .shadow_lg()
+            .on_mouse_down(MouseButton::Left, keep_open)
             .children(rows);
         if room >= SUB_WIDTH + 4.0 || f32::from(bounds.left()) < SUB_WIDTH {
             panel.left(px(WIDTH - 2.0)).into_any_element()
