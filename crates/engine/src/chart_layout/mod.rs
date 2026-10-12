@@ -229,6 +229,7 @@ pub fn layout_chart_elements(
         label_size,
         label_h: line_height(label_size),
         size,
+        snug: false,
         tagger: elements::Tagger::default(),
     };
     p.draw(size.0, size.1);
@@ -294,6 +295,10 @@ pub(crate) struct Painter<'a> {
     pub label_h: f32,
     /// Width and height of the chart area.
     pub size: (f32, f32),
+    /// The area a round or radar plot is given is the very box of its
+    /// disc (the plot area was put there by hand), with no room to leave
+    /// around it.
+    pub snug: bool,
     tagger: elements::Tagger,
 }
 
@@ -1080,6 +1085,7 @@ impl Painter<'_> {
         let inner = manual_plot.filter(|_| cartesian && !chart.plot_layout_outer);
         if let Some(outer) = manual_plot.filter(|_| inner.is_none()) {
             (left, top, right, bottom) = outer;
+            self.snug = !chart.plot_layout_outer && !chart.kind.is_3d();
         }
         if (right - left > 20.0 && bottom - top > 20.0) || inner.is_some() {
             let area = (left, top, right, bottom);

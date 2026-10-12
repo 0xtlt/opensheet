@@ -1395,3 +1395,18 @@ fn gridlines_and_axis_lines_take_their_format() {
     assert_eq!(lines(&prims, Color(0x00B050)).len(), 1);
     assert!(lines(&prims, AXIS).is_empty());
 }
+
+#[test]
+fn a_pie_fills_the_box_its_plot_area_was_given() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:B5", ChartKind::Pie);
+    chart.plot_layout = Some(ManualLayout {
+        x: 0.5,
+        y: 0.25,
+        w: Some(0.25),
+        h: Some(0.5),
+    });
+    // The disc is as wide as the narrow side, in the middle of the box.
+    let frame = elements(&w, &chart).bounds(ChartElement::PlotArea).unwrap();
+    assert!(near(frame[0], 240.0) && near(frame[2], 360.0) && near(frame[1], 84.0) && near(frame[3], 204.0), "{frame:?}");
+}

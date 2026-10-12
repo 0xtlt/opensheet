@@ -112,7 +112,11 @@ pub(super) fn draw_round(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let cy = (top + bottom) / 2.0;
     let room = if outside { p.label_h + 8.0 * z } else { 4.0 * z };
     let widest = if outside { 30.0 * z } else { 0.0 };
-    let available = (((right - left) / 2.0 - widest).min((bottom - top) / 2.0) - room).max(4.0);
+    let available = if p.snug {
+        ((right - left) / 2.0).min((bottom - top) / 2.0).max(4.0)
+    } else {
+        (((right - left) / 2.0 - widest).min((bottom - top) / 2.0) - room).max(4.0)
+    };
     // Slices pulled out of the pie take their room from its radius.
     let burst = if doughnut {
         0.0

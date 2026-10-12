@@ -1749,10 +1749,17 @@ impl ExcelApp {
     }
 
     pub fn set_font_size(&mut self, pt: f32, cx: &mut Context<Self>) {
+        let pt = pt.clamp(1.0, 409.0);
+        // A selected object takes the size for its own text.
+        if let Some(id) = self.object_sel {
+            let label = t("Font Size", "Taille de police");
+            if features::all()[id.owner].object_style(self, id.id, label, &|s| s.font.set_size_pt(pt), cx) {
+                return;
+            }
+        }
         if !self.may_all(Intent::FormatCells, cx) {
             return;
         }
-        let pt = pt.clamp(1.0, 409.0);
         let ranges = self.sel().ranges.clone();
         for r in &ranges {
             self.wb.update_style(self.sheet, *r, &|s| s.font.set_size_pt(pt));
@@ -1786,7 +1793,8 @@ impl ExcelApp {
     ];
 
     pub fn step_font_size(&mut self, grow: bool, cx: &mut Context<Self>) {
-        let cur = self.active_style().font.size_pt();
+        // The text of a selected chart element is what grows and shrinks.
+        let cur = features::charts::home_text_size(self).unwrap_or_else(|| self.active_style().font.size_pt());
         let next = if grow {
             Self::FONT_SIZES
                 .iter()

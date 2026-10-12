@@ -374,7 +374,15 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
         (LegendPos::Bottom, t("Bottom", "Bas")),
     ]
     .into_iter()
-    .map(|(pos, label)| edit(label, t("Legend", "Légende"), move |c| c.legend = pos).checked(chart.legend == pos))
+    .map(|(pos, label)| {
+        // A side chosen here is where the legend goes, wherever it had
+        // been dragged.
+        let place = move |c: &mut Chart| {
+            c.legend = pos;
+            c.legend_layout = None;
+        };
+        edit(label, t("Legend", "Légende"), place).checked(chart.legend == pos && chart.legend_layout.is_none())
+    })
     .collect();
     legend.push(MenuEntry::separator());
     legend.push(more(t("More Legend Options…", "Autres options de légende…"), ChartElement::Legend));
@@ -523,6 +531,8 @@ pub const QUICK_LAYOUTS: [QuickLayout; 11] = {
 
 /// Give a chart the elements of a quick layout.
 pub fn apply_quick_layout(chart: &mut Chart, layout: &QuickLayout) {
+    // A layout says where everything goes.
+    chart.clear_manual_layout();
     let axis_title = || t("Axis Title", "Titre de l'axe").to_string();
     chart.title = match (&chart.title, layout.title) {
         (_, false) => ChartTitle::None,

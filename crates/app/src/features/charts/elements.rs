@@ -7,7 +7,8 @@ use crate::app::{ExcelApp, MenuEntry};
 use crate::features::{Command, ContextMenu, MenuSection, chart_format};
 use crate::i18n::{Lang, lang, t};
 use opensheet_engine::chart::{
-    Axis, Chart, ChartData, ChartTitle, DataLabels, Family, LegendPos, Line, ShapeFormat, TrendKind, Trendline,
+    Axis, Chart, ChartData, ChartTitle, DataLabels, Family, LegendPos, Line, ShapeFormat, TextFormat, TrendKind,
+    Trendline,
 };
 use opensheet_engine::chart_layout::{AxisId, ChartElement, LayoutOptions, TextMeasure, layout_chart_elements};
 
@@ -203,15 +204,26 @@ pub fn delete(chart: &mut Chart, element: ChartElement) -> bool {
         ChartElement::ChartArea => return false,
         // Like Excel: the plot area cannot go, it loses its formatting.
         ChartElement::PlotArea => chart.plot_area = ShapeFormat::default(),
-        ChartElement::Title => chart.title = ChartTitle::None,
-        ChartElement::Legend => chart.legend = LegendPos::None,
+        // What is removed loses the place it was dragged to.
+        ChartElement::Title => {
+            chart.title = ChartTitle::None;
+            chart.title_layout = None;
+        }
+        ChartElement::Legend => {
+            chart.legend = LegendPos::None;
+            chart.legend_layout = None;
+        }
         ChartElement::LegendEntry(i) => {
             if !chart.legend_hidden.contains(&i) {
                 chart.legend_hidden.push(i);
             }
         }
         ChartElement::Axis(axis) => axis.of_mut(&mut chart.axes).visible = false,
-        ChartElement::AxisTitle(axis) => axis.of_mut(&mut chart.axes).title = None,
+        ChartElement::AxisTitle(axis) => {
+            let axis = axis.of_mut(&mut chart.axes);
+            axis.title = None;
+            axis.title_layout = None;
+        }
         ChartElement::MajorGridlines(axis) => axis.of_mut(&mut chart.axes).major_gridlines = false,
         ChartElement::MinorGridlines(axis) => axis.of_mut(&mut chart.axes).minor_gridlines = false,
         ChartElement::Series(s) | ChartElement::Point(s, _) => {
@@ -226,6 +238,7 @@ pub fn delete(chart: &mut Chart, element: ChartElement) -> bool {
                 return false;
             };
             series.labels = Some(DataLabels::none());
+            series.label_offsets.clear();
             // Once no series is labelled, the chart is back to "no labels".
             if chart.series.iter().all(|x| x.labels.as_ref().is_some_and(|l| !l.any())) {
                 chart.data_labels = false;
@@ -252,11 +265,38 @@ pub fn delete(chart: &mut Chart, element: ChartElement) -> bool {
     true
 }
 
-/// "Reset to Match Style": the element takes its automatic look back.
+/// "Reset to Match Style": the element takes its automatic look back,
+/// and the place the chart gives it. The chart area stands for the whole
+/// chart, as far as places and fonts go.
 pub fn reset(chart: &mut Chart, element: ChartElement) {
     match element {
-        ChartElement::ChartArea => chart.chart_area = ShapeFormat::default(),
-        ChartElement::PlotArea => chart.plot_area = ShapeFormat::default(),
+        ChartElement::ChartArea => {
+            chart.chart_area = ShapeFormat::default();
+            chart.clear_manual_layout();
+            for text in chart.text_formats_mut() {
+                *text = TextFormat::default();
+            }
+        }
+        ChartElement::PlotArea => {
+            chart.plot_area = ShapeFormat::default();
+            chart.plot_layout = None;
+            chart.plot_layout_outer = false;
+        }
+        ChartElement::Title => {
+            chart.title_text = TextFormat::default();
+            chart.title_layout = None;
+        }
+        ChartElement::Legend | ChartElement::LegendEntry(_) => {
+            chart.legend_text = TextFormat::default();
+            chart.legend_layout = None;
+        }
+        ChartElement::AxisTitle(axis) => {
+            let axis = axis.of_mut(&mut chart.axes);
+            axis.title_text = TextFormat::default();
+            axis.title_layout = None;
+        }
+        ChartElement::MajorGridlines(axis) => axis.of_mut(&mut chart.axes).major_gridline = Line::default(),
+        ChartElement::MinorGridlines(axis) => axis.of_mut(&mut chart.axes).minor_gridline = Line::default(),
         ChartElement::Series(s) => {
             if let Some(series) = chart.series.get_mut(s as usize) {
                 series.color = None;
@@ -277,17 +317,23 @@ pub fn reset(chart: &mut Chart, element: ChartElement) {
         ChartElement::Axis(axis) => {
             let old = axis.of(&chart.axes).clone();
             // What the axis shows stays; how it shows it is automatic again.
+            // Its title and its gridlines are elements of their own.
             *axis.of_mut(&mut chart.axes) = Axis {
                 visible: old.visible,
                 title: old.title,
+                title_text: old.title_text,
+                title_layout: old.title_layout,
                 major_gridlines: old.major_gridlines,
                 minor_gridlines: old.minor_gridlines,
+                major_gridline: old.major_gridline,
+                minor_gridline: old.minor_gridline,
                 ..Axis::new()
             };
         }
         ChartElement::DataLabels(s) => {
             if let Some(series) = chart.series.get_mut(s as usize) {
                 series.labels = Some(DataLabels::default());
+                series.label_offsets.clear();
             }
         }
         ChartElement::Trendline(s, i) => {

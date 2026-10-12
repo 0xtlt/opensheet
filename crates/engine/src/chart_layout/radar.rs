@@ -38,9 +38,11 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let widest = names.iter().map(|(_, w)| *w).fold(0.0, f32::max);
     let cx = (left + right) / 2.0;
     let cy = (top + bottom) / 2.0;
-    let r = ((bottom - top) / 2.0 - label_h - 6.0 * z)
-        .min((right - left) / 2.0 - widest - 8.0 * z)
-        .max(8.0);
+    let r = if p.snug {
+        ((bottom - top) / 2.0).min((right - left) / 2.0).max(8.0)
+    } else {
+        ((bottom - top) / 2.0 - label_h - 6.0 * z).min((right - left) / 2.0 - widest - 8.0 * z).max(8.0)
+    };
     // The first category points up; the others follow clockwise.
     let angle = |k: usize| -FRAC_PI_2 + TAU * k as f32 / n as f32;
     let at = |k: usize, f: f64| {

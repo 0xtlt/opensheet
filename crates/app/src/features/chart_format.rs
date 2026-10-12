@@ -6,6 +6,8 @@
 
 mod fields;
 mod pane;
+
+pub(crate) use fields::{text_of, text_size};
 #[cfg(test)]
 mod ui_tests;
 
@@ -75,30 +77,34 @@ impl Command for Cmd {
                 let element = app.chart_element();
                 app.edit_chart(self.label(), cx, move |chart| elements::reset(chart, element));
             }
-            Cmd::ShapeFill | Cmd::ShapeOutline => {
-                let outline = self == Cmd::ShapeOutline;
+            Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::TextFill => {
+                let paints = match self {
+                    Cmd::ShapeFill => Paints::Fill,
+                    Cmd::ShapeOutline => Paints::Outline,
+                    _ => Paints::Text,
+                };
                 let current = app.selected_chart().and_then(|chart| {
                     let element = app.chart_element();
-                    if outline {
-                        line_of(chart, element).map(|line| if line.shown == Some(false) { None } else { line.color })
-                    } else {
-                        fill_of(chart, element).map(|fill| match fill {
+                    match paints {
+                        Paints::Outline => line_of(chart, element).map(|line| if line.shown == Some(false) { None } else { line.color }),
+                        Paints::Fill => fill_of(chart, element).map(|fill| match fill {
                             Fill::Solid(color) => Some(color),
                             _ => None,
-                        })
+                        }),
+                        Paints::Text => text_of(chart, element).map(|text| text.color),
                     }
                 });
                 let weak = cx.weak_entity();
                 let view = cx.new(|_| ColorPopup {
                     app: weak,
-                    outline,
+                    paints,
                     current,
                 });
                 let anchor = app.command_anchor;
                 charts::open_ribbon_view(app, anchor, view, window, cx);
             }
-            // Effects and text formatting are not in the chart model.
-            Cmd::ShapeEffects | Cmd::TextFill | Cmd::TextOutline | Cmd::TextEffects => app.not_implemented(self.label(), cx),
+            // Effects and the outline of text are not in the chart model.
+            Cmd::ShapeEffects | Cmd::TextOutline | Cmd::TextEffects => app.not_implemented(self.label(), cx),
         }
     }
 
@@ -109,7 +115,8 @@ impl Command for Cmd {
         match self {
             Cmd::ShapeFill => fill_of(chart, app.chart_element()).is_some(),
             Cmd::ShapeOutline => line_of(chart, app.chart_element()).is_some(),
-            Cmd::ShapeEffects | Cmd::TextFill | Cmd::TextOutline | Cmd::TextEffects => false,
+            Cmd::TextFill => text_of(chart, app.chart_element()).is_some(),
+            Cmd::ShapeEffects | Cmd::TextOutline | Cmd::TextEffects => false,
             _ => true,
         }
     }
@@ -164,37 +171,55 @@ pub(crate) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {
 
 // ----------------------------------------------------- Shape Fill and Outline
 
-/// The colours dropped down by Shape Fill and Shape Outline.
+/// What a colour picked on the Format tab paints.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Paints {
+    Fill,
+    Outline,
+    Text,
+}
+
+/// The colours dropped down by Shape Fill, Shape Outline and Text Fill.
 struct ColorPopup {
     app: WeakEntity<ExcelApp>,
-    outline: bool,
-    /// The colour of the selected element; `None` when it has no fill or
-    /// outline to speak of.
+    paints: Paints,
+    /// The colour of the selected element; `None` when it has no fill,
+    /// outline or text to speak of.
     current: Option<Option<Color>>,
 }
 
-/// Fill the selected element, or draw its outline, in a colour (`None`:
-/// no fill, no outline).
-fn apply_shape_color(app: &mut ExcelApp, outline: bool, color: Option<Color>, cx: &mut Cx) {
+/// Fill the selected element, draw its outline or write its text in a
+/// colour (`None`: no fill, no outline, the automatic colour of text).
+fn apply_shape_color(app: &mut ExcelApp, paints: Paints, color: Option<Color>, cx: &mut Cx) {
     let element = app.chart_element();
-    let label = if outline { Cmd::ShapeOutline.label() } else { Cmd::ShapeFill.label() };
-    app.edit_chart(label, cx, move |chart| {
-        if outline {
+    let label = match paints {
+        Paints::Fill => Cmd::ShapeFill.label(),
+        Paints::Outline => Cmd::ShapeOutline.label(),
+        Paints::Text => Cmd::TextFill.label(),
+    };
+    app.edit_chart(label, cx, move |chart| match paints {
+        Paints::Outline => {
             if let Some(line) = line_of_mut(chart, element) {
                 line.shown = Some(color.is_some());
                 line.color = color;
             }
-        } else {
-            set_fill(chart, element, color.map_or(Fill::None, Fill::Solid));
+        }
+        Paints::Fill => set_fill(chart, element, color.map_or(Fill::None, Fill::Solid)),
+        Paints::Text => {
+            element.format_text(chart, |text| text.color = color);
         }
     });
 }
 
 impl Render for ColorPopup {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let outline = self.outline;
+        let paints = self.paints;
         let app = self.app.clone();
-        let none = if outline { t("No Outline", "Sans contour") } else { t("No Fill", "Aucun remplissage") };
+        let none = match self.paints {
+            Paints::Outline => t("No Outline", "Sans contour"),
+            Paints::Fill => t("No Fill", "Aucun remplissage"),
+            Paints::Text => t("Automatic", "Automatique"),
+        };
         div().p(px(8.)).text_size(px(12.)).child(
             ColorGrid::new("shape-color", self.current)
                 .none_label(none)
@@ -203,7 +228,7 @@ impl Render for ColorPopup {
                     let color = *color;
                     app.update(cx, |app, cx| {
                         app.close_popup(window, cx);
-                        apply_shape_color(app, outline, color, cx);
+                        apply_shape_color(app, paints, color, cx);
                     })
                     .ok();
                 })),
