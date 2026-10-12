@@ -37,16 +37,18 @@ use crate::shell::{Alert, Modal};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::c;
 use crate::widgets::TextField;
-use gpui::{AnyElement, Entity, Focusable, SharedString, Subscription, TextRun, Window, WindowTextSystem, div, prelude::*, px};
+use gpui::{
+    AnyElement, Entity, Focusable, Pixels, Point, SharedString, Subscription, TextRun, Window, WindowTextSystem, div,
+    prelude::*, px,
+};
 use logic::Target;
 use opensheet_engine::ast::StructuralEdit;
 use opensheet_engine::ops::PasteMode;
-use opensheet_engine::pivot::{PivotCell, PivotError, PivotTable, Report};
+use opensheet_engine::pivot::{PivotButton, PivotCell, PivotError, PivotTable, Report};
 use opensheet_engine::workbook::ClearMode;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
 
 pub struct Pivots;
 
@@ -221,18 +223,23 @@ struct PivotUi {
     active_field: Option<NameBox>,
     /// The cell whose drop-down was last opened.
     open_filter: Option<(u32, u32)>,
-    /// When a press outside last closed that drop-down, and the styles
-    /// gallery: the press on their own button must not open them again.
-    filter_closed: Rc<Cell<Option<Instant>>>,
-    gallery_closed: Rc<Cell<Option<Instant>>>,
+    /// Where the press that closed that drop-down landed, and the one that
+    /// closed the styles gallery: a press on their own button must not
+    /// open them again.
+    filter_closed: Dismissed,
+    gallery_closed: Dismissed,
 }
 
-/// True when a press closed a drop-down so recently that the click now
-/// handled is that same press, on the button the drop-down hangs from.
-fn just_closed(closed: &Cell<Option<Instant>>) -> bool {
+/// Where the press that closed a drop-down landed (set by the drop-down
+/// itself, read by the button it hangs from).
+type Dismissed = Rc<Cell<Option<Point<Pixels>>>>;
+
+/// True when the press that closed a drop-down is the one now handled at
+/// `at`: it landed on the button the drop-down hangs from.
+fn just_closed(closed: &Dismissed, at: Point<Pixels>) -> bool {
     closed
         .take()
-        .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(400))
+        .is_some_and(|press| (press.x - at.x).abs() < px(4.) && (press.y - at.y).abs() < px(4.))
 }
 
 // ------------------------------------------------------------------ helpers
@@ -772,6 +779,18 @@ impl Feature for Pivots {
 
     fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
         sheet::mouse_down(app, zone, ev, window, cx)
+    }
+
+    /// Alt+Down on a header or a filter cell opens its drop-down.
+    fn cell_drop_down(&self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> bool {
+        let (row, col) = app.active();
+        match app.wb.pivot_cell(app.sheet, row, col) {
+            Some(cell) if matches!(cell.button, Some(PivotButton::Filter { .. })) => {
+                filter::toggle_drop_down(app, cell.pivot, row, col, None, window, cx);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The cells of a PivotTable belong to its report: they are not typed

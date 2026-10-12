@@ -3,9 +3,9 @@
 //! Label Filter, Value Filter and Top 10.
 
 use super::logic::{self, LabelTest, ValueTest};
-use super::{PivotUi, actions, just_closed, update};
+use super::{Dismissed, PivotUi, actions, just_closed, update};
 use crate::app::ExcelApp;
-use crate::features::Cx;
+use crate::features::{Cx, Intent};
 use crate::i18n::t;
 use crate::shell::Modal;
 use crate::text_input::TextInput;
@@ -22,7 +22,6 @@ use opensheet_engine::pivot::{Area, FilterKind, PivotTable, SortOrder, Top10By};
 use opensheet_engine::{Locale, Rect};
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::Instant;
 
 /// Width of the drop-down and of its submenus.
 const WIDTH: f32 = 264.0;
@@ -52,10 +51,12 @@ struct FieldState {
     filtered: bool,
     sort: SortOrder,
     label_test: Option<LabelTest>,
-    /// The field has a value filter; `Some(true)` when it is a Top 10.
+    /// The value filter of the field, if it has one: its test, or `None`
+    /// for a Top 10.
     value_filter: Option<Option<ValueTest>>,
-    /// How the sort entries are worded: 0 text, 1 numbers, 2 dates.
-    kind: u8,
+    /// How the two sort entries are worded ("Sort A to Z", "Sort Smallest
+    /// to Largest"...).
+    sort_labels: (&'static str, &'static str),
     has_values: bool,
 }
 
@@ -74,15 +75,6 @@ impl FieldState {
             .iter()
             .map(|item| CheckItem::new(pivot.item_text(field, *item, locale), !hidden(*item)))
             .collect();
-        let source = pivot.cache.database_field(field);
-        let grouped = pivot.cache.fields.get(field).is_some_and(|f| f.group.is_some());
-        let kind = if grouped || !pivot.cache.is_numeric(source) {
-            0
-        } else if pivot.cache.is_date(source) {
-            2
-        } else {
-            1
-        };
         FieldState {
             field,
             caption: pivot.field_caption(field).to_string().into(),
@@ -98,7 +90,7 @@ impl FieldState {
                 FilterKind::Value { test, .. } => Some(ValueTest::of(test).0),
                 _ => None,
             }),
-            kind,
+            sort_labels: logic::sort_labels(pivot, field),
             has_values: !pivot.data_fields.is_empty(),
         }
     }
@@ -118,18 +110,33 @@ pub(super) struct DropDown {
     anchor: Point<Pixels>,
     /// Where the drop-down was painted, to choose the side of a submenu.
     bounds: Rc<Cell<Bounds<Pixels>>>,
-    /// Set when a press lands outside the drop-down (which closes it).
-    closed: Rc<Cell<Option<Instant>>>,
+    /// Where a press outside the drop-down (which closes it) landed.
+    closed: Dismissed,
 }
 
-/// Open the drop-down of the button in a cell, or close it when it is the
-/// one that was open.
-pub(super) fn toggle_drop_down(app: &mut ExcelApp, id: u32, row: u32, col: u32, window: &mut Window, cx: &mut Cx) {
+/// Open the drop-down of the button in a cell. `press`: where the button
+/// was pressed (`None` from the keyboard); when that very press has just
+/// closed the drop-down of this button, it stays closed.
+pub(super) fn toggle_drop_down(
+    app: &mut ExcelApp,
+    id: u32,
+    row: u32,
+    col: u32,
+    press: Option<Point<Pixels>>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    if !app.may(Intent::UsePivotTable, cx) {
+        return;
+    }
     let ui = app.ext_mut::<PivotUi>();
     let closed = ui.filter_closed.clone();
     let same = ui.open_filter == Some((row, col));
     ui.open_filter = Some((row, col));
-    if just_closed(&closed) && same {
+    // An older dismissal is forgotten either way.
+    let dismissed_here = press.is_some_and(|at| just_closed(&closed, at));
+    closed.set(None);
+    if dismissed_here && same {
         app.ext_mut::<PivotUi>().open_filter = None;
         return;
     }
@@ -551,17 +558,7 @@ impl Render for DropDown {
         }
 
         if !state.page {
-            let (ascending, descending) = match state.kind {
-                1 => (
-                    t("Sort Smallest to Largest", "Trier du plus petit au plus grand"),
-                    t("Sort Largest to Smallest", "Trier du plus grand au plus petit"),
-                ),
-                2 => (
-                    t("Sort Oldest to Newest", "Trier du plus ancien au plus récent"),
-                    t("Sort Newest to Oldest", "Trier du plus récent au plus ancien"),
-                ),
-                _ => (t("Sort A to Z", "Trier de A à Z"), t("Sort Z to A", "Trier de Z à A")),
-            };
+            let (ascending, descending) = state.sort_labels;
             top.push(self.menu_row(
                 "sort-asc",
                 Some("sort-asc"),
@@ -710,7 +707,7 @@ impl Render for DropDown {
             .text_size(px(12.5))
             // A press outside closes the drop-down; when it lands on the
             // button it hangs from, that button must not open it again.
-            .on_mouse_down_out(move |_, _, _| closed.set(Some(Instant::now())))
+            .on_mouse_down_out(move |ev, _, _| closed.set(Some(ev.position)))
             .on_action(cx.listener(|this, _: &widgets::Accept, window, cx| this.ok(&(), window, cx)))
             .on_action(cx.listener(|this, _: &crate::text_input::Enter, window, cx| this.ok(&(), window, cx)))
             .child(

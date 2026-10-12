@@ -318,7 +318,7 @@ pub(super) fn mouse_down(
         MouseButton::Left if app.is_editing() => ZoneResponse::Ignored,
         MouseButton::Left => match button {
             Some(button) => {
-                press_button(app, button, window, cx);
+                press_button(app, button, ev, window, cx);
                 ZoneResponse::Handled
             }
             None if ev.click_count >= 2 => double_click(app, row, col, window, cx),
@@ -328,10 +328,12 @@ pub(super) fn mouse_down(
     }
 }
 
-fn press_button(app: &mut ExcelApp, zone: &ButtonZone, window: &mut Window, cx: &mut Cx) {
+fn press_button(app: &mut ExcelApp, zone: &ButtonZone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
     app.select_cell(zone.row, zone.col, cx);
     match zone.button {
-        PivotButton::Filter { .. } => filter::toggle_drop_down(app, zone.pivot, zone.row, zone.col, window, cx),
+        PivotButton::Filter { .. } => {
+            filter::toggle_drop_down(app, zone.pivot, zone.row, zone.col, Some(ev.position), window, cx)
+        }
         PivotButton::Expand | PivotButton::Collapse => {
             let cell = app.wb.pivot_cell(app.sheet, zone.row, zone.col);
             if let Some((field, item)) = cell.and_then(|cell| cell.field.zip(cell.item)) {

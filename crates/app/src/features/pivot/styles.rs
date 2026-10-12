@@ -2,7 +2,7 @@
 //! the styles themselves, in the ribbon and in the drop-down that shows
 //! all of them.
 
-use super::{Cmd, PivotUi, active_pivot, just_closed, update};
+use super::{Cmd, Dismissed, PivotUi, active_pivot, just_closed, update};
 use crate::app::ExcelApp;
 use crate::features::{Command, Cx};
 use crate::i18n::t;
@@ -11,9 +11,6 @@ use crate::widgets::{Sketch, icon, label, preview, tooltip};
 use gpui::{AnyElement, Context, FontWeight, SharedString, WeakEntity, Window, div, point, prelude::*, px};
 use opensheet_engine::pivot::PivotStyle;
 use opensheet_engine::style::StylePatch;
-use std::cell::Cell;
-use std::rc::Rc;
-use std::time::Instant;
 
 /// Size of a thumbnail, and how many make a row of the gallery.
 const THUMB_W: f32 = 52.0;
@@ -166,13 +163,14 @@ struct Gallery {
     app: WeakEntity<ExcelApp>,
     pivot: u32,
     options: PivotStyle,
-    /// Set when a press lands outside the gallery (which closes it).
-    closed: Rc<Cell<Option<Instant>>>,
+    /// Where a press outside the gallery (which closes it) landed.
+    closed: Dismissed,
 }
 
 pub(super) fn open_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    // The press of this very click may have just closed the gallery.
     let closed = app.ext_mut::<PivotUi>().gallery_closed.clone();
-    if just_closed(&closed) {
+    if just_closed(&closed, window.mouse_position()) {
         return;
     }
     let Some(pivot) = active_pivot(app) else {
@@ -272,7 +270,7 @@ impl Render for Gallery {
             .text_size(px(12.))
             // A press outside closes the gallery; when it lands on the
             // button it hangs from, that button must not open it again.
-            .on_mouse_down_out(move |_, _, _| closed.set(Some(Instant::now())))
+            .on_mouse_down_out(move |ev, _, _| closed.set(Some(ev.position)))
             .child(
                 div()
                     .id("pivot-style-gallery")
