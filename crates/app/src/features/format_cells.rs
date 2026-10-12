@@ -306,6 +306,37 @@ pub fn open_partial(
     });
 }
 
+/// Open the dialog with its Number tab alone, for a number format that is
+/// not a cell's (the values of a PivotTable field). It opens on `code`,
+/// shows `sample` formatted, and `on_ok` receives the code the user leaves
+/// the dialog with; nothing is applied to the workbook.
+pub fn open_number_format(
+    app: &mut ExcelApp,
+    code: &str,
+    sample: Value,
+    window: &mut Window,
+    cx: &mut Cx,
+    on_ok: impl Fn(&str, &mut Window, &mut App) + 'static,
+) {
+    let base = StylePatch {
+        num_fmt: Some(Arc::from(code)),
+        ..StylePatch::default()
+    };
+    let mut state = Opening::partial(app, &base, TAB_NUMBER);
+    state.sample = sample;
+    app.open_modal(window, cx, move |modal, _, cx| {
+        let mut dialog = Dialog::new(modal, state, cx);
+        dialog.number_only = true;
+        dialog.partial = Some(Partial {
+            base,
+            on_ok: Rc::new(move |format, window, cx| {
+                on_ok(format.num_fmt.as_deref().unwrap_or("General"), window, cx)
+            }),
+        });
+        dialog
+    });
+}
+
 /// The border along each edge of a range: `None` where its cells disagree.
 fn edges_of(app: &ExcelApp, range: Rect) -> [Option<Border>; 6] {
     let sheet = &app.wb.sheets[app.sheet];
@@ -619,6 +650,9 @@ struct Dialog {
 
     /// Set when the dialog edits a partial format rather than the selection.
     partial: Option<Partial>,
+    /// The partial format is a number format: the Number tab shows alone
+    /// (see `open_number_format`).
+    number_only: bool,
 }
 
 /// A size in points as the Size box shows it.
@@ -725,6 +759,7 @@ impl Dialog {
             hidden: Prop::of(styles, |s| s.hidden),
             fonts: open.fonts,
             partial: None,
+            number_only: false,
             modal,
         }
     }
@@ -1858,6 +1893,7 @@ impl Render for Dialog {
         ];
         // The tabs on show, as indexes into `names`.
         let shown: Vec<usize> = match self.partial {
+            Some(_) if self.number_only => vec![TAB_NUMBER],
             Some(_) => PARTIAL_TABS.to_vec(),
             None => (0..names.len()).collect(),
         };
@@ -1866,7 +1902,7 @@ impl Render for Dialog {
         let footer = div()
             .flex()
             .gap(px(8.))
-            .when(self.partial.is_some(), |d| {
+            .when(self.partial.is_some() && !self.number_only, |d| {
                 d.child(
                     widgets::Button::new("clear", t("Clear", "Effacer"))
                         .on_click(cx.listener(|this, _, _, cx| this.clear_tab(cx))),
