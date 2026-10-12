@@ -22,6 +22,7 @@ pub mod flashfill;
 pub mod format;
 pub mod functions;
 pub mod hyperlink;
+pub mod ink;
 pub mod input;
 pub mod locale;
 pub mod metrics;
