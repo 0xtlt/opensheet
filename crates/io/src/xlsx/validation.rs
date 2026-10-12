@@ -50,7 +50,7 @@ const NS_XM: &str = "http://schemas.microsoft.com/office/excel/2006/main";
 
 /// The ranges of a `sqref`: references separated by spaces. A reference
 /// that makes no sense is left out, and so is one that was already given.
-fn parse_sqref(text: &str) -> Vec<Rect> {
+pub(crate) fn parse_sqref(text: &str) -> Vec<Rect> {
     let mut seen = HashSet::new();
     text.split_whitespace()
         .filter_map(Rect::parse)
@@ -173,7 +173,7 @@ pub(crate) fn read<'a>(r: &mut Reader<'a>, container: &Tag<'a>, sheet: &mut Shee
 
 /// Whether a formula names a sheet, which the plain form cannot. (A sheet
 /// that is gone is not named: what pointed at it is written `#REF!`.)
-fn names_a_sheet(expr: &Expr, wb: &Workbook) -> bool {
+pub(crate) fn names_a_sheet(expr: &Expr, wb: &Workbook) -> bool {
     let exists = |sheet: &str| wb.sheet_index(sheet).is_some();
     let mut found = false;
     expr.walk(&mut |e| {

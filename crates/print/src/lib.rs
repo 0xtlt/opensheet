@@ -139,8 +139,20 @@ impl PrintJob<'_> {
 pub struct PlannedPage {
     /// Index into `PrintPlan::sheets`.
     pub part: usize,
-    /// Index into that part's `pagination.pages`.
+    /// Index into that part's `pagination.pages`, or into its `notes`
+    /// for a page of notes.
     pub page: usize,
+    /// The page lists the notes and comments of the sheet ("At end of
+    /// sheet") instead of showing cells.
+    pub notes: bool,
+}
+
+/// One line of a page of notes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NotesLine {
+    pub text: String,
+    /// The line naming the cell.
+    pub bold: bool,
 }
 
 /// One sheet of a job, paginated.
@@ -148,6 +160,9 @@ pub struct PlannedPage {
 pub struct PlannedSheet {
     pub sheet: usize,
     pub pagination: Pagination,
+    /// The pages printed after the sheet's own when its notes print "At
+    /// end of sheet": the lines of each.
+    pub notes: Vec<Vec<NotesLine>>,
 }
 
 /// The pages a job prints.
@@ -164,16 +179,24 @@ pub struct PrintPlan {
 }
 
 impl PrintPlan {
-    /// The sheet index, pagination and page of a page of the job.
+    /// The sheet index, pagination and page of a page of the job; `None`
+    /// for a page of notes, which shows no cells.
     pub fn page(&self, index: usize) -> Option<(usize, &Pagination, &Page)> {
-        let planned = self.pages.get(index)?;
+        let planned = self.pages.get(index).filter(|planned| !planned.notes)?;
         let part = self.sheets.get(planned.part)?;
         Some((part.sheet, &part.pagination, part.pagination.pages.get(planned.page)?))
     }
 
+    /// The sheet a page of the job belongs to.
+    pub fn sheet_of(&self, index: usize) -> Option<usize> {
+        let planned = self.pages.get(index)?;
+        self.sheets.get(planned.part).map(|part| part.sheet)
+    }
+
     /// Paper width and height of a page in points.
     pub fn paper(&self, index: usize) -> Option<(f64, f64)> {
-        self.page(index).map(|(_, pagination, _)| pagination.paper)
+        let planned = self.pages.get(index)?;
+        self.sheets.get(planned.part).map(|part| part.pagination.paper)
     }
 }
 
@@ -205,13 +228,19 @@ pub fn plan(wb: &Workbook, job: &PrintJob) -> PrintPlan {
                 measure: Some(job.font_db()),
             },
         );
+        let notes = render::notes_pages(wb, sheet, &pagination, job.font_db());
         if let Some(last) = pagination.last_number() {
-            next_number = Some(last + 1);
+            next_number = Some(last + 1 + notes.len() as i32);
         }
         let part = out.sheets.len();
-        out.pages
-            .extend((0..pagination.pages.len()).map(|page| PlannedPage { part, page }));
-        out.sheets.push(PlannedSheet { sheet, pagination });
+        let pages = |count: usize, notes: bool| (0..count).map(move |page| PlannedPage { part, page, notes });
+        out.pages.extend(pages(pagination.pages.len(), false));
+        out.pages.extend(pages(notes.len(), true));
+        out.sheets.push(PlannedSheet {
+            sheet,
+            pagination,
+            notes,
+        });
     }
     // With a first page number of 5, three pages read "5 of 7".
     let first_number = out.page(0).map_or(1, |(_, _, page)| page.number);
@@ -236,7 +265,30 @@ pub fn plan(wb: &Workbook, job: &PrintJob) -> PrintPlan {
 /// the plan has no such page.
 pub fn render_page(wb: &Workbook, job: &PrintJob, plan: &PrintPlan, index: usize) -> Option<Scene> {
     let planned = plan.pages.get(index)?;
-    let (sheet, pagination, page) = plan.page(index)?;
+    let part = plan.sheets.get(planned.part)?;
+    let (sheet, pagination) = (part.sheet, &part.pagination);
+    // A page of notes is numbered after the sheet's own pages and has no
+    // cells: it stands at the top-left corner of the printable area.
+    let notes_page;
+    let page = if planned.notes {
+        let cells = pagination.pages.len();
+        notes_page = Page {
+            index: cells + planned.page,
+            number: pagination.last_number().unwrap_or(0) + 1 + planned.page as i32,
+            range: 0,
+            col_band: 0,
+            row_band: 0,
+            rows: (0, 0),
+            cols: (0, 0),
+            title_rows: None,
+            title_cols: None,
+            origin: (pagination.printable.0, pagination.printable.1),
+            size: (0.0, 0.0),
+        };
+        &notes_page
+    } else {
+        pagination.pages.get(planned.page)?
+    };
     let page_job = render::PageJob {
         wb,
         sheet,
@@ -253,9 +305,13 @@ pub fn render_page(wb: &Workbook, job: &PrintJob, plan: &PrintPlan, index: usize
             sheet_name: &wb.sheets.get(sheet)?.name,
             locale: wb.locale,
         },
-        first_of_sheet: planned.page == 0,
+        first_of_sheet: planned.page == 0 && !planned.notes,
     };
-    Some(render::render(&page_job))
+    Some(if planned.notes {
+        render::render_notes(&page_job, part.notes.get(planned.page)?)
+    } else {
+        render::render(&page_job)
+    })
 }
 
 /// Print a job as a PDF file. A job with nothing to print gives a PDF
