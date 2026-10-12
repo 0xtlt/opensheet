@@ -31,6 +31,7 @@ pub mod refs;
 pub mod structured;
 pub mod style;
 pub mod table;
+pub mod text_columns;
 pub mod validation;
 pub mod value;
 pub mod workbook;
