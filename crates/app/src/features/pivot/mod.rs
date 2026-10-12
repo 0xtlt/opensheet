@@ -19,6 +19,7 @@
 //! data, fits the columns, and commits one undo step.
 
 mod actions;
+mod calculated;
 mod create;
 mod dialogs;
 mod filter;
@@ -137,7 +138,8 @@ impl Command for Cmd {
             // the dialog opens at once.
             Cmd::Insert if app.command_anchor == Some("in-pivot") => menus::insert_menu(app, window, cx),
             Cmd::Insert | Cmd::Recommended => create::open_create(app, window, cx),
-            Cmd::CalculatedFields | Cmd::PivotChart => app.not_implemented(self.label(), cx),
+            Cmd::CalculatedFields => calculated::menu(app, window, cx),
+            Cmd::PivotChart => app.not_implemented(self.label(), cx),
             Cmd::Options => menus::options_menu(app, window, cx),
             Cmd::FieldSettings => dialogs::open_settings(app, window, cx),
             Cmd::ExpandField => actions::collapse_active_field(app, false, window, cx),
