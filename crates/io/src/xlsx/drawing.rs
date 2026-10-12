@@ -26,11 +26,10 @@
 //! shape as it stands, width and height exchanged, where `a:xfrm` keeps
 //! the box before rotation.
 
-use super::chart::read::parse_solid_fill;
 use super::chart::write::Drawing as DrawingPart;
-use super::color::Palette;
+use super::color::{Palette, adjust_luminance, parse_rgb};
 use super::parts::{Extras, push_relationship};
-use super::read::{Package, relationships};
+use super::read::{Package, Rel, relationships};
 use super::write::{NS_DOC_REL, NS_PKG_REL};
 use super::xml::{Event, Reader, Tag, XML_DECL, push_attr, push_text};
 use opensheet_engine::drawing::{
@@ -267,9 +266,22 @@ fn is_connector(shape: &Shape) -> bool {
             .is_some_and(|line| line.start != LineEnd::None || line.end != LineEnd::None)
 }
 
-fn push_locks(x: &mut String, element: &str, drawing: &Drawing) {
+/// The properties of an object that are not drawn (`xdr:cNvSpPr` and its
+/// like): only the lock of its proportions is kept.
+fn push_non_visual(
+    x: &mut String,
+    element: &str,
+    attributes: &str,
+    locks: &str,
+    drawing: &Drawing,
+) {
     if drawing.lock_aspect {
-        w!(x, "<a:{element} noChangeAspect=\"1\"/>");
+        w!(
+            x,
+            "<xdr:{element}{attributes}><a:{locks} noChangeAspect=\"1\"/></xdr:{element}>"
+        );
+    } else {
+        w!(x, "<xdr:{element}{attributes}/>");
     }
 }
 
@@ -277,9 +289,8 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     if is_connector(shape) {
         x.push_str("<xdr:cxnSp macro=\"\"><xdr:nvCxnSpPr>");
         push_identity(x, drawing, id);
-        x.push_str("<xdr:cNvCxnSpPr>");
-        push_locks(x, "cxnSpLocks", drawing);
-        x.push_str("</xdr:cNvCxnSpPr></xdr:nvCxnSpPr><xdr:spPr>");
+        push_non_visual(x, "cNvCxnSpPr", "", "cxnSpLocks", drawing);
+        x.push_str("</xdr:nvCxnSpPr><xdr:spPr>");
         push_xfrm(x, drawing, frame);
         x.push_str("<a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom>");
         push_outline(x, shape.outline.as_ref());
@@ -288,13 +299,9 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     }
     x.push_str("<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr>");
     push_identity(x, drawing, id);
-    x.push_str("<xdr:cNvSpPr");
-    if shape.text_box {
-        x.push_str(" txBox=\"1\"");
-    }
-    x.push('>');
-    push_locks(x, "spLocks", drawing);
-    x.push_str("</xdr:cNvSpPr></xdr:nvSpPr><xdr:spPr>");
+    let text_box = if shape.text_box { " txBox=\"1\"" } else { "" };
+    push_non_visual(x, "cNvSpPr", text_box, "spLocks", drawing);
+    x.push_str("</xdr:nvSpPr><xdr:spPr>");
     push_xfrm(x, drawing, frame);
     w!(
         x,
@@ -315,11 +322,10 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
 fn push_picture(x: &mut String, drawing: &Drawing, id: usize, frame: Frame, image: usize) {
     x.push_str("<xdr:pic><xdr:nvPicPr>");
     push_identity(x, drawing, id);
-    x.push_str("<xdr:cNvPicPr>");
-    push_locks(x, "picLocks", drawing);
+    push_non_visual(x, "cNvPicPr", "", "picLocks", drawing);
     w!(
         x,
-        "</xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr>"
+        "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr>"
     );
     push_xfrm(x, drawing, frame);
     x.push_str("<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>");
@@ -492,6 +498,123 @@ fn parse_corner<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Corner {
     ((row, col), (dx as f32, dy as f32))
 }
 
+/// Where the colours of a theme are in the palette, by the names shapes
+/// call them.
+fn scheme_slot(name: &str) -> Option<usize> {
+    Some(match name {
+        "dk1" | "tx1" => 0,
+        "lt1" | "bg1" => 1,
+        "dk2" | "tx2" => 2,
+        "lt2" | "bg2" => 3,
+        "accent1" => 4,
+        "accent2" => 5,
+        "accent3" => 6,
+        "accent4" => 7,
+        "accent5" => 8,
+        "accent6" => 9,
+        "hlink" => 10,
+        "folHlink" => 11,
+        _ => return None,
+    })
+}
+
+/// A colour channel as light: shades and tints are mixed there, which is
+/// why "accent 1, 15 % shade" is not 15 % of its numbers.
+fn to_linear(channel: u32) -> f64 {
+    let v = channel as f64 / 255.0;
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn from_linear(light: f64) -> u32 {
+    let light = light.clamp(0.0, 1.0);
+    let v = if light <= 0.003_130_8 {
+        light * 12.92
+    } else {
+        1.055 * light.powf(1.0 / 2.4) - 0.055
+    };
+    (v * 255.0).round().clamp(0.0, 255.0) as u32
+}
+
+/// Keep `amount` of the light of a colour and fill the rest with black
+/// (`toward` 0) or white (`toward` 1): `<a:shade>` and `<a:tint>`.
+fn mix_light(rgb: u32, amount: f64, toward: f64) -> u32 {
+    let channel = |shift: u32| {
+        let light = to_linear((rgb >> shift) & 0xFF) * amount + toward * (1.0 - amount);
+        from_linear(light) << shift
+    };
+    channel(16) | channel(8) | channel(0)
+}
+
+/// The colour an element holds (`<a:solidFill>`, a reference of a style,
+/// a stop of a gradient): given outright or by its place in the theme,
+/// lightened or darkened by the adjustments nested in it. Transparency is
+/// ignored.
+fn parse_color<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<Color> {
+    let mut color = None;
+    each_child(r, tag, |r, t| {
+        let mut rgb = match t.name {
+            "srgbClr" => t.attr("val").and_then(|v| parse_rgb(&v)),
+            "schemeClr" => t
+                .attr("val")
+                .and_then(|v| scheme_slot(&v))
+                .map(|slot| palette.theme[slot]),
+            "sysClr" => t.attr("lastClr").and_then(|v| parse_rgb(&v)).or_else(|| {
+                match t.attr("val").as_deref() {
+                    Some("windowText") => Some(0x000000),
+                    Some("window") => Some(0xFFFFFF),
+                    _ => None,
+                }
+            }),
+            // Light, in thousandths of a percent.
+            "scrgbClr" => {
+                let channel = |name: &str| t.attr_f64(name).map(|v| from_linear(v / 100_000.0));
+                match (channel("r"), channel("g"), channel("b")) {
+                    (Some(r), Some(g), Some(b)) => Some((r << 16) | (g << 8) | b),
+                    _ => None,
+                }
+            }
+            "prstClr" => match t.attr("val").as_deref() {
+                Some("black") => Some(0x000000),
+                Some("white") => Some(0xFFFFFF),
+                _ => None,
+            },
+            _ => None,
+        };
+        // Lightness is scaled, then shifted.
+        let (mut scale, mut shift) = (1.0, 0.0);
+        each_child(r, t, |r, adjustment| {
+            let amount = adjustment
+                .attr_f64("val")
+                .filter(|v| v.is_finite())
+                .map(|v| (v / 100_000.0).clamp(0.0, 1.0));
+            if let (Some(base), Some(amount)) = (rgb, amount) {
+                match adjustment.name {
+                    "lumMod" => {
+                        scale *= amount;
+                        shift *= amount;
+                    }
+                    "lumOff" => shift += amount,
+                    "tint" => rgb = Some(mix_light(base, amount, 1.0)),
+                    "shade" => rgb = Some(mix_light(base, amount, 0.0)),
+                    _ => {}
+                }
+            }
+            r.skip(adjustment);
+        });
+        if (scale, shift) != (1.0, 0.0) {
+            rgb = rgb.map(|base| adjust_luminance(base, scale, shift));
+        }
+        if color.is_none() {
+            color = rgb.map(Color);
+        }
+    });
+    color
+}
+
 /// How a file paints a surface or a line.
 #[derive(Clone, Copy, Default)]
 enum Paint {
@@ -512,12 +635,12 @@ fn parse_paint<'a>(r: &mut Reader<'a>, t: &Tag<'a>, palette: &Palette, paint: &m
             *paint = Paint::Nothing;
             r.skip(t);
         }
-        "solidFill" => *paint = color(parse_solid_fill(r, t, palette)),
+        "solidFill" => *paint = color(parse_color(r, t, palette)),
         "gradFill" => {
             let mut first = None;
             each_child(r, t, |r, list| {
                 each_child(r, list, |r, stop| {
-                    let found = parse_solid_fill(r, stop, palette);
+                    let found = parse_color(r, stop, palette);
                     first = first.or(found);
                 });
             });
@@ -526,7 +649,7 @@ fn parse_paint<'a>(r: &mut Reader<'a>, t: &Tag<'a>, palette: &Palette, paint: &m
         "pattFill" => {
             let mut foreground = None;
             each_child(r, t, |r, c| match c.name {
-                "fgClr" => foreground = parse_solid_fill(r, c, palette),
+                "fgClr" => foreground = parse_color(r, c, palette),
                 _ => r.skip(c),
             });
             *paint = color(foreground);
@@ -579,6 +702,46 @@ fn parse_line<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawLi
     line
 }
 
+/// What the theme of a workbook gives its shapes.
+struct Theme<'a> {
+    palette: &'a Palette,
+    /// The widths of its three line styles, in points.
+    line_widths: [f32; 3],
+}
+
+/// The line styles of the Office themes up to 2022, for a workbook
+/// without a theme part.
+const LINE_WIDTHS: [f32; 3] = [0.5, 1.0, 1.5];
+
+/// The widths of the line styles of a theme part (`a:lnStyleLst`).
+fn parse_line_widths(xml: &str) -> [f32; 3] {
+    let mut widths = LINE_WIDTHS;
+    let mut r = Reader::new(xml);
+    loop {
+        match r.next() {
+            Event::Open(t) => match t.name {
+                "theme" | "themeElements" | "fmtScheme" => {}
+                "lnStyleLst" => {
+                    let mut n = 0;
+                    each_child(&mut r, &t, |r, line| {
+                        let width = line.attr_f64("w").filter(|w| w.is_finite() && *w >= 0.0);
+                        if let (Some(width), Some(slot)) = (width, widths.get_mut(n)) {
+                            *slot = (width / EMU_PER_PT).min(1584.0) as f32;
+                        }
+                        n += 1;
+                        r.skip(line);
+                    });
+                    break;
+                }
+                _ => r.skip(&t),
+            },
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    widths
+}
+
 /// `<xdr:style>`: what the theme gives a shape where it says nothing
 /// itself. Only the colours are followed, and the width of the line.
 #[derive(Clone, Copy, Default)]
@@ -588,19 +751,20 @@ struct RawStyle {
     text: Option<Color>,
 }
 
-fn parse_style<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawStyle {
+fn parse_style<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawStyle {
     let mut style = RawStyle::default();
     each_child(r, tag, |r, t| {
         // The first entry of the theme's lists is number 1; 0 is none.
         let idx = t.attr_u32("idx").unwrap_or(0);
         match t.name {
             "lnRef" => {
-                let color = parse_solid_fill(r, t, palette);
-                let width = [0.5, 1.0, 1.5][idx.clamp(1, 3) as usize - 1];
+                let color = parse_color(r, t, theme.palette);
+                let width = theme.line_widths[idx.clamp(1, 3) as usize - 1];
                 style.line = color.filter(|_| idx > 0).map(|color| (color, width));
             }
-            "fillRef" => style.fill = parse_solid_fill(r, t, palette).filter(|_| idx > 0),
-            "fontRef" => style.text = parse_solid_fill(r, t, palette),
+            "fillRef" => style.fill = parse_color(r, t, theme.palette).filter(|_| idx > 0),
+            // Black from the theme is the automatic colour of text.
+            "fontRef" => style.text = parse_color(r, t, theme.palette).filter(|color| color.0 != 0),
             _ => r.skip(t),
         }
     });
@@ -809,7 +973,8 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawObject> {
     Some(object)
 }
 
-fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawObject {
+fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObject {
+    let palette = theme.palette;
     let connector = tag.name == "cxnSp";
     let mut object = RawObject::new(RawKind::Picture(String::new()));
     let mut text_box = false;
@@ -831,7 +996,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawO
             "ln" => line = Some(parse_line(r, c, palette)),
             _ => parse_paint(r, c, palette, &mut fill),
         }),
-        "style" => style = parse_style(r, t, palette),
+        "style" => style = parse_style(r, t, theme),
         "txBody" => text = parse_text(r, t, palette),
         _ => r.skip(t),
     });
@@ -910,21 +1075,21 @@ const MAX_NESTING: usize = 4;
 fn parse_content<'a>(
     r: &mut Reader<'a>,
     t: &Tag<'a>,
-    palette: &Palette,
+    theme: &Theme,
     depth: usize,
     object: &mut Option<RawObject>,
 ) {
     match t.name {
         "pic" if object.is_none() => *object = parse_picture(r, t),
-        "sp" | "cxnSp" if object.is_none() => *object = Some(parse_shape(r, t, palette)),
+        "sp" | "cxnSp" if object.is_none() => *object = Some(parse_shape(r, t, theme)),
         "AlternateContent" | "Choice" if depth < MAX_NESTING => {
-            each_child(r, t, |r, c| parse_content(r, c, palette, depth + 1, object))
+            each_child(r, t, |r, c| parse_content(r, c, theme, depth + 1, object))
         }
         _ => r.skip(t),
     }
 }
 
-fn parse_anchor<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawAnchor {
+fn parse_anchor<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawAnchor {
     let mut anchor = RawAnchor {
         placement: match tag.name {
             "oneCellAnchor" => Placement::MoveOnly,
@@ -962,14 +1127,14 @@ fn parse_anchor<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Raw
             anchor.print = t.attr_bool("fPrintsWithSheet").unwrap_or(true);
             r.skip(t);
         }
-        _ => parse_content(r, t, palette, 0, &mut anchor.object),
+        _ => parse_content(r, t, theme, 0, &mut anchor.object),
     });
     anchor
 }
 
 /// The anchors of a drawing part that hold a picture or a shape, in
 /// drawing order.
-fn parse_part(xml: &str, palette: &Palette) -> Vec<RawAnchor> {
+fn parse_part(xml: &str, theme: &Theme) -> Vec<RawAnchor> {
     let mut out = Vec::new();
     let mut r = Reader::new(xml);
     loop {
@@ -977,7 +1142,7 @@ fn parse_part(xml: &str, palette: &Palette) -> Vec<RawAnchor> {
             Event::Open(t) => match t.name {
                 "wsDr" | "AlternateContent" | "Choice" => {}
                 "twoCellAnchor" | "oneCellAnchor" | "absoluteAnchor" => {
-                    let anchor = parse_anchor(&mut r, &t, palette);
+                    let anchor = parse_anchor(&mut r, &t, theme);
                     if anchor.object.is_some() {
                         out.push(anchor);
                     }
@@ -999,13 +1164,22 @@ pub(crate) struct Loader {
     /// The image files read so far, by part name; `None` for those that
     /// are missing or not images the engine shows.
     images: HashMap<String, Option<Picture>>,
+    /// The widths of the line styles of the workbook's theme, in points.
+    line_widths: [f32; 3],
 }
 
 impl Loader {
-    pub fn new() -> Loader {
+    /// `workbook_rels` are the relationships of the workbook part, which
+    /// lead to the theme.
+    pub fn new<R: Read + Seek>(pkg: &mut Package<R>, workbook_rels: &[Rel]) -> Loader {
+        let theme = workbook_rels
+            .iter()
+            .find(|rel| rel.kind == "theme")
+            .and_then(|rel| pkg.read(&rel.target).ok().flatten());
         Loader {
             next_id: 1,
             images: HashMap::new(),
+            line_widths: theme.map_or(LINE_WIDTHS, |xml| parse_line_widths(&xml)),
         }
     }
 
@@ -1035,7 +1209,11 @@ impl Loader {
         let Ok(Some(xml)) = pkg.read(&part) else {
             return;
         };
-        let anchors = parse_part(&xml, palette);
+        let theme = Theme {
+            palette,
+            line_widths: self.line_widths,
+        };
+        let anchors = parse_part(&xml, &theme);
         if anchors.is_empty() {
             return;
         }
@@ -1133,6 +1311,82 @@ mod tests {
         let standing = turned(frame);
         assert_eq!(standing, Frame::new(130.0, 20.0, 20.0, 80.0));
         assert_eq!(turned(standing), frame);
+    }
+
+    #[test]
+    fn colours_of_the_theme_are_shaded_as_light() {
+        // The theme written into every package: the one of Excel today.
+        let palette = Palette {
+            theme: crate::xlsx::theme::COLORS,
+            ..Palette::default()
+        };
+        let color = |xml: &str| {
+            let mut r = Reader::new(xml);
+            let Event::Open(tag) = r.next() else {
+                panic!("no element in {xml}");
+            };
+            parse_color(&mut r, &tag, &palette).map(|color| color.0)
+        };
+        // The outline of Excel's new shapes and of its text boxes: the
+        // colours the engine gives its own.
+        assert_eq!(
+            color(
+                "<a:lnRef idx=\"2\"><a:schemeClr val=\"accent1\"><a:shade val=\"15000\"/></a:schemeClr></a:lnRef>"
+            ),
+            Some(0x042433)
+        );
+        assert_eq!(
+            color(
+                "<a:solidFill><a:schemeClr val=\"lt1\"><a:shade val=\"50000\"/></a:schemeClr></a:solidFill>"
+            ),
+            Some(0xBCBCBC)
+        );
+        assert_eq!(
+            color(
+                "<a:solidFill><a:srgbClr val=\"000000\"><a:tint val=\"50000\"/><a:alpha val=\"30000\"/></a:srgbClr></a:solidFill>"
+            ),
+            Some(0xBCBCBC)
+        );
+        assert_eq!(
+            color(
+                "<a:solidFill><a:schemeClr val=\"accent1\"><a:lumMod val=\"20000\"/><a:lumOff val=\"80000\"/></a:schemeClr></a:solidFill>"
+            ),
+            Some(adjust_luminance(palette.theme[4], 0.2, 0.8))
+        );
+        assert_eq!(
+            color(
+                "<a:fillRef idx=\"0\"><a:scrgbClr r=\"0\" g=\"100000\" b=\"50000\"/></a:fillRef>"
+            ),
+            Some(0x00FFBC)
+        );
+        assert_eq!(
+            color("<a:solidFill><a:sysClr val=\"windowText\" lastClr=\"112233\"/></a:solidFill>"),
+            Some(0x112233)
+        );
+        assert_eq!(
+            color("<a:solidFill><a:prstClr val=\"white\"/></a:solidFill>"),
+            Some(0xFFFFFF)
+        );
+        assert_eq!(
+            color("<a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill>"),
+            None
+        );
+        assert_eq!(color("<a:solidFill/>"), None);
+    }
+
+    #[test]
+    fn line_styles_of_a_theme() {
+        assert_eq!(
+            parse_line_widths(&crate::xlsx::theme::xml()),
+            [1.0, 1.5, 2.0]
+        );
+        assert_eq!(
+            parse_line_widths(
+                "<a:theme><a:themeElements><a:fmtScheme><a:fillStyleLst><a:ln w=\"1\"/></a:fillStyleLst><a:lnStyleLst><a:ln w=\"6350\"/><a:ln/><a:ln w=\"-4\"/><a:ln w=\"38100\"/></a:lnStyleLst>"
+            ),
+            [0.5, 1.0, 1.5]
+        );
+        assert_eq!(parse_line_widths("no theme"), LINE_WIDTHS);
     }
 
     #[test]

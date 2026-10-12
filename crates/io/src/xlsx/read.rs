@@ -1549,7 +1549,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         &styles.palette,
         &wb.styles.get(ctx.style(0)).font,
     );
-    let mut drawings = super::drawing::Loader::new();
+    let mut drawings = super::drawing::Loader::new(&mut pkg, &rels);
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),

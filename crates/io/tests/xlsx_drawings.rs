@@ -649,3 +649,164 @@ fn package_lists_the_drawing_parts() {
             .any(|n| n.contains("drawing") || n.contains("media"))
     );
 }
+
+/// One of each: a picture, a shape with text, an arrow, a text box that
+/// stays where it is.
+fn small() -> Workbook {
+    let mut wb = Workbook::new(Locale::en());
+    let picture = wb.add_picture(0, logo(), (1, 1)).unwrap();
+    change(&mut wb, 0, picture, |d| d.alt_text = "Our logo".to_string());
+    let hello = shape(&mut wb, 0, ShapeTool::Rectangle, (10.0, 5.0, 100.0, 50.0));
+    change(&mut wb, 0, hello, |d| {
+        d.as_shape_mut().unwrap().text = "Hi\nthere".to_string()
+    });
+    shape(&mut wb, 0, ShapeTool::Arrow, (200.0, 40.0, 80.0, 0.0));
+    let note = shape(&mut wb, 0, ShapeTool::TextBox, (300.0, 100.0, 96.0, 48.0));
+    change(&mut wb, 0, note, |d| {
+        d.placement = Placement::Fixed;
+        d.rotation = 90.0;
+        d.lock_aspect = true;
+        d.locked = false;
+        d.print = false;
+    });
+    wb.commit("drawings");
+    wb
+}
+
+/// `<xdr:from>` or `<xdr:to>`: a cell and a distance into it, in pixels.
+fn corner(name: &str, col: u32, x: u32, row: u32, y: u32) -> String {
+    format!(
+        "<xdr:{name}><xdr:col>{col}</xdr:col><xdr:colOff>{}</xdr:colOff><xdr:row>{row}</xdr:row><xdr:rowOff>{}</xdr:rowOff></xdr:{name}>",
+        x * 9525,
+        y * 9525
+    )
+}
+
+#[test]
+fn parts_say_what_the_model_says() {
+    let bytes = to_bytes(&small());
+    // Columns of 64 pixels and rows of 20; a pixel is 9525 EMU, a point
+    // 12700.
+    let run = |color: &str| {
+        format!("{color}<a:latin typeface=\"Aptos Narrow\"/><a:cs typeface=\"Aptos Narrow\"/>")
+    };
+    let white = run("<a:solidFill><a:srgbClr val=\"FFFFFF\"/></a:solidFill>");
+    let expected = [
+        format!("{DECL}<xdr:wsDr xmlns:xdr=\"{XDR}\" xmlns:a=\"{A}\">"),
+        // The picture, 48 × 32 pixels on B2: it moves with its cell and
+        // keeps its size and its proportions.
+        "<xdr:twoCellAnchor editAs=\"oneCell\">".to_string(),
+        corner("from", 1, 0, 1, 0),
+        corner("to", 1, 48, 2, 12),
+        "<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"2\" name=\"Picture 1\" descr=\"Our logo\"/><xdr:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></xdr:cNvPicPr></xdr:nvPicPr>".to_string(),
+        format!("<xdr:blipFill><a:blip xmlns:r=\"{REL}\" r:embed=\"rId1\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>"),
+        "<xdr:spPr><a:xfrm><a:off x=\"609600\" y=\"190500\"/><a:ext cx=\"457200\" cy=\"304800\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>".to_string(),
+        // The rectangle at (10, 5), 100 × 50, with two paragraphs.
+        "<xdr:twoCellAnchor>".to_string(),
+        corner("from", 0, 10, 0, 5),
+        corner("to", 1, 46, 2, 15),
+        "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"3\" name=\"Rectangle 2\"/><xdr:cNvSpPr/></xdr:nvSpPr>".to_string(),
+        "<xdr:spPr><a:xfrm><a:off x=\"95250\" y=\"47625\"/><a:ext cx=\"952500\" cy=\"476250\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"156082\"/></a:solidFill><a:ln w=\"12700\"><a:solidFill><a:srgbClr val=\"042433\"/></a:solidFill></a:ln></xdr:spPr>".to_string(),
+        "<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"ctr\"/><a:lstStyle/>".to_string(),
+        format!("<a:p><a:pPr algn=\"ctr\"/><a:r><a:rPr sz=\"1100\">{white}</a:rPr><a:t>Hi</a:t></a:r></a:p>"),
+        format!("<a:p><a:pPr algn=\"ctr\"/><a:r><a:rPr sz=\"1100\">{white}</a:rPr><a:t>there</a:t></a:r></a:p>"),
+        "</xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor>".to_string(),
+        // The arrow, a connector as Excel's own, from (200, 40) to
+        // (280, 40).
+        "<xdr:twoCellAnchor>".to_string(),
+        corner("from", 3, 8, 2, 0),
+        corner("to", 4, 24, 2, 0),
+        "<xdr:cxnSp macro=\"\"><xdr:nvCxnSpPr><xdr:cNvPr id=\"4\" name=\"Straight Arrow Connector 3\"/><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr>".to_string(),
+        "<xdr:spPr><a:xfrm><a:off x=\"1905000\" y=\"381000\"/><a:ext cx=\"762000\" cy=\"0\"/></a:xfrm><a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom><a:ln w=\"12700\"><a:solidFill><a:srgbClr val=\"156082\"/></a:solidFill><a:tailEnd type=\"triangle\"/></a:ln></xdr:spPr></xdr:cxnSp><xdr:clientData/></xdr:twoCellAnchor>".to_string(),
+        // The text box at (300, 100), 96 × 48, turned on its side: the
+        // anchor holds the box as it stands, 48 × 96 about the same
+        // centre, `xfrm` the box before the turn.
+        "<xdr:twoCellAnchor editAs=\"absolute\">".to_string(),
+        corner("from", 5, 4, 3, 16),
+        corner("to", 5, 52, 8, 12),
+        "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"5\" name=\"TextBox 4\"/><xdr:cNvSpPr txBox=\"1\"><a:spLocks noChangeAspect=\"1\"/></xdr:cNvSpPr></xdr:nvSpPr>".to_string(),
+        "<xdr:spPr><a:xfrm rot=\"5400000\"><a:off x=\"2857500\" y=\"952500\"/><a:ext cx=\"914400\" cy=\"457200\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"FFFFFF\"/></a:solidFill><a:ln w=\"9525\"><a:solidFill><a:srgbClr val=\"BCBCBC\"/></a:solidFill></a:ln></xdr:spPr>".to_string(),
+        "<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"t\"/><a:lstStyle/>".to_string(),
+        format!("<a:p><a:pPr algn=\"l\"/><a:endParaRPr sz=\"1100\">{}</a:endParaRPr></a:p>", run("")),
+        "</xdr:txBody></xdr:sp><xdr:clientData fLocksWithSheet=\"0\" fPrintsWithSheet=\"0\"/></xdr:twoCellAnchor>".to_string(),
+        "</xdr:wsDr>".to_string(),
+    ]
+    .concat();
+    assert_eq!(part(&bytes, "xl/drawings/drawing1.xml"), expected);
+    assert_eq!(
+        part(&bytes, "xl/drawings/_rels/drawing1.xml.rels"),
+        format!(
+            "{DECL}<Relationships xmlns=\"{PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{REL}/image\" Target=\"../media/image1.png\"/></Relationships>"
+        )
+    );
+
+    // In the workbook with everything: what each setting becomes.
+    let bytes = to_bytes(&sample());
+    let shapes = part(&bytes, "xl/drawings/drawing1.xml");
+    for expected in [
+        // Names and descriptions, escaped.
+        "<xdr:cNvPr id=\"2\" name=\"Box &lt;1&gt; &amp; &quot;co&quot;\" descr=\"A box.&#10;With two lines, &lt;tags&gt; &amp; &quot;quotes&quot;.\"/>",
+        // Text: a font, the paragraphs (an empty one keeps the font),
+        // spaces kept.
+        "<a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"b\"/><a:lstStyle/><a:p><a:pPr algn=\"r\"/><a:r><a:rPr sz=\"1400\" b=\"1\" i=\"1\" u=\"sng\" strike=\"sngStrike\"><a:solidFill><a:srgbClr val=\"FFC000\"/></a:solidFill><a:latin typeface=\"Georgia\"/><a:cs typeface=\"Georgia\"/></a:rPr><a:t>Total: 1 &lt; 2 &amp; 3 &gt; 2</a:t></a:r></a:p><a:p><a:pPr algn=\"r\"/><a:endParaRPr sz=\"1400\" b=\"1\" i=\"1\" u=\"sng\" strike=\"sngStrike\">",
+        "<a:t>  third line, indented </a:t>",
+        // No fill, a dashed outline; no outline.
+        "<a:prstGeom prst=\"roundRect\"><a:avLst/></a:prstGeom><a:noFill/><a:ln w=\"28575\"><a:solidFill><a:srgbClr val=\"C00000\"/></a:solidFill><a:prstDash val=\"sysDash\"/></a:ln>",
+        "<a:pPr algn=\"just\"/><a:r><a:rPr sz=\"1100\" u=\"dbl\"><a:latin ",
+        "<a:prstGeom prst=\"ellipse\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"00B050\"/></a:solidFill><a:ln><a:noFill/></a:ln>",
+        "<xdr:cNvSpPr><a:spLocks noChangeAspect=\"1\"/></xdr:cNvSpPr>",
+        // Turns and flips.
+        "<a:xfrm rot=\"1800000\">",
+        "<a:xfrm rot=\"5400000\">",
+        "<a:xfrm rot=\"16200000\">",
+        "<a:xfrm rot=\"12030000\" flipH=\"1\">",
+        "<a:xfrm flipV=\"1\">",
+        "<a:ln w=\"3175\"><a:solidFill><a:srgbClr val=\"7030A0\"/></a:solidFill><a:prstDash val=\"lgDashDotDot\"/></a:ln>",
+        // A line without ends is a shape; arrows are connectors unless
+        // they carry text.
+        "<xdr:cNvPr id=\"15\" name=\"Straight Connector 14\"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm flipV=\"1\">",
+        "<a:prstGeom prst=\"line\"><a:avLst/></a:prstGeom><a:noFill/><a:ln w=\"38100\"><a:solidFill><a:srgbClr val=\"000000\"/></a:solidFill><a:prstDash val=\"dot\"/></a:ln>",
+        "<xdr:cxnSp macro=\"\"><xdr:nvCxnSpPr><xdr:cNvPr id=\"16\" name=\"Straight Arrow Connector 15\"/><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm rot=\"900000\" flipH=\"1\">",
+        "<a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom><a:ln w=\"19050\"><a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill><a:prstDash val=\"dashDot\"/><a:headEnd type=\"oval\"/><a:tailEnd type=\"stealth\"/></a:ln></xdr:spPr></xdr:cxnSp>",
+        "<a:prstGeom prst=\"line\"><a:avLst/></a:prstGeom><a:noFill/><a:ln w=\"12700\"><a:solidFill><a:srgbClr val=\"0070C0\"/></a:solidFill><a:headEnd type=\"diamond\"/><a:tailEnd type=\"arrow\"/></a:ln></xdr:spPr><xdr:txBody>",
+        "<a:t>both ways</a:t>",
+        "<xdr:cNvSpPr txBox=\"1\"/>",
+        "<a:t>Élan &amp; co.</a:t>",
+        "<a:prstGeom prst=\"wedgeRectCallout\"><a:avLst/></a:prstGeom>",
+    ] {
+        assert!(shapes.contains(expected), "{expected}\n{shapes}");
+    }
+    for preset in ShapePreset::ALL {
+        assert!(
+            shapes.contains(&format!("<a:prstGeom prst=\"{}\">", preset.ooxml_name())),
+            "{preset:?}"
+        );
+    }
+    // How each follows the cells, and what is locked or printed.
+    assert_eq!(shapes.matches("<xdr:twoCellAnchor>").count(), 15);
+    assert_eq!(
+        shapes
+            .matches("<xdr:twoCellAnchor editAs=\"oneCell\">")
+            .count(),
+        2
+    );
+    assert_eq!(
+        shapes
+            .matches("<xdr:twoCellAnchor editAs=\"absolute\">")
+            .count(),
+        1
+    );
+    assert_eq!(
+        shapes
+            .matches("<xdr:clientData fLocksWithSheet=\"0\" fPrintsWithSheet=\"0\"/>")
+            .count(),
+        1
+    );
+    assert_eq!(shapes.matches("<xdr:clientData/>").count(), 17);
+    let pictures = part(&bytes, "xl/drawings/drawing2.xml");
+    assert!(pictures.contains(
+        "<xdr:cNvPr id=\"4\" name=\"Picture 3\" descr=\"The logo, on its side\"/><xdr:cNvPicPr/>"
+    ));
+    assert!(pictures.contains("<a:xfrm flipH=\"1\"><a:off "));
+    assert!(pictures.contains("<xdr:clientData fPrintsWithSheet=\"0\"/>"));
+}
