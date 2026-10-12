@@ -3647,6 +3647,7 @@ name = "opensheet"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "image",
  "opensheet_engine",
  "opensheet_io",
  "unicode-segmentation",

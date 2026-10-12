@@ -8,7 +8,7 @@ use crate::app::{Drag, ExcelApp, Hit};
 use crate::features::{self, Intent, ObjectId, ObjectInfo, ObjectVerb, Painter, Placement, ZMove};
 use crate::grid::GridLayout;
 use crate::theme::c;
-use gpui::Context;
+use gpui::{ClipboardItem, Context};
 use opensheet_engine::ops::Direction;
 
 const HANDLE: u32 = 0x8A8A8A;
@@ -96,14 +96,20 @@ impl ExcelApp {
         let objects = features::objects(self, self.sheet);
         for (id, object) in objects.iter().rev() {
             let rect = object_rect(layout, &object.place);
-            if self.object_sel == Some(*id) {
+            let feature = features::all()[id.owner];
+            if self.object_sel == Some(*id) && !feature.object_own_handles(self, id.id) {
                 for (i, (hx, hy)) in handle_points(rect).iter().enumerate() {
                     if (x - hx).abs() <= 6.0 && (y - hy).abs() <= 6.0 {
                         return Some(Hit::ObjectHandle(*id, i as u8));
                     }
                 }
             }
-            if x >= rect.0 && x <= rect.2 && y >= rect.1 && y <= rect.3 {
+            // A feature may know better than the frame (a line, a rotated
+            // shape).
+            let inside = feature
+                .object_hit(self, id.id, layout, x, y)
+                .unwrap_or(x >= rect.0 && x <= rect.2 && y >= rect.1 && y <= rect.3);
+            if inside {
                 return Some(Hit::Object(*id));
             }
         }
@@ -274,6 +280,11 @@ impl ExcelApp {
         };
         self.object_clip = Some((id.owner, data));
         self.clip = None;
+        // Other applications get what the feature offers them (a picture);
+        // what the system clipboard held before is no longer what Paste
+        // means.
+        let item = features::all()[id.owner].object_clipboard(self, id.id);
+        cx.write_to_clipboard(item.unwrap_or_else(|| ClipboardItem::new_string(String::new())));
         if cut {
             self.delete_selected_object(cx);
         }

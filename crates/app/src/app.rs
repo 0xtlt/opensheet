@@ -1613,6 +1613,10 @@ impl ExcelApp {
     }
 
     pub fn paste(&mut self, mode: PasteMode, cx: &mut Context<Self>) {
+        // A picture copied in another application.
+        if mode == PasteMode::All && features::paste_clipboard(self, cx) {
+            return;
+        }
         if self.object_clip.is_some() {
             self.paste_object(cx);
             return;
@@ -1667,6 +1671,12 @@ impl ExcelApp {
 
     /// Apply a formatting change to the whole selection.
     pub fn apply_style(&mut self, label: &str, cx: &mut Context<Self>, f: impl Fn(&mut Style)) {
+        // A selected shape takes the change for its own text.
+        if let Some(id) = self.object_sel {
+            if features::all()[id.owner].object_style(self, id.id, label, &f, cx) {
+                return;
+            }
+        }
         if !self.may_all(Intent::FormatCells, cx) {
             return;
         }
@@ -3160,9 +3170,10 @@ impl EntityInputHandler for ExcelApp {
         if text.chars().all(|c| c.is_control()) {
             return;
         }
-        if self.object_sel.is_some() && self.editing.is_none() {
+        if let (Some(id), None) = (self.object_sel, &self.editing) {
             // Typing with a chart or a picture selected does not go into a
-            // cell.
+            // cell; a shape takes it as its text.
+            features::all()[id.owner].object_typed(self, id.id, text, window, cx);
             return;
         }
         if self.editing.is_some() {
@@ -3481,6 +3492,10 @@ impl ExcelApp {
     pub fn on_cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
         if self.editing.is_some() {
             self.cancel_edit(window, cx);
+            return;
+        }
+        // A tool of a feature waiting for a click on the sheet.
+        if features::cancel(self, cx) {
             return;
         }
         if self.object_sel.is_some() {
