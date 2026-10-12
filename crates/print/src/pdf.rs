@@ -270,7 +270,9 @@ fn content(scene: &Scene, res: &mut Resources) -> String {
                     // A missing bold is the regular outline, thickened.
                     let _ = write!(out, "2 Tr {} RG {} w ", rgb(paint), num(size * 0.03));
                 }
-                let _ = writeln!(out, "1 0 {} -1 {} {} Tm <{hex}> Tj ET", num(slant), num(*x), num(*y));
+                // The rendering mode outlives the text object: put it back.
+                let reset = if bold { " 0 Tr" } else { "" };
+                let _ = writeln!(out, "1 0 {} -1 {} {} Tm <{hex}> Tj{reset} ET", num(slant), num(*x), num(*y));
                 if wrapped {
                     out.push_str("Q\n");
                 }
@@ -403,11 +405,10 @@ fn write_image(objects: &mut Objects, image: &Image) -> usize {
     let size = format!("/Type /XObject /Subtype /Image /Width {} /Height {}", image.width, image.height);
     match &image.pixels {
         Pixels::Jpeg(data) => {
-            // The file is the stream; a reader finds out by itself
-            // whether it is grey or colour from the frame header, but the
-            // dictionary must agree, so say what the components are.
-            let components = jpeg_components(data);
-            let space = match components {
+            // The file is stored as it is; the dictionary only has to
+            // name the colour space of its components. CMYK JPEGs store
+            // their values inverted.
+            let space = match jpeg_components(data) {
                 1 => "/DeviceGray",
                 4 => "/DeviceCMYK /Decode [1 0 1 0 1 0 1 0]",
                 _ => "/DeviceRGB",

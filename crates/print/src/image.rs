@@ -2,7 +2,9 @@
 //! whatever the application paints through `Canvas::image`.
 
 use flate2::read::ZlibDecoder;
+use std::cell::RefCell;
 use std::io::Read;
+use std::sync::Arc;
 
 /// The pixels of an image.
 #[derive(Clone, Debug, PartialEq)]
@@ -57,6 +59,31 @@ impl Image {
             None
         }
     }
+}
+
+/// A picture file and what it decodes to (`None` when it cannot be read).
+type Decoded = (Arc<[u8]>, Option<Arc<Image>>);
+
+thread_local! {
+    /// The pictures decoded last.
+    static DECODED: RefCell<Vec<Decoded>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Decode a picture stored in the workbook. The same picture is on every
+/// page of a header: it is decoded once, and being one image for all the
+/// pages it is also stored once in the PDF.
+pub(crate) fn decode_shared(data: &Arc<[u8]>) -> Option<Arc<Image>> {
+    DECODED.with_borrow_mut(|cache| {
+        if let Some((_, image)) = cache.iter().find(|(source, _)| Arc::ptr_eq(source, data)) {
+            return image.clone();
+        }
+        let image = Image::from_file_bytes(data).map(Arc::new);
+        if cache.len() >= 16 {
+            cache.remove(0);
+        }
+        cache.push((data.clone(), image.clone()));
+        image
+    })
 }
 
 /// Width and height of a JPEG, from its frame header.

@@ -504,8 +504,11 @@ fn drawing_matches_measuring() {
     assert!((x + width - (50.4 + 96.0 - 2.25)).abs() < 1e-6, "{x} {width}");
     // Helvetica at 11 pt: six characters, five digits and a period.
     assert!((width - (5.0 * 556.0 + 278.0) * 0.011).abs() < 1e-6);
-    // The baseline: bottom of row 2, less the padding and the descent.
-    assert!((y - (54.0 + 30.0 - 0.75 - 0.207 * 11.0)).abs() < 1e-6, "{y}");
+    // The baseline: the line (1.22 × 11 pt high, the glyphs in its
+    // middle) stands on the padding at the bottom of row 2.
+    let line = 1.22 * 11.0;
+    let ascent = (line - 0.925 * 11.0) / 2.0 + 0.718 * 11.0;
+    assert!((y - (54.0 + 30.0 - 0.75 - line + ascent)).abs() < 1e-6, "{y}");
     let (text, x, _, _) = texts[1];
     assert_eq!(text, "left");
     assert!((x - (50.4 + 96.0 + 2.25)).abs() < 1e-6);
@@ -513,7 +516,7 @@ fn drawing_matches_measuring() {
     let pdf = print_pdf(&wb, &job);
     let content: Vec<String> = streams(&pdf).into_iter().map(|s| String::from_utf8_lossy(&s).into_owned()).collect();
     let page = content.iter().find(|s| s.contains(" Tm <")).unwrap();
-    assert!(page.contains("1 0 0 -1 110.512 80.973 Tm <313233342E35> Tj"), "{page}");
+    assert!(page.contains("1 0 0 -1 110.512 79.3505 Tm <313233342E35> Tj"), "{page}");
 }
 
 #[test]
@@ -779,4 +782,237 @@ fn embedded_fonts_are_subsets_with_text_maps() {
     assert!(font_file.len() > 1000);
     let width_of_e = face.text_width("e", 1000.0);
     assert!(text.contains(&format!("{}", (width_of_e * 10000.0).round() / 10000.0)), "{width_of_e}");
+}
+
+/// A PNG file of one colour with a darker frame.
+fn png(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
+    use std::io::Write;
+    let mut rows = Vec::new();
+    for y in 0..height {
+        rows.push(0);
+        for x in 0..width {
+            let edge = x == 0 || y == 0 || x == width - 1 || y == height - 1;
+            rows.extend(if edge { rgb.map(|c| c / 2) } else { rgb });
+        }
+    }
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    z.write_all(&rows).unwrap();
+    let data = z.finish().unwrap();
+    let mut out = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let mut header = Vec::new();
+    header.extend(width.to_be_bytes());
+    header.extend(height.to_be_bytes());
+    header.extend([8, 2, 0, 0, 0]);
+    for (kind, body) in [(b"IHDR", &header[..]), (b"IDAT", &data[..]), (b"IEND", &[][..])] {
+        out.extend((body.len() as u32).to_be_bytes());
+        out.extend(kind);
+        out.extend(body);
+        out.extend([0u8; 4]);
+    }
+    out
+}
+
+#[test]
+fn header_pictures_and_other_scripts() {
+    use opensheet_engine::page::{HfPicture, HfSection, HfSlot, HfVariant};
+    let dir = tempfile::tempdir().unwrap();
+    let mut wb = Workbook::new(Locale::en());
+    enter(&mut wb, "A1", "Arrows → ← and symbols Ω ≈ √ ∑");
+    enter(&mut wb, "A2", "汉字 かな 한글");
+    enter(&mut wb, "A3", "Rotated down");
+    style(&mut wb, "A3", |s| {
+        s.rotation = -60;
+        s.v_align = VAlign::Top;
+    });
+    wb.set_row_height(0, 2, Some(90.0));
+    // A merged title that the first page break cuts in two.
+    enter(&mut wb, "I5", "Merged across two pages");
+    wb.merge(0, Rect::parse("I5:L6").unwrap());
+    style(&mut wb, "I5", |s| {
+        s.h_align = HAlign::Center;
+        s.v_align = VAlign::Center;
+        s.fill = Some(Color(0xFFE699));
+    });
+    wb.apply_borders(0, Rect::parse("I5:L6").unwrap(), BorderPreset::Outside, Border {
+        style: BorderStyle::Medium,
+        color: None,
+    });
+    wb.commit("cells");
+    let slot = |section| HfSlot {
+        variant: HfVariant::Odd,
+        footer: false,
+        section,
+    };
+    wb.update_page_setup(0, |p| {
+        p.header_footer.odd_header = "&L&G&CWith a logo&R&G".into();
+        p.header_footer.pictures = vec![
+            HfPicture {
+                slot: slot(HfSection::Left),
+                data: png(40, 20, [30, 120, 200]).into(),
+                size: (60.0, 30.0),
+            },
+            HfPicture {
+                slot: slot(HfSection::Right),
+                data: png(10, 10, [200, 60, 30]).into(),
+                size: (24.0, 24.0),
+            },
+        ];
+    });
+    let fonts = FontDb::standard_only();
+    let mut job = job(PrintWhat::Sheet(0));
+    job.fonts = Some(&fonts);
+    let plan = plan(&wb, &job);
+    // The merged area reaches column L: two pages across.
+    assert_eq!(plan.pages.len(), 2);
+    let scene = render_page(&wb, &job, &plan, 0).unwrap();
+    let images: Vec<RectF> = scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Image { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .collect();
+    // The left picture hangs from the header margin at the left margin;
+    // the right one ends at the right margin.
+    assert_eq!(images.len(), 2);
+    assert!((images[0].x - 50.4).abs() < 1e-9 && (images[0].y - 21.6).abs() < 1e-9);
+    assert_eq!((images[0].w, images[0].h), (60.0, 30.0));
+    assert!((images[1].right() - (612.0 - 50.4)).abs() < 1e-9);
+    // Both pages draw the merged cell's text, each clipped to its part.
+    for index in 0..2 {
+        let scene = render_page(&wb, &job, &plan, index).unwrap();
+        assert!(scene.ops.iter().any(|op| matches!(op, Op::Text { text, .. } if text == "Merged across two pages")));
+    }
+    // With the standard fonts, what Windows Latin 1 lacks is a question
+    // mark; the file is still sound.
+    let pdf = print_pdf(&wb, &job);
+    assert_eq!(page_count(&pdf), 2);
+    assert_eq!(String::from_utf8_lossy(&pdf).matches("/Subtype /Image").count(), 2);
+
+    // With the fonts of this machine, other fonts step in for the
+    // characters the cell's font lacks, where there are any.
+    let system = FontDb::system();
+    job.fonts = None;
+    let pdf = print_pdf(&wb, &job);
+    assert_eq!(page_count(&pdf), 2);
+    let path = save(&dir, "scripts.pdf", &pdf);
+    let face = system.face("Aptos Narrow", false, false);
+    let covered = |text: &str| system.runs(&face, text).iter().all(|(f, run)| run.chars().all(|c| f.has_glyph(c)));
+    if let Some(text) = pdftotext(&path, &[]) {
+        for sample in ["→", "Ω", "汉字", "かな", "한글"] {
+            if covered(sample) {
+                assert!(text.contains(sample), "{sample} missing from:\n{text}");
+            }
+        }
+    }
+}
+
+/// The straight lines of a scene of a given width: (x0, y0, x1, y1).
+fn lines_of(scene: &opensheet_print::Scene, width: f64) -> Vec<(f64, f64, f64, f64)> {
+    use opensheet_print::Segment;
+    scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Stroke { path, stroke } if (stroke.width - width).abs() < 1e-9 => match path.segments[..] {
+                [Segment::MoveTo(x0, y0), Segment::LineTo(x1, y1)] => Some((x0, y0, x1, y1)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn gridlines_give_way_to_text_and_merged_cells() {
+    let mut wb = Workbook::new(Locale::en());
+    enter(&mut wb, "A1", "A long text that flows over its neighbours");
+    enter(&mut wb, "A2", "short");
+    enter(&mut wb, "B4", "merged");
+    wb.merge(0, Rect::parse("B4:C5").unwrap());
+    enter(&mut wb, "E6", "end");
+    wb.update_page_setup(0, |p| p.gridlines = true);
+    wb.commit("cells");
+    let fonts = FontDb::standard_only();
+    let mut job = job(PrintWhat::Sheet(0));
+    job.fonts = Some(&fonts);
+    let plan = plan(&wb, &job);
+    let scene = render_page(&wb, &job, &plan, 0).unwrap();
+    let grid = lines_of(&scene, 0.25);
+    // Columns are 48 pt wide from x = 50.4, rows 15 pt high from y = 54.
+    let col = |c: f64| 50.4 + 48.0 * c;
+    let row = |r: f64| 54.0 + 15.0 * r;
+    let vertical_at = |x: f64, y: f64| grid.iter().any(|l| (l.0 - x).abs() < 1e-6 && (l.2 - x).abs() < 1e-6 && l.1 <= y && y <= l.3);
+    let horizontal_at = |x: f64, y: f64| grid.iter().any(|l| (l.1 - y).abs() < 1e-6 && (l.3 - y).abs() < 1e-6 && l.0 <= x && x <= l.2);
+    // The grid is closed all around A1:E6.
+    assert!(vertical_at(col(0.0), row(0.5)) && vertical_at(col(5.0), row(5.5)));
+    assert!(horizontal_at(col(0.5), row(0.0)) && horizontal_at(col(4.5), row(6.0)));
+    assert!(!vertical_at(col(6.0), row(0.5)));
+    // The text of A1 crosses the lines of the cells it flows over, on
+    // its row only: it is as wide as the font says.
+    let face = fonts.face("Aptos Narrow", false, false);
+    let end = col(0.0) + 2.25 + face.text_width("A long text that flows over its neighbours", 11.0) + 2.25;
+    assert!(end > col(3.0) && end < col(5.0));
+    for c in [1.0, 2.0, 3.0, 4.0] {
+        assert_eq!(vertical_at(col(c), row(0.5)), col(c) >= end, "line after column {c} on row 1");
+        assert!(vertical_at(col(c), row(1.5)), "line after column {c} on row 2");
+    }
+    // No lines inside the merged area, lines around it.
+    assert!(!vertical_at(col(2.0), row(3.5)) && !vertical_at(col(2.0), row(4.5)));
+    assert!(!horizontal_at(col(1.5), row(4.0)) && !horizontal_at(col(2.5), row(4.0)));
+    assert!(horizontal_at(col(0.5), row(4.0)) && horizontal_at(col(3.5), row(4.0)));
+    assert!(vertical_at(col(1.0), row(3.5)) && vertical_at(col(3.0), row(4.5)));
+    assert!(horizontal_at(col(1.5), row(3.0)) && horizontal_at(col(1.5), row(5.0)));
+    // Draft quality leaves the gridlines out.
+    wb.update_page_setup(0, |p| p.draft = true);
+    assert!(lines_of(&render_page(&wb, &job, &plan, 0).unwrap(), 0.25).is_empty());
+}
+
+#[test]
+fn titles_repeat_and_everything_scales() {
+    let mut wb = Workbook::new(Locale::en());
+    enter(&mut wb, "A1", "Title");
+    for r in 1..100u32 {
+        wb.set_cell_text(0, r, 0, &format!("row {}", r + 1)).unwrap();
+    }
+    wb.apply_borders(0, Rect::parse("A1").unwrap(), BorderPreset::Bottom, Border::thin());
+    wb.set_print_titles(0, Some((0, 0)), None);
+    wb.update_page_setup(0, |p| {
+        p.scale = 50;
+        p.headings = true;
+        p.header_footer.odd_header = "&C&20Big".into();
+    });
+    wb.commit("cells");
+    let fonts = FontDb::standard_only();
+    let mut job = job(PrintWhat::Sheet(0));
+    job.fonts = Some(&fonts);
+    let plan = plan(&wb, &job);
+    assert_eq!(plan.pages.len(), 2);
+    let scene = render_page(&wb, &job, &plan, 1).unwrap();
+    let texts: Vec<(&str, f64, f64)> = scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Text { text, size, y, .. } => Some((text.as_str(), *size, *y)),
+            _ => None,
+        })
+        .collect();
+    // The title row comes first on the second page, at half size; so do
+    // the headings and the header (it scales with the document).
+    let title = texts.iter().find(|t| t.0 == "Title").unwrap();
+    assert_eq!(title.1, 5.5);
+    let first_own = plan.page(1).unwrap().2.rows.0;
+    let own = texts.iter().find(|t| t.0 == format!("row {}", first_own + 1)).unwrap();
+    assert!((own.2 - title.2 - 7.5).abs() < 1e-9);
+    assert!(texts.iter().any(|t| t.0 == "A" && t.1 == 5.5));
+    assert!(texts.iter().any(|t| t.0 == "1" && t.1 == 5.5));
+    assert!(texts.iter().any(|t| t.0 == (first_own + 1).to_string()));
+    assert!(texts.iter().any(|t| t.0 == "Big" && t.1 == 10.0));
+    // The thin border under the title is drawn at half its width.
+    assert_eq!(lines_of(&scene, 0.25).len(), 1);
+    // Not scaling the header with the document.
+    wb.update_page_setup(0, |p| p.header_footer.scale_with_doc = false);
+    let scene = render_page(&wb, &job, &plan, 1).unwrap();
+    assert!(scene.ops.iter().any(|op| matches!(op, Op::Text { text, size, .. } if text == "Big" && *size == 20.0)));
 }

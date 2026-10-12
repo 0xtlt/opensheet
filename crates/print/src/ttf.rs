@@ -462,7 +462,8 @@ fn build_font(tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
     out
 }
 
-/// Read the character map: the Unicode subtable with the widest coverage.
+/// Read the character map: the Unicode subtable with the widest coverage,
+/// or the map of a symbol font (Wingdings and the like).
 fn parse_cmap(table: &[u8]) -> HashMap<u32, u16> {
     let count = u16_at(table, 2).unwrap_or(0) as usize;
     let mut best: Option<(u8, usize)> = None;
@@ -479,6 +480,7 @@ fn parse_cmap(table: &[u8]) -> HashMap<u32, u16> {
             (3, 10, 12) | (0, 4 | 6, 12) => 4,
             (3, 1, 4) => 3,
             (0, _, 4) => 2,
+            (3, 0, 4) => 1,
             _ => 0,
         };
         if rank > best.map_or(0, |b| b.0) {
@@ -486,7 +488,7 @@ fn parse_cmap(table: &[u8]) -> HashMap<u32, u16> {
         }
     }
     let mut map = HashMap::new();
-    let Some((_, offset)) = best else {
+    let Some((rank, offset)) = best else {
         return map;
     };
     let Some(sub) = table.get(offset..) else {
@@ -545,6 +547,15 @@ fn parse_cmap(table: &[u8]) -> HashMap<u32, u16> {
                 if gid != 0 {
                     map.insert(code as u32, gid);
                 }
+            }
+        }
+    }
+    if rank == 1 {
+        // Symbol fonts keep their glyphs at U+F020 to U+F0FF; text set in
+        // them is typed with the plain characters 0x20 to 0xFF.
+        for code in 0xF020..=0xF0FFu32 {
+            if let Some(glyph) = map.get(&code).copied() {
+                map.entry(code - 0xF000).or_insert(glyph);
             }
         }
     }
@@ -687,6 +698,27 @@ mod tests {
         // A composite brings its parts along.
         let sub = TtfFont::parse(font.subset(&BTreeSet::from([2])).into(), 0).unwrap();
         assert!(!sub.glyph_data(1).is_empty() && !sub.glyph_data(2).is_empty());
+    }
+
+    #[test]
+    fn symbol_fonts_map_plain_characters() {
+        // A Windows symbol subtable mapping U+F041 and U+F042 to glyphs
+        // 1 and 2: the letters A and B type them.
+        let mut cmap: Vec<u8> = Vec::new();
+        for v in [0u16, 1, 3, 0, 0, 12] {
+            cmap.extend(v.to_be_bytes());
+        }
+        for v in [4u16, 32, 0, 4, 4, 1, 0] {
+            cmap.extend(v.to_be_bytes());
+        }
+        for v in [0xF042u16, 0xFFFF, 0, 0xF041, 0xFFFF, 1u16.wrapping_sub(0xF041), 1, 0, 0] {
+            cmap.extend(v.to_be_bytes());
+        }
+        let map = parse_cmap(&cmap);
+        assert_eq!(map.get(&0x41), Some(&1));
+        assert_eq!(map.get(&0x42), Some(&2));
+        assert_eq!(map.get(&0xF042), Some(&2));
+        assert_eq!(map.get(&0x43), None);
     }
 
     #[test]

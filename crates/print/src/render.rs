@@ -42,6 +42,9 @@ const HAIR_WIDTH: f64 = 0.25;
 const THIN_WIDTH: f64 = 0.5;
 const MEDIUM_WIDTH: f64 = 1.0;
 const THICK_WIDTH: f64 = 1.5;
+/// Height of a line of text as a multiple of the font size: the same as
+/// on screen, so that rows sized for their text there hold it on paper.
+const LINE_HEIGHT: f64 = 1.22;
 /// Blank space above and below a cell's text, in pixels.
 const VERTICAL_PADDING: f64 = 1.0;
 /// Where the left and right sections of a header start when they do not
@@ -187,6 +190,13 @@ fn wrap_text(fonts: &FontDb, face: &Arc<Face>, size: f64, text: &str, max_width:
     out
 }
 
+/// The height of a line of text in a face at a size, and how far below
+/// the top of the line its baseline is: the glyphs sit in the middle.
+fn line_box(face: &Face, size: f64) -> (f64, f64) {
+    let height = LINE_HEIGHT * size;
+    (height, (height - (face.ascent() + face.descent()) * size) / 2.0 + face.ascent() * size)
+}
+
 /// How heavy a border is, to decide which of two borders on the same
 /// edge shows.
 fn border_weight(style: BorderStyle) -> u8 {
@@ -288,7 +298,6 @@ impl<'a> Renderer<'a> {
         }
         let available = (cell.w - 2.0 * pad - indent).max(0.0);
         let color = self.ink(formatted.color.or(style.font.color).unwrap_or(Color::BLACK));
-        let line_height = |size: f64| (face.ascent() + face.descent()) * size;
         let line_x = |align: Align, cell: &RectF, width: f64| match align {
             Align::Left => cell.x + pad + indent,
             Align::Right => cell.right() - pad - indent - width,
@@ -309,7 +318,7 @@ impl<'a> Renderer<'a> {
         // Wrapped text: several lines inside the cell.
         if (style.wrap || style.h_align == HAlign::Justify) && !is_number && style.rotation == 0 {
             let lines = wrap_text(fonts, &face, size, &text, available.max(size));
-            let height = line_height(size);
+            let (height, ascent) = line_box(&face, size);
             let block = height * lines.len() as f64;
             let top = match style.v_align {
                 VAlign::Top => cell.y + vpad,
@@ -328,7 +337,7 @@ impl<'a> Renderer<'a> {
                 };
                 planned.lines.push(TextLine {
                     x: line_x(align, &cell, width),
-                    baseline: top + height * i as f64 + face.ascent() * size,
+                    baseline: top + height * i as f64 + ascent,
                     width: width + word_gap * spaces as f64,
                     text: line,
                     word_gap,
@@ -355,7 +364,7 @@ impl<'a> Renderer<'a> {
         // Rotated text takes the room of its slanted box.
         let angle = style.rotation.clamp(-90, 90) as f64;
         let (sin, cos) = (angle.to_radians().sin().abs(), angle.to_radians().cos().abs());
-        let height = line_height(size);
+        let (height, ascent) = line_box(&face, size);
         let (box_w, box_h) = (width * cos + height * sin, width * sin + height * cos);
         if box_w > available + 1e-6 {
             if is_number && angle == 0.0 {
@@ -416,9 +425,9 @@ impl<'a> Renderer<'a> {
         }
         if angle == 0.0 {
             let baseline = match style.v_align {
-                VAlign::Top => cell.y + vpad + face.ascent() * size,
-                VAlign::Center => cell.y + (cell.h - height) / 2.0 + face.ascent() * size,
-                VAlign::Bottom => cell.bottom() - vpad - face.descent() * size,
+                VAlign::Top => cell.y + vpad + ascent,
+                VAlign::Center => cell.y + (cell.h - height) / 2.0 + ascent,
+                VAlign::Bottom => cell.bottom() - vpad - height + ascent,
             };
             planned.lines.push(TextLine {
                 x: line_x(align, &cell, width),
@@ -437,7 +446,7 @@ impl<'a> Renderer<'a> {
             planned.rotation = Some((left + box_w / 2.0, top + box_h / 2.0, angle));
             planned.lines.push(TextLine {
                 x: -width / 2.0,
-                baseline: -height / 2.0 + face.ascent() * size,
+                baseline: -height / 2.0 + ascent,
                 width,
                 text,
                 word_gap: 0.0,
@@ -526,7 +535,7 @@ impl<'a> Renderer<'a> {
                 let y = if i < nr { rows[i].pos } else { bounds.bottom() };
                 let mut next: Vec<(usize, usize, Color, f64)> = Vec::new();
                 for (j0, j1, color, top) in open.drain(..) {
-                    if runs.iter().any(|r| *r == (j0, j1, color)) {
+                    if runs.contains(&(j0, j1, color)) {
                         next.push((j0, j1, color, top));
                     } else {
                         let x = cols[j0].pos;
@@ -777,7 +786,8 @@ impl<'a> Renderer<'a> {
         let stroke = || Stroke::solid(Color::BLACK, GRIDLINE_WIDTH * self.scale);
         let label = |canvas: &mut Canvas, text: &str, r: RectF| {
             let width = self.job.fonts.text_width(&face, text, size);
-            let baseline = r.y + (r.h - (face.ascent() + face.descent()) * size) / 2.0 + face.ascent() * size;
+            let (height, ascent) = line_box(&face, size);
+            let baseline = r.y + (r.h - height) / 2.0 + ascent;
             canvas.save();
             canvas.clip_rect(r);
             canvas.face_text(&face, text, r.x + (r.w - width) / 2.0, baseline, size, Paint::BLACK);
@@ -867,13 +877,13 @@ impl<'a> Renderer<'a> {
                         footer,
                         section,
                     })
-                    .and_then(|p| Image::from_file_bytes(&p.data).map(|image| (Arc::new(image), p.size)));
-                // Lay the lines out: pieces with their width, and the
-                // height of each line.
+                    .and_then(|p| crate::image::decode_shared(&p.data).map(|image| (image, p.size)));
+                // Lay the lines out: pieces with their width, the height
+                // of each line and the depth of its baseline.
                 let mut lines: Vec<(Vec<Piece>, f64, f64)> = Vec::new();
                 for line in page::lines(page::expand(source, &self.job.hf)) {
                     let mut pieces = Vec::new();
-                    let (mut ascent, mut descent) = (0.0f64, 0.0f64);
+                    let (mut height, mut ascent) = (0.0f64, 0.0f64);
                     for run in line {
                         match run {
                             HfRun::Picture => {
@@ -893,8 +903,9 @@ impl<'a> Renderer<'a> {
                                     Script::Superscript => (full * 0.65, full * 0.35),
                                     Script::Subscript => (full * 0.65, -full * 0.12),
                                 };
-                                ascent = ascent.max(face.ascent() * full);
-                                descent = descent.max(face.descent() * full);
+                                let (h, a) = line_box(&face, full);
+                                height = height.max(h);
+                                ascent = ascent.max(a);
                                 let width = self.job.fonts.text_width(&face, &text, size);
                                 pieces.push(Piece::Text {
                                     text,
@@ -909,18 +920,18 @@ impl<'a> Renderer<'a> {
                             }
                         }
                     }
-                    if ascent == 0.0 {
+                    if height == 0.0 {
                         // A blank line is as tall as default text.
                         let face = self.job.fonts.face(&default_font, false, false);
-                        (ascent, descent) = (face.ascent() * 11.0 * scale, face.descent() * 11.0 * scale);
+                        (height, ascent) = line_box(&face, 11.0 * scale);
                     }
-                    lines.push((pieces, ascent, descent));
+                    lines.push((pieces, height, ascent));
                 }
-                let total: f64 = lines.iter().map(|(_, a, d)| a + d).sum();
+                let total: f64 = lines.iter().map(|(_, height, _)| height).sum();
                 // Headers hang from the header margin; footers stand on
                 // the footer margin.
                 let mut y = if footer { paper_h - margins.footer * 72.0 - total } else { margins.header * 72.0 };
-                for (pieces, ascent, descent) in lines {
+                for (pieces, height, ascent) in lines {
                     let width: f64 = pieces.iter().map(Piece::width).sum();
                     let mut x = match align {
                         Align::Left => left,
@@ -945,7 +956,7 @@ impl<'a> Renderer<'a> {
                             }
                         }
                     }
-                    y += ascent + descent;
+                    y += height;
                 }
             }
         }
@@ -1039,5 +1050,56 @@ pub(crate) fn render(job: &PageJob) -> Scene {
     Scene {
         size,
         ops: canvas.into_ops(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrapping() {
+        let fonts = FontDb::standard_only();
+        let face = fonts.face("Arial", false, false);
+        // Helvetica at 10 pt: "aaaa" is 22.24 pt wide, a space 2.78.
+        let wrap = |text: &str, width: f64| -> Vec<(String, bool)> { wrap_text(&fonts, &face, 10.0, text, width) };
+        let lines = |text: &str, width: f64| -> Vec<String> { wrap(text, width).into_iter().map(|(l, _)| l).collect() };
+        assert_eq!(lines("aaaa aaaa aaaa", 50.0), vec!["aaaa aaaa", "aaaa"]);
+        assert_eq!(lines("aaaa aaaa aaaa", 23.0), vec!["aaaa", "aaaa", "aaaa"]);
+        // A word too long for the line is cut where the line ends.
+        assert_eq!(lines("aaaaaaaaaa", 23.0), vec!["aaaa", "aaaa", "aa"]);
+        assert_eq!(lines("aaaa aaaaaaaaaa", 30.0), vec!["aaaa", "aaaaa", "aaaaa"]);
+        // Line breaks typed in the cell are kept, blank lines too.
+        assert_eq!(lines("one\n\ntwo\r\nthree", 500.0), vec!["one", "", "two", "three"]);
+        assert_eq!(wrap("aaaa aaaa\nb", 23.0), vec![
+            ("aaaa".to_string(), false),
+            ("aaaa".to_string(), true),
+            ("b".to_string(), true)
+        ]);
+        assert_eq!(lines("", 10.0), vec![""]);
+    }
+
+    #[test]
+    fn heavier_border_wins() {
+        let border = |style| Border { style, color: None };
+        assert_eq!(heavier(border(BorderStyle::Thin), border(BorderStyle::Thick)).style, BorderStyle::Thick);
+        assert_eq!(heavier(border(BorderStyle::Double), border(BorderStyle::Medium)).style, BorderStyle::Double);
+        assert_eq!(heavier(Border::NONE, border(BorderStyle::Hair)).style, BorderStyle::Hair);
+        // Of two equal borders, the one of the cell above or left stays.
+        let red = Border {
+            style: BorderStyle::Thin,
+            color: Some(Color(0xFF0000)),
+        };
+        assert_eq!(heavier(red, border(BorderStyle::Thin)), red);
+    }
+
+    #[test]
+    fn line_boxes() {
+        let fonts = FontDb::standard_only();
+        let face = fonts.face("Arial", false, false);
+        let (height, ascent) = line_box(&face, 10.0);
+        assert!((height - 12.2).abs() < 1e-9);
+        // 9.25 pt of glyphs centred in 12.2 pt: 1.475 pt above the ascent.
+        assert!((ascent - (1.475 + 7.18)).abs() < 1e-9);
     }
 }
