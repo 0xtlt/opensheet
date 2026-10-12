@@ -6,17 +6,18 @@
 //! from the page layout computed by the engine (`Pagination::layout`), in
 //! points from the top-left corner of the paper.
 
-use crate::ObjectPainter;
 use crate::fonts::{Face, FontDb};
+use crate::{NotesLine, ObjectPainter};
 use crate::image::Image;
 use crate::scene::{Canvas, LineCap, Paint, RectF, Scene, Stroke};
 use opensheet_engine::features::CellDisplay;
 use opensheet_engine::format;
+use opensheet_engine::comment::{Comment, Note};
 use opensheet_engine::page::{
     self, CELL_PADDING, HfContext, HfRun, HfSection, HfSections, HfSlot, INDENT_WIDTH, ObjectKind, Page, PageLayout,
-    PageSetup, Pagination, PrintErrors, Script, Span, axis_offset, visible_col_width,
+    PageSetup, Pagination, PrintComments, PrintErrors, Script, Span, axis_offset, visible_col_width,
 };
-use opensheet_engine::refs::{MAX_COLS, Rect, col_to_letters};
+use opensheet_engine::refs::{MAX_COLS, Rect, cell_name, col_to_letters};
 use opensheet_engine::style::{Border, BorderStyle, Borders, Color, HAlign, Style, StyleId, Underline, VAlign};
 use opensheet_engine::value::Value;
 use opensheet_engine::workbook::{Content, Sheet, Workbook};
@@ -50,6 +51,10 @@ const VERTICAL_PADDING: f64 = 1.0;
 /// Where the left and right sections of a header start when they do not
 /// align with the margins, in inches from the paper's edge.
 const HEADER_INSET: f64 = 0.7;
+/// The pale yellow of a note's box.
+const NOTE_FILL: Color = Color(0xFFFFE1);
+/// Blank space between the box of a note and its text, in pixels.
+const NOTE_PADDING: f64 = 4.0;
 
 /// A block of rows and columns that are neighbours on the sheet and on
 /// the page: the page's own cells, or repeated print titles.
@@ -924,6 +929,109 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    // -------------------------------------------------------------- notes
+
+    /// "As displayed on sheet": the notes that are shown on the sheet
+    /// print in their boxes, each joined to its cell by a line.
+    fn draw_notes(&self, canvas: &mut Canvas) {
+        if self.setup.comments != PrintComments::AsDisplayed {
+            return;
+        }
+        let (x, y, w, h) = self.layout.body;
+        let body = RectF::new(x, y, w, h);
+        let unit = self.layout.unit;
+        let line = || Stroke::solid(Color::BLACK, THIN_WIDTH * self.scale);
+        for ((row, col), comment) in &self.sh.comments {
+            let Some(note) = comment.as_note().filter(|note| note.visible) else {
+                continue;
+            };
+            let Some(frame) = self.sh.note_frame(*row, *col) else {
+                continue;
+            };
+            let (bx, by) = self.layout.to_paper(frame.x, frame.y);
+            let rect = RectF::new(bx, by, frame.width * unit, frame.height * unit);
+            if !rect.intersects(&body) {
+                continue;
+            }
+            canvas.save();
+            canvas.clip_rect(body);
+            // From the top-right corner of the cell to the box.
+            let (cx, cy) = self.layout.to_paper(
+                axis_offset(self.sh, false, *col + 1),
+                axis_offset(self.sh, true, *row),
+            );
+            canvas.line(cx, cy, rect.x, rect.y, line());
+            canvas.fill_rect(rect, self.ink_fill(NOTE_FILL));
+            canvas.stroke_rect(rect, line());
+            canvas.clip_rect(rect);
+            let pad = NOTE_PADDING * unit;
+            let mut top = rect.y + pad;
+            for pieces in self.note_lines(note, rect.w - 2.0 * pad) {
+                let size = pieces.iter().map(|p| p.2).fold(0.0f64, f64::max);
+                let (height, ascent) = match pieces.first() {
+                    Some((_, face, _)) => line_box(face, size),
+                    None => line_box(&self.job.fonts.face_for(&Note::font()), Note::font().size_pt() as f64 * self.scale),
+                };
+                let mut x = rect.x + pad;
+                for (text, face, size) in &pieces {
+                    x += canvas.face_text(face, text, x, top + ascent, *size, Paint::BLACK);
+                }
+                top += height;
+            }
+            canvas.restore();
+        }
+    }
+
+    /// A fill as it prints: none of it in black and white.
+    fn ink_fill(&self, color: Color) -> Color {
+        if self.setup.black_and_white {
+            Color::WHITE
+        } else {
+            color
+        }
+    }
+
+    /// The text of a note cut into lines no wider than `max_width`: the
+    /// pieces of each line with their face and size.
+    fn note_lines(&self, note: &Note, max_width: f64) -> Vec<Vec<(String, Arc<Face>, f64)>> {
+        let fonts = self.job.fonts;
+        let mut lines: Vec<Vec<(String, Arc<Face>, f64)>> = vec![Vec::new()];
+        let mut width = 0.0;
+        for run in &note.runs {
+            let face = fonts.face_for(&run.font);
+            let size = run.font.size_pt() as f64 * self.scale;
+            for (i, paragraph) in run.text.split('\n').enumerate() {
+                if i > 0 {
+                    lines.push(Vec::new());
+                    width = 0.0;
+                }
+                // Word by word, each keeping the space before it.
+                let mut rest = paragraph.trim_end_matches('\r');
+                while !rest.is_empty() {
+                    let end = rest[1..].find(' ').map_or(rest.len(), |at| at + 1);
+                    let (word, tail) = rest.split_at(end);
+                    rest = tail;
+                    let w = fonts.text_width(&face, word, size);
+                    let line_is_empty = lines.last().is_some_and(|line| line.is_empty());
+                    let word = if width + w > max_width + 1e-6 && !line_is_empty {
+                        lines.push(Vec::new());
+                        width = 0.0;
+                        word.trim_start()
+                    } else {
+                        word
+                    };
+                    width += fonts.text_width(&face, word, size);
+                    let line = lines.last_mut().expect("there is always a line being filled");
+                    match line.last_mut() {
+                        Some((text, last, _)) if Arc::ptr_eq(last, &face) => text.push_str(word),
+                        _ => line.push((word.to_string(), face.clone(), size)),
+                    }
+                }
+            }
+        }
+        lines
+    }
+
     // ------------------------------------------------- header and footer
 
     fn draw_header_footer(&self, canvas: &mut Canvas) {
@@ -1147,6 +1255,124 @@ pub(crate) fn render(job: &PageJob) -> Scene {
     if !sh.page.draft {
         renderer.draw_objects(&mut canvas);
     }
+    renderer.draw_notes(&mut canvas);
+    renderer.draw_header_footer(&mut canvas);
+    Scene {
+        size,
+        ops: canvas.into_ops(),
+    }
+}
+
+/// "Cell" and "Comment" as the page of notes labels them, in en, fr, es,
+/// de, it order, and whether a space comes before the colon.
+const NOTE_LABELS: [(&str, &str, &str, bool); 5] = [
+    ("en", "Cell", "Comment", false),
+    ("fr", "Cellule", "Commentaire", true),
+    ("es", "Celda", "Comentario", false),
+    ("de", "Zelle", "Kommentar", false),
+    ("it", "Cella", "Commento", false),
+];
+
+/// The font the pages of notes are set in: the workbook's own.
+fn notes_face(wb: &Workbook, fonts: &FontDb) -> (Arc<Face>, Arc<Face>, f64) {
+    let font = &wb.styles.get(StyleId(0)).font;
+    (
+        fonts.face(&font.name, false, false),
+        fonts.face(&font.name, true, false),
+        font.size_pt() as f64,
+    )
+}
+
+/// "At end of sheet": the notes and comments of the printed cells, cut
+/// into pages of lines. Each one names its cell, then gives its text (for
+/// a thread, every post after the name of its author).
+pub(crate) fn notes_pages(wb: &Workbook, sheet: usize, pagination: &Pagination, fonts: &FontDb) -> Vec<Vec<NotesLine>> {
+    let Some(sh) = wb.sheets.get(sheet) else {
+        return Vec::new();
+    };
+    if sh.page.comments != PrintComments::AtEnd || pagination.pages.is_empty() {
+        return Vec::new();
+    }
+    let (_, cell_label, comment_label, spaced) = NOTE_LABELS
+        .iter()
+        .find(|labels| labels.0 == wb.locale.id)
+        .unwrap_or(&NOTE_LABELS[0]);
+    let colon = if *spaced { " : " } else { ": " };
+    let (regular, _, size) = notes_face(wb, fonts);
+    let max_width = pagination.printable.2;
+    let mut lines: Vec<NotesLine> = Vec::new();
+    for ((row, col), comment) in &sh.comments {
+        if !pagination.ranges.iter().any(|range| range.rect.contains(*row, *col)) {
+            continue;
+        }
+        if !lines.is_empty() {
+            lines.push(NotesLine {
+                text: String::new(),
+                bold: false,
+            });
+        }
+        lines.push(NotesLine {
+            text: format!("{cell_label}{colon}{}", cell_name(*row, *col)),
+            bold: true,
+        });
+        let text = match comment {
+            Comment::Note(note) => note.text(),
+            Comment::Thread(thread) => thread
+                .posts()
+                .map(|post| format!("{}:\n{}", post.author.name, post.text))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        };
+        let text = format!("{comment_label}{colon}{}", text.trim_end());
+        lines.extend(
+            wrap_text(fonts, &regular, size, &text, max_width)
+                .into_iter()
+                .map(|(text, _)| NotesLine { text, bold: false }),
+        );
+    }
+    let per_page = (pagination.printable.3 / (LINE_HEIGHT * size)).floor().max(1.0) as usize;
+    lines.chunks(per_page).map(<[NotesLine]>::to_vec).collect()
+}
+
+/// Draw a page of notes: the lines from the top of the printable area,
+/// under the sheet's header and over its footer.
+pub(crate) fn render_notes(job: &PageJob, lines: &[NotesLine]) -> Scene {
+    let size = job.pagination.paper;
+    let mut canvas = Canvas::new(job.fonts);
+    let Some(sh) = job.wb.sheets.get(job.sheet) else {
+        return Scene { size, ops: Vec::new() };
+    };
+    let (left, top, width, height) = job.pagination.printable;
+    let renderer = Renderer {
+        job,
+        sh,
+        setup: &sh.page,
+        // No cells on this page.
+        layout: PageLayout {
+            unit: job.pagination.unit(),
+            block: (left, top, 0.0, 0.0),
+            heading: (0.0, 0.0),
+            cols: Vec::new(),
+            rows: Vec::new(),
+            title_cols: 0,
+            title_rows: 0,
+            body: (left, top, 0.0, 0.0),
+            body_px: (0.0, 0.0),
+        },
+        scale: job.pagination.scale(),
+    };
+    canvas.set_black_and_white(sh.page.black_and_white);
+    let (regular, bold, font_size) = notes_face(job.wb, job.fonts);
+    canvas.save();
+    canvas.clip_rect(RectF::new(left, top, width, height));
+    let mut y = top;
+    for line in lines {
+        let face = if line.bold { &bold } else { &regular };
+        let (line_height, ascent) = line_box(face, font_size);
+        canvas.face_text(face, &line.text, left, y + ascent, font_size, Paint::BLACK);
+        y += line_height;
+    }
+    canvas.restore();
     renderer.draw_header_footer(&mut canvas);
     Scene {
         size,

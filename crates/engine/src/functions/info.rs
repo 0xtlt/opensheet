@@ -277,9 +277,11 @@ fn f_cell(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
             0.0
         }),
         "width" => {
-            // Column width in characters of the default font, rounded.
+            // Column width in characters of the workbook's default font,
+            // as the Column Width dialog counts them, rounded.
             let px = wb.sheets.get(sheet).map_or(0.0, |sh| sh.col_width(col));
-            Value::Number((px / 8.0).round() as f64)
+            let chars = crate::metrics::col_width_in_chars(px, wb.font_metrics().digit_width);
+            Value::Number(chars.round())
         }
         "color" | "parentheses" => Value::Number(0.0),
         // The workbook has no file name known to the engine.
