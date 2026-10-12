@@ -11,7 +11,7 @@ use super::{Command, ContextMenu, ContextTab, Cx, Feature, MenuSection, MenuTarg
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::{t, t_ctx};
 use crate::ribbon::{group, rows};
-use gpui::{AnyElement, Window, div, prelude::*, px};
+use gpui::{AnyElement, Window, div, prelude::*};
 
 pub struct ChartFormat;
 

@@ -207,7 +207,7 @@ impl ExcelApp {
         let Some(id) = self.object_sel else {
             return;
         };
-        if !self.may(Intent::EditObjects, cx) {
+        if !self.may(Intent::EditObject(Some(id)), cx) {
             return;
         }
         let label = features::all()[id.owner].object_label(id.id, ObjectVerb::Delete);
@@ -225,7 +225,7 @@ impl ExcelApp {
         let Some(layout) = self.current_layout() else {
             return true;
         };
-        if !self.may(Intent::EditObjects, cx) {
+        if !self.may(Intent::EditObject(Some(id)), cx) {
             return true;
         }
         let (x, y) = corner(&layout, &object.place);
@@ -286,7 +286,7 @@ impl ExcelApp {
         let Some((owner, data)) = self.object_clip.clone() else {
             return;
         };
-        if !self.may(Intent::EditObjects, cx) {
+        if !self.may(Intent::EditObject(None), cx) {
             return;
         }
         let at = match (self.selected_object(), self.current_layout()) {
@@ -309,7 +309,7 @@ impl ExcelApp {
         let Some(id) = self.object_sel else {
             return;
         };
-        if !self.may(Intent::EditObjects, cx) {
+        if !self.may(Intent::EditObject(Some(id)), cx) {
             return;
         }
         features::all()[id.owner].reorder_object(self, id.id, mv);

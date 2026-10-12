@@ -685,7 +685,7 @@ impl ExcelApp {
         );
         let move_sheet = |label: &'static str, to: usize, disabled: bool| {
             MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
-                if to < a.wb.sheets.len() && a.may(Intent::EditStructure, cx) {
+                if to < a.wb.sheets.len() && a.may(Intent::MoveSheet, cx) {
                     a.wb.move_sheet(index, to);
                     a.views.swap(index, to);
                     a.sheet = to;

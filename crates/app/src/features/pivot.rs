@@ -1,11 +1,13 @@
 //! Pivot tables: the creation dialog, the PivotTable Fields pane, the
 //! buttons on pivot cells, and the "PivotTable Analyze" and "Design" tabs.
 //!
-//! Not written yet: the commands are in place and say so. See
-//! `features/mod.rs` for the hooks (the field list is a pane opened with
-//! `open_pane` and built with `widgets::Tree` / `widgets::CheckList`, the
-//! buttons on cells are zones, `guard` refuses typing into a pivot table,
-//! the two tabs appear through `context_tabs`).
+//! Not written yet: the commands are in place and say so; the two tabs
+//! appear while the active cell is in a pivot table. See `features/mod.rs`
+//! for the hooks: the field list is a pane opened with `open_pane` and
+//! built with `widgets::Tree` / `widgets::CheckList`; the buttons on cells
+//! (`Workbook::pivot_cell(..).button`) are zones; `guard` refuses typing
+//! into a pivot table (`Intent::EditCells`) and the row or column edits
+//! `Workbook::pivot_blocks_edit` objects to.
 
 use super::{Command, ContextTab, Cx, Feature, tables};
 use crate::app::ExcelApp;
@@ -71,10 +73,10 @@ impl Command for Cmd {
     }
 }
 
-/// The pivot table the active cell is in. The engine does not say yet
-/// where a pivot table is written: none is ever found.
-fn active_pivot(_app: &ExcelApp) -> Option<&PivotTable> {
-    None
+/// The pivot table the active cell is in.
+fn active_pivot(app: &ExcelApp) -> Option<&PivotTable> {
+    let (row, col) = app.active();
+    app.wb.pivot_at(app.sheet, row, col)
 }
 
 /// The groups of the "PivotTable Analyze" tab.

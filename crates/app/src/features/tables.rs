@@ -2,18 +2,19 @@
 //! the totals row, and the "Table Design" tab.
 //!
 //! Not written yet: the commands are in place and say so; the "Table
-//! Design" tab appears while the active cell is in a table. See
-//! `features/mod.rs` for the hooks (`cells_changed` extends a table when
-//! something is typed under or beside it, the resize handle at its corner
-//! is a zone that captures the mouse, the style gallery a view opened with
-//! `open_popup_view`).
+//! Design" tab appears while the active cell is in a table and its check
+//! boxes show the table's options. See `features/mod.rs` for the hooks:
+//! `cells_written` is where `Workbook::tables_after_edit` grows a table
+//! under what was typed (before the commit, as the engine asks), the
+//! resize handle at the corner is a zone that captures the mouse, the
+//! style gallery a view opened with `open_popup_view`.
 
 use super::{Command, ContextMenu, ContextTab, Cx, Feature, MenuSection, MenuTarget};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
 use crate::ribbon::{group, row, rows};
 use gpui::{AnyElement, Window, div, prelude::*, px};
-use opensheet_engine::table::Table;
+use opensheet_engine::table::{Table, TableOption};
 
 pub struct Tables;
 
@@ -59,11 +60,17 @@ impl Command for Cmd {
     }
 
     fn checked(self, app: &ExcelApp) -> bool {
-        match (self, active_table(app)) {
-            (Cmd::HeaderRow, Some(table)) => table.header_row,
-            (Cmd::TotalRow, Some(table)) => table.totals_row,
-            _ => false,
-        }
+        let option = match self {
+            Cmd::HeaderRow => TableOption::HeaderRow,
+            Cmd::TotalRow => TableOption::TotalsRow,
+            Cmd::BandedRows => TableOption::BandedRows,
+            Cmd::FirstColumn => TableOption::FirstCol,
+            Cmd::LastColumn => TableOption::LastCol,
+            Cmd::BandedColumns => TableOption::BandedCols,
+            Cmd::FilterButton => TableOption::FilterButton,
+            _ => return false,
+        };
+        active_table(app).is_some_and(|table| table.option(option))
     }
 
     fn run(self, app: &mut ExcelApp, _window: &mut Window, cx: &mut Cx) {

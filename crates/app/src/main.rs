@@ -214,6 +214,8 @@ fn export(input: Option<&str>, demo: bool, output: &str) -> Result<(), String> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let demo = args.iter().any(|a| a == "--demo");
+    // `--widgets`: open the gallery of the dialog toolkit at start.
+    let gallery = args.iter().any(|a| a == "--widgets");
     let export_to = args.iter().position(|a| a == "--export").and_then(|i| args.get(i + 1)).cloned();
     let file_arg = args
         .iter()
@@ -267,6 +269,9 @@ fn main() {
                     }
                     if let Some(path) = &file_arg {
                         app.load_path(std::path::PathBuf::from(path), cx);
+                    }
+                    if gallery {
+                        widgets::gallery::open(&mut app, window, cx);
                     }
                     app
                 })

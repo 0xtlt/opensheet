@@ -141,7 +141,8 @@ use gpui::{
     PathBuilder, Pixels, Point, ShapedLine, SharedString, TextRun, Window, WindowTextSystem, fill, px, quad, size,
 };
 use opensheet_engine::Rect;
-use opensheet_engine::ops::Direction;
+use opensheet_engine::ops::{Direction, PasteMode};
+use opensheet_engine::workbook::ClearMode;
 use std::any::Any;
 use std::rc::Rc;
 
@@ -203,7 +204,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// Every feature, in the order hooks are called. Floating objects are
 /// drawn in this order too (the objects of later features on top).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 14] = [
+    static ALL: [&dyn Feature; 15] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -218,6 +219,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &drawings::Drawings,
         &names::Names,
         &misc::Misc,
+        &crate::widgets::gallery::GalleryMarks,
     ];
     &ALL
 }
@@ -291,31 +293,58 @@ pub struct ContextTab {
 
 // ------------------------------------------------------------------ editing
 
-/// A change about to be made, submitted to [`Feature::guard`].
+/// A change about to be made to the current sheet (or to the workbook),
+/// submitted to [`Feature::guard`]. The variants are those of the engine's
+/// `protect::Action`, so the protection feature answers most of them with
+/// `Workbook::permits`.
 #[derive(Clone, Copy, Debug, PartialEq)]
+// Central code asks the questions of its own operations; the others are
+// there for the feature modules to ask before theirs.
+#[allow(dead_code)]
 pub enum Intent {
-    /// Typing into, pasting over, filling or clearing these cells of the
-    /// current sheet.
+    /// Typing into, pasting over, filling or clearing these cells.
     EditCells(Rect),
     /// Changing the formatting of these cells.
     FormatCells(Rect),
     /// Changing the width or the visibility of columns / rows.
     FormatColumns,
     FormatRows,
-    InsertColumns,
-    InsertRows,
-    DeleteColumns,
-    DeleteRows,
-    Sort,
-    /// Adding, moving, resizing or deleting charts, pictures, shapes and
-    /// comments.
-    EditObjects,
-    /// Adding, deleting, renaming, moving, hiding or colouring sheets.
-    EditStructure,
+    InsertColumns { at: u32, count: u32 },
+    InsertRows { at: u32, count: u32 },
+    /// Deleting the columns / rows `first..=last`.
+    DeleteColumns { first: u32, last: u32 },
+    DeleteRows { first: u32, last: u32 },
+    Sort(Rect),
+    /// Choosing what a filter shows with its drop-down buttons.
+    UseAutoFilter,
+    /// Putting the filter buttons on a range or taking them off.
+    ToggleAutoFilter,
+    /// Changing, refreshing or creating a pivot table.
+    UsePivotTable,
+    /// Adding (`None`), changing, moving or deleting a chart, a picture or
+    /// a shape.
+    EditObject(Option<ObjectId>),
+    /// Adding, changing or deleting a note or a comment.
+    EditComment,
+    /// Creating, resizing or restyling a table.
+    ChangeTable,
+    /// What a protected sheet never allows: merging cells, locking or
+    /// unlocking them, data validation, conditional formats, the tab
+    /// colour.
+    ChangeSheet,
+    InsertSheet,
+    DeleteSheet,
+    RenameSheet,
+    MoveSheet,
+    CopySheet,
+    HideSheet,
+    UnhideSheet,
 }
 
 /// An entry waiting to be stored, submitted to [`Feature::may_commit`].
 #[derive(Clone, Debug)]
+// A record for the feature modules: central code only fills it in.
+#[allow(dead_code)]
 pub struct PendingEdit<'a> {
     pub sheet: usize,
     pub row: u32,
@@ -338,13 +367,30 @@ pub enum Verdict {
     Hold,
 }
 
-/// Why cells changed, for [`Feature::cells_changed`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How cells were changed, for [`Feature::cells_written`] and
+/// [`Feature::cells_changed`].
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChangeCause {
     Typing,
-    Paste,
+    /// `from`: the cells that were copied or cut (sheet, range) when they
+    /// come from this workbook; `cut`: they were moved, not copied.
+    Paste {
+        from: Option<(usize, Rect)>,
+        cut: bool,
+        mode: PasteMode,
+    },
     Fill,
-    Clear,
+    Clear(ClearMode),
+}
+
+/// Cells the user just changed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+// A record for the feature modules: central code only fills it in.
+#[allow(dead_code)]
+pub struct CellEdit {
+    pub sheet: usize,
+    pub rect: Rect,
+    pub cause: ChangeCause,
 }
 
 // -------------------------------------------------------------------- menus
@@ -537,6 +583,8 @@ impl Zone {
 
 /// A mouse event on a [`Zone`] or on a floating object.
 #[derive(Clone, Debug)]
+// A record for the feature modules: central code only fills it in.
+#[allow(dead_code)]
 pub struct ZoneEvent {
     /// Window coordinates.
     pub position: Point<Pixels>,
@@ -573,13 +621,16 @@ pub struct Painter<'a> {
     pub visible: Rect,
     /// Clip rectangle of the pane (x0, y0, x1, y1).
     pub clip: (f32, f32, f32, f32),
-    /// Device pixels per logical pixel.
+    /// Device pixels per logical pixel (for hairlines).
+    #[allow(dead_code)] // no feature draws hairlines yet
     pub scale: f32,
     pub(crate) owner: usize,
     pub(crate) items: Vec<Draw>,
     pub(crate) zones: Vec<Zone>,
 }
 
+// The drawing helpers are for the feature modules; some have no caller yet.
+#[allow(dead_code)]
 impl<'a> Painter<'a> {
     pub(crate) fn new(
         app: &'a ExcelApp,
@@ -872,13 +923,25 @@ pub trait Feature: Sync + 'static {
         Verdict::Accept
     }
 
-    /// Cells of `sheet` were changed by the user and the change was
-    /// committed (its own undo step). What the feature does in response is
-    /// a step of its own (`snapshot`, mutate, `app.commit`).
-    fn cells_changed(&self, _app: &mut ExcelApp, _sheet: usize, _rect: Rect, _cause: ChangeCause, _cx: &mut Cx) {}
+    /// The user just changed cells (typed, pasted, filled, cleared) and
+    /// the change is not committed yet: what the feature changes in
+    /// `app.wb` now joins the same undo step. This is where a table grows
+    /// under what was typed (`Workbook::tables_after_edit`) and where
+    /// pasted cells bring their comments and validation along.
+    fn cells_written(&self, _app: &mut ExcelApp, _edit: &CellEdit, _cx: &mut Cx) {}
+
+    /// The same change, once committed. What the feature does now is an
+    /// undo step of its own (`snapshot`, mutate, `app.commit`).
+    fn cells_changed(&self, _app: &mut ExcelApp, _edit: &CellEdit, _cx: &mut Cx) {}
 
     /// The selection or the current sheet changed.
     fn selection_changed(&self, _app: &mut ExcelApp, _cx: &mut Cx) {}
+
+    /// May this cell become the active cell or part of the selection? (A
+    /// protected sheet can forbid selecting locked cells.)
+    fn can_select(&self, _app: &ExcelApp, _row: u32, _col: u32) -> bool {
+        true
+    }
 
     // ---- menus and status bar ---------------------------------------------
 
@@ -979,10 +1042,20 @@ pub(crate) fn may_commit(app: &mut ExcelApp, edit: &PendingEdit, window: &mut Wi
     Verdict::Accept
 }
 
-pub(crate) fn cells_changed(app: &mut ExcelApp, sheet: usize, rect: Rect, cause: ChangeCause, cx: &mut Cx) {
+pub(crate) fn cells_written(app: &mut ExcelApp, edit: &CellEdit, cx: &mut Cx) {
     for f in all() {
-        f.cells_changed(app, sheet, rect, cause, cx);
+        f.cells_written(app, edit, cx);
     }
+}
+
+pub(crate) fn cells_changed(app: &mut ExcelApp, edit: &CellEdit, cx: &mut Cx) {
+    for f in all() {
+        f.cells_changed(app, edit, cx);
+    }
+}
+
+pub(crate) fn can_select(app: &ExcelApp, row: u32, col: u32) -> bool {
+    all().iter().all(|f| f.can_select(app, row, col))
 }
 
 pub(crate) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {

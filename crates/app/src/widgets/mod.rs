@@ -41,6 +41,7 @@
 //!   `ExcelApp::open_popup_view` are fine.
 
 mod color;
+pub mod gallery;
 mod lists;
 
 pub use color::{ColorButton, ColorGrid};

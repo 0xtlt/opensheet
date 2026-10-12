@@ -15,7 +15,7 @@ use gpui::{
 use opensheet_engine::format;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, col_to_letters};
 use opensheet_engine::style::{Border, BorderStyle as CellBorderStyle, HAlign, Style, Underline, VAlign};
-use opensheet_engine::workbook::{Content, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, Sheet};
+use opensheet_engine::workbook::{Content, Sheet};
 use opensheet_engine::features::CellDisplay;
 use opensheet_engine::{Rect, StyleId, Value, Workbook};
 use std::cell::RefCell;
@@ -103,6 +103,7 @@ impl Axis {
 
     /// Leave blank space before some tracks: (track, pixels), sorted by
     /// track. Positions inside a gap belong to the track that follows it.
+    #[allow(dead_code)] // for `Feature::adjust_layout` of the Page Layout view
     pub fn set_gaps(&mut self, gaps: &[(u32, f32)]) {
         let mut total = 0.0f64;
         self.gaps = gaps
@@ -186,20 +187,20 @@ impl Axis {
     }
 }
 
-/// `hidden`: the sets of tracks shown with no size (hidden by hand, hidden
-/// by a filter).
+/// `hidden`: the tracks shown with no size (for rows: hidden by hand or by
+/// a filter).
 fn build_axis(
     default: f32,
     count: u32,
     zoom: f32,
     custom: &std::collections::BTreeMap<u32, f32>,
-    hidden: &[&std::collections::BTreeSet<u32>],
+    hidden: &std::collections::BTreeSet<u32>,
 ) -> Axis {
     let d = (default * zoom).round().max(1.0);
     let mut merged: Vec<(u32, f32)> = custom.iter().map(|(i, s)| (*i, (s * zoom).round())).collect();
-    if hidden.iter().any(|set| !set.is_empty()) {
+    if !hidden.is_empty() {
         let mut map: std::collections::BTreeMap<u32, f32> = merged.into_iter().collect();
-        for h in hidden.iter().flat_map(|set| set.iter()) {
+        for h in hidden {
             map.insert(*h, 0.0);
         }
         merged = map.into_iter().collect();
@@ -229,15 +230,21 @@ pub struct GridLayout {
 
 impl GridLayout {
     pub fn new(sheet: &Sheet, bounds: Bounds<Pixels>, zoom: f32, scroll_x: f64, scroll_y: f64) -> GridLayout {
-        let cols = build_axis(DEFAULT_COL_WIDTH, MAX_COLS, zoom, &sheet.col_widths, &[&sheet.hidden_cols]);
+        // The size of the tracks nobody resized is asked from the sheet (a
+        // sheet may have its own default): from the last track that has no
+        // size of its own and is shown.
+        let not_shown = sheet.rows_not_shown();
+        let plain_col = (0..MAX_COLS)
+            .rev()
+            .find(|c| !sheet.col_widths.contains_key(c) && !sheet.hidden_cols.contains(c))
+            .unwrap_or(MAX_COLS - 1);
+        let plain_row = (0..MAX_ROWS)
+            .rev()
+            .find(|r| !sheet.row_heights.contains_key(r) && !not_shown.contains(r))
+            .unwrap_or(MAX_ROWS - 1);
+        let cols = build_axis(sheet.col_width(plain_col), MAX_COLS, zoom, &sheet.col_widths, &sheet.hidden_cols);
         // Rows a filter hides take no room either.
-        let rows = build_axis(
-            DEFAULT_ROW_HEIGHT,
-            MAX_ROWS,
-            zoom,
-            &sheet.row_heights,
-            &[&sheet.hidden_rows, &sheet.filtered_rows],
-        );
+        let rows = build_axis(sheet.row_height(plain_row), MAX_ROWS, zoom, &sheet.row_heights, &not_shown);
         let frozen_w = cols.start(sheet.frozen_cols) as f32;
         let frozen_h = rows.start(sheet.frozen_rows) as f32;
         let (header_w, header_h) = if sheet.show_headers {
@@ -911,7 +918,8 @@ impl<'a> PaneCtx<'a> {
                         let mut paint = features::condfmt::paint_adornment(adornment, &cell);
                         fills.append(&mut paint.under);
                         texts.append(&mut paint.over);
-                        hide_text = paint.hide_text;
+                        // "Show Bar Only" / "Show Icon Only".
+                        hide_text = adornment.hide_value;
                         inset = paint.text_inset;
                     }
                 }

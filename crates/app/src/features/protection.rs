@@ -2,10 +2,14 @@
 //! refusing the changes a protected sheet does not allow.
 //!
 //! Not written yet, except "Lock Cell": the commands are in place and say
-//! so. See `features/mod.rs` for the hooks (`guard` is asked before every
-//! change, with an `Intent`; the dialogs are opened with `open_modal`).
+//! so. See `features/mod.rs` for the hooks: `guard` is asked before every
+//! change with an `Intent` whose variants are those of the engine's
+//! `protect::Action` (answer with `Workbook::permits` and
+//! `Denied::message`), `can_select` is `Workbook::can_select_cell`, and
+//! the dialogs are opened with `open_modal`. The formula bar already shows
+//! `Workbook::formula_bar_text`.
 
-use super::{Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget};
+use super::{Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
 use gpui::Window;
@@ -45,7 +49,9 @@ impl Command for Cmd {
         match self {
             Cmd::LockCell => {
                 let locked = !app.active_style().locked;
-                app.apply_style(self.label(), cx, move |s| s.locked = locked);
+                if app.may(Intent::ChangeSheet, cx) {
+                    app.apply_style(self.label(), cx, move |s| s.locked = locked);
+                }
             }
             _ => app.not_implemented(self.label(), cx),
         }

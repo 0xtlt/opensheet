@@ -4,8 +4,8 @@
 //! file calls the hooks of `features/mod.rs` at the right moments.
 
 use crate::features::{
-    self, ChangeCause, Command, ContextMenu, Intent, MenuSection, MenuTarget, ObjectId, PendingEdit, Verdict, ViewMode,
-    Zone, ZoneEvent, ZoneResponse,
+    self, CellEdit, ChangeCause, Command, ContextMenu, Intent, MenuSection, MenuTarget, ObjectId, PendingEdit, Verdict,
+    ViewMode, Zone, ZoneEvent, ZoneResponse,
 };
 use crate::grid::{FontResolver, GridLayout, Selection};
 use crate::i18n::t;
@@ -23,7 +23,7 @@ use opensheet_engine::ops::{BorderPreset, Clip, Direction, PasteMode, SelectionS
 use opensheet_engine::parser;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, cell_name};
 use opensheet_engine::style::{Border, Color, HAlign, Style, Underline, VAlign};
-use opensheet_engine::workbook::{ClearMode, Content, DEFAULT_ROW_HEIGHT};
+use opensheet_engine::workbook::ClearMode;
 use opensheet_engine::{Locale, Rect, Workbook};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -674,7 +674,8 @@ impl ExcelApp {
         self.sync_views();
         if self.editing.is_none() {
             let (r, c) = self.active();
-            let text = self.wb.edit_text(self.sheet, r, c);
+            // Nothing for a formula hidden on a protected sheet.
+            let text = self.wb.formula_bar_text(self.sheet, r, c);
             self.formula_input.update(cx, |input, cx| {
                 if input.text() != text {
                     input.set_text(text, cx);
@@ -813,9 +814,12 @@ impl ExcelApp {
     }
 
     pub fn select_cell(&mut self, row: u32, col: u32, cx: &mut Context<Self>) {
-        self.deselect_object(cx);
         let row = row.min(MAX_ROWS - 1);
         let col = col.min(MAX_COLS - 1);
+        if !features::can_select(self, row, col) {
+            return;
+        }
+        self.deselect_object(cx);
         let rect = self.expand_merges(Rect::cell(row, col));
         let sel = self.sel_mut();
         sel.active = (rect.r0, rect.c0);
@@ -838,6 +842,9 @@ impl ExcelApp {
 
     /// Extend the current range from the anchor to (row, col).
     fn extend_to(&mut self, row: u32, col: u32, cx: &mut Context<Self>) {
+        if !features::can_select(self, row, col) {
+            return;
+        }
         let anchor = self.sel().anchor;
         let rect = self.expand_merges(Rect::new(anchor.0, anchor.1, row, col));
         self.sel_mut().set_current(rect);
@@ -885,8 +892,7 @@ impl ExcelApp {
             }
             r = nr as u32;
             c = nc as u32;
-            let hidden = (dr != 0 && (sheet.hidden_rows.contains(&r) || sheet.filtered_rows.contains(&r)))
-                || (dc != 0 && sheet.hidden_cols.contains(&c));
+            let hidden = (dr != 0 && sheet.is_row_hidden(r)) || (dc != 0 && sheet.hidden_cols.contains(&c));
             if !hidden {
                 return (r, c);
             }
@@ -1111,7 +1117,9 @@ impl ExcelApp {
         let text = self.editor().read(cx).text().to_string();
         let mut highlights: Vec<(Range<usize>, gpui::Hsla)> = Vec::new();
         if let Some(body) = text.strip_prefix('=') {
-            let spans = parser::scan_refs(body, self.wb.locale);
+            // Structured references, names standing for a range and `A1#`
+            // are coloured with the cells they cover.
+            let spans = parser::scan_refs_in(body, &self.wb, edit.sheet, edit.row, edit.col);
             let mut seen: Vec<String> = Vec::new();
             for span in spans {
                 let key = span.reference.to_text();
@@ -1376,6 +1384,12 @@ impl ExcelApp {
             );
             return false;
         }
+        let edit = CellEdit {
+            sheet,
+            rect: Rect::cell(row, col),
+            cause: ChangeCause::Typing,
+        };
+        features::cells_written(self, &edit, cx);
         self.wb.commit(t("Typing", "Saisie"));
         self.editing = None;
         self.ref_highlights.clear();
@@ -1386,7 +1400,7 @@ impl ExcelApp {
         if !self.modal_open() {
             window.focus(&self.grid_focus);
         }
-        features::cells_changed(self, sheet, Rect::cell(row, col), ChangeCause::Typing, cx);
+        features::cells_changed(self, &edit, cx);
         if let Some(dir) = advance {
             self.advance(dir, cx);
         }
@@ -1426,7 +1440,7 @@ impl ExcelApp {
     }
 
     pub fn begin_rename_sheet(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if index >= self.wb.sheets.len() || !self.may(Intent::EditStructure, cx) {
+        if index >= self.wb.sheets.len() || !self.may(Intent::RenameSheet, cx) {
             return;
         }
         self.renaming_sheet = Some(index);
@@ -1520,6 +1534,22 @@ impl ExcelApp {
         self.refresh(cx);
     }
 
+    /// Finish a transaction that changed cells of the current sheet: the
+    /// features first add what belongs to the same undo step, then hear
+    /// about the committed change.
+    pub fn commit_cells(&mut self, label: &str, rects: &[Rect], cause: ChangeCause, cx: &mut Context<Self>) {
+        let sheet = self.sheet;
+        let edits: Vec<CellEdit> = rects.iter().map(|rect| CellEdit { sheet, rect: *rect, cause }).collect();
+        for edit in &edits {
+            features::cells_written(self, edit, cx);
+        }
+        self.wb.commit(label);
+        for edit in &edits {
+            features::cells_changed(self, edit, cx);
+        }
+        self.refresh(cx);
+    }
+
     pub fn undo(&mut self, cx: &mut Context<Self>) {
         if self.editing.is_some() {
             return;
@@ -1550,13 +1580,7 @@ impl ExcelApp {
         for r in &ranges {
             self.wb.clear(self.sheet, *r, mode);
         }
-        self.commit(t("Clear", "Effacer"), cx);
-        if mode != ClearMode::Formats {
-            let sheet = self.sheet;
-            for r in ranges {
-                features::cells_changed(self, sheet, r, ChangeCause::Clear, cx);
-            }
-        }
+        self.commit_cells(t("Clear", "Effacer"), &ranges, ChangeCause::Clear(mode), cx);
     }
 
     pub fn copy(&mut self, cut: bool, cx: &mut Context<Self>) {
@@ -1604,9 +1628,15 @@ impl ExcelApp {
             (Some(_), None) => true,
             _ => false,
         };
+        // Where the cells come from, for the features that follow them
+        // (comments, validation, conditional formats).
+        let mut from = None;
+        let mut cut = false;
         let written = if internal {
             let state = self.clip.take().unwrap();
+            from = Some((state.clip.sheet, state.clip.rect));
             if state.cut && mode == PasteMode::All {
+                cut = true;
                 let out = self
                     .wb
                     .move_range(state.clip.sheet, state.clip.rect, self.sheet, dest.r0, dest.c0);
@@ -1622,17 +1652,12 @@ impl ExcelApp {
             None
         };
         if let Some(rect) = written {
-            self.wb.commit(t("Paste", "Coller"));
             let active = (rect.r0, rect.c0);
             let sel = self.sel_mut();
             sel.ranges = vec![rect];
             sel.active = active;
             sel.anchor = active;
-            if mode != PasteMode::Formats {
-                let sheet = self.sheet;
-                features::cells_changed(self, sheet, rect, ChangeCause::Paste, cx);
-            }
-            self.refresh(cx);
+            self.commit_cells(t("Paste", "Coller"), &[rect], ChangeCause::Paste { from, cut, mode }, cx);
         }
     }
 
@@ -1699,12 +1724,9 @@ impl ExcelApp {
                 continue;
             }
             for row in r.r0..=r.r1 {
-                let cur = self.wb.sheets[self.sheet]
-                    .row_heights
-                    .get(&row)
-                    .copied()
-                    .unwrap_or(DEFAULT_ROW_HEIGHT);
-                if needed > cur {
+                // Hidden rows (height 0) stay as they are.
+                let cur = self.wb.sheets[self.sheet].row_height(row);
+                if cur > 0.0 && needed > cur {
                     self.wb.set_row_height(self.sheet, row, Some(needed));
                 }
             }
@@ -1819,7 +1841,7 @@ impl ExcelApp {
     pub fn toggle_merge(&mut self, center: bool, cx: &mut Context<Self>) {
         let rect = self.sel().current();
         let sheet = self.sheet;
-        if !self.may(Intent::FormatCells(rect), cx) {
+        if !self.may(Intent::ChangeSheet, cx) {
             return;
         }
         if self.wb.sheets[sheet].merges.iter().any(|m| rect.intersects(m)) {
@@ -1836,37 +1858,39 @@ impl ExcelApp {
     }
 
     pub fn insert_rows(&mut self, cx: &mut Context<Self>) {
-        if !self.may(Intent::InsertRows, cx) {
+        let r = self.sel().current();
+        let count = r.rows().min(MAX_ROWS - r.r0);
+        if !self.may(Intent::InsertRows { at: r.r0, count }, cx) {
             return;
         }
-        let r = self.sel().current();
-        self.wb.insert_rows(self.sheet, r.r0, r.rows().min(MAX_ROWS - r.r0));
+        self.wb.insert_rows(self.sheet, r.r0, count);
         self.commit(t("Insert Rows", "Insérer des lignes"), cx);
     }
 
     pub fn delete_rows(&mut self, cx: &mut Context<Self>) {
-        if !self.may(Intent::DeleteRows, cx) {
+        let r = self.sel().current();
+        if !self.may(Intent::DeleteRows { first: r.r0, last: r.r1 }, cx) {
             return;
         }
-        let r = self.sel().current();
         self.wb.delete_rows(self.sheet, r.r0, r.rows());
         self.commit(t("Delete Rows", "Supprimer des lignes"), cx);
     }
 
     pub fn insert_cols(&mut self, cx: &mut Context<Self>) {
-        if !self.may(Intent::InsertColumns, cx) {
+        let r = self.sel().current();
+        let count = r.cols().min(MAX_COLS - r.c0);
+        if !self.may(Intent::InsertColumns { at: r.c0, count }, cx) {
             return;
         }
-        let r = self.sel().current();
-        self.wb.insert_cols(self.sheet, r.c0, r.cols().min(MAX_COLS - r.c0));
+        self.wb.insert_cols(self.sheet, r.c0, count);
         self.commit(t("Insert Columns", "Insérer des colonnes"), cx);
     }
 
     pub fn delete_cols(&mut self, cx: &mut Context<Self>) {
-        if !self.may(Intent::DeleteColumns, cx) {
+        let r = self.sel().current();
+        if !self.may(Intent::DeleteColumns { first: r.c0, last: r.c1 }, cx) {
             return;
         }
-        let r = self.sel().current();
         self.wb.delete_cols(self.sheet, r.c0, r.cols());
         self.commit(t("Delete Columns", "Supprimer des colonnes"), cx);
     }
@@ -1897,7 +1921,7 @@ impl ExcelApp {
         } else {
             self.wb.clamp_to_used(self.sheet, cur)
         };
-        if region.rows() < 2 || !self.may(Intent::Sort, cx) {
+        if region.rows() < 2 || !self.may(Intent::Sort(region), cx) {
             return;
         }
         // A first row of labels above non-labels is treated as a header.
@@ -1967,7 +1991,7 @@ impl ExcelApp {
     }
 
     pub fn add_sheet(&mut self, cx: &mut Context<Self>) {
-        if !self.may(Intent::EditStructure, cx) {
+        if !self.may(Intent::InsertSheet, cx) {
             return;
         }
         let index = self.wb.add_sheet(self.sheet + 1);
@@ -1978,7 +2002,7 @@ impl ExcelApp {
     }
 
     pub fn delete_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
-        if !self.may(Intent::EditStructure, cx) {
+        if !self.may(Intent::DeleteSheet, cx) {
             return;
         }
         if self.wb.delete_sheet(index) {
@@ -1994,7 +2018,7 @@ impl ExcelApp {
     }
 
     pub fn duplicate_sheet(&mut self, index: usize, cx: &mut Context<Self>) {
-        if !self.may(Intent::EditStructure, cx) {
+        if !self.may(Intent::CopySheet, cx) {
             return;
         }
         if let Some(new) = self.wb.duplicate_sheet(index) {
@@ -2245,7 +2269,7 @@ impl ExcelApp {
                     return;
                 }
                 window.focus(&self.grid_focus);
-                if features::guard(self, &Intent::EditObjects).is_none() {
+                if features::guard(self, &Intent::EditObject(Some(id))).is_none() {
                     let handle = match hit {
                         Hit::ObjectHandle(_, handle) => Some(handle),
                         _ => None,
@@ -2638,9 +2662,7 @@ impl ExcelApp {
             Drag::Fill { src, dest } => {
                 if dest != src && self.may(Intent::EditCells(dest), cx) {
                     self.wb.autofill(self.sheet, src, dest);
-                    self.wb.commit(t("Auto Fill", "Recopie incrémentée"));
-                    let sheet = self.sheet;
-                    features::cells_changed(self, sheet, dest, ChangeCause::Fill, cx);
+                    self.commit_cells(t("Auto Fill", "Recopie incrémentée"), &[dest], ChangeCause::Fill, cx);
                     let active = self.active();
                     let sel = self.sel_mut();
                     sel.ranges = vec![dest];
@@ -2702,11 +2724,8 @@ impl ExcelApp {
                 return;
             }
             self.wb.autofill(self.sheet, src, dest);
-            self.wb.commit(t("Auto Fill", "Recopie incrémentée"));
             self.sel_mut().ranges = vec![dest];
-            let sheet = self.sheet;
-            features::cells_changed(self, sheet, dest, ChangeCause::Fill, cx);
-            self.refresh(cx);
+            self.commit_cells(t("Auto Fill", "Recopie incrémentée"), &[dest], ChangeCause::Fill, cx);
         }
     }
 
@@ -3096,7 +3115,7 @@ impl ExcelApp {
             ColorTarget::Fill => self.set_fill(color, cx),
             ColorTarget::Font => self.set_font_color(color, cx),
             ColorTarget::Tab => {
-                if self.may(Intent::EditStructure, cx) {
+                if self.may(Intent::ChangeSheet, cx) {
                     self.wb.set_tab_color(self.sheet, color);
                     self.commit(t("Tab Color", "Couleur d'onglet"), cx);
                 }
@@ -3378,15 +3397,14 @@ impl ExcelApp {
         if !self.may(Intent::EditCells(r), cx) {
             return;
         }
-        if dir == Direction::Right {
+        let label = if dir == Direction::Right {
             self.wb.fill_right(self.sheet, r);
-            self.commit(t("Fill Right", "Recopier à droite"), cx);
+            t("Fill Right", "Recopier à droite")
         } else {
             self.wb.fill_down(self.sheet, r);
-            self.commit(t("Fill Down", "Recopier vers le bas"), cx);
-        }
-        let sheet = self.sheet;
-        features::cells_changed(self, sheet, r, ChangeCause::Fill, cx);
+            t("Fill Down", "Recopier vers le bas")
+        };
+        self.commit_cells(label, &[r], ChangeCause::Fill, cx);
     }
     pub fn on_page_up(&mut self, _: &PageUp, _: &mut Window, cx: &mut Context<Self>) {
         let n = self.current_layout().map(|l| l.page_rows()).unwrap_or(20);
@@ -3433,9 +3451,7 @@ impl ExcelApp {
         let today = opensheet_engine::datetime::now_serial().floor();
         let text = format::format_number(today, self.wb.locale.short_date_format, self.wb.locale).text;
         if self.wb.set_cell_text(self.sheet, r, c, &text).is_ok() {
-            self.commit(t("Typing", "Saisie"), cx);
-            let sheet = self.sheet;
-            features::cells_changed(self, sheet, Rect::cell(r, c), ChangeCause::Typing, cx);
+            self.commit_cells(t("Typing", "Saisie"), &[Rect::cell(r, c)], ChangeCause::Typing, cx);
         }
     }
     pub fn on_auto_sum(&mut self, _: &AutoSum, window: &mut Window, cx: &mut Context<Self>) {
@@ -3523,13 +3539,4 @@ impl ExcelApp {
             cmd.run(self, window, cx);
         }
     }
-}
-
-/// Content of the active cell, for the status bar mode label.
-pub fn cell_has_formula(app: &ExcelApp) -> bool {
-    let (r, c) = app.active();
-    matches!(
-        app.wb.cell(app.sheet, r, c).map(|cell| &cell.content),
-        Some(Content::Formula(_))
-    )
 }

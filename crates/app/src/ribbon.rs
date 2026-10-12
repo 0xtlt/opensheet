@@ -152,6 +152,7 @@ impl ExcelApp {
     }
 
     /// An icon-only button running a command.
+    #[allow(dead_code)] // for the contextual tabs of the feature modules
     pub fn cmd_icon<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
         let color = if cmd.enabled(self) { theme::TEXT } else { theme::TEXT_DISABLED };
         let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
@@ -1315,6 +1316,8 @@ impl ExcelApp {
                 "border-top",
                 BorderPreset::TopAndBottom,
             ),
+            MenuEntry::separator(),
+            MenuEntry::command(format_cells::Cmd::Border, self),
         ];
         self.open_menu("rb-borders", entries, 250.0, window, cx);
     }

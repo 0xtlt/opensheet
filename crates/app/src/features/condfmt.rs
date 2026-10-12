@@ -109,6 +109,8 @@ fn menu(app: &ExcelApp) -> Vec<MenuEntry> {
 }
 
 /// The cell an adornment is drawn in.
+// Read by `paint_adornment` once it draws something.
+#[allow(dead_code)]
 pub struct CellBox<'a> {
     pub row: u32,
     pub col: u32,
@@ -122,21 +124,23 @@ pub struct CellBox<'a> {
     pub ts: &'a WindowTextSystem,
 }
 
-/// What an adornment draws and how it changes the text of its cell.
+/// What an adornment draws and the room it takes from the text of its
+/// cell.
 #[derive(Default)]
 pub struct AdornmentPaint {
-    /// Drawn over the cell's fill, under its text (a data bar).
+    /// Drawn over the cell's fill, under its text (the data bar).
     pub under: Vec<Draw>,
-    /// Drawn with the text (an icon).
+    /// Drawn with the text (the icon).
     pub over: Vec<Draw>,
-    /// The value is not shown ("Show Bar Only", "Show Icon Only").
-    pub hide_text: bool,
-    /// Room taken from the left and the right of the text (by an icon).
+    /// Room taken from the left and the right of the text (by the icon).
     pub text_inset: (f32, f32),
 }
 
-/// Draw what a conditional format adds inside a cell. Called by the grid
-/// for every visible cell whose `Workbook::display` carries an adornment.
+/// Draw what a conditional format adds inside a cell: `adornment.bar`
+/// (fractions of the cell's width, already mirrored and coloured by the
+/// engine) and `adornment.icon`. Called by the grid for every visible cell
+/// whose `Workbook::display` carries an adornment; the grid itself leaves
+/// the value out when `adornment.hide_value` is set.
 pub fn paint_adornment(_adornment: &Adornment, _cell: &CellBox) -> AdornmentPaint {
     AdornmentPaint::default()
 }

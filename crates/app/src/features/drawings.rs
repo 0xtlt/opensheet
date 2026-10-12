@@ -7,13 +7,18 @@
 //! `*_object` hooks is all it takes for pictures and shapes to be
 //! selected, moved, resized, nudged, copied, pasted and deleted like
 //! charts (`charts.rs` is the example).
+//!
+//! With the engine's `drawing` module, a `Placement` is read from
+//! `Sheet::drawing_corners` (its first corner) and `Sheet::drawing_frame`
+//! (the size), and written back with `Workbook::set_drawing_frame`, the
+//! frame's origin being `page::axis_offset` of the anchor plus the offset.
 
 use super::{Command, ContextTab, Cx, Feature, ZMove};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
 use crate::ribbon::{group, row, rows};
 use gpui::{AnyElement, Window, div, prelude::*, px};
-use opensheet_engine::drawing::Drawing;
+use opensheet_engine::drawing::{Drawing, DrawingKind};
 
 pub struct Drawings;
 
@@ -105,9 +110,9 @@ fn selected(app: &ExcelApp) -> Option<&Drawing> {
 }
 
 /// Whether a drawing is a picture (it gets the "Picture Format" tab) or a
-/// shape. The engine does not tell them apart yet.
-fn is_picture(_drawing: &Drawing) -> bool {
-    false
+/// shape.
+fn is_picture(drawing: &Drawing) -> bool {
+    matches!(drawing.kind, DrawingKind::Picture(_))
 }
 
 /// The Size group shared by the two tabs.

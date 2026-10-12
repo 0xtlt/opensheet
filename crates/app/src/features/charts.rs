@@ -48,7 +48,7 @@ impl ExcelApp {
         if self.editing.is_some() && !self.commit_edit(None, window, cx) {
             return;
         }
-        if !self.may(Intent::EditObjects, cx) {
+        if !self.may(Intent::EditObject(None), cx) {
             return;
         }
         let mut chart = self.wb.chart_from_range(self.sheet, self.sel().current(), kind);

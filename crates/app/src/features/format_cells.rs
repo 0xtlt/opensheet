@@ -359,6 +359,11 @@ impl Changes {
         if !app.may_all(Intent::FormatCells, cx) {
             return;
         }
+        // Merging and the two protection flags are more than formatting
+        // to a protected sheet.
+        if (self.merge.is_some() || self.locked.is_some() || self.hidden.is_some()) && !app.may(Intent::ChangeSheet, cx) {
+            return;
+        }
         let sheet = app.sheet;
         let ranges = app.sel().ranges.clone();
         for range in &ranges {
@@ -1341,14 +1346,14 @@ impl Dialog {
                     return;
                 };
                 let color = c(border.color.map(|col| col.0).unwrap_or(0x000000));
-                let mut solid = |offset: f32, width: f32, s: &mut Sketch| {
+                let solid = |offset: f32, width: f32, s: &mut Sketch| {
                     if horizontal {
                         s.rect(from.0, from.1 + offset, to.0, from.1 + offset + width, color);
                     } else {
                         s.rect(from.0 + offset, from.1, from.0 + offset + width, to.1, color);
                     }
                 };
-                let mut dashed = |on: f32, off: f32, s: &mut Sketch| {
+                let dashed = |on: f32, off: f32, s: &mut Sketch| {
                     let (mut p, end) = if horizontal { (from.0, to.0) } else { (from.1, to.1) };
                     while p < end {
                         let e = (p + on).min(end);
