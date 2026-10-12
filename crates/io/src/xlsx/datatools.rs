@@ -10,7 +10,7 @@ use opensheet_engine::consolidate::{ConsolidateFunction, ConsolidateSource, Cons
 use opensheet_engine::input::parse_numeric_text;
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::whatif::{DataTable, Scenario, ScenarioCell};
-use opensheet_engine::{Locale, Rect, Sheet};
+use opensheet_engine::{Content, Locale, Rect, Sheet};
 use std::fmt::Write;
 
 /// Read `<dataConsolidate>`: the function, the labels used and the
@@ -198,7 +198,8 @@ pub(crate) fn table_formula(sheet: &Sheet, row: u32, col: u32) -> Option<String>
 /// Read the `<f t="dataTable">` of a cell: `ref` is the range of the
 /// results, `r1` and `r2` the input cells (row then column for a table
 /// with both, else the one `dtr` says). A table whose input cell was
-/// deleted (`del1`, `del2`) stays the constants the file caches.
+/// deleted (`del1`, `del2`), or without the formula it shows, stays the
+/// constants the file caches.
 pub(crate) fn read_table(f: &Tag, sheet: &mut Sheet) {
     let cell = |name: &str| f.attr(name).and_then(|text| parse_cell_ref(&text));
     let Some(range) = f.attr("ref").and_then(|text| Rect::parse(&text)) else {
@@ -213,8 +214,18 @@ pub(crate) fn read_table(f: &Tag, sheet: &mut Sheet) {
         (false, false) => (None, cell("r1")),
     };
     let inputs = [row_input, col_input];
+    // The formula the first result shows: in the corner of a table with
+    // both inputs, else at the head of the column or of the row. Without
+    // it the results are only what the file caches.
+    let head = match (row_input, col_input) {
+        (Some(_), Some(_)) => (range.r0.wrapping_sub(1), range.c0.wrapping_sub(1)),
+        (None, _) => (range.r0.wrapping_sub(1), range.c0),
+        (Some(_), None) => (range.r0, range.c0.wrapping_sub(1)),
+    };
+    let has_formula = sheet.cells.get(&head).is_some_and(|cell| matches!(cell.content, Content::Formula(_)));
     let usable = range.r0 > 0
         && range.c0 > 0
+        && has_formula
         && inputs.iter().any(Option::is_some)
         && !inputs.iter().flatten().any(|(row, col)| range.contains(*row, *col))
         && !sheet.data_tables.iter().any(|table| table.range.intersects(&range));
