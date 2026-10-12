@@ -333,9 +333,9 @@ fn margins_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
             .into()
         };
         vec![
-            pair(t("Top", "Haut"), m.top, t("Bottom", "Bas"), m.bottom),
+            pair(crate::i18n::t_ctx("margin", "Top", "Haut"), m.top, crate::i18n::t_ctx("margin", "Bottom", "Bas"), m.bottom),
             pair(
-                t("Left", "Gauche"),
+                crate::i18n::t_ctx("margin", "Left", "Gauche"),
                 m.left,
                 crate::i18n::t_ctx("margin", "Right", "Droite"),
                 m.right,
