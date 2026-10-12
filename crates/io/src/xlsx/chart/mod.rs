@@ -1,17 +1,412 @@
 //! Charts: the drawing part of a sheet (where each chart sits) and the chart
-//! parts (what each one plots).
+//! parts (what each one shows and how).
 //!
-//! The engine's model is small: a kind, a title, a legend position, data
-//! labels on or off and, per series, the ranges it reads and an optional
-//! colour. That is what is written and read back; the formatting other
-//! applications store on top of it (fonts, gridlines, axis scales, colours
-//! of single points, trend lines, ...) is not kept.
+//! # What is written and read
+//!
+//! Every field of the engine's model has its place in a chart part, and
+//! what is written is read back as the same model:
+//!
+//! * the type of the chart and of each series: one chart-type element
+//!   (`c:barChart`, `c:lineChart`, ...) per group of series that share a
+//!   [`Plot`] and a pair of axes. Types that differ only by the look of
+//!   their series (lines with or without markers, the five scatter types)
+//!   share an element; which one a chart is, is read from the look of its
+//!   first series;
+//! * per series: names and ranges, colour, line or outline, marker,
+//!   smoothing, single points (`c:dPt`), explosion, data labels,
+//!   trendlines, error bars, bubble sizes;
+//! * per chart: title, legend (with deleted entries), data labels, the two
+//!   pairs of axes with all their options, gaps and overlap of bars, first
+//!   slice and hole of pies and doughnuts, bubble scale, the 3-D camera,
+//!   chart and plot area, data table, the treatment of blanks.
+//!
+//! An option left automatic in the model is written the way Excel spells
+//! it in its own new charts, and that spelling is read back as automatic.
+//! Automatic colours are spelled out too (the colours of the engine's
+//! palette, per series or per point): Excel would take them from a theme,
+//! and packages are written without one. What a chart has no use for (the
+//! hole of a doughnut in a column chart, an overlap without bars, a
+//! legend entry without a legend) is not written, and what Excel refuses
+//! in a file (a label position its chart type does not have, trendlines
+//! on stacked series, secondary axes in 3-D) is left out.
+//!
+//! # Charts of other applications
+//!
+//! The model is a subset of the format. A chart read from a file keeps the
+//! text of its part ([`ForeignChart`]), and as long as nothing but its
+//! place changes, [`foreign::reusable`] lets the writer put that text back
+//! as it was, with everything the model has no place for. Its theme
+//! colours alone are replaced by the colours they stand for, when the
+//! theme of the workbook is not the one Excel assumes for a package
+//! without a theme ([`foreign::without_theme`]). The text is not written
+//! back when it
+//!
+//! * is not a well-formed chart part in UTF-8,
+//! * names a sheet the workbook no longer has, or reads cells in a way the
+//!   engine cannot check (names, other workbooks),
+//! * belongs to a pivot table (`c:pivotSource`), or
+//! * refers to other parts of its package (pictures used as fills, for
+//!   instance), which are not carried over. Two such references are
+//!   simply cut out, as they add nothing to the picture: `c:externalData`
+//!   (the workbook embedded in a chart of a document) and `c:userShapes`
+//!   (drawings on top of the chart).
+//!
+//! Then, and whenever the chart was changed, the part is generated from
+//! the model, and what the model does not hold is lost:
+//!
+//! * fonts, sizes and colours of text; the formatting of titles, legend,
+//!   axis lines, gridlines, data labels, error bars, walls and floor;
+//!   manual layouts (positions of the plot area, of titles, of labels);
+//! * gradients, patterns and pictures (a gradient or a pattern becomes its
+//!   first colour), transparency, shadows and other effects, the absence
+//!   of a fill on a series, hollow markers, the colours a theme gives
+//!   what the file leaves automatic;
+//! * data labels and markers of single points, labels read from cells,
+//!   custom error amounts read from ranges, the label of a trendline;
+//! * series whose values are not a range of this workbook (numbers typed
+//!   into the chart, names, other workbooks), multi-level categories but
+//!   for the innermost level, titles linked to a cell (their last text is
+//!   kept), axis titles without a text;
+//! * stock, surface and pie-of-pie charts (read as lines and as a pie),
+//!   the shapes of 3-D bars, drop lines, high-low lines and up-down bars,
+//!   series lines, the depth axis of 3-D charts, line, marker and
+//!   smoothing of lines in 3-D;
+//! * differences between groups of the same chart that the model keeps
+//!   once (the gap of bars, "vary colours", the first slice), a third
+//!   pair of axes, date axes (written as automatic category axes), chart
+//!   style parts and extension lists.
+//!
+//! [`ForeignChart`]: opensheet_engine::chart::ForeignChart
 
+pub(crate) mod foreign;
 pub(crate) mod read;
 pub(crate) mod write;
 
 use opensheet_engine::ast::{CellRef, RefExpr, RefKind};
+use opensheet_engine::chart::{
+    ChartKind, Dash, DataLabels, DisplayUnit, Family, Grouping, LabelPosition, MarkerShape,
+    TickLabels, TickMark,
+};
+use opensheet_engine::{Color, Locale};
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Line widths are in English Metric Units too: 12 700 to the point.
+const EMU_PER_PT: f64 = 12_700.0;
+
+/// Automatic width, in points, of the outline of a shape and of the frame
+/// of the chart area.
+const OUTLINE_WIDTH: f32 = 0.75;
+/// Automatic width of the white lines between the slices of a pie.
+const SLICE_OUTLINE_WIDTH: f32 = 1.5;
+/// Automatic width of a trendline.
+const TREND_WIDTH: f32 = 1.5;
+/// Size of the markers Excel picks by itself.
+const LEGACY_MARKER_SIZE: u8 = 7;
+/// Automatic frames, gridlines and axis lines: the light grey of the
+/// charts Excel makes.
+const FRAME_GREY: Color = Color(0xD9D9D9);
+
+/// The markers Excel gives the series of a chart that leaves them to it,
+/// by position of the series.
+const LEGACY_MARKERS: [MarkerShape; 9] = [
+    MarkerShape::Diamond,
+    MarkerShape::Square,
+    MarkerShape::Triangle,
+    MarkerShape::X,
+    MarkerShape::Star,
+    MarkerShape::Circle,
+    MarkerShape::Plus,
+    MarkerShape::Dot,
+    MarkerShape::Dash,
+];
+
+const DASHES: [(Dash, &str); 8] = [
+    (Dash::Solid, "solid"),
+    (Dash::RoundDot, "sysDot"),
+    (Dash::SquareDot, "sysDash"),
+    (Dash::Dash, "dash"),
+    (Dash::DashDot, "dashDot"),
+    (Dash::LongDash, "lgDash"),
+    (Dash::LongDashDot, "lgDashDot"),
+    (Dash::LongDashDotDot, "lgDashDotDot"),
+];
+
+const MARKERS: [(MarkerShape, &str); 10] = [
+    (MarkerShape::None, "none"),
+    (MarkerShape::Circle, "circle"),
+    (MarkerShape::Square, "square"),
+    (MarkerShape::Diamond, "diamond"),
+    (MarkerShape::Triangle, "triangle"),
+    (MarkerShape::X, "x"),
+    (MarkerShape::Star, "star"),
+    (MarkerShape::Dash, "dash"),
+    (MarkerShape::Dot, "dot"),
+    (MarkerShape::Plus, "plus"),
+];
+
+const LABEL_POSITIONS: [(LabelPosition, &str); 9] = [
+    (LabelPosition::Center, "ctr"),
+    (LabelPosition::InsideEnd, "inEnd"),
+    (LabelPosition::InsideBase, "inBase"),
+    (LabelPosition::OutsideEnd, "outEnd"),
+    (LabelPosition::BestFit, "bestFit"),
+    (LabelPosition::Above, "t"),
+    (LabelPosition::Below, "b"),
+    (LabelPosition::Left, "l"),
+    (LabelPosition::Right, "r"),
+];
+
+const TICK_MARKS: [(TickMark, &str); 4] = [
+    (TickMark::None, "none"),
+    (TickMark::Inside, "in"),
+    (TickMark::Outside, "out"),
+    (TickMark::Cross, "cross"),
+];
+
+const TICK_LABELS: [(TickLabels, &str); 4] = [
+    (TickLabels::NextToAxis, "nextTo"),
+    (TickLabels::High, "high"),
+    (TickLabels::Low, "low"),
+    (TickLabels::None, "none"),
+];
+
+const DISPLAY_UNITS: [(DisplayUnit, &str); 9] = [
+    (DisplayUnit::Hundreds, "hundreds"),
+    (DisplayUnit::Thousands, "thousands"),
+    (DisplayUnit::TenThousands, "tenThousands"),
+    (DisplayUnit::HundredThousands, "hundredThousands"),
+    (DisplayUnit::Millions, "millions"),
+    (DisplayUnit::TenMillions, "tenMillions"),
+    (DisplayUnit::HundredMillions, "hundredMillions"),
+    (DisplayUnit::Billions, "billions"),
+    (DisplayUnit::Trillions, "trillions"),
+];
+
+/// Markers that are strokes without an inside. Excel paints the fill of
+/// such a marker as a square behind it: they are written without one, and
+/// their colour is that of their strokes.
+fn is_stroked(shape: MarkerShape) -> bool {
+    matches!(
+        shape,
+        MarkerShape::X | MarkerShape::Star | MarkerShape::Plus
+    )
+}
+
+/// What stands between the parts of a data label when the model leaves it
+/// automatic: the list separator of the locale, and a space. Excel left to
+/// itself would put the parts on lines of their own.
+fn list_separator(locale: &Locale) -> String {
+    format!("{} ", locale.arg_sep)
+}
+
+/// The name a file gives a value of the model.
+fn name_of<T: PartialEq + Copy>(table: &[(T, &'static str)], value: T) -> Option<&'static str> {
+    table
+        .iter()
+        .find(|(v, _)| *v == value)
+        .map(|(_, name)| *name)
+}
+
+/// The value of the model a file names.
+fn named<T: Copy>(table: &[(T, &'static str)], name: &str) -> Option<T> {
+    table.iter().find(|(_, n)| *n == name).map(|(v, _)| *v)
+}
+
+/// Position of a theme colour in a [`Palette`](super::color::Palette).
+fn scheme_slot(name: &str) -> Option<usize> {
+    Some(match name {
+        "dk1" | "tx1" => 0,
+        "lt1" | "bg1" => 1,
+        "dk2" | "tx2" => 2,
+        "lt2" | "bg2" => 3,
+        "accent1" => 4,
+        "accent2" => 5,
+        "accent3" => 6,
+        "accent4" => 7,
+        "accent5" => 8,
+        "accent6" => 9,
+        "hlink" => 10,
+        "folHlink" => 11,
+        _ => return None,
+    })
+}
+
+/// What a chart-type element of a file draws: the element itself, the
+/// direction of its bars, its grouping. Kinds that share a plot differ by
+/// the look of their series only, and their series can sit in one element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Plot {
+    pub family: Family,
+    pub grouping: Grouping,
+    pub is_3d: bool,
+    /// Radar charts: the series are filled.
+    pub filled: bool,
+}
+
+impl Plot {
+    pub fn of(kind: ChartKind) -> Plot {
+        Plot {
+            family: kind.family(),
+            grouping: kind.grouping(),
+            is_3d: kind.is_3d(),
+            filled: kind == ChartKind::RadarFilled,
+        }
+    }
+
+    /// Name of the element, without its prefix.
+    pub fn element(self) -> &'static str {
+        match (self.family, self.is_3d) {
+            (Family::Column | Family::Bar, false) => "barChart",
+            (Family::Column | Family::Bar, true) => "bar3DChart",
+            (Family::Line, false) => "lineChart",
+            (Family::Line, true) => "line3DChart",
+            (Family::Area, false) => "areaChart",
+            (Family::Area, true) => "area3DChart",
+            (Family::Pie, false) => "pieChart",
+            (Family::Pie, true) => "pie3DChart",
+            (Family::Doughnut, _) => "doughnutChart",
+            (Family::Scatter, _) => "scatterChart",
+            (Family::Bubble, _) => "bubbleChart",
+            (Family::Radar, _) => "radarChart",
+        }
+    }
+
+    /// The kind of a series of this plot that has markers, a line between
+    /// its points and a curved line, or not.
+    pub fn kind(self, markers: bool, line: bool, smooth: bool) -> ChartKind {
+        use ChartKind::*;
+        use Grouping::*;
+        match (self.family, self.is_3d) {
+            (Family::Column, false) => match self.grouping {
+                Standard => Column,
+                Stacked => StackedColumn,
+                Percent => PercentStackedColumn,
+            },
+            (Family::Column, true) => match self.grouping {
+                Standard => Column3D,
+                Stacked => StackedColumn3D,
+                Percent => PercentStackedColumn3D,
+            },
+            (Family::Bar, false) => match self.grouping {
+                Standard => Bar,
+                Stacked => StackedBar,
+                Percent => PercentStackedBar,
+            },
+            (Family::Bar, true) => match self.grouping {
+                Standard => Bar3D,
+                Stacked => StackedBar3D,
+                Percent => PercentStackedBar3D,
+            },
+            (Family::Line, true) => Line3D,
+            (Family::Line, false) => match (self.grouping, markers) {
+                (Standard, false) => Line,
+                (Stacked, false) => StackedLine,
+                (Percent, false) => PercentStackedLine,
+                (Standard, true) => LineMarkers,
+                (Stacked, true) => StackedLineMarkers,
+                (Percent, true) => PercentStackedLineMarkers,
+            },
+            (Family::Area, false) => match self.grouping {
+                Standard => Area,
+                Stacked => StackedArea,
+                Percent => PercentStackedArea,
+            },
+            (Family::Area, true) => match self.grouping {
+                Standard => Area3D,
+                Stacked => StackedArea3D,
+                Percent => PercentStackedArea3D,
+            },
+            (Family::Pie, false) => Pie,
+            (Family::Pie, true) => Pie3D,
+            (Family::Doughnut, _) => Doughnut,
+            (Family::Scatter, _) => match (line, smooth, markers) {
+                (false, ..) => Scatter,
+                (true, true, true) => ScatterSmoothMarkers,
+                (true, true, false) => ScatterSmooth,
+                (true, false, true) => ScatterLinesMarkers,
+                (true, false, false) => ScatterLines,
+            },
+            (Family::Bubble, _) => Bubble,
+            (Family::Radar, _) if self.filled => RadarFilled,
+            (Family::Radar, _) if markers => RadarMarkers,
+            (Family::Radar, _) => Radar,
+        }
+    }
+
+    /// Series drawn as a line through markers: their colour is that of a
+    /// stroke, and they have a `c:marker`.
+    pub fn is_line_like(self) -> bool {
+        match self.family {
+            Family::Line => !self.is_3d,
+            Family::Scatter => true,
+            Family::Radar => !self.filled,
+            _ => false,
+        }
+    }
+
+    pub fn is_round(self) -> bool {
+        matches!(self.family, Family::Pie | Family::Doughnut)
+    }
+
+    pub fn is_xy(self) -> bool {
+        matches!(self.family, Family::Scatter | Family::Bubble)
+    }
+
+    /// Whether the series say if their line is a curve (`c:smooth`).
+    pub fn has_smoothing(self) -> bool {
+        matches!(self.family, Family::Line | Family::Scatter)
+    }
+
+    /// Where Excel accepts the data labels of such a series; anywhere else
+    /// it takes the whole file for damaged.
+    pub fn label_positions(self) -> &'static [LabelPosition] {
+        use LabelPosition::*;
+        match self.family {
+            Family::Pie => &[BestFit, OutsideEnd, InsideEnd, Center],
+            _ if self.is_3d => &[],
+            Family::Column | Family::Bar if self.grouping == Grouping::Standard => {
+                &[OutsideEnd, InsideEnd, InsideBase, Center]
+            }
+            Family::Column | Family::Bar => &[InsideEnd, InsideBase, Center],
+            Family::Line | Family::Scatter | Family::Bubble => &[Above, Below, Left, Right, Center],
+            Family::Area | Family::Doughnut | Family::Radar => &[],
+        }
+    }
+
+    /// The labels as a file can hold them for a series of this plot: a
+    /// position Excel refuses there is left to it, and only pies have
+    /// leader lines to speak of.
+    pub fn labels(self, labels: &DataLabels) -> DataLabels {
+        let position = if self.label_positions().contains(&labels.position) {
+            labels.position
+        } else {
+            LabelPosition::Auto
+        };
+        DataLabels {
+            position,
+            leader_lines: labels.leader_lines || !self.is_round(),
+            ..labels.clone()
+        }
+    }
+
+    /// Excel has no error bars in pies, radar charts and 3-D charts.
+    pub fn takes_error_bars(self) -> bool {
+        !self.is_3d && !self.is_round() && self.family != Family::Radar
+    }
+
+    /// Nor trendlines, which stacked series do not have either.
+    pub fn takes_trendlines(self) -> bool {
+        self.takes_error_bars() && self.grouping == Grouping::Standard
+    }
+
+    /// Whether a chart of such series can have a data table under it.
+    pub fn takes_data_table(self) -> bool {
+        matches!(
+            self.family,
+            Family::Column | Family::Bar | Family::Line | Family::Area
+        )
+    }
+}
 
 /// Drawing coordinates are in English Metric Units: 914 400 to the inch,
 /// hence 9 525 to the pixel at 96 dpi.

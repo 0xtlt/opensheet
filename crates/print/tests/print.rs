@@ -749,6 +749,7 @@ fn charts_are_painted_by_the_application() {
         anchor: (2, 1),
         offset: (8.0, 4.0),
         size: (480.0, 288.0),
+        ..Chart::new(ChartKind::Column)
     };
     wb.add_chart(0, chart);
     wb.commit("chart");
