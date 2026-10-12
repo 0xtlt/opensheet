@@ -1108,6 +1108,9 @@ impl HfDialog {
             .collect();
         let fields = [0, 1, 2].map(|k| {
             let field = widgets::input(cx, texts[0][k].clone());
+            // The buttons insert at the caret: coming back from a dialog
+            // must not select the whole section.
+            field.update(cx, |field, _| field.select_on_tab = false);
             cx.subscribe(&field, move |this: &mut Self, _, event: &InputEvent, _| {
                 if matches!(event, InputEvent::Focused | InputEvent::Clicked) {
                     this.active = k;
