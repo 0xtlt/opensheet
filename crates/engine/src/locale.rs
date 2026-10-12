@@ -57,6 +57,14 @@ pub struct Locale {
     pub fmt_year: char,
     /// Name of the language in that language.
     pub display_name: &'static str,
+    /// Item specifiers of structured references (`Table1[#All]`), in
+    /// `TableItem::ALL` order: all, data, headers, totals, this row.
+    pub table_items: [&'static str; 5],
+    /// Other spellings of the item specifiers accepted when typed.
+    pub table_item_aliases: &'static [(&'static str, usize)],
+    /// Row and column letters of the R1C1 notation (`L1C1` in French),
+    /// uppercase: a defined name may not look like such a reference.
+    pub r1c1: (char, char),
     fn_pairs: &'static [(&'static str, &'static str)],
     maps: OnceLock<(HashMap<&'static str, &'static str>, HashMap<&'static str, &'static str>)>,
 }
@@ -144,6 +152,22 @@ impl Locale {
             }
         }
         ErrorKind::from_str(&up)
+    }
+
+    /// Index (in `TableItem::ALL` order) of a structured-reference item
+    /// specifier such as `#Headers`, in this locale or in English, compared
+    /// without case.
+    pub fn parse_table_item(&self, s: &str) -> Option<usize> {
+        let wanted = s.trim().to_lowercase();
+        let find = |names: &[&str; 5]| names.iter().position(|n| n.to_lowercase() == wanted);
+        find(&self.table_items)
+            .or_else(|| find(&EN.table_items))
+            .or_else(|| {
+                self.table_item_aliases
+                    .iter()
+                    .find(|(alias, _)| alias.to_lowercase() == wanted)
+                    .map(|(_, index)| *index)
+            })
     }
 
     pub fn bool_name(&self, b: bool) -> &'static str {
@@ -392,6 +416,9 @@ static EN: Locale = Locale {
     fmt_day: 'd',
     fmt_year: 'y',
     display_name: "English",
+    table_items: ["#All", "#Data", "#Headers", "#Totals", "#This Row"],
+    table_item_aliases: &[],
+    r1c1: ('R', 'C'),
     fn_pairs: &[],
     maps: OnceLock::new(),
 };
@@ -439,6 +466,9 @@ static FR: Locale = Locale {
     fmt_day: 'j',
     fmt_year: 'a',
     display_name: "Français",
+    table_items: ["#Tout", "#Données", "#En-têtes", "#Totaux", "#Cette ligne"],
+    table_item_aliases: &[],
+    r1c1: ('L', 'C'),
     fn_pairs: names_fr::FUNCTIONS,
     maps: OnceLock::new(),
 };
@@ -504,6 +534,9 @@ static ES: Locale = Locale {
     fmt_day: 'd',
     fmt_year: 'a',
     display_name: "Español",
+    table_items: ["#Todo", "#Datos", "#Encabezados", "#Totales", "#Esta fila"],
+    table_item_aliases: &[("#Todas", 0)],
+    r1c1: ('F', 'C'),
     fn_pairs: names_es::FUNCTIONS,
     maps: OnceLock::new(),
 };
@@ -567,6 +600,15 @@ static DE: Locale = Locale {
     fmt_day: 't',
     fmt_year: 'j',
     display_name: "Deutsch",
+    table_items: [
+        "#Alle",
+        "#Daten",
+        "#Kopfzeilen",
+        "#Ergebnisse",
+        "#Diese Zeile",
+    ],
+    table_item_aliases: &[],
+    r1c1: ('Z', 'S'),
     fn_pairs: names_de::FUNCTIONS,
     maps: OnceLock::new(),
 };
@@ -631,6 +673,15 @@ static IT: Locale = Locale {
     fmt_day: 'g',
     fmt_year: 'a',
     display_name: "Italiano",
+    table_items: [
+        "#Tutti",
+        "#Dati",
+        "#Intestazioni",
+        "#Totali",
+        "#Questa riga",
+    ],
+    table_item_aliases: &[],
+    r1c1: ('R', 'C'),
     fn_pairs: names_it::FUNCTIONS,
     maps: OnceLock::new(),
 };
