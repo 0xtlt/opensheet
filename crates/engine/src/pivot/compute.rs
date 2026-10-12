@@ -297,6 +297,17 @@ impl Line {
         func: 0,
         values: false,
     };
+
+    /// A line of the given kind at an axis position, standing for nothing:
+    /// what the sample report of a style thumbnail is made of.
+    pub(crate) fn sample(kind: LineKind, level: u8) -> Line {
+        Line {
+            kind,
+            level,
+            values: kind != LineKind::Header,
+            ..Line::HEADER
+        }
+    }
 }
 
 /// One position of an axis: a field, or "Σ Values".
@@ -566,6 +577,41 @@ impl Report {
                 self.row_levels.get(l as usize).filter(|v| v.compact).map(|v| v.indent)
             }
             _ => None,
+        }
+    }
+
+    /// Whether the label of a cell leaves room on its left for the expand /
+    /// collapse button Excel draws there. In a compact column every label
+    /// moves over as soon as one of its fields has detail below it, so that
+    /// they stay lined up; elsewhere only the text labels of a field with
+    /// another field below it do (numbers are aligned to the right).
+    pub(crate) fn drill_margin(&self, r: u32, c: u32, p: &PivotTable) -> bool {
+        if !p.options.show_drill {
+            return false;
+        }
+        let (rows, level, subtotal) = match self.tag(r, c) {
+            Tag::RowLabel(l) => (true, l as usize, false),
+            Tag::RowSubtotal(l) => (true, l as usize, true),
+            Tag::ColLabel(l) => (false, l as usize, false),
+            _ => return false,
+        };
+        let (levels, axis) = if rows {
+            (&self.row_levels, &p.row_fields)
+        } else {
+            (&self.col_levels, &p.col_fields)
+        };
+        let Some(lvl) = levels.get(level) else {
+            return false;
+        };
+        let has_button =
+            |k: usize, l: &Level| l.field.is_some() && axis.iter().skip(k + 1).any(|a| a.field().is_some());
+        if lvl.compact {
+            levels
+                .iter()
+                .enumerate()
+                .any(|(k, l)| l.compact && l.slot == lvl.slot && has_button(k, l))
+        } else {
+            !subtotal && has_button(level, lvl) && !self.value(r, c).is_number()
         }
     }
 }

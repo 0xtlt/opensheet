@@ -12,6 +12,9 @@ use gpui::{
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
+/// What a masked field draws in place of each character.
+const MASK: char = '•';
+
 actions!(
     text_input,
     [
@@ -147,6 +150,9 @@ pub struct TextInput {
     pub propagate_keys: bool,
     /// Numeric stepping with Up / Down.
     pub spin: Option<Spin>,
+    /// Show a bullet for each character and keep the text off the
+    /// clipboard: a password.
+    pub masked: bool,
     was_focused: bool,
 }
 
@@ -171,6 +177,7 @@ impl TextInput {
             select_on_tab: false,
             propagate_keys: false,
             spin: None,
+            masked: false,
             was_focused: false,
         }
     }
@@ -523,7 +530,7 @@ impl TextInput {
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected_range.is_empty() {
+        if !self.selected_range.is_empty() && !self.masked {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
@@ -531,7 +538,7 @@ impl TextInput {
     }
 
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.selected_range.is_empty() {
+        if !self.selected_range.is_empty() && !self.masked {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.content[self.selected_range.clone()].to_string(),
             ));
@@ -559,7 +566,26 @@ impl TextInput {
         let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref()) else {
             return 0;
         };
-        line.closest_index_for_x(position.x - bounds.left() + self.scroll_x)
+        self.from_shown(line.closest_index_for_x(position.x - bounds.left() + self.scroll_x))
+    }
+
+    /// Where a position in the text falls in what is drawn: a masked field
+    /// draws one bullet for each character.
+    fn to_shown(&self, offset: usize) -> usize {
+        if !self.masked {
+            return offset;
+        }
+        let offset = offset.min(self.content.len());
+        self.content[..offset].chars().count() * MASK.len_utf8()
+    }
+
+    /// The position in the text of a position in what is drawn.
+    fn from_shown(&self, offset: usize) -> usize {
+        if !self.masked {
+            return offset;
+        }
+        let chars = offset / MASK.len_utf8();
+        self.content.char_indices().nth(chars).map_or(self.content.len(), |(at, _)| at)
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -743,11 +769,11 @@ impl EntityInputHandler for TextInput {
         let range = self.range_from_utf16(&range_utf16);
         Some(Bounds::from_corners(
             point(
-                bounds.left() + last_layout.x_for_index(range.start) - self.scroll_x,
+                bounds.left() + last_layout.x_for_index(self.to_shown(range.start)) - self.scroll_x,
                 bounds.top(),
             ),
             point(
-                bounds.left() + last_layout.x_for_index(range.end) - self.scroll_x,
+                bounds.left() + last_layout.x_for_index(self.to_shown(range.end)) - self.scroll_x,
                 bounds.bottom(),
             ),
         ))
@@ -761,7 +787,7 @@ impl EntityInputHandler for TextInput {
     ) -> Option<usize> {
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
-        let utf8_index = last_layout.index_for_x(point.x - line_point.x + self.scroll_x)?;
+        let utf8_index = self.from_shown(last_layout.index_for_x(point.x - line_point.x + self.scroll_x)?);
         Some(self.offset_to_utf16(utf8_index))
     }
 }
@@ -820,9 +846,13 @@ impl Element for TextElement {
         cx: &mut App,
     ) -> Self::PrepaintState {
         let input = self.input.read(cx);
-        let content: SharedString = input.content.replace('\n', " ").into();
-        let selected_range = input.selected_range.clone();
-        let cursor = input.cursor_offset();
+        let content: SharedString = if input.masked {
+            MASK.to_string().repeat(input.content.chars().count()).into()
+        } else {
+            input.content.replace('\n', " ").into()
+        };
+        let selected_range = input.to_shown(input.selected_range.start)..input.to_shown(input.selected_range.end);
+        let cursor = input.to_shown(input.cursor_offset());
         let style = window.text_style();
 
         let (display_text, text_color) = if content.is_empty() {

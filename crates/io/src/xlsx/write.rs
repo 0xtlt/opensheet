@@ -2,11 +2,12 @@
 
 use super::chart::write::{CT_CHART, CT_DRAWING, drawings};
 use super::defaults::{self, Defaults};
+use super::dxf::Dxfs;
 use super::formula::{is_valid_name, needs_array_evaluation, to_file_text};
 use super::numfmt::{FIRST_CUSTOM_ID, builtin_id};
 use super::parts::{Extras, SheetLinks, push_relationship};
 use super::xml::{XML_DECL, push_attr, push_cell_text, push_text};
-use super::{protection, px_to_col_width, px_to_points, validation};
+use super::{condfmt, page, protection, px_to_col_width, px_to_points, validation};
 use crate::Result;
 use opensheet_engine::names::NameScope;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
@@ -74,9 +75,17 @@ pub(crate) fn push_number(x: &mut String, n: f64) {
 // ---- styles ------------------------------------------------------------------
 
 struct StyleBook {
-    xml: String,
+    /// `styles.xml` in three pieces. Between the first two go the custom
+    /// number formats and between the last two the differential formats:
+    /// both lists are only complete once everything that names a format
+    /// is written.
+    head: String,
+    body: String,
+    tail: String,
     /// `cellXfs` index of every engine style (0 for styles not in use).
     xf: Vec<u32>,
+    /// The custom number formats, in the order of their ids.
+    formats: Vec<String>,
 }
 
 fn push_font(x: &mut String, f: &Font) {
@@ -285,21 +294,9 @@ impl StyleBook {
             }
         }
 
-        let mut x = String::from(XML_DECL);
-        w!(x, "<styleSheet xmlns=\"{NS_MAIN}\">");
-        if !formats.is_empty() {
-            w!(x, "<numFmts count=\"{}\">", formats.len());
-            for (i, code) in formats.iter().enumerate() {
-                w!(
-                    x,
-                    "<numFmt numFmtId=\"{}\" formatCode=\"",
-                    FIRST_CUSTOM_ID + i as u32
-                );
-                push_attr(&mut x, code);
-                x.push_str("\"/>");
-            }
-            x.push_str("</numFmts>");
-        }
+        let mut head = String::from(XML_DECL);
+        w!(head, "<styleSheet xmlns=\"{NS_MAIN}\">");
+        let mut x = String::new();
         w!(x, "<fonts count=\"{}\">", fonts.len());
         for font in &fonts {
             push_font(&mut x, font);
@@ -327,10 +324,54 @@ impl StyleBook {
         x.push_str("<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>");
         w!(x, "<cellXfs count=\"{xf_count}\">{xfs}</cellXfs>");
         x.push_str("<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>");
-        x.push_str("<dxfs count=\"0\"/>");
-        x.push_str("<tableStyles count=\"0\" defaultTableStyle=\"TableStyleMedium9\" defaultPivotStyle=\"PivotStyleLight16\"/>");
-        x.push_str("</styleSheet>");
-        StyleBook { xml: x, xf: xf_of }
+        let tail = concat!(
+            "<tableStyles count=\"0\" defaultTableStyle=\"TableStyleMedium9\" defaultPivotStyle=\"PivotStyleLight16\"/>",
+            "</styleSheet>"
+        );
+        StyleBook {
+            head,
+            body: x,
+            tail: tail.to_string(),
+            xf: xf_of,
+            formats: formats.iter().map(|code| code.to_string()).collect(),
+        }
+    }
+
+    /// The registry of the differential formats of this workbook.
+    fn dxfs(&self, wb: &Workbook) -> Dxfs {
+        Dxfs::new(self.formats.clone(), wb.locale)
+    }
+
+    /// `styles.xml`, once every part that uses a differential format has
+    /// asked for its id.
+    fn xml(&self, dxfs: &mut Dxfs) -> String {
+        // The differential formats first: writing them gives the last of
+        // their number formats an id.
+        let dxfs_xml = dxfs.xml();
+        let mut x = self.head.clone();
+        let formats = self
+            .formats
+            .iter()
+            .map(String::as_str)
+            .chain(dxfs.own_formats().iter().map(|code| &**code));
+        let count = self.formats.len() + dxfs.own_formats().len();
+        if count > 0 {
+            w!(x, "<numFmts count=\"{count}\">");
+            for (i, code) in formats.enumerate() {
+                w!(
+                    x,
+                    "<numFmt numFmtId=\"{}\" formatCode=\"",
+                    FIRST_CUSTOM_ID + i as u32
+                );
+                push_attr(&mut x, code);
+                x.push_str("\"/>");
+            }
+            x.push_str("</numFmts>");
+        }
+        x.push_str(&self.body);
+        x.push_str(&dxfs_xml);
+        x.push_str(&self.tail);
+        x
     }
 }
 
@@ -533,6 +574,7 @@ struct SheetWriter<'a> {
     /// The sizes that follow from the workbook's default font.
     defaults: Defaults,
     strings: &'a mut SharedStrings,
+    dxfs: &'a mut Dxfs,
     /// Set when a dynamic array formula was written (the package then needs
     /// the metadata part that marks such formulas).
     dynamic_arrays: bool,
@@ -638,6 +680,7 @@ impl SheetWriter<'_> {
             .row_heights
             .keys()
             .chain(sheet.hidden_rows.iter())
+            .chain(sheet.filtered_rows.iter())
             .chain(sheet.row_styles.keys())
             .copied()
             .filter(|r| *r < MAX_ROWS)
@@ -675,7 +718,8 @@ impl SheetWriter<'_> {
                     px_to_points(*height).min(MAX_ROW_HEIGHT_PT)
                 );
             }
-            if sheet.hidden_rows.contains(&row) {
+            // Hidden by hand or by a filter: a file does not say which.
+            if sheet.hidden_rows.contains(&row) || sheet.filtered_rows.contains(&row) {
                 x.push_str(" hidden=\"1\"");
             }
             x.push('>');
@@ -740,7 +784,9 @@ impl SheetWriter<'_> {
         x.push_str("</sheetData>");
     }
 
-    fn sheet_xml(&mut self, sheet: &Sheet, selected: bool) -> String {
+    fn sheet_xml(&mut self, sheet: &Sheet, index: usize) -> String {
+        // The first sheet is the one shown when the file is opened.
+        let selected = index == 0;
         let mut x = String::with_capacity(512 + sheet.cells.len() * 40);
         x.push_str(XML_DECL);
         w!(
@@ -763,10 +809,13 @@ impl SheetWriter<'_> {
         // Each element written has its step below, named after it; a new
         // one goes between its neighbours of the list.
 
-        // sheetPr
-        if let Some(color) = sheet.tab_color {
+        // sheetPr: tabColor, then pageSetUpPr
+        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) {
             x.push_str("<sheetPr>");
-            push_rgb(&mut x, "tabColor", color);
+            if let Some(color) = sheet.tab_color {
+                push_rgb(&mut x, "tabColor", color);
+            }
+            page::push_sheet_pr(&mut x, &sheet.page);
             x.push_str("</sheetPr>");
         }
         // dimension
@@ -788,6 +837,8 @@ impl SheetWriter<'_> {
         if let Some(protection) = &sheet.protection {
             protection::write_sheet(&mut x, protection);
         }
+        // autoFilter (the rows it hides are hidden rows of sheetData)
+        super::filter::write_sheet(&mut x, self.wb, index, self.dxfs);
         // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {
@@ -799,16 +850,20 @@ impl SheetWriter<'_> {
             }
             x.push_str("</mergeCells>");
         }
+        // conditionalFormatting
+        condfmt::write(&mut x, sheet, index, self.wb, self.dxfs);
         // dataValidations
         validation::write(&mut x, sheet, self.wb);
-        // pageMargins
-        x.push_str("<pageMargins left=\"0.7\" right=\"0.7\" top=\"0.75\" bottom=\"0.75\" header=\"0.3\" footer=\"0.3\"/>");
-        // drawing, legacyDrawing: what lives in parts of its own (charts,
-        // the boxes of notes).
+        // printOptions, pageMargins, pageSetup, headerFooter, rowBreaks,
+        // colBreaks
+        page::write(&mut x, &sheet.page);
+        // drawing, legacyDrawing, tableParts: what lives in parts of its
+        // own (charts, pictures and shapes; the boxes of notes; tables).
         SheetLinks::of(sheet).push_elements(&mut x);
         // extLst: one `<ext>` per feature, in the order Excel writes them
         // (conditional formats, then data validations).
         let mut extensions = String::new();
+        condfmt::write_ext(&mut extensions, sheet, index, self.wb, self.dxfs);
         validation::write_ext(&mut extensions, sheet, self.wb);
         if !extensions.is_empty() {
             w!(x, "<extLst>{extensions}</extLst>");
@@ -820,7 +875,9 @@ impl SheetWriter<'_> {
 
 // ---- package -------------------------------------------------------------------
 
-fn workbook_xml(wb: &Workbook) -> String {
+/// `extra` is what comes after the calculation properties: the elements
+/// naming parts the workbook part relates to.
+fn workbook_xml(wb: &Workbook, extra: &str) -> String {
     let mut x = String::from(XML_DECL);
     w!(x, "<workbook xmlns=\"{NS_MAIN}\" xmlns:r=\"{NS_DOC_REL}\">");
     // The children of the workbook, in the order of the schema
@@ -845,8 +902,14 @@ fn workbook_xml(wb: &Workbook) -> String {
         .into_iter()
         .filter(|(_, def)| is_valid_name(&def.name))
         .collect();
-    if !names.is_empty() {
+    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) {
         x.push_str("<definedNames>");
+        // The ranges of the sheets' filters, which Excel keeps as hidden
+        // names beside the filters themselves.
+        super::filter::push_names(&mut x, wb);
+        // The print areas and print titles of the sheets, which are names
+        // only in files.
+        page::push_names(&mut x, wb);
         for (scope, def) in names {
             x.push_str("<definedName name=\"");
             push_attr(&mut x, &def.name);
@@ -868,6 +931,7 @@ fn workbook_xml(wb: &Workbook) -> String {
     // Cached results are written, but the reader is asked to recalculate:
     // its functions are the reference.
     x.push_str("<calcPr calcId=\"191029\" fullCalcOnLoad=\"1\"/>");
+    x.push_str(extra);
     x.push_str("</workbook>");
     x
 }
@@ -892,23 +956,25 @@ pub(crate) fn write_workbook<W: Write + Seek>(
 ) -> Result<W> {
     let styles = StyleBook::build(wb);
     let mut strings = SharedStrings::default();
+    let mut dxfs = styles.dxfs(wb);
     let mut writer = SheetWriter {
         wb,
         styles: &styles,
         defaults: Defaults::of(&wb.styles.default_style().font),
         strings: &mut strings,
+        dxfs: &mut dxfs,
         dynamic_arrays: false,
     };
     let sheets: Vec<String> = wb
         .sheets
         .iter()
         .enumerate()
-        .map(|(i, sheet)| writer.sheet_xml(sheet, i == 0))
+        .map(|(i, sheet)| writer.sheet_xml(sheet, i))
         .collect();
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
-    let drawings = drawings(wb);
-    let extras = Extras::of(wb, &drawings);
+    let mut drawings = drawings(wb);
+    let extras = Extras::of(wb, &mut drawings, &mut dxfs);
 
     let mut content_types = String::from(XML_DECL);
     content_types
@@ -992,12 +1058,11 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let mut workbook_rels = String::from(XML_DECL);
     w!(workbook_rels, "<Relationships xmlns=\"{NS_PKG_REL}\">");
     let mut next_id = 1;
-    // `kind` is the whole type of the relationship.
-    let mut relate_as = |kind: &str, target: &str| {
-        push_relationship(&mut workbook_rels, next_id, kind, target);
+    let mut relate = |kind: &str, target: &str| {
+        let kind = format!("{NS_DOC_REL}/{kind}");
+        push_relationship(&mut workbook_rels, next_id, &kind, target);
         next_id += 1;
     };
-    let mut relate = |kind: &str, target: &str| relate_as(&format!("{NS_DOC_REL}/{kind}"), target);
     // Sheets first: `workbook.xml` refers to sheet n as rId n.
     for i in 1..=sheet_count {
         relate("worksheet", &format!("worksheets/sheet{i}.xml"));
@@ -1007,9 +1072,10 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     if dynamic_arrays {
         relate("sheetMetadata", "metadata.xml");
     }
-    for (kind, target) in &extras.workbook_rels {
-        relate_as(kind, target);
-    }
+    // The parts of the features are numbered after these; the workbook
+    // part names some of them by those ids.
+    let first_extra = next_id;
+    workbook_rels.push_str(&extras.workbook_relationships(first_extra));
     workbook_rels.push_str("</Relationships>");
 
     let app = format!(
@@ -1031,12 +1097,15 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     put("_rels/.rels", &root_rels)?;
     put("docProps/app.xml", &app)?;
     put("docProps/core.xml", &core)?;
-    put("xl/workbook.xml", &workbook_xml(wb))?;
+    put(
+        "xl/workbook.xml",
+        &workbook_xml(wb, &extras.workbook_elements(first_extra)),
+    )?;
     put("xl/_rels/workbook.xml.rels", &workbook_rels)?;
     for (i, xml) in sheets.iter().enumerate() {
         put(&format!("xl/worksheets/sheet{}.xml", i + 1), xml)?;
     }
-    put("xl/styles.xml", &styles.xml)?;
+    put("xl/styles.xml", &styles.xml(&mut dxfs))?;
     put("xl/sharedStrings.xml", &strings.xml())?;
     if dynamic_arrays {
         put("xl/metadata.xml", &format!("{XML_DECL}{METADATA_XML}"))?;
@@ -1054,7 +1123,8 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     }
     // The relationships of the worksheets are among them.
     for part in &extras.parts {
-        put(&part.name, &part.data)?;
+        zip.start_file(part.name.as_str(), options)?;
+        zip.write_all(&part.data)?;
     }
     Ok(zip.finish()?)
 }
