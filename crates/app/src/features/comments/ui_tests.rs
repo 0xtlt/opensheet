@@ -1065,3 +1065,64 @@ fn odd_cases(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("down");
     app.update(cx, |app, _| assert_eq!(app.active(), (active.0 + 1, active.1)));
 }
+
+#[gpui::test]
+fn a_protected_sheet_refuses_changes_to_notes_and_comments(cx: &mut TestAppContext) {
+    use opensheet_engine::protect::{Permission, SheetProtection};
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.set_note(0, 2, 1, "Ada", "Ada:\nShown");
+        wb.set_note_visible(0, 2, 1, true);
+        wb.add_comment(0, 5, 1, &bob(), 45_000.0, "A thread");
+    });
+    app.update(cx, |app, cx| {
+        app.wb.protect_sheet(0, SheetProtection::default(), "");
+        cx.notify();
+    });
+    redraw(cx);
+    // Each attempt is answered by Excel's message, and changes nothing.
+    let refused = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, what: &str| {
+        app.update(cx, |app, _| assert!(app.modal_open(), "{what} was not refused"));
+        cx.simulate_keystrokes("enter");
+        app.update(cx, |app, _| assert!(!app.modal_open() && !app.wb.can_undo(), "{what} changed the workbook"));
+        redraw(cx);
+    };
+    select(&app, cx, (8, 3));
+    cx.simulate_keystrokes("shift-f2");
+    assert_eq!(editing(&app, cx), None);
+    refused(&app, cx, "New Note");
+    cx.simulate_keystrokes("cmd-shift-m");
+    assert_eq!(card(&app, cx), None);
+    refused(&app, cx, "New Comment");
+    select(&app, cx, (2, 1));
+    run(&app, cx, Cmd::DeleteNote);
+    refused(&app, cx, "Delete Note");
+    run(&app, cx, Cmd::ShowHideNote);
+    refused(&app, cx, "Show/Hide Note");
+    // The box of a shown note is neither opened nor moved.
+    let (x0, y0, _, _) = box_of(&app, cx, (2, 1)).unwrap();
+    click(cx, point(px(x0 + 30.0), px(y0 + 30.0)));
+    assert_eq!(editing(&app, cx), None);
+    refused(&app, cx, "typing in a note");
+    let frame = app.update(cx, |app, _| app.wb.sheets[0].note_frame(2, 1));
+    drag(cx, (x0 + 40.0, y0), (x0 + 90.0, y0 + 30.0));
+    refused(&app, cx, "moving a note");
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].note_frame(2, 1)), frame);
+    // A thread can be read (its card opens), not answered.
+    let on_comment = centre(&app, cx, (5, 1));
+    click(cx, on_comment);
+    assert_eq!(card(&app, cx), Some(((5, 1), true)));
+    app.update(cx, |app, cx| assert!(!post(app, 0, (5, 1), "No", cx)));
+    refused(&app, cx, "a reply");
+    app.update(cx, |app, cx| resolve(app, 0, (5, 1), true, cx));
+    refused(&app, cx, "Resolve thread");
+
+    // With "Edit objects" allowed, they all work again.
+    app.update(cx, |app, cx| {
+        app.wb.unprotect_sheet(0, "").unwrap();
+        app.wb.protect_sheet(0, SheetProtection::allowing(&[Permission::EditObjects]), "");
+        cx.notify();
+    });
+    app.update(cx, |app, cx| assert!(post(app, 0, (5, 1), "Yes", cx)));
+    assert_eq!(thread(&app, cx, (5, 1)).unwrap().replies.len(), 1);
+}
