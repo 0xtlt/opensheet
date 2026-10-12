@@ -64,6 +64,7 @@ fn advanced_filter_in_place_round_trips() {
     wb.sheets[0].hidden_rows.insert(7);
     wb.commit("filter");
     let bytes = to_bytes(&wb);
+    common::keep_sample("data-advanced-filter.xlsx", &bytes);
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     assert!(sheet.contains("<sheetPr filterMode=\"1\"></sheetPr>"), "{sheet}");
     assert!(sheet.contains("<row r=\"3\" hidden=\"1\""), "{sheet}");
@@ -134,6 +135,7 @@ fn consolidation_settings_round_trip() {
     wb.toggle_auto_filter(0, Rect::cell(0, 0)).unwrap();
     wb.commit("Consolidate");
     let bytes = to_bytes(&wb);
+    common::keep_sample("data-consolidate.xlsx", &bytes);
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     assert_worksheet_order("sheet1", &sheet);
     assert!(
@@ -191,6 +193,7 @@ fn scenarios_round_trip() {
     wb.protect_sheet(0, Default::default(), "");
     wb.commit("scenarios");
     let bytes = to_bytes(&wb);
+    common::keep_sample("data-scenarios.xlsx", &bytes);
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     assert_worksheet_order("sheet1", &sheet);
     assert!(
@@ -253,6 +256,7 @@ fn data_tables_round_trip() {
     wb.data_table_create(0, rect("A10:B11"), Some((0, 1)), None).unwrap();
     wb.commit("Data Table");
     let bytes = to_bytes(&wb);
+    common::keep_sample("data-tables.xlsx", &bytes);
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     for expected in [
         "<c r=\"E2\"><f t=\"dataTable\" ref=\"E2:F3\" dt2D=\"1\" dtr=\"1\" r1=\"B1\" r2=\"B2\"/><v>10</v></c><c r=\"F2\"><v>20</v></c>",
@@ -334,6 +338,7 @@ fn text_imports_round_trip() {
     wb.import_text(1, (5, 2), "a\tb", plain.clone()).unwrap();
     wb.commit("Import Data");
     let bytes = to_bytes(&wb);
+    common::keep_sample("data-text-import.xlsx", &bytes);
 
     let names = part_names(&bytes);
     for name in ["xl/connections.xml", "xl/queryTables/queryTable1.xml", "xl/queryTables/queryTable3.xml", "xl/worksheets/_rels/sheet2.xml.rels"] {
@@ -344,11 +349,11 @@ fn text_imports_round_trip() {
     for expected in [
         concat!(
             "<connection id=\"1\" name=\"sales\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\">",
-            "<textPr sourceFile=\"/Users/ann/Sales &amp; co/sales.csv\" firstRow=\"2\" tab=\"0\" semicolon=\"1\" consecutive=\"1\" qualifier=\"none\" delimiter=\"|\">",
+            "<textPr codePage=\"65001\" sourceFile=\"/Users/ann/Sales &amp; co/sales.csv\" firstRow=\"2\" tab=\"0\" semicolon=\"1\" consecutive=\"1\" qualifier=\"none\" delimiter=\"|\">",
             "<textFields count=\"4\"><textField type=\"text\"/><textField/><textField type=\"DMY\"/><textField type=\"skip\"/></textFields></textPr></connection>"
         ),
-        "<textPr sourceFile=\"/Users/ann/stock.txt\" delimited=\"0\"><textFields count=\"3\"><textField/><textField position=\"5\"/><textField position=\"9\"/></textFields></textPr>",
-        "<connection id=\"3\" name=\"notes\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr sourceFile=\"/Users/ann/notes.txt\"/></connection>",
+        "<textPr codePage=\"65001\" sourceFile=\"/Users/ann/stock.txt\" delimited=\"0\"><textFields count=\"3\"><textField/><textField position=\"5\"/><textField position=\"9\"/></textFields></textPr>",
+        "<connection id=\"3\" name=\"notes\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr codePage=\"65001\" sourceFile=\"/Users/ann/notes.txt\"><textFields count=\"2\"><textField/><textField/></textFields></textPr></connection>",
     ] {
         assert!(connections.contains(expected), "{expected}\n{connections}");
     }
@@ -374,10 +379,9 @@ fn text_imports_round_trip() {
         import
     };
     assert_eq!(read(0, 0), expect(delimited, "sales", "A10:C11"));
-    // The positions of a fixed-width file say a format for each column.
-    let mut fixed = expect(fixed, "stock", "A1:C2");
-    fixed.spec.formats = vec![ColumnFormat::General; 3];
-    assert_eq!(read(1, 0), fixed);
+    // Every column has its field in the file; one that says nothing is a
+    // General column and comes back as no format at all.
+    assert_eq!(read(1, 0), expect(fixed, "stock", "A1:C2"));
     assert_eq!(read(1, 1), expect(plain, "notes", "C6:D6"));
     // The ranges are not ordinary names of the workbook.
     assert!(back.all_names().is_empty());
@@ -389,11 +393,91 @@ fn text_imports_round_trip() {
     assert_eq!(value(&back, 1, "A2"), Value::Empty);
 
     // A query on something else than a text file, or without its range, is left out.
-    let other = connections.replace("type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr sourceFile=\"/Users/ann/notes.txt\"/>", "type=\"5\"><dbPr connection=\"x\" command=\"y\"/>");
+    let other = connections.replace("type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr codePage=\"65001\" sourceFile=\"/Users/ann/notes.txt\"><textFields count=\"2\"><textField/><textField/></textFields></textPr>", "type=\"5\"><dbPr connection=\"x\" command=\"y\"/>");
     let unnamed = workbook.replace("<definedName name=\"stock\" localSheetId=\"1\">Sheet2!$A$1:$C$2</definedName>", "");
     assert_ne!(unnamed, workbook);
     let bytes = with_part(&with_part(&bytes, "xl/connections.xml", &other), "xl/workbook.xml", &unnamed);
     let back = load(&bytes);
     assert_eq!(back.sheets[0].text_imports.len(), 1);
     assert!(back.sheets[1].text_imports.is_empty());
+}
+
+/// One workbook holding every part of this file, kept as a sample to open
+/// in Excel (see `common::keep_sample`).
+#[test]
+fn every_data_tool_in_one_sample() {
+    // Sheet1: the list under an Advanced Filter, scenarios and a text import.
+    let mut wb = list();
+    wb.advanced_filter_in_place(0, rect("A1:B5"), Some((0, rect("D1:D2"))), false).unwrap();
+    let mut low = scenario("Low", &[(0, 5, "50"), (1, 5, "5%")]);
+    low.comment = "Created by Ann on 10/12/2026".into();
+    low.user = "Ann".into();
+    wb.scenario_add(0, low).unwrap();
+    wb.scenario_add(0, scenario("High", &[(0, 5, "150")])).unwrap();
+    let import = TextImport {
+        name: String::new(),
+        path: "/Users/ann/sales.csv".into(),
+        range: Rect::cell(0, 0),
+        first_row: 1,
+        spec: Spec::new(Layout::Delimited(Delimiters::only(';'))),
+    };
+    wb.import_text(0, (11, 0), "007;x\n008;y", import).unwrap();
+
+    // Sheet2: the sources and the result of a consolidation.
+    wb.add_sheet(1);
+    for (cell, text) in [("A1", "Q1"), ("A2", "4"), ("B1", "Q2"), ("B2", "5"), ("D1", "Q1"), ("D2", "6"), ("E1", "Q2"), ("E2", "7")] {
+        enter(&mut wb, 1, cell, text);
+    }
+    let spec = Consolidation {
+        function: ConsolidateFunction::Sum,
+        sources: vec![
+            ConsolidateSource {
+                sheet: "Sheet2".into(),
+                range: rect("A1:B2"),
+            },
+            ConsolidateSource {
+                sheet: "Sheet2".into(),
+                range: rect("D1:E2"),
+            },
+        ],
+        top_row: true,
+        left_column: false,
+    };
+    wb.consolidate(1, rect("G1"), &spec).unwrap();
+
+    // Sheet3: the three kinds of data table.
+    wb.add_sheet(2);
+    let cells = [
+        ("B1", "10"),
+        ("B2", "3"),
+        ("B3", "=B1*B2"),
+        ("D1", "=B3"),
+        ("E1", "10"),
+        ("F1", "20"),
+        ("D2", "1"),
+        ("D3", "2"),
+        ("E7", "=B3+1"),
+        ("D8", "5"),
+        ("A11", "=B3+1"),
+        ("B10", "7"),
+    ];
+    for (cell, text) in cells {
+        enter(&mut wb, 2, cell, text);
+    }
+    wb.commit("setup");
+    wb.data_table_create(2, rect("D1:F3"), Some((0, 1)), Some((1, 1))).unwrap();
+    wb.data_table_create(2, rect("D7:E8"), None, Some((1, 1))).unwrap();
+    wb.data_table_create(2, rect("A10:B11"), Some((0, 1)), None).unwrap();
+    wb.commit("Data Table");
+
+    let bytes = to_bytes(&wb);
+    for name in part_names(&bytes).iter().filter(|name| name.ends_with(".xml") || name.ends_with(".rels")) {
+        assert_well_formed(name, &part(&bytes, name));
+    }
+    common::keep_sample("data-tools.xlsx", &bytes);
+    let back = load(&bytes);
+    assert!(back.sheets[0].advanced_filter.is_some());
+    assert_eq!(back.sheets[0].scenarios.len(), 2);
+    assert_eq!(back.sheets[0].text_imports.len(), 1);
+    assert_eq!(back.sheets[2].data_tables.len(), 3);
 }

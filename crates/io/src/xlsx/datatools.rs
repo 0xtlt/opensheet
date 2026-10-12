@@ -274,7 +274,9 @@ fn field_format(name: &str) -> ColumnFormat {
 fn push_connection(x: &mut String, id: usize, import: &TextImport) {
     w!(x, "<connection id=\"{id}\" name=\"");
     push_attr(x, &import.name);
-    x.push_str("\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr sourceFile=\"");
+    // Excel repairs a workbook whose text connection names no code page
+    // or no fields; files are read as UTF-8 (65001).
+    x.push_str("\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr codePage=\"65001\" sourceFile=\"");
     push_attr(x, &import.path);
     x.push('"');
     if import.first_row > 1 {
@@ -310,13 +312,10 @@ fn push_connection(x: &mut String, id: usize, import: &TextImport) {
             positions.extend(breaks.iter().copied());
         }
     }
-    // One field per column of a fixed-width file (its position), else
-    // one per format chosen.
-    let count = positions.len().max(import.spec.formats.len());
-    if count == 0 {
-        x.push_str("/></connection>");
-        return;
-    }
+    // One field per column: of a fixed-width file (its position), of the
+    // formats chosen, of the cells the import fills.
+    let columns = (import.range.c1 - import.range.c0 + 1) as usize;
+    let count = positions.len().max(import.spec.formats.len()).max(columns);
     w!(x, "><textFields count=\"{count}\">");
     for i in 0..count {
         x.push_str("<textField");
@@ -455,6 +454,11 @@ fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
             },
             Event::Close(name) if name == "textPr" => {
                 if let (Some(id), Some(mut import)) = (id, current.take()) {
+                    // A field that says nothing is a General column, which
+                    // is also what a column without a format is.
+                    while import.spec.formats.last() == Some(&ColumnFormat::General) {
+                        import.spec.formats.pop();
+                    }
                     if let Layout::FixedWidth(positions) = &mut import.spec.layout {
                         breaks.sort_unstable();
                         breaks.dedup();
