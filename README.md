@@ -128,7 +128,9 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 
 ## Ce qui manque
 
-**Hors périmètre** : les macros (VBA) et les scripts.
+**Hors périmètre** : l'exécution des macros VBA.
+
+**Prévu** : les scripts Office en TypeScript (onglet Automatiser).
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
 - Graphiques sparkline, thèmes.
