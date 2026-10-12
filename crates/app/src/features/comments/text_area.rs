@@ -286,6 +286,9 @@ pub struct TextArea {
     pub min_rows: usize,
     /// The box grows with its text up to this height, then scrolls.
     pub max_height: Option<f32>,
+    /// Tab is left to what holds the box (a pane walks its controls with
+    /// it); else it is swallowed, so that it never reaches the grid.
+    tab_moves_on: bool,
     marked: Option<Range<usize>>,
     shaped: Option<Shaped>,
     bounds: Option<Bounds<Pixels>>,
@@ -308,6 +311,7 @@ impl TextArea {
             bold_prefix: None,
             min_rows: 1,
             max_height: None,
+            tab_moves_on: false,
             marked: None,
             shaped: None,
             bounds: None,
@@ -317,6 +321,14 @@ impl TextArea {
             was_focused: false,
             pending_caret: None,
         }
+    }
+
+    /// A box for a pane: it takes part in the Tab order, and Tab leaves it.
+    pub fn field(cx: &mut Context<Self>) -> Self {
+        let mut area = TextArea::new(cx);
+        area.focus_handle = cx.focus_handle().tab_stop(true);
+        area.tab_moves_on = true;
+        area
     }
 
     pub fn text(&self) -> &str {
@@ -617,6 +629,18 @@ impl TextArea {
 
     fn escape(&mut self, _: &line::Escape, _: &mut Window, cx: &mut Context<Self>) {
         cx.emit(AreaEvent::Escape);
+    }
+
+    fn tab(&mut self, _: &line::Tab, _: &mut Window, cx: &mut Context<Self>) {
+        if self.tab_moves_on {
+            cx.propagate();
+        }
+    }
+
+    fn shift_tab(&mut self, _: &line::ShiftTab, _: &mut Window, cx: &mut Context<Self>) {
+        if self.tab_moves_on {
+            cx.propagate();
+        }
     }
 
     fn show_character_palette(&mut self, _: &line::ShowCharacterPalette, window: &mut Window, _: &mut Context<Self>) {
@@ -981,9 +1005,8 @@ impl Render for TextArea {
             .on_action(cx.listener(Self::alt_enter))
             .on_action(cx.listener(Self::submit))
             .on_action(cx.listener(Self::escape))
-            // Tab has nowhere to go from here and must not reach the grid.
-            .on_action(|_: &line::Tab, _, _| {})
-            .on_action(|_: &line::ShiftTab, _, _| {})
+            .on_action(cx.listener(Self::tab))
+            .on_action(cx.listener(Self::shift_tab))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))

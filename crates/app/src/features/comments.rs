@@ -1167,14 +1167,18 @@ fn floating_card(app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, c
     }
     let sheet = app.sheet;
     let ui = app.ext::<Ui>()?;
-    if ui.card.is_none() {
-        let cell = ui.hover.shown()?;
-        if kind_at(app, sheet, cell) != Some(CommentKind::Thread) {
-            return None;
-        }
+    // The comment the pointer rests on shows its card, in place of the
+    // card of another cell unless words are being written there.
+    let rested = ui.hover.shown().filter(|cell| kind_at(app, sheet, *cell) == Some(CommentKind::Thread));
+    let makes_way = |card: &OpenCard| {
+        rested.is_some_and(|cell| (card.sheet, card.cell) != (sheet, cell)) && !card.view.read(cx).has_draft(cx)
+    };
+    if let Some(cell) = rested.filter(|_| ui.card.as_ref().is_none_or(makes_way)) {
         let weak = cx.weak_entity();
         let view = cx.new(|cx| CommentCard::new(weak, sheet, cell, false, window, cx));
-        app.ext_mut::<Ui>().card = Some(OpenCard {
+        let ui = app.ext_mut::<Ui>();
+        ui.drop_card(cx);
+        ui.card = Some(OpenCard {
             sheet,
             cell,
             view,

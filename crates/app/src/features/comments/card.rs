@@ -114,7 +114,7 @@ impl CommentCard {
         cx: &mut Context<Self>,
     ) -> Self {
         let input = cx.new(|cx| {
-            let mut area = TextArea::new(cx);
+            let mut area = if in_pane { TextArea::field(cx) } else { TextArea::new(cx) };
             area.max_height = Some(120.0);
             area
         });
@@ -164,8 +164,9 @@ impl CommentCard {
 
     /// Rewrite a post in place (`reply` `None`: the first comment).
     pub fn start_edit(&mut self, reply: Option<usize>, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        let in_pane = self.in_pane;
         let area = cx.new(|cx| {
-            let mut area = TextArea::new(cx);
+            let mut area = if in_pane { TextArea::field(cx) } else { TextArea::new(cx) };
             area.max_height = Some(160.0);
             area.set_text(text.clone(), cx);
             area
