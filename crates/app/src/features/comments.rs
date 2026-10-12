@@ -15,6 +15,8 @@ mod card;
 mod notes;
 mod pane;
 mod text_area;
+#[cfg(test)]
+mod ui_tests;
 
 pub use self::text_area::bind_keys;
 

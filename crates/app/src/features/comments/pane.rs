@@ -61,6 +61,12 @@ impl CommentsPane {
         self.reveal(cell, cx);
     }
 
+    /// The cells of the cards, in the order they are listed.
+    #[cfg(test)]
+    pub fn cells(&self, cx: &gpui::App) -> Vec<(u32, u32)> {
+        self.cards.iter().map(|card| card.read(cx).cell).collect()
+    }
+
     /// Line the cards up with the threads of the current sheet, keeping
     /// those in which a new comment is being written.
     fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -113,6 +119,7 @@ impl Render for CommentsPane {
                 let app = self.app.clone();
                 div()
                     .id(("pane-card", index))
+                    .debug_selector(|| format!("pane-card-{index}"))
                     .rounded(px(7.))
                     .border_1()
                     .border_color(if active == Some(cell) { c(theme::ACCENT) } else { gpui::transparent_black() })

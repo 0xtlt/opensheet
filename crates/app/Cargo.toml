@@ -11,3 +11,7 @@ opensheet_io = { path = "../io" }
 opensheet_print = { path = "../print" }
 gpui = "0.2.2"
 unicode-segmentation = "1"
+
+[dev-dependencies]
+# The headless window of GPUI, to drive the interface in tests.
+gpui = { version = "0.2.2", features = ["test-support"] }

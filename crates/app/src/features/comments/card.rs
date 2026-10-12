@@ -522,6 +522,7 @@ impl Render for CommentCard {
             card.w_full()
         } else {
             card.w(px(WIDTH))
+                .debug_selector(|| "comment-card".into())
                 .shadow_lg()
                 .occlude()
                 // A press on the card keeps it open when the pointer leaves.
