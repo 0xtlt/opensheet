@@ -244,11 +244,6 @@ pub fn outline_of(shape: &Shape, placed: &Placed, natural: (f32, f32)) -> Vec<Po
     geometry::flatten(&shape.preset.path(natural.0, natural.1), placed)
 }
 
-/// The length (and the width) of the arrowheads of an outline.
-fn head_size(width: f32, zoom: f32) -> f32 {
-    3.0 * width.max(pt_to_px(2.0) * zoom)
-}
-
 fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     let lines = outline_of(shape, placed, natural);
     if let (Some(fill), false) = (shape.fill, shape.preset.is_line()) {
@@ -265,7 +260,7 @@ fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush
             if !line.closed {
                 // The ends of a line: heads pointing away from it, and the
                 // line stopping under them.
-                let size = head_size(width, brush.zoom);
+                let size = geometry::head_size(width, brush.zoom);
                 let count = line.points.len();
                 let ends = [
                     (outline.start, line.points[0], line.points[1], false),

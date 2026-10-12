@@ -23,7 +23,7 @@
 //! Positions are always asked of the engine (`Sheet::drawing_frame`): a
 //! drawing sized with its cells follows them without being touched.
 
-mod geometry;
+pub(crate) mod geometry;
 mod paint;
 mod pane;
 mod picture;

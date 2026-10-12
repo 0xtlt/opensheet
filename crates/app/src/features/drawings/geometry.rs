@@ -244,6 +244,13 @@ pub struct ArrowHead {
     pub cut: f32,
 }
 
+/// The length (and the width) of the arrowheads of a line `width` pixels
+/// thick at a zoom: Excel's medium head, three line widths and a few
+/// pixels at least. The screen and the printed page ask the same rule.
+pub fn head_size(width: f32, zoom: f32) -> f32 {
+    (3.0 * width).max(6.0 * zoom)
+}
+
 /// The head at the end `tip` of a line coming from `from`; `size` is its
 /// length and its width.
 pub fn arrow_head(kind: LineEnd, tip: Pt, from: Pt, size: f32) -> Option<ArrowHead> {
@@ -532,6 +539,8 @@ mod tests {
         assert!(arrow_head(LineEnd::None, (1.0, 1.0), (0.0, 0.0), 10.0).is_none());
         assert!(arrow_head(LineEnd::Oval, (1.0, 1.0), (1.0, 1.0), 10.0).is_none());
         assert_eq!(arrow_head(LineEnd::Diamond, (0.0, 0.0), (-9.0, 0.0), 8.0).unwrap().points.len(), 4);
+        // Thin lines keep a head that can be seen; it grows with the zoom.
+        assert_eq!((head_size(1.0, 1.0), head_size(4.0, 1.0), head_size(1.0, 2.0)), (6.0, 12.0, 12.0));
         // The line is shortened under a head, at either end.
         let mut points = vec![(0.0, 0.0), (100.0, 0.0)];
         trim(&mut points, 8.0, true);

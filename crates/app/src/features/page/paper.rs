@@ -5,13 +5,14 @@
 //! The canvas handed to every method is in sheet pixels at 100 % with its
 //! origin on the object, so the numbers are those of the screen.
 
+use crate::features::drawings::geometry;
 use crate::i18n::t;
 use gpui::RenderImage;
 use opensheet_engine::chart::Chart;
 use opensheet_engine::chart_layout::{self, Ink, Labels, LayoutOptions, Prim, Seg, TextAnchor, layout_chart};
 use opensheet_engine::condfmt::{Adornment, Bar, Icon};
 use opensheet_engine::drawing::{
-    Drawing, DrawingKind, ImageFormat, LineEnd, Outline, PathCommand, Picture, Shape, TEXT_MARGIN, TextAlign,
+    Drawing, DrawingKind, ImageFormat, PathCommand, Picture, Shape, TEXT_MARGIN, TextAlign,
     TextAnchor as ShapeAnchor,
 };
 use opensheet_engine::{Color, StyleId, Workbook};
@@ -305,76 +306,49 @@ fn paint_shape(shape: &Shape, w: f64, h: f64, canvas: &mut Canvas) {
     };
     let width = outline.width as f64 * PX_PER_PT;
     let dash: Vec<f64> = outline.dash.pattern().iter().map(|d| *d as f64 * width).collect();
-    canvas.stroke_path(
-        path,
-        Stroke::solid(outline.color, width).dashed(&dash).join(LineJoin::Round),
-    );
-    // Arrowheads at the ends of an open path.
-    let points: Vec<(f64, f64)> = commands
+    let stroke = Stroke::solid(outline.color, width).dashed(&dash).join(LineJoin::Round);
+    if !shape.preset.is_line() {
+        canvas.stroke_path(path, stroke);
+        return;
+    }
+    // A line: heads at its ends, as the sheet draws them (the same
+    // outlines, from `drawings::geometry`), and the line stopping under
+    // them.
+    let mut points: Vec<(f32, f32)> = commands
         .iter()
         .filter_map(|command| match *command {
             PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) | PathCommand::CurveTo(_, _, _, _, x, y) => {
-                Some((x as f64 * w, y as f64 * h))
+                Some((x * w as f32, y * h as f32))
             }
             PathCommand::Close => None,
         })
         .collect();
-    if let [first, second, ..] = points.as_slice() {
-        line_end(outline, outline.start, *first, *second, canvas);
-    }
-    if let [.., before, last] = points.as_slice() {
-        line_end(outline, outline.end, *last, *before, canvas);
-    }
-}
-
-/// What a line ends with at `tip`, pointing away from `from`.
-fn line_end(outline: &Outline, end: LineEnd, tip: (f64, f64), from: (f64, f64), canvas: &mut Canvas) {
-    let (dx, dy) = (tip.0 - from.0, tip.1 - from.1);
-    let length = dx.hypot(dy);
-    if end == LineEnd::None || length <= 0.0 {
+    if points.len() < 2 {
         return;
     }
-    let width = outline.width as f64 * PX_PER_PT;
-    // Excel's medium arrowhead: three line widths, at least a few pixels.
-    let reach = (width * 3.0).max(6.0);
-    let (ux, uy) = (dx / length, dy / length);
-    let at = |along: f64, across: f64| (tip.0 - ux * along - uy * across, tip.1 - uy * along + ux * across);
-    match end {
-        LineEnd::None => {}
-        LineEnd::Triangle | LineEnd::Stealth => {
-            let mut points = vec![tip, at(reach, reach / 2.0)];
-            if end == LineEnd::Stealth {
-                points.push(at(reach * 0.6, 0.0));
-            }
-            points.push(at(reach, -reach / 2.0));
-            canvas.fill_path(Path::polyline(&points).close(), outline.color);
-        }
-        LineEnd::Diamond => {
-            let points = [
-                at(-reach / 2.0, 0.0),
-                at(0.0, reach / 2.0),
-                at(reach / 2.0, 0.0),
-                at(0.0, -reach / 2.0),
-            ];
-            canvas.fill_path(Path::polyline(&points).close(), outline.color);
-        }
-        LineEnd::Oval => {
-            let r = reach / 2.0;
-            canvas.fill_path(
-                Path::ellipse(RectF::new(tip.0 - r, tip.1 - r, reach, reach)),
-                outline.color,
-            );
-        }
-        LineEnd::Open => {
-            let points = [at(reach, reach / 2.0), tip, at(reach, -reach / 2.0)];
+    let size = geometry::head_size(width as f32, 1.0);
+    let last = points.len() - 1;
+    let ends = [
+        (outline.start, points[0], points[1], false),
+        (outline.end, points[last], points[last - 1], true),
+    ];
+    for (kind, tip, from, at_end) in ends {
+        let Some(head) = geometry::arrow_head(kind, tip, from, size) else {
+            continue;
+        };
+        geometry::trim(&mut points, head.cut, at_end);
+        let outline_points: Vec<(f64, f64)> = head.points.iter().map(|p| (p.0 as f64, p.1 as f64)).collect();
+        if head.filled {
+            canvas.fill_path(Path::polyline(&outline_points).close(), outline.color);
+        } else {
             canvas.stroke_path(
-                Path::polyline(&points),
-                Stroke::solid(outline.color, width)
-                    .cap(LineCap::Round)
-                    .join(LineJoin::Round),
+                Path::polyline(&outline_points),
+                Stroke::solid(outline.color, width).cap(LineCap::Round).join(LineJoin::Round),
             );
         }
     }
+    let line: Vec<(f64, f64)> = points.iter().map(|p| (p.0 as f64, p.1 as f64)).collect();
+    canvas.stroke_path(Path::polyline(&line), stroke);
 }
 
 /// Break text into lines no wider than `max_width`, at spaces.
