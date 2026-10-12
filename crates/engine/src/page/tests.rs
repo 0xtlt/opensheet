@@ -459,6 +459,7 @@ fn formatting_merges_and_objects_extend_the_range() {
         anchor: (60, 3),
         offset: (10.0, 5.0),
         size: (480.0, 288.0),
+        ..Chart::new(ChartKind::Column)
     };
     wb.add_chart(0, chart);
     wb.commit("chart");
