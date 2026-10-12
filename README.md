@@ -4,7 +4,7 @@ Un tableur open source qui reprend l'interface et le comportement d'Excel, écri
 
 ![OpenSheet](docs/screenshot.jpg)
 
-> État : **v0.1, prototype fonctionnel**. Le cœur (grille, formules, mise en forme, fichiers) marche ; une grande partie d'Excel reste à faire — voir [Ce qui manque](#ce-qui-manque).
+> État : **v0.1, en développement actif**. La plupart des grandes fonctions d'Excel, hors macros, sont en place ; plusieurs restent partielles ou absentes — voir [Ce qui manque](#ce-qui-manque).
 
 ## Lancer
 
@@ -58,51 +58,81 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 ## Ce qui fonctionne
 
 **Interface**
-- Barre de titre, ruban à onglets (Accueil, Insertion, Mise en page, Formules, Données, Révision, Affichage…), barre de formule avec zone Nom, onglets de feuilles, barre d'état avec Moyenne / Nb / Somme et zoom.
+- Barre de titre, ruban à onglets (Accueil, Insertion, Mise en page, Formules, Données, Révision, Affichage…) avec ses onglets contextuels (tableau, tableau croisé, graphique, forme, image), barre de formule avec zone Nom, onglets de feuilles, barre d'état avec Moyenne / Nb / Somme et zoom.
+- Boîtes de dialogue, volets latéraux et menus contextuels d'Excel, dont Format de cellule et ses six onglets.
 - Grille de 1 048 576 lignes × 16 384 colonnes, défilement fluide, zoom 10–400 %, volets figés.
 
 **Saisie et sélection**
 - Saisie directe, F2, double-clic, barre de formule ; Entrée / Tab / Échap ; reconnaissance des nombres, pourcentages, montants, dates et heures.
 - Formules : références relatives / absolues, autres feuilles, plages colorées pendant la saisie, sélection des références à la souris ou au clavier, fermeture automatique des parenthèses.
-- Sélection à la souris et au clavier (Maj, ⌘ pour les sélections multiples, ⌘+flèches, lignes et colonnes entières), zone Nom pour atteindre une cellule.
-- Copier / couper / coller (formules décalées, valeurs seules, mise en forme seule), échange avec les autres applications en texte tabulé.
+- Sélection à la souris et au clavier (Maj, ⌘ pour les sélections multiples, ⌘+flèches, lignes et colonnes entières), Atteindre et Sélectionner les cellules (formules, vides, antécédents…).
+- Copier / couper / coller avec le collage spécial (valeurs, formats, largeurs de colonnes, validation, commentaires…), échange avec les autres applications en texte tabulé.
 - Poignée de recopie avec séries (nombres, dates, « Article 1 », jours, mois), double-clic pour recopier vers le bas, ⌘D / ⌘R.
 - Annuler / rétablir sur toutes les opérations.
 
 **Calcul**
-- 336 fonctions : maths, statistiques, logique, texte, date et heure, recherche (RECHERCHEV, RECHERCHEX, INDEX, EQUIV…), finance, ingénierie.
-- Tableaux dynamiques avec propagation (`=A1:A3*2`, FILTRE, TRIER, UNIQUE, SEQUENCE…) et erreur `#PROPAGATION!`.
-- Détection des références circulaires.
+- 337 fonctions : maths, statistiques, logique, texte, date et heure, recherche (RECHERCHEV, RECHERCHEX, INDEX, EQUIV…), finance, ingénierie.
+- Tableaux dynamiques avec propagation (`=A1:A3*2`, `A1#`, FILTRE, TRIER, UNIQUE, SEQUENCE…) et erreur `#PROPAGATION!`.
+- Noms définis (classeur ou feuille), références 3D (`Feuil1:Feuil3!A1`), références structurées (`Tableau1[Colonne]`), intersection et union.
+- Outils de formules : Gestionnaire de noms, Créer à partir de la sélection, Insérer une fonction et Arguments de la fonction, Afficher les formules, flèches d'antécédents et de dépendants, Vérification des erreurs, Évaluer la formule, Fenêtre Espion.
 
 **Mise en forme**
 - Police, taille, gras, italique, souligné, barré, couleurs de police et de remplissage, bordures, alignements, retrait, renvoi à la ligne, fusion.
 - Formats de nombre Excel complets (codes personnalisés, sections, couleurs, dates, fractions, scientifique, comptabilité).
+- Mise en forme conditionnelle : règles de surbrillance, valeurs hautes / basses, barres de données, nuances de couleurs, 20 jeux d'icônes, règles par formule, gestionnaire de règles.
 - Largeur / hauteur par glisser, ajustement automatique, masquer / afficher.
 
-**Graphiques**
-- Histogrammes groupés et empilés, barres, courbes, aires, secteurs, anneau, nuage de points.
-- Création depuis la sélection (onglet Insertion) : en-têtes, catégories et sens des séries détectés automatiquement.
-- Déplacement et redimensionnement à la souris, titre modifiable par double-clic, légende, étiquettes de données, changement de type, inversion lignes/colonnes (onglet contextuel « Création de graphique »).
+**Données**
+- Filtres automatiques (valeurs, texte, nombres, dates, couleurs, 10 premiers), tri à plusieurs niveaux avec listes personnalisées, suppression des doublons.
+- Tableaux structurés : 60 styles, ligne de total, colonnes calculées, agrandissement automatique à la saisie.
+- Tableaux croisés dynamiques : volet des champs avec glisser-déposer, filtres, regroupements, « afficher les valeurs comme », styles, détail par double-clic.
+- Validation des données : tous les critères, liste déroulante dans la cellule, message de saisie, alertes, cercles autour des données non valides.
+
+**Graphiques, images et formes**
+- 37 types de graphiques : histogrammes, barres, courbes, aires, secteurs, anneau, nuage de points, bulles, radar, combinés, et leurs variantes 3D.
+- Création depuis la sélection, sélection de chaque élément au clic, volet Format, axes secondaires, échelles manuelles, étiquettes, courbes de tendance, barres d'erreur, Sélectionner des données, Modifier le type de graphique.
+- Images (fichier, glisser-déposer, collage) et 15 formes avec texte : déplacement, redimensionnement, rotation, remplissage, contour, flèches.
 - Les graphiques suivent les données en direct, les insertions de lignes et les renommages de feuilles.
-- Ils sont enregistrés dans les `.xlsx` et relus, y compris ceux créés dans Excel (les types qu'OpenSheet ne connaît pas sont ramenés au plus proche : 3D → 2D, radar → courbes, bulles → nuage de points).
 
-![Les neuf types de graphiques](docs/captures/types-de-graphiques.jpg)
+![Neuf des types de graphiques](docs/captures/types-de-graphiques.jpg)
 
-Ce classeur d'exemple se génère avec :
+Un classeur d'exemple (133 graphiques sur 8 feuilles) se génère avec :
 
 ```bash
 cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 ```
 
+**Révision**
+- Notes (bulles jaunes) et commentaires en fil avec réponses et résolution, volet Commentaires.
+- Protection de la feuille (15 autorisations, mot de passe, cellules verrouillées ou masquées) et de la structure du classeur.
+
+**Mise en page et impression**
+- Marges, orientation, papier, zone d'impression, sauts de page, titres à répéter, mise à l'échelle, en-têtes et pieds de page.
+- Vue Mise en page et Aperçu des sauts de page ; aperçu avant impression.
+- Impression vers un fichier PDF (polices incorporées) ou vers Aperçu.
+
 **Structure et fichiers**
-- Insérer / supprimer lignes et colonnes (formules réécrites), trier, feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
-- Ouvrir et enregistrer en `.xlsx` (valeurs, formules, styles, largeurs, fusions, volets figés, graphiques) et `.csv`.
+- Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
+- Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes. Les fichiers produits s'ouvrent dans Excel sans réparation.
+- Ouvrir et enregistrer en `.csv` et `.tsv`.
 
 ## Ce qui manque
 
-Tableaux croisés dynamiques, mise en forme conditionnelle, tableaux structurés, filtres automatiques, validation des données, commentaires, images et formes, impression et mise en page, boîte de dialogue Format de cellule, gestionnaire de noms, protection, macros (hors périmètre pour l'instant). Les boutons correspondants sont présents dans le ruban mais affichent « pas encore disponible ».
+**Hors périmètre** : les macros (VBA) et les scripts.
 
-Côté graphiques : pas encore de mise en forme fine (couleurs par point, titres d'axes, échelles manuelles, axes secondaires), ni de courbes de tendance, de graphiques combinés ou 3D. Ces éléments sont perdus quand on ouvre puis réenregistre un fichier Excel qui en contient.
+**Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
+- Remplacer, liens hypertexte, graphiques sparkline, styles de cellules, thèmes.
+- Convertir (texte en colonnes), remplissage instantané, consolider, analyse de scénarios, grouper / dissocier (plan), sous-total, filtre avancé, données externes.
+- Segments, chronologies, champs calculés et graphiques croisés dynamiques.
+- Orthographe, traduction, statistiques du classeur, vérification d'accessibilité, onglet Dessin, équations, symboles, SmartArt, WordArt, icônes.
+- Partage et co-édition.
+
+**Partiels**
+- Graphiques : le titre, la légende et la zone de traçage ne se placent pas librement ; pas de mise en forme du texte ni des quadrillages.
+- Formes et images : pas de sélection multiple (donc pas d'alignement ni de groupe), pas de rognage ni d'effets ; les formes passent toujours devant les graphiques.
+- Mise en page : pas d'arrière-plan de feuille ni d'affichages personnalisés ; l'impression passe par un PDF.
+- Commentaires : pas de @mentions.
+- Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
 
 Le recalcul est complet à chaque modification (pas encore de graphe de dépendances) : environ 0,15 s pour 200 000 formules en mode release, ce qui deviendra sensible sur de très gros classeurs.
 
@@ -111,18 +141,22 @@ Le recalcul est complet à chaque modification (pas encore de graphe de dépenda
 ```
 crates/
   engine/   moteur de calcul, sans dépendance d'interface
-            valeurs, analyseur de formules (localisé), évaluateur, 336 fonctions,
-            formats de nombre, modèle de classeur, annuler/rétablir, opérations d'édition
+            valeurs, analyseur de formules (localisé), évaluateur, 337 fonctions,
+            formats de nombre, modèle de classeur, annuler/rétablir, opérations d'édition,
+            et un module par fonctionnalité (filtres, tableaux, mise en forme conditionnelle,
+            validation, commentaires, protection, mise en page, tableaux croisés, graphiques, formes)
   io/       lecture / écriture .xlsx et .csv
-  app/      l'application GPUI : ruban, grille peinte directement, éditeur de cellule
+  print/    pagination et écriture PDF
+  app/      l'application GPUI : ruban, grille peinte directement, éditeur de cellule,
+            une interface par fonctionnalité dans src/features/
 ```
 
 Les formules sont stockées sous forme canonique (noms anglais) et traduites à l'affichage et à la saisie ; un fichier écrit en français s'ouvre donc tel quel en anglais.
 
-Tests du moteur :
+Tous les tests :
 
 ```bash
-cargo test -p opensheet_engine -p opensheet_io
+cargo test -p opensheet_engine -p opensheet_io -p opensheet_print -p opensheet
 ```
 
 ## Licence
