@@ -22,6 +22,7 @@ commands! {
         Advanced = "filter", t("Advanced", "Avancé");
         Sort = "sort-filter", t("Sort", "Trier");
         CustomSort = "sort-filter", t("Custom Sort…", "Tri personnalisé…");
+        RemoveDuplicates = "delete-cells", t("Remove Duplicates", "Supprimer les doublons");
     }
 }
 

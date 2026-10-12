@@ -926,6 +926,10 @@ impl ExcelApp {
     /// Move the active cell after Enter / Tab: inside a multi-cell selection
     /// it cycles through the selection, otherwise it moves the selection.
     fn advance(&mut self, dir: Direction, cx: &mut Context<Self>) {
+        // Tab goes through a table row after row.
+        if features::tables::advance(self, dir, cx) {
+            return;
+        }
         let sel = self.sel().clone();
         let cur = sel.current();
         let merged = self.wb.sheets[self.sheet].merge_at(sel.active.0, sel.active.1) == Some(cur);
@@ -1012,6 +1016,10 @@ impl ExcelApp {
                 self.select_rect(rect, cx);
                 return true;
             }
+        }
+        // The name of a table, or a structured reference.
+        if features::tables::go_to(self, text, cx) {
+            return true;
         }
         false
     }
@@ -1216,6 +1224,7 @@ impl ExcelApp {
                 let dir = if *shift { Direction::Left } else { Direction::Right };
                 let col = self.editing.as_ref().map(|e| e.col);
                 let origin = self.tab_origin.or(col);
+                features::tables::tab_pressed(self);
                 if self.commit_edit(Some(dir), window, cx) {
                     self.tab_origin = origin;
                 }
@@ -1285,6 +1294,12 @@ impl ExcelApp {
             text.push_str(&cell_name(rect.r0, rect.c0));
         } else {
             text.push_str(&rect.name());
+        }
+        // Cells of a table are written as Excel does: `Table1[Sales]`.
+        if kind == SelectKind::Cells {
+            if let Some(reference) = features::tables::pointed_reference(self, rect) {
+                text = reference;
+            }
         }
         let editor = self.editor().clone();
         let range = match &edit.point {
@@ -2949,14 +2964,18 @@ impl ExcelApp {
                 clipboard(&mut menu);
                 paste_special(&mut menu);
                 let mut add = |entry: MenuEntry| menu.add(MenuSection::Edit, entry);
-                add(MenuEntry::new(t("Insert Rows", "Insérer des lignes"), |a, _, cx| a.insert_rows(cx)).icon("insert-cells"));
-                add(MenuEntry::new(t("Insert Columns", "Insérer des colonnes"), |a, _, cx| {
-                    a.insert_cols(cx)
-                }));
-                add(MenuEntry::new(t("Delete Rows", "Supprimer les lignes"), |a, _, cx| a.delete_rows(cx)).icon("delete-cells"));
-                add(MenuEntry::new(t("Delete Columns", "Supprimer les colonnes"), |a, _, cx| {
-                    a.delete_cols(cx)
-                }));
+                // A table cell gets the Insert and Delete submenus of its
+                // table instead (`features/tables`).
+                if self.wb.table_at(self.sheet, row, col).is_none() {
+                    add(MenuEntry::new(t("Insert Rows", "Insérer des lignes"), |a, _, cx| a.insert_rows(cx)).icon("insert-cells"));
+                    add(MenuEntry::new(t("Insert Columns", "Insérer des colonnes"), |a, _, cx| {
+                        a.insert_cols(cx)
+                    }));
+                    add(MenuEntry::new(t("Delete Rows", "Supprimer les lignes"), |a, _, cx| a.delete_rows(cx)).icon("delete-cells"));
+                    add(MenuEntry::new(t("Delete Columns", "Supprimer les colonnes"), |a, _, cx| {
+                        a.delete_cols(cx)
+                    }));
+                }
                 add(clear());
                 let mut add = |entry: MenuEntry| menu.add(MenuSection::Data, entry);
                 add(MenuEntry::new(t("Sort A to Z", "Trier de A à Z"), |a, _, cx| a.sort(true, cx)).icon("sort-asc"));
@@ -3292,6 +3311,7 @@ impl ExcelApp {
         self.jump_selection(Direction::Right, true, cx);
     }
     pub fn on_next_cell(&mut self, _: &NextCell, window: &mut Window, cx: &mut Context<Self>) {
+        features::tables::tab_pressed(self);
         if self.editing_key(Direction::Right, false, true, window, cx) || self.cycle_object(true, cx) {
             return;
         }
@@ -3301,6 +3321,7 @@ impl ExcelApp {
         self.advance(Direction::Right, cx);
     }
     pub fn on_prev_cell(&mut self, _: &PrevCell, window: &mut Window, cx: &mut Context<Self>) {
+        features::tables::tab_pressed(self);
         if self.editing_key(Direction::Left, false, true, window, cx) || self.cycle_object(false, cx) {
             return;
         }
