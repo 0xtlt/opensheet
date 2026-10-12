@@ -7,7 +7,7 @@
 //! held to what the sheet lets its users select, and Tab walks the
 //! unlocked cells.
 
-use super::{Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget};
+use super::{Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PendingEdit, Verdict};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::Selection;
 use crate::i18n::t;
@@ -18,7 +18,7 @@ use crate::widgets::{self, Button, Checkbox, GroupBox, ROW_H, TextField, Tri, di
 use gpui::{App, Context, Entity, FocusHandle, KeyDownEvent, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::ops::Direction;
 use opensheet_engine::protect::{Action, Denied, PasswordError, Permission, SheetProtection};
-use opensheet_engine::{Locale, MAX_ROWS, Workbook};
+use opensheet_engine::{Content, Locale, MAX_ROWS, Workbook};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -243,6 +243,15 @@ fn walk_column(wb: &Workbook, sheet: usize, from: (u32, u32), down: bool) -> Opt
         .map(|at| (at, col))
 }
 
+/// Whether an entry would wipe a formula its cell hides. A hidden formula
+/// is edited from an empty box, since showing it would give it away:
+/// leaving the box empty must not be taken for clearing the cell.
+fn spares_hidden_content(wb: &Workbook, sheet: usize, row: u32, col: u32, text: &str) -> bool {
+    text.is_empty()
+        && wb.is_formula_hidden(sheet, row, col)
+        && wb.cell(sheet, row, col).is_some_and(|cell| !matches!(cell.content, Content::Empty))
+}
+
 /// The first cell a protected sheet lets its users select, for when the
 /// active cell is not one.
 fn first_selectable(wb: &Workbook, sheet: usize) -> Option<(u32, u32)> {
@@ -295,6 +304,14 @@ impl Feature for Protection {
 
     fn can_select(&self, app: &ExcelApp, row: u32, col: u32) -> bool {
         app.wb.can_select_cell(app.sheet, row, col)
+    }
+
+    fn may_commit(&self, app: &mut ExcelApp, edit: &PendingEdit, window: &mut Window, cx: &mut Cx) -> Verdict {
+        if spares_hidden_content(&app.wb, edit.sheet, edit.row, edit.col, edit.text) {
+            app.cancel_edit(window, cx);
+            return Verdict::Hold;
+        }
+        Verdict::Accept
     }
 
     fn next_cell(&self, app: &ExcelApp, from: (u32, u32), dir: Direction, entry: bool) -> Option<(u32, u32)> {
@@ -974,6 +991,24 @@ mod tests {
         assert_eq!(first_selectable(&wb, 0), Some(cell("E1")));
         assert!(selection_allowed(&wb, 0, &Selection::single(1, 1)));
         assert!(!selection_allowed(&wb, 0, &Selection::single(0, 0)));
+    }
+
+    #[test]
+    fn a_hidden_formula_survives_an_empty_edit() {
+        let mut wb = form();
+        wb.set_cell_text(0, 1, 1, "=1+1").unwrap();
+        wb.update_style(0, rect("B2"), &|s| s.hidden = true);
+        wb.commit("setup");
+        // Nothing is hidden until the sheet is protected.
+        assert!(!spares_hidden_content(&wb, 0, 1, 1, ""));
+        wb.protect_sheet(0, SheetProtection::default(), "");
+        assert_eq!(wb.formula_bar_text(0, 1, 1), "");
+        assert!(spares_hidden_content(&wb, 0, 1, 1, ""));
+        // Typing replaces the formula; other cells are cleared as usual.
+        assert!(!spares_hidden_content(&wb, 0, 1, 1, "5"));
+        assert!(!spares_hidden_content(&wb, 0, 2, 1, ""));
+        wb.update_style(0, rect("C2"), &|s| s.hidden = true);
+        assert!(!spares_hidden_content(&wb, 0, 1, 2, ""));
     }
 
     #[test]

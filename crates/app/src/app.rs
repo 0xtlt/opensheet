@@ -1086,7 +1086,8 @@ impl ExcelApp {
         }
         let text = match initial {
             Some(s) => s.to_string(),
-            None => self.wb.edit_text(self.sheet, row, col),
+            // Like the formula bar, the cell does not show a hidden formula.
+            None => self.wb.formula_bar_text(self.sheet, row, col),
         };
         self.ensure_visible(row, col);
         self.editing = Some(Editing {
