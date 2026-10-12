@@ -395,13 +395,23 @@ fn paint_preview(p: &mut Painter) {
                     let handle = Handle::Edge { range: index, edge };
                     match edge {
                         Edge::Left | Edge::Right => {
-                            let x = if edge == Edge::Left { x0 - 2.0 } else { x1 - 2.0 };
+                            // The left edge of a range starting in column A
+                            // stays in view beside the headings.
+                            let x = if edge == Edge::Left {
+                                (x0 - 2.0).max(clip.0)
+                            } else {
+                                x1 - 2.0
+                            };
                             rule(p, (x, y0 - 2.0), (x, y1 + 1.0), 3.0, blue);
                             p.zone((x - grab, y0, x + 3.0 + grab, y1), handle)
                                 .cursor(CursorStyle::ResizeLeftRight);
                         }
                         Edge::Top | Edge::Bottom => {
-                            let y = if edge == Edge::Top { y0 - 2.0 } else { y1 - 2.0 };
+                            let y = if edge == Edge::Top {
+                                (y0 - 2.0).max(clip.1)
+                            } else {
+                                y1 - 2.0
+                            };
                             rule(p, (x0 - 2.0, y), (x1 + 1.0, y), 3.0, blue);
                             p.zone((x0, y - grab, x1, y + 3.0 + grab), handle)
                                 .cursor(CursorStyle::ResizeUpDown);

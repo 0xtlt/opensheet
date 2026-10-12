@@ -736,12 +736,21 @@ impl SetupDialog {
         );
         let (header_codes, header_names, header) = self.preset_list(false);
         let (footer_codes, footer_names, footer) = self.preset_list(true);
+        // The two lists line up whatever the length of their labels.
+        let row = |text: &'static str, list: Select| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(label(text).w(px(86.)))
+                .child(list)
+        };
         div()
             .flex()
             .flex_col()
             .gap(px(8.))
             .child(self.sample(false))
-            .child(labeled(
+            .child(row(
                 t("Header:", "En-tête :"),
                 Select::new("header", header_names, header)
                     .width(440.0)
@@ -767,7 +776,7 @@ impl SetupDialog {
                             .on_click(cx.listener(|this, _, window, cx| this.custom(true, window, cx))),
                     ),
             )
-            .child(labeled(
+            .child(row(
                 t("Footer:", "Pied de page :"),
                 Select::new("footer", footer_names, footer)
                     .width(440.0)

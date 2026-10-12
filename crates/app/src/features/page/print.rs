@@ -638,14 +638,17 @@ impl PrintDialog {
             .child(
                 div()
                     .flex()
-                    .gap(px(8.))
+                    .flex_col()
+                    .gap(px(6.))
                     .child(
                         Button::new("open-preview", t("Open in Preview", "Ouvrir dans Aperçu"))
+                            .width(wide)
                             .disabled(nothing)
                             .on_click(cx.listener(Self::open_in_preview)),
                     )
                     .child(
                         Button::new("save-pdf", t("Save as PDF…", "Enregistrer au format PDF…"))
+                            .width(wide)
                             .disabled(nothing)
                             .on_click(cx.listener(Self::save_pdf)),
                     ),
