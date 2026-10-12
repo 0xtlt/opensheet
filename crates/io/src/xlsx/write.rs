@@ -497,6 +497,7 @@ fn push_sheet_views(x: &mut String, sheet: &Sheet, selected: bool) {
     if selected {
         x.push_str(" tabSelected=\"1\"");
     }
+    super::outline::push_view_attrs(x, sheet);
     x.push_str(" workbookViewId=\"0\"");
     let rows = sheet.frozen_rows.min(MAX_ROWS - 1);
     let cols = sheet.frozen_cols.min(MAX_COLS - 1);
@@ -531,6 +532,8 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defau
         width: Option<f32>,
         hidden: bool,
         xf: u32,
+        level: u8,
+        collapsed: bool,
     }
     let mut cols: BTreeMap<u32, Col> = BTreeMap::new();
     for (c, width) in &sheet.col_widths {
@@ -541,6 +544,12 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defau
     }
     for (c, style) in &sheet.col_styles {
         cols.entry(*c).or_default().xf = styles.xf(*style);
+    }
+    for (c, level) in &sheet.outline.cols.levels {
+        cols.entry(*c).or_default().level = *level;
+    }
+    for c in &sheet.outline.cols.collapsed {
+        cols.entry(*c).or_default().collapsed = true;
     }
     cols.retain(|c, col| *c < MAX_COLS && *col != Col::default());
     if cols.is_empty() {
@@ -579,6 +588,7 @@ fn push_cols(x: &mut String, sheet: &Sheet, styles: &StyleBook, defaults: &Defau
         if col.width.is_some() {
             x.push_str(" customWidth=\"1\"");
         }
+        super::outline::push_level(x, col.level, col.collapsed);
         x.push_str("/>");
     }
     x.push_str("</cols>");
@@ -736,6 +746,8 @@ impl SheetWriter<'_> {
             .chain(sheet.hidden_rows.iter())
             .chain(sheet.filtered_rows.iter())
             .chain(sheet.row_styles.keys())
+            .chain(sheet.outline.rows.levels.keys())
+            .chain(sheet.outline.rows.collapsed.iter())
             .copied()
             .filter(|r| *r < MAX_ROWS)
             .collect();
@@ -776,6 +788,7 @@ impl SheetWriter<'_> {
             if sheet.hidden_rows.contains(&row) || sheet.filtered_rows.contains(&row) {
                 x.push_str(" hidden=\"1\"");
             }
+            super::outline::push_attrs(x, &sheet.outline.rows, row);
             x.push('>');
             loop {
                 let cell_col = cells
@@ -879,14 +892,16 @@ impl SheetWriter<'_> {
         // Each element written has its step below, named after it; a new
         // one goes between its neighbours of the list.
 
-        // sheetPr: tabColor, then pageSetUpPr
+        // sheetPr: tabColor, outlinePr, then pageSetUpPr
         // filterMode: rows are hidden by an Advanced Filter.
         let filter_mode = sheet.advanced_filter.is_some();
-        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode {
+        let outline = super::outline::needs_sheet_pr(sheet);
+        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode || outline {
             x.push_str(if filter_mode { "<sheetPr filterMode=\"1\">" } else { "<sheetPr>" });
             if let Some(color) = sheet.tab_color {
                 push_rgb(&mut x, "tabColor", color);
             }
+            super::outline::push_sheet_pr(&mut x, sheet);
             page::push_sheet_pr(&mut x, &sheet.page);
             x.push_str("</sheetPr>");
         }

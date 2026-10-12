@@ -41,6 +41,7 @@ mod filter;
 mod formula;
 mod hyperlink;
 mod numfmt;
+mod outline;
 mod page;
 mod parts;
 mod pivot;

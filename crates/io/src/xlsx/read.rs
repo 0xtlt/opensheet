@@ -1053,6 +1053,7 @@ impl<'c> SheetReader<'c> {
                         "tabColor" => {
                             self.sheet.tab_color = RawColor::from_tag(&t).resolve(self.ctx.palette)
                         }
+                        "outlinePr" => super::outline::read_sheet_pr(&t, &mut self.sheet),
                         "pageSetUpPr" => page::read_sheet_pr(&t, &mut self.sheet.page),
                         _ => {}
                     }
@@ -1075,6 +1076,7 @@ impl<'c> SheetReader<'c> {
                     first = false;
                     self.sheet.show_gridlines = view.attr_bool("showGridLines").unwrap_or(true);
                     self.sheet.show_headers = view.attr_bool("showRowColHeaders").unwrap_or(true);
+                    super::outline::read_view(&view, &mut self.sheet);
                     if view.empty {
                         continue;
                     }
@@ -1137,6 +1139,7 @@ impl<'c> SheetReader<'c> {
         if lo > hi {
             return;
         }
+        super::outline::read_attrs(t, &mut self.sheet.outline.cols, lo, hi);
         let hidden = t.attr_bool("hidden").unwrap_or(false);
         let custom = t.attr_bool("customWidth").unwrap_or(false);
         let default = self.sheet.default_col_width;
@@ -1203,6 +1206,7 @@ impl<'c> SheetReader<'c> {
     }
 
     fn row(&mut self, t: &Tag, row: u32) {
+        super::outline::read_attrs(t, &mut self.sheet.outline.rows, row, row);
         let hidden = t.attr_bool("hidden").unwrap_or(false);
         if hidden {
             self.sheet.hidden_rows.insert(row);

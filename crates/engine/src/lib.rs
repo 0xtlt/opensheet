@@ -27,6 +27,7 @@ pub mod locale;
 pub mod metrics;
 pub mod names;
 pub mod ops;
+pub mod outline;
 pub mod page;
 pub mod parser;
 pub mod paste_special;

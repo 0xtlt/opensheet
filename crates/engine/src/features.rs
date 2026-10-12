@@ -51,6 +51,7 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     crate::consolidate::on_structural_edit(sheet, edit, edited_sheet);
     crate::whatif::on_structural_edit(sheet, edit, edited_sheet);
     crate::text_columns::on_structural_edit(sheet, edit, edited_sheet);
+    crate::outline::on_structural_edit(sheet, edit, edited_sheet);
 }
 
 /// A sheet was renamed from `old` to `new`. Called for every sheet (the
