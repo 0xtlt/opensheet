@@ -585,7 +585,7 @@ impl Painter<'_> {
         } else {
             // Slices are kept apart by a white line.
             let round = kind.is_round();
-            self.stroke(&series.line, round, Color::WHITE, if round { 1.125 } else { 0.75 })
+            self.stroke(&series.line, round, Color::WHITE, if round { 1.5 } else { 0.75 })
         };
         let marker = series.marker_for(kind);
         let marker = (lined && marker.shape != MarkerShape::None).then(|| MarkerLook {
@@ -683,6 +683,13 @@ impl Painter<'_> {
             index += 1;
             !chart.legend_hidden.contains(&(index - 1))
         });
+        // Clustered bars are listed from the top one down, as Excel does:
+        // the first series is the lowest bar of each cluster.
+        if chart.kind.family() == Family::Bar && !chart.kind.is_stacked() && !self.varied() {
+            let series = chart.series.len().min(self.data.series.len()) as u32;
+            let shown = (0..series).filter(|i| !chart.legend_hidden.contains(i)).count();
+            entries[..shown].reverse();
+        }
         entries
     }
 

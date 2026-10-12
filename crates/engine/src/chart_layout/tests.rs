@@ -581,7 +581,7 @@ fn pies_and_doughnuts() {
     let pie3d = chart_of(&w, "A1:B5", ChartKind::Pie3D);
     let prims = lay(&w, &pie3d);
     assert_sane(&prims, SIZE, "3-D pie");
-    assert!(filled_paths(&prims, shade(Color(SOUTH), -0.3).0) >= 1, "the rim of a front slice");
+    assert!(filled_paths(&prims, shade(Color(SOUTH), -0.36).0) >= 1, "the rim of a front slice");
 }
 
 #[test]
@@ -788,8 +788,8 @@ fn three_d() {
         // Front faces in the colour of the series, shaded sides and tops.
         assert!(filled_paths(&prims, NORTH) >= 1, "{kind:?}");
         if kind.family() != Family::Line {
-            assert!(filled_paths(&prims, shade(Color(NORTH), -0.3).0) >= 1, "{kind:?}: sides");
-            assert!(filled_paths(&prims, shade(Color(NORTH), -0.15).0) >= 1, "{kind:?}: tops");
+            assert!(filled_paths(&prims, shade(Color(NORTH), -0.36).0) >= 1, "{kind:?}: sides");
+            assert!(filled_paths(&prims, shade(Color(NORTH), -0.2).0) >= 1, "{kind:?}: tops");
         }
         // Another camera, perspective and from the left: still sane.
         chart.view3d = Some(View3D {
@@ -811,7 +811,7 @@ fn three_d() {
     // A 3-D column: twelve boxes of three visible faces each.
     let prims = lay(&w, &chart_of(&w, "A1:D5", ChartKind::Column3D));
     assert_eq!(filled_paths(&prims, NORTH), 4);
-    assert_eq!(filled_paths(&prims, shade(Color(NORTH), -0.3).0), 4);
+    assert_eq!(filled_paths(&prims, shade(Color(NORTH), -0.36).0), 4);
     // With right-angle axes the front of a box is a rectangle.
     let front = prims
         .iter()
@@ -822,6 +822,33 @@ fn three_d() {
         .unwrap();
     let (Seg::Move(x0, y0), Seg::Line(x1, y1), Seg::Line(x2, _)) = (front[0], front[1], front[2]) else { panic!() };
     assert!((y0 - y1).abs() < 0.01 && (x1 - x2).abs() < 0.01 && x1 > x0);
+    // Excel's proportions: the floor runs back along (sin 20°, sin 15°),
+    // two and a half times as deep as a bar is wide (a bar is as deep as
+    // it is wide, with one and a half times that around it).
+    let (floor, _) = stroked(&prims, AXIS.0).into_iter().find(|(pts, _)| pts.len() == 4).expect("the floor");
+    let (dx, dy) = (floor[2].0 - floor[1].0, floor[1].1 - floor[2].1);
+    assert!((dy / dx - 15f32.to_radians().sin() / 20f32.to_radians().sin()).abs() < 0.01, "{floor:?}");
+    let depth = dx / 20f32.to_radians().sin();
+    assert!((depth / (x1 - x0) - 2.5).abs() < 0.01, "{depth} {}", x1 - x0);
+    // Bars are listed from the top one down in the legend of a bar chart.
+    let bars = lay(&w, &chart_of(&w, "A1:D5", ChartKind::Bar3D));
+    assert!(find_text(&bars, "West").x < find_text(&bars, "North").x);
+    let columns = lay(&w, &chart_of(&w, "A1:D5", ChartKind::Column));
+    assert!(find_text(&columns, "West").x > find_text(&columns, "North").x);
+    let stacked = lay(&w, &chart_of(&w, "A1:D5", ChartKind::StackedBar));
+    assert!(find_text(&stacked, "West").x > find_text(&stacked, "North").x);
+
+    // In perspective the picture keeps its proportions: the upright edges
+    // of the box stay upright and the far end of the floor is narrower.
+    let lines = lay(&w, &chart_of(&w, "A1:D5", ChartKind::Line3D));
+    let (floor, _) = stroked(&lines, AXIS.0).into_iter().find(|(pts, _)| pts.len() == 4).expect("the floor");
+    let near = ((floor[1].0 - floor[0].0).powi(2) + (floor[1].1 - floor[0].1).powi(2)).sqrt();
+    let far = ((floor[2].0 - floor[3].0).powi(2) + (floor[2].1 - floor[3].1).powi(2)).sqrt();
+    assert!(far < near * 0.95 && far > near * 0.6, "{near} {far}");
+    // A short value axis has fewer gridlines: by 10 instead of by 5.
+    assert!(has_text(&lines, "15"));
+    let small = lay_at(&w, &chart_of(&w, "A1:D5", ChartKind::Line3D), (320.0, 200.0), 1.0);
+    assert!(has_text(&small, "10") && !has_text(&small, "15") && !has_text(&small, "5"));
 }
 
 #[test]

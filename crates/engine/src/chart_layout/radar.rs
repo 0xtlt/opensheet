@@ -48,7 +48,8 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
         (cx + r * f as f32 * a.cos(), cy + r * f as f32 * a.sin())
     };
 
-    // Rings and spokes.
+    // Rings and spokes; no more rings than their labels have room for.
+    let scale = scale.coarsen(&chart.axes.value, (r / (label_h * 1.1)).floor().max(1.0) as usize + 1);
     let grid = Stroke::new(GRIDLINE, 1.0);
     let ticks = scale.major_ticks();
     if chart.axes.value.major_gridlines {

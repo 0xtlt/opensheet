@@ -95,6 +95,36 @@ impl Scale {
         }
     }
 
+    /// The same scale with fewer gridlines, when it has more than `room`
+    /// of them: Excel never crowds the labels of an axis, it widens the
+    /// unit (1, 2, 5, 10...) and moves the automatic ends onto it. A unit
+    /// that was set stays.
+    pub fn coarsen(mut self, axis: &Axis, room: usize) -> Scale {
+        if self.log_base.is_some() || axis.major_unit.is_some() {
+            return self;
+        }
+        let room = room.max(2);
+        for _ in 0..20 {
+            if self.major_ticks().len() <= room {
+                break;
+            }
+            let mag = 10f64.powf(self.major.log10().floor());
+            let norm = self.major / mag;
+            let next = mag * if norm < 1.5 { 2.0 } else if norm < 3.5 { 5.0 } else { 10.0 };
+            self.major = next;
+            if axis.min.is_none() {
+                self.min = (self.min / next + 1e-9).floor() * next;
+            }
+            if axis.max.is_none() {
+                self.max = (self.max / next - 1e-9).ceil() * next;
+            }
+            if axis.minor_unit.is_none() {
+                self.minor = next / 5.0;
+            }
+        }
+        self
+    }
+
     /// Position of a value along the scale without regard for its
     /// direction: 0 at `min`, 1 at `max`. Values outside fall outside.
     fn raw_fraction(&self, v: f64) -> f64 {
@@ -227,6 +257,28 @@ mod tests {
         assert!(s.max > s.min);
         let s = Scale::new(&Axis { min: Some(3.0), max: Some(3.0), ..Axis::new() }, 0.0, 1.0, false);
         assert!(s.max > s.min);
+    }
+
+    #[test]
+    fn short_axes_have_fewer_gridlines() {
+        let axis = Axis::new();
+        let s = Scale::new(&axis, 5.0, 21.0, false);
+        assert_eq!(s.major_ticks().len(), 6);
+        assert_eq!(s.clone().coarsen(&axis, 6), s);
+        // 0 to 25 by 5 does not fit in four labels: 0 to 30 by 10 does.
+        let c = s.clone().coarsen(&axis, 4);
+        assert_eq!((c.min, c.max, c.major, c.minor), (0.0, 30.0, 10.0, 2.0));
+        let c = s.clone().coarsen(&axis, 2);
+        assert_eq!(c.major_ticks(), vec![0.0, 50.0]);
+        // Percentages stay within 0 to 100 %.
+        let c = Scale::new(&axis, 0.0, 1.0, true).coarsen(&axis, 7);
+        assert_eq!((c.min, c.max, c.major), (0.0, 1.0, 0.2));
+        // What was set is kept.
+        let fixed = Axis { major_unit: Some(5.0), ..Axis::new() };
+        assert_eq!(Scale::new(&fixed, 5.0, 21.0, false).coarsen(&fixed, 3).major, 5.0);
+        let ends = Axis { min: Some(1.0), max: Some(24.0), ..Axis::new() };
+        let c = Scale::new(&ends, 5.0, 21.0, false).coarsen(&ends, 3);
+        assert_eq!((c.min, c.max, c.major), (1.0, 24.0, 10.0));
     }
 
     #[test]

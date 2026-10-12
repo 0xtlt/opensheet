@@ -463,13 +463,39 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             pad(&mut ranges[0]);
         }
     }
-    let scale_of = |i: usize, axis: &Axis| {
+    let value_code = |i: usize| -> String {
+        if percent[i] && !xy {
+            return "0%".to_string();
+        }
+        let first = groups.iter().filter(|g| g.secondary as usize == i).flat_map(|g| g.series.iter()).min();
+        match (i, first) {
+            (1, Some(&si)) => data.series[si].format.clone(),
+            _ => data.value_format.clone(),
+        }
+    };
+    // An axis shows as many gridlines as its labels have room for: about
+    // the plot is known before the labels are, well enough for that.
+    let room_up = ((bottom - top - 2.0 * label_h) / (label_h * 1.1)).floor().max(1.0) as usize + 1;
+    let across = (right - left - 60.0 * z).max(20.0);
+    let tuned = |p: &Painter, scale: Scale, axis: &Axis, code: &str, upright: bool| -> Scale {
+        let room = if upright {
+            room_up
+        } else {
+            let widest = scale_labels(p, axis, &scale, code).iter().map(|l| l.2).fold(0.0, f32::max);
+            (across / (widest + 8.0 * z)).floor().max(1.0) as usize + 1
+        };
+        scale.coarsen(axis, room)
+    };
+    let scale_of = |p: &Painter, i: usize, axis: &Axis| {
         let r = ranges[i];
         let (lo, hi) = if r.is_empty() { (0.0, 1.0) } else { (r.lo, r.hi) };
-        Scale::new(axis, lo, hi, percent[i] && !xy)
+        tuned(p, Scale::new(axis, lo, hi, percent[i] && !xy), axis, &value_code(i), !horizontal)
     };
-    let scales = [scale_of(0, &chart.axes.value), scale_of(1, &chart.axes.secondary_value)];
-    let x_scale = xy.then(|| Scale::new(&chart.axes.category, x_range.lo, x_range.hi, false));
+    let scales = [scale_of(p, 0, &chart.axes.value), scale_of(p, 1, &chart.axes.secondary_value)];
+    let x_scale = xy.then(|| {
+        let axis = &chart.axes.category;
+        tuned(p, Scale::new(axis, x_range.lo, x_range.hi, false), axis, &data.x_format, false)
+    });
 
     // ---- axes, before the plot rectangle is known --------------------------
     let slots = n + extra_slots;
@@ -483,16 +509,6 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         slots,
         on_ticks,
         reversed: !xy && chart.axes.category.reversed,
-    };
-    let value_code = |i: usize| -> String {
-        if percent[i] && !xy {
-            return "0%".to_string();
-        }
-        let first = groups.iter().filter(|g| g.secondary as usize == i).flat_map(|g| g.series.iter()).min();
-        match (i, first) {
-            (1, Some(&si)) => data.series[si].format.clone(),
-            _ => data.value_format.clone(),
-        }
     };
     // Where the value axis stands along the category axis, and where the
     // category axis stands along the value axis.

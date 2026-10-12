@@ -200,7 +200,7 @@ pub(super) fn draw_pie_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let elevation = (view.rot_x.clamp(10, 80) as f32).to_radians();
     let squash = elevation.sin();
     // Thickness of the pie, as a share of its radius.
-    let thick = 0.2 * view.depth_percent.clamp(20, 2000) as f32 / 100.0 * elevation.cos();
+    let thick = 0.27 * view.depth_percent.clamp(20, 2000) as f32 / 100.0 * elevation.cos();
     let burst = ring.iter().map(|s| explosion_of(&chart.series[0], s.point)).max().unwrap_or(0) as f32 / 100.0;
     let labelled = chart.labels_for(&chart.series[0]);
     let room = if labelled.is_some_and(|l| l.position == LabelPosition::OutsideEnd) { p.label_h + 8.0 * z } else { 4.0 * z };
@@ -245,7 +245,7 @@ pub(super) fn draw_pie_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             let mut wall = arc_points(ox, oy, rx, ry, lo, hi);
             let lower: Vec<(f32, f32)> = wall.iter().rev().map(|(x, y)| (*x, y + band)).collect();
             wall.extend(lower);
-            p.polygon(&wall, Some(Ink::solid(shade(color, -0.3))), None);
+            p.polygon(&wall, Some(Ink::solid(shade(color, -0.36))), None);
         }
         let fill = Some(Ink::solid(color));
         if ring.len() == 1 {
