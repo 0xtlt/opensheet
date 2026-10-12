@@ -35,7 +35,6 @@ fn load(bytes: &[u8]) -> Workbook {
 fn keep(name: &str, bytes: &[u8]) {
     common::keep_sample(name, bytes);
 }
-}
 
 fn rect(name: &str) -> Rect {
     Rect::parse(name).unwrap_or_else(|| panic!("bad range {name}"))

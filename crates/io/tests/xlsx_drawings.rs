@@ -42,7 +42,6 @@ fn load(bytes: &[u8]) -> Workbook {
 fn keep(name: &str, bytes: &[u8]) {
     common::keep_sample(name, bytes);
 }
-}
 
 /// The bytes of one part of a package, text or not.
 fn raw_part(bytes: &[u8], name: &str) -> Vec<u8> {
