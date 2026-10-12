@@ -1,8 +1,7 @@
 //! The boxes of notes: where they sit on the screen, how they are drawn,
 //! and what dragging their border or one of their handles makes of them.
 
-use super::{Spot, Ui};
-use crate::app::ExcelApp;
+use super::Spot;
 use crate::features::Painter;
 use crate::grid::{Draw, FontResolver, GridLayout, pt_to_px};
 use crate::objects::handle_points;
@@ -237,24 +236,26 @@ fn shown(layout: &GridLayout, sheet: &Sheet, cell: (u32, u32), frame: Frame, sta
     }
 }
 
-/// Every note box to draw on the current sheet: the notes left showing,
-/// the one under the pointer, the one selected or being typed.
-pub(super) fn shown_boxes(app: &ExcelApp, layout: &GridLayout) -> Vec<ShownBox> {
-    let sheet = &app.wb.sheets[app.sheet];
-    let Some(ui) = app.ext::<Ui>() else {
-        // Nothing was hovered, selected or typed yet.
-        return sheet
-            .comments
-            .iter()
-            .filter(|(_, comment)| comment.as_note().is_some_and(|note| note.visible))
-            .filter_map(|(cell, _)| Some(shown(layout, sheet, *cell, sheet.note_frame(cell.0, cell.1)?, true, BoxState::Plain)))
-            .collect();
-    };
-    let editing = ui.note_edit.as_ref().filter(|edit| edit.sheet == app.sheet);
+/// What decides which note boxes show, besides the notes themselves.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(super) struct BoxView {
+    /// The note whose text is being typed (it may not exist yet).
+    pub editing: Option<(u32, u32)>,
+    /// The note whose box is selected.
+    pub selected: Option<(u32, u32)>,
+    /// Hidden notes that show for now: under the pointer, or where Next
+    /// Note went.
+    pub peeked: Vec<(u32, u32)>,
+    pub drag: Option<BoxDrag>,
+}
+
+/// Every note box to draw on a sheet: the notes left showing, the one
+/// under the pointer, the one selected or being typed.
+pub(super) fn shown_boxes(sheet: &Sheet, layout: &GridLayout, view: &BoxView) -> Vec<ShownBox> {
     let state_of = |cell: (u32, u32)| {
-        if editing.is_some_and(|edit| edit.cell == cell) {
+        if view.editing == Some(cell) {
             BoxState::Editing
-        } else if ui.note_sel == Some(cell) {
+        } else if view.selected == Some(cell) {
             BoxState::Selected
         } else {
             BoxState::Plain
@@ -266,10 +267,10 @@ pub(super) fn shown_boxes(app: &ExcelApp, layout: &GridLayout) -> Vec<ShownBox> 
             continue;
         };
         let state = state_of(*cell);
-        if !note.visible && state == BoxState::Plain && !ui.peeks(*cell) {
+        if !note.visible && state == BoxState::Plain && !view.peeked.contains(cell) {
             continue;
         }
-        let frame = match ui.drag.filter(|drag| drag.cell == *cell) {
+        let frame = match view.drag.filter(|drag| drag.cell == *cell) {
             Some(drag) => Some(drag.current),
             None => sheet.note_frame(cell.0, cell.1),
         };
@@ -278,9 +279,9 @@ pub(super) fn shown_boxes(app: &ExcelApp, layout: &GridLayout) -> Vec<ShownBox> 
         }
     }
     // A note being written that the workbook does not hold yet.
-    if let Some(edit) = editing.filter(|edit| !out.iter().any(|shown| shown.cell == edit.cell)) {
-        let frame = sheet.default_note_frame(edit.cell.0, edit.cell.1);
-        out.push(shown(layout, sheet, edit.cell, frame, false, BoxState::Editing));
+    if let Some(cell) = view.editing.filter(|cell| !sheet.comments.contains_key(cell)) {
+        let frame = sheet.default_note_frame(cell.0, cell.1);
+        out.push(shown(layout, sheet, cell, frame, false, BoxState::Editing));
     }
     out
 }
@@ -316,9 +317,11 @@ pub(super) fn note_text(note: &Note, fonts: &FontResolver) -> NoteText {
     let mut runs = Vec::new();
     for run in &note.runs {
         let color = run.font.color.map(theme::engine_color).unwrap_or(c(0x000000));
-        text.push_str(&run.text);
+        // Lines end with a line feed, whatever the file used.
+        let part = run.text.replace("\r\n", "\n").replace('\r', "\n");
+        text.push_str(&part);
         runs.push(TextRun {
-            len: run.text.len(),
+            len: part.len(),
             font: note_font(&run.font, fonts),
             color,
             background_color: None,
@@ -467,7 +470,7 @@ pub(super) fn paint_box(p: &mut Painter, shown: &ShownBox, cell: Px, text: Optio
     }
 
     if shown.state != BoxState::Plain {
-        for (hx, hy) in handle_points((x0 - BAND / 2.0, y0 - BAND / 2.0, x1 + BAND / 2.0, y1 + BAND / 2.0)) {
+        for (hx, hy) in handle_points(handle_frame(shown.rect)) {
             if inside((hx, hy), clip) {
                 p.disc(hx, hy, 4.0, c(0x404040));
                 p.disc(hx, hy, 3.0, c(0xFFFFFF));
@@ -476,41 +479,72 @@ pub(super) fn paint_box(p: &mut Painter, shown: &ShownBox, cell: Px, text: Optio
     }
 }
 
-/// Make a box react to the mouse: its inside starts typing, its border
-/// moves it, its handles (when it shows them) resize it.
-pub(super) fn zones(p: &mut Painter, shown: &ShownBox) {
+/// What makes a box react to the mouse: its inside starts typing, its
+/// border moves it, its handles (when it shows them) resize it. Later
+/// zones lie over earlier ones.
+pub(super) fn box_zones(shown: &ShownBox) -> Vec<(Px, Spot, CursorStyle)> {
     let (x0, y0, x1, y1) = shown.rect;
     let (row, col) = shown.cell;
-    let clip = shown.clip;
-    let zone = |p: &mut Painter, area: Px, spot: Spot, cursor: CursorStyle| {
-        if let Some(area) = intersect(area, clip) {
-            p.zone(area, spot).cursor(cursor);
+    let mut out = Vec::new();
+    let mut zone = |area: Px, spot: Spot, cursor: CursorStyle| {
+        if let Some(area) = intersect(area, shown.clip) {
+            out.push((area, spot, cursor));
         }
     };
     if shown.state != BoxState::Editing {
         zone(
-            p,
             (x0 + REACH, y0 + REACH, x1 - REACH, y1 - REACH),
             Spot::Body(row, col),
             CursorStyle::IBeam,
         );
     }
-    let out = if shown.state == BoxState::Plain { REACH } else { BAND };
+    let out_by = if shown.state == BoxState::Plain { REACH } else { BAND };
     for strip in [
-        (x0 - out, y0 - out, x1 + out, y0 + REACH),
-        (x0 - out, y1 - REACH, x1 + out, y1 + out),
-        (x0 - out, y0 + REACH, x0 + REACH, y1 - REACH),
-        (x1 - REACH, y0 + REACH, x1 + out, y1 - REACH),
+        (x0 - out_by, y0 - out_by, x1 + out_by, y0 + REACH),
+        (x0 - out_by, y1 - REACH, x1 + out_by, y1 + out_by),
+        (x0 - out_by, y0 + REACH, x0 + REACH, y1 - REACH),
+        (x1 - REACH, y0 + REACH, x1 + out_by, y1 - REACH),
     ] {
-        zone(p, strip, Spot::Grip(row, col, Grip::Move), Grip::Move.cursor());
+        zone(strip, Spot::Grip(row, col, Grip::Move), Grip::Move.cursor());
     }
     if shown.state != BoxState::Plain {
-        let points = handle_points((x0 - BAND / 2.0, y0 - BAND / 2.0, x1 + BAND / 2.0, y1 + BAND / 2.0));
-        for (index, (hx, hy)) in points.into_iter().enumerate() {
+        for (index, (hx, hy)) in handle_points(handle_frame(shown.rect)).into_iter().enumerate() {
             let grip = Grip::Handle(index as u8);
-            zone(p, (hx - 5.0, hy - 5.0, hx + 5.0, hy + 5.0), Spot::Grip(row, col, grip), grip.cursor());
+            zone((hx - 5.0, hy - 5.0, hx + 5.0, hy + 5.0), Spot::Grip(row, col, grip), grip.cursor());
         }
     }
+    out
+}
+
+/// Where the handles of a selected box sit: in the middle of its band.
+fn handle_frame(rect: Px) -> Px {
+    (rect.0 - BAND / 2.0, rect.1 - BAND / 2.0, rect.2 + BAND / 2.0, rect.3 + BAND / 2.0)
+}
+
+/// Register the zones of a box with the grid.
+pub(super) fn zones(p: &mut Painter, shown: &ShownBox) {
+    for (area, spot, cursor) in box_zones(shown) {
+        p.zone(area, spot).cursor(cursor);
+    }
+}
+
+/// The corner mark of an annotated cell: a triangle for a note, a small
+/// flag for a comment, inside the gridlines at the top right of the cell.
+pub(super) fn mark(thread: bool, cell: Px, zoom: f32) -> Vec<(f32, f32)> {
+    let (_, y0, x1, y1) = cell;
+    let right = x1 - 1.0;
+    let size = ((if thread { 8.0 } else { 6.0 }) * zoom).round().clamp(4.0, 18.0).min(y1 - y0);
+    if !thread {
+        return vec![(right - size, y0), (right, y0), (right, y0 + size)];
+    }
+    let cut = (size * 0.45).round();
+    vec![
+        (right - size, y0),
+        (right, y0),
+        (right, y0 + size),
+        (right - size + cut, y0 + size),
+        (right - size, y0 + size - cut),
+    ]
 }
 
 #[cfg(test)]
@@ -604,6 +638,147 @@ mod tests {
         assert_eq!(peek.pushed, (0.0, 12.0));
         // Once selected (its border was pressed), it takes the mouse.
         assert!(shown(&l, sheet, (4, 2), frame, false, BoxState::Selected).solid);
+    }
+
+    /// The spot a press at (x, y) lands on: the last zone that holds it,
+    /// as the grid decides.
+    fn spot_at(shown: &ShownBox, x: f32, y: f32) -> Option<Spot> {
+        box_zones(shown)
+            .into_iter()
+            .rev()
+            .find(|(area, _, _)| x >= area.0 && x < area.2 && y >= area.1 && y < area.3)
+            .map(|(_, spot, _)| spot)
+    }
+
+    fn at(rect: Px, clip: Px, state: BoxState) -> ShownBox {
+        ShownBox {
+            cell: (4, 2),
+            rect,
+            clip,
+            state,
+            solid: true,
+            pushed: (0.0, 0.0),
+        }
+    }
+
+    #[test]
+    fn a_press_on_a_box_finds_its_inside_its_border_or_a_handle() {
+        let everywhere = (0.0, 0.0, 1000.0, 600.0);
+        let rect = (300.0, 100.0, 444.0, 179.0);
+        let plain = at(rect, everywhere, BoxState::Plain);
+        // The inside starts typing; the border, a few pixels either side
+        // of the line, moves the box; beside it the press is for the cells.
+        assert_eq!(spot_at(&plain, 370.0, 140.0), Some(Spot::Body(4, 2)));
+        assert_eq!(spot_at(&plain, 301.0, 140.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(spot_at(&plain, 298.0, 140.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(spot_at(&plain, 370.0, 180.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(spot_at(&plain, 290.0, 140.0), None);
+        assert_eq!(spot_at(&plain, 370.0, 190.0), None);
+        // No handles until the box is selected: a corner moves it.
+        assert_eq!(spot_at(&plain, 299.0, 99.0), Some(Spot::Grip(4, 2, Grip::Move)));
+
+        // Selected: the eight handles, clockwise from the top-left corner,
+        // win over the border they sit on.
+        let selected = at(rect, everywhere, BoxState::Selected);
+        assert_eq!(spot_at(&selected, 298.0, 98.0), Some(Spot::Grip(4, 2, Grip::Handle(0))));
+        assert_eq!(spot_at(&selected, 372.0, 98.0), Some(Spot::Grip(4, 2, Grip::Handle(1))));
+        assert_eq!(spot_at(&selected, 446.0, 98.0), Some(Spot::Grip(4, 2, Grip::Handle(2))));
+        assert_eq!(spot_at(&selected, 446.0, 139.5), Some(Spot::Grip(4, 2, Grip::Handle(3))));
+        assert_eq!(spot_at(&selected, 446.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(4))));
+        assert_eq!(spot_at(&selected, 372.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(5))));
+        assert_eq!(spot_at(&selected, 298.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(6))));
+        assert_eq!(spot_at(&selected, 298.0, 139.5), Some(Spot::Grip(4, 2, Grip::Handle(7))));
+        assert_eq!(spot_at(&selected, 330.0, 98.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(spot_at(&selected, 370.0, 140.0), Some(Spot::Body(4, 2)));
+
+        // While its text is typed the inside belongs to the editor laid
+        // over it; the band around still moves and resizes the box.
+        let editing = at(rect, everywhere, BoxState::Editing);
+        assert_eq!(spot_at(&editing, 370.0, 140.0), None);
+        assert_eq!(spot_at(&editing, 330.0, 98.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(spot_at(&editing, 446.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(4))));
+
+        // A box half under the headers or a frozen pane takes no press there.
+        let clipped = at(rect, (350.0, 120.0, 1000.0, 600.0), BoxState::Selected);
+        assert_eq!(spot_at(&clipped, 330.0, 140.0), None);
+        assert_eq!(spot_at(&clipped, 370.0, 110.0), None);
+        assert_eq!(spot_at(&clipped, 370.0, 140.0), Some(Spot::Body(4, 2)));
+        assert_eq!(spot_at(&clipped, 298.0, 98.0), None);
+    }
+
+    #[test]
+    fn which_boxes_show() {
+        let mut wb = Workbook::new(Locale::en());
+        wb.set_note(0, 1, 0, "Ada", "left showing");
+        wb.set_note_visible(0, 1, 0, true);
+        wb.set_note(0, 4, 2, "Ada", "hidden");
+        wb.add_comment(0, 6, 1, &opensheet_engine::comment::Person::new("Bob"), 45_000.0, "a thread");
+        wb.commit("setup");
+        let sheet = &wb.sheets[0];
+        let l = layout(&wb, 1.0, (0.0, 0.0));
+        let cells = |view: &BoxView| -> Vec<((u32, u32), BoxState, bool)> {
+            shown_boxes(sheet, &l, view).iter().map(|shown| (shown.cell, shown.state, shown.solid)).collect()
+        };
+        // Only the notes left showing; a comment has no box.
+        assert_eq!(cells(&BoxView::default()), [((1, 0), BoxState::Plain, true)]);
+        // Under the pointer (or where Next Note went) a hidden note shows,
+        // deaf to the mouse.
+        let mut view = BoxView {
+            peeked: vec![(4, 2), (6, 1)],
+            ..BoxView::default()
+        };
+        assert_eq!(
+            cells(&view),
+            [((1, 0), BoxState::Plain, true), ((4, 2), BoxState::Plain, false)]
+        );
+        // Selected or typed in, it shows whatever the pointer does.
+        view.peeked.clear();
+        view.selected = Some((4, 2));
+        assert_eq!(cells(&view)[1], ((4, 2), BoxState::Selected, true));
+        view.selected = None;
+        view.editing = Some((4, 2));
+        assert_eq!(cells(&view)[1], ((4, 2), BoxState::Editing, true));
+        // A note being written on a cell that has none yet gets a box
+        // where Excel would put it.
+        view.editing = Some((8, 3));
+        let boxes = shown_boxes(sheet, &l, &view);
+        assert_eq!(boxes.len(), 2);
+        let frame = sheet.default_note_frame(8, 3);
+        assert_eq!((boxes[1].cell, boxes[1].state), ((8, 3), BoxState::Editing));
+        assert_eq!(boxes[1].rect.0, l.header_w + frame.x as f32);
+        assert_eq!(boxes[1].rect.2 - boxes[1].rect.0, 144.0);
+        // A box follows the mouse that drags it before the note is changed.
+        let origin = sheet.note_frame(1, 0).unwrap();
+        let moved = dragged(origin, Grip::Move, 30.0, 12.0);
+        let view = BoxView {
+            selected: Some((1, 0)),
+            drag: Some(BoxDrag {
+                cell: (1, 0),
+                grip: Grip::Move,
+                start: (0.0, 0.0),
+                origin,
+                current: moved,
+            }),
+            ..BoxView::default()
+        };
+        let still = shown_boxes(sheet, &l, &BoxView::default())[0].rect;
+        let dragging = shown_boxes(sheet, &l, &view)[0].rect;
+        assert_eq!((dragging.0 - still.0, dragging.1 - still.1), (30.0, 12.0));
+        assert_eq!(sheet.note_frame(1, 0), Some(origin));
+    }
+
+    #[test]
+    fn marks_sit_in_the_top_right_corner() {
+        let cell = (100.0, 40.0, 164.0, 60.0);
+        // A note: a red triangle against the gridline, six pixels a side.
+        assert_eq!(mark(false, cell, 1.0), [(157.0, 40.0), (163.0, 40.0), (163.0, 46.0)]);
+        // A comment: a larger shape with its lower-left corner cut off.
+        let flag = mark(true, cell, 1.0);
+        assert_eq!(flag.len(), 5);
+        assert_eq!((flag[0], flag[1], flag[2]), ((155.0, 40.0), (163.0, 40.0), (163.0, 48.0)));
+        // They grow with the zoom, and never past the height of a low row.
+        assert_eq!(mark(false, (200.0, 80.0, 328.0, 120.0), 2.0)[0], (315.0, 80.0));
+        assert_eq!(mark(true, (100.0, 40.0, 164.0, 45.0), 1.0)[2], (163.0, 45.0));
     }
 
     #[test]

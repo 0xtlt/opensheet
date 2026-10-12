@@ -19,7 +19,7 @@ mod text_area;
 pub use self::text_area::bind_keys;
 
 use self::card::{Beside, CommentCard};
-use self::notes::{BoxDrag, Grip};
+use self::notes::{BoxDrag, BoxView, Grip, ShownBox};
 use self::pane::CommentsPane;
 use self::text_area::{AreaEvent, TextArea};
 use super::{
@@ -39,7 +39,7 @@ use gpui::{
 use opensheet_engine::comment::{self, Comment, CommentKind, Note, Person};
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::workbook::ClearMode;
-use opensheet_engine::Rect;
+use opensheet_engine::{Rect, Workbook};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -267,11 +267,62 @@ pub(self) enum Spot {
     Grip(u32, u32, Grip),
 }
 
-/// The annotated cell under the pointer.
-struct Hover {
-    cell: (u32, u32),
+/// What the pointer makes appear: the note or the comment of the cell it
+/// rests on. The timers are kept by the caller; this says when to start
+/// them and what their end changes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(self) struct Peek {
+    cell: Option<(u32, u32)>,
     /// The pointer has rested: the note or the comment shows.
     shown: bool,
+}
+
+impl Peek {
+    /// The annotated cell whose note or comment shows.
+    fn shown(&self) -> Option<(u32, u32)> {
+        self.cell.filter(|_| self.shown)
+    }
+
+    /// The pointer came onto an annotated cell. True when the wait before
+    /// showing starts (it is another cell than the one it was on).
+    fn enter(&mut self, cell: (u32, u32)) -> bool {
+        if self.cell == Some(cell) {
+            return false;
+        }
+        *self = Peek {
+            cell: Some(cell),
+            shown: false,
+        };
+        true
+    }
+
+    /// The pointer has rested on `cell` long enough. True when that makes
+    /// something show.
+    fn rested(&mut self, cell: (u32, u32)) -> bool {
+        let shows = self.cell == Some(cell) && !self.shown;
+        self.shown |= shows;
+        shows
+    }
+
+    /// The pointer left the cell. True when something shows, which stays
+    /// for a moment more (the pointer may come back, or reach the card);
+    /// what was still waiting is forgotten at once.
+    fn leave(&mut self) -> bool {
+        if !self.shown {
+            *self = Peek::default();
+        }
+        self.shown
+    }
+
+    /// That moment has passed. `held`: the pointer is on the card. True
+    /// when what showed goes away.
+    fn expired(&mut self, held: bool) -> bool {
+        let goes = self.shown && !held;
+        if goes {
+            *self = Peek::default();
+        }
+        goes
+    }
 }
 
 /// A note being typed in its box.
@@ -297,7 +348,7 @@ struct OpenCard {
 /// What the feature remembers between events.
 #[derive(Default)]
 pub(self) struct Ui {
-    hover: Option<Hover>,
+    hover: Peek,
     /// Shows the note or the comment once the pointer has rested.
     rest_timer: Option<Task<()>>,
     /// Takes it away shortly after the pointer left.
@@ -314,14 +365,34 @@ pub(self) struct Ui {
     drag: Option<BoxDrag>,
     card: Option<OpenCard>,
     pane: Option<Entity<CommentsPane>>,
+    /// The fields of editors that were put away: if one of them still
+    /// has the keyboard when the window is next drawn, the grid takes it.
+    orphans: Vec<FocusHandle>,
 }
 
 impl Ui {
-    /// Whether the box of a hidden note shows for now: the pointer rests
-    /// on its cell, or Next Note went there.
-    fn peeks(&self, cell: (u32, u32)) -> bool {
-        self.visited == Some(cell) || self.hover.as_ref().is_some_and(|hover| hover.shown && hover.cell == cell)
+    /// What decides which note boxes show on a sheet.
+    fn box_view(&self, sheet: usize) -> BoxView {
+        BoxView {
+            editing: self.note_edit.as_ref().filter(|edit| edit.sheet == sheet).map(|edit| edit.cell),
+            selected: self.note_sel,
+            peeked: self.hover.shown().into_iter().chain(self.visited).collect(),
+            drag: self.drag,
+        }
     }
+
+    /// Put the floating card away.
+    fn drop_card(&mut self, cx: &gpui::App) {
+        if let Some(card) = self.card.take() {
+            self.orphans.extend(card.view.read(cx).fields(cx));
+        }
+    }
+}
+
+/// The note boxes that show on the current sheet.
+fn boxes(app: &ExcelApp, layout: &GridLayout) -> Vec<ShownBox> {
+    let view = app.ext::<Ui>().map(|ui| ui.box_view(app.sheet)).unwrap_or_default();
+    notes::shown_boxes(&app.wb.sheets[app.sheet], layout, &view)
 }
 
 // -------------------------------------------------------------------- notes
@@ -375,26 +446,40 @@ fn edit_note(app: &mut ExcelApp, cell: (u32, u32), at: Option<Point<Pixels>>, wi
         _subscription: subscription,
     });
     ui.note_sel = None;
-    ui.hover = None;
+    ui.hover = Peek::default();
     ui.rest_timer = None;
     ui.leave_timer = None;
     cx.notify();
 }
 
-/// Store the note being typed, if any: a new note, or the new text of an
-/// old one, in one undo step.
+/// Store what was typed in the box of a note: a new note (`original`
+/// `None`), or the new text of an old one. Returns the name of the undo
+/// step when the workbook changed.
+fn store_note(
+    wb: &mut Workbook,
+    sheet: usize,
+    cell: (u32, u32),
+    author: &str,
+    original: Option<&str>,
+    text: &str,
+) -> Option<&'static str> {
+    if original == Some(text) || !wb.set_note(sheet, cell.0, cell.1, author, text) {
+        return None;
+    }
+    Some(match original {
+        Some(_) => Cmd::EditNote.label(),
+        None => Cmd::NewNote.label(),
+    })
+}
+
+/// Store the note being typed, if any, in one undo step.
 fn finish_note_edit(app: &mut ExcelApp, cx: &mut Cx) {
     let Some(edit) = app.ext::<Ui>().is_some().then(|| app.ext_mut::<Ui>().note_edit.take()).flatten() else {
         return;
     };
     let text = edit.area.read(cx).text().to_string();
-    if edit.original.as_deref() != Some(text.as_str())
-        && app.wb.set_note(edit.sheet, edit.cell.0, edit.cell.1, user_name(), &text)
-    {
-        let label = match edit.original {
-            Some(_) => Cmd::EditNote.label(),
-            None => Cmd::NewNote.label(),
-        };
+    app.ext_mut::<Ui>().orphans.push(edit.area.focus_handle(cx));
+    if let Some(label) = store_note(&mut app.wb, edit.sheet, edit.cell, user_name(), edit.original.as_deref(), &text) {
         app.commit(label, cx);
     }
     cx.notify();
@@ -440,7 +525,7 @@ fn start_drag(app: &mut ExcelApp, cell: (u32, u32), grip: Grip, ev: &ZoneEvent, 
     // it starts from where it is seen.
     let pushed = match stays {
         true => (0.0, 0.0),
-        false => notes::shown_boxes(app, &layout)
+        false => boxes(app, &layout)
             .iter()
             .find(|shown| shown.cell == cell)
             .map_or((0.0, 0.0), |shown| shown.pushed),
@@ -477,29 +562,33 @@ fn nudge_box(app: &mut ExcelApp, dx: f64, dy: f64, cx: &mut Cx) {
 
 // ----------------------------------------------------------------- comments
 
+/// Write a post on a cell: the comment that starts its thread when it has
+/// none, else a reply. Returns the name of the undo step when it was
+/// written (not on a note, nor on a resolved thread).
+fn write_post(wb: &mut Workbook, sheet: usize, cell: (u32, u32), author: &str, now: f64, text: &str) -> Option<&'static str> {
+    let author = Person::new(author);
+    let (row, col) = cell;
+    match wb.comment_at(sheet, row, col).map(Comment::kind) {
+        Some(CommentKind::Thread) => wb
+            .add_reply(sheet, row, col, &author, now, text)
+            .then_some(t("Reply", "Répondre")),
+        Some(CommentKind::Note) => None,
+        None => wb
+            .add_comment(sheet, row, col, &author, now, text)
+            .then_some(Cmd::NewComment.label()),
+    }
+}
+
 /// Post a comment on a cell that has none, or a reply to its thread.
 pub(self) fn post(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), text: &str, cx: &mut Cx) -> bool {
     if !may_edit(app, cx) {
         return false;
     }
-    let author = Person::new(user_name());
-    let now = comment::now_utc();
-    let (row, col) = cell;
-    let (done, label) = match kind_at(app, sheet, cell) {
-        Some(CommentKind::Thread) => (
-            app.wb.add_reply(sheet, row, col, &author, now, text),
-            t("Reply", "Répondre"),
-        ),
-        Some(CommentKind::Note) => return false,
-        None => (
-            app.wb.add_comment(sheet, row, col, &author, now, text),
-            Cmd::NewComment.label(),
-        ),
-    };
-    if done {
+    let label = write_post(&mut app.wb, sheet, cell, user_name(), comment::now_utc(), text);
+    if let Some(label) = label {
         app.commit(label, cx);
     }
-    done
+    label.is_some()
 }
 
 /// Change the text of a post (`reply` `None`: the first of its thread).
@@ -546,8 +635,8 @@ pub(self) fn resolve(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), resolve
 pub(self) fn close_card(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), cx: &mut Cx) {
     let ui = app.ext_mut::<Ui>();
     if ui.card.as_ref().is_some_and(|card| (card.sheet, card.cell) == (sheet, cell)) {
-        ui.card = None;
-        ui.hover = None;
+        ui.drop_card(cx);
+        ui.hover = Peek::default();
         cx.notify();
     }
 }
@@ -655,7 +744,7 @@ fn write_comment(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
                     }
                 })
                 .button(t("Discard comment", "Abandonner le commentaire"), |app, window, cx| {
-                    app.ext_mut::<Ui>().card = None;
+                    app.ext_mut::<Ui>().drop_card(cx);
                     write_comment(app, window, cx);
                 }),
             cx,
@@ -714,7 +803,7 @@ fn toggle_pane(app: &mut ExcelApp, cx: &mut Cx) {
     pane.update(cx, |pane, cx| pane.reveal(active, cx));
     // The pane shows the threads from now on: no card over the grid.
     let ui = app.ext_mut::<Ui>();
-    ui.card = None;
+    ui.drop_card(cx);
     ui.pane = Some(pane.clone());
     app.open_pane(PANE, t("Comments", "Commentaires"), pane, cx);
 }
@@ -724,32 +813,49 @@ fn toggle_pane(app: &mut ExcelApp, cx: &mut Cx) {
 /// whether to go on from the other end.
 fn go(app: &mut ExcelApp, kind: CommentKind, forward: bool, window: &mut Window, cx: &mut Cx) {
     let (row, col) = app.active();
-    let from = (app.sheet, row, col);
-    let found = if forward {
-        app.wb.next_comment(from, Some(kind))
-    } else {
-        app.wb.previous_comment(from, Some(kind))
-    };
-    if let Some(target) = found {
-        visit(app, target, kind, window, cx);
-        return;
+    match step(&app.wb, (app.sheet, row, col), kind, forward) {
+        Step::To(target) => visit(app, target, kind, window, cx),
+        Step::Wrap(target) => {
+            let question = comment::end_of_workbook_question(app.wb.locale);
+            app.alert(
+                Alert::new("OpenSheet", question)
+                    .button(t("OK", "OK"), move |app, window, cx| {
+                        // The workbook may have changed behind the question.
+                        if app.wb.comment_at(target.0, target.1, target.2).map(Comment::kind) == Some(kind) {
+                            visit(app, target, kind, window, cx);
+                        }
+                    })
+                    .close_button(t("Cancel", "Annuler")),
+                cx,
+            );
+        }
+        Step::Nowhere => {}
     }
-    let question = comment::end_of_workbook_question(app.wb.locale);
-    app.alert(
-        Alert::new("OpenSheet", question)
-            .button(t("OK", "OK"), move |app, window, cx| {
-                let target = if forward {
-                    app.wb.first_comment(Some(kind))
-                } else {
-                    app.wb.last_comment(Some(kind))
-                };
-                if let Some(target) = target {
-                    visit(app, target, kind, window, cx);
-                }
-            })
-            .close_button(t("Cancel", "Annuler")),
-        cx,
-    );
+}
+
+/// Where Previous / Next goes from a cell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    /// Straight to that cell (sheet, row, column).
+    To((usize, u32, u32)),
+    /// The workbook ends first: there, if the user agrees to go on from
+    /// its other end.
+    Wrap((usize, u32, u32)),
+    /// The workbook has none of that kind.
+    Nowhere,
+}
+
+fn step(wb: &Workbook, from: (usize, u32, u32), kind: CommentKind, forward: bool) -> Step {
+    let (found, other_end) = if forward {
+        (wb.next_comment(from, Some(kind)), wb.first_comment(Some(kind)))
+    } else {
+        (wb.previous_comment(from, Some(kind)), wb.last_comment(Some(kind)))
+    };
+    match (found, other_end) {
+        (Some(target), _) => Step::To(target),
+        (None, Some(target)) => Step::Wrap(target),
+        (None, None) => Step::Nowhere,
+    }
 }
 
 /// Select an annotated cell and show what it carries.
@@ -779,10 +885,10 @@ fn visit(app: &mut ExcelApp, target: (usize, u32, u32), kind: CommentKind, windo
 fn pointer_on(app: &mut ExcelApp, cell: (u32, u32), cx: &mut Cx) {
     let ui = app.ext_mut::<Ui>();
     ui.leave_timer = None;
-    if ui.hover.as_ref().is_some_and(|hover| hover.cell == cell) {
+    if !ui.hover.enter(cell) {
         return;
     }
-    ui.hover = Some(Hover { cell, shown: false });
+    // The card of the comment the pointer was on before goes at once.
     if ui.card.as_ref().is_some_and(|card| !card.pinned) {
         ui.card = None;
     }
@@ -791,8 +897,7 @@ fn pointer_on(app: &mut ExcelApp, cell: (u32, u32), cx: &mut Cx) {
         this.update(cx, |app, cx| {
             let ui = app.ext_mut::<Ui>();
             ui.rest_timer = None;
-            if let Some(hover) = ui.hover.as_mut().filter(|hover| hover.cell == cell) {
-                hover.shown = true;
+            if ui.hover.rested(cell) {
                 cx.notify();
             }
         })
@@ -804,23 +909,18 @@ fn pointer_on(app: &mut ExcelApp, cell: (u32, u32), cx: &mut Cx) {
 /// The pointer left the annotated cell it was on.
 fn pointer_off(app: &mut ExcelApp, cx: &mut Cx) {
     let sheet = app.sheet;
-    let Some(ui) = app.ext::<Ui>() else {
+    let Some(cell) = app.ext::<Ui>().and_then(|ui| ui.hover.cell) else {
         return;
     };
-    let Some(hover) = &ui.hover else {
-        return;
-    };
-    if !hover.shown {
-        let ui = app.ext_mut::<Ui>();
-        ui.hover = None;
-        ui.rest_timer = None;
-        return;
+    let ui = app.ext_mut::<Ui>();
+    ui.rest_timer = None;
+    if ui.hover.leave() {
+        let delay = match kind_at(app, sheet, cell) {
+            Some(CommentKind::Thread) => LINGER_CARD,
+            _ => LINGER_NOTE,
+        };
+        linger(app, delay, cx);
     }
-    let delay = match kind_at(app, sheet, hover.cell) {
-        Some(CommentKind::Thread) => LINGER_CARD,
-        _ => LINGER_NOTE,
-    };
-    linger(app, delay, cx);
 }
 
 /// Take away what the pointer made appear, after a moment: the pointer
@@ -831,14 +931,15 @@ fn linger(app: &mut ExcelApp, delay: Duration, cx: &mut Cx) {
         this.update(cx, |app, cx| {
             let ui = app.ext_mut::<Ui>();
             ui.leave_timer = None;
-            if ui.card.as_ref().is_some_and(|card| card.pointer_inside && !card.pinned) {
-                return;
+            let floating = ui.card.as_ref().filter(|card| !card.pinned);
+            let held = floating.is_some_and(|card| card.pointer_inside);
+            let had_card = floating.is_some();
+            if ui.hover.expired(held) || (had_card && !held) {
+                if had_card {
+                    ui.card = None;
+                }
+                cx.notify();
             }
-            ui.hover = None;
-            if ui.card.as_ref().is_some_and(|card| !card.pinned) {
-                ui.card = None;
-            }
-            cx.notify();
         })
         .ok();
     }));
@@ -873,28 +974,9 @@ fn paint_marks(p: &mut Painter) {
         if x1 - x0 < 3.0 || y1 - y0 < 3.0 {
             continue;
         }
-        // Inside the gridline at the right of the cell.
-        let right = x1 - 1.0;
-        match comment {
-            Comment::Note(_) => {
-                let size = (6.0 * z).round().clamp(4.0, 14.0).min(y1 - y0);
-                p.polygon(&[(right - size, y0), (right, y0), (right, y0 + size)], c(NOTE_MARK));
-            }
-            Comment::Thread(_) => {
-                let size = (8.0 * z).round().clamp(5.0, 18.0).min(y1 - y0);
-                let cut = (size * 0.45).round();
-                p.polygon(
-                    &[
-                        (right - size, y0),
-                        (right, y0),
-                        (right, y0 + size),
-                        (right - size + cut, y0 + size),
-                        (right - size, y0 + size - cut),
-                    ],
-                    c(COMMENT_MARK),
-                );
-            }
-        }
+        let thread = comment.kind() == CommentKind::Thread;
+        let color = if thread { COMMENT_MARK } else { NOTE_MARK };
+        p.polygon(&notes::mark(thread, (x0, y0, x1, y1), z), c(color));
         p.zone((x0, y0, x1, y1), Spot::Cell(*row, *col));
     }
 }
@@ -906,7 +988,7 @@ fn paint_boxes(p: &mut Painter) {
     if sheet.comments.is_empty() && app.ext::<Ui>().is_none_or(|ui| ui.note_edit.is_none()) {
         return;
     }
-    for shown in notes::shown_boxes(app, p.layout) {
+    for shown in boxes(app, p.layout) {
         let (x0, y0, x1, y1) = shown.rect;
         let clip = shown.clip;
         if x1 + 8.0 < clip.0 || y1 + 8.0 < clip.1 || x0 - 8.0 > clip.2 || y0 - 8.0 > clip.3 {
@@ -953,8 +1035,9 @@ fn status_text(cell: &str, comment: &Comment) -> String {
 
 // ----------------------------------------------------------------- elements
 
-/// Forget what no longer exists (deleted, undone, another sheet).
-fn tidy(app: &mut ExcelApp, cx: &mut Cx) {
+/// Forget what no longer exists (deleted, undone), and give the grid the
+/// keyboard an editor that was put away still holds.
+fn tidy(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let Some(ui) = app.ext::<Ui>() else {
         return;
     };
@@ -965,13 +1048,13 @@ fn tidy(app: &mut ExcelApp, cx: &mut Cx) {
     });
     let gone_sel = ui.note_sel.is_some_and(|cell| !is(cell, CommentKind::Note));
     let gone_visit = ui.visited.is_some_and(|cell| !is(cell, CommentKind::Note));
-    let gone_hover = ui.hover.as_ref().is_some_and(|hover| kind_at(app, sheet, hover.cell).is_none());
-    if !(gone_card || gone_sel || gone_visit || gone_hover) {
+    let gone_hover = ui.hover.cell.is_some_and(|cell| kind_at(app, sheet, cell).is_none());
+    if !(gone_card || gone_sel || gone_visit || gone_hover || !ui.orphans.is_empty()) {
         return;
     }
     let ui = app.ext_mut::<Ui>();
     if gone_card {
-        ui.card = None;
+        ui.drop_card(cx);
     }
     if gone_sel {
         ui.note_sel = None;
@@ -981,8 +1064,12 @@ fn tidy(app: &mut ExcelApp, cx: &mut Cx) {
         ui.visited = None;
     }
     if gone_hover {
-        ui.hover = None;
+        ui.hover = Peek::default();
         ui.rest_timer = None;
+    }
+    let stranded = std::mem::take(&mut ui.orphans).iter().any(|handle| handle.is_focused(window));
+    if stranded {
+        window.focus(&app.grid_focus);
     }
 }
 
@@ -990,7 +1077,7 @@ fn tidy(app: &mut ExcelApp, cx: &mut Cx) {
 fn note_editor(app: &mut ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyElement> {
     let edit = app.ext::<Ui>()?.note_edit.as_ref().filter(|edit| edit.sheet == app.sheet)?;
     let (cell, area) = (edit.cell, edit.area.clone());
-    let shown = notes::shown_boxes(app, layout).into_iter().find(|shown| shown.cell == cell)?;
+    let shown = boxes(app, layout).into_iter().find(|shown| shown.cell == cell)?;
     let z = layout.zoom;
     let (x0, y0, x1, y1) = shown.rect;
     let inner = (
@@ -1081,7 +1168,7 @@ fn floating_card(app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, c
     let sheet = app.sheet;
     let ui = app.ext::<Ui>()?;
     if ui.card.is_none() {
-        let cell = ui.hover.as_ref().filter(|hover| hover.shown).map(|hover| hover.cell)?;
+        let cell = ui.hover.shown()?;
         if kind_at(app, sheet, cell) != Some(CommentKind::Thread) {
             return None;
         }
@@ -1129,7 +1216,7 @@ impl Feature for Comments {
     }
 
     fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        tidy(app, cx);
+        tidy(app, window, cx);
         [
             note_editor(app, layout, cx),
             box_keys(app, cx),
@@ -1238,7 +1325,7 @@ impl Feature for Comments {
             .as_ref()
             .is_some_and(|card| (card.sheet, card.cell) != here && !card.view.read(cx).has_draft(cx))
         {
-            ui.card = None;
+            ui.drop_card(cx);
         }
         if let Some(pane) = ui.pane.clone().filter(|_| pane) {
             pane.update(cx, |pane, cx| pane.reveal(here.1, cx));
@@ -1264,8 +1351,7 @@ impl Feature for Comments {
     }
 
     fn status_items(&self, app: &ExcelApp) -> Vec<StatusItem> {
-        let hover = app.ext::<Ui>().and_then(|ui| ui.hover.as_ref()).filter(|hover| hover.shown);
-        let Some((row, col)) = hover.map(|hover| hover.cell) else {
+        let Some((row, col)) = app.ext::<Ui>().and_then(|ui| ui.hover.shown()) else {
             return Vec::new();
         };
         match app.wb.comment_at(app.sheet, row, col) {
@@ -1305,6 +1391,151 @@ mod tests {
                 Cmd::ConvertToComments
             ]
         );
+    }
+
+    #[test]
+    fn the_pointer_shows_and_hides_what_a_cell_carries() {
+        let (a, b) = ((1, 0), (2, 2));
+        let mut peek = Peek::default();
+        // Coming onto a cell starts the wait; nothing shows before its end.
+        assert!(peek.enter(a));
+        assert_eq!(peek.shown(), None);
+        assert!(peek.rested(a));
+        assert_eq!(peek.shown(), Some(a));
+        // Moving inside the cell (or coming back to it) changes nothing.
+        assert!(!peek.enter(a));
+        assert!(!peek.rested(a));
+        assert_eq!(peek.shown(), Some(a));
+        // Leaving keeps it for a moment; coming back in time keeps it.
+        assert!(peek.leave());
+        assert!(!peek.enter(a));
+        assert_eq!(peek.shown(), Some(a));
+        // Once the moment has passed it is gone, unless the pointer is on
+        // the card.
+        assert!(peek.leave());
+        assert!(!peek.expired(true));
+        assert_eq!(peek.shown(), Some(a));
+        assert!(peek.expired(false));
+        assert_eq!(peek, Peek::default());
+        assert!(!peek.expired(false));
+
+        // Going from one annotated cell to the next hides the first at
+        // once and starts the wait again.
+        peek.enter(a);
+        peek.rested(a);
+        assert!(peek.enter(b));
+        assert_eq!(peek.shown(), None);
+        // The wait of the cell that was left counts for nothing.
+        assert!(!peek.rested(a));
+        assert!(peek.rested(b));
+        assert_eq!(peek.shown(), Some(b));
+
+        // Leaving before anything showed forgets the cell: no lingering.
+        let mut peek = Peek::default();
+        peek.enter(a);
+        assert!(!peek.leave());
+        assert_eq!(peek, Peek::default());
+        assert!(!peek.rested(a));
+        assert_eq!(peek.shown(), None);
+    }
+
+    fn book() -> Workbook {
+        let mut wb = Workbook::new(opensheet_engine::Locale::en());
+        wb.add_sheet(1);
+        wb.commit("sheet");
+        wb
+    }
+
+    #[test]
+    fn typing_a_note_is_one_undo_step() {
+        let mut wb = book();
+        let template = Note::template("Ada");
+        // A new note is stored even when nothing was added to the name of
+        // its author, as Excel does.
+        assert_eq!(store_note(&mut wb, 0, (1, 1), "Ada", None, &template), Some("New Note"));
+        wb.commit("New Note");
+        let note = wb.comment_at(0, 1, 1).unwrap().as_note().unwrap();
+        assert_eq!((note.author.as_str(), note.text().as_str()), ("Ada", "Ada:\n"));
+        assert!(note.runs[0].font.bold);
+        // Leaving the box without a change stores nothing.
+        assert_eq!(store_note(&mut wb, 0, (1, 1), "Bob", Some(&template), &template), None);
+        assert!(!wb.commit("nothing"));
+        // Another person's edit keeps the author of the note.
+        assert_eq!(
+            store_note(&mut wb, 0, (1, 1), "Bob", Some(&template), "Ada:\nCheck this."),
+            Some("Edit Note")
+        );
+        wb.commit("Edit Note");
+        let note = wb.comment_at(0, 1, 1).unwrap().as_note().unwrap();
+        assert_eq!((note.author.as_str(), note.text().as_str()), ("Ada", "Ada:\nCheck this."));
+        wb.undo();
+        assert_eq!(wb.comment_at(0, 1, 1).unwrap().as_note().unwrap().text(), "Ada:\n");
+        wb.undo();
+        assert!(wb.comment_at(0, 1, 1).is_none());
+        // A cell that has a comment takes no note.
+        wb.add_comment(0, 3, 3, &Person::new("Cy"), 45_000.0, "a thread");
+        wb.commit("comment");
+        assert_eq!(store_note(&mut wb, 0, (3, 3), "Ada", None, &template), None);
+    }
+
+    #[test]
+    fn posting_starts_a_thread_then_replies_to_it() {
+        let mut wb = book();
+        assert_eq!(write_post(&mut wb, 0, (2, 0), "Ada", 45_000.25, "Is this right?"), Some("New Comment"));
+        wb.commit("New Comment");
+        assert_eq!(write_post(&mut wb, 0, (2, 0), "Bob", 45_000.5, "Yes."), Some("Reply"));
+        wb.commit("Reply");
+        let thread = wb.comment_at(0, 2, 0).unwrap().as_thread().unwrap();
+        assert_eq!((thread.first.author.name.as_str(), thread.first.text.as_str()), ("Ada", "Is this right?"));
+        assert_eq!(thread.replies.len(), 1);
+        assert_eq!((thread.replies[0].author.name.as_str(), thread.replies[0].time), ("Bob", 45_000.5));
+        // Each post is its own undo step.
+        wb.undo();
+        assert!(wb.comment_at(0, 2, 0).unwrap().as_thread().unwrap().replies.is_empty());
+        wb.redo();
+        // A resolved thread takes no reply until it is reopened; a note none at all.
+        wb.set_comment_resolved(0, 2, 0, true);
+        wb.commit("resolve");
+        assert_eq!(write_post(&mut wb, 0, (2, 0), "Cy", 45_001.0, "Late"), None);
+        wb.set_comment_resolved(0, 2, 0, false);
+        wb.commit("reopen");
+        assert_eq!(write_post(&mut wb, 0, (2, 0), "Cy", 45_001.0, "Late"), Some("Reply"));
+        wb.set_note(0, 5, 0, "Ada", "a note");
+        wb.commit("note");
+        assert_eq!(write_post(&mut wb, 0, (5, 0), "Cy", 45_001.0, "On a note"), None);
+    }
+
+    #[test]
+    fn previous_and_next_go_through_the_workbook() {
+        let mut wb = book();
+        wb.set_note(0, 1, 0, "Ada", "n1");
+        wb.add_comment(0, 2, 1, &Person::new("Bob"), 45_000.0, "t1");
+        wb.set_note(1, 0, 3, "Ada", "n2");
+        wb.add_comment(1, 4, 4, &Person::new("Bob"), 45_000.0, "t2");
+        wb.commit("setup");
+        let (note, thread) = (CommentKind::Note, CommentKind::Thread);
+        // Each kind is walked on its own, sheet after sheet.
+        assert_eq!(step(&wb, (0, 0, 0), note, true), Step::To((0, 1, 0)));
+        assert_eq!(step(&wb, (0, 1, 0), note, true), Step::To((1, 0, 3)));
+        assert_eq!(step(&wb, (0, 0, 0), thread, true), Step::To((0, 2, 1)));
+        assert_eq!(step(&wb, (0, 2, 1), thread, true), Step::To((1, 4, 4)));
+        assert_eq!(step(&wb, (1, 4, 4), thread, false), Step::To((0, 2, 1)));
+        // Past the last one, Excel asks before going on from the first;
+        // before the first, from the last.
+        assert_eq!(step(&wb, (1, 0, 3), note, true), Step::Wrap((0, 1, 0)));
+        assert_eq!(step(&wb, (1, 9, 9), thread, true), Step::Wrap((0, 2, 1)));
+        assert_eq!(step(&wb, (0, 1, 0), note, false), Step::Wrap((1, 0, 3)));
+        assert_eq!(step(&wb, (0, 0, 0), thread, false), Step::Wrap((1, 4, 4)));
+        // A workbook without any: nowhere to go, nothing to ask.
+        assert_eq!(step(&book(), (0, 0, 0), note, true), Step::Nowhere);
+        assert_eq!(step(&book(), (0, 0, 0), thread, false), Step::Nowhere);
+    }
+
+    #[test]
+    fn the_name_of_the_user_is_asked_once() {
+        let name = user_name();
+        assert!(!name.trim().is_empty());
+        assert!(std::ptr::eq(name, user_name()));
     }
 
     #[test]

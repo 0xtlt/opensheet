@@ -9,7 +9,8 @@ use crate::i18n::t;
 use crate::theme::{self, c};
 use crate::widgets::{Button, icon, tooltip};
 use gpui::{
-    AnyElement, App, Bounds, Context, CursorStyle, Element, ElementId, Entity, Focusable, FontWeight, GlobalElementId,
+    AnyElement, App, Bounds, Context, CursorStyle, Element, ElementId, Entity, FocusHandle, Focusable, FontWeight,
+    GlobalElementId,
     IntoElement, LayoutId, MouseButton, MouseDownEvent, Pixels, Point, Position, Render, SharedString, Style,
     Subscription, WeakEntity, Window, div, point, prelude::*, px,
 };
@@ -144,6 +145,12 @@ impl CommentCard {
 
     pub fn set_room(&mut self, room: f32) {
         self.room = room;
+    }
+
+    /// What can hold the keyboard in this card.
+    pub fn fields(&self, cx: &App) -> Vec<FocusHandle> {
+        let edit = self.editing.as_ref().map(|edit| edit.area.focus_handle(cx));
+        std::iter::once(self.input.focus_handle(cx)).chain(edit).collect()
     }
 
     /// Words were typed that are not in the workbook yet.
