@@ -743,6 +743,46 @@ impl RuleError {
     }
 }
 
+/// What is wrong, for now, with the formulas typed in the dialog: found
+/// when OK is pressed (`Workbook::rule_formula_warning`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormulaWarning {
+    /// The list source is a name nobody defined: the rule is refused.
+    UnknownName,
+    /// The formula of this box gives an error; the user may go on.
+    Error(Field),
+}
+
+impl FormulaWarning {
+    /// Excel's message: a refusal, or the question whether to continue.
+    pub fn message(self, locale: &Locale) -> String {
+        match self {
+            FormulaWarning::UnknownName => localized(
+                locale,
+                [
+                    "A named range you specified cannot be found.",
+                    "Nous ne trouvons pas une plage nommée que vous avez spécifiée.",
+                    "No se puede encontrar uno de los rangos especificados.",
+                    "Der angegebene benannte Bereich wurde nicht gefunden.",
+                    "L'intervallo denominato specificato non è stato trovato.",
+                ],
+            )
+            .to_string(),
+            FormulaWarning::Error(field) => localized(
+                locale,
+                [
+                    "| currently evaluates to an error. Do you want to continue?",
+                    "| est reconnu comme erroné. Voulez-vous continuer ?",
+                    "| actualmente evalúa un error. ¿Desea continuar?",
+                    "| untersucht gerade einen möglichen Fehler. Möchten Sie den Vorgang fortsetzen?",
+                    "| restituisce attualmente un errore. Continuare?",
+                ],
+            )
+            .replace('|', field.capitalized(locale)),
+        }
+    }
+}
+
 /// A constant written as a number, possibly signed.
 fn constant_number(expr: &Expr) -> Option<f64> {
     match expr {
@@ -1469,6 +1509,35 @@ impl Workbook {
         }
         self.snapshot();
         remove_bands(&mut self.sheets[sheet], bands)
+    }
+
+    /// What the dialog asks about before giving cells a rule whose boxes
+    /// were just filled in (`Validation::set_operands`, the formulas still
+    /// reading from `active`): a list named after nothing, or a formula
+    /// that gives an error where it stands.
+    pub fn rule_formula_warning(&self, sheet: usize, active: (u32, u32), rule: &Validation) -> Option<FormulaWarning> {
+        let (row, col) = active;
+        let (field1, field2) = operand_fields(rule.kind, rule.operator);
+        let boxes = [(field1, &rule.formula1), (field2, &rule.formula2)];
+        for (field, formula) in boxes {
+            let (Some(field), Some(formula)) = (field, formula.as_deref()) else {
+                continue;
+            };
+            // A list read from cells is judged entry by entry, not as a whole.
+            if rule.kind == ValidationKind::List
+                && (matches!(formula, Expr::Text(_)) || self.list_reference(sheet, row, col, formula, 0).is_some())
+            {
+                continue;
+            }
+            let value = Calc::eval_once(self, sheet, row, col, formula).into_scalar();
+            if rule.kind == ValidationKind::List && matches!(formula, Expr::Name(_)) && value.is_error() {
+                return Some(FormulaWarning::UnknownName);
+            }
+            if value.is_error() {
+                return Some(FormulaWarning::Error(field));
+            }
+        }
+        None
     }
 
     // ---- checking --------------------------------------------------------
@@ -2620,6 +2689,48 @@ mod tests {
         assert!(w.validation_at(0, 4, 3).is_none());
         w.undo();
         assert_eq!(ranges(&w), [vec!["A1:A2"], vec!["D4"]]);
+    }
+
+    #[test]
+    fn formulas_that_fail_are_asked_about() {
+        let mut w = wb(&[("A1", "0"), ("C1", "x"), ("C2", "=1/0")]);
+        w.define_name("Fruits", crate::parser::parse_formula("Sheet1!$C$1:$C$2", Locale::en()).unwrap());
+        w.commit("names");
+        let warning = |w: &Workbook, kind, first: &str| {
+            w.rule_formula_warning(0, (4, 4), &rule(kind, Operator::GreaterThan, first, ""))
+        };
+        assert_eq!(warning(&w, ValidationKind::Whole, "5"), None);
+        assert_eq!(warning(&w, ValidationKind::Whole, "=A1+1"), None);
+        assert_eq!(
+            warning(&w, ValidationKind::Whole, "=1/A1"),
+            Some(FormulaWarning::Error(Field::Minimum))
+        );
+        assert_eq!(
+            warning(&w, ValidationKind::Custom, "=E5/A1>0"),
+            Some(FormulaWarning::Error(Field::Formula))
+        );
+        // A list of cells may hold errors; a name must exist.
+        assert_eq!(warning(&w, ValidationKind::List, "=$C$1:$C$2"), None);
+        assert_eq!(warning(&w, ValidationKind::List, "=Fruits"), None);
+        assert_eq!(warning(&w, ValidationKind::List, "a,b"), None);
+        assert_eq!(
+            warning(&w, ValidationKind::List, "=Nowhere"),
+            Some(FormulaWarning::UnknownName)
+        );
+        let second = w.rule_formula_warning(
+            0,
+            (0, 1),
+            &rule(ValidationKind::Decimal, Operator::Between, "1", "=1/A1"),
+        );
+        assert_eq!(second, Some(FormulaWarning::Error(Field::Maximum)));
+        assert_eq!(
+            FormulaWarning::Error(Field::Source).message(Locale::en()),
+            "The Source currently evaluates to an error. Do you want to continue?"
+        );
+        assert_eq!(
+            FormulaWarning::Error(Field::Minimum).message(Locale::fr()),
+            "Le minimum est reconnu comme erroné. Voulez-vous continuer ?"
+        );
     }
 
     #[test]

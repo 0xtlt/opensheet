@@ -21,8 +21,8 @@ mod setup;
 mod views;
 
 use super::{
-    Command, ContextMenu, ContextTab, Cx, Feature, MenuSection, MenuTarget, Painter, StatusItem, ViewMode, Zone,
-    ZoneEvent, ZoneResponse,
+    Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, Painter, StatusItem, ViewMode,
+    Zone, ZoneEvent, ZoneResponse,
 };
 use crate::app::{ExcelApp, MenuAction, MenuEntry};
 use crate::grid::{Axis, GridLayout};
@@ -570,6 +570,20 @@ impl Command for Cmd {
         let margins = |app: &mut ExcelApp, cx: &mut Cx, margins: Margins| {
             change(app, t("Margins", "Marges"), cx, |s| s.margins = margins);
         };
+        // A protected sheet keeps its print area and its page breaks.
+        let lays_out = matches!(
+            self,
+            Cmd::SetPrintArea
+                | Cmd::ClearPrintArea
+                | Cmd::ResetPrintArea
+                | Cmd::AddToPrintArea
+                | Cmd::InsertBreak
+                | Cmd::RemoveBreak
+                | Cmd::ResetBreaks
+        );
+        if lays_out && !app.may(Intent::ChangeSheet, cx) {
+            return;
+        }
         match self {
             Cmd::Print => print::open(app, window, cx),
             // The launcher of the ribbon group opens on Page; the menu
