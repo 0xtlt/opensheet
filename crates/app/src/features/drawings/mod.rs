@@ -22,7 +22,6 @@
 //! Positions are always asked of the engine (`Sheet::drawing_frame`): a
 //! drawing sized with its cells follows them without being touched.
 
-mod debug_seed; // TEMP-DEBUG
 mod geometry;
 mod paint;
 mod pane;
@@ -40,11 +39,10 @@ use crate::grid::{Draw, GridLayout};
 use crate::i18n::t;
 use geometry::normalise_angle;
 use gpui::{
-    AnyElement, ClipboardEntry, ClipboardItem, CursorStyle, Entity, ExternalPaths, Focusable, Pixels, Point, SharedString,
+    AnyElement, ClipboardEntry, ClipboardItem, CursorStyle, Entity, ExternalPaths, Focusable, Pixels, Point,
     Subscription, Window, div, prelude::*, px,
 };
 use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, ImageFormat, Shape, ShapeTool, TextAlign, TextAnchor, ZOrder};
-use opensheet_engine::protect::Action;
 use opensheet_engine::style::{HAlign, Style, VAlign};
 use paint::Grip;
 use std::any::Any;
@@ -268,7 +266,6 @@ struct DrawingUi {
     /// The fields and the view the ribbon and the panes keep.
     tabs: tabs::TabState,
     panes: pane::PaneState,
-    seeded: bool, // TEMP-DEBUG
 }
 
 /// Where the caret goes when the text of a shape starts being edited.
@@ -586,11 +583,6 @@ impl Feature for Drawings {
 
     fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
         picture::sweep(window, cx);
-        // TEMP-DEBUG
-        if !app.ext_mut::<DrawingUi>().seeded {
-            app.ext_mut::<DrawingUi>().seeded = true;
-            debug_seed::seed(app, cx);
-        }
         // Image files dropped on the cells become pictures. The element
         // takes nothing else from the mouse.
         let mut out = vec![
@@ -617,23 +609,6 @@ impl Feature for Drawings {
 
     fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
         tool::mouse_up(app, zone, ev, window, cx);
-    }
-
-    /// A locked drawing cannot be changed on a protected sheet that does
-    /// not allow editing objects.
-    fn guard(&self, app: &ExcelApp, intent: &Intent) -> Option<SharedString> {
-        let Intent::EditObject(Some(id)) = intent else {
-            return None;
-        };
-        if id.owner != owner() {
-            return None;
-        }
-        let locked = app.wb.drawing(app.sheet, id.id)?.locked;
-        let action = Action::EditObject {
-            sheet: app.sheet,
-            locked,
-        };
-        app.wb.permits(&action).err().map(|denied| denied.message(app.wb.locale).into())
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
