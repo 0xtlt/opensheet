@@ -68,7 +68,9 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Saisie directe, F2, double-clic, barre de formule ; Entrée / Tab / Échap ; reconnaissance des nombres, pourcentages, montants, dates et heures.
 - Formules : références relatives / absolues, autres feuilles, plages colorées pendant la saisie, sélection des références à la souris ou au clavier, fermeture automatique des parenthèses.
 - Sélection à la souris et au clavier (Maj, ⌘ pour les sélections multiples, ⌘+flèches, lignes et colonnes entières), Atteindre et Sélectionner les cellules (formules, vides, antécédents…).
-- Copier / couper / coller (formules décalées, valeurs seules, mise en forme seule), échange avec les autres applications en texte tabulé.
+- Copier / couper / coller, menu du bouton Coller et boîte Collage spécial : formules, valeurs, formats, largeurs de colonnes, opérations (ajouter, multiplier…), blancs non compris, transposer, coller avec liaison. Échange avec les autres applications en texte tabulé.
+- Rechercher et remplacer : dans la feuille ou le classeur, dans les formules ou les valeurs, casse, cellule entière, Remplacer tout en une seule annulation.
+- Liens hypertexte : page web, fichier, emplacement du classeur, adresse de courrier ; clic pour suivre, création automatique à la saisie d'une adresse.
 - Poignée de recopie avec séries (nombres, dates, « Article 1 », jours, mois), double-clic pour recopier vers le bas, ⌘D / ⌘R.
 - Annuler / rétablir sur toutes les opérations.
 
@@ -84,6 +86,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Police, taille, gras, italique, souligné, barré, couleurs de police et de remplissage, bordures, alignements, retrait, renvoi à la ligne, fusion.
 - Formats de nombre Excel complets (codes personnalisés, sections, couleurs, dates, fractions, scientifique, comptabilité).
 - Mise en forme conditionnelle : règles de surbrillance, valeurs hautes / basses, barres de données, nuances de couleurs, 20 jeux d'icônes, règles par formule, gestionnaire de règles.
+- Styles de cellules : galerie des 49 styles d'Excel, styles personnalisés (nouveau, modifier, dupliquer, supprimer).
 - Largeur / hauteur par glisser, ajustement automatique, masquer / afficher.
 
 **Données**
@@ -91,6 +94,9 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Tableaux structurés : 60 styles, ligne de total, colonnes calculées, agrandissement automatique à la saisie.
 - Tableaux croisés dynamiques : volet des champs avec glisser-déposer, filtres, regroupements, « afficher les valeurs comme », styles, détail par double-clic.
 - Validation des données : tous les critères, liste déroulante dans la cellule, message de saisie, alertes, cercles autour des données non valides.
+- Outils de données : Convertir (assistant en 3 étapes), remplissage instantané, filtre avancé, consolider.
+- Analyse de scénarios : valeur cible, gestionnaire de scénarios avec feuille de synthèse, table de données.
+- Import d'un fichier texte ou CSV, mémorisé dans le classeur et relu par Actualiser tout.
 
 **Graphiques, images et formes**
 - 37 types de graphiques : histogrammes, barres, courbes, aires, secteurs, anneau, nuage de points, bulles, radar, combinés, et leurs variantes 3D.
@@ -117,7 +123,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 
 **Structure et fichiers**
 - Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
-- Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes. Les fichiers produits s'ouvrent dans Excel sans réparation.
+- Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles et styles nommés, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes, liens hypertexte, scénarios, tables de données, consolidation, imports de texte. Les fichiers produits s'ouvrent dans Excel sans réparation.
 - Ouvrir et enregistrer en `.csv` et `.tsv`.
 
 ## Ce qui manque
@@ -125,8 +131,8 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Hors périmètre** : les macros (VBA) et les scripts.
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
-- Remplacer, boîte Collage spécial, liens hypertexte, graphiques sparkline, styles de cellules, thèmes.
-- Convertir (texte en colonnes), remplissage instantané, consolider, analyse de scénarios, grouper / dissocier (plan), sous-total, filtre avancé, données externes.
+- Graphiques sparkline, thèmes.
+- Grouper / dissocier (plan), sous-total.
 - Segments, chronologies, champs calculés et graphiques croisés dynamiques.
 - Orthographe, traduction, statistiques du classeur, vérification d'accessibilité, onglet Dessin, équations, symboles, SmartArt, WordArt, icônes.
 - Partage et co-édition.
@@ -137,6 +143,10 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Mise en page : pas d'arrière-plan de feuille ni d'affichages personnalisés ; l'impression passe par un PDF.
 - Commentaires : pas de @mentions.
 - Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
+- Rechercher et remplacer : pas de « Rechercher tout » avec sa liste de résultats.
+- Collage spécial : pas de collage en image ; un collage transposé ne reporte ni la mise en forme conditionnelle ni la validation.
+- Obtenir des données : fichiers texte et CSV seulement (pas de bases de données, de web ni de Power Query).
+- Consolider : pas de liaison aux données source (elle demande le plan).
 - Calcul : le calcul itératif est lu et enregistré dans le fichier, mais aucun réglage ne permet de l'activer depuis l'interface ; un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
 - Ruban : quand la fenêtre est trop étroite pour un onglet (par exemple Formules en allemand dans une fenêtre de 1 390 points de large), le ruban défile horizontalement au lieu de replier ses groupes.
 
