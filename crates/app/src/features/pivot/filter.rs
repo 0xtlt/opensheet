@@ -1157,7 +1157,7 @@ impl Top10Dialog {
 
 impl Render for Top10Dialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ends: Vec<SharedString> = vec![t("Top", "Haut").into(), t("Bottom", "Bas").into()];
+        let ends: Vec<SharedString> = vec![crate::i18n::t_ctx("top10", "Top", "Haut").into(), crate::i18n::t_ctx("top10", "Bottom", "Bas").into()];
         let kinds: Vec<SharedString> = TOP10_BY.iter().map(|by| logic::top10_by_label(*by).into()).collect();
         dialog(
             &self.modal,
