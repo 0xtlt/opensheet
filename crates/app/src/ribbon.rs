@@ -1435,27 +1435,95 @@ impl ExcelApp {
                         |this, window, cx| this.insert_chart(ChartKind::Column, window, cx),
                     ),
                     self.large("in-chart-col", "chart-bar", t("Column", "Histogramme"), true, cx, |this, window, cx| {
-                        this.open_chart_menu("in-chart-col", &[ChartKind::Column, ChartKind::StackedColumn], window, cx)
+                        this.open_chart_menu(
+                            "in-chart-col",
+                            &[
+                                ChartKind::Column,
+                                ChartKind::StackedColumn,
+                                ChartKind::PercentStackedColumn,
+                                ChartKind::Column3D,
+                                ChartKind::StackedColumn3D,
+                                ChartKind::PercentStackedColumn3D,
+                            ],
+                            window,
+                            cx,
+                        )
                     }),
                     self.large("in-chart-barh", "chart-bar-h", t("Bar", "Barres"), true, cx, |this, window, cx| {
-                        this.open_chart_menu("in-chart-barh", &[ChartKind::Bar, ChartKind::StackedBar], window, cx)
+                        this.open_chart_menu(
+                            "in-chart-barh",
+                            &[
+                                ChartKind::Bar,
+                                ChartKind::StackedBar,
+                                ChartKind::PercentStackedBar,
+                                ChartKind::Bar3D,
+                                ChartKind::StackedBar3D,
+                                ChartKind::PercentStackedBar3D,
+                            ],
+                            window,
+                            cx,
+                        )
                     }),
-                    self.large("in-chart-line", "chart-line", t("Line", "Courbes"), false, cx, |this, window, cx| {
-                        this.insert_chart(ChartKind::Line, window, cx)
+                    self.large("in-chart-line", "chart-line", t("Line", "Courbes"), true, cx, |this, window, cx| {
+                        this.open_chart_menu(
+                            "in-chart-line",
+                            &[
+                                ChartKind::Line,
+                                ChartKind::StackedLine,
+                                ChartKind::PercentStackedLine,
+                                ChartKind::LineMarkers,
+                                ChartKind::StackedLineMarkers,
+                                ChartKind::PercentStackedLineMarkers,
+                                ChartKind::Line3D,
+                            ],
+                            window,
+                            cx,
+                        )
                     }),
-                    self.large("in-chart-area", "chart-area", t("Area", "Aires"), false, cx, |this, window, cx| {
-                        this.insert_chart(ChartKind::Area, window, cx)
+                    self.large("in-chart-area", "chart-area", t("Area", "Aires"), true, cx, |this, window, cx| {
+                        this.open_chart_menu(
+                            "in-chart-area",
+                            &[
+                                ChartKind::Area,
+                                ChartKind::StackedArea,
+                                ChartKind::PercentStackedArea,
+                                ChartKind::Area3D,
+                                ChartKind::StackedArea3D,
+                                ChartKind::PercentStackedArea3D,
+                            ],
+                            window,
+                            cx,
+                        )
                     }),
                     self.large("in-chart-pie", "chart-pie", t("Pie", "Secteurs"), true, cx, |this, window, cx| {
-                        this.open_chart_menu("in-chart-pie", &[ChartKind::Pie, ChartKind::Doughnut], window, cx)
+                        this.open_chart_menu(
+                            "in-chart-pie",
+                            &[ChartKind::Pie, ChartKind::Pie3D, ChartKind::Doughnut],
+                            window,
+                            cx,
+                        )
                     }),
                     self.large(
                         "in-chart-scatter",
                         "chart-scatter",
                         t("Scatter", "Nuage de points"),
-                        false,
+                        true,
                         cx,
-                        |this, window, cx| this.insert_chart(ChartKind::Scatter, window, cx),
+                        |this, window, cx| {
+                            this.open_chart_menu(
+                                "in-chart-scatter",
+                                &[
+                                    ChartKind::Scatter,
+                                    ChartKind::ScatterSmoothMarkers,
+                                    ChartKind::ScatterSmooth,
+                                    ChartKind::ScatterLinesMarkers,
+                                    ChartKind::ScatterLines,
+                                    ChartKind::Bubble,
+                                ],
+                                window,
+                                cx,
+                            )
+                        },
                     ),
                 ]),
             )
@@ -1513,7 +1581,7 @@ impl ExcelApp {
                 MenuEntry::new(chart_kind_name(kind), move |a, window, cx| a.insert_chart(kind, window, cx))
             })
             .collect();
-        self.open_menu(anchor, entries, 220.0, window, cx);
+        self.open_menu(anchor, entries, 330.0, window, cx);
     }
 
     fn layout_tab(&mut self, cx: &mut Cx) -> Vec<AnyElement> {
@@ -1971,13 +2039,47 @@ pub fn chart_kind_name(kind: ChartKind) -> &'static str {
     match kind {
         ChartKind::Column => t("Clustered Column", "Histogramme groupé"),
         ChartKind::StackedColumn => t("Stacked Column", "Histogramme empilé"),
+        ChartKind::PercentStackedColumn => t("100% Stacked Column", "Histogramme empilé 100 %"),
+        ChartKind::Column3D => t("3-D Clustered Column", "Histogramme 3D groupé"),
+        ChartKind::StackedColumn3D => t("3-D Stacked Column", "Histogramme 3D empilé"),
+        ChartKind::PercentStackedColumn3D => t("3-D 100% Stacked Column", "Histogramme 3D empilé 100 %"),
+        ChartKind::Line => t("Line", "Courbes"),
+        ChartKind::StackedLine => t("Stacked Line", "Courbes empilées"),
+        ChartKind::PercentStackedLine => t("100% Stacked Line", "Courbes empilées 100 %"),
+        ChartKind::LineMarkers => t("Line with Markers", "Courbes avec marques"),
+        ChartKind::StackedLineMarkers => t("Stacked Line with Markers", "Courbes empilées avec marques"),
+        ChartKind::PercentStackedLineMarkers => {
+            t("100% Stacked Line with Markers", "Courbes empilées 100 % avec marques")
+        }
+        ChartKind::Line3D => t("3-D Line", "Courbes 3D"),
+        ChartKind::Pie => t("Pie", "Secteurs"),
+        ChartKind::Pie3D => t("3-D Pie", "Secteurs en 3D"),
+        ChartKind::Doughnut => t("Doughnut", "Anneau"),
         ChartKind::Bar => t("Clustered Bar", "Barres groupées"),
         ChartKind::StackedBar => t("Stacked Bar", "Barres empilées"),
-        ChartKind::Line => t("Line", "Courbes"),
+        ChartKind::PercentStackedBar => t("100% Stacked Bar", "Barres empilées 100 %"),
+        ChartKind::Bar3D => t("3-D Clustered Bar", "Barres 3D groupées"),
+        ChartKind::StackedBar3D => t("3-D Stacked Bar", "Barres 3D empilées"),
+        ChartKind::PercentStackedBar3D => t("3-D 100% Stacked Bar", "Barres 3D empilées 100 %"),
         ChartKind::Area => t("Area", "Aires"),
-        ChartKind::Pie => t("Pie", "Secteurs"),
-        ChartKind::Doughnut => t("Doughnut", "Anneau"),
+        ChartKind::StackedArea => t("Stacked Area", "Aires empilées"),
+        ChartKind::PercentStackedArea => t("100% Stacked Area", "Aires empilées 100 %"),
+        ChartKind::Area3D => t("3-D Area", "Aires 3D"),
+        ChartKind::StackedArea3D => t("3-D Stacked Area", "Aires 3D empilées"),
+        ChartKind::PercentStackedArea3D => t("3-D 100% Stacked Area", "Aires 3D empilées 100 %"),
         ChartKind::Scatter => t("Scatter", "Nuage de points"),
+        ChartKind::ScatterSmoothMarkers => {
+            t("Scatter with Smooth Lines and Markers", "Nuage de points avec courbes lissées et marques")
+        }
+        ChartKind::ScatterSmooth => t("Scatter with Smooth Lines", "Nuage de points avec courbes lissées"),
+        ChartKind::ScatterLinesMarkers => {
+            t("Scatter with Straight Lines and Markers", "Nuage de points avec courbes droites et marques")
+        }
+        ChartKind::ScatterLines => t("Scatter with Straight Lines", "Nuage de points avec courbes droites"),
+        ChartKind::Bubble => t("Bubble", "Bulles"),
+        ChartKind::Radar => t("Radar", "Radar"),
+        ChartKind::RadarMarkers => t("Radar with Markers", "Radar avec marques"),
+        ChartKind::RadarFilled => t("Filled Radar", "Radar plein"),
     }
 }
 

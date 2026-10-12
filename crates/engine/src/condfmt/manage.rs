@@ -12,6 +12,7 @@
 use super::formula::shifted;
 use super::model::CondFormat;
 use crate::ast::{Expr, RefExpr, RefKind, StructuralEdit};
+use crate::features::{CellShift, TIDY_LIMIT, join_sorted, without_bands};
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
 use crate::workbook::{Sheet, Workbook};
 
@@ -74,7 +75,17 @@ fn joined(a: &Rect, b: &Rect) -> Option<Rect> {
 /// lying inside another are dropped and ranges that together make a
 /// rectangle are joined. Keeps rules from crumbling into ever more ranges
 /// as cells are pasted and cleared.
+///
+/// A long list (a rule left on the rows a filter shows, one block of rows
+/// after the other) is joined by sorting instead, and comes out in reading
+/// order: comparing every pair, over and over, would take for ever.
 pub fn normalize_ranges(mut ranges: Vec<Rect>) -> Vec<Rect> {
+    if ranges.len() > TIDY_LIMIT {
+        ranges = join_sorted(ranges);
+        if ranges.len() > TIDY_LIMIT {
+            return ranges;
+        }
+    }
     let mut i = 0;
     while i < ranges.len() {
         let mut grew = false;
@@ -278,21 +289,22 @@ impl Workbook {
         true
     }
 
-    /// Carry conditional formats along with copied cells: paste, fill and
-    /// the format painter. `src` is the copied block and `dest` the block
-    /// written (`dest` may hold several copies of `src`, as when one cell
-    /// is pasted over a selection). The destination loses the rules it
-    /// had and takes those of the source cells, whose formulas read from
-    /// each pasted cell as they did from the cell it was copied from. On
-    /// the same sheet the rules simply gain the pasted cells; on another
-    /// sheet they are added as new rules of the highest priority, in
-    /// their own order. False when no rule touched either block.
+    /// Carry conditional formats along with copied cells (`paste`, the
+    /// fills and the format painter call this). `src` is the copied block
+    /// and `dest` the block written (`dest` may hold several copies of
+    /// `src`, as when one cell is pasted over a selection). The
+    /// destination loses the rules it had and takes those of the source
+    /// cells, whose formulas read from each pasted cell as they did from
+    /// the cell it was copied from. On the same sheet the rules simply
+    /// gain the pasted cells; on another sheet they are added as new rules
+    /// of the highest priority, in their own order. False when no rule
+    /// touched either block.
     pub fn copy_cond_formats(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest: Rect) -> bool {
         self.carry_cond_formats(src_sheet, src, dest_sheet, dest, false)
     }
 
-    /// Carry conditional formats along with moved cells (cut and paste,
-    /// dragging a block): as `copy_cond_formats` to the block of the same
+    /// Carry conditional formats along with moved cells (`move_range`
+    /// calls this): as `copy_cond_formats` to the block of the same
     /// size at (`dest_row`, `dest_col`), after which the cells left behind
     /// have no rule. Absolute references of any rule to the moved cells
     /// follow them when the move stays on one sheet.
@@ -382,6 +394,89 @@ impl Workbook {
                     });
                 }
             }
+        }
+        self.caches.cond.invalidate();
+        true
+    }
+}
+
+/// Take the cells of `bands` (see `without_bands`) out of every rule;
+/// rules left without a cell go.
+fn remove_bands(rules: &mut Vec<CondFormat>, bands: &[Rect]) {
+    rules.retain_mut(|cf| {
+        let ranges = without_bands(&cf.ranges, bands);
+        if ranges.is_empty() {
+            return false;
+        }
+        if ranges != cf.ranges {
+            cf.set_ranges(normalize_ranges(ranges));
+        }
+        true
+    });
+}
+
+impl Workbook {
+    /// As `clear_cond_formats`, for the blocks of rows a filter leaves
+    /// shown in a selection (`Sheet::shown_parts`): one pass, however
+    /// many blocks there are.
+    pub(crate) fn clear_cond_formats_in_bands(&mut self, sheet: usize, bands: &[Rect]) -> bool {
+        if self.cond_formats_in(sheet, bands).is_empty() {
+            return false;
+        }
+        self.edit_cond_formats(sheet, |rules| remove_bands(rules, bands));
+        true
+    }
+
+    /// As `copy_cond_formats`, laying `src` over each of `bands` (see
+    /// `without_bands`; each holds a whole number of copies of `src`):
+    /// what filling or pasting one row over a filtered list does, where
+    /// the rows the filter hides keep their rules. One pass, so that the
+    /// rules do not crumble a little more with every block.
+    pub(crate) fn copy_cond_formats_to_bands(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        bands: &[Rect],
+    ) -> bool {
+        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
+            return false;
+        }
+        let from_source = self.cond_formats(src_sheet).iter().any(|cf| cf.intersects(&src));
+        if !from_source && self.cond_formats_in(dest_sheet, bands).is_empty() {
+            return false;
+        }
+        self.snapshot();
+        let copies = |cf: &CondFormat| -> Vec<Rect> {
+            let pieces: Vec<Rect> = cf.ranges.iter().filter_map(|r| r.intersection(&src)).collect();
+            bands.iter().flat_map(|band| tiled(&pieces, &src, band)).collect()
+        };
+        if src_sheet == dest_sheet {
+            let rules = std::mem::take(&mut self.sheets[src_sheet].cond_formats);
+            self.sheets[src_sheet].cond_formats = rules
+                .into_iter()
+                .filter_map(|mut cf| {
+                    let mut ranges = without_bands(&cf.ranges, bands);
+                    ranges.extend(copies(&cf));
+                    if ranges != cf.ranges {
+                        cf.set_ranges(normalize_ranges(ranges));
+                    }
+                    (!cf.ranges.is_empty()).then_some(cf)
+                })
+                .collect();
+        } else {
+            let mut added = Vec::new();
+            for cf in &self.sheets[src_sheet].cond_formats {
+                let ranges = copies(cf);
+                if !ranges.is_empty() {
+                    let mut copy = cf.clone();
+                    copy.set_ranges(normalize_ranges(ranges));
+                    added.push(copy);
+                }
+            }
+            let rules = &mut self.sheets[dest_sheet].cond_formats;
+            remove_bands(rules, bands);
+            rules.splice(0..0, added);
         }
         self.caches.cond.invalidate();
         true
@@ -529,4 +624,49 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     for cf in &mut sheet.cond_formats {
         cf.rule.map_exprs(&mut |e| e.with_sheet_renamed(original, &name));
     }
+}
+
+/// See `features::on_sheet_deleted`: formulas that read the deleted sheet
+/// read `#REF!`.
+pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet, order: &[&str]) {
+    for cf in wb.sheets.iter_mut().flat_map(|sh| &mut sh.cond_formats) {
+        cf.rule.map_exprs(&mut |e| e.with_sheet_deleted(&deleted.name, order));
+    }
+    // The cache knows sheets by their place, which changed.
+    wb.caches.cond.invalidate();
+}
+
+/// See `features::on_sheet_moved`: 3-D references follow their end sheets.
+pub(crate) fn on_sheet_moved(wb: &mut Workbook, moved: &str, before: &[&str], after: &[&str]) {
+    for cf in wb.sheets.iter_mut().flat_map(|sh| &mut sh.cond_formats) {
+        cf.rule.map_exprs(&mut |e| e.with_sheet_moved(moved, before, after));
+    }
+    wb.caches.cond.invalidate();
+}
+
+/// See `features::on_cells_shifted`: the cells that moved keep their
+/// rules, as if pasted where they now are, and deleted cells leave
+/// theirs. Inserted cells join the rules of the cell before them, as rows
+/// and columns inserted into the sheet do.
+pub(crate) fn on_cells_shifted(wb: &mut Workbook, sheet: usize, shift: CellShift) {
+    if wb.sheets.iter().all(|sh| sh.cond_formats.is_empty()) {
+        return;
+    }
+    if let Some((from, to)) = shift.carried() {
+        wb.copy_cond_formats(sheet, from, sheet, to);
+    }
+    match shift.inserted() {
+        Some((blank, Some(before))) => wb.copy_cond_formats(sheet, before, sheet, blank),
+        Some((blank, None)) => wb.clear_cond_formats(sheet, &[blank]),
+        None => false,
+    };
+    // Rules anywhere that name the moved cells go on reading them.
+    let edited = wb.sheets[sheet].name.clone();
+    for sh in &mut wb.sheets {
+        let own = sh.name.clone();
+        for cf in &mut sh.cond_formats {
+            cf.rule.map_exprs(&mut |e| shift.fix_rule(e, &edited, &own));
+        }
+    }
+    wb.caches.cond.invalidate();
 }
