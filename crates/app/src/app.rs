@@ -3573,7 +3573,7 @@ impl ExcelApp {
         }
     }
     pub fn on_insert_link(&mut self, _: &InsertLink, window: &mut Window, cx: &mut Context<Self>) {
-        self.run_command(features::misc::Cmd::Link, window, cx);
+        self.run_command(features::edit_tools::Cmd::Link, window, cx);
     }
 
     /// Run a feature command from the keyboard or the menu bar: an entry

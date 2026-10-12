@@ -21,7 +21,7 @@ pub(crate) use goto::{Kinds, Special, select_special};
 
 use self::audit::Trace;
 use self::calc::CalcMode;
-use super::{Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, Painter, names};
+use super::{Command, Cx, Feature, Painter, names};
 use crate::app::{ExcelApp, MenuEntry, NameManager};
 use crate::grid::GridLayout;
 use crate::i18n::{t, t_ctx};
@@ -37,12 +37,10 @@ commands! {
         Share = "share", t("Share", "Partager");
         // Home
         CellStyles = "cell-styles", t("Cell Styles", "Styles de cellules");
-        ClearHyperlinks = "", t("Clear Hyperlinks", "Effacer les liens hypertexte");
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert
         Sparklines = "chart-line", t("Sparklines", "Graphiques sparkline");
-        Link = "link", t("Link", "Lien");
         Equation = "function", t("Equation", "Équation");
         Symbol = "more", t("Symbol", "Symbole");
         // Draw
@@ -254,12 +252,6 @@ impl Feature for Misc {
 
     fn cells_changed(&self, app: &mut ExcelApp, _edit: &super::CellEdit, cx: &mut Cx) {
         calc::after_change(app, cx);
-    }
-
-    fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
-        if matches!(target, MenuTarget::Cell(..)) {
-            menu.add(MenuSection::Extra, MenuEntry::command(Cmd::Link, app).shortcut("⌘K"));
-        }
     }
 }
 

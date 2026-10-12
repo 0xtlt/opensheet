@@ -1225,7 +1225,8 @@ impl ExcelApp {
                                 a.clear(ClearMode::Contents, cx)
                             }),
                             MenuEntry::command(comments::Cmd::Clear, this),
-                            MenuEntry::command(misc::Cmd::ClearHyperlinks, this),
+                            MenuEntry::command(edit_tools::Cmd::ClearHyperlinks, this),
+                            MenuEntry::command(edit_tools::Cmd::RemoveHyperlinks, this),
                         ];
                         this.open_menu("rb-clear", entries, 260.0, window, cx);
                     }),
@@ -1463,7 +1464,7 @@ impl ExcelApp {
             .into_any_element(),
             group(
                 t("Links", "Liens"),
-                row(vec![self.cmd_large("in-link", misc::Cmd::Link, false, cx)]),
+                row(vec![self.cmd_large("in-link", edit_tools::Cmd::Link, false, cx)]),
             )
             .into_any_element(),
             group(

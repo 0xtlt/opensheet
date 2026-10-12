@@ -5,12 +5,15 @@
 //! hooks and the shortcuts.
 
 mod find;
+mod links;
 mod paste;
 #[cfg(test)]
 mod ui_tests;
 
 use super::misc::{self, Kinds, Special};
-use super::{Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget};
+use super::{
+    CellEdit, Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, Painter, Zone, ZoneEvent, ZoneResponse,
+};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
 use opensheet_engine::ops::PasteMode;
@@ -47,6 +50,13 @@ commands! {
         PasteValuesSource = "", t("Values & Source Formatting", "Valeurs et format source");
         PasteFormatting = "", t("Formatting", "Mise en forme");
         PasteLink = "", t("Paste Link", "Coller avec liaison");
+        // Insert ▸ Link, the context menu of a cell, Home ▸ Clear
+        Link = "link", t("Link", "Lien");
+        EditLink = "link", t("Edit Link…", "Modifier le lien…");
+        OpenLink = "", t("Open Link", "Ouvrir le lien");
+        RemoveLink = "", t("Remove Link", "Supprimer le lien");
+        ClearHyperlinks = "", t("Clear Hyperlinks", "Effacer les liens hypertexte");
+        RemoveHyperlinks = "", t("Remove Hyperlinks", "Supprimer les liens hypertexte");
     }
 }
 
@@ -83,6 +93,13 @@ impl Command for Cmd {
                 entries.push(MenuEntry::command(Cmd::PasteSpecial, app).shortcut("⌃⌘V"));
                 app.open_command_menu(entries, 330.0, window, cx);
             }
+            Cmd::Link | Cmd::EditLink => links::open(app, window, cx),
+            Cmd::OpenLink => {
+                let (row, col) = app.active();
+                links::follow(app, row, col, window, cx);
+            }
+            Cmd::RemoveLink | Cmd::RemoveHyperlinks => links::remove(app, true, cx),
+            Cmd::ClearHyperlinks => links::remove(app, false, cx),
             Cmd::PasteSpecial => paste::open(app, window, cx),
             Cmd::PasteLink => paste::paste_link(app, cx),
             Cmd::PasteFormulas
@@ -108,6 +125,10 @@ impl Command for Cmd {
             // (cut cells can only be moved).
             Cmd::PasteLink => app.clip.as_ref().is_some_and(|state| !state.cut),
             _ if self.paste_spec().is_some() => app.clip.as_ref().is_some_and(|state| !state.cut),
+            Cmd::ClearHyperlinks | Cmd::RemoveHyperlinks => {
+                let links = &app.wb.sheets[app.sheet].hyperlinks;
+                app.sel().ranges.iter().any(|range| links.iter().any(|link| link.range.intersects(range)))
+            }
             _ => true,
         }
     }
@@ -160,6 +181,36 @@ impl Feature for EditTools {
         if matches!(target, MenuTarget::Cell(..) | MenuTarget::RowHeader(_) | MenuTarget::ColHeader(_)) {
             menu.add(MenuSection::Clipboard, MenuEntry::command(Cmd::PasteSpecial, app).shortcut("⌃⌘V"));
         }
+        if let MenuTarget::Cell(row, col) = target {
+            if app.wb.link_action_at(app.sheet, *row, *col).is_none() {
+                menu.add(MenuSection::Extra, MenuEntry::command(Cmd::Link, app).shortcut("⌘K"));
+                return;
+            }
+            // A link made by HYPERLINK() is followed, not edited here.
+            if app.wb.hyperlink_at(app.sheet, *row, *col).is_some() {
+                menu.add(MenuSection::Extra, MenuEntry::command(Cmd::EditLink, app).shortcut("⌘K"));
+            }
+            menu.add(MenuSection::Extra, MenuEntry::command(Cmd::OpenLink, app));
+            if app.wb.hyperlink_at(app.sheet, *row, *col).is_some() {
+                menu.add(MenuSection::Extra, MenuEntry::command(Cmd::RemoveLink, app));
+            }
+        }
+    }
+
+    fn paint(&self, p: &mut Painter) {
+        links::paint(p);
+    }
+
+    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _: &mut Window, cx: &mut Cx) -> ZoneResponse {
+        links::zone_mouse_down(app, zone, ev, cx)
+    }
+
+    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+        links::zone_mouse_up(app, zone, ev, window, cx);
+    }
+
+    fn cells_written(&self, app: &mut ExcelApp, edit: &CellEdit, _: &mut Cx) {
+        links::cells_written(app, edit);
     }
 }
 

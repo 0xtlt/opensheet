@@ -66,7 +66,9 @@ pub(super) fn paste(app: &mut ExcelApp, spec: PasteSpecial, cx: &mut Cx) {
     }
     let written = app.wb.paste_special(app.sheet, dest, &state.clip, &spec);
     let cause = ChangeCause::Paste {
-        from: Some((state.clip.sheet, state.clip.rect)),
+        // Turned cells are not where the features would look for what
+        // travels with them.
+        from: (!spec.transpose).then_some((state.clip.sheet, state.clip.rect)),
         cut: false,
         mode: spec.what.mode(),
     };
