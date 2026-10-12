@@ -32,7 +32,9 @@ pub use formula::{
     text_operand_from_ooxml,
 };
 pub use manage::normalize_ranges;
-pub(crate) use manage::{on_sheet_duplicated, on_sheet_renamed, on_structural_edit};
+pub(crate) use manage::{
+    on_cells_shifted, on_sheet_deleted, on_sheet_duplicated, on_sheet_moved, on_sheet_renamed, on_structural_edit,
+};
 pub use model::{
     BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, Icon, IconRule, IconSet,
     IconThreshold, Rule, TextOp, TimePeriod,
