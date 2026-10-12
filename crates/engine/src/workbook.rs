@@ -419,6 +419,8 @@ pub struct Workbook {
     undo_stack: Vec<UndoEntry>,
     redo_stack: Vec<UndoEntry>,
     pending: Vec<Change>,
+    /// The current transaction holds a snapshot of the sheets.
+    snapshot_taken: bool,
 }
 
 impl Workbook {
@@ -438,6 +440,7 @@ impl Workbook {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             pending: Vec::new(),
+            snapshot_taken: false,
         }
     }
 
@@ -562,9 +565,10 @@ impl Workbook {
     /// rows, sheet operations, merges, ...). Call once before mutating
     /// `self.sheets` directly.
     pub fn snapshot(&mut self) {
-        if self.pending.iter().any(|c| matches!(c, Change::Sheets { .. })) {
+        if self.snapshot_taken {
             return;
         }
+        self.snapshot_taken = true;
         self.pending.push(Change::Sheets {
             before: Box::new(SheetsState {
                 sheets: self.sheets.clone(),
@@ -581,6 +585,7 @@ impl Workbook {
             return false;
         }
         let mut changes = std::mem::take(&mut self.pending);
+        self.snapshot_taken = false;
         for ch in &mut changes {
             if let Change::Sheets { before, after } = ch {
                 // What was changed directly on the sheets since the
@@ -608,6 +613,7 @@ impl Workbook {
     /// Drop the changes of the current (uncommitted) transaction.
     pub fn rollback(&mut self) {
         let changes = std::mem::take(&mut self.pending);
+        self.snapshot_taken = false;
         self.apply_changes(&changes, true);
     }
 
@@ -654,6 +660,7 @@ impl Workbook {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.pending.clear();
+        self.snapshot_taken = false;
     }
 
     fn apply_changes(&mut self, changes: &[Change], reverse: bool) {
