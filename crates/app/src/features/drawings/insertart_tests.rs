@@ -115,7 +115,10 @@ fn formatting_reaches_the_selected_characters_of_a_shape(cx: &mut TestAppContext
     });
     redraw(cx);
     let shape = drawing(&app, cx, id).as_shape().unwrap().clone();
-    assert!(shape.runs.iter().all(|run| run.effects.outline.is_some() && run.font.color == Some(Color(0xE97132))));
+    // The colours of a style are those of the workbook's theme, and follow it.
+    let accent_2 = app.update(cx, |app, _| app.wb.theme().accent(2, 0.0));
+    assert!(accent_2.is_themed());
+    assert!(shape.runs.iter().all(|run| run.effects.outline.is_some() && run.font.color == Some(accent_2)));
     assert!(shape.runs[1].font.bold && !shape.runs[0].font.bold);
     app.update(cx, |app, cx| wordart::set_fill(app, None, cx));
     assert!(drawing(&app, cx, id).as_shape().unwrap().effects.hollow);

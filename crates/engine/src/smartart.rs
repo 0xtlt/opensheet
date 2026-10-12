@@ -21,7 +21,8 @@
 
 use crate::drawing::{Outline, Shape, ShapePreset, ShapeTool, TextAlign, TextAnchor};
 use crate::locale::Locale;
-use crate::style::Color;
+use crate::style::{Color, ThemeSlot};
+use crate::theme::Theme;
 use crate::validation::localized;
 use std::sync::Arc;
 
@@ -166,34 +167,18 @@ impl Layout {
 
 // ---- colours -------------------------------------------------------------
 
-/// The colours of the Office theme the variants are made of: dark 1,
-/// light 1, dark 2, light 2, then the six accents.
-const THEME: [Color; 10] = [
-    Color(0x000000),
-    Color(0xFFFFFF),
-    Color(0x0E2841),
-    Color(0xE8E8E8),
-    Color(0x156082),
-    Color(0xE97132),
-    Color(0x196B24),
-    Color(0x0F9ED5),
-    Color(0xA02B93),
-    Color(0x4EA72E),
-];
-
-const DARK_1: Color = THEME[0];
-const LIGHT_1: Color = THEME[1];
-const DARK_2: Color = THEME[2];
-
-fn accent(number: u8) -> Color {
-    THEME[3 + number.clamp(1, 6) as usize]
-}
-
 /// A colour between two others (`t` from 0 to 1).
 fn mix(a: Color, b: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
+    // At its ends the range is the colours themselves, which may follow
+    // the theme.
+    if t == 0.0 {
+        return a;
+    } else if t == 1.0 {
+        return b;
+    }
     let channel = |shift: u32| {
-        let (x, y) = (((a.0 >> shift) & 0xFF) as f32, ((b.0 >> shift) & 0xFF) as f32);
+        let (x, y) = (((a.value() >> shift) & 0xFF) as f32, ((b.value() >> shift) & 0xFF) as f32);
         ((x + (y - x) * t).round() as u32) << shift
     };
     Color(channel(16) | channel(8) | channel(0))
@@ -275,36 +260,38 @@ impl ColorScheme {
     }
 
     /// The paint of the `index`th of `count` shapes.
-    fn paint(self, index: usize, count: usize) -> Paint {
+    fn paint(self, theme: &Theme, index: usize, count: usize) -> Paint {
+        let (dark_1, light_1, dark_2) = (theme.color(ThemeSlot::Dark1, 0.0), theme.color(ThemeSlot::Light1, 0.0), theme.color(ThemeSlot::Dark2, 0.0));
+        let accent = |number: u8| theme.accent(number.clamp(1, 6) as usize, 0.0);
         let along = if count > 1 { index as f32 / (count - 1) as f32 } else { 0.0 };
         let outlined = |color: Color| Paint {
-            fill: LIGHT_1,
+            fill: light_1,
             line: color,
-            text: DARK_1,
+            text: dark_1,
             opacity: 1.0,
             base: color,
             filled: false,
         };
         let filled = |color: Color| Paint {
             fill: color,
-            line: LIGHT_1,
-            text: LIGHT_1,
+            line: light_1,
+            text: light_1,
             opacity: 1.0,
             base: color,
             filled: true,
         };
         match self {
-            ColorScheme::Dark(2) => filled(DARK_2),
-            ColorScheme::Dark(3) => outlined(DARK_2),
-            ColorScheme::Dark(_) => outlined(DARK_1),
+            ColorScheme::Dark(2) => filled(dark_2),
+            ColorScheme::Dark(3) => outlined(dark_2),
+            ColorScheme::Dark(_) => outlined(dark_1),
             ColorScheme::Colorful(1) => filled(accent(2 + (index % 5) as u8)),
             ColorScheme::Colorful(n) => filled(mix(accent(n), accent(n + 1), along)),
             ColorScheme::Accent { accent: a, variant } => {
                 let color = accent(a);
                 match variant {
                     1 => outlined(color),
-                    3 => filled(mix(mix(color, DARK_1, 0.2), mix(color, LIGHT_1, 0.5), along)),
-                    4 => filled(mix(mix(color, DARK_1, 0.2), mix(color, LIGHT_1, 0.5), 1.0 - (2.0 * along - 1.0).abs())),
+                    3 => filled(mix(mix(color, dark_1, 0.2), mix(color, light_1, 0.5), along)),
+                    4 => filled(mix(mix(color, dark_1, 0.2), mix(color, light_1, 0.5), 1.0 - (2.0 * along - 1.0).abs())),
                     5 => Paint {
                         opacity: 0.9 - 0.5 * along,
                         ..filled(color)
@@ -358,16 +345,17 @@ impl QuickStyle {
 
     /// The fill, the outline and the colour of the text of a shape
     /// painted with `paint` in this style.
-    fn look(self, paint: Paint) -> (Color, Option<Outline>, Color) {
+    fn look(self, paint: Paint, theme: &Theme) -> (Color, Option<Outline>, Color) {
+        let (dark_1, light_1) = (theme.color(ThemeSlot::Dark1, 0.0), theme.color(ThemeSlot::Light1, 0.0));
         let line = |color: Color, width: f32| Some(Outline::solid(color, width));
         match self {
             QuickStyle::Simple => (paint.fill, line(paint.line, 1.0), paint.text),
             QuickStyle::WhiteOutline => (paint.fill, line(paint.line, 3.0), paint.text),
-            QuickStyle::SubtleEffect if paint.filled => (mix(paint.fill, LIGHT_1, 0.6), line(paint.base, 0.5), DARK_1),
+            QuickStyle::SubtleEffect if paint.filled => (mix(paint.fill, light_1, 0.6), line(paint.base, 0.5), dark_1),
             QuickStyle::SubtleEffect => (paint.fill, line(paint.line, 0.5), paint.text),
             QuickStyle::ModerateEffect if paint.filled => (paint.fill, None, paint.text),
             QuickStyle::ModerateEffect => (paint.fill, line(paint.line, 1.5), paint.text),
-            QuickStyle::IntenseEffect if paint.filled => (mix(paint.fill, DARK_1, 0.15), None, paint.text),
+            QuickStyle::IntenseEffect if paint.filled => (mix(paint.fill, dark_1, 0.15), None, paint.text),
             QuickStyle::IntenseEffect => (paint.fill, line(paint.line, 2.25), paint.text),
         }
     }
@@ -700,7 +688,7 @@ impl SmartArt {
 
     /// The graphic laid out in a frame `width` by `height` pixels: its
     /// shapes, bottom-most first.
-    pub fn pieces(&self, width: f32, height: f32) -> Vec<Piece> {
+    pub fn pieces(&self, theme: &Theme, width: f32, height: f32) -> Vec<Piece> {
         let (width, height) = (width.max(1.0), height.max(1.0));
         if let Some(foreign) = &self.foreign {
             let (sx, sy) = (width / foreign.size.0.max(1.0), height / foreign.size.1.max(1.0));
@@ -719,6 +707,7 @@ impl SmartArt {
         }
         let mut drawn = Composer {
             art: self,
+            theme,
             pieces: Vec::new(),
         };
         match self.layout {
@@ -834,6 +823,7 @@ fn fit_text(pieces: &mut [Piece]) {
 
 struct Composer<'a> {
     art: &'a SmartArt,
+    theme: &'a Theme,
     pieces: Vec<Piece>,
 }
 
@@ -842,8 +832,8 @@ impl Composer<'_> {
     /// kind, showing line `line` of the outline.
     #[allow(clippy::too_many_arguments)]
     fn node(&mut self, preset: ShapePreset, frame: (f32, f32, f32, f32), text: String, line: usize, index: usize, count: usize) -> &mut Piece {
-        let paint = self.art.colors.paint(index, count);
-        let (fill, outline, ink) = self.art.style.look(paint);
+        let paint = self.art.colors.paint(self.theme, index, count);
+        let (fill, outline, ink) = self.art.style.look(paint, self.theme);
         let mut shape = ShapeTool::Rectangle.shape();
         shape.preset = preset;
         shape.fill = Some(fill);
@@ -874,7 +864,7 @@ impl Composer<'_> {
         let mut shape = ShapeTool::Rectangle.shape();
         shape.fill = None;
         shape.outline = None;
-        shape.font.color = Some(DARK_1);
+        shape.font.color = Some(self.theme.color(ThemeSlot::Dark1, 0.0));
         shape.align = TextAlign::Left;
         shape.anchor = TextAnchor::Top;
         shape.text = text;
@@ -893,9 +883,9 @@ impl Composer<'_> {
 
     /// An arrow between two entries, pointing right before it is turned.
     fn arrow(&mut self, centre: (f32, f32), size: (f32, f32), rotation: f32, index: usize, count: usize) {
-        let paint = self.art.colors.paint(index, count);
+        let paint = self.art.colors.paint(self.theme, index, count);
         let mut shape = ShapeTool::RightArrow.shape();
-        shape.fill = Some(mix(paint.base, LIGHT_1, 0.6));
+        shape.fill = Some(mix(paint.base, self.theme.color(ThemeSlot::Light1, 0.0), 0.6));
         shape.outline = None;
         self.pieces.push(Piece {
             shape,
@@ -912,9 +902,9 @@ impl Composer<'_> {
 
     /// A level or upright connector of an organization chart.
     fn connector(&mut self, from: (f32, f32), to: (f32, f32)) {
-        let paint = self.art.colors.paint(0, 1);
+        let paint = self.art.colors.paint(self.theme, 0, 1);
         let mut shape = ShapeTool::Line.shape();
-        shape.outline = Some(Outline::solid(mix(paint.base, DARK_1, 0.4), 1.0));
+        shape.outline = Some(Outline::solid(mix(paint.base, self.theme.color(ThemeSlot::Dark1, 0.0), 0.4), 1.0));
         self.pieces.push(Piece {
             shape,
             x: from.0.min(to.0),
@@ -1205,10 +1195,11 @@ impl Composer<'_> {
                 i as f32 * step - std::f32::consts::FRAC_PI_2
             };
             let (x, y) = (centre.0 + reach * d * angle.cos(), centre.1 + reach * d * angle.sin());
+            let ink = self.theme.color(ThemeSlot::Dark1, 0.0);
             let circle = self.node(ShapePreset::Ellipse, (x - d / 2.0, y - d / 2.0, d, d), text, line, i, count);
             circle.opacity = circle.opacity.min(0.5);
             // Over one another, what is written must stay readable.
-            circle.shape.font.color = Some(DARK_1);
+            circle.shape.font.color = Some(ink);
         }
     }
 
@@ -1238,6 +1229,24 @@ impl Composer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[allow(non_snake_case)]
+    fn LIGHT_1() -> Color {
+        theme().color(ThemeSlot::Light1, 0.0)
+    }
+
+    #[allow(non_snake_case)]
+    fn DARK_1() -> Color {
+        theme().color(ThemeSlot::Dark1, 0.0)
+    }
+
+    fn theme() -> Theme {
+        Theme::default()
+    }
+
+    fn accent(number: usize) -> Color {
+        theme().accent(number, 0.0)
+    }
 
     fn outline(art: &SmartArt) -> String {
         art.outline().iter().map(|(level, text)| format!("{}{text}", ">".repeat(*level))).collect::<Vec<_>>().join(" ")
@@ -1321,7 +1330,7 @@ mod tests {
                 let mut art = SmartArt::new(layout);
                 art.set_outline(&(0..count).flat_map(|i| [(0, format!("Entry {i}")), (1, "Detail".to_string())]).collect::<Vec<_>>());
                 for (width, height) in [(576.0, 384.0), (200.0, 600.0), (900.0, 120.0)] {
-                    let pieces = art.pieces(width, height);
+                    let pieces = art.pieces(&theme(), width, height);
                     let shown = pieces.iter().filter(|piece| piece.node.is_some()).count();
                     assert!(shown >= count, "{layout:?} {count}: {shown} shapes");
                     for piece in &pieces {
@@ -1345,30 +1354,30 @@ mod tests {
     fn layouts_place_their_shapes() {
         // Five blocks in a frame of 6 by 4 inches: rows of three and two,
         // the second centred under the first.
-        let blocks = SmartArt::new(Layout::BlockList).pieces(576.0, 384.0);
+        let blocks = SmartArt::new(Layout::BlockList).pieces(&theme(), 576.0, 384.0);
         assert_eq!(blocks.len(), 5);
         assert!((blocks[0].y - blocks[2].y).abs() < 0.01 && blocks[3].y > blocks[0].y + blocks[0].height);
         assert!((blocks[0].height / blocks[0].width - 0.6).abs() < 1e-3);
         assert!(blocks[3].x > blocks[0].x && blocks[4].x + blocks[4].width < blocks[2].x + blocks[2].width);
         assert!(!blocks.iter().enumerate().any(|(i, a)| blocks[i + 1..].iter().any(|b| overlap(a, b))));
         // A process: three boxes, two arrows between them, in a row.
-        let process = SmartArt::new(Layout::Process).pieces(576.0, 384.0);
+        let process = SmartArt::new(Layout::Process).pieces(&theme(), 576.0, 384.0);
         assert_eq!(process.iter().filter(|piece| piece.node.is_none()).count(), 2);
         assert_eq!(process[1].shape.preset, ShapePreset::RightArrow);
         assert!(process[0].x + process[0].width < process[1].x && process[1].x + process[1].width < process[2].x);
         // Right to left, the first box is on the right and arrows point left.
         let mut reversed = SmartArt::new(Layout::Process);
         reversed.rtl = true;
-        let mirrored = reversed.pieces(576.0, 384.0);
+        let mirrored = reversed.pieces(&theme(), 576.0, 384.0);
         assert!((mirrored[0].x + mirrored[0].width - (576.0 - process[0].x)).abs() < 0.01);
         assert!(mirrored[1].flip_h && !mirrored[0].flip_h);
         // Chevrons reach into one another.
-        let chevrons = SmartArt::new(Layout::Chevron).pieces(600.0, 300.0);
+        let chevrons = SmartArt::new(Layout::Chevron).pieces(&theme(), 600.0, 300.0);
         assert!(chevrons.iter().all(|piece| piece.shape.preset == ShapePreset::Chevron));
         assert!(chevrons[1].x < chevrons[0].x + chevrons[0].width && chevrons[2].x + chevrons[2].width <= 600.01);
         // A cycle starts at the top and runs clockwise, an arrow after
         // each circle.
-        let cycle = SmartArt::new(Layout::Cycle).pieces(400.0, 400.0);
+        let cycle = SmartArt::new(Layout::Cycle).pieces(&theme(), 400.0, 400.0);
         assert_eq!(cycle.len(), 10);
         assert!((cycle[0].x + cycle[0].width / 2.0 - 200.0).abs() < 0.01 && cycle[0].y.abs() < 0.01);
         assert!(cycle[2].x > cycle[0].x && cycle[2].y > cycle[0].y);
@@ -1377,23 +1386,23 @@ mod tests {
         assert!(!circles.iter().enumerate().any(|(i, a)| circles[i + 1..].iter().any(|b| overlap(a, b) && (a.x - b.x).hypot(a.y - b.y) < a.width)));
         // An organization chart: the head over its three reports, joined
         // by lines that lie under the boxes.
-        let chart = SmartArt::new(Layout::OrgChart).pieces(576.0, 384.0);
+        let chart = SmartArt::new(Layout::OrgChart).pieces(&theme(), 576.0, 384.0);
         let boxes: Vec<&Piece> = chart.iter().filter(|piece| piece.node.is_some()).collect();
         assert_eq!(boxes.len(), 4);
         assert!(chart[0].node.is_none() && chart.iter().filter(|piece| piece.node.is_none()).all(|line| line.width == 0.0 || line.height == 0.0));
         assert!((boxes[0].x + boxes[0].width / 2.0 - (boxes[2].x + boxes[2].width / 2.0)).abs() < 0.01);
         assert!(boxes[1].y > boxes[0].y + boxes[0].height && (boxes[1].y - boxes[3].y).abs() < 0.01);
         // Venn circles overlap and let one another show.
-        let venn = SmartArt::new(Layout::Venn).pieces(576.0, 384.0);
+        let venn = SmartArt::new(Layout::Venn).pieces(&theme(), 576.0, 384.0);
         assert!(overlap(&venn[0], &venn[1]) && venn.iter().all(|piece| piece.opacity <= 0.5));
         // The levels of a pyramid line up into a triangle.
-        let pyramid = SmartArt::new(Layout::Pyramid).pieces(300.0, 300.0);
+        let pyramid = SmartArt::new(Layout::Pyramid).pieces(&theme(), 300.0, 300.0);
         assert_eq!(pyramid[0].shape.preset, ShapePreset::Triangle);
         assert_eq!((pyramid[2].x, pyramid[2].width), (0.0, 300.0));
         let inset = pyramid[2].shape.adjust.unwrap() * pyramid[2].height;
         assert!((inset - 50.0).abs() < 0.01 && (pyramid[1].x - 50.0).abs() < 0.01);
         // A bullet list: a bar for each entry, its details under it.
-        let list = SmartArt::new(Layout::BulletList).pieces(576.0, 384.0);
+        let list = SmartArt::new(Layout::BulletList).pieces(&theme(), 576.0, 384.0);
         assert_eq!(list.len(), 4);
         assert!(list[1].shape.fill.is_none() && list[1].y >= list[0].y + list[0].height - 0.01);
         assert_eq!(list[1].shape.text, "• ");
@@ -1403,16 +1412,16 @@ mod tests {
     #[test]
     fn text_is_as_large_as_fits_every_shape() {
         let mut art = lettered(Layout::Process, &[(0, "One"), (0, "Two"), (0, "Three")]);
-        let short = art.pieces(576.0, 384.0)[0].shape.font.size_pt();
+        let short = art.pieces(&theme(), 576.0, 384.0)[0].shape.font.size_pt();
         art.set_text(1, "A much longer description of the second step");
-        let pieces = art.pieces(576.0, 384.0);
+        let pieces = art.pieces(&theme(), 576.0, 384.0);
         let long = pieces[0].shape.font.size_pt();
         assert!(long < short, "{long} {short}");
         // One size for every entry.
         assert!(pieces.iter().filter(|piece| piece.node.is_some()).all(|piece| piece.shape.font.size_pt() == long));
         // What is under an entry is listed in its shape.
         art.set_outline(&[(0, "Plan".into()), (1, "Scope".into()), (2, "Budget".into()), (0, "Do".into())]);
-        let pieces = art.pieces(576.0, 384.0);
+        let pieces = art.pieces(&theme(), 576.0, 384.0);
         assert_eq!(pieces[0].shape.text, "Plan\n• Scope\n  • Budget");
         assert_eq!((pieces[0].shape.align, pieces[2].shape.align), (TextAlign::Left, TextAlign::Center));
         assert_eq!((pieces[0].node, pieces[2].node), (Some(0), Some(3)));
@@ -1430,14 +1439,14 @@ mod tests {
         let look = |colors, style| {
             let mut art = SmartArt::new(Layout::BlockList);
             (art.colors, art.style) = (colors, style);
-            let pieces = art.pieces(576.0, 384.0);
+            let pieces = art.pieces(&theme(), 576.0, 384.0);
             pieces.iter().map(|piece| (piece.shape.fill.unwrap(), piece.shape.outline.map(|line| (line.color, line.width)), piece.shape.font.color.unwrap())).collect::<Vec<_>>()
         };
         // A new graphic: accent 1 with a white line and white text.
         let plain = look(ColorScheme::default(), QuickStyle::Simple);
-        assert!(plain.iter().all(|shape| *shape == (accent(1), Some((LIGHT_1, 1.0)), LIGHT_1)));
+        assert!(plain.iter().all(|shape| *shape == (accent(1), Some((LIGHT_1(), 1.0)), LIGHT_1())));
         let outlined = look(ColorScheme::Accent { accent: 2, variant: 1 }, QuickStyle::Simple);
-        assert_eq!(outlined[0], (LIGHT_1, Some((accent(2), 1.0)), DARK_1));
+        assert_eq!(outlined[0], (LIGHT_1(), Some((accent(2), 1.0)), DARK_1()));
         // Colourful: one accent after the other, from the second.
         let colourful = look(ColorScheme::Colorful(1), QuickStyle::Simple);
         assert_eq!((colourful[0].0, colourful[1].0, colourful[4].0), (accent(2), accent(3), accent(6)));
@@ -1448,9 +1457,9 @@ mod tests {
         let looped = look(ColorScheme::Accent { accent: 1, variant: 4 }, QuickStyle::Simple);
         assert_eq!(looped[0].0, looped[4].0);
         // Styles: a heavy white line, a pale fill with dark text, no line.
-        assert_eq!(look(ColorScheme::default(), QuickStyle::WhiteOutline)[0].1, Some((LIGHT_1, 3.0)));
+        assert_eq!(look(ColorScheme::default(), QuickStyle::WhiteOutline)[0].1, Some((LIGHT_1(), 3.0)));
         let subtle = look(ColorScheme::default(), QuickStyle::SubtleEffect)[0];
-        assert_eq!((subtle.1, subtle.2), (Some((accent(1), 0.5)), DARK_1));
+        assert_eq!((subtle.1, subtle.2), (Some((accent(1), 0.5)), DARK_1()));
         assert_eq!(look(ColorScheme::default(), QuickStyle::ModerateEffect)[0].1, None);
         let mut art = SmartArt::new(Layout::Venn);
         (art.colors, art.style, art.rtl) = (ColorScheme::Colorful(2), QuickStyle::IntenseEffect, true);
@@ -1461,18 +1470,18 @@ mod tests {
     #[test]
     fn a_graphic_of_a_file_is_shown_through_its_shapes() {
         let mut art = SmartArt::new(Layout::BlockList);
-        let piece = art.pieces(400.0, 200.0).remove(0);
+        let piece = art.pieces(&theme(), 400.0, 200.0).remove(0);
         art.foreign = Some(Arc::new(Foreign {
             pieces: vec![piece.clone()],
             size: (400.0, 200.0),
             parts: Default::default(),
         }));
         // Stretched with the frame, whatever the outline says.
-        let shown = art.pieces(800.0, 100.0);
+        let shown = art.pieces(&theme(), 800.0, 100.0);
         assert_eq!(shown.len(), 1);
         assert_eq!((shown[0].x, shown[0].width, shown[0].height), (piece.x * 2.0, piece.width * 2.0, piece.height / 2.0));
         // Given a layout, it is drawn from its outline again.
         art.set_layout(Layout::Cycle);
-        assert_eq!(art.pieces(400.0, 400.0).len(), 10);
+        assert_eq!(art.pieces(&theme(), 400.0, 400.0).len(), 10);
     }
 }

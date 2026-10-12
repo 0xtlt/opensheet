@@ -741,7 +741,13 @@ impl Feature for Drawings {
                 clip,
             };
             let mut items = Vec::new();
-            paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items);
+            match &drawing.kind {
+                DrawingKind::SmartArt(art) => {
+                    let level = geometry::Placed::plain(placed.x0, placed.y0, placed.x1, placed.y1);
+                    smartart::draw(art, app.wb.theme(), &level, natural, &brush, Some(&*app.fonts), app.wb.locale, &mut items);
+                }
+                _ => paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items),
+            }
             if is_selected {
                 paint::draw_selection(drawing, &placed, &brush, &mut items);
             }

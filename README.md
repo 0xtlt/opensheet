@@ -87,6 +87,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Formats de nombre Excel complets (codes personnalisés, sections, couleurs, dates, fractions, scientifique, comptabilité).
 - Mise en forme conditionnelle : règles de surbrillance, valeurs hautes / basses, barres de données, nuances de couleurs, 20 jeux d'icônes, règles par formule, gestionnaire de règles.
 - Styles de cellules : galerie des 49 styles d'Excel, styles personnalisés (nouveau, modifier, dupliquer, supprimer).
+- Thèmes de document : les 29 thèmes d'Excel, jeux de couleurs et de polices, personnalisation ; les couleurs et polices « du thème » suivent un changement de thème dans les cellules, tableaux, graphiques et formes.
 - Largeur / hauteur par glisser, ajustement automatique, masquer / afficher.
 
 **Données**
@@ -94,7 +95,8 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Tableaux structurés : 60 styles, ligne de total, colonnes calculées, agrandissement automatique à la saisie.
 - Tableaux croisés dynamiques : volet des champs avec glisser-déposer, filtres, regroupements, « afficher les valeurs comme », styles, détail par double-clic.
 - Validation des données : tous les critères, liste déroulante dans la cellule, message de saisie, alertes, cercles autour des données non valides.
-- Outils de données : Convertir (assistant en 3 étapes), remplissage instantané, filtre avancé, consolider.
+- Outils de données : Convertir (assistant en 3 étapes), remplissage instantané, filtre avancé, consolider (avec liaison aux données source).
+- Plan : grouper / dissocier lignes et colonnes, niveaux et boutons + / − dans la marge, plan automatique, sous-total avec ses 11 fonctions.
 - Analyse de scénarios : valeur cible, gestionnaire de scénarios avec feuille de synthèse, table de données.
 - Import d'un fichier texte ou CSV, mémorisé dans le classeur et relu par Actualiser tout.
 
@@ -103,6 +105,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Création depuis la sélection, sélection de chaque élément au clic, volet Format, axes secondaires, échelles manuelles, étiquettes, courbes de tendance, barres d'erreur, Sélectionner des données, Modifier le type de graphique.
 - Images (fichier, glisser-déposer, collage) et 15 formes avec texte : déplacement, redimensionnement, rotation, remplissage, contour, flèches.
 - Les graphiques suivent les données en direct, les insertions de lignes et les renommages de feuilles.
+- Graphiques sparkline dans les cellules : courbe, histogramme, positif / négatif, 36 styles, points marqués, axes.
 
 ![Neuf des types de graphiques](docs/captures/types-de-graphiques.jpg)
 
@@ -123,7 +126,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 
 **Structure et fichiers**
 - Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
-- Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles et styles nommés, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes, liens hypertexte, scénarios, tables de données, consolidation, imports de texte. Les fichiers produits s'ouvrent dans Excel sans réparation.
+- Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles et styles nommés, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes, liens hypertexte, scénarios, tables de données, consolidation, imports de texte, plan, sparklines, thème du document. Les fichiers produits s'ouvrent dans Excel sans réparation.
 - Ouvrir et enregistrer en `.csv` et `.tsv`.
 
 ## Ce qui manque
@@ -133,8 +136,6 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Prévu** : les scripts Office en TypeScript (onglet Automatiser).
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
-- Graphiques sparkline, thèmes.
-- Grouper / dissocier (plan), sous-total.
 - Segments, chronologies, champs calculés et graphiques croisés dynamiques.
 - Orthographe, traduction, statistiques du classeur, vérification d'accessibilité, onglet Dessin, équations, symboles, SmartArt, WordArt, icônes.
 - Partage et co-édition.
@@ -148,7 +149,8 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Rechercher et remplacer : pas de « Rechercher tout » avec sa liste de résultats.
 - Collage spécial : pas de collage en image ; un collage transposé ne reporte ni la mise en forme conditionnelle ni la validation.
 - Obtenir des données : fichiers texte et CSV seulement (pas de bases de données, de web ni de Power Query).
-- Consolider : pas de liaison aux données source (elle demande le plan).
+- Sparklines : pas d'axe de dates. Plan : pas de styles automatiques ; la marge du plan n'apparaît pas en vue Mise en page.
+- Thèmes : les effets sont enregistrés mais ne changent pas le dessin ; les jeux personnalisés ne durent que la session.
 - Calcul : le calcul itératif est lu et enregistré dans le fichier, mais aucun réglage ne permet de l'activer depuis l'interface ; un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
 - Ruban : quand la fenêtre est trop étroite pour un onglet (par exemple Formules en allemand dans une fenêtre de 1 390 points de large), le ruban défile horizontalement au lieu de replier ses groupes.
 

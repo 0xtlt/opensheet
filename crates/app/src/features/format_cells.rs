@@ -472,7 +472,7 @@ impl Changes {
             s.rotation = v;
         }
         if let Some(v) = &self.font_name {
-            s.font.name = v.clone();
+            crate::theme::set_font_choice(&mut s.font, v, &crate::theme::document_theme());
         }
         if let Some(v) = self.bold {
             s.font.bold = v;
@@ -742,7 +742,9 @@ impl Dialog {
         let rotation_input = widgets::number_input(cx, rotation.value.map(|v| v as f64), -90.0, 90.0, 1.0);
 
         // Office fonts first, as in the ribbon's list, then the system's.
-        let mut font_names: Vec<SharedString> = Vec::new();
+        // The fonts of the theme come before all others.
+        let mut font_names: Vec<SharedString> =
+            crate::theme::theme_font_labels(&crate::theme::document_theme()).into_iter().map(SharedString::from).collect();
         for name in ["Aptos Narrow", "Aptos", "Calibri", "Arial", "Times New Roman", "Courier New"]
             .iter()
             .map(|n| n.to_string())
@@ -752,7 +754,7 @@ impl Dialog {
                 font_names.push(name.into());
             }
         }
-        let font_name = Prop::of(styles, |s| s.font.name.to_string());
+        let font_name = Prop::of(styles, |s| crate::theme::font_label(&s.font));
         let font_name_at_open = font_name.value.clone().unwrap_or_default();
         let size = Prop::of(styles, |s| s.font.size);
         let size_at_open = size.value.map(|half| size_text(half as f32 / 2.0, locale)).unwrap_or_default();
@@ -830,7 +832,7 @@ impl Dialog {
         let mut style = Style::default();
         let name = self.font_name.read(cx).text().trim().to_string();
         if !name.is_empty() {
-            style.font.name = Arc::from(name);
+            crate::theme::set_font_choice(&mut style.font, &name, &crate::theme::document_theme());
         }
         if let Some(pt) = self.typed_size(cx) {
             style.font.set_size_pt(pt);
@@ -1063,7 +1065,7 @@ impl Dialog {
                     .row(move |i, _| {
                         let (text, color) = samples[i].clone();
                         div()
-                            .when_some(color, |d, color| d.text_color(c(color.0)))
+                            .when_some(color, |d, color| d.text_color(c(color.value())))
                             .child(text)
                             .into_any_element()
                     })
@@ -1363,7 +1365,7 @@ impl Dialog {
         let style = self.preview_style(cx);
         let font = cell_font(&style, &self.fonts);
         let font_px = pt_to_px(style.font.size_pt());
-        let color = style.font.color.map(|col| c(col.0)).unwrap_or(c(0x000000));
+        let color = style.font.color.map(|col| c(col.value())).unwrap_or(c(0x000000));
         let (underline, strike) = (style.font.underline != Underline::None, style.font.strike);
         let sample = preview(300.0, 64.0, move |s: &mut Sketch| {
             let text = "AaBbCcYyZz";
@@ -1598,7 +1600,7 @@ impl Dialog {
                     s.line(from, to, 3.0, c(0xC8C8C8));
                     return;
                 };
-                let color = c(border.color.map(|col| col.0).unwrap_or(0x000000));
+                let color = c(border.color.map(|col| col.value()).unwrap_or(0x000000));
                 let solid = |offset: f32, width: f32, s: &mut Sketch| {
                     if horizontal {
                         s.rect(from.0, from.1 + offset, to.0, from.1 + offset + width, color);
@@ -1916,7 +1918,7 @@ impl Dialog {
                             .h(px(60.))
                             .border_1()
                             .border_color(c(theme::BORDER_STRONG))
-                            .bg(c(shown.flatten().map(|col| col.0).unwrap_or(0xFFFFFF))),
+                            .bg(c(shown.flatten().map(|col| col.value()).unwrap_or(0xFFFFFF))),
                     ),
                 ),
             )

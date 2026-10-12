@@ -1926,7 +1926,7 @@ fn presets_have_excels_colours() {
     assert_eq!(bordered.fill, None);
     assert_eq!(HighlightFormat::ALL.len(), 6);
 
-    let bars: Vec<u32> = BarColor::ALL.iter().map(|c| c.color().0).collect();
+    let bars: Vec<u32> = BarColor::ALL.iter().map(|c| c.color().value()).collect();
     assert_eq!(bars, [0x638EC6, 0x63C384, 0xFF555A, 0xFFB628, 0x008AEF, 0xD6007B]);
     let gradient = DataBar::preset(BarColor::Red, true);
     assert_eq!(
@@ -1955,7 +1955,7 @@ fn presets_have_excels_colours() {
         (false, None, Some(RED), None)
     );
 
-    let colors = |preset: ScalePreset| -> Vec<u32> { preset.scale().stops.iter().map(|s| s.color.0).collect() };
+    let colors = |preset: ScalePreset| -> Vec<u32> { preset.scale().stops.iter().map(|s| s.color.value()).collect() };
     let (red, yellow, green, white, blue) = (0xF8696B, 0xFFEB84, 0x63BE7B, 0xFCFCFF, 0x5A8AC6);
     // From the lowest number to the highest.
     assert_eq!(colors(ScalePreset::GreenYellowRed), [red, yellow, green]);

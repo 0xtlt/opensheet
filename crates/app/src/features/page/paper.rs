@@ -231,7 +231,7 @@ impl ObjectPainter for PaperPainter {
             // is written in them. (Fills that let what is under them show
             // are printed solid.)
             DrawingKind::SmartArt(art) => {
-                let pieces = art.pieces(w as f32, h as f32);
+                let pieces = art.pieces(wb.theme(), w as f32, h as f32);
                 for text in [false, true] {
                     for piece in &pieces {
                         let (pw, ph) = (piece.width as f64, piece.height as f64);
@@ -429,7 +429,7 @@ const ICON_SIZE: f64 = 16.0;
 
 fn mix(a: Color, b: Color, t: f64) -> Color {
     let channel = |shift: u32| {
-        let (x, y) = (((a.0 >> shift) & 0xFF) as f64, ((b.0 >> shift) & 0xFF) as f64);
+        let (x, y) = (((a.value() >> shift) & 0xFF) as f64, ((b.value() >> shift) & 0xFF) as f64);
         ((x + (y - x) * t).round() as u32) << shift
     };
     Color(channel(16) | channel(8) | channel(0))

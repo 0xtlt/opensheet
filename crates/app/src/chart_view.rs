@@ -132,7 +132,7 @@ impl TextMeasure for Shaper<'_> {
 }
 
 fn ink(ink: Ink) -> Hsla {
-    if ink.opacity >= 1.0 { c(ink.color.0) } else { ca(ink.color.0, ink.opacity.max(0.0)) }
+    if ink.opacity >= 1.0 { c(ink.color.value()) } else { ca(ink.color.value(), ink.opacity.max(0.0)) }
 }
 
 /// Converts the engine's primitives, whose origin is the corner of the
@@ -239,7 +239,7 @@ impl Converter<'_> {
                 }
             }
             Prim::Text(run) => {
-                let color = c(run.color.0);
+                let color = c(run.color.value());
                 let line_h = line_height(run.size);
                 if run.rotation != 0.0 {
                     let (path, w, h) = self.shaper.turned(&run.text, run.size, run.bold);
@@ -287,7 +287,7 @@ impl Converter<'_> {
             Seg::Line(cx + r * a.cos(), cy + r * a.sin())
         }));
         segs.push(Seg::Close);
-        self.fill_path(&segs, c(color.0));
+        self.fill_path(&segs, c(color.value()));
     }
 }
 
@@ -368,7 +368,7 @@ pub fn outline_draws(outline: &Outline, origin: Point<Pixels>, ts: &WindowTextSy
             px(0.),
             gpui::transparent_black(),
             px(1.),
-            c(frame.0),
+            c(frame.value()),
             BorderStyle::Solid,
         )));
     }

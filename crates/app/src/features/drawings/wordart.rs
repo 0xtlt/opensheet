@@ -140,7 +140,7 @@ pub(super) struct ArtBlock<'a> {
 pub(super) type ArtBox = (f32, f32, f32, f32);
 
 fn hex(color: Color) -> String {
-    format!("#{:06X}", color.0 & 0xFF_FFFF)
+    format!("#{:06X}", color.value() & 0xFF_FFFF)
 }
 
 impl ArtBlock<'_> {
@@ -433,6 +433,9 @@ fn format_shape(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: &
     }
     let typed = typed_selection(app, id, cx);
     let sheet = app.sheet;
+    // A style of the gallery names colours of the theme: they take their
+    // values in the theme of this workbook.
+    let theme = app.wb.theme_arc();
     app.wb.update_drawing(sheet, id, |drawing| {
         let Some(shape) = drawing.as_shape_mut() else {
             return;
@@ -447,6 +450,7 @@ fn format_shape(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: &
             None => 0..0,
         };
         change(shape, range);
+        theme.resolve_shape(shape);
     });
     fit_to_text(app, id, cx);
     app.commit(label, cx);

@@ -12,8 +12,8 @@
 
 use crate::ast::same_name;
 use crate::refs::Rect;
-use crate::style::{Border, BorderStyle, Borders, Color, Style, StyleId, Underline};
-use crate::table::{OFFICE_THEME, tint};
+use crate::style::{Border, BorderStyle, Borders, Color, Style, StyleId, ThemeFont, ThemeSlot, Underline};
+use crate::theme::Theme;
 use crate::workbook::Workbook;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -210,17 +210,24 @@ const COMMA_0: &str = "_(* #,##0_);_(* \\(#,##0\\);_(* \"-\"_);_(@_)";
 const CURRENCY: &str = "_($* #,##0.00_);_($* \\(#,##0.00\\);_($* \"-\"??_);_(@_)";
 const CURRENCY_0: &str = "_($* #,##0_);_($* \\(#,##0\\);_($* \"-\"_);_(@_)";
 
-/// The font of headings in the Office theme.
-const HEADING_FONT: &str = "Aptos Display";
-/// The colours of links in the Office theme.
-pub const LINK_COLOR: Color = Color(0x467886);
-pub const FOLLOWED_COLOR: Color = Color(0x96607D);
+/// The colours of links: the two link colours of the theme, here with
+/// the values they have in the Office theme.
+pub const LINK_COLOR: Color = Color::themed(ThemeSlot::Hyperlink, 0.0, 0x467886);
+pub const FOLLOWED_COLOR: Color = Color::themed(ThemeSlot::FollowedHyperlink, 0.0, 0x96607D);
 
 /// Excel's built-in styles in the order of the gallery, as they are in a
-/// workbook whose Normal style is `normal`.
+/// workbook of the Office theme whose Normal style is `normal`.
 pub fn builtin_styles(normal: &Style) -> Vec<CellStyle> {
-    let accent = |n: usize| Color(OFFICE_THEME[3 + n]);
-    let dark2 = Color(OFFICE_THEME[3]);
+    builtin_styles_in(&Theme::office(), normal)
+}
+
+/// Excel's built-in styles in the order of the gallery, as they are in a
+/// workbook of theme `theme` whose Normal style is `normal`. What they
+/// take from the theme, they refer to: cells given such a style follow
+/// the theme.
+pub fn builtin_styles_in(theme: &Theme, normal: &Style) -> Vec<CellStyle> {
+    let accent = |n: usize, lighter: f64| theme.accent(n, lighter);
+    let dark2 = theme.color(ThemeSlot::Dark2, 0.0);
     let mut out: Vec<CellStyle> = Vec::new();
     let mut add = |name: &str, id: u32, includes: StyleParts, set: &dyn Fn(&mut Style)| {
         let mut style = normal.clone();
@@ -266,11 +273,11 @@ pub fn builtin_styles(normal: &Style) -> Vec<CellStyle> {
         s.font.color = rgb(0x7F7F7F);
     });
     add("Followed Hyperlink", 9, font, &|s| {
-        s.font.color = Some(FOLLOWED_COLOR);
+        s.font.color = Some(theme.color(ThemeSlot::FollowedHyperlink, 0.0));
         s.font.underline = Underline::Single;
     });
     add("Hyperlink", 8, font, &|s| {
-        s.font.color = Some(LINK_COLOR);
+        s.font.color = Some(theme.color(ThemeSlot::Hyperlink, 0.0));
         s.font.underline = Underline::Single;
     });
     add("Input", 20, boxed, &|s| {
@@ -307,7 +314,7 @@ pub fn builtin_styles(normal: &Style) -> Vec<CellStyle> {
             s.font.color = Some(dark2);
             s.font.set_size_pt(size);
             if let Some((line, lighter)) = border {
-                s.borders = bottom(line, tint(Color(OFFICE_THEME[4]), lighter));
+                s.borders = bottom(line, accent(1, lighter));
             }
         }
     };
@@ -316,7 +323,8 @@ pub fn builtin_styles(normal: &Style) -> Vec<CellStyle> {
     add("Heading 3", 18, font_border, &heading(11.0, Some((BorderStyle::Medium, 0.4))));
     add("Heading 4", 19, font, &heading(11.0, None));
     add("Title", 15, font, &|s| {
-        s.font.name = Arc::from(HEADING_FONT);
+        s.font.name = theme.font(ThemeFont::Major).clone();
+        s.font.theme = Some(ThemeFont::Major);
         s.font.color = Some(dark2);
         s.font.set_size_pt(18.0);
     });
@@ -325,11 +333,11 @@ pub fn builtin_styles(normal: &Style) -> Vec<CellStyle> {
         s.borders = Borders {
             top: Border {
                 style: BorderStyle::Thin,
-                color: Some(accent(1)),
+                color: Some(accent(1, 0.0)),
             },
             bottom: Border {
                 style: BorderStyle::Double,
-                color: Some(accent(1)),
+                color: Some(accent(1, 0.0)),
             },
             ..Borders::default()
         };
@@ -337,7 +345,7 @@ pub fn builtin_styles(normal: &Style) -> Vec<CellStyle> {
     // Themed Cell Styles: a row of six accents for each strength.
     for (label, lighter, first_id) in [("20% - ", 0.8, 30), ("40% - ", 0.6, 31), ("60% - ", 0.4, 32), ("", 0.0, 29)] {
         for n in 1..=6u32 {
-            let fill = tint(accent(n as usize), lighter);
+            let fill = accent(n as usize, lighter);
             // Only the full accent is dark enough for white text.
             let text = if lighter == 0.0 { rgb(0xFFFFFF) } else { None };
             add(&format!("{label}Accent{n}"), first_id + 4 * (n - 1), font_fill, &|s| {
@@ -363,7 +371,7 @@ impl Workbook {
     pub fn all_cell_styles(&self) -> Vec<CellStyle> {
         let mut custom: Vec<CellStyle> = self.cell_styles.iter().filter(|style| style.builtin.is_none()).cloned().collect();
         custom.sort_by_key(|style| style.name.to_lowercase());
-        let builtin = builtin_styles(self.styles.default_style()).into_iter().map(|style| {
+        let builtin = builtin_styles_in(self.theme(), self.styles.default_style()).into_iter().map(|style| {
             let changed = self.cell_styles.iter().find(|own| own.builtin == style.builtin);
             changed.cloned().unwrap_or(style)
         });
@@ -375,7 +383,7 @@ impl Workbook {
         if let Some(own) = self.cell_styles.iter().find(|style| same_name(&style.name, name)) {
             return Some(own.clone());
         }
-        builtin_styles(self.styles.default_style()).into_iter().find(|style| same_name(&style.name, name))
+        builtin_styles_in(self.theme(), self.styles.default_style()).into_iter().find(|style| same_name(&style.name, name))
     }
 
     /// The name of the style of a cell.

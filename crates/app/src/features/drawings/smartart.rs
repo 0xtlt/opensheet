@@ -7,6 +7,7 @@ use crate::grid::{Draw, FontResolver};
 use crate::theme::ca;
 use opensheet_engine::Locale;
 use opensheet_engine::smartart::{Piece, SmartArt, placeholder};
+use opensheet_engine::theme::Theme;
 
 /// Where a piece of a graphic is drawn, the graphic being drawn in
 /// `placed`: `natural` is the size the pieces were laid out for.
@@ -26,8 +27,8 @@ pub(super) fn placed_piece(piece: &Piece, placed: &Placed, natural: (f32, f32)) 
 /// The items that draw a graphic in a frame. A graphic is never turned:
 /// its frame stands as its cells do. The shapes come first, then what is
 /// written in them, so that shapes that overlap hide no text.
-pub(super) fn draw(art: &SmartArt, placed: &Placed, natural: (f32, f32), brush: &Brush, fonts: Option<&FontResolver>, locale: &Locale, out: &mut Vec<Draw>) {
-    let pieces = art.pieces(natural.0, natural.1);
+pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32, f32), brush: &Brush, fonts: Option<&FontResolver>, locale: &Locale, out: &mut Vec<Draw>) {
+    let pieces = art.pieces(theme, natural.0, natural.1);
     for piece in &pieces {
         let at = placed_piece(piece, placed, natural);
         let size = (piece.width, piece.height);
@@ -36,7 +37,7 @@ pub(super) fn draw(art: &SmartArt, placed: &Placed, natural: (f32, f32), brush: 
         // A fill that lets what is under it show is painted here.
         if let (Some(fill), true) = (shape.fill, piece.opacity < 1.0) {
             for line in geometry::flatten(&shape.path(size.0, size.1), &at).iter().filter(|line| line.closed) {
-                brush.fill(&line.points, ca(fill.0, piece.opacity.max(0.0)), out);
+                brush.fill(&line.points, ca(fill.value(), piece.opacity.max(0.0)), out);
             }
             shape.fill = None;
         }

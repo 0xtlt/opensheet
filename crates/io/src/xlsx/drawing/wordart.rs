@@ -8,14 +8,6 @@ use opensheet_engine::wordart::{TextEffects, TextOutline, TextRun, TextShadow};
 
 // ---- writing -------------------------------------------------------------------
 
-fn push_alpha_color(x: &mut String, color: Color, opacity: f32) {
-    w!(x, "<a:srgbClr val=\"{:06X}\">", color.0 & 0xFF_FFFF);
-    if opacity < 1.0 {
-        w!(x, "<a:alpha val=\"{}\"/>", (opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as i64);
-    }
-    x.push_str("</a:srgbClr>");
-}
-
 /// The properties of a run (`a:rPr`), or of the end of a paragraph that
 /// has none (`a:endParaRPr`), in the order the schema wants them: line,
 /// fill, effects, fonts.
@@ -56,7 +48,8 @@ fn push_run_properties(x: &mut String, element: &str, font: &Font, effects: &Tex
             emu(shadow.blur),
             emu(shadow.distance)
         );
-        push_alpha_color(x, shadow.color, shadow.opacity);
+        let alpha = (shadow.opacity < 1.0).then(|| (shadow.opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
+        push_drawing_color(x, shadow.color, alpha);
         x.push_str("</a:outerShdw></a:effectLst>");
     }
     for script in ["latin", "cs"] {
@@ -137,17 +130,11 @@ fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Op
         let points = |name: &str| t.attr_f64(name).filter(|v| v.is_finite() && *v >= 0.0).map_or(0.0, |v| (v / EMU_PER_PT).min(400.0) as f32);
         let (blur, distance) = (points("blurRad"), points("dist"));
         let angle = t.attr_f64("dir").filter(|v| v.is_finite()).map_or(0.0, |v| (v / ANGLE_UNITS).rem_euclid(360.0) as f32);
-        // The colour, and how much of it shows.
-        let mut color = None;
+        // The colour (which may be one of the theme), then how much of
+        // it shows: the element is read once for each.
+        let color = parse_color(&mut r.fork(), t, palette);
         let mut opacity = 1.0f32;
         each_child(r, t, |r, c| {
-            let rgb = match c.name {
-                "srgbClr" => c.attr("val").and_then(|v| parse_rgb(&v)),
-                "schemeClr" => c.attr("val").and_then(|v| scheme_slot(&v)).map(|slot| palette.theme[slot]),
-                "prstClr" if c.attr("val").as_deref() == Some("white") => Some(0xFFFFFF),
-                "prstClr" | "sysClr" => Some(0x000000),
-                _ => None,
-            };
             each_child(r, c, |r, adjustment| {
                 if adjustment.name == "alpha" {
                     if let Some(alpha) = adjustment.attr_f64("val").filter(|v| v.is_finite()) {
@@ -156,7 +143,6 @@ fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Op
                 }
                 r.skip(adjustment);
             });
-            color = color.or(rgb.map(Color));
         });
         shadow = Some(TextShadow {
             color: color.unwrap_or(Color::BLACK),

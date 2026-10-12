@@ -132,7 +132,7 @@ pub(crate) fn compose(outer: [f64; 6], inner: [f64; 6]) -> [f64; 6] {
 }
 
 fn color(paint: &Paint) -> Hsla {
-    ca(paint.color.0, paint.opacity)
+    ca(paint.color.value(), paint.opacity)
 }
 
 struct Brush<'a> {

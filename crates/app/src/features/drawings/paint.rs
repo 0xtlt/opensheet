@@ -370,10 +370,9 @@ fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f
 pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     match &drawing.kind {
         DrawingKind::Shape(shape) => draw_shape(shape, placed, natural, brush, text, out),
-        DrawingKind::SmartArt(art) => {
-            let level = Placed { rotation: 0.0, flip_h: false, flip_v: false, ..*placed };
-            super::smartart::draw(art, &level, natural, brush, text, crate::i18n::lang().locale(), out)
-        }
+        // A graphic is drawn by `smartart::draw`, which is told the theme
+        // its colours come from.
+        DrawingKind::SmartArt(_) => {}
         DrawingKind::Picture(picture) => match super::icons::image_for(picture, placed, brush.scale)
             .or_else(|| picture::image_for(picture, placed, brush.scale))
         {

@@ -202,7 +202,7 @@ pub enum Repaint {
 impl Repaint {
     /// The properties to set, with their values.
     fn properties(self) -> Vec<(&'static str, String)> {
-        let hex = |color: Color| format!("#{:06X}", color.0 & 0xFF_FFFF);
+        let hex = |color: Color| format!("#{:06X}", color.value() & 0xFF_FFFF);
         match self {
             Repaint::Fill(color) => vec![("fill", color.map_or("none".to_string(), hex))],
             Repaint::Outline(Some((color, width))) => vec![("stroke", hex(color)), ("stroke-width", format!("{width}"))],

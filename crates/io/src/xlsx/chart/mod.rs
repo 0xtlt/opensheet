@@ -35,10 +35,9 @@
 //! The model is a subset of the format. A chart read from a file keeps the
 //! text of its part ([`ForeignChart`]), and as long as nothing but its
 //! place changes, [`foreign::reusable`] lets the writer put that text back
-//! as it was, with everything the model has no place for. Its theme
-//! colours alone are replaced by the colours they stand for, when the
-//! theme of the workbook is not the one packages are written with
-//! ([`foreign::without_theme`]). The text is not written
+//! as it was, with everything the model has no place for (its theme
+//! colours are those of the theme of the workbook, which is kept too).
+//! The text is not written
 //! back when it
 //!
 //! * is not a well-formed chart part in UTF-8,

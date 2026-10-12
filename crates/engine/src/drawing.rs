@@ -16,7 +16,7 @@ use crate::ast::StructuralEdit;
 use crate::features::CellShift;
 use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS};
-use crate::style::{Color, Font};
+use crate::style::{Color, Font, ThemeSlot};
 use crate::validation::localized;
 use crate::workbook::{Sheet, Workbook};
 use std::collections::{BTreeMap, BTreeSet};
@@ -836,9 +836,10 @@ pub enum ShapeTool {
     Callout,
 }
 
-/// Fill of new shapes and colour of new lines (first accent of the Office
-/// theme), and the darker shade of their outline.
-const ACCENT: Color = Color(0x156082);
+/// Fill of new shapes and colour of new lines (the first accent of the
+/// theme, here with its value in the Office theme: `add_drawing` gives it
+/// the one of the workbook), and the darker shade of their outline.
+const ACCENT: Color = Color::themed(ThemeSlot::Accent1, 0.0, 0x156082);
 const ACCENT_DARK: Color = Color(0x042433);
 
 impl ShapeTool {
@@ -1500,6 +1501,9 @@ impl Workbook {
         }
         self.snapshot();
         drawing.id = self.next_drawing_id();
+        if let DrawingKind::Shape(shape) = &mut drawing.kind {
+            self.theme().resolve_shape(shape);
+        }
         let sh = &mut self.sheets[sheet];
         if drawing.name.is_empty() {
             let base = match &drawing.kind {
@@ -1934,7 +1938,7 @@ mod tests {
         let rectangle = shape(ShapeTool::Rectangle);
         assert_eq!(
             (rectangle.fill, rectangle.align, rectangle.anchor),
-            (Some(Color(0x156082)), TextAlign::Center, TextAnchor::Middle)
+            (Some(ACCENT), TextAlign::Center, TextAnchor::Middle)
         );
         assert_eq!(rectangle.font.color, Some(Color::WHITE));
         let ends = |tool: ShapeTool| shape(tool).outline.map(|o| (o.start, o.end)).unwrap();

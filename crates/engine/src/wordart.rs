@@ -16,7 +16,7 @@
 //! bevels and the warped text of Transform.
 
 use crate::drawing::{Shape, ShapeTool, TextAlign, TextAnchor};
-use crate::style::{Color, Font};
+use crate::style::{Color, Font, ThemeSlot};
 use std::ops::Range;
 
 /// The line around letters (`a:ln` of a run).
@@ -210,15 +210,21 @@ impl Shape {
 
 // ---- the gallery ---------------------------------------------------------
 
-/// Colours of the Office theme the gallery is drawn in.
-const TEXT_1: Color = Color(0x000000);
-const BACKGROUND_1: Color = Color(0xFFFFFF);
-const ACCENT_1: Color = Color(0x156082);
-const ACCENT_2: Color = Color(0xE97132);
-const ACCENT_3: Color = Color(0x196B24);
-const ACCENT_4: Color = Color(0x0F9ED5);
-const ACCENT_5: Color = Color(0xA02B93);
-const GRAY: Color = Color(0x7F7F7F);
+/// The colours of the theme the gallery is made of, here with their
+/// values in the Office theme: a shape that takes a style is resolved in
+/// the theme of its workbook (`Theme::resolve_shape`, which `add_drawing`
+/// calls), and follows it from then on.
+const TEXT_1: Color = Color::themed(ThemeSlot::Dark1, 0.0, 0x000000);
+const BACKGROUND_1: Color = Color::themed(ThemeSlot::Light1, 0.0, 0xFFFFFF);
+const ACCENT_1: Color = Color::themed(ThemeSlot::Accent1, 0.0, 0x156082);
+const ACCENT_2: Color = Color::themed(ThemeSlot::Accent2, 0.0, 0xE97132);
+const ACCENT_3: Color = Color::themed(ThemeSlot::Accent3, 0.0, 0x196B24);
+const ACCENT_4: Color = Color::themed(ThemeSlot::Accent4, 0.0, 0x0F9ED5);
+const ACCENT_5: Color = Color::themed(ThemeSlot::Accent5, 0.0, 0xA02B93);
+const GRAY: Color = Color::themed(ThemeSlot::Dark1, 0.5, 0x7F7F7F);
+/// Background 1, 25 % darker; accent 1, 60 % lighter.
+const SILVER: Color = Color::themed(ThemeSlot::Light1, -0.25, 0xBFBFBF);
+const ACCENT_1_PALE: Color = Color::themed(ThemeSlot::Accent1, 0.6, 0xA1CFE1);
 
 /// Size of the text of a new WordArt, in points.
 pub const WORDART_SIZE_PT: f32 = 54.0;
@@ -276,15 +282,15 @@ impl WordArtStyle {
             // Fill: accent 3 (the bevel is left out).
             9 => (ACCENT_3, None, Some(soft(TEXT_1, 0.3))),
             // Fill: text colour 1; outline: white; hard shadow: white.
-            10 => (TEXT_1, line(BACKGROUND_1, 0.75), Some(hard(Color(0xBFBFBF)))),
+            10 => (TEXT_1, line(BACKGROUND_1, 0.75), Some(hard(SILVER))),
             // Fill: text colour 1; outline: white; hard shadow: accent 5.
             11 => (TEXT_1, line(BACKGROUND_1, 0.75), Some(hard(ACCENT_5))),
             // Fill: accent 1; outline: white; hard shadow: accent 1.
-            12 => (ACCENT_1, line(BACKGROUND_1, 0.75), Some(hard(Color(0x8AB0C1)))),
+            12 => (ACCENT_1, line(BACKGROUND_1, 0.75), Some(hard(ACCENT_1_PALE))),
             // Fill: white; outline: accent 1 (the glow is left out).
             13 => (BACKGROUND_1, line(ACCENT_1, 1.5), None),
             // Pattern fill: accent 1; hard shadow: accent 1.
-            _ => (Color(0x8AB0C1), line(ACCENT_1, 0.5), Some(hard(ACCENT_1))),
+            _ => (ACCENT_1_PALE, line(ACCENT_1, 0.5), Some(hard(ACCENT_1))),
         };
         (
             fill,
@@ -395,7 +401,8 @@ mod tests {
         let shape = WordArtStyle(3).shape("Your text here");
         assert!(shape.text_box && shape.fill.is_none() && shape.outline.is_none() && !shape.wrap);
         assert_eq!(shape.font.size_pt(), WORDART_SIZE_PT);
-        assert_eq!(shape.font.color, Some(Color::WHITE));
+        assert_eq!(shape.font.color, Some(BACKGROUND_1));
+        assert!(shape.font.color.is_some_and(|color| color.is_themed() && color.value() == 0xFFFFFF));
         assert_eq!(shape.effects.outline.map(|line| line.color), Some(ACCENT_1));
         assert!(shape.effects.shadow.is_some() && shape.has_text_effects());
         // A style changes the look of letters, not their font.

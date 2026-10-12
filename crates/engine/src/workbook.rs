@@ -111,6 +111,10 @@ pub struct Sheet {
     /// (see `names.rs`). They travel with the sheet when it is moved,
     /// copied or deleted.
     pub names: BTreeMap<String, DefinedName>,
+    /// Grouped rows and columns (Data > Group), see `outline.rs`.
+    pub outline: crate::outline::Outline,
+    /// Sparklines, by group (Insert > Sparklines), see `sparkline.rs`.
+    pub sparklines: Vec<crate::sparkline::SparklineGroup>,
 }
 
 impl Sheet {
@@ -151,6 +155,8 @@ impl Sheet {
             drawings: Vec::new(),
             hyperlinks: Vec::new(),
             names: BTreeMap::new(),
+            outline: crate::outline::Outline::default(),
+            sparklines: Vec::new(),
         }
     }
 
@@ -355,6 +361,8 @@ struct SheetsState {
     sheets: Vec<Sheet>,
     names: BTreeMap<String, DefinedName>,
     cell_styles: Vec<crate::cell_style::CellStyle>,
+    /// The theme the sheets were in (see `theme.rs`).
+    theme: Arc<crate::theme::Theme>,
 }
 
 #[derive(Clone)]
@@ -600,6 +608,7 @@ impl Workbook {
                 sheets: self.sheets.clone(),
                 names: self.names.clone(),
                 cell_styles: self.cell_styles.clone(),
+                theme: self.theme_arc(),
             }),
             after: None,
         });
@@ -622,6 +631,7 @@ impl Workbook {
                     sheets: self.sheets.clone(),
                     names: self.names.clone(),
                     cell_styles: self.cell_styles.clone(),
+                theme: self.theme_arc(),
                 }));
             }
         }
@@ -805,6 +815,7 @@ impl Workbook {
                     let replaced = std::mem::replace(&mut wb.sheets, state.sheets.clone());
                     wb.names = state.names.clone();
                     wb.cell_styles = state.cell_styles.clone();
+                    wb.restore_theme(&state.theme);
                     // The snapshot brings contents back; results are those
                     // of the workbook as it was calculated last.
                     wb.calc.sheets_changed(&replaced, &mut wb.sheets);

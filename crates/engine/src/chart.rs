@@ -993,11 +993,18 @@ pub const DEFAULT_CHART_SIZE: (f32, f32) = (480.0, 288.0);
 /// Automatic series colours (Office theme accents).
 pub const PALETTE: [u32; 6] = [0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93, 0x4EA72E];
 
-/// Colour of the `index`-th series / pie slice; later rounds are lightened
-/// or darkened variants of the six accents, as Office does.
+/// Colour of the `index`-th series / pie slice in the Office theme; see
+/// [`palette_color_of`].
 pub fn palette_color(index: usize) -> Color {
-    let base = PALETTE[index % PALETTE.len()];
-    let round = index / PALETTE.len();
+    palette_color_of(&PALETTE, index)
+}
+
+/// Colour of the `index`-th series / pie slice for the six accents of a
+/// theme (`Theme::chart_color`); later rounds are lightened or darkened
+/// variants of them, as Office does.
+pub fn palette_color_of(accents: &[u32; 6], index: usize) -> Color {
+    let base = accents[index % accents.len()];
+    let round = index / accents.len();
     let amount: f32 = match round % 6 {
         0 => 0.0,
         1 => 0.4,
@@ -1047,6 +1054,16 @@ pub struct ChartData {
     pub x_format: String,
     /// Title to display, when the chart has one that can be resolved.
     pub title: Option<String>,
+    /// The six accents of the workbook's theme, which automatic colours
+    /// are taken from; `None` = those of the Office theme.
+    pub accents: Option<[u32; 6]>,
+}
+
+impl ChartData {
+    /// The automatic colour of the `index`-th series or point.
+    pub fn palette_color(&self, index: usize) -> Color {
+        palette_color_of(self.accents.as_ref().unwrap_or(&PALETTE), index)
+    }
 }
 
 fn abs_cell(row: u32, col: u32) -> CellRef {
@@ -1405,9 +1422,11 @@ impl Workbook {
 
     /// Read the data a chart plots.
     pub fn chart_data(&self, own_sheet: usize, chart: &Chart) -> ChartData {
+        let theme = self.theme();
         let mut data = ChartData {
             value_format: "General".to_string(),
             x_format: "General".to_string(),
+            accents: Some(crate::style::ThemeSlot::ACCENTS.map(|slot| theme.rgb(slot))),
             ..Default::default()
         };
         let mut have_format = false;
@@ -1464,7 +1483,7 @@ impl Workbook {
             data.series.push(SeriesData {
                 name,
                 values,
-                color: s.color.unwrap_or_else(|| palette_color(i)),
+                color: s.color.unwrap_or_else(|| data.palette_color(i)),
                 x_values,
                 sizes,
                 format: code.unwrap_or_else(|| "General".to_string()),

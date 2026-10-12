@@ -7,7 +7,7 @@
 use crate::app::*;
 use crate::features::{
     self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, protection, tables, validation,
+    pivot, protection, tables, themes, validation,
 };
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -718,7 +718,7 @@ impl ExcelApp {
             let (r, col) = self.active();
             self.wb.sheets[self.sheet].merge_at(r, col).is_some()
         };
-        let font_name = style.font.name.to_string();
+        let font_name = theme::font_label(&style.font);
         let size = style.font.size_pt();
         let size_text = if (size - size.round()).abs() < 0.01 {
             format!("{:.0}", size)
@@ -868,7 +868,7 @@ impl ExcelApp {
                     self.color_button(
                         "rb-fill",
                         icon("fill", 15.0, theme::TEXT),
-                        self.last_fill.map(|col| col.0),
+                        self.last_fill.map(|col| col.value()),
                         t("Fill Color", "Couleur de remplissage"),
                         cx,
                         |this, _, cx| {
@@ -885,7 +885,7 @@ impl ExcelApp {
                     self.color_button(
                         "rb-font-color",
                         div().text_size(px(13.)).line_height(px(13.)).font_weight(FontWeight::SEMIBOLD).child("A"),
-                        self.last_font_color.map(|col| col.0),
+                        self.last_font_color.map(|col| col.value()),
                         t("Font Color", "Couleur de police"),
                         cx,
                         |this, _, cx| {
@@ -1291,8 +1291,9 @@ impl ExcelApp {
     }
 
     fn open_font_menu(&mut self, window: &mut Window, cx: &mut Cx) {
-        let current = self.active_style().font.name.to_string();
-        let mut names: Vec<String> = Vec::new();
+        let current = theme::font_label(&self.active_style().font);
+        // The two fonts of the theme come first, as in Excel.
+        let mut names: Vec<String> = theme::theme_font_labels(self.wb.theme()).to_vec();
         for office in ["Aptos Narrow", "Aptos", "Calibri", "Arial", "Times New Roman", "Courier New"] {
             names.push(office.to_string());
         }
@@ -1453,7 +1454,7 @@ impl ExcelApp {
             group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
                 t("Sparklines", "Graphiques sparkline"),
-                row(vec![self.cmd_large("in-sparklines", misc::Cmd::Sparklines, true, cx)]),
+                row(vec![self.cmd_large("in-sparklines", features::sparklines::Cmd::Menu, true, cx)]),
             )
             .into_any_element(),
             group(
@@ -1505,11 +1506,11 @@ impl ExcelApp {
                     .flex()
                     .items_center()
                     .gap(px(2.))
-                    .child(self.cmd_large("pl-themes", misc::Cmd::Themes, true, cx))
+                    .child(self.cmd_large("pl-themes", themes::Cmd::Themes, true, cx))
                     .child(rows(vec![
-                        self.cmd_labeled("pl-theme-colors", misc::Cmd::ThemeColors, true, cx),
-                        self.cmd_labeled("pl-theme-fonts", misc::Cmd::ThemeFonts, true, cx),
-                        self.cmd_labeled("pl-theme-effects", misc::Cmd::ThemeEffects, true, cx),
+                        self.cmd_labeled("pl-theme-colors", themes::Cmd::Colors, true, cx),
+                        self.cmd_labeled("pl-theme-fonts", themes::Cmd::Fonts, true, cx),
+                        self.cmd_labeled("pl-theme-effects", themes::Cmd::Effects, true, cx),
                     ])),
             )
             .into_any_element(),
@@ -1806,16 +1807,7 @@ impl ExcelApp {
                 row(vec![self.cmd_large("dt-whatif", data_tools::Cmd::WhatIf, true, cx)]),
             )
             .into_any_element(),
-            group(
-                crate::i18n::t_ctx("group", "Outline", "Plan"),
-                row(vec![
-                    self.cmd_large("dt-group", misc::Cmd::GroupRows, true, cx),
-                    self.cmd_large("dt-ungroup", misc::Cmd::UngroupRows, true, cx),
-                    self.cmd_large("dt-subtotal", misc::Cmd::Subtotal, false, cx),
-                ]),
-            )
-            .border_r_0()
-            .into_any_element(),
+            features::outline::ribbon_group(self, cx).border_r_0().into_any_element(),
         ]
     }
 

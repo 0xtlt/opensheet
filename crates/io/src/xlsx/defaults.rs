@@ -82,5 +82,6 @@ pub(crate) fn write(x: &mut String, sheet: &Sheet, defaults: &Defaults) {
     if (sheet.default_row_height - defaults.row_height).abs() > tolerance {
         x.push_str(" customHeight=\"1\"");
     }
+    super::outline::push_format_attrs(x, sheet);
     x.push_str("/>");
 }

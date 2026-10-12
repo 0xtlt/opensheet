@@ -82,7 +82,7 @@ fn thumbnail(
         name: name.to_string(),
         ..options.clone()
     };
-    let sample = style.sample();
+    let sample = style.sample_in(&crate::theme::document_theme());
     let current = options.name == name;
     div()
         .id(("pivot-style", id))
