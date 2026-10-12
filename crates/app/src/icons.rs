@@ -120,6 +120,7 @@ const ICONS: &[(&str, &str)] = &[
     ("condfmt-new", r#"<rect x="2.5" y="5.5" width="8" height="8"/><path d="M2.5 8.2h8M2.5 10.8h8M6 5.5v8"/><path d="M12.5 1.2v5M10 3.7h5"/>"#),
     ("condfmt-clear", r#"<rect x="2.5" y="2.5" width="8" height="8"/><path d="M2.5 5.2h8M2.5 7.8h8M6 2.5v8"/><path d="M10.2 10.2l4.3 4.3M14.5 10.2l-4.3 4.3" stroke-width="1.4"/>"#),
     ("condfmt-manage", r#"<rect x="2.5" y="2.5" width="11" height="11"/><path d="M2.5 6.2h11M2.5 9.8h11"/><path d="M4.4 4.4h1.2M4.4 8h1.2M4.4 11.6h1.2" stroke-width="1.6"/><path d="M7.5 4.4h4M7.5 8h4M7.5 11.6h4" stroke-width="0.9"/>"#),
+    ("filters-clear", r#"<path d="M1.500 2.500h9L7.300 6.800v4.700l-2.600 1.300V6.800z"/><path d="M10.500 9.500l4 4M14.500 9.500l-4 4"/>"#),
 ];
 
 pub struct Assets;
