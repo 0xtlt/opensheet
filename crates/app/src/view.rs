@@ -1270,7 +1270,7 @@ impl ExcelApp {
                         .on_action(|_: &crate::text_input::ShiftTab, window, _| window.focus_prev())
                         .on_action(cx.listener(|this, _: &crate::widgets::Dismiss, window, cx| this.close_popup(window, cx)))
                         .on_action(cx.listener(|this, _: &crate::text_input::Escape, window, cx| this.close_popup(window, cx)))
-                        .on_mouse_down_out(cx.listener(|this, _, window, cx| this.close_popup(window, cx)))
+                        .on_mouse_down_out(cx.listener(|this, ev: &MouseDownEvent, window, cx| { if ev.position.x < px(0.) { return; } this.close_popup(window, cx) }))
                         .child(view.clone()),
                 )
                 .into_any_element(),
