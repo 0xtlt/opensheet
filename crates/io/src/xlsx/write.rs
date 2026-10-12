@@ -810,8 +810,10 @@ impl SheetWriter<'_> {
         // one goes between its neighbours of the list.
 
         // sheetPr: tabColor, then pageSetUpPr
-        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) {
-            x.push_str("<sheetPr>");
+        // filterMode: rows are hidden by an Advanced Filter.
+        let filter_mode = sheet.advanced_filter.is_some();
+        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode {
+            x.push_str(if filter_mode { "<sheetPr filterMode=\"1\">" } else { "<sheetPr>" });
             if let Some(color) = sheet.tab_color {
                 push_rgb(&mut x, "tabColor", color);
             }

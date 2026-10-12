@@ -1006,6 +1006,9 @@ impl<'c> SheetReader<'c> {
     }
 
     fn sheet_pr<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
+        if tag.attr_bool("filterMode") == Some(true) {
+            super::filter::read_filter_mode(&mut self.sheet);
+        }
         if tag.empty {
             return;
         }
@@ -1642,6 +1645,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         // like) belong to features that keep their ranges elsewhere.
         let sheet = scope.and_then(|sheet| wb.sheets.get_mut(sheet));
         if page::read_name(&key, &raw.text, sheet)
+            || super::filter::read_name(&key, &raw.text, scope.and_then(|sheet| wb.sheets.get_mut(sheet)))
             || raw.name.is_empty()
             || key.starts_with("_XLNM.")
         {
@@ -1660,6 +1664,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             comment: raw.comment,
         });
     }
+
+    super::filter::finish_names(&mut wb);
 
     // Formulas the engine cannot calculate keep their cached result.
     super::formula::keep_cached_results(&mut wb);
