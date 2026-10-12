@@ -75,7 +75,11 @@ impl ExcelApp {
 
     /// Apply a change to the selected chart.
     pub fn edit_chart(&mut self, label: &str, cx: &mut Cx, f: impl FnOnce(&mut Chart)) {
-        if let Some(id) = self.selected_chart().map(|chart| chart.id) {
+        let Some(id) = self.selected_chart().map(|chart| chart.id) else {
+            return;
+        };
+        // A protected sheet keeps its charts as they are.
+        if self.may(Intent::EditObject(Some(object_id(&Charts, id))), cx) {
             self.wb.update_chart(self.sheet, id, f);
             self.commit(label, cx);
         }
@@ -96,6 +100,9 @@ impl ExcelApp {
 
 /// Edit the title of a chart in place (double-click on the chart).
 fn begin_title_edit(app: &mut ExcelApp, id: u32, window: &mut Window, cx: &mut Cx) {
+    if !app.may(Intent::EditObject(Some(object_id(&Charts, id))), cx) {
+        return;
+    }
     let Some(chart) = app.wb.chart(app.sheet, id) else {
         return;
     };

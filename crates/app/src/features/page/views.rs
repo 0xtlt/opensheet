@@ -13,7 +13,7 @@
 
 use super::{Cmd, HF_TAB, PageUi, change, metric, setup};
 use crate::app::{Drag, ExcelApp, MenuEntry};
-use crate::features::{Cx, PaintLayer, Painter, StatusItem, ViewMode, Zone, ZoneEvent, ZoneResponse};
+use crate::features::{Cx, Intent, PaintLayer, Painter, StatusItem, ViewMode, Zone, ZoneEvent, ZoneResponse};
 use crate::grid::{Axis, GridLayout};
 use crate::i18n::t;
 use crate::ribbon::{group, row, rows};
@@ -440,6 +440,10 @@ fn paint_preview(p: &mut Painter) {
 /// Drop a dragged line where it is: a page break moves (an automatic one
 /// becomes manual), an edge of the outline changes the print area.
 fn drop_line(app: &mut ExcelApp, drag: BreakDrag, cx: &mut Cx) {
+    // A protected sheet keeps its page breaks and its print area.
+    if !app.may(Intent::ChangeSheet, cx) {
+        return;
+    }
     match drag.handle {
         Handle::Break { axis, at } => {
             if drag.to != at
