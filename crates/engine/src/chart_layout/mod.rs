@@ -23,18 +23,23 @@ pub use elements::{AxisId, ChartElement, ChartLayout, Outline};
 pub use scale::{Fit, Scale};
 
 use crate::chart::{
-    Chart, ChartData, ChartKind, ChartTitle, Dash, Family, Fill, LegendPos, Line, MarkerShape, Series, TrendKind,
-    palette_color,
+    Chart, ChartData, ChartKind, ChartTitle, Dash, Family, Fill, LegendPos, Line, MarkerShape, Series, TextFormat,
+    TrendKind, palette_color,
 };
 use crate::format;
 use crate::locale::Locale;
 use crate::style::Color;
+use std::sync::Arc;
 
 /// Titles, labels and legends: dark grey rather than black.
 pub(crate) const TEXT: Color = Color(0x595959);
 pub(crate) const GRIDLINE: Color = Color(0xD9D9D9);
 pub(crate) const MINOR_GRIDLINE: Color = Color(0xF2F2F2);
 pub(crate) const AXIS: Color = Color(0xBFBFBF);
+
+/// The air between a text and the frame it shows when selected, and so
+/// between the corner an element is put at by hand and what is written.
+pub(crate) const FRAME_PAD: f32 = 3.0;
 
 /// Pixels per point at 100 %.
 pub(crate) const PT: f32 = 96.0 / 72.0;
@@ -89,7 +94,7 @@ pub enum TextAnchor {
     End,
 }
 
-/// One line of text in the chart's font.
+/// One line of text, in the chart's font unless it names its own.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextRun {
     pub text: String,
@@ -102,6 +107,9 @@ pub struct TextRun {
     pub size: f32,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
+    /// Font family; `None` = the font of the chart.
+    pub font: Option<Arc<str>>,
     pub color: Color,
     /// Degrees, clockwise, around the anchor point (-90 reads bottom to
     /// top, as the title of a vertical axis does).
@@ -143,6 +151,14 @@ pub fn line_height(size: f32) -> f32 {
 pub trait TextMeasure {
     /// Width in pixels of `text` on one line, at `size` pixels.
     fn width(&self, text: &str, size: f32, bold: bool) -> f32;
+
+    /// The same for text in italics or in a font of its own (`family`;
+    /// `None` = the font of the chart). Measurers that know one font only
+    /// answer as `width` does.
+    fn width_styled(&self, text: &str, size: f32, bold: bool, italic: bool, family: Option<&str>) -> f32 {
+        let _ = (italic, family);
+        self.width(text, size, bold)
+    }
 }
 
 /// The words a chart shows that come from the application's language
@@ -212,6 +228,7 @@ pub fn layout_chart_elements(
         out: Vec::new(),
         label_size,
         label_h: line_height(label_size),
+        size,
         tagger: elements::Tagger::default(),
     };
     p.draw(size.0, size.1);
@@ -240,6 +257,25 @@ pub(crate) struct MarkerLook {
     pub line: Color,
 }
 
+/// The font of a text of the chart, automatic parts resolved.
+#[derive(Clone, Debug)]
+pub(crate) struct Face {
+    /// In pixels.
+    pub size: f32,
+    /// Height of a line.
+    pub h: f32,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub family: Option<Arc<str>>,
+    pub color: Color,
+}
+
+/// Sizes Excel gives the texts of a chart, in points.
+pub const TITLE_POINTS: f32 = 14.0;
+pub const AXIS_TITLE_POINTS: f32 = 10.0;
+pub const LABEL_POINTS: f32 = 9.0;
+
 /// The sample of a series shown in the legend.
 pub(crate) enum Key {
     Swatch(Color),
@@ -256,6 +292,8 @@ pub(crate) struct Painter<'a> {
     /// Size of axis labels, legend entries and data labels (9 pt).
     pub label_size: f32,
     pub label_h: f32,
+    /// Width and height of the chart area.
+    pub size: (f32, f32),
     tagger: elements::Tagger,
 }
 
@@ -419,6 +457,96 @@ impl Painter<'_> {
         self.measure.width(text, size, false)
     }
 
+    /// The font a text is written in: what its format says, and for the
+    /// rest a regular dark grey of `points` points.
+    pub fn face(&self, format: &TextFormat, points: f32) -> Face {
+        let size = (format.size.unwrap_or(points).clamp(1.0, 409.0) * PT * self.z).max(6.0);
+        Face {
+            size,
+            h: line_height(size),
+            bold: format.bold.unwrap_or(false),
+            italic: format.italic.unwrap_or(false),
+            underline: format.underline.unwrap_or(false),
+            family: format.font.clone(),
+            color: format.color.unwrap_or(TEXT),
+        }
+    }
+
+    /// The font of the data labels of a series.
+    pub fn label_face(&self, series: usize) -> Face {
+        let format = self.chart.series.get(series).and_then(|s| self.chart.labels_for(s)).map(|l| &l.text);
+        self.face(format.unwrap_or(&self.chart.label_options.text), LABEL_POINTS)
+    }
+
+    pub fn width_of(&self, text: &str, face: &Face) -> f32 {
+        self.measure.width_styled(text, face.size, face.bold, face.italic, face.family.as_deref())
+    }
+
+    /// Text in a font, its top-left corner (or top-centre, top-right, as
+    /// `anchor` says) at (x, top).
+    pub fn write(&mut self, text: &str, x: f32, top: f32, face: &Face, anchor: TextAnchor) {
+        self.out.push(Prim::Text(TextRun {
+            text: text.replace(['\n', '\r'], " "),
+            x,
+            y: top + face.h / 2.0,
+            anchor,
+            size: face.size,
+            bold: face.bold,
+            italic: face.italic,
+            underline: face.underline,
+            font: face.family.clone(),
+            color: face.color,
+            rotation: 0.0,
+        }));
+    }
+
+    /// Text in a font, centred on a point and turned around it.
+    pub fn write_rotated(&mut self, text: &str, cx: f32, cy: f32, face: &Face, rotation: f32) {
+        self.out.push(Prim::Text(TextRun {
+            text: text.replace(['\n', '\r'], " "),
+            x: cx,
+            y: cy,
+            anchor: TextAnchor::Middle,
+            size: face.size,
+            bold: face.bold,
+            italic: face.italic,
+            underline: face.underline,
+            font: face.family.clone(),
+            color: face.color,
+            rotation,
+        }));
+    }
+
+    /// The data label of a point: written in the font of the labels of
+    /// its series, shifted by as much as it was dragged, and remembered
+    /// as the label of that point.
+    pub fn data_label(&mut self, series: usize, point: usize, text: &str, x: f32, top: f32, anchor: TextAnchor) {
+        let face = self.label_face(series);
+        let (dx, dy) = self.label_shift(series, point);
+        self.tag(ChartElement::DataLabels(series as u32));
+        self.tagger.label(self.out.len(), series as u32, point as u32);
+        self.write(text, x + dx, top + dy, &face, anchor);
+    }
+
+    /// How far the label of a point was dragged, in pixels.
+    pub fn label_shift(&self, series: usize, point: usize) -> (f32, f32) {
+        match self.chart.series.get(series).and_then(|s| s.label_offset(point)) {
+            Some((dx, dy)) => (dx as f32 * self.size.0, dy as f32 * self.size.1),
+            None => (0.0, 0.0),
+        }
+    }
+
+    /// The rectangle a manual layout describes, in pixels: (x0, y0, x1,
+    /// y1), the size being `natural` where the layout leaves it alone.
+    pub fn manual_rect(&self, m: &crate::chart::ManualLayout, natural: (f32, f32)) -> (f32, f32, f32, f32) {
+        let (w, h) = self.size;
+        let x = m.x as f32 * w;
+        let y = m.y as f32 * h;
+        let bw = m.w.map_or(natural.0, |v| v as f32 * w).max(0.0);
+        let bh = m.h.map_or(natural.1, |v| v as f32 * h).max(0.0);
+        (x, y, x + bw, y + bh)
+    }
+
     /// What is drawn from now on belongs to `element`.
     pub fn tag(&mut self, element: ChartElement) {
         self.tagger.tag(self.out.len(), element);
@@ -525,31 +653,11 @@ impl Painter<'_> {
             size,
             bold: false,
             italic: false,
+            underline: false,
+            font: None,
             color,
             rotation: 0.0,
         }));
-    }
-
-    /// Text centred on a point and turned around it.
-    pub fn text_rotated(&mut self, text: &str, cx: f32, cy: f32, size: f32, color: Color, rotation: f32) {
-        self.out.push(Prim::Text(TextRun {
-            text: text.replace(['\n', '\r'], " "),
-            x: cx,
-            y: cy,
-            anchor: TextAnchor::Middle,
-            size,
-            bold: false,
-            italic: false,
-            color,
-            rotation,
-        }));
-    }
-
-    /// A label of the standard size, left-aligned; returns its width.
-    pub fn label(&mut self, text: &str, x: f32, top: f32, color: Color) -> f32 {
-        let size = self.label_size;
-        self.text(text, x, top, size, color, TextAnchor::Start);
-        self.width(text, size)
     }
 
     pub fn marker(&mut self, m: &MarkerLook, cx: f32, cy: f32) {
@@ -778,7 +886,6 @@ impl Painter<'_> {
     fn draw(&mut self, w: f32, h: f32) {
         let chart = self.chart;
         let z = self.z;
-        let text = TEXT;
         // Chart area.
         let area_fill = match chart.chart_area.fill {
             Fill::Auto => Some(Ink::solid(Color::WHITE)),
@@ -794,8 +901,6 @@ impl Painter<'_> {
 
         let pad = (10.0 * z).round();
         let (mut left, mut top, mut right, mut bottom) = (pad, pad, w - pad, h - pad);
-        let label_size = self.label_size;
-        let label_h = self.label_h;
 
         // Title.
         let title = match (&chart.title, &self.data.title) {
@@ -805,17 +910,25 @@ impl Painter<'_> {
         };
         let mut title_run = None;
         if let Some(title) = title {
-            let size = (18.67 * z).max(8.0);
-            let tw = self.width(&title, size);
-            title_run = Some((title, ((w - tw) / 2.0).max(4.0), top - 2.0 * z, size));
+            let face = self.face(&chart.title_text, TITLE_POINTS);
+            let tw = self.width_of(&title, &face);
+            // A title put somewhere by hand has the corner of its frame
+            // there; the plot keeps the room it left for the title.
+            let (x, y) = match &chart.title_layout {
+                Some(m) => (m.x as f32 * w + FRAME_PAD, m.y as f32 * h + FRAME_PAD),
+                None => (((w - tw) / 2.0).max(4.0), top - 2.0 * z),
+            };
             if !chart.title_overlay {
-                top += line_height(size) + 4.0 * z;
+                top += face.h + 4.0 * z;
             }
+            title_run = Some((title, x, y, face));
         }
 
         // Legend: measured now, so that the plot knows the room left, and
         // drawn after the plot when it lies over it.
         let entries = if chart.legend == LegendPos::None { Vec::new() } else { self.legend_entries() };
+        let legend_face = self.face(&chart.legend_text, LABEL_POINTS);
+        let label_h = legend_face.h;
         let mut placed: Vec<(usize, f32, f32)> = Vec::new();
         // A swatch for shapes, a piece of line for lines; next to lines a
         // swatch is as wide as they are, as in Excel's legends.
@@ -823,7 +936,7 @@ impl Painter<'_> {
         let lined = entries.iter().any(|(_, key, _)| matches!(key, Key::Line(..)));
         let marks: Vec<f32> = entries.iter().map(|_| if lined { 18.0 * z } else { swatch }).collect();
         if !entries.is_empty() {
-            let widths: Vec<f32> = entries.iter().map(|(name, ..)| self.width(name, label_size)).collect();
+            let widths: Vec<f32> = entries.iter().map(|(name, ..)| self.width_of(name, &legend_face)).collect();
             let entry_gap = 14.0 * z;
             let entry_w = |i: usize| widths[i] + marks[i] + 4.0 * z;
             let reserve = !chart.legend_overlay;
@@ -909,28 +1022,85 @@ impl Painter<'_> {
                 }
                 LegendPos::None => {}
             }
+            // A legend put somewhere by hand: its entries flow in the box
+            // it was given, or in the one it would fill by itself there.
+            if let Some(m) = &chart.legend_layout {
+                placed.clear();
+                let pitch = (label_h * 1.2).round();
+                let upright = !matches!(chart.legend, LegendPos::Bottom | LegendPos::Top);
+                let natural = if upright {
+                    ((0..entries.len()).map(entry_w).fold(0.0f32, f32::max), pitch * (entries.len() as f32 - 1.0) + label_h)
+                } else {
+                    ((0..entries.len()).map(entry_w).sum::<f32>() + entry_gap * (entries.len() as f32 - 1.0), label_h)
+                };
+                let frame = self.manual_rect(m, (natural.0 + 2.0 * FRAME_PAD, natural.1 + 2.0 * FRAME_PAD));
+                let inner_w = frame.2 - frame.0 - 2.0 * FRAME_PAD;
+                let mut rows: Vec<Vec<usize>> = vec![Vec::new()];
+                let mut row_w = 0.0f32;
+                for i in 0..entries.len() {
+                    let ew = entry_w(i);
+                    let last = rows.last_mut().expect("at least one row");
+                    let needed = if last.is_empty() { ew } else { row_w + entry_gap + ew };
+                    // Half a pixel of slack: the box may be the very one
+                    // the entries were measured for.
+                    if needed > inner_w + 0.5 && !last.is_empty() {
+                        rows.push(vec![i]);
+                        row_w = ew;
+                    } else {
+                        last.push(i);
+                        row_w = needed;
+                    }
+                }
+                let step = pitch;
+                let block_h = step * (rows.len() as f32 - 1.0) + label_h;
+                let mut y = frame.1 + FRAME_PAD + ((frame.3 - frame.1 - 2.0 * FRAME_PAD - block_h) / 2.0).max(0.0);
+                for row in &rows {
+                    let mut x = frame.0 + FRAME_PAD;
+                    for i in row {
+                        // Entries the box has no room for are left out.
+                        if y + label_h <= frame.3 + 0.5 || rows.len() == 1 {
+                            placed.push((*i, x, y));
+                        }
+                        x += entry_w(*i) + entry_gap;
+                    }
+                    y += step;
+                }
+                self.area(ChartElement::Legend, frame);
+            }
         }
 
-        if right - left > 20.0 && bottom - top > 20.0 {
+        // The plot area where it was put by hand: the box it is laid out
+        // in, or its very inside.
+        let manual_plot = chart
+            .plot_layout
+            .as_ref()
+            .filter(|m| m.w.is_some_and(|v| v > 0.0) && m.h.is_some_and(|v| v > 0.0))
+            .map(|m| self.manual_rect(m, (0.0, 0.0)));
+        let cartesian = !chart.kind.is_round() && !chart.kind.is_3d() && chart.kind.family() != Family::Radar;
+        let inner = manual_plot.filter(|_| cartesian && !chart.plot_layout_outer);
+        if let Some(outer) = manual_plot.filter(|_| inner.is_none()) {
+            (left, top, right, bottom) = outer;
+        }
+        if (right - left > 20.0 && bottom - top > 20.0) || inner.is_some() {
             let area = (left, top, right, bottom);
             match (chart.kind.family(), chart.kind.is_3d()) {
                 (Family::Pie, true) => round::draw_pie_3d(self, area),
                 (Family::Pie | Family::Doughnut, _) => round::draw_round(self, area),
                 (Family::Radar, _) => radar::draw_radar(self, area),
                 (_, true) => three_d::draw_3d(self, area),
-                _ => cartesian::draw_cartesian(self, area),
+                _ => cartesian::draw_cartesian(self, area, inner),
             }
         }
 
-        if let Some((title, x, y, size)) = title_run {
+        if let Some((title, x, y, face)) = title_run {
             self.tag(ChartElement::Title);
-            self.text(&title, x, y, size, text, TextAnchor::Start);
+            self.write(&title, x, y, &face, TextAnchor::Start);
         }
         for (i, x, y) in placed {
             let (name, key, number) = &entries[i];
             self.tag(ChartElement::LegendEntry(*number));
             self.draw_key(key, x, y + label_h / 2.0, marks[i]);
-            self.label(name, x + marks[i] + 4.0 * z, y, text);
+            self.write(name, x + marks[i] + 4.0 * z, y, &legend_face, TextAnchor::Start);
         }
         self.tag(ChartElement::ChartArea);
     }

@@ -1180,3 +1180,218 @@ fn the_layout_tells_the_scales_it_used() {
     let scatter = chart_of(&w, "B1:C5", ChartKind::Scatter);
     assert!(lay_elements(&w, &scatter).scale(AxisId::Category).is_some());
 }
+
+// ---- manual layouts, fonts, gridline formats ---------------------------------
+
+use crate::chart::{Line, ManualLayout, TextFormat};
+
+fn elements(w: &Workbook, chart: &Chart) -> ChartLayout {
+    let data = w.chart_data(0, chart);
+    let options = LayoutOptions {
+        scale: 1.0,
+        locale: w.locale,
+        labels: Labels::default(),
+    };
+    layout_chart_elements(chart, &data, SIZE, &options, &Fixed)
+}
+
+fn near(a: f32, b: f32) -> bool {
+    (a - b).abs() < 0.01
+}
+
+#[test]
+fn a_title_put_by_hand_has_its_frame_there_and_leaves_the_plot_alone() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.title = ChartTitle::Text("Sales".into());
+    let auto = elements(&w, &chart);
+    chart.title_layout = Some(ManualLayout::at(0.1, 0.5));
+    let moved = elements(&w, &chart);
+    let frame = moved.bounds(ChartElement::Title).unwrap();
+    assert!(near(frame[0], 48.0) && near(frame[1], 144.0), "{frame:?}");
+    assert_eq!(auto.bounds(ChartElement::PlotArea), moved.bounds(ChartElement::PlotArea));
+}
+
+#[test]
+fn a_legend_put_by_hand_keeps_the_room_of_its_side() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.legend = LegendPos::Right;
+    let auto = elements(&w, &chart);
+    let natural = auto.bounds(ChartElement::Legend).unwrap();
+    chart.legend_layout = Some(ManualLayout::at(0.25, 0.25));
+    let moved = elements(&w, &chart);
+    let frame = moved.bounds(ChartElement::Legend).unwrap();
+    assert!(near(frame[0], 120.0) && near(frame[1], 72.0), "{frame:?}");
+    // The same size as by itself, and the plot where it was.
+    assert!(near(frame[2] - frame[0], natural[2] - natural[0]), "{frame:?} {natural:?}");
+    assert!(near(frame[3] - frame[1], natural[3] - natural[1]), "{frame:?} {natural:?}");
+    assert_eq!(auto.bounds(ChartElement::PlotArea), moved.bounds(ChartElement::PlotArea));
+    // Its entries are inside it.
+    let north = find_text(&moved.prims, "North");
+    assert!(north.x > frame[0] && north.x < frame[2] && north.y > frame[1] && north.y < frame[3]);
+}
+
+#[test]
+fn a_wide_legend_box_puts_its_entries_side_by_side() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.legend = LegendPos::Right;
+    chart.legend_layout = Some(ManualLayout {
+        x: 0.1,
+        y: 0.8,
+        w: Some(0.8),
+        h: Some(0.1),
+    });
+    let laid = elements(&w, &chart);
+    let (north, south) = (find_text(&laid.prims, "North"), find_text(&laid.prims, "South"));
+    assert_eq!(north.y, south.y);
+    assert!(south.x > north.x);
+    let frame = laid.bounds(ChartElement::Legend).unwrap();
+    assert!(near(frame[0], 48.0) && near(frame[1], 230.4) && near(frame[2], 432.0) && near(frame[3], 259.2), "{frame:?}");
+}
+
+#[test]
+fn the_plot_area_is_where_it_was_put() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.plot_layout = Some(ManualLayout {
+        x: 0.25,
+        y: 0.25,
+        w: Some(0.5),
+        h: Some(0.5),
+    });
+    let laid = elements(&w, &chart);
+    assert_eq!(laid.bounds(ChartElement::PlotArea), Some([120.0, 72.0, 360.0, 216.0]));
+    // The labels of the value axis stand left of it.
+    let zero = find_text(&laid.prims, "0");
+    assert!(zero.x < 120.0 && zero.anchor == TextAnchor::End);
+    // As the box around labels and all, the inside is smaller.
+    chart.plot_layout_outer = true;
+    let outer = elements(&w, &chart).bounds(ChartElement::PlotArea).unwrap();
+    assert!(outer[0] > 120.0 && outer[3] < 216.0, "{outer:?}");
+}
+
+#[test]
+fn an_axis_title_put_by_hand_has_its_frame_there() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.axes.value.title = Some("Units".into());
+    chart.axes.category.title = Some("Months".into());
+    chart.axes.value.title_layout = Some(ManualLayout::at(0.5, 0.25));
+    chart.axes.category.title_layout = Some(ManualLayout::at(0.75, 0.5));
+    let laid = elements(&w, &chart);
+    let upright = laid.bounds(ChartElement::AxisTitle(AxisId::Value)).unwrap();
+    assert!(near(upright[0], 240.0) && near(upright[1], 72.0), "{upright:?}");
+    let flat = laid.bounds(ChartElement::AxisTitle(AxisId::Category)).unwrap();
+    assert!(near(flat[0], 360.0) && near(flat[1], 144.0), "{flat:?}");
+}
+
+#[test]
+fn a_dragged_data_label_is_shifted_and_found_again() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:B5", ChartKind::Column);
+    chart.data_labels = true;
+    let before = elements(&w, &chart);
+    let was = before.data_label_box(0, 1).unwrap();
+    chart.series[0].set_label_offset(1, 0.1, -0.05);
+    let after = elements(&w, &chart);
+    let now = after.data_label_box(0, 1).unwrap();
+    assert!(near(now[0] - was[0], 48.0) && near(now[1] - was[1], -14.4), "{was:?} {now:?}");
+    assert_eq!(before.data_label_box(0, 0), after.data_label_box(0, 0));
+    assert_eq!(after.data_label_at((now[0] + now[2]) / 2.0, (now[1] + now[3]) / 2.0), Some((0, 1)));
+    chart.clear_manual_layout();
+    assert_eq!(elements(&w, &chart).data_label_box(0, 1), Some(was));
+}
+
+#[test]
+fn text_formats_change_what_is_written_and_the_room_it_takes() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    chart.title = ChartTitle::Text("Sales".into());
+    chart.legend = LegendPos::Right;
+    let auto = elements(&w, &chart);
+    let plot = auto.bounds(ChartElement::PlotArea).unwrap();
+    chart.title_text = TextFormat {
+        size: Some(28.0),
+        bold: Some(true),
+        underline: Some(true),
+        font: Some("Georgia".into()),
+        color: Some(Color(0xC00000)),
+        ..TextFormat::default()
+    };
+    chart.legend_text.size = Some(18.0);
+    chart.legend_text.italic = Some(true);
+    chart.axes.value.text.size = Some(18.0);
+    let laid = elements(&w, &chart);
+    let title = find_text(&laid.prims, "Sales");
+    assert!(title.bold && title.underline && !title.italic);
+    assert_eq!((title.font.as_deref(), title.color), (Some("Georgia"), Color(0xC00000)));
+    assert!(near(title.size, 28.0 * PT));
+    assert!(find_text(&laid.prims, "North").italic);
+    // A taller title pushes the plot down, wider legend and axis labels squeeze it.
+    let squeezed = laid.bounds(ChartElement::PlotArea).unwrap();
+    assert!(squeezed[1] > plot[1] && squeezed[0] > plot[0] && squeezed[2] < plot[2], "{plot:?} {squeezed:?}");
+    let was = auto.bounds(ChartElement::Legend).unwrap();
+    let now = laid.bounds(ChartElement::Legend).unwrap();
+    assert!(now[2] - now[0] > was[2] - was[0]);
+}
+
+#[test]
+fn the_text_of_data_labels_follows_the_series_then_the_chart() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:C5", ChartKind::Column);
+    chart.data_labels = true;
+    chart.label_options.text.bold = Some(true);
+    assert!(ChartElement::DataLabels(1).format_text(&mut chart, |t| t.size = Some(20.0)));
+    // The series now has labels of its own, as the chart's were.
+    assert_eq!(chart.series[1].labels.as_ref().map(|l| l.text.bold), Some(Some(true)));
+    assert_eq!(chart.series[0].labels, None);
+    let prims = lay(&w, &chart);
+    assert!(near(find_label(&prims, "12").size, 12.0) && find_label(&prims, "12").bold);
+    assert!(near(find_label(&prims, "14").size, 20.0 * PT));
+    // The chart area stands for every text.
+    ChartElement::ChartArea.format_text(&mut chart, |t| t.italic = Some(true));
+    assert!(chart.title_text.italic == Some(true) && chart.axes.value.text.italic == Some(true));
+    assert_eq!(chart.series[1].labels.as_ref().unwrap().text.italic, Some(true));
+    assert!(!ChartElement::PlotArea.format_text(&mut chart, |t| t.italic = None));
+}
+
+#[test]
+fn gridlines_and_axis_lines_take_their_format() {
+    let w = sales();
+    let mut chart = chart_of(&w, "A1:D5", ChartKind::Column);
+    let auto = lay(&w, &chart);
+    let rules = lines(&auto, GRIDLINE).len();
+    assert!(rules >= 3);
+    chart.axes.value.major_gridline = Line {
+        color: Some(Color(0xFF0000)),
+        width: Some(3.0),
+        dash: Dash::Dash,
+        ..Line::default()
+    };
+    let prims = lay(&w, &chart);
+    assert_eq!(lines(&prims, Color(0xFF0000)).len(), rules);
+    assert!(lines(&prims, GRIDLINE).is_empty());
+    let stroke = prims
+        .iter()
+        .find_map(|p| match p {
+            Prim::Line { stroke, .. } if stroke.ink.color == Color(0xFF0000) => Some(*stroke),
+            _ => None,
+        })
+        .unwrap();
+    assert!(near(stroke.width, 4.0) && stroke.dash == Dash::Dash);
+    // "No line" keeps the gridlines in the model and draws none.
+    chart.axes.value.major_gridline = Line {
+        shown: Some(false),
+        ..Line::default()
+    };
+    assert!(lines(&lay(&w, &chart), GRIDLINE).is_empty());
+    // The value axis of a column chart has no line unless it is given one.
+    assert_eq!(lines(&auto, AXIS).len(), 1);
+    chart.axes.value.line.color = Some(Color(0x00B050));
+    chart.axes.category.line.shown = Some(false);
+    let prims = lay(&w, &chart);
+    assert_eq!(lines(&prims, Color(0x00B050)).len(), 1);
+    assert!(lines(&prims, AXIS).is_empty());
+}

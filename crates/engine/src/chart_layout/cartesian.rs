@@ -4,8 +4,8 @@
 
 use super::scale::{Fit, Scale};
 use super::{
-    AXIS, AxisId, ChartElement, GRIDLINE, Group, Ink, MINOR_GRIDLINE, PT, Painter, Stroke, TEXT, TextAnchor, clip_polygon,
-    clip_polyline, fmt_value, groups, label_text, line_height, smooth_points,
+    AXIS, AXIS_TITLE_POINTS, AxisId, ChartElement, FRAME_PAD, Face, GRIDLINE, Group, Ink, LABEL_POINTS, MINOR_GRIDLINE, PT,
+    Painter, Stroke, TEXT, TextAnchor, clip_polygon, clip_polyline, fmt_value, groups, label_text, smooth_points,
 };
 use crate::chart::{
     Axis, AxisCrossing, BlanksAs, Chart, ChartData, DataLabels, DisplayUnit, ErrorAmount, ErrorBars, ErrorDirection, Family, Fill,
@@ -175,6 +175,13 @@ struct AxisPlan {
     tick_mark: TickMark,
     minor_ticks: Vec<f64>,
     minor_mark: TickMark,
+    /// The font of the labels, and of the title.
+    face: Face,
+    title_face: Face,
+    /// Where the title was put by hand.
+    title_at: Option<crate::chart::ManualLayout>,
+    /// The line of the axis, when it has one.
+    stroke: Option<Stroke>,
 }
 
 impl AxisPlan {
@@ -235,12 +242,13 @@ fn unit_name(p: &Painter, unit: DisplayUnit) -> Option<String> {
 fn scale_labels(p: &Painter, axis: &Axis, scale: &Scale, code: &str) -> Vec<(f64, String, f32)> {
     let divisor = axis.display_unit.divisor();
     let code = axis.number_format.as_deref().unwrap_or(code);
+    let face = p.face(&axis.text, LABEL_POINTS);
     scale
         .major_ticks()
         .into_iter()
         .map(|v| {
             let text = fmt_value(v / divisor, code, p.options.locale);
-            let w = p.width(&text, p.label_size);
+            let w = p.width_of(&text, &face);
             (scale.fraction(v), text, w)
         })
         .collect()
@@ -299,6 +307,7 @@ fn error_ends(bars: &ErrorBars, values: &[Option<f64>], v: f64) -> (f64, f64) {
 /// A data label waiting to be drawn over everything else.
 struct PendingLabel {
     series: usize,
+    point: usize,
     text: String,
     x: f32,
     top: f32,
@@ -306,7 +315,18 @@ struct PendingLabel {
     key: Option<Color>,
 }
 
-pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
+/// The line of an axis or of its gridlines: a hairline whatever the zoom
+/// unless it was given a width.
+fn rule_stroke(p: &Painter, line: &crate::chart::Line, auto_shown: bool, auto_color: Color) -> Option<Stroke> {
+    p.stroke(line, auto_shown, auto_color, 0.75).map(|s| Stroke {
+        width: if line.width.is_none() { 1.0 } else { s.width },
+        ..s
+    })
+}
+
+/// `inner` is the rectangle between the axes when the plot area was put
+/// somewhere by hand; the labels and titles of the axes go around it.
+pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner: Option<(f32, f32, f32, f32)>) {
     let chart = p.chart;
     let data = p.data;
     let z = p.z;
@@ -482,48 +502,59 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
     // An axis shows as many gridlines as its labels have room for. Its
     // length is not known before its labels are, but nearly: what the
     // other axis and the titles take is.
-    let title_size = (13.33 * z).max(6.0);
-    let title_h = line_height(title_size);
-    let titled = |axis: &Axis, gap: f32| if axis.title.as_ref().is_some_and(|t| !t.is_empty()) { title_h + gap } else { 0.0 };
+    let face_of = |p: &Painter, axis: &Axis| p.face(&axis.text, LABEL_POINTS);
+    let title_face_of = |p: &Painter, axis: &Axis| p.face(&axis.title_text, AXIS_TITLE_POINTS);
+    let titled = |axis: &Axis, gap: f32| {
+        if axis.title.as_ref().is_some_and(|t| !t.is_empty()) { title_face_of(p, axis).h + gap } else { 0.0 }
+    };
     let labelled = |axis: &Axis| axis.visible && axis.labels != TickLabels::None;
     let cat_axis = &chart.axes.category;
+    let cat_face = face_of(p, cat_axis);
+    let value_face = face_of(p, &chart.axes.value);
     let up = if horizontal {
         0.0
     } else {
         let under = match chart.data_table {
             Some(_) if !xy => (label_h + 4.0 * z) * (chart.series.len() as f32 + 1.0) + 2.0 * z,
-            _ if labelled(cat_axis) => label_h + 6.0 * z,
+            _ if labelled(cat_axis) => cat_face.h + 6.0 * z,
             _ => 0.0,
         };
         // The categories written once more above the plot.
         let far = &chart.axes.secondary_category;
         let over = if has_secondary && !xy && far.visible {
-            (if far.labels == TickLabels::None { 0.0 } else { label_h + 6.0 * z }) + titled(far, 4.0 * z)
+            (if far.labels == TickLabels::None { 0.0 } else { face_of(p, far).h + 6.0 * z }) + titled(far, 4.0 * z)
         } else {
             0.0
         };
-        bottom - top - label_h / 2.0 - under - over - titled(cat_axis, 4.0 * z)
+        bottom - top - value_face.h / 2.0 - under - over - titled(cat_axis, 4.0 * z)
     };
     let across = if xy {
-        right - left - 8.0 * z - (label_size * 1.8 + 8.0 * z) - titled(&chart.axes.value, 6.0 * z)
+        right - left - 8.0 * z - (value_face.size * 1.8 + 8.0 * z) - titled(&chart.axes.value, 6.0 * z)
     } else {
         let names = if labelled(cat_axis) {
-            let widest = data.categories.iter().take(n).map(|c| p.width(c, label_size)).fold(0.0, f32::max);
+            let widest = data.categories.iter().take(n).map(|c| p.width_of(c, &cat_face)).fold(0.0, f32::max);
             widest.min((right - left) * 0.4) + 8.0 * z
         } else {
             0.0
         };
         right - left - 8.0 * z - names - titled(cat_axis, 6.0 * z)
     };
+    // A plot area of a given size has axes of that length.
+    let (up, across) = match inner {
+        Some(rect) if horizontal => (0.0, rect.2 - rect.0),
+        Some(rect) => (rect.3 - rect.1, rect.2 - rect.0),
+        None => (up, across),
+    };
     let fitted = |p: &Painter, axis: &Axis, lo: f64, hi: f64, code: &str, upright: bool, percent: bool| -> Scale {
+        let face = face_of(p, axis);
         let fit = if upright {
-            Fit::along(up, label_h * 1.25)
+            Fit::along(up, face.h * 1.25)
         } else {
             // Wide enough for the longest label and some air; Excel keeps
             // the labels of a horizontal scale well apart even when short.
             let divisor = axis.display_unit.divisor();
             let code = axis.number_format.as_deref().unwrap_or(code);
-            let widest = [lo, hi].iter().map(|v| p.width(&fmt_value(v / divisor, code, locale), label_size)).fold(0.0, f32::max);
+            let widest = [lo, hi].iter().map(|v| p.width_of(&fmt_value(v / divisor, code, locale), &face)).fold(0.0, f32::max);
             Fit::along(across, (widest + 12.0 * z).max(34.0 * z))
         };
         Scale::new(
@@ -589,11 +620,15 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             title: axis.title.clone().filter(|t| !t.is_empty()),
             unit: if axis.display_unit_label { unit_name(p, axis.display_unit) } else { None },
             line_at,
-            draw_line: line && axis.visible,
+            draw_line: axis.visible,
             ticks: scale.major_ticks().iter().map(|v| scale.fraction(*v)).collect(),
             tick_mark: if axis.visible { axis.major_ticks } else { TickMark::None },
             minor_ticks: scale.minor_ticks().iter().map(|v| scale.fraction(*v)).collect(),
             minor_mark: if axis.visible { axis.minor_ticks } else { TickMark::None },
+            face: face_of(p, axis),
+            title_face: title_face_of(p, axis),
+            title_at: axis.title_layout,
+            stroke: rule_stroke(p, &axis.line, line, AXIS),
         }
     };
     let value_plan = scale_plan(p, &chart.axes.value, &scales[0], &value_code(0), !horizontal, value_at, xy);
@@ -611,7 +646,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 (0..n)
                     .map(|k| {
                         let text = data.categories.get(k).cloned().unwrap_or_default();
-                        let w = p.width(&text, label_size);
+                        let w = p.width_of(&text, &cat_face);
                         (geo0.cat(geo0.centre(k)), text, w)
                     })
                     .collect()
@@ -636,12 +671,18 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 tick_mark: if axis.visible { axis.major_ticks } else { TickMark::None },
                 minor_ticks: Vec::new(),
                 minor_mark: TickMark::None,
+                face: cat_face.clone(),
+                title_face: title_face_of(p, axis),
+                title_at: axis.title_layout,
+                stroke: rule_stroke(p, &axis.line, true, AXIS),
             }
         }
     };
 
     // The categories once more, at the far end of the plot, when the
     // secondary category axis is shown.
+    let far_axis = &chart.axes.secondary_category;
+    let far_face = face_of(p, far_axis);
     let far_plan = (has_secondary && !xy && chart.axes.secondary_category.visible).then(|| AxisPlan {
         side: Side::High,
         title: chart.axes.secondary_category.title.clone().filter(|t| !t.is_empty()),
@@ -654,7 +695,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             (0..n)
                 .map(|k| {
                     let text = data.categories.get(k).cloned().unwrap_or_default();
-                    let w = p.width(&text, label_size);
+                    let w = p.width_of(&text, &far_face);
                     (geo0.cat(geo0.centre(k)), text, w)
                 })
                 .collect()
@@ -665,6 +706,10 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         ticks: category_plan.ticks.clone(),
         minor_ticks: Vec::new(),
         minor_mark: TickMark::None,
+        face: far_face.clone(),
+        title_face: title_face_of(p, far_axis),
+        title_at: far_axis.title_layout,
+        stroke: rule_stroke(p, &far_axis.line, true, AXIS),
     });
     // A data table takes the place of the category labels, under an
     // upright plot.
@@ -688,12 +733,12 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             let w = if plan.categories { plan.label_w().min(max_cat_w) } else { plan.label_w() };
             w + 8.0 * z
         } else {
-            label_h + 6.0 * z
+            plan.face.h + 6.0 * z
         }
     };
     let extras = |plan: &AxisPlan| -> f32 {
-        let title = if plan.title.is_some() { title_h + if plan.vertical { 6.0 * z } else { 4.0 * z } } else { 0.0 };
-        let unit = if plan.unit.is_some() { label_h + 4.0 * z } else { 0.0 };
+        let title = if plan.title.is_some() { plan.title_face.h + if plan.vertical { 6.0 * z } else { 4.0 * z } } else { 0.0 };
+        let unit = if plan.unit.is_some() { plan.face.h + 4.0 * z } else { 0.0 };
         title + unit
     };
     for plan in [Some(&value_plan), secondary_plan.as_ref(), Some(&category_plan), far_plan.as_ref()].into_iter().flatten() {
@@ -707,7 +752,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         // The first and last labels of a scale stick out of the plot.
         if !plan.categories && !plan.labels.is_empty() {
             if plan.vertical {
-                m_top = m_top.max(label_h / 2.0);
+                m_top = m_top.max(plan.face.h / 2.0);
             } else {
                 m_right = m_right.max(8.0 * z);
             }
@@ -717,12 +762,15 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         m_bottom += table_h + 2.0 * z;
         m_left = m_left.max(names_w);
     }
-    let geo = Geo {
-        px0: left + m_left,
-        py0: top + m_top,
-        px1: right - m_right,
-        py1: bottom - m_bottom,
-        ..geo0
+    let geo = match inner {
+        Some((px0, py0, px1, py1)) => Geo { px0, py0, px1, py1, ..geo0 },
+        None => Geo {
+            px0: left + m_left,
+            py0: top + m_top,
+            px1: right - m_right,
+            py1: bottom - m_bottom,
+            ..geo0
+        },
     };
     if geo.px1 - geo.px0 < 10.0 || geo.py1 - geo.py0 < 10.0 {
         return;
@@ -741,16 +789,16 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
 
     // A line across the plot at fraction `f` of an axis that runs up
     // (`vertical`) or along the plot.
-    let rule = |p: &mut Painter, element: ChartElement, vertical: bool, f: f64, color: Color| {
+    let rule = |p: &mut Painter, element: ChartElement, vertical: bool, f: f64, stroke: Stroke| {
         p.tag(element);
         if vertical {
             let y = (py1 - f as f32 * (py1 - py0)).round();
-            p.hline(px0, px1, y, color);
+            p.line(px0, y + 0.5, px1, y + 0.5, stroke);
             p.anchor(element, px0, y);
             p.anchor(element, px1, y);
         } else {
             let x = (px0 + f as f32 * (px1 - px0)).round();
-            p.vline(x, py0, py1, color);
+            p.line(x + 0.5, py0, x + 0.5, py1, stroke);
             p.anchor(element, x, py0);
             p.anchor(element, x, py1);
         }
@@ -761,16 +809,16 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         gridded.push((AxisId::SecondaryValue, &chart.axes.secondary_value, plan));
     }
     for (id, axis, plan) in &gridded {
-        if axis.minor_gridlines {
+        if let Some(stroke) = rule_stroke(p, &axis.minor_gridline, true, MINOR_GRIDLINE).filter(|_| axis.minor_gridlines) {
             for f in &plan.minor_ticks {
-                rule(p, ChartElement::MinorGridlines(*id), plan.vertical, *f, MINOR_GRIDLINE);
+                rule(p, ChartElement::MinorGridlines(*id), plan.vertical, *f, stroke);
             }
         }
     }
     for (id, axis, plan) in &gridded {
-        if axis.major_gridlines {
+        if let Some(stroke) = rule_stroke(p, &axis.major_gridline, true, GRIDLINE).filter(|_| axis.major_gridlines) {
             for f in &plan.ticks {
-                rule(p, ChartElement::MajorGridlines(*id), plan.vertical, *f, GRIDLINE);
+                rule(p, ChartElement::MajorGridlines(*id), plan.vertical, *f, stroke);
             }
         }
     }
@@ -788,6 +836,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
         if !label.is_empty() {
             pending.push(PendingLabel {
                 series: si,
+                point: k,
                 text: label,
                 x,
                 top,
@@ -816,6 +865,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     let scale = scale_for(si);
                     let base = base_for(si);
                     let labels = chart.labels_for(&chart.series[si]).cloned();
+                    let label_h = p.label_face(si).h;
                     for k in 0..n {
                         let Some(v) = shape.to[k] else { continue };
                         let from = shape.from[k].unwrap_or(base);
@@ -905,6 +955,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         p.anchor(ChartElement::Series(si as u32), *x, *y);
                     }
                     if let Some(labels) = chart.labels_for(&chart.series[si]) {
+                        let label_h = p.label_face(si).h;
                         // In the middle of the band, as Excel writes them.
                         let mut at = 0;
                         for k in 0..n {
@@ -1004,6 +1055,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                             p.pick(element, x, y);
                         }
                         if let Some(labels) = chart.labels_for(&chart.series[si]) {
+                            let label_h = p.label_face(si).h;
                             let mid = y - label_h / 2.0;
                             let off = reach + 3.0 * z;
                             let (lx, top, anchor) = match labels.position {
@@ -1130,11 +1182,14 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
     plans.extend(far_plan.as_ref().map(|plan| (AxisId::SecondaryCategory, plan)));
     for (id, plan) in plans {
         let tick = 4.0 * z;
+        let face = &plan.face;
+        let (label_h, title_h) = (face.h, plan.title_face.h);
+        let line = plan.stroke.filter(|_| plan.draw_line);
         p.tag(ChartElement::Axis(id));
         if plan.vertical {
             let x = (px0 + plan.line_at as f32 * (px1 - px0)).round();
-            if plan.draw_line {
-                p.vline(x, py0, py1, AXIS);
+            if let Some(stroke) = line {
+                p.line(x + 0.5, py0, x + 0.5, py1, stroke);
             }
             let y_of = |f: f64| py1 - f as f32 * (py1 - py0);
             let marks = |p: &mut Painter, mark: TickMark, at: &[f64], len: f32| {
@@ -1163,12 +1218,10 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 let mid = if plan.categories { y_of(*f) } else { y_of(*f).round() };
                 let top = mid - label_h / 2.0;
                 match plan.side {
-                    Side::Low if plan.categories => {
-                        p.text(label, px0 - 6.0 * z - w.min(label_w), top, label_size, text, TextAnchor::Start)
-                    }
-                    Side::Low => p.text(label, px0 - 6.0 * z, top, label_size, text, TextAnchor::End),
-                    Side::High => p.text(label, px1 + 6.0 * z, top, label_size, text, TextAnchor::Start),
-                    Side::Inside => p.text(label, x - 6.0 * z, top, label_size, text, TextAnchor::End),
+                    Side::Low if plan.categories => p.write(label, px0 - 6.0 * z - w.min(label_w), top, face, TextAnchor::Start),
+                    Side::Low => p.write(label, px0 - 6.0 * z, top, face, TextAnchor::End),
+                    Side::High => p.write(label, px1 + 6.0 * z, top, face, TextAnchor::Start),
+                    Side::Inside => p.write(label, x - 6.0 * z, top, face, TextAnchor::End),
                 }
             }
             let labels_w = if plan.labels.is_empty() || plan.side == Side::Inside { 0.0 } else { label_w + 8.0 * z };
@@ -1176,19 +1229,27 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             let mut out = labels_w + 4.0 * z;
             if let Some(unit) = &plan.unit {
                 let cx = if high { px1 + out + label_h / 2.0 } else { px0 - out - label_h / 2.0 };
-                let w = p.width(unit, label_size);
-                p.text_rotated(unit, cx, (py0 + w / 2.0 + 4.0 * z).min((py0 + py1) / 2.0), label_size, text, -90.0);
+                let w = p.width_of(unit, face);
+                p.write_rotated(unit, cx, (py0 + w / 2.0 + 4.0 * z).min((py0 + py1) / 2.0), face, -90.0);
                 out += label_h + 4.0 * z;
             }
             if let Some(title) = &plan.title {
-                let cx = if high { px1 + out + title_h / 2.0 } else { px0 - out - title_h / 2.0 };
+                let (cx, cy) = match &plan.title_at {
+                    // The corner of the frame of the turned text.
+                    Some(m) => {
+                        let tw = p.width_of(title, &plan.title_face);
+                        let (x, y, ..) = p.manual_rect(m, (0.0, 0.0));
+                        (x + FRAME_PAD + title_h / 2.0, y + FRAME_PAD + tw / 2.0)
+                    }
+                    None => (if high { px1 + out + title_h / 2.0 } else { px0 - out - title_h / 2.0 }, (py0 + py1) / 2.0),
+                };
                 p.tag(ChartElement::AxisTitle(id));
-                p.text_rotated(title, cx, (py0 + py1) / 2.0, title_size, text, -90.0);
+                p.write_rotated(title, cx, cy, &plan.title_face, -90.0);
             }
         } else {
             let y = (py1 - plan.line_at as f32 * (py1 - py0)).round();
-            if plan.draw_line {
-                p.hline(px0, px1, y, AXIS);
+            if let Some(stroke) = line {
+                p.line(px0, y + 0.5, px1, y + 0.5, stroke);
             }
             let x_of = |f: f64| px0 + f as f32 * (px1 - px0);
             let marks = |p: &mut Painter, mark: TickMark, at: &[f64], len: f32| {
@@ -1219,11 +1280,11 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         continue;
                     }
                     let x = (x_of(*f) - w / 2.0).clamp(px0 - tick_w, (px1 - w).max(px0 - tick_w));
-                    p.text(label, x, top, label_size, text, TextAnchor::Start);
+                    p.write(label, x, top, face, TextAnchor::Start);
                 }
             } else {
                 for (f, label, _) in &plan.labels {
-                    p.text(label, x_of(*f).round(), top, label_size, text, TextAnchor::Middle);
+                    p.write(label, x_of(*f).round(), top, face, TextAnchor::Middle);
                 }
             }
             let labels_h = if plan.categories && plan.side == Side::Low && table.is_some() {
@@ -1237,13 +1298,20 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
             let mut out = labels_h + 2.0 * z;
             if let Some(unit) = &plan.unit {
                 let top = if high { py0 - out - label_h } else { py1 + out };
-                p.text(unit, px1, top, label_size, text, TextAnchor::End);
+                p.write(unit, px1, top, face, TextAnchor::End);
                 out += label_h + 4.0 * z;
             }
             if let Some(title) = &plan.title {
-                let top = if high { py0 - out - title_h } else { py1 + out };
+                let (cx, top) = match &plan.title_at {
+                    Some(m) => {
+                        let tw = p.width_of(title, &plan.title_face);
+                        let (x, y, ..) = p.manual_rect(m, (0.0, 0.0));
+                        (x + FRAME_PAD + tw / 2.0, y + FRAME_PAD)
+                    }
+                    None => ((px0 + px1) / 2.0, if high { py0 - out - title_h } else { py1 + out }),
+                };
                 p.tag(ChartElement::AxisTitle(id));
-                p.text(title, (px0 + px1) / 2.0, top, title_size, text, TextAnchor::Middle);
+                p.write(title, cx, top, &plan.title_face, TextAnchor::Middle);
             }
         }
     }
@@ -1335,24 +1403,27 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32)) {
     }
     for label in pending {
         p.tag(ChartElement::DataLabels(label.series as u32));
+        let face = p.label_face(label.series);
+        let label_h = face.h;
         let mut x = label.x;
         if let Some(color) = label.key {
             // The swatch goes before the text, the pair keeps its anchor.
             let s = (6.0 * z).round().max(3.0);
-            let w = p.width(&label.text, label_size);
+            let w = p.width_of(&label.text, &face);
+            let (dx, dy) = p.label_shift(label.series, label.point);
             let start = match label.anchor {
                 TextAnchor::Start => x,
                 TextAnchor::Middle => x - (w + s + 3.0 * z) / 2.0,
                 TextAnchor::End => x - w - s - 3.0 * z,
             };
-            let cy = label.top + label_h / 2.0;
-            p.rect(start, cy - s / 2.0, start + s, cy + s / 2.0, color);
+            let cy = label.top + label_h / 2.0 + dy;
+            p.rect(start + dx, cy - s / 2.0, start + dx + s, cy + s / 2.0, color);
             x = match label.anchor {
                 TextAnchor::Start => x + s + 3.0 * z,
                 TextAnchor::Middle => x + (s + 3.0 * z) / 2.0,
                 TextAnchor::End => x,
             };
         }
-        p.text(&label.text, x, label.top, label_size, text, label.anchor);
+        p.data_label(label.series, label.point, &label.text, x, label.top, label.anchor);
     }
 }
