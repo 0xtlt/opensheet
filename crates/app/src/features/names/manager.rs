@@ -349,8 +349,9 @@ fn line(row: &NameRow) -> AnyElement {
         .flex()
         .items_center()
         .child(
+            // The row is already padded like the cells of the header.
             div()
-                .w(px(WIDTHS[0]))
+                .w(px(WIDTHS[0] - 6.0))
                 .flex_none()
                 .flex()
                 .items_center()

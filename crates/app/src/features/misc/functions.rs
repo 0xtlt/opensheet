@@ -499,27 +499,58 @@ fn open_arguments(app: &mut ExcelApp, restore: Restore, window: &mut Window, cx:
     let editor = app.editor().clone();
     let text = editor.read(cx).text().to_string();
     let caret = editor.read(cx).selection().start;
-    if !text.starts_with('=') {
-        return false;
-    }
-    let Some(call) = call_at(&text, caret, locale) else {
-        return false;
-    };
-    let Some(def) = function_of(&call, locale) else {
+    let Some(site) = call_site(&text, caret, locale) else {
         return false;
     };
     let init = ArgsInit {
-        def,
+        def: site.def,
         locale,
-        prefix: text[..call.range.start].to_string(),
-        suffix: text[call.range.end..].to_string(),
-        args: call.args,
+        prefix: site.prefix,
+        suffix: site.suffix,
+        args: site.args,
         cell,
         restore,
         shown: text,
     };
     app.open_modal(window, cx, move |modal, _, cx| FunctionArgs::new(modal, init, cx));
     true
+}
+
+/// The call of a known function a caret is in, and the formula around it.
+struct CallSite {
+    def: &'static FunctionDef,
+    /// The formula before the call, from its `=`.
+    prefix: String,
+    args: Vec<String>,
+    /// The formula after the call.
+    suffix: String,
+}
+
+/// What Function Arguments works on in a formula being typed: the
+/// innermost call of a function of the engine around the caret. `None`
+/// for a text that is not a formula, a caret outside any call, and
+/// functions the engine does not have.
+fn call_site(text: &str, caret: usize, locale: &Locale) -> Option<CallSite> {
+    if !text.starts_with('=') {
+        return None;
+    }
+    let call = call_at(text, caret, locale)?;
+    Some(CallSite {
+        def: function_of(&call, locale)?,
+        prefix: text[..call.range.start].to_string(),
+        suffix: text[call.range.end..].to_string(),
+        args: call.args,
+    })
+}
+
+/// The formula Function Arguments writes back: the call with its
+/// arguments (the empty ones at the end left out) between what came
+/// before and after it.
+fn compose(prefix: &str, def: &FunctionDef, args: &[String], suffix: &str, locale: &Locale) -> String {
+    let used = args.iter().rposition(|arg| !arg.trim().is_empty()).map_or(0, |last| last + 1);
+    let args: Vec<&str> = args[..used].iter().map(|arg| arg.trim()).collect();
+    let sep = locale.arg_sep.to_string();
+    format!("{prefix}{}({}){suffix}", locale.fn_to_local(def.name), args.join(&sep))
 }
 
 struct ArgsInit {
@@ -613,18 +644,10 @@ impl FunctionArgs {
         }
     }
 
-    /// The arguments typed, without the empty ones at the end.
-    fn args(&self, cx: &Context<Self>) -> Vec<String> {
-        let mut args: Vec<String> = self.fields.iter().map(|field| field.read(cx).text().trim().to_string()).collect();
-        while args.last().is_some_and(|arg| arg.is_empty()) {
-            args.pop();
-        }
-        args
-    }
-
+    /// The call as the boxes spell it.
     fn call(&self, cx: &Context<Self>) -> String {
-        let sep = self.locale.arg_sep.to_string();
-        format!("{}({})", self.locale.fn_to_local(self.def.name), self.args(cx).join(&sep))
+        let args: Vec<String> = self.fields.iter().map(|field| field.read(cx).text().to_string()).collect();
+        compose("", self.def, &args, "", self.locale)
     }
 
     /// An argument changed: the formula in the cell follows.
@@ -869,6 +892,33 @@ mod tests {
         assert_eq!(call_at("=A1+B1", 3, en), None);
         assert_eq!(function_of(&call_at("=SOMME(A1)", 3, Locale::fr()).unwrap(), Locale::fr()).map(|def| def.name), Some("SUM"));
         assert!(function_of(&call(0..5, "NOPE", &[]), en).is_none());
+    }
+
+    #[test]
+    fn the_dialog_takes_a_call_apart_and_puts_it_back() {
+        let fr = Locale::fr();
+        let text = "=A1+SOMME(B1;C1:C3)*2";
+        let site = call_site(text, 12, fr).unwrap();
+        assert_eq!((site.def.name, site.prefix.as_str(), site.suffix.as_str()), ("SUM", "=A1+", "*2"));
+        assert_eq!(site.args, ["B1", "C1:C3"]);
+        // Unchanged arguments give the formula back.
+        assert_eq!(compose(&site.prefix, site.def, &site.args, &site.suffix, fr), text);
+        // Empty boxes at the end are left out, those in the middle kept.
+        let args = |list: &[&str]| -> Vec<String> { list.iter().map(|arg| arg.to_string()).collect() };
+        let sum = site.def;
+        assert_eq!(compose("=", sum, &args(&["A1", " ", ""]), "", fr), "=SOMME(A1)");
+        assert_eq!(compose("=", sum, &args(&["", "B2 ", ""]), "", fr), "=SOMME(;B2)");
+        assert_eq!(compose("=", sum, &args(&[]), "+1", Locale::en()), "=SUM()+1");
+        // A call just started, the caret between its parentheses.
+        let fresh = call_site("=RECHERCHEV()", 12, fr).unwrap();
+        assert_eq!((fresh.def.name, fresh.args.len()), ("VLOOKUP", 0));
+        // Not a formula, no call under the caret, a function nobody knows.
+        assert!(call_site("SOMME(A1)", 3, fr).is_none());
+        assert!(call_site("=A1+B1", 3, fr).is_none());
+        assert!(call_site("=MACHIN(A1)", 4, fr).is_none());
+        // Inside an unknown function, the known one around it is not
+        // taken for it.
+        assert!(call_site("=SOMME(MACHIN(A1))", 15, fr).is_none());
     }
 
     #[test]

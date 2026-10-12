@@ -241,8 +241,16 @@ impl Feature for Misc {
 
 // ------------------------------------------------------------------- ribbon
 
-/// The Formula Auditing group of the Formulas tab.
+/// A one-row button of the Formulas tab: with its label, or the icon alone
+/// when the window is short of room.
+fn tool(app: &ExcelApp, id: &'static str, cmd: Cmd, dropdown: bool, compact: bool, cx: &mut Cx) -> AnyElement {
+    if compact { app.cmd_icon(id, cmd, cx) } else { app.cmd_labeled(id, cmd, dropdown, cx) }
+}
+
+/// The Formula Auditing group of the Formulas tab. As the window narrows
+/// the tracing commands lose their labels first, then the others.
 pub fn auditing_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
+    let (tracing, others) = (app.ribbon_level >= 2, app.ribbon_level >= 4);
     group(
         t("Formula Auditing", "Vérification des formules"),
         div()
@@ -250,14 +258,14 @@ pub fn auditing_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
             .items_center()
             .gap(px(2.))
             .child(rows(vec![
-                app.cmd_labeled("fx-precedents", Cmd::TracePrecedents, false, cx),
-                app.cmd_labeled("fx-dependents", Cmd::TraceDependents, false, cx),
-                app.cmd_labeled("fx-remove-arrows", Cmd::RemoveArrowsMenu, true, cx),
+                tool(app, "fx-precedents", Cmd::TracePrecedents, false, tracing, cx),
+                tool(app, "fx-dependents", Cmd::TraceDependents, false, tracing, cx),
+                tool(app, "fx-remove-arrows", Cmd::RemoveArrowsMenu, true, tracing, cx),
             ]))
             .child(rows(vec![
-                app.cmd_labeled("fx-show-formulas", Cmd::ShowFormulas, false, cx),
-                app.cmd_labeled("fx-error-checking", Cmd::ErrorCheckingMenu, true, cx),
-                app.cmd_labeled("fx-evaluate", Cmd::EvaluateFormula, false, cx),
+                tool(app, "fx-show-formulas", Cmd::ShowFormulas, false, others, cx),
+                tool(app, "fx-error-checking", Cmd::ErrorCheckingMenu, true, others, cx),
+                tool(app, "fx-evaluate", Cmd::EvaluateFormula, false, others, cx),
             ]))
             .child(app.cmd_large("fx-watch", Cmd::WatchWindow, false, cx)),
     )
@@ -267,6 +275,7 @@ pub fn auditing_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
 /// The Calculation group of the Formulas tab (the last one: the caller
 /// takes its right border off).
 pub fn calculation_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
+    let compact = app.ribbon_level >= 2;
     group(
         t("Calculation", "Calcul"),
         div()
@@ -275,8 +284,8 @@ pub fn calculation_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
             .gap(px(2.))
             .child(app.cmd_large("fx-calc-options", Cmd::CalcOptions, true, cx))
             .child(rows(vec![
-                app.cmd_labeled("fx-calc-now", Cmd::CalcNow, false, cx),
-                app.cmd_labeled("fx-calc-sheet", Cmd::CalcSheet, false, cx),
+                tool(app, "fx-calc-now", Cmd::CalcNow, false, compact, cx),
+                tool(app, "fx-calc-sheet", Cmd::CalcSheet, false, compact, cx),
             ])),
     )
 }

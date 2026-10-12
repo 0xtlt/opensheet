@@ -62,11 +62,15 @@ fn go_to(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
         app.alert(Alert::new("OpenSheet", names::invalid_reference()).warning(), cx);
         return false;
     }
-    let visited = app.ext_mut::<Visited>();
-    visited.places.retain(|place| *place != from);
-    visited.places.insert(0, from);
-    visited.places.truncate(REMEMBERED);
+    remember(&mut app.ext_mut::<Visited>().places, from);
     true
+}
+
+/// Put a place at the head of the list of those visited.
+fn remember(places: &mut Vec<String>, place: String) {
+    places.retain(|known| *known != place);
+    places.insert(0, place);
+    places.truncate(REMEMBERED);
 }
 
 struct GoTo {
@@ -764,6 +768,16 @@ mod tests {
 
     fn found(wb: &Workbook, selection: &[&str], what: Special) -> Vec<String> {
         special_cells(wb, 0, &selecting(selection), what).iter().map(|range| range.name()).collect()
+    }
+
+    #[test]
+    fn the_last_places_left_are_remembered() {
+        let mut places = Vec::new();
+        for place in ["Sheet1!$A$1", "Sheet1!$B$2", "Sheet1!$A$1", "Sheet2!$C$3", "Sheet1!$D$4", "Sheet1!$E$5"] {
+            remember(&mut places, place.to_string());
+        }
+        // Most recent first, each once, four at most.
+        assert_eq!(places, ["Sheet1!$E$5", "Sheet1!$D$4", "Sheet2!$C$3", "Sheet1!$A$1"]);
     }
 
     #[test]

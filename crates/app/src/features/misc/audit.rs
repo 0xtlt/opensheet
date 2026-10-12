@@ -3,7 +3,7 @@
 
 use super::links;
 use crate::app::{EditMode, EditSource, ExcelApp};
-use crate::features::{Cx, PaintLayer, Painter};
+use crate::features::{Cx, PaintLayer, Painter, ViewMode};
 use crate::grid::{Axis, GridLayout};
 use crate::i18n::{t, t_ctx};
 use crate::shell::{Alert, Modal, RefStyle};
@@ -32,8 +32,6 @@ pub(crate) struct Audit {
     arrows: RefCell<Vec<Arrow>>,
     /// Workbook generation the arrows were last checked against.
     checked: Cell<u64>,
-    /// How many levels were traced from a cell, per kind of arrow.
-    levels: BTreeMap<(usize, u32, u32, Trace), u32>,
     /// Errors the user asked Error Checking to leave alone (sheet name,
     /// row, column).
     ignored: HashSet<(String, u32, u32)>,
@@ -99,8 +97,10 @@ fn doubled_columns(sheet: &Sheet, zoom: f32) -> Axis {
 }
 
 /// `Feature::adjust_layout`: widen the columns of a sheet showing formulas.
+/// Not in the Page Layout view, whose pages are laid out on the widths the
+/// sheet prints with.
 pub(super) fn adjust_layout(app: &ExcelApp, layout: &mut GridLayout) {
-    if shows_formulas(app) {
+    if shows_formulas(app) && app.view_mode() != ViewMode::PageLayout {
         layout.cols = doubled_columns(&app.wb.sheets[app.sheet], layout.zoom);
         layout.frozen_w = layout.cols.start(layout.frozen_cols) as f32;
     }
@@ -230,6 +230,17 @@ pub(crate) fn arrow_holds(wb: &Workbook, arrow: &Arrow) -> bool {
     }
 }
 
+/// What a use of Trace Precedents / Trace Dependents did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Traced {
+    /// One more level of arrows is shown.
+    Added,
+    /// Every level is shown already.
+    Complete,
+    /// The cell has nothing to trace.
+    Nothing,
+}
+
 impl Audit {
     /// Drop the arrows the last change of the workbook made untrue.
     fn prune(&self, wb: &Workbook) {
@@ -238,39 +249,51 @@ impl Audit {
             self.arrows.borrow_mut().retain(|arrow| arrow_holds(wb, arrow));
         }
     }
+
+    /// Show one more level of arrows from a cell: the first level whose
+    /// arrows are not all there yet.
+    pub(crate) fn trace(&mut self, wb: &Workbook, sheet: usize, cell: (u32, u32), kind: Trace) -> Traced {
+        self.prune(wb);
+        let mut arrows = self.arrows.borrow_mut();
+        let mut known = 0;
+        // Chains of formulas end; the bound is for circular ones.
+        for depth in 1..=256 {
+            let wanted = match kind {
+                Trace::Precedents => precedent_arrows(wb, sheet, cell, depth),
+                Trace::Dependents => dependent_arrows(wb, sheet, cell, depth),
+            };
+            if wanted.len() == known {
+                return if depth == 1 { Traced::Nothing } else { Traced::Complete };
+            }
+            let missing: Vec<Arrow> = wanted.iter().filter(|arrow| !arrows.contains(arrow)).cloned().collect();
+            if !missing.is_empty() {
+                arrows.extend(missing);
+                return Traced::Added;
+            }
+            known = wanted.len();
+        }
+        Traced::Complete
+    }
+
+    /// Remove the arrows of a sheet: all of them, or those of one command.
+    /// Returns false when there was none.
+    pub(crate) fn remove(&mut self, sheet: usize, kind: Option<Trace>) -> bool {
+        let mut arrows = self.arrows.borrow_mut();
+        let before = arrows.len();
+        arrows.retain(|arrow| arrow.sheet != sheet || kind.is_some_and(|kind| arrow.trace != kind));
+        arrows.len() != before
+    }
 }
 
 /// Trace Precedents / Trace Dependents: each use shows one more level.
 pub(super) fn trace(app: &mut ExcelApp, kind: Trace, cx: &mut Cx) {
     let sheet = app.sheet;
-    let (row, col) = app.active();
-    let key = (sheet, row, col, kind);
-    let generation = app.wb.generation;
-    let audit = app.ext::<Audit>();
-    // Levels shown so far, unless their arrows are gone.
-    let shown = audit
-        .filter(|audit| audit.arrows.borrow().iter().any(|arrow| arrow.sheet == sheet && arrow.trace == kind))
-        .and_then(|audit| audit.levels.get(&key).copied())
-        .unwrap_or(0);
-    let all = match kind {
-        Trace::Precedents => precedent_arrows(&app.wb, sheet, (row, col), shown + 1),
-        Trace::Dependents => dependent_arrows(&app.wb, sheet, (row, col), shown + 1),
-    };
-    let audit = app.ext_mut::<Audit>();
-    let mut added = false;
-    {
-        let mut arrows = audit.arrows.borrow_mut();
-        for arrow in all {
-            if !arrows.contains(&arrow) {
-                arrows.push(arrow);
-                added = true;
-            }
-        }
-    }
-    if added {
-        audit.levels.insert(key, shown + 1);
-        audit.checked.set(generation);
-    } else if shown == 0 {
+    let cell = app.active();
+    // The state and the workbook are two fields of the application.
+    let mut audit = std::mem::take(app.ext_mut::<Audit>());
+    let traced = audit.trace(&app.wb, sheet, cell, kind);
+    *app.ext_mut::<Audit>() = audit;
+    if traced == Traced::Nothing {
         let message = match kind {
             Trace::Precedents => t(
                 "The Trace Precedents command requires that the active cell contain a formula which includes valid references.",
@@ -290,14 +313,7 @@ pub(super) fn trace(app: &mut ExcelApp, kind: Trace, cx: &mut Cx) {
 /// Remove Arrows: all of them, or those of one command.
 pub(super) fn remove_arrows(app: &mut ExcelApp, kind: Option<Trace>, cx: &mut Cx) {
     let sheet = app.sheet;
-    let audit = app.ext_mut::<Audit>();
-    let before = audit.arrows.borrow().len();
-    audit
-        .arrows
-        .borrow_mut()
-        .retain(|arrow| arrow.sheet != sheet || kind.is_some_and(|kind| arrow.trace != kind));
-    audit.levels.retain(|(on, _, _, trace), _| *on != sheet || kind.is_some_and(|kind| *trace != kind));
-    if audit.arrows.borrow().len() == before {
+    if !app.ext_mut::<Audit>().remove(sheet, kind) {
         tell(
             app,
             t(
@@ -329,10 +345,36 @@ pub(super) fn trace_error(app: &mut ExcelApp, cx: &mut Cx) {
     trace(app, Trace::Precedents, cx);
 }
 
-/// Where an arrow touches a cell: a third of the way in, half-way down.
-fn touch(p: &Painter, cell: Rect) -> (f32, f32) {
-    let (x0, y0, x1, y1) = p.cell_box(Rect::cell(cell.r0, cell.c0));
-    (x0 + ((x1 - x0) * 0.35).min(22.0 * p.zoom()), (y0 + y1) / 2.0)
+/// Where an arrow touches a cell, given the box of the cell: a third of
+/// the way in (never far from the left edge of a wide cell), half-way
+/// down.
+pub(crate) fn touch_point(cell: (f32, f32, f32, f32), zoom: f32) -> (f32, f32) {
+    let (x0, y0, x1, y1) = cell;
+    (x0 + ((x1 - x0) * 0.35).min(22.0 * zoom), (y0 + y1) / 2.0)
+}
+
+/// The line of an arrow: its start, the tip of its head, and whether it
+/// is the dashed arrow of cells on another sheet (which starts from, or
+/// points at, a sheet icon set apart from the cell). `from` and `to` are
+/// the boxes of the first cell read and of the formula's cell.
+pub(crate) fn arrow_line(
+    from: Option<(f32, f32, f32, f32)>,
+    to: Option<(f32, f32, f32, f32)>,
+    zoom: f32,
+) -> Option<((f32, f32), (f32, f32), bool)> {
+    let reach = 34.0 * zoom.max(0.6);
+    match (from, to) {
+        (Some(from), Some(to)) => Some((touch_point(from, zoom), touch_point(to, zoom), false)),
+        (None, Some(to)) => {
+            let end = touch_point(to, zoom);
+            Some(((end.0 - reach, end.1 - reach * 0.6), end, true))
+        }
+        (Some(from), None) => {
+            let start = touch_point(from, zoom);
+            Some((start, (start.0 + reach, start.1 + reach * 0.6), true))
+        }
+        (None, None) => None,
+    }
 }
 
 /// A line of dashes between two points.
@@ -387,20 +429,11 @@ pub(super) fn paint(p: &mut Painter) {
     let arrows = audit.arrows.borrow();
     let blue = c(0x2B4FE0);
     let black = c(0x000000);
-    let reach = 34.0 * p.zoom().max(0.6);
     for arrow in arrows.iter().filter(|arrow| arrow.sheet == app.sheet) {
-        // Ends of the line, and whether each is a cell of this sheet.
-        let (start, end, dashed) = match (arrow.from, arrow.to) {
-            (Some(from), Some(to)) => (touch(p, from), touch(p, Rect::cell(to.0, to.1)), false),
-            (None, Some(to)) => {
-                let end = touch(p, Rect::cell(to.0, to.1));
-                ((end.0 - reach, end.1 - reach * 0.6), end, true)
-            }
-            (Some(from), None) => {
-                let start = touch(p, from);
-                (start, (start.0 + reach, start.1 + reach * 0.6), true)
-            }
-            (None, None) => continue,
+        let first = |range: Rect| p.cell_box(Rect::cell(range.r0, range.c0));
+        let boxes = (arrow.from.map(first), arrow.to.map(|(row, col)| p.cell_box(Rect::cell(row, col))));
+        let Some((start, end, dashed)) = arrow_line(boxes.0, boxes.1, p.zoom()) else {
+            continue;
         };
         // Nothing of it in this pane.
         let (left, right) = (start.0.min(end.0), start.0.max(end.0));
@@ -1194,7 +1227,7 @@ impl Render for WatchWindow {
         let titles = [t("Sheet", "Feuille"), t("Cell", "Cellule"), t("Value", "Valeur"), t("Formula", "Formule")];
         let header = div()
             .h(px(22.))
-            .px(px(7.))
+            .px(px(6.))
             .flex()
             .items_center()
             .bg(c(theme::CHROME_BG))
@@ -1433,6 +1466,64 @@ mod tests {
         wb.set_cell_text(1, 0, 0, "1").unwrap();
         wb.commit("edit");
         assert!(!arrow_holds(&wb, &arrow("B2", None)));
+    }
+
+    #[test]
+    fn each_use_of_a_trace_command_shows_one_more_level() {
+        let mut wb = workbook();
+        let mut audit = Audit::default();
+        let c1 = at("C1");
+        let count = |audit: &Audit| audit.arrows.borrow().len();
+        assert_eq!(audit.trace(&wb, 0, c1, Trace::Precedents), Traced::Added);
+        assert_eq!(count(&audit), 2);
+        assert_eq!(audit.trace(&wb, 0, c1, Trace::Precedents), Traced::Added);
+        assert_eq!(count(&audit), 5);
+        // Every level is there: nothing more, and no message.
+        assert_eq!(audit.trace(&wb, 0, c1, Trace::Precedents), Traced::Complete);
+        assert_eq!(count(&audit), 5);
+        // A constant has no precedents, the last formula no dependents.
+        assert_eq!(audit.trace(&wb, 0, at("A1"), Trace::Precedents), Traced::Nothing);
+        assert_eq!(audit.trace(&wb, 0, c1, Trace::Dependents), Traced::Nothing);
+        // Dependents add to what is shown; arrows of another cell too.
+        assert_eq!(audit.trace(&wb, 0, at("A2"), Trace::Dependents), Traced::Added);
+        assert_eq!(count(&audit), 8);
+
+        // Remove Dependent Arrows leaves the others; a second time there
+        // is nothing to remove.
+        assert!(audit.remove(0, Some(Trace::Dependents)));
+        assert_eq!(count(&audit), 5);
+        assert!(!audit.remove(0, Some(Trace::Dependents)));
+        assert!(!audit.remove(1, None));
+
+        // Changing a formula takes its arrows away at the next look, and
+        // the level it was at is traced again from what is left.
+        wb.set_cell_text(0, 0, 1, "=A1*3").unwrap();
+        wb.commit("edit");
+        assert_eq!(audit.trace(&wb, 0, c1, Trace::Precedents), Traced::Complete);
+        assert_eq!(count(&audit), 4);
+        assert!(audit.remove(0, None));
+        assert_eq!(count(&audit), 0);
+        assert_eq!(audit.trace(&wb, 0, c1, Trace::Precedents), Traced::Added);
+        assert_eq!(count(&audit), 2);
+    }
+
+    #[test]
+    fn arrows_run_between_the_cells_or_to_a_sheet_icon() {
+        let a = (100.0, 40.0, 164.0, 60.0);
+        let b = (300.0, 100.0, 364.0, 120.0);
+        // A third of the way into each cell, half-way down.
+        assert_eq!(touch_point(a, 1.0), (122.0, 50.0));
+        assert_eq!(arrow_line(Some(a), Some(b), 1.0), Some(((122.0, 50.0), (322.0, 110.0), false)));
+        // A wide cell is touched near its left edge, and zoom scales it.
+        assert_eq!(touch_point((0.0, 0.0, 600.0, 20.0), 1.0).0, 22.0);
+        assert_eq!(touch_point((0.0, 0.0, 600.0, 40.0), 2.0), (44.0, 20.0));
+        // Another sheet: a dashed line from an icon up and left of the
+        // formula, or down and right of the cell read.
+        let (start, end, dashed) = arrow_line(None, Some(b), 1.0).unwrap();
+        assert!(dashed && end == (322.0, 110.0) && start.0 < end.0 && start.1 < end.1);
+        let (start, end, dashed) = arrow_line(Some(a), None, 1.0).unwrap();
+        assert!(dashed && start == (122.0, 50.0) && end.0 > start.0 && end.1 > start.1);
+        assert_eq!(arrow_line(None, None, 1.0), None);
     }
 
     #[test]
