@@ -316,7 +316,7 @@ fn icon_place(rect: (f32, f32, f32, f32), style: &Style, zoom: f32, alone: bool)
     let (width, height) = (x1 - x0 - 1.0, y1 - y0 - 1.0);
     let font_px = pt_to_px(style.font.size_pt()) * zoom;
     let line = (font_px * 1.22).round();
-    let margin = (2.0 * zoom).round().max(1.0);
+    let margin = zoom.round().max(1.0);
     let side = (style.font.size_pt() * 16.0 / 11.0 * zoom)
         .round()
         .min(height - 1.0)
@@ -389,17 +389,17 @@ mod tests {
     use super::*;
 
     fn place(style: &Style, zoom: f32, alone: bool) -> (f32, f32, f32) {
-        // A cell of the default size: 64 × 20 pixels plus its gridlines.
-        let rect = (100.0, 40.0, 100.0 + 65.0 * zoom, 40.0 + 21.0 * zoom);
+        // A cell of the default size: 64 × 20 pixels, gridlines included.
+        let rect = (100.0, 40.0, 100.0 + 64.0 * zoom, 40.0 + 20.0 * zoom);
         icon_place(rect, style, zoom, alone)
     }
 
     #[test]
     fn the_icon_of_default_text_is_sixteen_pixels_at_the_left() {
         let (x, y, side) = place(&Style::default(), 1.0, false);
-        assert_eq!(side, 16.0);
-        assert_eq!(x, 102.0);
-        assert!(y >= 40.0 && y + side <= 60.0, "the icon stays inside its row: {y}");
+        // As in Excel: one pixel from the gridline at its left, two free
+        // above it and one below.
+        assert_eq!((x, y, side), (101.0, 42.0, 16.0));
     }
 
     #[test]
@@ -409,7 +409,7 @@ mod tests {
         big.font.set_size_pt(22.0);
         // Twice the font would be twice the icon, but the row is not that
         // tall: the icon shrinks to fit.
-        assert!(place(&big, 1.0, false).2 <= 19.0);
+        assert_eq!(place(&big, 1.0, false).2, 18.0);
     }
 
     #[test]
@@ -420,10 +420,10 @@ mod tests {
         let centre = place(&style, 1.0, true).0;
         style.h_align = HAlign::Right;
         let right = place(&style, 1.0, true).0;
-        assert_eq!(left, 102.0);
+        assert_eq!(left, 101.0);
         assert_eq!(centre, 124.0);
         assert_eq!(right, 146.0);
         // With its value shown, the icon stays at the left.
-        assert_eq!(place(&style, 1.0, false).0, 102.0);
+        assert_eq!(place(&style, 1.0, false).0, 101.0);
     }
 }

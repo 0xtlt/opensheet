@@ -402,8 +402,9 @@ pub fn icon(icon: Icon, x: f32, y: f32, size: f32, out: &mut Vec<Draw>) {
 
 // ---------------------------------------------------------------- data bars
 
-/// How far a gradient bar fades towards white at its tip.
-const GRADIENT_FADE: f32 = 0.9;
+/// How far a gradient bar fades towards white at its tip (measured on
+/// Excel's bars: four fifths of the way).
+const GRADIENT_FADE: f32 = 0.8;
 
 fn towards_white(color: Color, amount: f32) -> Hsla {
     let mix = |v: u8| (v as f32 + (255.0 - v as f32) * amount).round() as u32;
@@ -411,12 +412,12 @@ fn towards_white(color: Color, amount: f32) -> Hsla {
 }
 
 /// Draw a data bar in a cell whose box is `cell` (x0, y0, x1, y1 in window
-/// coordinates, gridlines included at its right and bottom edges). The
-/// bar leaves a pixel free along each edge; its axis runs over the whole
-/// height of the cell.
+/// coordinates, gridlines included at its right and bottom edges). As in
+/// Excel the bar leaves a pixel free at the top and on both sides and two
+/// at the bottom; its axis runs over the whole height of the cell.
 pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>) {
     let gap = zoom.round().max(1.0);
-    let (x0, y0, x1, y1) = (cell.0 + gap, cell.1 + gap, cell.2 - 1.0 - gap, cell.3 - 1.0 - gap);
+    let (x0, y0, x1, y1) = (cell.0 + gap, cell.1 + gap, cell.2 - 1.0 - gap, cell.3 - 1.0 - 2.0 * gap);
     if x1 <= x0 || y1 <= y0 {
         return;
     }
@@ -427,11 +428,10 @@ pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>
     if right - left >= 1.0 {
         let bounds = Bounds::new(point(px(left), px(y0)), size(px(right - left), px(y1 - y0)));
         let background = if bar.gradient {
-            // From the full colour to almost white in the direction the
-            // bars of positive numbers grow: the bars of negative numbers,
-            // which grow the other way, fade towards the axis.
-            let rightwards = (tip >= base) != bar.negative;
-            let angle = if rightwards { 90.0 } else { 270.0 };
+            // From the full colour at the base of the bar (the edge of
+            // the cell or the axis) to a pale tint at its tip, whichever
+            // way it grows.
+            let angle = if tip >= base { 90.0 } else { 270.0 };
             linear_gradient(
                 angle,
                 linear_color_stop(c(bar.fill.0), 0.0),
@@ -592,13 +592,13 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_keeps_a_pixel_free_inside_the_cell() {
+    fn a_bar_keeps_clear_of_the_edges_of_the_cell() {
         let mut out = Vec::new();
         bar(&sample_bar(0.0, 1.0), (10.0, 20.0, 110.0, 40.0), 1.0, &mut out);
         let b = quads(&out)[0];
         assert_eq!(
             (f32::from(b.left()), f32::from(b.top()), f32::from(b.right()), f32::from(b.bottom())),
-            (11.0, 21.0, 108.0, 38.0)
+            (11.0, 21.0, 108.0, 37.0)
         );
     }
 
@@ -618,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn gradients_fade_the_way_positive_bars_grow() {
+    fn a_gradient_fades_from_the_base_of_the_bar_to_its_tip() {
         let angle = |bar: &Bar| {
             let mut out = Vec::new();
             super::bar(bar, (0.0, 0.0, 103.0, 20.0), 1.0, &mut out);
@@ -632,14 +632,13 @@ mod tests {
             negative,
             ..sample_bar(start, end)
         };
-        // Left to right: a positive bar and a negative one fade alike.
+        // A negative bar grows leftwards from the axis and fades that
+        // way, as does a positive bar on a sheet read right to left.
         let positive = angle(&gradient(0.5, 1.0, false));
         let negative = angle(&gradient(0.5, 0.0, true));
-        let mirrored = angle(&gradient(0.5, 0.0, false));
-        assert_eq!(positive, negative);
-        // Right to left, everything is mirrored.
-        assert_ne!(positive, mirrored);
-        assert_eq!(mirrored, angle(&gradient(0.5, 1.0, true)));
+        assert_ne!(positive, negative);
+        assert_eq!(negative, angle(&gradient(0.5, 0.0, false)));
+        assert_eq!(positive, angle(&gradient(0.5, 1.0, true)));
     }
 
     #[test]
