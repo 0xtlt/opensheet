@@ -19,7 +19,8 @@ use crate::text_input::{self, InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{self, Button, ROW_H, ScrollState, TextField, Tri, check_mark, icon, virtual_rows};
 use gpui::{
-    AnyElement, App, Bounds, Context, Corner, Entity, FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point,
+    AnyElement, App, Bounds, Context, Corner, Entity, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
+    Pixels, Point,
     SharedString, WeakEntity, Window, anchored, canvas, deferred, div, point, prelude::*, px,
 };
 use opensheet_engine::datetime::date_to_serial;
@@ -750,6 +751,8 @@ pub(super) struct FilterMenu {
     cursor: usize,
     menu_focus: FocusHandle,
     list_focus: FocusHandle,
+    /// Where the drop-down hangs, in the window.
+    anchor: Point<Pixels>,
     dismissed: Rc<Cell<Option<Point<Pixels>>>>,
 }
 
@@ -768,7 +771,6 @@ pub(super) fn open(app: &mut ExcelApp, button: FilterButton, window: &mut Window
     let locale = app.wb.locale;
     let weak = cx.weak_entity();
     let dismissed = Rc::new(Cell::new(None));
-    let view = cx.new(|cx| FilterMenu::new(weak, sheet, button, data, locale, dismissed.clone(), cx));
     // It hangs from its button: under the cell, from the left edge of the
     // button.
     let cell = Rect::cell(button.row, button.col);
@@ -778,6 +780,7 @@ pub(super) fn open(app: &mut ExcelApp, button: FilterButton, window: &mut Window
             anchor.x = layout.to_window(left, 0.0).x;
         }
     }
+    let view = cx.new(|cx| FilterMenu::new(weak, sheet, button, data, locale, anchor, dismissed.clone(), cx));
     app.open_popup_view(anchor, view.clone(), cx);
     window.focus(&view.read(cx).menu_focus);
     app.ext_mut::<State>().menu = Some(OpenMenu {
@@ -793,6 +796,7 @@ impl FilterMenu {
         button: FilterButton,
         data: FilterDropdown,
         locale: &'static Locale,
+        anchor: Point<Pixels>,
         dismissed: Rc<Cell<Option<Point<Pixels>>>>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -825,7 +829,24 @@ impl FilterMenu {
             cursor: 0,
             menu_focus: cx.focus_handle().tab_stop(true),
             list_focus: cx.focus_handle().tab_stop(true),
+            anchor,
             dismissed,
+        }
+    }
+
+    /// What a press inside a submenu ends with, unless it ran an entry.
+    /// Submenus hang outside the drop-down, so the press has just closed
+    /// it as a press outside does: this puts it back as it was.
+    fn keep_open(&self, cx: &mut Context<Self>) -> impl Fn(&MouseDownEvent, &mut Window, &mut App) + use<> {
+        let (app, view, anchor, focus) = (self.app.clone(), cx.entity(), self.anchor, self.menu_focus.clone());
+        move |_, window, cx| {
+            app.update(cx, |app, cx| {
+                if app.popup.is_none() {
+                    app.open_popup_view(anchor, view.clone(), cx);
+                    window.focus(&focus);
+                }
+            })
+            .ok();
         }
     }
 
@@ -1109,6 +1130,12 @@ impl FilterMenu {
                     .absolute()
                     .size_full(),
                 );
+                // A press opens the submenu as resting on the entry does.
+                // (Not through a listener of this view: see `keep_open`.)
+                let view = cx.entity();
+                row = row.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    view.update(cx, |this, cx| this.hover(level, index, cx));
+                });
             }
             EntryKind::Act(act) if !entry.disabled => {
                 let (app, sheet, scope, col_id, act) = (self.app.clone(), self.sheet, self.scope, self.col_id, *act);
@@ -1157,6 +1184,7 @@ impl FilterMenu {
                 .shadow_lg()
                 .text_size(px(12.5))
                 .text_color(c(theme::TEXT))
+                .on_mouse_down(MouseButton::Left, self.keep_open(cx))
                 .children(rows);
             // Beside its entry: on the right, or on the left when the
             // window has no room there.

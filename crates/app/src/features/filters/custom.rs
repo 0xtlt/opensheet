@@ -8,7 +8,7 @@ use crate::i18n::t;
 use crate::shell::{Alert, Modal};
 use crate::text_input::TextInput;
 use crate::widgets::{self, ComboBox, NumberField, RadioGroup, Select, dialog, label, ok_cancel};
-use gpui::{Context, Entity, SharedString, Window, div, prelude::*, px};
+use gpui::{Context, Entity, Focusable, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::Locale;
 use opensheet_engine::datetime::date_to_serial;
 use opensheet_engine::filter::{
@@ -152,6 +152,8 @@ struct CustomDialog {
     and: bool,
     operands: [Entity<TextInput>; 2],
     suggestions: Vec<SharedString>,
+    /// The dialog has not put the keyboard in its first value box yet.
+    opening: bool,
 }
 
 /// Open the Custom AutoFilter dialog for a column. `preset`: the
@@ -190,6 +192,7 @@ pub(super) fn open(
             and: fields.and,
             operands: [widgets::input(cx, first), widgets::input(cx, second)],
             suggestions,
+            opening: true,
         }
     });
 }
@@ -237,7 +240,17 @@ impl CustomDialog {
 }
 
 impl Render for CustomDialog {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.opening) {
+            // The comparison is chosen already: typing goes to its value,
+            // as in Excel. (A dialog starts on its first control; this
+            // runs right after.)
+            cx.on_next_frame(window, |this, window, cx| {
+                let field = this.operands[0].clone();
+                window.focus(&field.read(cx).focus_handle(cx));
+                field.update(cx, |field, cx| field.select_all_text(cx));
+            });
+        }
         let joints: Vec<SharedString> = vec![t("And", "Et").into(), t("Or", "Ou").into()];
         let first = self.line(0, cx);
         let second = self.line(1, cx);

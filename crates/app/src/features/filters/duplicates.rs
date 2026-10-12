@@ -114,7 +114,8 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 }
 
 fn open_on(app: &mut ExcelApp, rect: Rect, has_header: bool, fixed_header: bool, window: &mut Window, cx: &mut Cx) {
-    if !app.may(Intent::EditCells(rect), cx) {
+    // A protected sheet never allows it, as in Excel.
+    if !app.may(Intent::ChangeSheet, cx) {
         return;
     }
     let sheet = app.sheet;
@@ -140,7 +141,7 @@ fn names_of(wb: &Workbook, sheet: usize, rect: Rect, has_header: bool) -> Vec<Sh
 /// What OK does once the dialog is closed. `columns`: offsets of the
 /// compared columns in `rect`.
 fn run(app: &mut ExcelApp, sheet: usize, rect: Rect, columns: Vec<u32>, has_header: bool, cx: &mut Cx) {
-    if app.sheet != sheet || !app.may(Intent::EditCells(rect), cx) {
+    if app.sheet != sheet || !app.may(Intent::ChangeSheet, cx) {
         return;
     }
     match app.wb.remove_duplicates(sheet, rect, &columns, has_header) {
