@@ -3670,6 +3670,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "opensheet_print"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flate2",
+ "opensheet_engine",
+ "tempfile",
+]
+
+[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
