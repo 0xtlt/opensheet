@@ -5,9 +5,7 @@
 //! ours it is checked for everything that would make Excel take the new
 //! file for a damaged one.
 
-use super::scheme_slot;
 use crate::xlsx::formula::from_file_text;
-use crate::xlsx::theme;
 use crate::xlsx::xml::unescape;
 use opensheet_engine::ast::Expr;
 use std::borrow::Cow;
@@ -144,58 +142,6 @@ fn declares_other_encoding(xml: &str) -> bool {
     };
     attributes(declaration)
         .any(|(key, value)| key == "encoding" && !value.eq_ignore_ascii_case("utf-8"))
-}
-
-/// The text of a chart part as it reads without the theme of its
-/// workbook. Packages are written with one theme, the engine's
-/// ([`theme`]), whatever the file had: in a chart that comes from a
-/// workbook with another one, every theme colour is replaced by the
-/// colour it stands for (which takes the same adjustments). Theme fonts
-/// stay what they are, and become those of the theme that is written.
-pub(crate) fn without_theme<'a>(xml: &'a str, theme: &[u32; 12]) -> Cow<'a, str> {
-    if *theme == theme::COLORS || !xml.contains("schemeClr") {
-        return Cow::Borrowed(xml);
-    }
-    let mut out = String::with_capacity(xml.len());
-    let mut scanner = Scanner { src: xml, pos: 0 };
-    // Whether each theme colour element that is open was replaced.
-    let mut replaced: Vec<bool> = Vec::new();
-    let mut copied = 0;
-    loop {
-        let start = scanner.pos;
-        match scanner.next() {
-            // Not XML: nothing that will be written back.
-            None => return Cow::Borrowed(xml),
-            Some(Token::End) => break,
-            Some(Token::Open { name, attrs, empty }) if split(name).1 == "schemeClr" => {
-                let color = attributes(attrs)
-                    .find(|(key, _)| *key == "val")
-                    .and_then(|(_, value)| scheme_slot(value))
-                    .map(|slot| theme[slot]);
-                if let Some(rgb) = color {
-                    let prefix = name.strip_suffix("schemeClr").unwrap_or_default();
-                    out.push_str(&xml[copied..start]);
-                    out.push_str(&format!("<{prefix}srgbClr val=\"{rgb:06X}\""));
-                    out.push_str(if empty { "/>" } else { ">" });
-                    copied = scanner.pos;
-                }
-                if !empty {
-                    replaced.push(color.is_some());
-                }
-            }
-            Some(Token::Close(name)) if split(name).1 == "schemeClr" => {
-                if replaced.pop() == Some(true) {
-                    let prefix = name.strip_suffix("schemeClr").unwrap_or_default();
-                    out.push_str(&xml[copied..start]);
-                    out.push_str(&format!("</{prefix}srgbClr>"));
-                    copied = scanner.pos;
-                }
-            }
-            Some(_) => {}
-        }
-    }
-    out.push_str(&xml[copied..]);
-    Cow::Owned(out)
 }
 
 /// The text of a chart part as it can go into the package being written,
@@ -412,25 +358,5 @@ mod tests {
             assert_eq!(check(xml), None, "{xml}");
         }
         assert!(check("<?xml version='1.0' encoding='utf-8'?><c:chartSpace/>").is_some());
-    }
-
-    #[test]
-    fn theme_colours_are_spelled_out() {
-        let mut theme = theme::COLORS;
-        let xml = "<c:spPr><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill><a:ln><a:solidFill><a:schemeClr val=\"tx1\"><a:lumMod val=\"15000\"/></a:schemeClr></a:solidFill></a:ln><x:schemeClr val='bg1' /><a:schemeClr val=\"phClr\"><a:tint val=\"1\"/></a:schemeClr></c:spPr>";
-        // The theme packages are written with: as it is, to the byte.
-        assert!(matches!(without_theme(xml, &theme), Cow::Borrowed(_)));
-        theme[4] = 0x4472C4;
-        assert_eq!(
-            without_theme(xml, &theme),
-            "<c:spPr><a:solidFill><a:srgbClr val=\"4472C4\"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"000000\"><a:lumMod val=\"15000\"/></a:srgbClr></a:solidFill></a:ln><x:srgbClr val=\"FFFFFF\"/><a:schemeClr val=\"phClr\"><a:tint val=\"1\"/></a:schemeClr></c:spPr>"
-        );
-        // Text that is not XML is not touched.
-        for damaged in [
-            "<a:schemeClr val=\"accent1\"",
-            "<a:schemeClr val=\"accent1\"/><!-- ",
-        ] {
-            assert_eq!(without_theme(damaged, &theme), damaged);
-        }
     }
 }

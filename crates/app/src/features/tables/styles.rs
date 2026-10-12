@@ -79,17 +79,20 @@ fn swatches(style: Option<&TableStyle>, look: &TableLook) -> Vec<Swatch> {
     let edge = |border: Option<Border>| {
         border
             .filter(|border| !border.is_none())
-            .map(|border| border.color.map_or(0x000000, |color| color.0))
+            .map(|border| border.color.map_or(0x000000, |color| color.value()))
     };
+    let document = theme::document_theme();
     let mut cells = Vec::with_capacity((ROWS * COLS) as usize);
     for row in 0..ROWS {
         // Bands are counted from the first row of data.
         let band = row.saturating_sub(look.header_row as u32);
         for col in 0..COLS {
-            let patch = style.map(|style| style.patch(look, row, col, band)).unwrap_or_default();
+            // The style in the colours of the theme of the workbook.
+            let mut patch = style.map(|style| style.patch(look, row, col, band)).unwrap_or_default();
+            document.resolve_patch(&mut patch);
             cells.push(Swatch {
-                fill: patch.fill.flatten().map(|color| color.0),
-                ink: patch.font_color.flatten().map_or(0x000000, |color| color.0),
+                fill: patch.fill.flatten().map(|color| color.value()),
+                ink: patch.font_color.flatten().map_or(0x000000, |color| color.value()),
                 bold: patch.bold == Some(true),
                 top: edge(patch.border_top),
                 bottom: edge(patch.border_bottom),
@@ -599,7 +602,7 @@ mod tests {
         assert_eq!(cells.len(), 25);
         // Medium 2: a header in the first accent colour with white bold
         // text, then bands.
-        let accent = tint(Color(OFFICE_THEME[4]), 0.0).0;
+        let accent = tint(Color(OFFICE_THEME[4]), 0.0).value();
         assert_eq!(cells[0].fill, Some(accent));
         assert_eq!(cells[0].ink, 0xFFFFFF);
         assert!(cells[0].bold);

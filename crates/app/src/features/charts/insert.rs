@@ -567,7 +567,7 @@ impl ChartTypeDialog {
                             .flex()
                             .items_center()
                             .gap(px(5.))
-                            .child(div().size(px(9.)).flex_none().bg(c(palette_color(i).0)))
+                            .child(div().size(px(9.)).flex_none().bg(c(palette_color(i).value())))
                             .child(div().truncate().child(self.names.get(i).cloned().unwrap_or_default())),
                     )
                     .child(

@@ -22,7 +22,7 @@
 //! states of a cache are read back only to filter the fields that are in
 //! no area of the report, whose items the PivotTable part may not list.
 
-use super::extlst::ExtList;
+use super::ext::SheetExtensions;
 use super::filter::push_text_attr;
 use super::parts::{CacheList, Extras, SheetLinks};
 use super::read::{Package, Rel, relationships};
@@ -375,20 +375,20 @@ pub(crate) fn is_cache_name(wb: &Workbook, name: &str) -> bool {
 }
 
 /// The extensions of a worksheet naming its slicers and timelines.
-pub(crate) fn write_ext(list: &mut ExtList, sheet: &Sheet) {
+pub(crate) fn write_ext(list: &mut SheetExtensions, sheet: &Sheet) {
     let links = SheetLinks::of(sheet);
     if let Some(id) = links.slicers {
-        list.add(format!(
+        list.push(format!(
             "<ext uri=\"{EXT_SHEET_SLICERS}\" xmlns:x14=\"{NS_X14}\"><x14:slicerList><x14:slicer r:id=\"rId{id}\"/></x14:slicerList></ext>"
         ));
     }
     if let Some(id) = links.timelines {
-        list.add(format!(
+        list.push(format!(
             "<ext uri=\"{EXT_SHEET_TIMELINES}\" xmlns:x15=\"{NS_X15}\"><x15:timelineRefs><x15:timelineRef r:id=\"rId{id}\"/></x15:timelineRefs></ext>"
         ));
     }
     if let Some(id) = links.table_slicers {
-        list.add(format!(
+        list.push(format!(
             "<ext uri=\"{EXT_SHEET_TABLE_SLICERS}\" xmlns:x15=\"{NS_X15}\"><x14:slicerList xmlns:x14=\"{NS_X14}\"><x14:slicer r:id=\"rId{id}\"/></x14:slicerList></ext>"
         ));
     }

@@ -1502,12 +1502,13 @@ fn a_missing_part_costs_only_what_it_held() {
     );
     assert_eq!(thread_at(&load(&bytes), 0, "B4"), thread);
 
-    // No styles: text without a font is in the font of new workbooks.
+    // No styles: text without a font is in the body font of the theme.
     let wb = load(&excel_package(&[("xl/styles.xml", None)]));
-    assert_eq!(
-        note_at(&wb, 1, "B2").runs,
-        [run("Just text", Font::default())]
-    );
+    let body = Font {
+        name: Arc::from("Calibri"),
+        ..Font::default()
+    };
+    assert_eq!(note_at(&wb, 1, "B2").runs, [run("Just text", body)]);
     assert_eq!(note_at(&wb, 0, "A1").runs[1].font, Note::font());
 
     // No relationships: nothing, and nothing else is lost.

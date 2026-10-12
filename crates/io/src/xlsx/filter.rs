@@ -1032,7 +1032,7 @@ mod tests {
                 fill: Some(Color(0xFFC7CE))
             }
         );
-        assert_eq!(colors[2].font, Some(Color(0x4472C4)));
+        assert_eq!(colors[2].font.map(Color::plain), Some(Color(0x4472C4)));
         assert_eq!(colors[2].fill, Some(Color(0xFF0000)));
         assert_eq!(colors[3], DxfColors::default());
         assert_eq!(colors[4], DxfColors::default());

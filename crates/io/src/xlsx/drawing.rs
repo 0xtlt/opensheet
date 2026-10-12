@@ -27,7 +27,7 @@
 //! the box before rotation.
 
 use super::chart::write::Drawing as DrawingPart;
-use super::color::{Palette, adjust_luminance, parse_rgb};
+use super::color::{Palette, adjust_luminance, parse_rgb, push_drawing_color, scheme_color};
 use super::parts::{Extras, push_relationship};
 use super::read::{Package, Rel, relationships};
 use super::write::{NS_DOC_REL, NS_PKG_REL};
@@ -171,11 +171,9 @@ fn push_xfrm(x: &mut String, drawing: &Drawing, frame: Frame) {
 }
 
 fn push_solid_fill(x: &mut String, color: Color) {
-    w!(
-        x,
-        "<a:solidFill><a:srgbClr val=\"{:06X}\"/></a:solidFill>",
-        color.0 & 0xFF_FFFF
-    );
+    x.push_str("<a:solidFill>");
+    push_drawing_color(x, color, None);
+    x.push_str("</a:solidFill>");
 }
 
 fn push_outline(x: &mut String, outline: Option<&Outline>) {
@@ -583,12 +581,14 @@ fn mix_light(rgb: u32, amount: f64, toward: f64) -> u32 {
 fn parse_color<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<Color> {
     let mut color = None;
     each_child(r, tag, |r, t| {
+        // The place in the theme of a colour that is given by it.
+        let slot = match t.name {
+            "schemeClr" => t.attr("val").and_then(|v| scheme_slot(&v)),
+            _ => None,
+        };
         let mut rgb = match t.name {
             "srgbClr" => t.attr("val").and_then(|v| parse_rgb(&v)),
-            "schemeClr" => t
-                .attr("val")
-                .and_then(|v| scheme_slot(&v))
-                .map(|slot| palette.theme[slot]),
+            "schemeClr" => slot.map(|slot| palette.theme[slot]),
             "sysClr" => t.attr("lastClr").and_then(|v| parse_rgb(&v)).or_else(|| {
                 match t.attr("val").as_deref() {
                     Some("windowText") => Some(0x000000),
@@ -613,6 +613,8 @@ fn parse_color<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Opti
         };
         // Lightness is scaled, then shifted.
         let (mut scale, mut shift) = (1.0, 0.0);
+        // Nothing but that was done to the colour.
+        let mut plain_lightness = true;
         each_child(r, t, |r, adjustment| {
             let amount = adjustment
                 .attr_f64("val")
@@ -630,13 +632,19 @@ fn parse_color<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Opti
                     _ => {}
                 }
             }
+            plain_lightness &= matches!(adjustment.name, "lumMod" | "lumOff" | "alpha");
             r.skip(adjustment);
         });
+        // A colour of the theme, as it is or as a picker varies it, stays
+        // a colour of the theme.
+        let reference = slot
+            .filter(|_| plain_lightness)
+            .and_then(|slot| scheme_color(palette, slot, scale, shift));
         if (scale, shift) != (1.0, 0.0) {
             rgb = rgb.map(|base| adjust_luminance(base, scale, shift));
         }
         if color.is_none() {
-            color = rgb.map(Color);
+            color = reference.or(rgb.map(Color));
         }
     });
     color
@@ -791,7 +799,7 @@ fn parse_style<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawStyle
             }
             "fillRef" => style.fill = parse_color(r, t, theme.palette).filter(|_| idx > 0),
             // Black from the theme is the automatic colour of text.
-            "fontRef" => style.text = parse_color(r, t, theme.palette).filter(|color| color.0 != 0),
+            "fontRef" => style.text = parse_color(r, t, theme.palette).filter(|color| color.value() != 0),
             _ => r.skip(t),
         }
     });
@@ -1369,7 +1377,7 @@ mod tests {
     fn colours_of_the_theme_are_shaded_as_light() {
         // The theme written into every package: the one of Excel today.
         let palette = Palette {
-            theme: crate::xlsx::theme::COLORS,
+            theme: opensheet_engine::Theme::office().colors.part_order(),
             ..Palette::default()
         };
         let color = |xml: &str| {
@@ -1377,7 +1385,7 @@ mod tests {
             let Event::Open(tag) = r.next() else {
                 panic!("no element in {xml}");
             };
-            parse_color(&mut r, &tag, &palette).map(|color| color.0)
+            parse_color(&mut r, &tag, &palette).map(|color| color.value())
         };
         // The outline of Excel's new shapes and of its text boxes: the
         // colours the engine gives its own.
@@ -1403,7 +1411,15 @@ mod tests {
             color(
                 "<a:solidFill><a:schemeClr val=\"accent1\"><a:lumMod val=\"20000\"/><a:lumOff val=\"80000\"/></a:schemeClr></a:solidFill>"
             ),
-            Some(adjust_luminance(palette.theme[4], 0.2, 0.8))
+            // "80 % lighter" stays a colour of the theme, with the value
+            // cells give that variant.
+            Some(opensheet_engine::Theme::office().accent(1, 0.8).value())
+        );
+        assert_eq!(
+            color(
+                "<a:solidFill><a:schemeClr val=\"accent1\"><a:lumMod val=\"20000\"/><a:lumOff val=\"70000\"/></a:schemeClr></a:solidFill>"
+            ),
+            Some(adjust_luminance(palette.theme[4], 0.2, 0.7))
         );
         assert_eq!(
             color(
@@ -1429,7 +1445,7 @@ mod tests {
     #[test]
     fn line_styles_of_a_theme() {
         assert_eq!(
-            parse_line_widths(&crate::xlsx::theme::xml()),
+            parse_line_widths(&crate::xlsx::theme::xml(&opensheet_engine::Theme::office())),
             [1.0, 1.5, 2.0]
         );
         assert_eq!(

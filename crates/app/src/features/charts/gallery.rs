@@ -134,7 +134,7 @@ impl Render for Gallery {
                         .h(px(th))
                         .flex()
                         .items_center()
-                        .children(colors.iter().map(|color| div().flex_1().h_full().bg(c(color.0))))
+                        .children(colors.iter().map(|color| div().flex_1().h_full().bg(c(color.value()))))
                         .into_any_element(),
                 };
                 grid = grid.child(

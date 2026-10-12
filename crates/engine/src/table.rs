@@ -13,11 +13,12 @@ use crate::filter::AutoFilter;
 use crate::ops::shift_interval;
 use crate::parser::ParseError;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
-use crate::style::{Border, BorderStyle, Color, StyleId, StylePatch};
+use crate::style::{Border, BorderStyle, Color, StyleId, StylePatch, ThemeSlot};
+use crate::theme::Theme;
 use crate::value::{ErrorKind, Value};
 use crate::workbook::{Cell, ClearMode, Content, Sheet, Workbook};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 /// The style new tables get, as in Excel.
 pub const DEFAULT_TABLE_STYLE: &str = "TableStyleMedium2";
@@ -339,78 +340,7 @@ pub const OFFICE_THEME: [u32; 10] = [
     0xFFFFFF, 0x000000, 0xE8E8E8, 0x0E2841, 0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93, 0x4EA72E,
 ];
 
-/// Lighten (`amount > 0`) or darken (`amount < 0`) a theme colour the way
-/// Excel does: on the luminance of the Windows colour dialog's integer
-/// HLS space (0..=240), which is why its shades differ by a unit or two
-/// from a floating-point HSL computation.
-pub fn tint(color: Color, amount: f64) -> Color {
-    const HLS_MAX: i32 = 240;
-    const RGB_MAX: i32 = 255;
-    if amount == 0.0 || !amount.is_finite() {
-        return color;
-    }
-    let (r, g, b) = (color.r() as i32, color.g() as i32, color.b() as i32);
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let sum = max + min;
-    let lum = (sum * HLS_MAX + RGB_MAX) / (2 * RGB_MAX);
-    let (hue, sat) = if max == min {
-        (0, 0)
-    } else {
-        let d = max - min;
-        let sat = if lum <= HLS_MAX / 2 {
-            (d * HLS_MAX + sum / 2) / sum
-        } else {
-            (d * HLS_MAX + (2 * RGB_MAX - sum) / 2) / (2 * RGB_MAX - sum)
-        };
-        let delta = |c: i32| ((max - c) * (HLS_MAX / 6) + d / 2) / d;
-        let hue = if r == max {
-            delta(b) - delta(g)
-        } else if g == max {
-            HLS_MAX / 3 + delta(r) - delta(b)
-        } else {
-            2 * HLS_MAX / 3 + delta(g) - delta(r)
-        };
-        (hue.rem_euclid(HLS_MAX), sat)
-    };
-    let amount = amount.clamp(-1.0, 1.0);
-    let scaled = if amount < 0.0 {
-        lum as f64 * (1.0 + amount)
-    } else {
-        lum as f64 * (1.0 - amount) + HLS_MAX as f64 * amount
-    };
-    // The bias keeps a nominal 80 % from landing a hair under a whole unit.
-    let lum = ((scaled + 0.01) as i32).clamp(0, HLS_MAX);
-
-    let byte = |v: i32| ((v * RGB_MAX + HLS_MAX / 2) / HLS_MAX).clamp(0, 255) as u8;
-    if sat == 0 {
-        let v = byte(lum);
-        return Color::rgb(v, v, v);
-    }
-    let m2 = if lum <= HLS_MAX / 2 {
-        (lum * (HLS_MAX + sat) + HLS_MAX / 2) / HLS_MAX
-    } else {
-        lum + sat - (lum * sat + HLS_MAX / 2) / HLS_MAX
-    };
-    let m1 = 2 * lum - m2;
-    let channel = |h: i32| {
-        let h = h.rem_euclid(HLS_MAX);
-        if h < HLS_MAX / 6 {
-            m1 + ((m2 - m1) * h + HLS_MAX / 12) / (HLS_MAX / 6)
-        } else if h < HLS_MAX / 2 {
-            m2
-        } else if h < HLS_MAX * 2 / 3 {
-            m1 + ((m2 - m1) * (HLS_MAX * 2 / 3 - h) + HLS_MAX / 12) / (HLS_MAX / 6)
-        } else {
-            m1
-        }
-    };
-    Color::rgb(
-        byte(channel(hue + HLS_MAX / 3)),
-        byte(channel(hue)),
-        byte(channel(hue - HLS_MAX / 3)),
-    )
-}
+pub use crate::theme::tint;
 
 /// The formatting of one element of a table style (whole table, header
 /// row, a stripe...): what the `dxf` of a `tableStyleElement` holds.
@@ -576,15 +506,37 @@ impl TableStyle {
 }
 
 /// The built-in styles of the gallery, in its order: TableStyleLight1-21,
-/// TableStyleMedium1-28, TableStyleDark1-11.
+/// TableStyleMedium1-28, TableStyleDark1-11, in the Office theme. Their
+/// colours are theme colours; [`table_styles_in`] gives them for another
+/// theme.
 pub fn builtin_table_styles() -> &'static [TableStyle] {
     static STYLES: OnceLock<Vec<TableStyle>> = OnceLock::new();
-    STYLES.get_or_init(|| build_styles(&OFFICE_THEME))
+    STYLES.get_or_init(|| build_styles(&Theme::office()))
 }
 
-/// A built-in table style by name; `None` for names that are not built in
-/// (custom styles of a file are kept by name but not drawn).
-pub fn table_style(name: &str) -> Option<&'static TableStyle> {
+/// The built-in styles in the colours of `theme`.
+pub fn table_styles_in(theme: &Theme) -> Arc<Vec<TableStyle>> {
+    // The styles of the last theme asked for that is not the Office
+    // theme: every cell of every table asks at every repaint.
+    static LAST: Mutex<Option<([u32; 12], Arc<Vec<TableStyle>>)>> = Mutex::new(None);
+    static OFFICE: OnceLock<Arc<Vec<TableStyle>>> = OnceLock::new();
+    if theme.is_office() {
+        return OFFICE.get_or_init(|| Arc::new(builtin_table_styles().to_vec())).clone();
+    }
+    let key = theme.colors.part_order();
+    let mut last = LAST.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match &*last {
+        Some((colors, styles)) if *colors == key => styles.clone(),
+        _ => {
+            let styles = Arc::new(build_styles(theme));
+            *last = Some((key, styles.clone()));
+            styles
+        }
+    }
+}
+
+/// The place of a built-in style in the gallery, by its name.
+fn builtin_index(name: &str) -> Option<usize> {
     let families = [
         ("TableStyleLight", 0, 21),
         ("TableStyleMedium", 21, 28),
@@ -594,16 +546,29 @@ pub fn table_style(name: &str) -> Option<&'static TableStyle> {
         .iter()
         .find_map(|(prefix, first, count)| Some((name.strip_prefix(prefix)?, *first, *count)))?;
     let number: usize = number.parse().ok()?;
-    (1..=count)
-        .contains(&number)
-        .then(|| &builtin_table_styles()[first + number - 1])
+    (1..=count).contains(&number).then(|| first + number - 1)
+}
+
+/// A built-in table style by name, in the Office theme; `None` for names
+/// that are not built in (custom styles of a file are kept by name but
+/// not drawn).
+pub fn table_style(name: &str) -> Option<&'static TableStyle> {
+    Some(&builtin_table_styles()[builtin_index(name)?])
+}
+
+/// A built-in table style by name, in the colours of `theme`.
+pub fn table_style_in(theme: &Theme, name: &str) -> Option<TableStyle> {
+    Some(table_styles_in(theme)[builtin_index(name)?].clone())
 }
 
 /// The built-in styles for a theme, as Excel's preset table styles define
 /// them. Within a family the first style is the neutral one (black, white
 /// and greys) and the next six use the accents 1 to 6.
-fn build_styles(theme: &[u32; 10]) -> Vec<TableStyle> {
-    let color = |index: usize, amount: f64| tint(Color(theme[index]), amount);
+fn build_styles(theme: &Theme) -> Vec<TableStyle> {
+    let color = |index: usize, amount: f64| {
+        let slot = ThemeSlot::from_index(index).unwrap_or(ThemeSlot::Dark1);
+        theme.color(slot, amount)
+    };
     let (white, black) = (color(0, 0.0), color(1, 0.0));
     let line = |style: BorderStyle, color: Color| {
         Some(Border {
@@ -851,7 +816,8 @@ fn build_styles(theme: &[u32; 10]) -> Vec<TableStyle> {
 pub fn style_patch_at(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option<StylePatch> {
     let sh = wb.sheets.get(sheet)?;
     let table = sh.tables.iter().find(|t| t.contains(row, col))?;
-    let style = table_style(table.style.as_deref()?)?;
+    let styles = table_styles_in(wb.theme());
+    let style = &styles[builtin_index(table.style.as_deref()?)?];
     let band = match table.data_range() {
         Some(data) if table.banded_rows && data.r0 <= row && row <= data.r1 => {
             row - data.r0 - hidden_between(wb, sheet, sh, data.r0, row)
@@ -2709,6 +2675,21 @@ mod tests {
         Rect::parse(name).unwrap()
     }
 
+    /// A colour of the Office theme as the built-in styles refer to it:
+    /// slot 0 is white, 1 black, 4 to 9 the accents.
+    fn themed(slot: usize, amount: f64) -> Color {
+        Theme::office().color(ThemeSlot::from_index(slot).unwrap(), amount)
+    }
+
+    /// A lighter or darker variant: of the same theme colour for a theme
+    /// colour.
+    fn shade(color: Color, amount: f64) -> Color {
+        match color.theme() {
+            Some(reference) => themed(reference.slot.index(), amount),
+            None => tint(color, amount),
+        }
+    }
+
     fn text(w: &Workbook, name: &str) -> String {
         let r = rect(name);
         w.display_text(0, r.r0, r.c0).text
@@ -3133,8 +3114,8 @@ mod tests {
         ] {
             assert!(table_style(unknown).is_none(), "{unknown}");
         }
-        let accent = |n: usize| Color(OFFICE_THEME[3 + n]);
-        let (white, black) = (Color::WHITE, Color::BLACK);
+        let accent = |n: usize| themed(3 + n, 0.0);
+        let (white, black) = (themed(0, 0.0), themed(1, 0.0));
         let line = |style, color| {
             Some(Border {
                 style,
@@ -3144,10 +3125,10 @@ mod tests {
 
         let medium2 = table_style("TableStyleMedium2").unwrap();
         assert_eq!(medium2.header_row, ElementStyle::heading(white, accent(1)));
-        assert_eq!(medium2.first_row_stripe.fill, Some(tint(accent(1), 0.8)));
+        assert_eq!(medium2.first_row_stripe.fill, Some(shade(accent(1), 0.8)));
         assert_eq!(
             medium2.whole_table.horizontal,
-            line(BorderStyle::Thin, tint(accent(1), 0.4))
+            line(BorderStyle::Thin, shade(accent(1), 0.4))
         );
         assert_eq!(medium2.whole_table.vertical, None);
         assert_eq!(medium2.total_row.top, line(BorderStyle::Double, accent(1)));
@@ -3155,9 +3136,9 @@ mod tests {
         let light1 = table_style("TableStyleLight1").unwrap();
         assert_eq!(light1.whole_table.top, line(BorderStyle::Thin, black));
         assert_eq!(light1.whole_table.font_color, None);
-        assert_eq!(light1.first_row_stripe.fill, Some(Color(0xD9D9D9)));
+        assert_eq!(light1.first_row_stripe.fill, Some(themed(0, -0.15)));
         let light7 = table_style("TableStyleLight7").unwrap();
-        assert_eq!(light7.header_row.font_color, Some(tint(accent(6), -0.25)));
+        assert_eq!(light7.header_row.font_color, Some(shade(accent(6), -0.25)));
         assert_eq!(light7.header_row.bottom, line(BorderStyle::Thin, accent(6)));
         let light10 = table_style("TableStyleLight10").unwrap();
         assert_eq!(light10.header_row.fill, Some(accent(2)));
@@ -3168,32 +3149,32 @@ mod tests {
         assert_eq!(light16.header_row.bottom, line(BorderStyle::Medium, accent(1)));
 
         let medium9 = table_style("TableStyleMedium9").unwrap();
-        assert_eq!(medium9.whole_table.fill, Some(tint(accent(1), 0.8)));
-        assert_eq!(medium9.first_row_stripe.fill, Some(tint(accent(1), 0.6)));
+        assert_eq!(medium9.whole_table.fill, Some(shade(accent(1), 0.8)));
+        assert_eq!(medium9.first_row_stripe.fill, Some(shade(accent(1), 0.6)));
         assert_eq!(medium9.header_row.bottom, line(BorderStyle::Thick, white));
         assert_eq!(medium9.first_column, ElementStyle::heading(white, accent(1)));
         let medium15 = table_style("TableStyleMedium15").unwrap();
         assert_eq!(medium15.whole_table.left, line(BorderStyle::Thin, black));
         assert_eq!(table_style("TableStyleMedium16").unwrap().whole_table.left, None);
-        assert_eq!(medium15.first_row_stripe.fill, Some(Color(0xD9D9D9)));
+        assert_eq!(medium15.first_row_stripe.fill, Some(themed(0, -0.15)));
         let medium28 = table_style("TableStyleMedium28").unwrap();
         assert_eq!(
             medium28.whole_table.vertical,
-            line(BorderStyle::Thin, tint(accent(6), 0.4))
+            line(BorderStyle::Thin, shade(accent(6), 0.4))
         );
         assert_eq!(medium28.total_row.top, line(BorderStyle::Medium, accent(6)));
         assert!(medium28.header_row.bold && medium28.header_row.fill.is_none());
 
         let dark1 = table_style("TableStyleDark1").unwrap();
-        assert_eq!(dark1.whole_table.fill, Some(Color(0x737373)));
+        assert_eq!(dark1.whole_table.fill, Some(themed(1, 0.45)));
         assert_eq!(dark1.whole_table.font_color, Some(white));
         assert_eq!(dark1.header_row.fill, Some(black));
         let dark2 = table_style("TableStyleDark2").unwrap();
         assert_eq!(dark2.whole_table.fill, Some(accent(1)));
-        assert_eq!(dark2.total_row.fill, Some(tint(accent(1), -0.5)));
+        assert_eq!(dark2.total_row.fill, Some(shade(accent(1), -0.5)));
         assert_eq!(dark2.first_column.right, line(BorderStyle::Medium, white));
         let dark11 = table_style("TableStyleDark11").unwrap();
-        assert_eq!(dark11.whole_table.fill, Some(tint(accent(5), 0.8)));
+        assert_eq!(dark11.whole_table.fill, Some(shade(accent(5), 0.8)));
         assert_eq!(dark11.header_row.fill, Some(accent(6)));
         assert!(!dark11.header_row.bold);
     }
@@ -3201,8 +3182,8 @@ mod tests {
     #[test]
     fn style_of_cells() {
         let (mut w, id) = sales();
-        let accent = Color(OFFICE_THEME[4]);
-        let (band, edge) = (tint(accent, 0.8), tint(accent, 0.4));
+        let accent = themed(4, 0.0);
+        let (band, edge) = (shade(accent, 0.8), shade(accent, 0.4));
         let thin = Some(Border {
             style: BorderStyle::Thin,
             color: Some(edge),
@@ -3210,7 +3191,7 @@ mod tests {
         // Header: white bold on the accent, the table's outline around.
         let head = style_patch_at(&w, 0, 0, 0).unwrap();
         assert_eq!(head.fill, Some(Some(accent)));
-        assert_eq!(head.font_color, Some(Some(Color::WHITE)));
+        assert_eq!(head.font_color, Some(Some(themed(0, 0.0))));
         assert_eq!(head.bold, Some(true));
         assert_eq!(
             (head.border_top, head.border_left, head.border_bottom, head.border_right),
@@ -3274,7 +3255,7 @@ mod tests {
         // A dark style colours every cell.
         w.set_table_style(0, id, Some("TableStyleDark2"));
         let cell = style_patch_at(&w, 0, 2, 1).unwrap();
-        assert_eq!(cell.font_color, Some(Some(Color::WHITE)));
+        assert_eq!(cell.font_color, Some(Some(themed(0, 0.0))));
         assert_eq!(cell.fill, Some(Some(accent)));
     }
 
@@ -3810,7 +3791,7 @@ mod tests {
         w.set_filter_criteria(0, FilterScope::Table(id), 1, only(&["North"]));
         w.update_style(0, rect("B2"), &|s| s.fill = Some(Color(0xFF0000)));
         w.commit("setup");
-        let accent = Color(OFFICE_THEME[4]);
+        let accent = themed(4, 0.0);
         assert!(w.convert_table_to_range(0, id));
         w.commit("convert");
         assert!(w.sheets[0].tables.is_empty() && w.sheets[0].filtered_rows.is_empty());
@@ -3819,9 +3800,9 @@ mod tests {
         let head = w.style_at(0, 0, 0);
         assert_eq!(
             (head.fill, head.font.color, head.font.bold),
-            (Some(accent), Some(Color::WHITE), true)
+            (Some(accent), Some(themed(0, 0.0)), true)
         );
-        assert_eq!(w.style_at(0, 1, 0).fill, Some(tint(accent, 0.8)));
+        assert_eq!(w.style_at(0, 1, 0).fill, Some(shade(accent, 0.8)));
         assert_eq!(w.style_at(0, 1, 1).fill, Some(Color(0xFF0000)));
         assert_eq!(w.style_at(0, 2, 0).fill, None);
         assert_eq!(w.style_at(0, 4, 2).borders.top.style, BorderStyle::Double);

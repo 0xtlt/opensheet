@@ -15,6 +15,7 @@ use gpui::{
     AnyElement, Context, Entity, Focusable, FontWeight, Pixels, Point, SharedString, Subscription, WeakEntity, Window, div,
     point, prelude::*, px,
 };
+use opensheet_engine::theme::Theme;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -315,8 +316,8 @@ pub(super) fn timeline_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 
 /// A small slicer in the colours of a style: its header and four buttons,
 /// two of them selected.
-fn draw_slicer(s: &mut Sketch, name: &str) {
-    let look = logic::slicer_look(name);
+fn draw_slicer(s: &mut Sketch, theme: &Theme, name: &str) {
+    let look = logic::slicer_look(theme, name);
     s.rect(0.0, 0.0, s.width, s.height, c(look.background));
     if let Some(fill) = look.header_fill {
         s.rect(0.0, 0.0, s.width, 9.0, c(fill));
@@ -333,8 +334,8 @@ fn draw_slicer(s: &mut Sketch, name: &str) {
 }
 
 /// A small timeline in the colours of a style.
-fn draw_timeline(s: &mut Sketch, name: &str) {
-    let look = logic::timeline_look(name);
+fn draw_timeline(s: &mut Sketch, theme: &Theme, name: &str) {
+    let look = logic::timeline_look(theme, name);
     s.rect(0.0, 0.0, s.width, s.height, c(look.background));
     s.rect(4.0, 5.0, s.width * 0.5, 7.0, c(look.header_text));
     s.rect(4.0, 12.0, s.width * 0.35, 14.0, c(look.label_text));
@@ -347,9 +348,10 @@ fn draw_timeline(s: &mut Sketch, name: &str) {
     s.frame(0.0, 0.0, s.width, s.height, 1.0, c(look.border));
 }
 
-fn thumbnail(index: usize, name: &'static str, current: bool, on_pick: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
+fn thumbnail(index: usize, name: &'static str, theme: &Rc<Theme>, current: bool, on_pick: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
     let title: SharedString = logic::style_title(name, lang().locale()).into();
     let timeline = name.starts_with("Time");
+    let theme = theme.clone();
     div()
         .id(("slicer-style", index))
         .p(px(2.))
@@ -357,7 +359,7 @@ fn thumbnail(index: usize, name: &'static str, current: bool, on_pick: impl Fn(&
         .border_color(if current { c(theme::ACCENT) } else { gpui::transparent_black() })
         .rounded(px(2.))
         .hover(|s| s.border_color(c(0xF2994A)))
-        .child(preview(THUMB_W, THUMB_H, move |s| if timeline { draw_timeline(s, name) } else { draw_slicer(s, name) }))
+        .child(preview(THUMB_W, THUMB_H, move |s| if timeline { draw_timeline(s, &theme, name) } else { draw_slicer(s, &theme, name) }))
         .tooltip(tooltip(title))
         .on_click(move |_, window, cx| on_pick(window, cx))
         .into_any_element()
@@ -391,12 +393,14 @@ fn ribbon_gallery(app: &mut ExcelApp, cx: &mut Cx) -> AnyElement {
     let at = names.iter().position(|name| *name == current).unwrap_or(0);
     let first = at / 6 * 6;
     let weak = cx.weak_entity();
+    // The thumbnails are in the colours of the workbook's theme.
+    let theme = Rc::new(app.wb.theme().clone());
     let thumbs: Vec<AnyElement> = names[first..(first + 6).min(names.len())]
         .iter()
         .enumerate()
         .map(|(k, name)| {
             let weak = weak.clone();
-            thumbnail(first + k, name, *name == current, move |_, cx| {
+            thumbnail(first + k, name, &theme, *name == current, move |_, cx| {
                 weak.update(cx, |app, cx| set_style(app, name, cx)).ok();
             })
         })
@@ -432,6 +436,7 @@ struct Gallery {
     app: WeakEntity<ExcelApp>,
     names: &'static [&'static str],
     current: String,
+    theme: Rc<Theme>,
     closed: Rc<Cell<Option<Point<Pixels>>>>,
 }
 
@@ -450,10 +455,12 @@ pub(super) fn open_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
         None => at,
     };
     let weak = cx.weak_entity();
+    let theme = Rc::new(app.wb.theme().clone());
     let view = cx.new(|_| Gallery {
         app: weak,
         names,
         current,
+        theme,
         closed,
     });
     app.open_popup_view(position, view, cx);
@@ -476,7 +483,7 @@ impl Gallery {
                     .gap(px(2.))
                     .children(chunk.iter().map(|(index, name)| {
                         let (app, name) = (self.app.clone(), *name);
-                        thumbnail(100 + index, name, name == self.current, move |window, cx| {
+                        thumbnail(100 + index, name, &self.theme, name == self.current, move |window, cx| {
                             app.update(cx, |app, cx| {
                                 app.close_popup(window, cx);
                                 set_style(app, name, cx);

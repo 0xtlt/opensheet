@@ -117,7 +117,7 @@ pub(super) fn slicer(p: &mut Painter, id: u32, rect: Box4) {
     };
     let z = p.zoom();
     let frame = Frame { x: rect.0, y: rect.1, z };
-    let look = logic::slicer_look(&slicer.style);
+    let look = logic::slicer_look(p.app.wb.theme(), &slicer.style);
     let items = items_of(p.app, id);
     let layout = logic::slicer_layout(
         slicer.size,
@@ -191,7 +191,7 @@ pub(super) fn timeline(p: &mut Painter, id: u32, rect: Box4) {
     };
     let z = p.zoom();
     let frame = Frame { x: rect.0, y: rect.1, z };
-    let look = logic::timeline_look(&timeline.style);
+    let look = logic::timeline_look(p.app.wb.theme(), &timeline.style);
     let locale = p.app.wb.locale;
     let bounds = p.app.wb.timeline_bounds(id);
     let band: Vec<_> = bounds.map(|(start, end)| periods(timeline.level, start, end, locale)).unwrap_or_default();

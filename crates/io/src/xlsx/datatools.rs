@@ -27,7 +27,7 @@ const CT_QUERY_TABLE: &str = "application/vnd.openxmlformats-officedocument.spre
 
 /// Read `<dataConsolidate>`: the function, the labels used and the
 /// references. References to other workbooks (`r:id`) and to names are
-/// left out; "Create links to source data" is not modelled.
+/// left out.
 pub(crate) fn read_consolidate<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mut Sheet) {
     let mut spec = Consolidation {
         function: tag
@@ -37,6 +37,7 @@ pub(crate) fn read_consolidate<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mu
         sources: Vec::new(),
         top_row: tag.attr_bool("topLabels").unwrap_or(false),
         left_column: tag.attr_bool("leftLabels").unwrap_or(false),
+        link: tag.attr_bool("link").unwrap_or(false),
     };
     if !tag.empty {
         loop {
@@ -78,6 +79,9 @@ pub(crate) fn write_consolidate(x: &mut String, sheet: &Sheet) {
     }
     if spec.top_row {
         x.push_str(" topLabels=\"1\"");
+    }
+    if spec.link {
+        x.push_str(" link=\"1\"");
     }
     if spec.sources.is_empty() {
         x.push_str("/>");

@@ -3,11 +3,14 @@
 //!
 //! The settings of the dialog are kept on the sheet consolidated into
 //! (`Sheet::consolidation`, the `<dataConsolidate>` of a file), so that
-//! the dialog opens on them again. The result is written as values: the
-//! "Create links to source data" variant, which writes formulas under an
-//! outline, is not built.
+//! the dialog opens on them again. The result is written as values, or
+//! with "Create links to source data" as formulas under an outline: a row
+//! of links for each source of a result row, folded under a row that
+//! combines them.
 
-use crate::ast::StructuralEdit;
+use std::sync::Arc;
+
+use crate::ast::{CellRef, Expr, RefExpr, RefKind, StructuralEdit};
 use crate::filter::AutoFilter;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
 use crate::value::{ErrorKind, Value};
@@ -121,6 +124,8 @@ pub struct Consolidation {
     /// "Use labels in: Top row" / "Left column".
     pub top_row: bool,
     pub left_column: bool,
+    /// "Create links to source data".
+    pub link: bool,
 }
 
 /// Why nothing was consolidated.
@@ -132,6 +137,9 @@ pub enum ConsolidateError {
     OffSheet,
     /// A source range overlaps the destination.
     Overlap,
+    /// Links were asked for and a source is on the sheet consolidated
+    /// into.
+    LinkToSelf,
 }
 
 /// Where a cell of a source falls in the result: a position, or a label.
@@ -162,10 +170,57 @@ impl Axis {
     }
 }
 
+/// A row of a source that feeds a row of the result: the source, and for
+/// each column of the result the cell of that row that falls there.
+struct LinkedRow {
+    source: usize,
+    cells: Vec<Option<(u32, u32)>>,
+}
+
+/// `=Sheet2!$B$3`.
+fn link_formula(sheet: &str, row: u32, col: u32) -> Expr {
+    Expr::Ref(RefExpr {
+        sheet: Some(Arc::from(sheet)),
+        start: CellRef {
+            row,
+            col,
+            abs_row: true,
+            abs_col: true,
+        },
+        end: None,
+        kind: RefKind::Cells,
+    })
+}
+
+impl ConsolidateFunction {
+    /// The worksheet function that combines the linked cells.
+    fn worksheet_function(self) -> &'static str {
+        match self {
+            ConsolidateFunction::Sum => "SUM",
+            ConsolidateFunction::Count => "COUNTA",
+            ConsolidateFunction::Average => "AVERAGE",
+            ConsolidateFunction::Max => "MAX",
+            ConsolidateFunction::Min => "MIN",
+            ConsolidateFunction::Product => "PRODUCT",
+            ConsolidateFunction::CountNumbers => "COUNT",
+            ConsolidateFunction::StdDev => "STDEV",
+            ConsolidateFunction::StdDevP => "STDEVP",
+            ConsolidateFunction::Var => "VAR",
+            ConsolidateFunction::VarP => "VARP",
+        }
+    }
+}
+
 impl Workbook {
     /// The table a consolidation gives: its rows of values, labels
     /// included (`Value::Empty` for the cells left empty).
     pub fn consolidated(&self, spec: &Consolidation) -> Result<Vec<Vec<Value>>, ConsolidateError> {
+        Ok(self.consolidated_with_links(spec)?.0)
+    }
+
+    /// `consolidated`, and for each row of the result under the labels
+    /// the rows of the sources that feed it.
+    fn consolidated_with_links(&self, spec: &Consolidation) -> Result<(Vec<Vec<Value>>, Vec<Vec<LinkedRow>>), ConsolidateError> {
         if spec.sources.is_empty() {
             return Err(ConsolidateError::NoSource);
         }
@@ -173,7 +228,8 @@ impl Workbook {
         // For each result cell: how many source cells hold something, and
         // their numbers.
         let mut cells: Vec<Vec<(usize, Vec<f64>)>> = Vec::new();
-        for source in &spec.sources {
+        let mut linked: Vec<Vec<LinkedRow>> = Vec::new();
+        for (source_index, source) in spec.sources.iter().enumerate() {
             let sheet = self.sheet_index(&source.sheet).ok_or(ConsolidateError::NoSource)?;
             let sh = &self.sheets[sheet];
             let range = self.clamp_to_used(sheet, source.range);
@@ -190,12 +246,27 @@ impl Workbook {
                     continue;
                 }
                 let r = rows.index(key, shown);
+                if linked.len() <= r {
+                    linked.resize_with(r + 1, Vec::new);
+                }
+                linked[r].push(LinkedRow {
+                    source: source_index,
+                    cells: Vec::new(),
+                });
                 for col in first_col..=range.c1 {
                     let (key, shown) = if spec.top_row { label(range.r0, col) } else { (Key::At(col - first_col), Value::Empty) };
                     if key == Key::Label(String::new()) {
                         continue;
                     }
                     let c = cols.index(key, shown);
+                    if let Some(feeding) = linked[r].last_mut() {
+                        if feeding.cells.len() <= c {
+                            feeding.cells.resize(c + 1, None);
+                        }
+                        // Two columns of one source under the same label:
+                        // the link shows the first.
+                        feeding.cells[c].get_or_insert((row, col));
+                    }
                     if cells.len() <= r {
                         cells.resize(r + 1, Vec::new());
                     }
@@ -233,20 +304,29 @@ impl Workbook {
             }
             table.push(line);
         }
-        Ok(table)
+        Ok((table, linked))
     }
 
     /// Where a consolidation would be written from the top-left cell of
     /// `dest`. A destination of several cells takes no more than it
     /// holds, as in Excel.
     pub fn consolidate_extent(&self, sheet: usize, dest: Rect, spec: &Consolidation) -> Result<Rect, ConsolidateError> {
-        let table = self.consolidated(spec)?;
+        let (table, linked) = self.consolidated_with_links(spec)?;
         let mut height = table.len() as u32;
         let mut width = table.iter().map(Vec::len).max().unwrap_or(0) as u32;
         if height == 0 || width == 0 {
             return Err(ConsolidateError::NoSource);
         }
-        if !dest.is_single() {
+        let name = self.sheets.get(sheet).map(|sh| sh.name.to_lowercase());
+        if spec.link {
+            if spec.sources.iter().any(|source| Some(source.sheet.to_lowercase()) == name) {
+                return Err(ConsolidateError::LinkToSelf);
+            }
+            // A row of links for each source row, and beside the labels
+            // a column that names the sources.
+            height += linked.iter().map(Vec::len).sum::<usize>() as u32;
+            width += u32::from(spec.left_column);
+        } else if !dest.is_single() {
             height = height.min(dest.rows());
             width = width.min(dest.cols());
         }
@@ -254,7 +334,6 @@ impl Workbook {
             return Err(ConsolidateError::OffSheet);
         }
         let extent = Rect::new(dest.r0, dest.c0, dest.r0 + height - 1, dest.c0 + width - 1);
-        let name = self.sheets.get(sheet).map(|sh| sh.name.to_lowercase());
         let overlaps = spec
             .sources
             .iter()
@@ -266,6 +345,11 @@ impl Workbook {
     /// settings there. Returns the rectangle written. The caller commits.
     pub fn consolidate(&mut self, sheet: usize, dest: Rect, spec: &Consolidation) -> Result<Rect, ConsolidateError> {
         let extent = self.consolidate_extent(sheet, dest, spec)?;
+        if spec.link {
+            self.consolidate_linked(sheet, extent, spec)?;
+            self.sheets[sheet].consolidation = Some(spec.clone());
+            return Ok(extent);
+        }
         let table = self.consolidated(spec)?;
         for (i, line) in table.into_iter().take(extent.rows() as usize).enumerate() {
             for (j, value) in line.into_iter().take(extent.cols() as usize).enumerate() {
@@ -276,6 +360,77 @@ impl Workbook {
         self.snapshot();
         self.sheets[sheet].consolidation = Some(spec.clone());
         Ok(extent)
+    }
+}
+
+impl Workbook {
+    /// "Create links to source data": under the labels, each row of the
+    /// result becomes a group of rows that link to the cells of the
+    /// sources, folded under a row of formulas combining them. With
+    /// labels on the left, a second column names the source of each row
+    /// of links (Excel writes the name of the source workbook there; the
+    /// sources of one workbook are told apart by their sheet).
+    fn consolidate_linked(&mut self, sheet: usize, extent: Rect, spec: &Consolidation) -> Result<(), ConsolidateError> {
+        let (table, linked) = self.consolidated_with_links(spec)?;
+        self.snapshot();
+        let labels = usize::from(spec.left_column);
+        let first_col = extent.c0 + 2 * labels as u32;
+        let mut row = extent.r0;
+        let mut lines = table.into_iter();
+        if spec.top_row {
+            for (j, value) in lines.next().unwrap_or_default().into_iter().enumerate().skip(labels) {
+                self.set_value(sheet, row, first_col + (j - labels) as u32, value);
+            }
+            row += 1;
+        }
+        let mut groups: Vec<(u32, u32)> = Vec::new();
+        for (line, feeding) in lines.zip(&linked) {
+            let first = row;
+            for detail in feeding {
+                let source = &spec.sources[detail.source].sheet;
+                if spec.left_column {
+                    self.set_value(sheet, row, extent.c0 + 1, Value::text(source.as_str()));
+                }
+                for (j, cell) in detail.cells.iter().enumerate() {
+                    if let Some((r, c)) = cell {
+                        self.set_formula(sheet, row, first_col + j as u32, link_formula(source, *r, *c));
+                    }
+                }
+                row += 1;
+            }
+            // The row of the result, over the rows it combines.
+            for (j, value) in line.into_iter().enumerate() {
+                if j < labels {
+                    self.set_value(sheet, row, extent.c0, value);
+                    continue;
+                }
+                let col = first_col + (j - labels) as u32;
+                if value.is_empty() || row == first {
+                    self.set_value(sheet, row, col, value);
+                } else {
+                    let above = Expr::Ref(RefExpr::range(Rect::new(first, col, row - 1, col)));
+                    self.set_formula(sheet, row, col, Expr::Func(Arc::from(spec.function.worksheet_function()), vec![above]));
+                }
+            }
+            if row > first {
+                groups.push((first, row - 1));
+            }
+            row += 1;
+        }
+        // The outline, folded as Excel leaves it.
+        let sh = &mut self.sheets[sheet];
+        sh.outline.summary_below = true;
+        for row in extent.r0..=extent.r1 {
+            sh.outline.rows.levels.remove(&row);
+            sh.outline.rows.collapsed.remove(&row);
+            sh.hidden_rows.remove(&row);
+        }
+        for (first, last) in groups {
+            self.outline_group(sheet, crate::outline::Axis::Rows, first, last).map_err(|_| ConsolidateError::OffSheet)?;
+            let group = crate::outline::Group { level: 1, first, last };
+            self.outline_set_collapsed(sheet, crate::outline::Axis::Rows, &group, true);
+        }
+        Ok(())
     }
 }
 
@@ -325,6 +480,7 @@ mod tests {
             sources: ranges.iter().map(|range| source(range)).collect(),
             top_row,
             left_column,
+            link: false,
         }
     }
 
@@ -471,5 +627,71 @@ mod tests {
         let kept = w.sheets[0].consolidation.as_ref().unwrap();
         assert_eq!(kept.sources[0].range, Rect::parse("A3:C5").unwrap());
         assert_eq!(kept.sources[0].sheet, "Data");
+    }
+
+    #[test]
+    fn links_to_the_sources_under_an_outline() {
+        let mut book = wb(&[]);
+        for name in ["East", "West"] {
+            let sheet = book.add_sheet(book.sheets.len());
+            assert!(book.rename_sheet(sheet, name));
+        }
+        let east = [["", "Q1", "Q2"], ["Apples", "1", "2"], ["Pears", "3", "4"]];
+        let west = [["", "Q2", "Q1"], ["Pears", "10", "20"], ["Plums", "5", ""]];
+        for (sheet, rows) in [(1, east), (2, west)] {
+            for (r, row) in rows.iter().enumerate() {
+                for (c, text) in row.iter().enumerate() {
+                    book.set_cell_text(sheet, r as u32, c as u32, text).unwrap();
+                }
+            }
+        }
+        book.commit("setup");
+        let source = |sheet: &str| ConsolidateSource {
+            sheet: sheet.to_string(),
+            range: Rect::parse("A1:C3").unwrap(),
+        };
+        let spec = Consolidation {
+            function: ConsolidateFunction::Sum,
+            sources: vec![source("East"), source("West")],
+            top_row: true,
+            left_column: true,
+            link: true,
+        };
+        let written = book.consolidate(0, Rect::cell(0, 0), &spec).unwrap();
+        book.commit("Consolidate");
+        // Labels, the column naming the sources, then the values: a row
+        // of links per source under each label.
+        assert_eq!(written, Rect::parse("A1:D8").unwrap());
+        let formula = |cell: &str| {
+            let (r, c) = crate::refs::parse_cell_name(cell).unwrap();
+            book.formula_text(0, r, c).unwrap_or_default()
+        };
+        assert_eq!((val(&book, "C1"), val(&book, "D1")), (Value::text("Q1"), Value::text("Q2")));
+        assert_eq!((val(&book, "B2"), formula("C2"), formula("D2")), (Value::text("East"), "=East!$B$2".into(), "=East!$C$2".into()));
+        assert_eq!((val(&book, "A3"), formula("C3")), (Value::text("Apples"), "=SUM(C2)".into()));
+        assert_eq!((formula("C4"), formula("C5"), formula("D5")), ("=East!$B$3".into(), "=West!$C$2".into(), "=West!$B$2".into()));
+        assert_eq!((val(&book, "A6"), formula("C6"), val(&book, "C6")), (Value::text("Pears"), "=SUM(C4:C5)".into(), Value::Number(23.0)));
+        assert_eq!((val(&book, "A8"), val(&book, "C8"), formula("D8")), (Value::text("Plums"), Value::Empty, "=SUM(D7)".into()));
+        // The rows of links are folded away under their totals.
+        let sh = &book.sheets[0];
+        assert_eq!((0..8).map(|r| sh.outline.rows.level(r)).collect::<Vec<_>>(), [0, 1, 0, 1, 1, 0, 1, 0]);
+        assert_eq!(sh.hidden_rows.iter().copied().collect::<Vec<_>>(), [1, 3, 4, 6]);
+        assert!(sh.consolidation.as_ref().is_some_and(|kept| kept.link));
+        // The links follow their sources.
+        book.set_cell_text(2, 1, 2, "100").unwrap();
+        book.commit("edit");
+        assert_eq!(val(&book, "C6"), Value::Number(103.0));
+        assert!(book.undo() && book.undo());
+        assert!(book.sheets[0].outline.is_empty() && book.sheets[0].cells.is_empty());
+
+        // A source on the sheet consolidated into cannot be linked.
+        let own = Consolidation {
+            sources: vec![ConsolidateSource {
+                sheet: book.sheets[0].name.clone(),
+                range: Rect::parse("F1:G3").unwrap(),
+            }],
+            ..spec
+        };
+        assert_eq!(book.consolidate(0, Rect::cell(0, 0), &own), Err(ConsolidateError::LinkToSelf));
     }
 }

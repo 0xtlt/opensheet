@@ -129,6 +129,7 @@ fn consolidation_settings_round_trip() {
         ],
         top_row: true,
         left_column: false,
+        link: false,
     };
     wb.consolidate(0, rect("J1"), &spec).unwrap();
     // With the filter, to check where the element goes.
@@ -442,6 +443,7 @@ fn every_data_tool_in_one_sample() {
         ],
         top_row: true,
         left_column: false,
+        link: false,
     };
     wb.consolidate(1, rect("G1"), &spec).unwrap();
 
@@ -480,4 +482,38 @@ fn every_data_tool_in_one_sample() {
     assert_eq!(back.sheets[0].scenarios.len(), 2);
     assert_eq!(back.sheets[0].text_imports.len(), 1);
     assert_eq!(back.sheets[2].data_tables.len(), 3);
+}
+
+#[test]
+fn consolidation_links_round_trip_with_their_outline() {
+    let mut wb = Workbook::new(Locale::en());
+    wb.add_sheet(1);
+    for (cell, text) in [("A1", "Q1"), ("A2", "4"), ("A3", "6"), ("B1", "Q2"), ("B2", "5")] {
+        enter(&mut wb, 1, cell, text);
+    }
+    let spec = Consolidation {
+        function: ConsolidateFunction::Sum,
+        sources: vec![ConsolidateSource {
+            sheet: "Sheet2".into(),
+            range: rect("A1:B3"),
+        }],
+        top_row: true,
+        left_column: false,
+        link: true,
+    };
+    wb.consolidate(0, rect("A1"), &spec).unwrap();
+    wb.commit("Consolidate");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("consolidate-links.xlsx", &bytes);
+    let xml = part(&bytes, "xl/worksheets/sheet1.xml");
+    assert_well_formed("sheet1.xml", &xml);
+    assert_worksheet_order("sheet1.xml", &xml);
+    assert!(xml.contains("<dataConsolidate topLabels=\"1\" link=\"1\">"), "{xml}");
+    assert!(xml.contains("<row r=\"2\" hidden=\"1\" outlineLevel=\"1\">"), "{xml}");
+    assert!(xml.contains("<f>Sheet2!$A$2</f>") && xml.contains("<f>SUM(A2)</f>"), "{xml}");
+    let back = load(&bytes);
+    assert_eq!(back.sheets[0].consolidation, Some(spec));
+    assert_eq!(back.sheets[0].outline, wb.sheets[0].outline);
+    assert_eq!(value(&back, 0, "A3"), Value::Number(4.0));
+    assert_eq!(value(&back, 0, "A5"), Value::Number(6.0));
 }

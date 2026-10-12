@@ -5,7 +5,8 @@
 //! corner of the object.
 
 use opensheet_engine::slicer::{Period, SlicerItem, TimeLevel};
-use opensheet_engine::table::{OFFICE_THEME, tint};
+use opensheet_engine::table::tint;
+use opensheet_engine::theme::Theme;
 use opensheet_engine::{Color, Locale};
 
 /// A box: x0, y0, x1, y1.
@@ -249,7 +250,7 @@ pub(super) const TIMELINE_STYLES: [&str; 12] = [
 ];
 
 fn shade(color: u32, amount: f64) -> u32 {
-    tint(Color(color), amount).0
+    tint(Color(color), amount).value()
 }
 
 /// The family ("Light", "Dark", "Other") and the number of a style name.
@@ -261,13 +262,13 @@ pub(super) fn style_parts(name: &str) -> (&str, usize) {
 }
 
 /// The accent colour a style is built on: styles 1 to 6 take the six
-/// accents of the theme.
-fn accent(number: usize) -> u32 {
-    OFFICE_THEME[4 + (number.max(1) - 1) % 6]
+/// accents of the workbook's theme.
+fn accent(theme: &Theme, number: usize) -> u32 {
+    theme.accent((number.max(1) - 1) % 6 + 1, 0.0).value()
 }
 
 /// The colours of a slicer style; an unknown name gets the first one.
-pub(super) fn slicer_look(name: &str) -> SlicerLook {
+pub(super) fn slicer_look(theme: &Theme, name: &str) -> SlicerLook {
     let (family, number) = style_parts(name);
     let plain = Tile {
         fill: 0xFFFFFF,
@@ -300,7 +301,7 @@ pub(super) fn slicer_look(name: &str) -> SlicerLook {
     };
     match family {
         "Dark" => {
-            let base = accent(number);
+            let base = accent(theme, number);
             SlicerLook {
                 background: 0xFFFFFF,
                 border: shade(base, -0.25),
@@ -336,7 +337,7 @@ pub(super) fn slicer_look(name: &str) -> SlicerLook {
             },
             ..light(0x000000)
         },
-        _ => light(accent(number)),
+        _ => light(accent(theme, number)),
     }
 }
 
@@ -356,9 +357,9 @@ pub(super) struct TimelineLook {
     pub handle: u32,
 }
 
-pub(super) fn timeline_look(name: &str) -> TimelineLook {
+pub(super) fn timeline_look(theme: &Theme, name: &str) -> TimelineLook {
     let (family, number) = style_parts(name);
-    let base = accent(number);
+    let base = accent(theme, number);
     if family == "Dark" {
         TimelineLook {
             background: shade(base, -0.5),
@@ -643,16 +644,21 @@ mod tests {
 
     #[test]
     fn styles_take_the_accents_of_the_theme() {
-        let first = slicer_look("SlicerStyleLight1");
-        assert_eq!(first.header_rule, OFFICE_THEME[4]);
+        let theme = Theme::office();
+        let accent = |n: usize| theme.accent(n, 0.0).value();
+        let first = slicer_look(&theme, "SlicerStyleLight1");
+        assert_eq!(first.header_rule, accent(1));
         assert_eq!(first.tile(false, true).fill, 0xFFFFFF);
         assert_ne!(first.tile(true, true).fill, first.tile(true, false).fill);
-        assert_eq!(slicer_look("SlicerStyleLight3").header_rule, OFFICE_THEME[6]);
-        let dark = slicer_look("SlicerStyleDark2");
-        assert_eq!((dark.selected.fill, dark.selected.text), (OFFICE_THEME[5], 0xFFFFFF));
+        assert_eq!(slicer_look(&theme, "SlicerStyleLight3").header_rule, accent(3));
+        let dark = slicer_look(&theme, "SlicerStyleDark2");
+        assert_eq!((dark.selected.fill, dark.selected.text), (accent(2), 0xFFFFFF));
         assert!(dark.header_fill.is_some());
-        assert_eq!(slicer_look("nonsense"), first);
-        assert_eq!(timeline_look("TimeSlicerStyleLight2").selected, OFFICE_THEME[5]);
+        assert_eq!(slicer_look(&theme, "nonsense"), first);
+        assert_eq!(timeline_look(&theme, "TimeSlicerStyleLight2").selected, accent(2));
+        // Another theme, other colours.
+        let facet = Theme::builtin("Facet").expect("the Facet theme");
+        assert_ne!(slicer_look(&facet, "SlicerStyleLight1").header_rule, first.header_rule);
         assert_eq!(style_title("SlicerStyleOther2", Locale::en()), "Slicer Style Other 2");
         assert_eq!(style_title("TimeSlicerStyleDark4", Locale::fr()), "Style de chronologie foncé\u{a0}4");
     }
