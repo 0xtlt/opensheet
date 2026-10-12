@@ -516,6 +516,8 @@ pub(super) fn zones(p: &mut Painter, shown: &ShownBox) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::{Bounds, point, size};
+    use opensheet_engine::{Locale, Workbook};
 
     const BOX: Frame = Frame {
         x: 100.0,
@@ -523,6 +525,86 @@ mod tests {
         width: 144.0,
         height: 79.0,
     };
+
+    fn layout(wb: &Workbook, zoom: f32, scroll: (f64, f64)) -> GridLayout {
+        let bounds = Bounds::new(point(px(0.), px(0.)), size(px(1000.), px(600.)));
+        GridLayout::new(&wb.sheets[0], bounds, zoom, scroll.0, scroll.1)
+    }
+
+    /// A workbook with a note on C5 (left showing or not).
+    fn noted(visible: bool) -> Workbook {
+        let mut wb = Workbook::new(Locale::en());
+        wb.set_note(0, 4, 2, "Ada", "Ada:\nCheck");
+        wb.set_note_visible(0, 4, 2, visible);
+        wb.commit("note");
+        wb
+    }
+
+    #[test]
+    fn shown_boxes_follow_zoom_and_scrolling() {
+        let wb = noted(true);
+        let sheet = &wb.sheets[0];
+        // 15 pixels right of C5, a little above its top.
+        let frame = sheet.note_frame(4, 2).unwrap();
+        assert_eq!(frame, Frame::new(207.0, 70.0, 144.0, 79.0));
+        let at = |zoom: f32, scroll: (f64, f64)| {
+            let l = layout(&wb, zoom, scroll);
+            let shown = shown(&l, sheet, (4, 2), frame, true, BoxState::Plain);
+            assert!(shown.solid && shown.pushed == (0.0, 0.0));
+            let (x0, y0, x1, y1) = shown.rect;
+            (x0 - l.header_w, y0 - l.header_h, x1 - x0, y1 - y0)
+        };
+        assert_eq!(at(1.0, (0.0, 0.0)), (207.0, 70.0, 144.0, 79.0));
+        // Twice as large, twice as far: the box stays 15 zoomed pixels from its cell.
+        assert_eq!(at(2.0, (0.0, 0.0)), (414.0, 140.0, 288.0, 158.0));
+        // It scrolls with the sheet, out of view if need be.
+        assert_eq!(at(1.0, (64.0, 40.0)), (143.0, 30.0, 144.0, 79.0));
+        assert_eq!(at(1.0, (640.0, 400.0)), (-433.0, -330.0, 144.0, 79.0));
+    }
+
+    #[test]
+    fn shown_boxes_slide_under_frozen_panes() {
+        let mut wb = noted(true);
+        wb.sheets[0].frozen_rows = 2;
+        wb.sheets[0].frozen_cols = 1;
+        let sheet = &wb.sheets[0];
+        let frame = sheet.note_frame(4, 2).unwrap();
+        let l = layout(&wb, 1.0, (100.0, 30.0));
+        let shown = shown(&l, sheet, (4, 2), frame, true, BoxState::Plain);
+        // The box scrolls; what it may draw on starts after the frozen
+        // column and the frozen rows.
+        assert_eq!(shown.rect.0, l.header_w + 107.0);
+        assert_eq!(shown.rect.1, l.header_h + 40.0);
+        assert_eq!(shown.clip, (l.header_w + 64.0, l.header_h + 40.0, 1000.0, 600.0));
+        // A box anchored in the frozen column stays put and draws over
+        // the whole grid.
+        let frozen = shown_at(&l, sheet, Frame::new(10.0, 5.0, 144.0, 79.0));
+        assert_eq!(frozen.rect.0, l.header_w + 10.0);
+        assert_eq!(frozen.clip, (l.header_w, l.header_h, 1000.0, 600.0));
+    }
+
+    fn shown_at(l: &GridLayout, sheet: &Sheet, frame: Frame) -> ShownBox {
+        shown(l, sheet, (4, 2), frame, true, BoxState::Plain)
+    }
+
+    #[test]
+    fn peeked_boxes_are_pushed_into_view() {
+        let wb = noted(false);
+        let sheet = &wb.sheets[0];
+        let frame = sheet.note_frame(4, 2).unwrap();
+        // In view: where the note is, and deaf to the mouse.
+        let l = layout(&wb, 1.0, (0.0, 0.0));
+        let peek = shown(&l, sheet, (4, 2), frame, false, BoxState::Plain);
+        assert_eq!((peek.rect.0, peek.pushed, peek.solid), (l.header_w + 207.0, (0.0, 0.0), false));
+        // Scrolled so that row 5 is the first in view: the box, which
+        // starts above its cell, is pushed down under the headers.
+        let l = layout(&wb, 1.0, (0.0, 80.0));
+        let peek = shown(&l, sheet, (4, 2), frame, false, BoxState::Plain);
+        assert_eq!(peek.rect.1, l.header_h + 2.0);
+        assert_eq!(peek.pushed, (0.0, 12.0));
+        // Once selected (its border was pressed), it takes the mouse.
+        assert!(shown(&l, sheet, (4, 2), frame, false, BoxState::Selected).solid);
+    }
 
     #[test]
     fn moving_and_resizing() {
