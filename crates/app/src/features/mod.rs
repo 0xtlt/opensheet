@@ -36,7 +36,7 @@
 //! | Drop-down hanging from a cell | `app.open_popup_view(app.cell_anchor(rect), view, cx)`, `app.close_popup(window, cx)` |
 //! | Cell appearance | the grid paints `Workbook::display` (table, pivot and conditional styles); [`condfmt::paint_adornment`] draws data bars and icons |
 //! | Drawing under / over the cells | [`Feature::paint`] with a [`Painter`], once per pane and [`PaintLayer`] |
-//! | Clickable things drawn on the grid | [`Painter::zone`], then [`Feature::zone_mouse_down`], [`Feature::zone_drag`], [`Feature::zone_mouse_up`], [`Feature::zone_hover`]; cursor and tooltip are set on the [`Zone`] |
+//! | Clickable things drawn on the grid | [`Painter::zone`], then [`Feature::zone_mouse_down`], [`Feature::zone_drag`], [`Feature::zone_mouse_up`], [`Feature::zone_hover`], [`Feature::zone_scroll`]; cursor and tooltip are set on the [`Zone`] |
 //! | Real elements over the grid (a note being typed) | [`Feature::overlay_elements`] |
 //! | Refusing a change (protection, pivot cells) | [`Feature::guard`] with an [`Intent`]; a feature asks before its own changes with `app.may(intent, cx)` |
 //! | Refusing a selection (protection) | [`Feature::can_select`] |
@@ -238,6 +238,7 @@ pub mod names;
 pub mod page;
 pub mod pivot;
 pub mod protection;
+pub mod slicers;
 pub mod tables;
 pub mod validation;
 
@@ -247,7 +248,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// Every feature, in the order hooks are called. Floating objects are
 /// drawn in this order too (the objects of later features on top).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 17] = [
+    static ALL: [&dyn Feature; 18] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -260,6 +261,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &charts::Charts,
         &chart_format::ChartFormat,
         &drawings::Drawings,
+        &slicers::Slicers,
         &names::Names,
         &edit_tools::EditTools,
         &data_tools::DataTools,
@@ -958,6 +960,13 @@ pub trait Feature: Sync + 'static {
 
     /// The press that answered `Capture` ended.
     fn zone_mouse_up(&self, _app: &mut ExcelApp, _zone: &Zone, _ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) {}
+
+    /// The wheel was turned over one of this feature's zones, by `delta`
+    /// pixels (x, y; positive towards the start). True when the zone
+    /// scrolled something of its own: the sheet then stays where it is.
+    fn zone_scroll(&self, _app: &mut ExcelApp, _zone: &Zone, _delta: (f32, f32), _cx: &mut Cx) -> bool {
+        false
+    }
 
     /// The pointer entered one of this feature's zones (`Some`) or left
     /// the one it was on (`None`).

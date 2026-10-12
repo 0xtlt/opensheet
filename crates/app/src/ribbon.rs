@@ -7,7 +7,7 @@
 use crate::app::*;
 use crate::features::{
     self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, protection, tables, validation,
+    pivot, protection, slicers, tables, validation,
 };
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -1459,8 +1459,8 @@ impl ExcelApp {
             group(
                 t("Filters", "Filtres"),
                 row(vec![
-                    self.cmd_large("in-slicer", tables::Cmd::InsertSlicer, false, cx),
-                    self.cmd_large("in-timeline", pivot::Cmd::InsertTimeline, false, cx),
+                    self.cmd_large("in-slicer", slicers::Cmd::InsertSlicer, false, cx),
+                    self.cmd_large("in-timeline", slicers::Cmd::InsertTimeline, false, cx),
                 ]),
             )
             .into_any_element(),

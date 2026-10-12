@@ -2834,6 +2834,17 @@ impl ExcelApp {
     pub fn grid_scroll(&mut self, ev: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let delta = ev.delta.pixel_delta(px(20.0 * self.zoom));
         let (mut dx, mut dy) = (f32::from(delta.x) as f64, f32::from(delta.y) as f64);
+        // A feature's zone may scroll what it shows (the buttons of a
+        // slicer) instead of the sheet.
+        if let Some(layout) = self.current_layout() {
+            let (x, y) = layout.local(ev.position);
+            if let Some(zone) = self.zone_at(x, y, true).or_else(|| self.zone_at(x, y, false)).map(|i| self.zones[i].clone())
+                && features::all()[zone.owner].zone_scroll(self, &zone, (dx as f32, dy as f32), cx)
+            {
+                cx.notify();
+                return;
+            }
+        }
         if ev.modifiers.platform || ev.modifiers.control {
             // Zoom with Cmd/Ctrl + wheel.
             if dy.abs() > 0.5 {

@@ -51,7 +51,6 @@ commands! {
         Insert = "table", t("Table", "Tableau");
         FormatAs = "table", t("Format as Table", "Mettre sous forme de tableau");
         RemoveDuplicates = "delete-cells", t("Remove Duplicates", "Supprimer les doublons");
-        InsertSlicer = "slicer", t("Slicer", "Segment");
         // Table Design
         Resize = "table", t("Resize Table", "Redimensionner le tableau");
         SummarizeWithPivot = "pivot", t("Summarize with PivotTable", "Synthétiser avec un tableau croisé dynamique");
@@ -364,7 +363,7 @@ impl Command for Cmd {
         match self {
             // Excel greys Insert > Table out inside a table.
             Cmd::Insert => table.is_none(),
-            Cmd::FormatAs | Cmd::RemoveDuplicates | Cmd::InsertSlicer | Cmd::NewStyle => true,
+            Cmd::FormatAs | Cmd::RemoveDuplicates | Cmd::NewStyle => true,
             // No table is connected to a source of data outside the workbook.
             Cmd::Refresh => false,
             // The buttons sit on the header row.
