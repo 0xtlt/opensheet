@@ -595,7 +595,7 @@ impl Render for DropDown {
             top.push(Self::separator());
             y += 3.0 * ROW + SEPARATOR;
 
-            let clear = t("Clear Filter From \"{}\"", "Effacer le filtre de « {} »").replace("{}", &state.caption);
+            let clear = t("Clear Filter From \"{}\"", "Effacer le filtre de «\u{a0}{}\u{a0}»").replace("{}", &state.caption);
             top.push(self.menu_row(
                 "clear",
                 Some("filter"),

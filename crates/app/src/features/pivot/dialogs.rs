@@ -1138,7 +1138,7 @@ impl GroupingDialog {
 impl Render for GroupingDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let locale = self.locale;
-        let auto = GroupBox::new(t("Auto", "Automatique"))
+        let auto = GroupBox::new(t_ctx("grouping", "Auto", "Automatique"))
             .child(self.bound("auto-start", t("Starting at:", "Début :"), self.auto_start, &self.start, true, cx))
             .child(self.bound("auto-end", t("Ending at:", "Fin :"), self.auto_end, &self.end, false, cx));
         let by: AnyElement = if self.dates {

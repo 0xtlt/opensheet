@@ -1344,7 +1344,7 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
             }
             menu.push(Item::separator());
             menu.push(Item::named(
-                t("Remove \"{}\"", "Supprimer « {} »"),
+                t("Remove \"{}\"", "Supprimer «\u{a0}{}\u{a0}»"),
                 name,
                 Act::Remove(Target::Data(data)),
             ));
@@ -1416,7 +1416,7 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                     t("Filter", "Filtrer"),
                     vec![
                         Item::named(
-                            t("Clear Filter From \"{}\"", "Effacer le filtre de « {} »"),
+                            t("Clear Filter From \"{}\"", "Effacer le filtre de «\u{a0}{}\u{a0}»"),
                             caption,
                             Act::ClearFilter(field),
                         )
@@ -1444,7 +1444,7 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 ));
                 menu.push(Item::separator());
                 menu.push(
-                    Item::named(t("Subtotal \"{}\"", "Sous-total de « {} »"), caption, Act::ToggleSubtotal(field))
+                    Item::named(t("Subtotal \"{}\"", "Sous-total de «\u{a0}{}\u{a0}»"), caption, Act::ToggleSubtotal(field))
                         .checked(p.fields[field].subtotals != Subtotals::None),
                 );
             }
@@ -1501,18 +1501,18 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 let mut moves: Vec<Item> = Vec::new();
                 let (back, forth) = if in_columns {
                     (
-                        t("Move \"{}\" Left", "Déplacer « {} » vers la gauche"),
-                        t("Move \"{}\" Right", "Déplacer « {} » vers la droite"),
+                        t("Move \"{}\" Left", "Déplacer «\u{a0}{}\u{a0}» vers la gauche"),
+                        t("Move \"{}\" Right", "Déplacer «\u{a0}{}\u{a0}» vers la droite"),
                     )
                 } else {
                     (
-                        t("Move \"{}\" Up", "Déplacer « {} » vers le haut"),
-                        t("Move \"{}\" Down", "Déplacer « {} » vers le bas"),
+                        t("Move \"{}\" Up", "Déplacer «\u{a0}{}\u{a0}» vers le haut"),
+                        t("Move \"{}\" Down", "Déplacer «\u{a0}{}\u{a0}» vers le bas"),
                     )
                 };
                 let (to_start, to_end) = (
-                    t("Move \"{}\" to Beginning", "Déplacer « {} » au début"),
-                    t("Move \"{}\" to End", "Déplacer « {} » à la fin"),
+                    t("Move \"{}\" to Beginning", "Déplacer «\u{a0}{}\u{a0}» au début"),
+                    t("Move \"{}\" to End", "Déplacer «\u{a0}{}\u{a0}» à la fin"),
                 );
                 // The item of a label moves among the items shown.
                 if let (true, Some(item)) = (is_label(cell.part), cell.item) {
@@ -1542,14 +1542,14 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 moves.push(Item::separator());
                 if area != Area::Rows {
                     moves.push(Item::named(
-                        t("Move \"{}\" to Rows", "Déplacer « {} » vers les lignes"),
+                        t("Move \"{}\" to Rows", "Déplacer «\u{a0}{}\u{a0}» vers les lignes"),
                         caption,
                         Act::MoveFieldTo { field, area: Area::Rows },
                     ));
                 }
                 if area != Area::Columns {
                     moves.push(Item::named(
-                        t("Move \"{}\" to Columns", "Déplacer « {} » vers les colonnes"),
+                        t("Move \"{}\" to Columns", "Déplacer «\u{a0}{}\u{a0}» vers les colonnes"),
                         caption,
                         Act::MoveFieldTo {
                             field,
@@ -1562,7 +1562,7 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
             }
             menu.push(Item::separator());
             menu.push(Item::named(
-                t("Remove \"{}\"", "Supprimer « {} »"),
+                t("Remove \"{}\"", "Supprimer «\u{a0}{}\u{a0}»"),
                 caption,
                 Act::Remove(Target::Field(field)),
             ));
