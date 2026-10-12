@@ -1069,8 +1069,18 @@ impl ExcelApp {
         if popup.geometry.borrow().panels.iter().any(|panel| panel.contains(&position)) {
             return;
         }
-        // Remember what was closed so the click that follows on the same
-        // control does not reopen it.
+        // A press on the control the pop-up hangs from is left to that
+        // control: its click closes the pop-up (see `open_menu`).
+        let on_anchor = popup
+            .anchor
+            .and_then(|anchor| self.anchors.borrow().get(anchor).copied())
+            .is_some_and(|bounds| bounds.contains(&position));
+        if on_anchor {
+            return;
+        }
+        // Remember what was closed so the click that follows on a control
+        // sharing this anchor (the arrow beside a button) does not reopen
+        // it.
         self.popup_dismissed = popup.anchor;
         self.close_popup(window, cx);
     }

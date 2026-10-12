@@ -3052,8 +3052,7 @@ impl ExcelApp {
     }
     /// Open a drop-down below the ribbon control registered under `anchor`.
     pub fn open_menu(&mut self, anchor: &'static str, entries: Vec<MenuEntry>, width: f32, window: &mut Window, cx: &mut Context<Self>) {
-        if self.popup_dismissed.take() == Some(anchor) {
-            cx.notify();
+        if self.toggles_popup_of(anchor, cx) {
             return;
         }
         let pos = self.anchor_pos(anchor, window);
@@ -3062,13 +3061,26 @@ impl ExcelApp {
     }
 
     pub fn open_palette(&mut self, anchor: &'static str, target: ColorTarget, window: &mut Window, cx: &mut Context<Self>) {
-        if self.popup_dismissed.take() == Some(anchor) {
-            cx.notify();
+        if self.toggles_popup_of(anchor, cx) {
             return;
         }
         let pos = self.anchor_pos(anchor, window);
         self.popup = Some(Popup::new(PopupKind::Palette(target), pos, 214.0).anchored(anchor));
         cx.notify();
+    }
+
+    /// A click on a control whose pop-up is open (or was closed by the
+    /// press of this very click) closes it instead of opening it again.
+    fn toggles_popup_of(&mut self, anchor: &'static str, cx: &mut Context<Self>) -> bool {
+        let open = self.popup.as_ref().is_some_and(|popup| popup.anchor == Some(anchor));
+        let just_closed = self.popup_dismissed.take() == Some(anchor);
+        if open {
+            self.popup = None;
+        }
+        if open || just_closed {
+            cx.notify();
+        }
+        open || just_closed
     }
 
     fn anchor_pos(&self, anchor: &'static str, window: &Window) -> Point<Pixels> {
