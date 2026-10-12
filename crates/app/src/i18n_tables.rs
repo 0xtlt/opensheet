@@ -39,6 +39,7 @@ pub static ES: &[(&str, &str)] = &[
     ("Page break between groups", "Salto de página entre grupos"),
     ("Summary below data", "Resumen debajo de los datos"),
     ("Remove All", "Quitar todos"),
+    ("Cannot create links to consolidation sheet.", "No se puede crear vínculos a una hoja de consolidación."),
     // ---- Editing tools ----
     ("OpenSheet cannot find the data you're searching for. If you are certain the data exists in the current sheet, check what you typed and try again.", "OpenSheet no encuentra los datos que busca. Si está seguro de que los datos existen en la hoja actual, compruebe la entrada y vuelva a intentarlo."),
     ("OpenSheet cannot find matching data to replace. No cell in the selection contains what you typed, or no records match the criteria.", "OpenSheet no encuentra datos coincidentes para reemplazar. No existen celdas que contengan lo que ha escrito o no hay registros que coincidan con los criterios."),
@@ -2885,6 +2886,7 @@ pub static DE: &[(&str, &str)] = &[
     ("Page break between groups", "Seitenumbruch zwischen Gruppen einfügen"),
     ("Summary below data", "Ergebnisse unterhalb der Daten anzeigen"),
     ("Remove All", "Entfernen"),
+    ("Cannot create links to consolidation sheet.", "Kann keine Verknüpfung zum Konsolidationsblatt erstellen."),
     // ---- Editing tools ----
     ("OpenSheet cannot find the data you're searching for. If you are certain the data exists in the current sheet, check what you typed and try again.", "OpenSheet kann keine übereinstimmenden Daten finden. Überprüfen Sie die Eingabe und versuchen Sie es erneut, wenn Sie sicher sind, dass bestimmte Daten in dem aktuellen Blatt vorhanden sind."),
     ("OpenSheet cannot find matching data to replace. No cell in the selection contains what you typed, or no records match the criteria.", "OpenSheet kann keine übereinstimmenden Daten zum Ersetzen finden. Keine Zelle der Markierung enthält den Suchbegriff, oder kein Datensatz entspricht dem Kriterium."),
@@ -5719,6 +5721,7 @@ pub static IT: &[(&str, &str)] = &[
     ("Page break between groups", "Interruzione di pagina tra gruppi"),
     ("Summary below data", "Riepilogo sotto i dati"),
     ("Remove All", "Rimuovi tutti"),
+    ("Cannot create links to consolidation sheet.", "Impossibile creare dei collegamenti ad un foglio di consolidamento."),
     // ---- Editing tools ----
     ("OpenSheet cannot find the data you're searching for. If you are certain the data exists in the current sheet, check what you typed and try again.", "OpenSheet non può trovare i dati cercati. Se si è certi dell'esistenza dei dati nel foglio corrente, verificare l'ortografia della stringa digitata e riprovare."),
     ("OpenSheet cannot find matching data to replace. No cell in the selection contains what you typed, or no records match the criteria.", "OpenSheet non può trovare dati da sostituire corrispondenti ai criteri specificati. Nessuna cella della selezione contiene la stringa digitata o nessun record corrisponde ai criteri."),

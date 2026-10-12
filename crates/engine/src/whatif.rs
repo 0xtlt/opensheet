@@ -403,6 +403,8 @@ impl Workbook {
         self.update_style(report, Rect::new(2, 3, 2, last_col), &|s| s.h_align = crate::style::HAlign::Right);
         let mut row = 3;
         let sections = [(&labels.changing_cells, &changing, true), (&labels.result_cells, &results.to_vec(), false)];
+        // The rows of each section, for the outline.
+        let mut groups: Vec<(u32, u32)> = Vec::new();
         for (title, cells, is_changing) in sections {
             if cells.is_empty() {
                 continue;
@@ -410,6 +412,7 @@ impl Workbook {
             text(self, row, 1, title);
             self.update_style(report, Rect::new(row, 1, row, last_col), &|s| s.font.bold = true);
             row += 1;
+            groups.push((row, row + cells.len() as u32 - 1));
             for (i, (r, c)) in cells.iter().enumerate() {
                 let name = cell_name(*r, *c);
                 let letters = name.trim_end_matches(|ch: char| ch.is_ascii_digit());
@@ -435,6 +438,12 @@ impl Workbook {
         for line in &labels.notes {
             text(self, row, 1, line);
             row += 1;
+        }
+        // Excel's report comes with an outline: the cells of each section
+        // fold under its heading.
+        self.sheets[report].outline.summary_below = false;
+        for (first, last) in groups {
+            self.outline_group(report, crate::outline::Axis::Rows, first, last).ok()?;
         }
         Some(report)
     }
@@ -841,6 +850,10 @@ mod tests {
         assert_eq!([at("D8"), at("E8")], [n(110.00000000000001), n(52.5)]);
         assert!(close(&at("F8"), 220.0));
         assert_eq!(at("B9"), Value::text("Notes"));
+        // The cells of each section fold under its heading.
+        let outline = &w.sheets[0].outline;
+        assert!(!outline.summary_below);
+        assert_eq!((3..9).map(|row| outline.rows.level(row)).collect::<Vec<_>>(), [0, 1, 1, 0, 1, 0]);
         // The sheet itself is as it was, and a second report gets another name.
         assert_eq!(w.value_at(1, 0, 0), n(100.0));
         assert_eq!(w.value_at(1, 2, 0), n(110.00000000000001));

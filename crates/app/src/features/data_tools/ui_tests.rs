@@ -441,6 +441,66 @@ fn consolidate_by_category_and_again(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn consolidate_with_links_to_the_sources(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "Q1"), ("B1", "Q2"), ("A2", "1"), ("B2", "2"), ("A3", "3"), ("B3", "4")]);
+    // On the sheet of the sources Excel refuses the links.
+    select(&app, cx, "E1");
+    let dialog = app.update_in(cx, |app, window, cx| consolidate::open(app, window, cx));
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| {
+        dialog.set_reference("A1:B3", cx);
+        assert!(dialog.add(cx));
+        let spec = dialog.spec_mut();
+        spec.top_row = true;
+        spec.link = true;
+    });
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    cx.simulate_keystrokes("enter escape");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "E1"), Value::Empty);
+    // From another sheet: links folded under their totals.
+    let source = app.update(cx, |app, _| app.wb.sheets[0].name.clone());
+    app.update_in(cx, |app, window, cx| {
+        let sheet = app.wb.add_sheet(1);
+        app.commit("setup", cx);
+        app.switch_sheet(sheet, window, cx);
+    });
+    redraw(cx);
+    select(&app, cx, "A1");
+    let dialog = app.update_in(cx, |app, window, cx| consolidate::open(app, window, cx));
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| {
+        dialog.set_reference(&format!("{source}!$A$1:$B$3"), cx);
+        assert!(dialog.add(cx));
+        let spec = dialog.spec_mut();
+        spec.top_row = true;
+        spec.link = true;
+    });
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "A3"), Value::Number(1.0));
+    assert_eq!(value(&app, cx, "B5"), Value::Number(4.0));
+    let (hidden, formula) = app.update(cx, |app, _| {
+        let hidden: Vec<u32> = app.wb.sheets[app.sheet].hidden_rows.iter().copied().collect();
+        (hidden, app.wb.formula_text(app.sheet, 1, 0))
+    });
+    assert_eq!(hidden, [1, 3]);
+    assert_eq!(formula, Some(format!("={source}!$A$2")));
+    // The outline shows in the margin, and one step takes all of it back.
+    assert!(app.update(cx, |app, _| app.current_layout().unwrap().margin_w) > 0.0);
+    cx.simulate_keystrokes("cmd-z");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A3"), Value::Empty);
+    assert!(app.update(cx, |app, _| app.wb.sheets[app.sheet].outline.is_empty()));
+}
+
+#[gpui::test]
 fn consolidate_refusals(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     fill(&app, cx, &[("A1", "1"), ("A2", "2")]);
