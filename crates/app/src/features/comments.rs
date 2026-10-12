@@ -9,22 +9,21 @@
 //!
 //! The marks and the boxes are painted on the grid (`notes.rs`); the box
 //! in which a note is typed and the comment cards are elements placed
-//! over it (`text_area.rs`, `card.rs`, `pane.rs`). `ui_tests.rs` drives
+//! over it (`widgets/text_area.rs`, `card.rs`, `pane.rs`). `ui_tests.rs` drives
 //! all of it in GPUI's headless window.
 
 mod card;
 mod notes;
 mod pane;
-mod text_area;
 #[cfg(test)]
 mod ui_tests;
 
-pub use self::text_area::bind_keys;
+pub use crate::widgets::text_area::bind_keys;
 
 use self::card::{Beside, CommentCard};
 use self::notes::{BoxDrag, BoxView, Grip, ShownBox};
 use self::pane::CommentsPane;
-use self::text_area::{AreaEvent, TextArea};
+use crate::widgets::text_area::{AreaEvent, TextArea};
 use super::{
     Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PaintLayer, Painter, StatusItem, Zone,
     ZoneEvent, ZoneResponse,

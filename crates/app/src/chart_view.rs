@@ -446,3 +446,10 @@ pub fn paint_turned(
         .translate(point(back.x.scale(scale), back.y.scale(scale)));
     let _ = window.paint_svg(bounds, path, matrix, color, cx);
 }
+
+/// The asset path of a line of text to draw turned (`Draw::Turned`), and
+/// the width and the height of its box: for turned text outside charts
+/// (the text of a turned shape).
+pub fn turned_text(ts: &WindowTextSystem, family: SharedString, text: &str, size: f32, bold: bool) -> (SharedString, f32, f32) {
+    Shaper { ts, family }.turned(text, size, bold)
+}

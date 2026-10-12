@@ -47,6 +47,8 @@
 //! | Context menus | [`Feature::context_menu`] with a [`MenuTarget`] |
 //! | Status bar | [`Feature::status_items`] |
 //! | Pictures and shapes | [`Feature::objects`] and the `*_object` hooks; selecting, moving, resizing, nudging, deleting, copy / paste and stacking order come from `objects.rs` |
+//! | Objects that are not their frame (a line, a turned shape) | [`Feature::object_hit`], [`Feature::object_extent`], [`Feature::object_own_handles`] |
+//! | Typing, Home-tab formatting, Escape and Paste while an object is selected | [`Feature::object_typed`], [`Feature::object_style`], [`Feature::cancel`], [`Feature::object_clipboard`], [`Feature::paste_clipboard`] |
 //! | Page Layout view / Page Break Preview | `app.view_mode()`, [`Feature::view_mode_changed`], [`Feature::adjust_layout`] (`Axis::set_gaps` leaves room between pages) |
 //!
 //! Row heights and the arrow keys already skip rows a filter hides
@@ -175,10 +177,11 @@ use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{Draw, GridLayout};
 use crate::theme::c;
 use gpui::{
-    AnyElement, BorderStyle, Bounds, Context, CursorStyle, Font, FontStyle, FontWeight, Hsla, Modifiers, MouseButton,
-    PathBuilder, Pixels, Point, ShapedLine, SharedString, TextRun, Window, WindowTextSystem, fill, px, quad, size,
+    AnyElement, BorderStyle, Bounds, ClipboardItem, Context, CursorStyle, Font, FontStyle, FontWeight, Hsla, Modifiers,
+    MouseButton, PathBuilder, Pixels, Point, ShapedLine, SharedString, TextRun, Window, WindowTextSystem, fill, px, quad,
+    size,
 };
-use opensheet_engine::Rect;
+use opensheet_engine::{Rect, Style};
 use opensheet_engine::ops::{Direction, PasteMode};
 use opensheet_engine::workbook::ClearMode;
 use std::any::Any;
@@ -1058,6 +1061,61 @@ pub trait Feature: Sync + 'static {
     /// one was deselected (`None`).
     fn object_selected(&self, _app: &mut ExcelApp, _id: Option<u32>, _cx: &mut Cx) {}
 
+    /// Whether a point of the grid element is on an object that does not
+    /// fill its frame (a line, a rotated shape, a shape without fill).
+    /// `None`: anywhere in the frame.
+    fn object_hit(&self, _app: &ExcelApp, _id: u32, _layout: &GridLayout, _x: f32, _y: f32) -> Option<bool> {
+        None
+    }
+
+    /// The box (x0, y0, x1, y1) an object covers on screen when it is not
+    /// its frame (a rotated shape, the tail of a callout): it is drawn as
+    /// long as that box shows.
+    fn object_extent(&self, _app: &ExcelApp, _id: u32, _layout: &GridLayout) -> Option<(f32, f32, f32, f32)> {
+        None
+    }
+
+    /// True when the feature draws the selection of this object and
+    /// handles its handles itself (zones registered in `paint_object`),
+    /// instead of the frame and the eight handles of `objects.rs`: the two
+    /// ends of a line, the handles of a rotated shape.
+    fn object_own_handles(&self, _app: &ExcelApp, _id: u32) -> bool {
+        false
+    }
+
+    /// Text typed while one of this feature's objects is selected (a
+    /// shape takes it as its text). True when the feature took it.
+    fn object_typed(&self, _app: &mut ExcelApp, _id: u32, _text: &str, _window: &mut Window, _cx: &mut Cx) -> bool {
+        false
+    }
+
+    /// A formatting command of the Home tab (font, colours, alignment)
+    /// was run while one of this feature's objects is selected: `change`
+    /// is what it does to a cell style. True when the feature applied it
+    /// to the object (the text of a shape) and committed.
+    fn object_style(&self, _app: &mut ExcelApp, _id: u32, _label: &str, _change: &dyn Fn(&mut Style), _cx: &mut Cx) -> bool {
+        false
+    }
+
+    /// What Copy leaves on the system clipboard for an object, for other
+    /// applications (a picture). `None` leaves it empty.
+    fn object_clipboard(&self, _app: &ExcelApp, _id: u32) -> Option<ClipboardItem> {
+        None
+    }
+
+    /// Paste was asked: true when the feature pasted what the system
+    /// clipboard holds itself (a picture copied in another application).
+    fn paste_clipboard(&self, _app: &mut ExcelApp, _cx: &mut Cx) -> bool {
+        false
+    }
+
+    /// Escape was pressed while no cell is being edited: true when the
+    /// feature had something of its own to cancel (a tool waiting for a
+    /// click on the sheet).
+    fn cancel(&self, _app: &mut ExcelApp, _cx: &mut Cx) -> bool {
+        false
+    }
+
     // ---- views --------------------------------------------------------------
 
     /// The view mode of the current sheet changed (`app.view_mode()`).
@@ -1156,6 +1214,16 @@ pub(crate) fn view_mode_changed(app: &mut ExcelApp, cx: &mut Cx) {
     for f in all() {
         f.view_mode_changed(app, cx);
     }
+}
+
+/// True when a feature pasted what the system clipboard holds itself.
+pub(crate) fn paste_clipboard(app: &mut ExcelApp, cx: &mut Cx) -> bool {
+    all().iter().any(|f| f.paste_clipboard(app, cx))
+}
+
+/// True when a feature had something to cancel on Escape.
+pub(crate) fn cancel(app: &mut ExcelApp, cx: &mut Cx) -> bool {
+    all().iter().any(|f| f.cancel(app, cx))
 }
 
 /// Every floating object of a sheet, bottom-most first.

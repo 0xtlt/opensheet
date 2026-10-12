@@ -43,6 +43,7 @@
 mod color;
 pub mod gallery;
 mod lists;
+pub mod text_area;
 
 pub use color::{ColorButton, ColorGrid};
 pub use lists::{CheckItem, CheckList, ListBox, Tree, TreeNode};

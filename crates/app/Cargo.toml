@@ -10,6 +10,9 @@ opensheet_engine = { path = "../engine" }
 opensheet_io = { path = "../io" }
 opensheet_print = { path = "../print" }
 gpui = "0.2.2"
+# The crate GPUI decodes pictures with (already built for it): its bitmap
+# type is what `gpui::RenderImage` is made from.
+image = "0.25"
 unicode-segmentation = "1"
 
 [dev-dependencies]

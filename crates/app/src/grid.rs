@@ -578,6 +578,17 @@ pub enum Draw {
         align: TextAlign,
         bounds: Bounds<Pixels>,
     },
+    /// A decoded picture stretched over `bounds`.
+    Image {
+        image: Arc<gpui::RenderImage>,
+        bounds: Bounds<Pixels>,
+    },
+    /// Items cut off at `clip` (a floating object is clipped to the pane
+    /// it is drawn in when panes are frozen).
+    Clipped {
+        clip: Bounds<Pixels>,
+        items: Vec<Draw>,
+    },
     /// A line of text turned by `turn` radians (clockwise) around `pivot`:
     /// the title of a vertical chart axis. `path` names the text as an
     /// asset (see `chart_view::text_asset`), `bounds` is its box before it
@@ -1337,12 +1348,15 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         let mut painter = Painter::new(input.app, layout, ts, PaintLayer::Top, all_visible, clip, input.scale);
         for (id, object) in &objects {
             let rect = crate::objects::object_rect(layout, &object.place);
-            if rect.2 < hw || rect.3 < hh || rect.0 > w || rect.1 > h {
+            let feature = features::all()[id.owner];
+            // What shows of a rotated shape is not its frame.
+            let shown = feature.object_extent(input.app, id.id, layout).unwrap_or(rect);
+            if shown.2 < hw || shown.3 < hh || shown.0 > w || shown.1 > h {
                 continue;
             }
             painter.owner = id.owner;
-            features::all()[id.owner].paint_object(&mut painter, object, rect);
-            if input.app.object_sel == Some(*id) {
+            feature.paint_object(&mut painter, object, rect);
+            if input.app.object_sel == Some(*id) && !feature.object_own_handles(input.app, id.id) {
                 crate::objects::paint_selection(&mut painter, rect);
             }
         }
@@ -1561,6 +1575,10 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
                             }
                         });
                     }
+                    Draw::Image { image, bounds } => {
+                        let _ = window.paint_image(bounds, Default::default(), image, 0, false);
+                    }
+                    Draw::Clipped { clip, items } => paint_layers(vec![Layer { clip, items }], window, cx),
                 }
             }
         });

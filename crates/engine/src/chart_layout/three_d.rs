@@ -9,7 +9,7 @@ use super::{
     AXIS, AxisId, ChartElement, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, groups, label_text, line_height,
     shade,
 };
-use crate::chart::{Family, View3D};
+use crate::chart::{Family, TickLabels, View3D};
 use crate::style::Color;
 
 /// Excel leaves one and a half times the depth of a shape free around it
@@ -268,7 +268,8 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         if kind.is_percent() { "0%".to_string() } else { data.value_format.clone() }
     });
     let labels_of = |p: &Painter, scale: &Scale| -> Vec<(f64, String, f32)> {
-        if !value_axis.visible {
+        // "None" for the tick labels hides them and leaves the axis.
+        if !value_axis.visible || value_axis.labels == TickLabels::None {
             return Vec::new();
         }
         scale
@@ -282,7 +283,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             .collect()
     };
     let value_labels = labels_of(p, &scale);
-    let cat_labels: Vec<(String, f32)> = if chart.axes.category.visible {
+    let cat_labels: Vec<(String, f32)> = if chart.axes.category.visible && chart.axes.category.labels != TickLabels::None {
         (0..n)
             .map(|k| {
                 let text = data.categories.get(k).cloned().unwrap_or_default();
@@ -320,7 +321,9 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let px1 = right - if row_labels.is_empty() { 4.0 * z } else { widest(&row_labels) + 8.0 * z };
     let py0 = top + label_h / 2.0;
     let py1 = bottom - foot_h - if foot_title.is_some() { title_h + 4.0 * z } else { 0.0 };
-    if px1 - px0 < 20.0 || py1 - py0 < 20.0 {
+    // The smallest plot worth drawing shrinks with the zoom, so that the
+    // thumbnails of the galleries, drawn at a small zoom, are not left empty.
+    if px1 - px0 < 20.0 * z || py1 - py0 < 20.0 * z {
         return;
     }
     let view = chart.view3d_or_default();

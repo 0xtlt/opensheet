@@ -1,5 +1,9 @@
 //! A text box of several lines with word wrap and IME support: where a
-//! note is typed in place, and the fields of a comment card.
+//! note is typed in place, the fields of a comment card, and the text of
+//! a shape.
+//!
+//! The box takes its font, size, colour and line height from the element
+//! that holds it, is as wide as that element and as tall as its text.
 //!
 //! It answers the keys of the single-line `TextInput` (same key context),
 //! plus those that only make sense on several lines. Return starts a new
@@ -56,7 +60,7 @@ pub enum AreaEvent {
 /// The text and its selection: everything about editing that needs no
 /// layout.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct Buffer {
+pub(crate) struct Buffer {
     pub text: String,
     /// Byte range; empty when it is only a caret.
     pub selected: Range<usize>,
@@ -191,10 +195,13 @@ struct Shaped {
     starts: Vec<usize>,
     rows: Vec<Row>,
     line_height: Pixels,
+    /// The width the rows are aligned in.
+    width: Pixels,
+    align: TextAlign,
 }
 
 impl Shaped {
-    fn new(mut lines: Vec<WrappedLine>, line_height: Pixels) -> Shaped {
+    fn new(mut lines: Vec<WrappedLine>, line_height: Pixels, width: Pixels, align: TextAlign) -> Shaped {
         // Whatever happens there is a row for the caret.
         if lines.is_empty() {
             lines.push(WrappedLine::default());
@@ -223,6 +230,22 @@ impl Shaped {
             starts,
             rows,
             line_height,
+            width,
+            align,
+        }
+    }
+
+    /// Where a row starts, from the left edge of the box: GPUI centres a
+    /// row (or pushes it right) by the width of its glyphs, blanks
+    /// included.
+    fn row_left(&self, row: &Row) -> Pixels {
+        let layout = &self.lines[row.paragraph].unwrapped_layout;
+        let end = if row.end >= layout.len { layout.width } else { layout.x_for_index(row.end) };
+        let row_width = end - layout.x_for_index(row.start);
+        match self.align {
+            TextAlign::Left => px(0.),
+            TextAlign::Center => (self.width - row_width) / 2.0,
+            TextAlign::Right => self.width - row_width,
         }
     }
 
@@ -247,7 +270,7 @@ impl Shaped {
     fn x_in_row(&self, row: &Row, index: usize) -> Pixels {
         let layout = &self.lines[row.paragraph].unwrapped_layout;
         let local = index.saturating_sub(self.starts[row.paragraph]).clamp(row.start, row.end);
-        layout.x_for_index(local) - layout.x_for_index(row.start)
+        self.row_left(row) + layout.x_for_index(local) - layout.x_for_index(row.start)
     }
 
     /// Top-left corner of the caret at `index`, from the corner of the text.
@@ -266,7 +289,7 @@ impl Shaped {
         let row = &self.rows[row];
         let layout = &self.lines[row.paragraph].unwrapped_layout;
         let local = layout
-            .closest_index_for_x(x.max(px(0.)) + layout.x_for_index(row.start))
+            .closest_index_for_x((x - self.row_left(row)).max(px(0.)) + layout.x_for_index(row.start))
             .clamp(row.start, row.end);
         self.starts[row.paragraph] + local
     }
@@ -286,6 +309,11 @@ pub struct TextArea {
     pub min_rows: usize,
     /// The box grows with its text up to this height, then scrolls.
     pub max_height: Option<f32>,
+    /// How each line sits in the width of the box (the text of a shape is
+    /// often centred).
+    pub align: TextAlign,
+    /// The colour of the caret; black when `None`.
+    pub caret_color: Option<Hsla>,
     /// Tab is left to what holds the box (a pane walks its controls with
     /// it); else it is swallowed, so that it never reaches the grid.
     tab_moves_on: bool,
@@ -311,6 +339,8 @@ impl TextArea {
             bold_prefix: None,
             min_rows: 1,
             max_height: None,
+            align: TextAlign::Left,
+            caret_color: None,
             tab_moves_on: false,
             marked: None,
             shaped: None,
@@ -425,12 +455,13 @@ impl TextArea {
         } else {
             (self.buffer.text.clone().into(), self.runs(style))
         };
+        let width = width.max(px(8.));
         let lines = window
             .text_system()
-            .shape_text(text, font_size, &runs, Some(width.max(px(8.))), None)
+            .shape_text(text, font_size, &runs, Some(width), None)
             .map(|lines| lines.into_iter().collect())
             .unwrap_or_default();
-        Shaped::new(lines, line_height)
+        Shaped::new(lines, line_height, width, self.align)
     }
 
     fn changed(&mut self, cx: &mut Context<Self>) {
@@ -863,7 +894,17 @@ impl Element for AreaElement {
         let line_height = window.line_height();
         let shaped = area.shape(bounds.size.width, &text_style, font_size, line_height, window);
         let empty = area.buffer.text.is_empty();
-        let caret_at = if empty { Point::default() } else { shaped.position(area.buffer.caret()) };
+        // In an empty box the caret stands where the first character will.
+        let caret_at = if empty {
+            let start = match area.align {
+                TextAlign::Left => px(0.),
+                TextAlign::Center => bounds.size.width / 2.0,
+                TextAlign::Right => bounds.size.width - px(1.),
+            };
+            point(start, px(0.))
+        } else {
+            shaped.position(area.buffer.caret())
+        };
 
         // Keep the caret in view.
         let mut scroll_y = area.scroll_y;
@@ -882,7 +923,7 @@ impl Element for AreaElement {
         if selected.is_empty() || empty {
             caret = Some(fill(
                 Bounds::new(origin + caret_at, size(px(1.), line_height)),
-                rgb(0x000000),
+                area.caret_color.unwrap_or(rgb(0x000000).into()),
             ));
         } else {
             for (index, row) in shaped.rows.iter().enumerate() {
@@ -938,8 +979,9 @@ impl Element for AreaElement {
                 }
             }
             let mut y = bounds.top() - prepared.scroll_y;
+            let align = prepared.shaped.align;
             for line in &prepared.shaped.lines {
-                let _ = line.paint(point(bounds.left(), y), line_height, TextAlign::Left, None, window, cx);
+                let _ = line.paint(point(bounds.left(), y), line_height, align, None, window, cx);
                 y += line_height * (line.wrap_boundaries().len() + 1) as f32;
             }
             if let Some(caret) = prepared.caret.filter(|_| focused) {
