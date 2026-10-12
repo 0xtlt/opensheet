@@ -16,7 +16,7 @@ use opensheet_engine::style::{
 };
 use opensheet_engine::value::{ErrorKind, Value};
 use opensheet_engine::workbook::{Cell, Content, Sheet};
-use opensheet_engine::{Color, Workbook};
+use opensheet_engine::{CalcMode, Color, IterativeCalc, Workbook};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 use std::io::{Seek, Write};
@@ -929,8 +929,28 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         x.push_str("</definedNames>");
     }
     // Cached results are written, but the reader is asked to recalculate:
-    // its functions are the reference.
-    x.push_str("<calcPr calcId=\"191029\" fullCalcOnLoad=\"1\"/>");
+    // its functions are the reference. The calculation options are written
+    // where they are not Excel's defaults.
+    x.push_str("<calcPr calcId=\"191029\"");
+    match wb.calc_mode() {
+        CalcMode::Automatic => {}
+        CalcMode::AutomaticExceptTables => x.push_str(" calcMode=\"autoNoTable\""),
+        CalcMode::Manual => x.push_str(" calcMode=\"manual\""),
+    }
+    let iterative = wb.iterative_calc();
+    let usual = IterativeCalc::default();
+    if iterative.enabled {
+        x.push_str(" iterate=\"1\"");
+    }
+    if iterative.max_iterations != usual.max_iterations {
+        w!(x, " iterateCount=\"{}\"", iterative.max_iterations);
+    }
+    if iterative.max_change != usual.max_change {
+        x.push_str(" iterateDelta=\"");
+        push_number(&mut x, iterative.max_change);
+        x.push('"');
+    }
+    x.push_str(" fullCalcOnLoad=\"1\"/>");
     x.push_str(extra);
     x.push_str("</workbook>");
     x
