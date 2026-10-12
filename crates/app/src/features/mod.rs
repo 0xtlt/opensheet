@@ -235,9 +235,11 @@ pub mod filters;
 pub mod format_cells;
 pub mod misc;
 pub mod names;
+pub mod outline;
 pub mod page;
 pub mod pivot;
 pub mod protection;
+pub mod sparklines;
 pub mod tables;
 pub mod themes;
 pub mod validation;
@@ -248,7 +250,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// Every feature, in the order hooks are called. Floating objects are
 /// drawn in this order too (the objects of later features on top).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 18] = [
+    static ALL: [&dyn Feature; 20] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -265,6 +267,8 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &edit_tools::EditTools,
         &data_tools::DataTools,
         &themes::Themes,
+        &outline::Outline,
+        &sparklines::Sparklines,
         &misc::Misc,
         &crate::widgets::gallery::GalleryMarks,
     ];

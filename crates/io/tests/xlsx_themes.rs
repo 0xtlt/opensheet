@@ -8,6 +8,7 @@ use common::{assert_well_formed, at, enter, keep_sample, package, part};
 use opensheet_engine::chart::ChartKind;
 use opensheet_engine::condfmt::{Cfvo, ColorScale, ColorStop, CondFormat, Rule};
 use opensheet_engine::drawing::{Frame, ShapeTool};
+use opensheet_engine::sparkline::SparklineType;
 use opensheet_engine::style::{Border, BorderStyle, StylePatch, ThemeFont, ThemeSlot};
 use opensheet_engine::theme::{Theme, ThemeColors, ThemeFonts};
 use opensheet_engine::{Color, Locale, Rect, Workbook};
@@ -90,6 +91,9 @@ fn sample() -> Workbook {
     chart.series[0].color = Some(theme.accent(3, 0.6));
     chart.series[1].color = Some(Color(0x123456));
     wb.add_chart(0, chart);
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:B2")), rect("F1:F2")).unwrap();
+    let series = theme.accent(5, -0.5);
+    wb.update_sparkline_groups(0, &[rect("F1")], |group| group.colors.series = series);
     wb.commit("setup");
     wb
 }
@@ -123,6 +127,7 @@ fn a_workbook_keeps_its_theme_and_its_references() {
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     assert!(sheet.contains("<tabColor theme=\"9\"/>"), "{sheet}");
     assert!(sheet.contains("<color theme=\"0\"/><color theme=\"7\"/></colorScale>"), "{sheet}");
+    assert!(sheet.contains("<x14:colorSeries theme=\"8\" tint=\"-0.499984740745262\"/>"), "{sheet}");
     // Shapes and charts: the name of the colour and its lightness.
     let drawing = part(&bytes, "xl/drawings/drawing1.xml");
     assert!(drawing.contains("<a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill>"), "{drawing}");
@@ -145,6 +150,7 @@ fn a_workbook_keeps_its_theme_and_its_references() {
     assert_eq!(read.sheets[0].drawings[0].as_shape(), wb.sheets[0].drawings[0].as_shape());
     assert_eq!(read.sheets[0].charts[0].series[0].color, Some(facet.accent(3, 0.6)));
     assert_eq!(read.sheets[0].charts[0].series[1].color, Some(Color(0x123456)));
+    assert_eq!(read.sheets[0].sparklines[0].colors, wb.sheets[0].sparklines[0].colors);
     assert_eq!(read.font_metrics(), wb.font_metrics());
     assert_eq!(read.sheets[0].default_col_width, wb.sheets[0].default_col_width);
 
@@ -161,6 +167,7 @@ fn a_workbook_keeps_its_theme_and_its_references() {
     assert_eq!(read.sheets[0].tab_color, Some(office.accent(6, 0.0)));
     assert_eq!(read.sheets[0].charts[0].series[0].color, Some(office.accent(3, 0.6)));
     assert_eq!(read.sheets[0].drawings[0].as_shape().unwrap().fill, Some(office.accent(1, 0.0)));
+    assert_eq!(read.sheets[0].sparklines[0].colors.series, office.accent(5, -0.5));
     // Saved again, it is the Office theme that is written.
     let again = to_bytes(&read);
     assert!(part(&again, "xl/theme/theme1.xml").contains("name=\"Office Theme\"><a:themeElements><a:clrScheme name=\"Office\">"));

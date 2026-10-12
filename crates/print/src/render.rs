@@ -9,7 +9,8 @@
 use crate::fonts::{Face, FontDb};
 use crate::{NotesLine, ObjectPainter};
 use crate::image::Image;
-use crate::scene::{Canvas, LineCap, Paint, RectF, Scene, Stroke};
+use crate::scene::{Canvas, LineCap, Paint, Path, RectF, Scene, Stroke};
+use opensheet_engine::sparkline::SparkShape;
 use opensheet_engine::features::CellDisplay;
 use opensheet_engine::format;
 use opensheet_engine::comment::{Comment, Note};
@@ -616,6 +617,42 @@ impl<'a> Renderer<'a> {
                         canvas.restore_to(depth);
                     }
                 }
+            }
+        }
+
+        // Sparklines lie over the fill of their cell and under its text.
+        for group in &sh.sparklines {
+            let shared = self.job.wb.sparkline_scale(group);
+            for sparkline in &group.sparklines {
+                let (Some(i), Some(j)) = (pane.row_index(sparkline.row), pane.col_index(sparkline.col)) else {
+                    continue;
+                };
+                if cell(i, j).1.is_some() {
+                    continue;
+                }
+                let r = cell_rect(i, j);
+                let values = self.job.wb.sparkline_values(group, sparkline);
+                let size = ((r.w / pane.unit) as f32, (r.h / pane.unit) as f32);
+                let depth = canvas.depth();
+                canvas.save();
+                canvas.clip_rect(r);
+                canvas.translate(r.x, r.y);
+                canvas.scale(pane.unit, pane.unit);
+                for shape in opensheet_engine::sparkline::shapes(group, &values, shared, size.0, size.1, 1.0) {
+                    match shape {
+                        SparkShape::Rect { x0, y0, x1, y1, color } => {
+                            canvas.fill_rect(RectF::new(x0 as f64, y0 as f64, (x1 - x0) as f64, (y1 - y0) as f64), self.ink(color));
+                        }
+                        SparkShape::Line { points, color, width } => {
+                            let mut path = Path::new().move_to(points[0].0 as f64, points[0].1 as f64);
+                            for (x, y) in &points[1..] {
+                                path = path.line_to(*x as f64, *y as f64);
+                            }
+                            canvas.stroke_path(path, Stroke::solid(self.ink(color), width as f64));
+                        }
+                    }
+                }
+                canvas.restore_to(depth);
             }
         }
 

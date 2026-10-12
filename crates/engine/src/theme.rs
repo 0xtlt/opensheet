@@ -515,7 +515,8 @@ impl Workbook {
 }
 
 /// Work out again the theme colours kept on a sheet: its tab, its
-/// conditional formats, its filters by colour, its charts and its shapes. (Cells are in the
+/// conditional formats, its filters by colour, its sparklines, its charts
+/// and its shapes. (Cells are in the
 /// style table; tables and PivotTables name a style, which is computed
 /// from the theme when it is drawn.)
 fn retheme_sheet(theme: &Theme, sheet: &mut Sheet) {
@@ -545,6 +546,21 @@ fn retheme_sheet(theme: &Theme, sheet: &mut Sheet) {
             if let Criteria::Color(by) = criteria {
                 theme.resolve_opt(&mut by.color);
             }
+        }
+    }
+    for group in &mut sheet.sparklines {
+        let colors = &mut group.colors;
+        for color in [
+            &mut colors.series,
+            &mut colors.negative,
+            &mut colors.axis,
+            &mut colors.markers,
+            &mut colors.first,
+            &mut colors.last,
+            &mut colors.high,
+            &mut colors.low,
+        ] {
+            *color = theme.resolve(*color);
         }
     }
     for chart in &mut sheet.charts {

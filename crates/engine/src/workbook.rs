@@ -111,6 +111,10 @@ pub struct Sheet {
     /// (see `names.rs`). They travel with the sheet when it is moved,
     /// copied or deleted.
     pub names: BTreeMap<String, DefinedName>,
+    /// Grouped rows and columns (Data > Group), see `outline.rs`.
+    pub outline: crate::outline::Outline,
+    /// Sparklines, by group (Insert > Sparklines), see `sparkline.rs`.
+    pub sparklines: Vec<crate::sparkline::SparklineGroup>,
 }
 
 impl Sheet {
@@ -151,6 +155,8 @@ impl Sheet {
             drawings: Vec::new(),
             hyperlinks: Vec::new(),
             names: BTreeMap::new(),
+            outline: crate::outline::Outline::default(),
+            sparklines: Vec::new(),
         }
     }
 

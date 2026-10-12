@@ -1454,7 +1454,7 @@ impl ExcelApp {
             group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
                 t("Sparklines", "Graphiques sparkline"),
-                row(vec![self.cmd_large("in-sparklines", misc::Cmd::Sparklines, true, cx)]),
+                row(vec![self.cmd_large("in-sparklines", features::sparklines::Cmd::Menu, true, cx)]),
             )
             .into_any_element(),
             group(
@@ -1807,16 +1807,7 @@ impl ExcelApp {
                 row(vec![self.cmd_large("dt-whatif", data_tools::Cmd::WhatIf, true, cx)]),
             )
             .into_any_element(),
-            group(
-                crate::i18n::t_ctx("group", "Outline", "Plan"),
-                row(vec![
-                    self.cmd_large("dt-group", misc::Cmd::GroupRows, true, cx),
-                    self.cmd_large("dt-ungroup", misc::Cmd::UngroupRows, true, cx),
-                    self.cmd_large("dt-subtotal", misc::Cmd::Subtotal, false, cx),
-                ]),
-            )
-            .border_r_0()
-            .into_any_element(),
+            features::outline::ribbon_group(self, cx).border_r_0().into_any_element(),
         ]
     }
 
