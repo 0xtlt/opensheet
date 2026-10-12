@@ -1126,3 +1126,50 @@ fn a_protected_sheet_refuses_changes_to_notes_and_comments(cx: &mut TestAppConte
     app.update(cx, |app, cx| assert!(post(app, 0, (5, 1), "Yes", cx)));
     assert_eq!(thread(&app, cx, (5, 1)).unwrap().replies.len(), 1);
 }
+
+#[gpui::test]
+fn the_pointer_finds_notes_under_frozen_panes_and_near_the_edges(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.set_note(0, 0, 0, "Ada", "Ada:\nIn the frozen corner");
+        wb.set_note(0, 30, 3, "Ada", "Ada:\nFar down");
+        wb.set_frozen(0, 2, 1);
+    });
+    app.update(cx, |app, cx| {
+        app.set_zoom(1.5, cx);
+        app.views[0].scroll_y = 20.0 * 28.0 * 1.5;
+        cx.notify();
+    });
+    redraw(cx);
+    let rests_on = |cell: Cell, cx: &mut VisualTestContext| {
+        let at = centre(&app, cx, cell);
+        cx.simulate_mouse_move(at, None, Modifiers::none());
+        wait(cx, REST + Duration::from_millis(10));
+        redraw_at(cx, at);
+        box_of(&app, cx, cell)
+    };
+    // The frozen cell is where it always is, whatever the scrolling.
+    let frozen = rests_on((0, 0), cx).expect("the note of the frozen cell shows");
+    let corner = in_cell(&app, cx, (0, 0), (0.0, 0.0));
+    assert!(frozen.0 > f32::from(corner.x) && frozen.1 >= f32::from(corner.y));
+    // The scrolled one shows beside its cell, at the zoom of the sheet.
+    let scrolled = rests_on((30, 3), cx).expect("the note of the scrolled cell shows");
+    assert_eq!((scrolled.2 - scrolled.0, scrolled.3 - scrolled.1), (216.0, 119.0));
+    assert_eq!(box_of(&app, cx, (0, 0)), None);
+
+    // A cell against the right edge of the grid: its box opens on the
+    // other side and stays whole inside the cells.
+    let (last_col, grid) = app.update(cx, |app, _| {
+        let layout = app.current_layout().unwrap();
+        let col = layout.col_at(layout.width() - 20.0);
+        let (a, b) = (layout.to_window(layout.header_w, layout.header_h), layout.to_window(layout.width(), layout.height()));
+        (col, (f32::from(a.x), f32::from(a.y), f32::from(b.x), f32::from(b.y)))
+    });
+    edit(&app, cx, |wb| {
+        wb.set_note(0, 31, last_col, "Ada", "Ada:\nAt the edge");
+    });
+    let edge = rests_on((31, last_col), cx).expect("the note at the edge shows");
+    assert!(edge.0 >= grid.0 && edge.1 >= grid.1 && edge.2 <= grid.2 && edge.3 <= grid.3, "{edge:?} in {grid:?}");
+    let cell = in_cell(&app, cx, (31, last_col), (0.0, 0.0));
+    assert!(edge.2 < f32::from(cell.x), "left of its cell");
+}
