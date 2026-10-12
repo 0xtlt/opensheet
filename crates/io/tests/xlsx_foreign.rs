@@ -7,7 +7,7 @@ mod common;
 use common::{at, formula, package, value};
 use opensheet_engine::style::{Border, BorderStyle, HAlign, Underline, VAlign};
 use opensheet_engine::workbook::Content;
-use opensheet_engine::{Color, ErrorKind, Locale, Rect, Value, Workbook};
+use opensheet_engine::{Color, ErrorKind, Locale, Rect, StyleId, Value, Workbook};
 use opensheet_io::read_xlsx;
 use std::io::Cursor;
 
@@ -254,6 +254,11 @@ fn sheets_names_and_views() {
 fn geometry() {
     let wb = load(&excel_like(), Locale::en());
     let first = &wb.sheets[0];
+    // Calibri 11: columns of 64 pixels, rows of 20.
+    assert_eq!(
+        (first.default_col_width, first.default_row_height),
+        (64.0, 20.0)
+    );
     assert_eq!(first.col_widths.get(&0), Some(&145.0));
     assert_eq!(
         first.col_widths.get(&2),
@@ -278,14 +283,14 @@ fn geometry() {
     assert_eq!(first.row_heights.len(), 2, "a 15 pt row is a default row");
     assert_eq!(first.hidden_rows.iter().copied().collect::<Vec<_>>(), [1]);
 
-    // The second sheet declares its own default column width (12 → 84 px):
-    // the columns in use get it explicitly.
+    // The second sheet declares its own default column width (12 → 84 px);
+    // there a column of the usual 64 pixels is a column with a width.
     let second = &wb.sheets[1];
+    assert_eq!(second.default_col_width, 84.0);
     let widths: Vec<(u32, f32)> = second.col_widths.iter().map(|(c, w)| (*c, *w)).collect();
-    assert_eq!(
-        widths,
-        [(0, 84.0), (1, 64.0), (2, 84.0), (3, 84.0), (5, 84.0)]
-    );
+    assert_eq!(widths, [(1, 64.0)]);
+    assert_eq!(second.col_width(0), 84.0);
+    assert_eq!(second.col_width(200), 84.0);
     assert_eq!(second.hidden_cols.iter().copied().collect::<Vec<_>>(), [4]);
     assert_eq!(second.col_width(4), 0.0);
 }
@@ -328,7 +333,7 @@ fn values_and_formulas() {
     assert_eq!(value(&wb, 0, "D8"), Value::Number(40.0));
     assert_eq!(value(&wb, 0, "D9"), Value::Number(60.0));
     // The cached results are gone as constants; what remains of those cells
-    // is their formatting (every cell of this file carries its Calibri font).
+    // is their formatting (which is not that of their column).
     for name in ["D8", "D9"] {
         let (r, c) = at(name);
         assert!(
@@ -377,6 +382,11 @@ fn styles() {
         (plain.font.name.as_ref(), plain.font.size, plain.font.color),
         ("Calibri", 22, None)
     );
+    // It is the font of the cells nobody formatted, used or not.
+    let (r, c) = at("A1");
+    assert_eq!(wb.cell(0, r, c).unwrap().style, StyleId(0));
+    assert_eq!(wb.styles.default_style(), &plain);
+    assert_eq!(wb.style_at(1, 500, 500), &plain);
     assert_eq!(plain.num_fmt.as_ref(), "General");
     assert!(plain.locked && plain.fill.is_none() && plain.borders.is_none());
 

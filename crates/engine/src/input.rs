@@ -63,22 +63,14 @@ pub fn parse_input(text: &str, locale: &Locale) -> Result<ParsedInput, ParseErro
             num_fmt: fmt,
         });
     }
-    // "+A1" / "-A1*2" are formulas too.
-    if (trimmed.starts_with('+') || trimmed.starts_with('-')) && trimmed.len() > 1 {
-        if let Ok(expr) = parse_formula(trimmed, locale) {
-            let has_ref_or_call = {
-                let mut found = false;
-                expr.walk(&mut |e| {
-                    if matches!(e, crate::ast::Expr::Ref(_) | crate::ast::Expr::Func(..)) {
-                        found = true;
-                    }
-                });
-                found
-            };
-            if has_ref_or_call {
-                return plain(Content::Formula(Arc::new(expr)));
-            }
-        }
+    // What starts with `+` or `-` and is neither a number nor a date is a
+    // formula for Excel, whatever it is made of ("+A1", "-5+3",
+    // "-Sales[Qty]", "+A1#", "-@B:B"), and is refused like one typed
+    // after `=` when it cannot be read ("- to do"): text needs an
+    // apostrophe.
+    if trimmed.starts_with(['+', '-']) && trimmed.chars().count() > 1 {
+        let expr = parse_formula(trimmed, locale)?;
+        return plain(Content::Formula(Arc::new(expr)));
     }
     plain(Content::Value(Value::text(text)))
 }
@@ -478,5 +470,72 @@ mod tests {
             Content::Formula(_)
         ));
         assert!(parse_input("=1+", en).is_err());
+    }
+
+    #[test]
+    fn entries_starting_with_a_sign() {
+        let en = Locale::en();
+        let formula = |text: &str, locale: &Locale| match parse_input(text, locale) {
+            Ok(ParsedInput {
+                content: Content::Formula(e),
+                ..
+            }) => Some(e.to_text(locale)),
+            _ => None,
+        };
+        let text = |text: &str| match parse_input(text, en) {
+            Ok(ParsedInput {
+                content: Content::Value(Value::Text(s)),
+                ..
+            }) => Some(s.to_string()),
+            _ => None,
+        };
+        // Whatever they are made of, they are formulas: every kind of
+        // reference, names, plain arithmetic.
+        for typed in [
+            "+A1",
+            "-A1*2",
+            "-SUM(B:B)",
+            "-Sales[Qty]",
+            "+Sales[[#Totals],[Unit Price]]",
+            "-Sales[@Qty]*2",
+            "-[@Qty]",
+            "+A1#",
+            "+Sheet2!A1#",
+            "-Sheet1:Sheet3!A1",
+            "+SUM(Sheet1:Sheet3!A1:B2)",
+            "-'My Sheet'!A1",
+            "-(A1:A3,C1:C3)",
+            "+A1:C3 B2:D4",
+            "-@A1:A10",
+            "+@Sales[Qty]",
+            "+Sheet1!Rate",
+            "-Rate",
+            "+1+2",
+            "-5+3",
+            "-TRUE",
+            "--A1",
+        ] {
+            assert_eq!(formula(typed, en).as_deref(), Some(typed), "{typed}");
+        }
+        assert_eq!(formula(" -A1 ", en).as_deref(), Some("-A1"));
+        let fr = Locale::fr();
+        assert_eq!(formula("-SOMME(A1;B1)", fr).as_deref(), Some("-SOMME(A1;B1)"));
+        assert_eq!(formula("+Ventes[[#Totaux];[Qté]]", fr).as_deref(), Some("+Ventes[[#Totaux];[Qté]]"));
+        // Numbers and dates stay what they are.
+        assert_eq!(num("-5", en), Some((-5.0, None)));
+        assert_eq!(num("+5", en), Some((5.0, None)));
+        assert_eq!(num("-5%", en), Some((-0.05, Some("0%".into()))));
+        assert_eq!(num("-$5", en).map(|n| n.0), Some(-5.0));
+        assert_eq!(num("+1.5E3", en).map(|n| n.0), Some(1500.0));
+        assert_eq!(num("-1,5", fr), Some((-1.5, None)));
+        // A sign alone is text, and so is anything after an apostrophe.
+        for typed in ["-", "+", " - ", "@A1"] {
+            assert_eq!(text(typed).as_deref(), Some(typed), "{typed}");
+        }
+        assert_eq!(text("'-abc").as_deref(), Some("-abc"));
+        // What cannot be read as a formula is refused, as after `=`.
+        for typed in ["- to do!", "--", "+(", "-A1+"] {
+            assert!(parse_input(typed, en).is_err(), "{typed}");
+        }
     }
 }
