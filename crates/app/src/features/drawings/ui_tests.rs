@@ -144,9 +144,13 @@ fn a_click_selects_what_is_drawn_there(cx: &mut TestAppContext) {
     let at = on_sheet(&app, cx, 350.0, 111.0);
     click(cx, at);
     assert_eq!(selection(&app, cx), Some(line));
-    // A turned shape is taken where it was turned to.
+    // A turned shape is taken where it was turned to (and its text is
+    // drawn turned with it).
     let tall = add(&app, cx, ShapeTool::Rectangle, (100.0, 240.0, 200.0, 20.0));
-    change(&app, cx, tall, |d| d.rotation = 90.0);
+    change(&app, cx, tall, |d| {
+        d.rotation = 90.0;
+        d.as_shape_mut().unwrap().text = "Turned with its shape, on two lines".into();
+    });
     let at = on_sheet(&app, cx, 110.0, 250.0);
     click(cx, at);
     assert_eq!(selection(&app, cx), None);

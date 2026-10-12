@@ -8,8 +8,8 @@ use super::text::TextLook;
 use crate::grid::{Draw, FontResolver, GridLayout, Layer, pt_to_px};
 use crate::theme::{c, engine_color};
 use gpui::{
-    Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels, Point, WindowTextSystem, canvas, point,
-    prelude::*, px, size,
+    Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels, Point, WindowTextSystem, WrappedLine,
+    canvas, point, prelude::*, px, size,
 };
 use opensheet_engine::Sheet;
 use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, LineEnd, Outline, Shape, ShapeTool, TEXT_MARGIN};
@@ -224,10 +224,11 @@ pub fn text_look(shape: &Shape, zoom: f32, fonts: &FontResolver) -> TextLook {
 }
 
 /// The upright box (x0, y0, x1, y1) the text of a shape is laid out in:
-/// the text rectangle of its preset less the margins. GPUI draws text
-/// level only, so the text of a turned shape stays level around the place
-/// its rectangle is turned to; when the shape lies on its side the box
-/// does too, so that the text still wraps inside the shape.
+/// the text rectangle of its preset less the margins. For a turned shape
+/// this is where its text is typed: the field stays level, around the
+/// place the rectangle is turned to, and lies on its side when the shape
+/// does, so that what is typed still wraps inside the shape. (Once typed,
+/// the text is drawn turned: `draw_turned_text`.)
 pub fn text_box(shape: &Shape, placed: &Placed, natural: (f32, f32), zoom: f32) -> (f32, f32, f32, f32) {
     let [left, top, right, bottom] = shape.preset.text_rect(natural.0, natural.1);
     let mut width = ((right - left) * placed.width().abs() - 2.0 * TEXT_MARGIN.0 * zoom).max(1.0);
@@ -287,17 +288,74 @@ fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush
     }
     if let Some(fonts) = text.filter(|_| !shape.text.is_empty() && !shape.preset.is_line()) {
         let look = text_look(shape, brush.zoom, fonts);
-        let (x0, y0, x1, y1) = text_box(shape, placed, natural, brush.zoom);
-        let (lines, rows) = look.wrap(&shape.text, x1 - x0, brush.ts);
-        let origin = brush.at((x0, y0 + look.top(rows, y1 - y0)));
-        // Lines are aligned in the width of the box; a text too tall for
-        // it shows above and below as far as the pane goes.
-        out.push(Draw::Wrapped {
-            lines,
-            origin,
-            line_height: look.line_height(),
-            align: look.align(),
-            bounds: Bounds::new(point(origin.x, brush.clip.origin.y), size(px(x1 - x0), brush.clip.size.height)),
+        let turn = geometry::normalise_angle(placed.rotation);
+        if turn < 0.5 || turn > 359.5 {
+            let (x0, y0, x1, y1) = text_box(shape, placed, natural, brush.zoom);
+            let (lines, rows) = look.wrap(&shape.text, x1 - x0, brush.ts);
+            let origin = brush.at((x0, y0 + look.top(rows, y1 - y0)));
+            // Lines are aligned in the width of the box; a text too tall
+            // for it shows above and below as far as the pane goes.
+            out.push(Draw::Wrapped {
+                lines,
+                origin,
+                line_height: look.line_height(),
+                align: look.align(),
+                bounds: Bounds::new(point(origin.x, brush.clip.origin.y), size(px(x1 - x0), brush.clip.size.height)),
+            });
+        } else {
+            draw_turned_text(shape, &look, placed, natural, brush, out);
+        }
+    }
+}
+
+/// The rows of a wrapped text as they are shown: each without the blanks
+/// that end it.
+fn rows_of(lines: &[WrappedLine]) -> Vec<String> {
+    let mut rows = Vec::new();
+    for line in lines {
+        let text: &str = &line.text;
+        let mut start = 0;
+        for boundary in line.wrap_boundaries() {
+            let end = line.runs()[boundary.run_ix].glyphs[boundary.glyph_ix].index;
+            rows.push(text[start..end].trim_end().to_string());
+            start = end;
+        }
+        rows.push(text[start..].trim_end().to_string());
+    }
+    rows
+}
+
+/// The text of a turned shape turns with it (it is never mirrored). GPUI
+/// turns images, not glyphs: each row is drawn as the image charts use for
+/// the titles of their vertical axes, laid out where it would be in the
+/// shape before the turn, then turned about the middle of the shape. Such
+/// a row is neither slanted, underlined nor struck through.
+fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+    let level = Placed { rotation: 0.0, ..*placed };
+    let (x0, y0, x1, y1) = text_box(shape, &level, natural, brush.zoom);
+    let (lines, count) = look.wrap(&shape.text, x1 - x0, brush.ts);
+    let line_height = f32::from(look.line_height());
+    let top = y0 + look.top(count, y1 - y0);
+    let pivot = brush.at(placed.centre());
+    let bold = look.font.weight >= FontWeight::BOLD;
+    for (i, row) in rows_of(&lines).into_iter().enumerate() {
+        if row.is_empty() {
+            continue;
+        }
+        let (path, width, height) = crate::chart_view::turned_text(brush.ts, look.font.family.clone(), &row, look.size, bold);
+        let left = match look.align() {
+            gpui::TextAlign::Left => x0,
+            gpui::TextAlign::Center => (x0 + x1 - width) / 2.0,
+            gpui::TextAlign::Right => x1 - width,
+        };
+        let y = top + i as f32 * line_height + (line_height - height) / 2.0;
+        out.push(Draw::Turned {
+            path,
+            bounds: Bounds::new(brush.at((left.round(), y.round())), size(px(width), px(height))),
+            pivot,
+            turn: placed.rotation.to_radians(),
+            color: look.color,
+            clip: brush.clip,
         });
     }
 }
