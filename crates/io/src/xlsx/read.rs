@@ -1261,6 +1261,7 @@ fn read_charts<R: Read + Seek>(
     sheet_part: &str,
     loaded: &LoadedSheet,
     palette: &Palette,
+    locale: &Locale,
     next_id: &mut u32,
 ) -> Vec<Chart> {
     fn relationships<R: Read + Seek>(pkg: &mut Package<R>, part: &str) -> Vec<Rel> {
@@ -1314,21 +1315,15 @@ fn read_charts<R: Read + Seek>(
             let Ok(Some(xml)) = pkg.read(&rel.target) else {
                 continue;
             };
-            let Some(content) = parse_chart(&xml, palette) else {
+            let Some(mut chart) = parse_chart(&xml, palette, locale) else {
                 continue;
             };
             let place = frame.placement(&cols, &rows);
-            charts.push(Chart {
-                id: *next_id,
-                title: content.title,
-                legend: content.legend,
-                series: content.series,
-                data_labels: content.data_labels,
-                anchor: place.anchor,
-                offset: place.offset,
-                size: place.size,
-                ..Chart::new(content.kind)
-            });
+            chart.id = *next_id;
+            chart.anchor = place.anchor;
+            chart.offset = place.offset;
+            chart.size = place.size;
+            charts.push(chart);
             *next_id += 1;
         }
     }
@@ -1454,6 +1449,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             &part,
             &loaded,
             &styles.palette,
+            locale,
             &mut next_chart_id,
         );
         sheets.push(loaded.sheet);
