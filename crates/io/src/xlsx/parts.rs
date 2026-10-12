@@ -1,13 +1,15 @@
 //! The parts of a package beside the worksheets, and what ties them to the
 //! sheets and to the workbook.
 //!
-//! Charts, notes and comments are kept in parts of their own. A worksheet
-//! names such a part by the id of a relationship (`<drawing r:id="rId1"/>`),
-//! its relationships part says which part that is, and `[Content_Types].xml`
-//! says what kind of part it is. A feature states here what it adds; the
-//! writer lays the package out from that.
+//! Charts, notes and comments, tables, PivotTables are kept in parts of
+//! their own. A worksheet names such a part by the id of a relationship
+//! (`<drawing r:id="rId1"/>`), its relationships part says which part that
+//! is, and `[Content_Types].xml` says what kind of part it is. A feature
+//! states here what it adds; the writer lays the package out from that.
 
 use super::chart::write::Drawing;
+use super::dxf::Dxfs;
+use super::theme;
 use super::write::{NS_DOC_REL, NS_PKG_REL};
 use super::xml::{XML_DECL, push_attr};
 use opensheet_engine::Workbook;
@@ -30,9 +32,10 @@ pub(crate) fn push_relationship(x: &mut String, id: usize, kind: &str, target: &
 /// numbered in the order of the fields, skipping what the sheet lacks: the
 /// worksheet, written first, and its relationships part agree on them
 /// because both ask here.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SheetLinks {
-    /// The drawing part holding the charts (`<drawing>`).
+    /// The drawing part holding the charts, the pictures and the shapes
+    /// (`<drawing>`).
     pub drawing: Option<usize>,
     /// The boxes of the notes, a VML drawing (`<legacyDrawing>`).
     pub vml: Option<usize>,
@@ -40,6 +43,10 @@ pub(crate) struct SheetLinks {
     pub comments: Option<usize>,
     /// The comment threads; no element either.
     pub threads: Option<usize>,
+    /// The tables, in the order of `Sheet::tables` (`<tableParts>`).
+    pub tables: Vec<usize>,
+    /// The PivotTables, in the order of `Sheet::pivots`; no element.
+    pub pivots: Vec<usize>,
 }
 
 impl SheetLinks {
@@ -56,10 +63,12 @@ impl SheetLinks {
         let annotated = !sheet.comments.is_empty();
         let threaded = sheet.comments.values().any(|c| c.as_thread().is_some());
         SheetLinks {
-            drawing: id(!sheet.charts.is_empty()),
+            drawing: id(!sheet.charts.is_empty() || !sheet.drawings.is_empty()),
             vml: id(annotated),
             comments: id(annotated),
             threads: id(threaded),
+            tables: sheet.tables.iter().filter_map(|_| id(true)).collect(),
+            pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
         }
     }
 
@@ -72,6 +81,13 @@ impl SheetLinks {
         if let Some(id) = self.vml {
             w!(x, "<legacyDrawing r:id=\"rId{id}\"/>");
         }
+        if !self.tables.is_empty() {
+            w!(x, "<tableParts count=\"{}\">", self.tables.len());
+            for id in &self.tables {
+                w!(x, "<tablePart r:id=\"rId{id}\"/>");
+            }
+            x.push_str("</tableParts>");
+        }
     }
 }
 
@@ -82,7 +98,8 @@ pub(crate) struct Part {
     /// `None` when the extension of the name says it all (see
     /// [`Extras::defaults`]).
     pub content_type: Option<&'static str>,
-    pub data: String,
+    /// Text for most parts, the bytes of the file for a picture.
+    pub data: Vec<u8>,
 }
 
 /// Everything the features kept in parts of their own add to a package.
@@ -92,23 +109,30 @@ pub(crate) struct Extras {
     pub defaults: Vec<(&'static str, &'static str)>,
     /// What `xl/workbook.xml` relates to, beside its sheets and tables of
     /// styles and strings: (whole relationship type, target).
-    pub workbook_rels: Vec<(String, String)>,
+    workbook_rels: Vec<(String, String)>,
+    /// The pivot caches the workbook part lists: (`cacheId`, place of the
+    /// relationship in `workbook_rels`).
+    pivot_caches: Vec<(usize, usize)>,
     pub parts: Vec<Part>,
     /// The relationships of each worksheet so far, as elements.
     sheet_rels: Vec<String>,
 }
 
 impl Extras {
-    /// What the sheets of `wb` need beside the parts of the worksheets;
-    /// `drawings` are the charts, which the writer stores itself.
-    pub fn of(wb: &Workbook, drawings: &[Drawing]) -> Extras {
+    /// What `wb` needs beside the parts of the worksheets, of the styles
+    /// and of the strings; `drawings` are the charts, which the writer
+    /// stores itself. The formats these parts refer to get their ids from
+    /// `dxfs`.
+    pub fn of(wb: &Workbook, drawings: &mut Vec<Drawing>, dxfs: &mut Dxfs) -> Extras {
         let mut extras = Extras {
             defaults: Vec::new(),
             workbook_rels: Vec::new(),
+            pivot_caches: Vec::new(),
             parts: Vec::new(),
             sheet_rels: vec![String::new(); wb.sheets.len()],
         };
-        for drawing in drawings {
+        super::drawing::add_parts(wb, drawings, &mut extras);
+        for drawing in drawings.iter() {
             let links = wb.sheets.get(drawing.sheet).map(SheetLinks::of);
             if let Some(id) = links.and_then(|links| links.drawing) {
                 let target = format!("../drawings/drawing{}.xml", drawing.number);
@@ -116,18 +140,24 @@ impl Extras {
             }
         }
         super::comments::add_parts(wb, &mut extras);
+        super::table::add_parts(wb, &mut extras, dxfs);
+        super::pivot::add_parts(wb, &mut extras, dxfs);
+        extras.add_part(
+            "xl/theme/theme1.xml".to_string(),
+            Some(theme::CT_THEME),
+            theme::xml(),
+        );
+        extras.relate_workbook(&format!("{NS_DOC_REL}/theme"), "theme/theme1.xml");
 
         for (index, rels) in std::mem::take(&mut extras.sheet_rels).iter().enumerate() {
             if rels.is_empty() {
                 continue;
             }
-            extras.parts.push(Part {
-                name: format!("xl/worksheets/_rels/sheet{}.xml.rels", index + 1),
-                content_type: None,
-                data: format!(
-                    "{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\">{rels}</Relationships>"
-                ),
-            });
+            extras.add_part(
+                format!("xl/worksheets/_rels/sheet{}.xml.rels", index + 1),
+                None,
+                format!("{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\">{rels}</Relationships>"),
+            );
         }
         extras
     }
@@ -139,11 +169,16 @@ impl Extras {
         }
     }
 
-    pub fn add_part(&mut self, name: String, content_type: Option<&'static str>, data: String) {
+    pub fn add_part(
+        &mut self,
+        name: String,
+        content_type: Option<&'static str>,
+        data: impl Into<Vec<u8>>,
+    ) {
         self.parts.push(Part {
             name,
             content_type,
-            data,
+            data: data.into(),
         });
     }
 
@@ -159,6 +194,43 @@ impl Extras {
     pub fn relate_workbook(&mut self, kind: &str, target: &str) {
         self.workbook_rels
             .push((kind.to_string(), target.to_string()));
+    }
+
+    /// Relate the workbook to the definition of a pivot cache, which the
+    /// workbook part also lists under `cache_id`.
+    pub fn add_pivot_cache(&mut self, cache_id: usize, target: &str) {
+        self.pivot_caches.push((cache_id, self.workbook_rels.len()));
+        self.relate_workbook(&format!("{NS_DOC_REL}/pivotCacheDefinition"), target);
+    }
+
+    /// The relationships of the workbook part to these parts, numbered
+    /// from `first`: the writer has given the ids before it to the sheets
+    /// and to its own parts.
+    pub fn workbook_relationships(&self, first: usize) -> String {
+        let mut x = String::new();
+        for (n, (kind, target)) in self.workbook_rels.iter().enumerate() {
+            push_relationship(&mut x, first + n, kind, target);
+        }
+        x
+    }
+
+    /// The elements of the workbook part that name these parts, under the
+    /// ids [`Extras::workbook_relationships`] gives them: `<pivotCaches>`,
+    /// which comes after the calculation properties.
+    pub fn workbook_elements(&self, first: usize) -> String {
+        let mut x = String::new();
+        if !self.pivot_caches.is_empty() {
+            x.push_str("<pivotCaches>");
+            for (cache_id, rel) in &self.pivot_caches {
+                w!(
+                    x,
+                    "<pivotCache cacheId=\"{cache_id}\" r:id=\"rId{}\"/>",
+                    first + rel
+                );
+            }
+            x.push_str("</pivotCaches>");
+        }
+        x
     }
 }
 

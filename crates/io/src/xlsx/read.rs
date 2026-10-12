@@ -73,6 +73,11 @@ impl<R: Read + Seek> Package<R> {
     }
 
     pub(super) fn read(&mut self, part: &str) -> Result<Option<String>> {
+        Ok(self.read_bytes(part)?.map(decode_xml))
+    }
+
+    /// A part as it is stored: an image, or text before it is decoded.
+    pub(super) fn read_bytes(&mut self, part: &str) -> Result<Option<Vec<u8>>> {
         let Some(&i) = self.index.get(&normalize_part(part)) else {
             return Ok(None);
         };
@@ -83,7 +88,7 @@ impl<R: Read + Seek> Package<R> {
         if bytes.len() as u64 > MAX_PART_SIZE {
             return Err(IoError::Invalid(format!("the part {part} is too large")));
         }
-        Ok(Some(decode_xml(bytes)))
+        Ok(Some(bytes))
     }
 }
 
@@ -774,6 +779,8 @@ struct Ctx<'c> {
     palette: &'c Palette,
     /// The differential formats of the workbook, by `dxfId`.
     dxfs: &'c [StylePatch],
+    /// The colours filters and sorts go by, by `dxfId`.
+    filter_colors: &'c [super::filter::DxfColors],
     locale: &'c Locale,
     /// The sizes that follow from the workbook's default font.
     defaults: Defaults,
@@ -912,6 +919,10 @@ impl<'c> SheetReader<'c> {
                     "sheetProtection" => {
                         this.sheet.protection = protection::read_sheet(&t);
                         r.skip(&t);
+                    }
+                    "autoFilter" => {
+                        this.sheet.auto_filter =
+                            super::filter::parse_auto_filter(&mut r, &t, ctx.filter_colors)
                     }
                     "mergeCells" => this.merges(&mut r, &t),
                     "conditionalFormatting" => {
@@ -1503,6 +1514,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     wb.protection = info.protection;
     let styles_xml = pkg.read(&part_of("styles", "styles.xml"))?;
     let styles = parse_styles(styles_xml.as_deref(), theme, locale, &mut wb.styles);
+    let style_lookup =
+        super::stylerefs::StyleLookup::read(styles_xml.as_deref(), &styles.palette, locale);
     drop(styles_xml);
     let strings = match pkg.read(&part_of("sharedStrings", "sharedStrings.xml"))? {
         Some(xml) => parse_shared_strings(&xml),
@@ -1524,12 +1537,15 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         strings: &strings,
         palette: &styles.palette,
         dxfs: &styles.dxfs,
+        filter_colors: &style_lookup.dxf_colors,
         locale,
         defaults: styles.defaults,
         shift_dates: info.date1904.then_some(&date_styles),
     };
 
     let mut sheets: Vec<Sheet> = Vec::new();
+    // The worksheet part of each sheet that was loaded.
+    let mut sheet_parts: Vec<String> = Vec::new();
     // Where each sheet of the file ended up (`None` when it was not loaded).
     let mut loaded_as: Vec<Option<usize>> = vec![None; info.sheets.len()];
     // Chart ids are unique in the workbook; files have no such thing.
@@ -1540,6 +1556,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         &styles.palette,
         &wb.styles.get(ctx.style(0)).font,
     );
+    let mut drawings = super::drawing::Loader::new(&mut pkg, &rels);
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),
@@ -1568,11 +1585,24 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             loaded.sheet.default_row_height,
         );
         super::comments::read_sheet(&mut pkg, &part, &mut loaded.sheet, default_sizes, &comments);
+        drawings.read_sheet(
+            &mut pkg,
+            &part,
+            loaded.drawing.as_deref(),
+            &mut loaded.sheet,
+            &styles.palette,
+        );
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
+        sheet_parts.push(part);
     }
     if !sheets.is_empty() {
         wb.sheets = sheets;
+        // What needs the whole workbook: tables have names and ids no
+        // other table of any sheet may have, PivotTables share caches and
+        // write their reports into the cells.
+        super::table::read_all(&mut pkg, &mut wb, &sheet_parts, &style_lookup.dxf_colors);
+        super::pivot::read_all(&mut pkg, &mut wb, &sheet_parts, &style_lookup);
     } else {
         loaded_as.clear();
     }
