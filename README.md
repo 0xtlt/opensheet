@@ -48,6 +48,8 @@ Cinq langues : français, anglais, espagnol, allemand, italien. L'interface **et
 
 Les formules sont enregistrées sous forme canonique : un classeur saisi en français s'affiche en allemand sans rien perdre.
 
+Toute l'interface est traduite dans les cinq langues (2 082 textes par langue), avec les termes d'Excel dans chacune. `python3 scripts/check_i18n.py` vérifie qu'aucun texte n'est oublié.
+
 ### Polices
 
 Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans elle, OpenSheet affiche une police système de proportions proches (Seravek sur macOS). Deux façons d'obtenir le rendu exact :
@@ -74,6 +76,8 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - 337 fonctions : maths, statistiques, logique, texte, date et heure, recherche (RECHERCHEV, RECHERCHEX, INDEX, EQUIV…), finance, ingénierie.
 - Tableaux dynamiques avec propagation (`=A1:A3*2`, `A1#`, FILTRE, TRIER, UNIQUE, SEQUENCE…) et erreur `#PROPAGATION!`.
 - Noms définis (classeur ou feuille), références 3D (`Feuil1:Feuil3!A1`), références structurées (`Tableau1[Colonne]`), intersection et union.
+- Recalcul par dépendances : seules les formules qui lisent une cellule modifiée sont recalculées. Modes Automatique et Manuel, Calculer maintenant (F9), Calculer la feuille (Maj+F9), indicateur « Calculer » dans la barre d'état.
+- Références circulaires : avertissement d'Excel, cellule signalée dans la barre d'état, calcul itératif pour les classeurs qui l'activent.
 - Outils de formules : Gestionnaire de noms, Créer à partir de la sélection, Insérer une fonction et Arguments de la fonction, Afficher les formules, flèches d'antécédents et de dépendants, Vérification des erreurs, Évaluer la formule, Fenêtre Espion.
 
 **Mise en forme**
@@ -133,8 +137,26 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Mise en page : pas d'arrière-plan de feuille ni d'affichages personnalisés ; l'impression passe par un PDF.
 - Commentaires : pas de @mentions.
 - Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
+- Calcul : le calcul itératif est lu et enregistré dans le fichier, mais aucun réglage ne permet de l'activer depuis l'interface ; un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
+- Ruban : quand la fenêtre est trop étroite pour un onglet (par exemple Formules en allemand sous 1 500 points de large), le ruban défile horizontalement au lieu de replier ses groupes.
 
-Le recalcul est complet à chaque modification (pas encore de graphe de dépendances) : environ 0,15 s pour 200 000 formules en mode release, ce qui deviendra sensible sur de très gros classeurs.
+### Vitesse du recalcul
+
+Mesures en mode release sur un classeur de 100 000 formules :
+
+| Modification | Durée |
+|---|---|
+| Une cellule lue par deux formules, ou par aucune | 0,04 ms |
+| Une cellule lue par toutes les formules | 51 ms |
+| Premier calcul de 200 000 formules | environ 105 ms |
+
+Le recalcul redevient complet dans quatre cas : feuille ajoutée, supprimée, renommée ou déplacée ; nom défini ou tableau modifié ; plus de la moitié des cellules changées d'un coup ; classeur contenant une référence circulaire.
+
+Pour refaire les mesures :
+
+```bash
+cargo run -p opensheet_engine --release --example bench
+```
 
 ## Architecture
 

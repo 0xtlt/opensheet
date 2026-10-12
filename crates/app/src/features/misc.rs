@@ -181,7 +181,8 @@ impl Command for Cmd {
                     MenuEntry::command(Cmd::CalcAutomaticExceptTables, app),
                     MenuEntry::command(Cmd::CalcManual, app),
                 ];
-                app.open_command_menu(entries, 320.0, window, cx);
+                // Wide enough for the French label of the second entry.
+                app.open_command_menu(entries, 370.0, window, cx);
             }
             Cmd::CalcAutomatic => set_calc_mode(app, CalcMode::Automatic, cx),
             Cmd::CalcAutomaticExceptTables => set_calc_mode(app, CalcMode::AutomaticExceptTables, cx),
