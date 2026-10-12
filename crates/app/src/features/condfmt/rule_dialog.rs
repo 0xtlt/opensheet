@@ -479,8 +479,7 @@ impl RuleDialog {
                                 .shadow_md()
                                 .text_size(px(12.))
                                 .text_color(c(theme::TEXT))
-                                .on_mouse_down_out(cx.listener(|this, ev: &gpui::MouseDownEvent, _, cx| {
-                                    if ev.position.x < px(0.) { return; } /* TEST AID */
+                                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                                     this.drop = None;
                                     this.drop_closed = Some(Instant::now());
                                     cx.notify();

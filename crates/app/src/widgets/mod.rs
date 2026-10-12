@@ -1564,7 +1564,7 @@ pub(crate) fn drop_panel(
                     .shadow_md()
                     .text_size(px(12.))
                     .text_color(c(theme::TEXT))
-                    .on_mouse_down_out(move |ev: &MouseDownEvent, window, cx| { if ev.position.x < px(0.) { return; } /* TEST AID */ on_dismiss(window, cx) })
+                    .on_mouse_down_out(move |_, window, cx| on_dismiss(window, cx))
                     .child(rows),
             ),
         )
