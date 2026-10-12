@@ -229,6 +229,7 @@ pub const FUNCTIONS: &[(&str, &str)] = &[
     ("DROP", "WEGLASSEN"),
     ("EXPAND", "ERWEITERN"),
     ("FORMULATEXT", "FORMELTEXT"),
+    ("GETPIVOTDATA", "PIVOTDATENZUORDNEN"),
     ("HLOOKUP", "WVERWEIS"),
     ("HSTACK", "HSTAPELN"),
     ("INDIRECT", "INDIREKT"),

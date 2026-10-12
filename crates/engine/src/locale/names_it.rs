@@ -244,6 +244,7 @@ pub const FUNCTIONS: &[(&str, &str)] = &[
     ("EXPAND", "ESPANDI"),
     ("FILTER", "FILTRO"),
     ("FORMULATEXT", "TESTO.FORMULA"),
+    ("GETPIVOTDATA", "INFO.DATI.TAB.PIVOT"),
     ("HLOOKUP", "CERCA.ORIZZ"),
     ("HSTACK", "STACK.ORIZ"),
     ("HYPERLINK", "COLLEG.IPERTESTUALE"),

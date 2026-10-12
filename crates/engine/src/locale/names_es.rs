@@ -226,6 +226,7 @@ pub const FUNCTIONS: &[(&str, &str)] = &[
     ("EXPAND", "EXPANDIR"),
     ("FILTER", "FILTRAR"),
     ("FORMULATEXT", "FORMULATEXTO"),
+    ("GETPIVOTDATA", "IMPORTARDATOSDINAMICOS"),
     ("HLOOKUP", "BUSCARH"),
     ("HSTACK", "APILARH"),
     ("HYPERLINK", "HIPERVINCULO"),
