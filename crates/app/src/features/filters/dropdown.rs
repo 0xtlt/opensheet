@@ -778,7 +778,6 @@ pub(super) fn open(app: &mut ExcelApp, button: FilterButton, window: &mut Window
             anchor.x = layout.to_window(left, 0.0).x;
         }
     }
-    super::dbg_log(&format!("open at {:?}", anchor));
     app.open_popup_view(anchor, view.clone(), cx);
     window.focus(&view.read(cx).menu_focus);
     app.ext_mut::<State>().menu = Some(OpenMenu {
@@ -1271,7 +1270,6 @@ impl FilterMenu {
 
 impl Render for FilterMenu {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        super::dbg_log("render menu");
         let menu: Vec<AnyElement> = self
             .entries
             .iter()
@@ -1295,10 +1293,7 @@ impl Render for FilterMenu {
             .on_action(cx.listener(|this, _: &text_input::Escape, _, cx| this.dismiss(cx)))
             // A press outside closes the drop-down; where it landed tells
             // its button not to open it again.
-            .on_mouse_down_out(move |event, _, _| {
-                super::dbg_log(&format!("mouse_down_out {:?}", event.position));
-                dismissed.set(Some(event.position))
-            })
+            .on_mouse_down_out(move |event, _, _| dismissed.set(Some(event.position)))
             .child(
                 div()
                     .id("filter-entries")

@@ -622,10 +622,7 @@ impl SortDialog {
                             .shadow_md()
                             .text_size(px(12.))
                             .text_color(c(theme::TEXT))
-                            .on_mouse_down_out(cx.listener(|this, ev: &gpui::MouseDownEvent, _, cx| {
-                                if ev.position.x < px(0.) {
-                                    return; // TESTONLY
-                                }
+                            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                                 this.colors_open = None;
                                 this.colors_closed = Some(Instant::now());
                                 cx.notify();

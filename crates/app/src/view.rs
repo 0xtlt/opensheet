@@ -1067,7 +1067,7 @@ impl ExcelApp {
         let Some(popup) = &self.popup else {
             return;
         };
-        if popup.geometry.borrow().panels.iter().any(|panel| panel.contains(&position)) || position.x < px(0.) {
+        if popup.geometry.borrow().panels.iter().any(|panel| panel.contains(&position)) {
             return;
         }
         // A press on the control the pop-up hangs from is left to that
@@ -1271,11 +1271,7 @@ impl ExcelApp {
                         .on_action(|_: &crate::text_input::ShiftTab, window, _| window.focus_prev())
                         .on_action(cx.listener(|this, _: &crate::widgets::Dismiss, window, cx| this.close_popup(window, cx)))
                         .on_action(cx.listener(|this, _: &crate::text_input::Escape, window, cx| this.close_popup(window, cx)))
-                        .on_mouse_down_out(cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                            if ev.position.x >= px(0.) {
-                                this.close_popup(window, cx)
-                            }
-                        }))
+                        .on_mouse_down_out(cx.listener(|this, _, window, cx| this.close_popup(window, cx)))
                         .child(view.clone()),
                 )
                 .into_any_element(),

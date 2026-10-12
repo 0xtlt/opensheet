@@ -41,13 +41,6 @@ use std::rc::Rc;
 
 pub struct Filters;
 
-pub(super) fn dbg_log(msg: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/private/tmp/claude-501/-Users-thomas-Library-Application-Support-Claude-scratch-workspaces-1b8e31e6-2975-46bd-98b5-22b7b0a14062-50509064-6f13-43f6-b6ec-67433cc3a1cc-scratch-2026-10-11-dcfa5d/7819dbb1-4942-47ff-9c70-94d2ccc61163/scratchpad/filters-tmp/debug.log") {
-        let _ = writeln!(f, "{:?} {}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() % 1000000).unwrap_or(0), msg);
-    }
-}
-
 commands! {
     /// What the user can ask of sorting and filtering.
     pub enum Cmd {
@@ -1054,7 +1047,6 @@ impl Feature for Filters {
         // The press that just closed the drop-down of this very button
         // leaves it closed.
         let key = (button.scope, button.col_id);
-        dbg_log(&format!("zone_mouse_down {:?} pos {:?} popup_open {}", key, ev.position, app.popup.is_some()));
         let closed_it = app
             .ext::<State>()
             .and_then(|state| state.menu.as_ref())

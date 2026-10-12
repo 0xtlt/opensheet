@@ -107,25 +107,6 @@ pub fn fill_workbook(wb: &mut Workbook) {
     wb.set_col_width(0, 3, Some(96.0));
     wb.set_col_width(0, 4, Some(96.0));
     wb.set_col_width(0, 5, Some(88.0));
-    // TESTONLY: a table with dates over several years and coloured cells.
-    let extra = [
-        ("Ville", "Ventes", "Jour"),
-        ("Paris", "120", "2025-11-03"),
-        ("Lyon", "80", "2026-01-15"),
-        ("Nice", "45", "2026-01-20"),
-        ("Paris", "60", "2026-02-01"),
-        ("Lille", "80", "2024-06-30"),
-    ];
-    for (r, (a, b, c)) in extra.iter().enumerate() {
-        let _ = wb.set_cell_text(0, r as u32, 8, a);
-        let _ = wb.set_cell_text(0, r as u32, 9, b);
-        let _ = wb.set_cell_text(0, r as u32, 10, c);
-    }
-    let short2: Arc<str> = Arc::from(wb.locale.short_date_format);
-    wb.update_style(0, Rect::new(1, 10, 5, 10), &move |s| s.num_fmt = short2.clone());
-    wb.update_style(0, Rect::cell(2, 9), &|s| s.fill = Some(Color(0xFFFF00)));
-    wb.update_style(0, Rect::cell(4, 9), &|s| s.font.color = Some(Color(0xC00000)));
-    let _ = wb.add_table(0, Rect::new(0, 8, 5, 10), true);
     wb.commit("Demo");
     wb.clear_history();
     wb.modified = false;
