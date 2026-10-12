@@ -855,7 +855,7 @@ fn the_menu_of_a_cell_follows_what_it_carries(cx: &mut TestAppContext) {
         wb.set_note(0, 1, 1, "Ada", "Ada:\nA note");
         wb.add_comment(0, 3, 1, &bob(), 45_000.0, "A thread");
     });
-    let mut menu_of = |cell: Cell, cx: &mut VisualTestContext| {
+    let menu_of = |cell: Cell, cx: &mut VisualTestContext| {
         let at = centre(&app, cx, cell);
         cx.simulate_mouse_down(at, MouseButton::Right, Modifiers::none());
         cx.simulate_mouse_up(at, MouseButton::Right, Modifiers::none());
