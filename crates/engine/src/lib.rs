@@ -35,6 +35,7 @@ pub mod pivot;
 pub mod protect;
 pub mod recalc;
 pub mod refs;
+pub mod sparkline;
 pub mod structured;
 pub mod subtotal;
 pub mod style;

@@ -1017,6 +1017,7 @@ impl<'c> SheetReader<'c> {
                                 self.cond_formats.read_ext(r, &t, &ctx);
                             }
                             "dataValidations" => validation::read(r, &t, &mut self.sheet),
+                            "sparklineGroups" => super::sparkline::read(r, &t, &mut self.sheet, self.ctx.palette),
                             _ => r.skip(&t),
                         },
                         Event::Close(_) | Event::Eof => break,

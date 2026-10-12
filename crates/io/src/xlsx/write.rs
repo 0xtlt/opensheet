@@ -953,14 +953,16 @@ impl SheetWriter<'_> {
         // drawing, legacyDrawing, tableParts: what lives in parts of its
         // own (charts, pictures and shapes; the boxes of notes; tables).
         SheetLinks::of(sheet).push_elements(&mut x);
-        // extLst: one `<ext>` per feature, in the order Excel writes them
-        // (conditional formats, then data validations).
-        let mut extensions = String::new();
-        condfmt::write_ext(&mut extensions, sheet, index, self.wb, self.dxfs);
-        validation::write_ext(&mut extensions, sheet, self.wb);
-        if !extensions.is_empty() {
-            w!(x, "<extLst>{extensions}</extLst>");
-        }
+        // extLst: one `<ext>` per feature, put in the order Excel writes
+        // them by `SheetExtensions`.
+        let mut extensions = super::ext::SheetExtensions::default();
+        let mut ext = String::new();
+        condfmt::write_ext(&mut ext, sheet, index, self.wb, self.dxfs);
+        extensions.push(std::mem::take(&mut ext));
+        validation::write_ext(&mut ext, sheet, self.wb);
+        extensions.push(ext);
+        extensions.push(super::sparkline::ext(sheet));
+        extensions.write(&mut x);
         x.push_str("</worksheet>");
         x
     }

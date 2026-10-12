@@ -52,6 +52,7 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     crate::whatif::on_structural_edit(sheet, edit, edited_sheet);
     crate::text_columns::on_structural_edit(sheet, edit, edited_sheet);
     crate::outline::on_structural_edit(sheet, edit, edited_sheet);
+    crate::sparkline::on_structural_edit(sheet, edit, edited_sheet);
 }
 
 /// A sheet was renamed from `old` to `new`. Called for every sheet (the
@@ -68,6 +69,7 @@ pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
     drawing::on_sheet_renamed(sheet, old, new);
     hyperlink::on_sheet_renamed(sheet, old, new);
     crate::consolidate::on_sheet_renamed(sheet, old, new);
+    crate::sparkline::on_sheet_renamed(sheet, old, new);
 }
 
 /// `wb.sheets[copy]` was just inserted as a copy of the sheet named
@@ -84,6 +86,7 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     pivot::on_sheet_duplicated(wb, copy, original);
     drawing::on_sheet_duplicated(wb, copy, original);
     hyperlink::on_sheet_duplicated(wb, copy, original);
+    crate::sparkline::on_sheet_duplicated(wb, copy, original);
 }
 
 /// The sheet `deleted` was just taken out of the workbook; `order` lists
@@ -101,6 +104,7 @@ pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet, order: &[&str
     pivot::on_sheet_deleted(wb, deleted, order);
     drawing::on_sheet_deleted(wb, deleted, order);
     hyperlink::on_sheet_deleted(wb, deleted, order);
+    crate::sparkline::on_sheet_deleted(wb, deleted);
 }
 
 /// The sheet named `moved` changed place among the tabs; `before` and
@@ -134,6 +138,7 @@ pub(crate) fn on_cells_shifted(wb: &mut Workbook, sheet: usize, shift: CellShift
     pivot::on_cells_shifted(wb, sheet, shift);
     drawing::on_cells_shifted(wb, sheet, shift);
     hyperlink::on_cells_shifted(wb, sheet, shift);
+    crate::sparkline::on_cells_shifted(wb, sheet, shift);
 }
 
 /// Excel's "shift cells": `count` cells are inserted at `at` (or deleted
