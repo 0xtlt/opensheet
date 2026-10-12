@@ -376,3 +376,100 @@ fn advanced_filter_refusals_keep_the_dialog(cx: &mut TestAppContext) {
     }
     assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
 }
+
+// -------------------------------------------------------------- Consolidate
+
+#[gpui::test]
+fn consolidate_by_category_and_again(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(
+        &app,
+        cx,
+        &[
+            ("B1", "Q1"),
+            ("A2", "Apples"),
+            ("B2", "10"),
+            ("A3", "Pears"),
+            ("B3", "5"),
+            ("E1", "Q1"),
+            ("D2", "Pears"),
+            ("E2", "1"),
+        ],
+    );
+    select(&app, cx, "A8");
+    let dialog = app.update_in(cx, |app, window, cx| consolidate::open(app, window, cx));
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| {
+        dialog.set_reference("A1:B3", cx);
+        assert!(dialog.add(cx));
+        // The same range twice is listed once.
+        assert!(dialog.add(cx));
+        dialog.set_reference("$D$1:$E$2", cx);
+        assert!(dialog.add(cx));
+        dialog.set_reference("G1:G3", cx);
+        assert!(dialog.add(cx));
+        // Delete takes the selected line away.
+        dialog.select(2, cx);
+        dialog.delete(cx);
+        let spec = dialog.spec_mut();
+        assert_eq!(spec.sources.len(), 2);
+        spec.top_row = true;
+        spec.left_column = true;
+    });
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "B8"), text("Q1"));
+    assert_eq!(value(&app, cx, "A10"), text("Pears"));
+    assert_eq!(value(&app, cx, "B10"), Value::Number(6.0));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Consolidate"));
+    // The dialog opens on the same settings.
+    let again = app.update_in(cx, |app, window, cx| consolidate::open(app, window, cx));
+    redraw(cx);
+    again.update(cx, |dialog, _| {
+        let spec = dialog.spec_mut();
+        assert_eq!(spec.sources.len(), 2);
+        assert!(spec.top_row && spec.left_column);
+    });
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    // One step back: the cells and the settings.
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "A10"), Value::Empty);
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].consolidation.is_none()));
+}
+
+#[gpui::test]
+fn consolidate_refusals(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "1"), ("A2", "2")]);
+    select(&app, cx, "A1");
+    run(&app, cx, Cmd::Consolidate);
+    assert!(modal_open(&app, cx));
+    // No reference at all: a message, the dialog stays.
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(modal_open(&app, cx));
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    // A reference that is none, then one that covers the destination.
+    let dialog = app.update_in(cx, |app, window, cx| consolidate::open(app, window, cx));
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| {
+        dialog.set_reference("not a range", cx);
+        assert!(!dialog.add(cx));
+    });
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| dialog.set_reference("A1:A2", cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(modal_open(&app, cx));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
+}

@@ -82,6 +82,8 @@ pub struct Sheet {
     pub filtered_rows: BTreeSet<u32>,
     /// The Advanced Filter applied in place, see `filter/advanced.rs`.
     pub advanced_filter: Option<crate::filter::AdvancedFilter>,
+    /// The settings of the last Data > Consolidate into this sheet.
+    pub consolidation: Option<crate::consolidate::Consolidation>,
     /// Tables ("Format as Table"), see `table.rs`.
     pub tables: Vec<crate::table::Table>,
     /// Conditional formats, in priority order, see `condfmt.rs`.
@@ -128,6 +130,7 @@ impl Sheet {
             auto_filter: None,
             filtered_rows: BTreeSet::new(),
             advanced_filter: None,
+            consolidation: None,
             tables: Vec::new(),
             cond_formats: Vec::new(),
             validations: Vec::new(),

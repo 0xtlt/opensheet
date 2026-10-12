@@ -1772,7 +1772,7 @@ impl ExcelApp {
                     self.cmd_large("dt-flash", data_tools::Cmd::FlashFill, false, cx),
                     self.cmd_large("dt-dup", filters::Cmd::RemoveDuplicates, false, cx),
                     self.cmd_large("dt-valid", validation::Cmd::Menu, true, cx),
-                    self.cmd_large("dt-consolidate", misc::Cmd::Consolidate, false, cx),
+                    self.cmd_large("dt-consolidate", data_tools::Cmd::Consolidate, false, cx),
                 ]),
             )
             .into_any_element(),

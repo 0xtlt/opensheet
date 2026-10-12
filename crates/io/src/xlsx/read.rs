@@ -944,6 +944,7 @@ impl<'c> SheetReader<'c> {
                         this.sheet.auto_filter =
                             super::filter::parse_auto_filter(&mut r, &t, ctx.filter_colors)
                     }
+                    "dataConsolidate" => super::datatools::read_consolidate(&mut r, &t, &mut this.sheet),
                     "mergeCells" => this.merges(&mut r, &t),
                     "conditionalFormatting" => {
                         let ctx = this.cond_format_context();

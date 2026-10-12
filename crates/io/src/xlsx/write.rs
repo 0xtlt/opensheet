@@ -841,6 +841,8 @@ impl SheetWriter<'_> {
         }
         // autoFilter (the rows it hides are hidden rows of sheetData)
         super::filter::write_sheet(&mut x, self.wb, index, self.dxfs);
+        // dataConsolidate
+        super::datatools::write_consolidate(&mut x, sheet);
         // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {

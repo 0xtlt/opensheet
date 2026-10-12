@@ -9,6 +9,7 @@ pub mod chart_layout;
 pub mod chart_trend;
 pub mod comment;
 pub mod condfmt;
+pub mod consolidate;
 pub mod datetime;
 pub mod deps;
 pub mod drawing;

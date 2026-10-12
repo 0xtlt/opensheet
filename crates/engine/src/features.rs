@@ -47,6 +47,7 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     page::on_structural_edit(sheet, edit, edited_sheet);
     pivot::on_structural_edit(sheet, edit, edited_sheet);
     drawing::on_structural_edit(sheet, edit, edited_sheet);
+    crate::consolidate::on_structural_edit(sheet, edit, edited_sheet);
 }
 
 /// A sheet was renamed from `old` to `new`. Called for every sheet (the
@@ -61,6 +62,7 @@ pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
     page::on_sheet_renamed(sheet, old, new);
     pivot::on_sheet_renamed(sheet, old, new);
     drawing::on_sheet_renamed(sheet, old, new);
+    crate::consolidate::on_sheet_renamed(sheet, old, new);
 }
 
 /// `wb.sheets[copy]` was just inserted as a copy of the sheet named

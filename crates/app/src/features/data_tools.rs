@@ -8,6 +8,7 @@
 //! them in GPUI's headless window.
 
 mod advanced;
+mod consolidate;
 mod flash;
 mod text_wizard;
 #[cfg(test)]
@@ -28,6 +29,7 @@ commands! {
         TextToColumns = "columns", t("Text to Columns", "Convertir");
         FlashFill = "fill-down", t("Flash Fill", "Remplissage instantané");
         AdvancedFilter = "filter", t("Advanced", "Avancé");
+        Consolidate = "grid", t("Consolidate", "Consolider");
     }
 }
 
@@ -48,6 +50,9 @@ impl Command for Cmd {
             Cmd::FlashFill => flash::flash_fill(app, cx),
             Cmd::AdvancedFilter => {
                 advanced::open(app, window, cx);
+            }
+            Cmd::Consolidate => {
+                consolidate::open(app, window, cx);
             }
         }
     }
