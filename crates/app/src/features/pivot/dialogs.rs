@@ -216,7 +216,7 @@ impl ValueSettings {
         let sample = self.open.sample.clone();
         let this = cx.weak_entity();
         self.modal.update_app(cx, |app, cx| {
-            format_cells::open_number_format(app, &code, sample, window, cx, move |_, code, _, cx| {
+            format_cells::open_number_format(app, &code, sample, window, cx, move |code, _, cx| {
                 this.update(cx, |this, cx| {
                     this.open.num_fmt = Some(Arc::from(code));
                     cx.notify();

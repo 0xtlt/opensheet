@@ -1176,3 +1176,109 @@ fn titles_repeat_and_everything_scales() {
             .any(|op| matches!(op, Op::Text { text, size, .. } if text == "Big" && *size == 20.0))
     );
 }
+
+/// The text of a scene, one string per text operation.
+fn texts_of(scene: &opensheet_print::Scene) -> Vec<String> {
+    scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn notes_print_at_the_end_or_where_they_are_shown() {
+    use opensheet_engine::comment::Person;
+    use opensheet_engine::page::PrintComments;
+    let dir = tempfile::tempdir().unwrap();
+    let fonts = FontDb::standard_only();
+    let mut wb = Workbook::new(Locale::fr());
+    enter(&mut wb, "A1", "Ventes");
+    enter(&mut wb, "B2", "1200");
+    enter(&mut wb, "D30", "fin");
+    wb.set_note(0, 1, 1, "Ana", "Ana:\nChiffre provisoire, à confirmer avec la comptabilité avant la clôture.");
+    wb.add_comment(0, 0, 0, &Person::new("Luc"), NOW, "Qui valide ?");
+    wb.add_reply(0, 0, 0, &Person::new("Ana"), NOW, "Moi.");
+    // A note outside the print area is left out.
+    wb.set_note(0, 39, 0, "Ana", "Ana:\nHors zone");
+    wb.set_print_area(0, &[Rect::parse("A1:E35").unwrap()]);
+    wb.update_page_setup(0, |s| s.header_footer.odd_footer = "&CPage &P de &N".into());
+    wb.commit("setup");
+    let mut job = job(PrintWhat::Sheet(0));
+    job.fonts = Some(&fonts);
+
+    // Not printed unless asked for.
+    let p = plan(&wb, &job);
+    assert_eq!((p.pages.len(), p.sheets[0].notes.len()), (1, 0));
+    let texts = texts_of(&render_page(&wb, &job, &p, 0).unwrap());
+    assert!(!texts.iter().any(|t| t.contains("provisoire")));
+
+    // At the end: one more page, numbered on, naming each cell.
+    wb.update_page_setup(0, |s| s.comments = PrintComments::AtEnd);
+    wb.commit("at end");
+    let p = plan(&wb, &job);
+    assert_eq!((p.pages.len(), p.total), (2, 2));
+    assert!(p.pages[1].notes && p.page(1).is_none());
+    assert_eq!(p.sheet_of(1), Some(0));
+    assert_eq!(p.paper(1), p.paper(0));
+    let lines: Vec<&str> = p.sheets[0].notes[0].iter().map(|line| line.text.as_str()).collect();
+    assert_eq!(lines[0], "Cellule : A1");
+    assert_eq!(lines[1], "Commentaire : Luc:");
+    assert_eq!(&lines[2..5], &["Qui valide ?", "Ana:", "Moi."]);
+    assert_eq!(&lines[5..8], &["", "Cellule : B2", "Commentaire : Ana:"]);
+    assert!(lines[8].starts_with("Chiffre provisoire"));
+    assert!(!lines.iter().any(|line| line.contains("Hors zone")));
+    let texts = texts_of(&render_page(&wb, &job, &p, 1).unwrap());
+    assert!(texts.contains(&"Cellule : B2".to_string()));
+    assert!(texts.contains(&"Page 2 de 2".to_string()));
+    let pdf = print_pdf(&wb, &job);
+    assert_eq!(page_count(&pdf), 2);
+    let path = save(&dir, "notes-at-end.pdf", &pdf);
+    if let Some(text) = pdftotext(&path, &["-f", "2"]) {
+        assert!(text.contains("Cellule : A1") && text.contains("Qui valide ?"));
+    }
+    // A long text takes as many pages as it needs.
+    let long = format!("Ana:\n{}", "ligne\n".repeat(120));
+    wb.set_note(0, 2, 2, "Ana", &long);
+    wb.commit("long");
+    let p = plan(&wb, &job);
+    assert_eq!(p.sheets[0].notes.len(), 3);
+    assert_eq!(p.total, 4);
+
+    // As displayed: only the notes shown on the sheet, in their boxes.
+    wb.delete_comment(0, 2, 2);
+    wb.update_page_setup(0, |s| s.comments = PrintComments::AsDisplayed);
+    wb.commit("as displayed");
+    let p = plan(&wb, &job);
+    assert_eq!(p.pages.len(), 1);
+    let scene = render_page(&wb, &job, &p, 0).unwrap();
+    assert!(!texts_of(&scene).iter().any(|t| t.contains("provisoire")));
+    wb.set_note_visible(0, 1, 1, true);
+    wb.commit("show");
+    let scene = render_page(&wb, &job, &p, 0).unwrap();
+    let texts = texts_of(&scene);
+    assert!(texts.iter().any(|t| t == "Ana:"));
+    assert!(texts.iter().any(|t| t.starts_with("Chiffre provisoire")));
+    // The text is wrapped inside the box: 144 pixels are 108 points.
+    let frame = wb.sheets[0].note_frame(1, 1).unwrap();
+    let boxes: Vec<&RectF> = scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Clip(r) if (r.w - frame.width * 0.75).abs() < 1e-6 => Some(r),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(boxes.len(), 1);
+    for op in &scene.ops {
+        if let Op::Text { face, size, x, text, .. } = op {
+            if text.starts_with("Chiffre") {
+                assert!(x + face.text_width(text, *size) <= boxes[0].right() + 1e-6);
+            }
+        }
+    }
+    save(&dir, "notes-as-displayed.pdf", &print_pdf(&wb, &job));
+}

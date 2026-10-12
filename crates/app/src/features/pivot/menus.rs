@@ -293,13 +293,17 @@ fn number_format(app: &mut ExcelApp, id: u32, data: usize, row: u32, col: u32, w
     let sample = Some(app.wb.value_at(app.sheet, row, col))
         .filter(Value::is_number)
         .unwrap_or(Value::Number(1234.5));
-    format_cells::open_number_format(app, &code, sample, window, cx, move |app, code, window, cx| {
+    let weak = cx.weak_entity();
+    format_cells::open_number_format(app, &code, sample, window, cx, move |code, window, cx| {
         let code: Arc<str> = Arc::from(code);
-        update(app, id, t("Number Format", "Format de nombre"), window, cx, move |p| {
-            if let Some(d) = p.data_fields.get_mut(data) {
-                d.num_fmt = Some(code.clone());
-            }
-        });
+        weak.update(cx, |app, cx| {
+            update(app, id, t("Number Format", "Format de nombre"), window, cx, move |p| {
+                if let Some(d) = p.data_fields.get_mut(data) {
+                    d.num_fmt = Some(code.clone());
+                }
+            });
+        })
+        .ok();
     });
 }
 
