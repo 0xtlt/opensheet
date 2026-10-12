@@ -269,6 +269,8 @@ impl Render for MessageBox {
                     .child(
                         div()
                             .flex_1()
+                            // Long messages wrap instead of running out of the box.
+                            .min_w(px(0.))
                             .text_size(px(12.5))
                             .line_height(px(18.))
                             .children(self.alert.message.split('\n').map(|line| {

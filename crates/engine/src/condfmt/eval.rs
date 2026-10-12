@@ -507,7 +507,7 @@ fn for_each_value(sh: &Sheet, ranges: &[Rect], f: &mut dyn FnMut(u32, u32, &Valu
 
 /// The numbers in the ranges. Text, booleans, blanks and errors take no
 /// part in ranks, averages and scales.
-fn numbers(sh: &Sheet, ranges: &[Rect]) -> Vec<f64> {
+pub(super) fn numbers(sh: &Sheet, ranges: &[Rect]) -> Vec<f64> {
     let mut out = Vec::new();
     for_each_value(sh, ranges, &mut |_, _, v| {
         if let Value::Number(n) = v {
