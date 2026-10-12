@@ -153,7 +153,7 @@ impl Brush<'_> {
         point(self.origin.x + px(p.0), self.origin.y + px(p.1))
     }
 
-    fn fill(&self, points: &[Pt], color: Hsla, out: &mut Vec<Draw>) {
+    pub(super) fn fill(&self, points: &[Pt], color: Hsla, out: &mut Vec<Draw>) {
         if points.len() < 3 {
             return;
         }
@@ -230,7 +230,7 @@ pub fn text_look(shape: &Shape, zoom: f32, fonts: &FontResolver) -> TextLook {
 /// does, so that what is typed still wraps inside the shape. (Once typed,
 /// the text is drawn turned: `draw_turned_text`.)
 pub fn text_box(shape: &Shape, placed: &Placed, natural: (f32, f32), zoom: f32) -> (f32, f32, f32, f32) {
-    let [left, top, right, bottom] = shape.preset.text_rect(natural.0, natural.1);
+    let [left, top, right, bottom] = shape.text_rect(natural.0, natural.1);
     let mut width = ((right - left) * placed.width().abs() - 2.0 * TEXT_MARGIN.0 * zoom).max(1.0);
     let mut height = ((bottom - top) * placed.height().abs() - 2.0 * TEXT_MARGIN.1 * zoom).max(1.0);
     if (geometry::normalise_angle(placed.rotation + 45.0) % 180.0) >= 90.0 {
@@ -242,10 +242,10 @@ pub fn text_box(shape: &Shape, placed: &Placed, natural: (f32, f32), zoom: f32) 
 
 /// The outline of a shape on screen.
 pub fn outline_of(shape: &Shape, placed: &Placed, natural: (f32, f32)) -> Vec<Polyline> {
-    geometry::flatten(&shape.preset.path(natural.0, natural.1), placed)
+    geometry::flatten(&shape.path(natural.0, natural.1), placed)
 }
 
-fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
+pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     let lines = outline_of(shape, placed, natural);
     if let (Some(fill), false) = (shape.fill, shape.preset.is_line()) {
         for line in lines.iter().filter(|line| line.closed) {
@@ -370,6 +370,10 @@ fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f
 pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     match &drawing.kind {
         DrawingKind::Shape(shape) => draw_shape(shape, placed, natural, brush, text, out),
+        DrawingKind::SmartArt(art) => {
+            let level = Placed { rotation: 0.0, flip_h: false, flip_v: false, ..*placed };
+            super::smartart::draw(art, &level, natural, brush, text, crate::i18n::lang().locale(), out)
+        }
         DrawingKind::Picture(picture) => match super::icons::image_for(picture, placed, brush.scale)
             .or_else(|| picture::image_for(picture, placed, brush.scale))
         {

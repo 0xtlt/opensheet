@@ -60,7 +60,7 @@ pub(super) enum Drag {
 /// where the drawing is in the pane under it.
 pub(super) fn hits(drawing: &Drawing, placed: &Placed, natural: (f32, f32), zoom: f32, p: Pt) -> bool {
     match &drawing.kind {
-        DrawingKind::Picture(_) => placed.contains(p),
+        DrawingKind::Picture(_) | DrawingKind::SmartArt(_) => placed.contains(p),
         DrawingKind::Shape(shape) => {
             let lines = paint::outline_of(shape, placed, natural);
             let is_line = shape.preset.is_line();

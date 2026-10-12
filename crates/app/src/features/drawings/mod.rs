@@ -29,6 +29,7 @@ mod icons;
 mod paint;
 mod pane;
 mod picture;
+mod smartart;
 mod svg;
 mod tabs;
 mod text;

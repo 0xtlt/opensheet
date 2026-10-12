@@ -34,6 +34,7 @@ pub mod pivot;
 pub mod protect;
 pub mod recalc;
 pub mod refs;
+pub mod smartart;
 pub mod structured;
 pub mod svg;
 pub mod style;

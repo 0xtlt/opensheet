@@ -245,6 +245,39 @@ fn push_non_visual(
     }
 }
 
+/// `<a:prstGeom>`: the preset and, when the shape has one of its own, its
+/// adjustment (in 100 000ths of the shorter side).
+fn push_geometry(x: &mut String, shape: &Shape) {
+    w!(x, "<a:prstGeom prst=\"{}\">", shape.preset.ooxml_name());
+    match shape.adjust.filter(|adjust| adjust.is_finite()) {
+        Some(adjust) => {
+            let value = (adjust.clamp(0.0, 100.0) as f64 * 100_000.0).round() as i64;
+            w!(x, "<a:avLst><a:gd name=\"adj\" fmla=\"val {value}\"/></a:avLst>");
+        }
+        None => x.push_str("<a:avLst/>"),
+    }
+    x.push_str("</a:prstGeom>");
+}
+
+/// The adjustment `<a:prstGeom>` gives its preset, if it gives one the
+/// engine follows. Consumes the element.
+fn parse_adjust<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, preset: Option<ShapePreset>) -> Option<f32> {
+    let mut adjust = None;
+    each_child(r, tag, |r, list| {
+        each_child(r, list, |r, guide| {
+            if guide.name == "gd" && guide.attr("name").as_deref() == Some("adj") {
+                adjust = guide
+                    .attr("fmla")
+                    .and_then(|formula| formula.strip_prefix("val ")?.trim().parse::<f64>().ok())
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .map(|value| (value / 100_000.0) as f32);
+            }
+            r.skip(guide);
+        });
+    });
+    adjust.filter(|_| matches!(preset, Some(ShapePreset::Chevron | ShapePreset::Trapezoid)))
+}
+
 fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame: Frame) {
     if is_connector(shape) {
         x.push_str("<xdr:cxnSp macro=\"\"><xdr:nvCxnSpPr>");
@@ -263,11 +296,7 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     push_non_visual(x, "cNvSpPr", text_box, "spLocks", drawing);
     x.push_str("</xdr:nvSpPr><xdr:spPr>");
     push_xfrm(x, drawing, frame);
-    w!(
-        x,
-        "<a:prstGeom prst=\"{}\"><a:avLst/></a:prstGeom>",
-        shape.preset.ooxml_name()
-    );
+    push_geometry(x, shape);
     match shape.fill {
         Some(color) => push_solid_fill(x, color),
         None => x.push_str("<a:noFill/>"),
@@ -316,6 +345,7 @@ fn push_anchor(x: &mut String, sheet: &Sheet, drawing: &Drawing, id: usize, imag
         (DrawingKind::Shape(shape), _) => push_shape(x, drawing, shape, id, frame),
         (DrawingKind::Picture(_), Some((image, vector))) => push_picture(x, drawing, id, frame, image, vector),
         (DrawingKind::Picture(_), None) => {}
+        (DrawingKind::SmartArt(_), _) => {}
     }
     x.push_str("<xdr:clientData");
     if !drawing.locked {
@@ -860,6 +890,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
     let mut line: Option<RawLine> = None;
     let mut style = RawStyle::default();
     let mut text = wordart::RawText::default();
+    let mut adjust = None;
     each_child(r, tag, |r, t| match t.name {
         "nvSpPr" | "nvCxnSpPr" => text_box = object.parse_identity(r, t),
         "spPr" => each_child(r, t, |r, c| match c.name {
@@ -868,7 +899,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
                 preset = c
                     .attr("prst")
                     .and_then(|name| ShapePreset::from_ooxml_name(&name));
-                r.skip(c);
+                adjust = parse_adjust(r, c, preset);
             }
             "ln" => line = Some(parse_line(r, c, palette)),
             _ => parse_paint(r, c, palette, &mut fill),
@@ -921,6 +952,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
         effects: Default::default(),
         runs: Vec::new(),
         wrap: true,
+        adjust,
     };
     text.into_shape(&mut shape, style.text);
     object.kind = RawKind::Shape(shape);
