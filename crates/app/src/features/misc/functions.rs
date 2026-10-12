@@ -804,7 +804,14 @@ impl Render for FunctionArgs {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(SharedString::from(capitalized(&arg.name))),
                 )
-                .child(div().flex_1().line_height(px(16.)).child(SharedString::from(arg.description.clone())))
+                // `min_w(0)` lets a long description wrap instead of running out of the dialog.
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .line_height(px(16.))
+                        .child(SharedString::from(arg.description.clone())),
+                )
                 .into_any_element(),
             // Without Excel's texts, the syntax says what goes where.
             _ if self.help.is_none() => div()

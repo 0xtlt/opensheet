@@ -550,7 +550,8 @@ impl Render for ProtectSheet {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let list = self.permission_list(window, cx);
         dialog(&self.modal, t("Protect Sheet", "Protéger la feuille"))
-            .width(300.0)
+            // Wide enough for the French label of the check box.
+            .width(380.0)
             .on_ok(cx.listener(Self::ok))
             .child(
                 div()
