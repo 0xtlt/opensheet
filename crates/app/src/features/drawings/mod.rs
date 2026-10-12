@@ -29,6 +29,8 @@ mod picture;
 mod tabs;
 mod text;
 mod tool;
+#[cfg(test)]
+mod ui_tests;
 
 use super::{
     Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, ObjectInfo, ObjectVerb, PaintLayer,
