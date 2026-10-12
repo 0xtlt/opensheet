@@ -356,11 +356,15 @@ pub struct Workbook {
     pub modified: bool,
     /// Protection of the workbook structure, see `protect.rs`.
     pub protection: crate::protect::WorkbookProtection,
-    /// Incremented by every recalculation: anything derived from cell
+    /// Incremented whenever a value may have changed (by every committed
+    /// edit, undo, redo and recalculation): anything derived from cell
     /// values can be cached against it.
     pub generation: u64,
     /// Caches of the features that live in their own modules.
     pub caches: crate::features::Caches,
+    /// Calculation settings, the dependency graph and what changed since
+    /// the last calculation, see `recalc.rs`.
+    pub(crate) calc: crate::recalc::CalcState,
     undo_stack: Vec<UndoEntry>,
     redo_stack: Vec<UndoEntry>,
     pending: Vec<Change>,
@@ -379,6 +383,7 @@ impl Workbook {
             protection: crate::protect::WorkbookProtection::default(),
             generation: 0,
             caches: crate::features::Caches::default(),
+            calc: crate::recalc::CalcState::default(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             pending: Vec::new(),
@@ -475,14 +480,25 @@ impl Workbook {
         };
         // A cell with nothing in it and no formatting of its own is not stored.
         let inherited = sh.inherited_style(row, col);
-        let cell = cell.filter(|c| !(matches!(c.content, Content::Empty) && c.style == inherited));
+        let mut cell = cell.filter(|c| !(matches!(c.content, Content::Empty) && c.style == inherited));
+        let current = sh.cells.get(&(row, col));
+        if crate::recalc::same_content(current, cell.as_ref()) {
+            // The same formula keeps the result it has: only a change of
+            // content is calculated again.
+            if let (Some(old), Some(new)) = (current, cell.as_mut()) {
+                new.value = old.value.clone();
+            }
+            if current.map(|c| c.style) == cell.as_ref().map(|c| c.style) {
+                return;
+            }
+        } else {
+            let replaced = current.is_some_and(|c| matches!(c.content, Content::Formula(_)));
+            self.calc.touch(sheet, row, col, replaced);
+        }
         let before = match &cell {
             Some(c) => sh.cells.insert((row, col), c.clone()),
             None => sh.cells.remove(&(row, col)),
         };
-        if before == cell {
-            return;
-        }
         self.pending.push(Change::Cell {
             sheet,
             pos: (row, col),
@@ -515,7 +531,10 @@ impl Workbook {
         }
         let mut changes = std::mem::take(&mut self.pending);
         for ch in &mut changes {
-            if let Change::Sheets { after, .. } = ch {
+            if let Change::Sheets { before, after } = ch {
+                // What was changed directly on the sheets since the
+                // snapshot is found by comparing with it.
+                self.calc.sheets_changed(&before.sheets, &mut self.sheets);
                 *after = Some(Box::new(SheetsState {
                     sheets: self.sheets.clone(),
                     names: self.names.clone(),
@@ -531,7 +550,7 @@ impl Workbook {
         }
         self.redo_stack.clear();
         self.modified = true;
-        self.recalc();
+        self.changed();
         true
     }
 
@@ -564,7 +583,7 @@ impl Workbook {
         self.apply_changes(&entry.changes, true);
         self.redo_stack.push(entry);
         self.modified = true;
-        self.recalc();
+        self.changed();
         true
     }
 
@@ -575,7 +594,7 @@ impl Workbook {
         self.apply_changes(&entry.changes, false);
         self.undo_stack.push(entry);
         self.modified = true;
-        self.recalc();
+        self.changed();
         true
     }
 
@@ -596,9 +615,21 @@ impl Workbook {
             } => {
                 let target = if reverse { before } else { after };
                 if let Some(sh) = wb.sheets.get_mut(*sheet) {
+                    let mut target = target.clone();
+                    let current = sh.cells.get(pos);
+                    if crate::recalc::same_content(current, target.as_ref()) {
+                        // Only the formatting comes back: the result of a
+                        // formula is the one calculated since.
+                        if let (Some(old), Some(new)) = (current, target.as_mut()) {
+                            new.value = old.value.clone();
+                        }
+                    } else {
+                        let replaced = current.is_some_and(|c| matches!(c.content, Content::Formula(_)));
+                        wb.calc.touch(*sheet, pos.0, pos.1, replaced);
+                    }
                     match target {
                         Some(c) => {
-                            sh.cells.insert(*pos, c.clone());
+                            sh.cells.insert(*pos, c);
                         }
                         None => {
                             sh.cells.remove(pos);
@@ -685,8 +716,11 @@ impl Workbook {
                     after.as_ref()
                 };
                 if let Some(state) = target {
-                    wb.sheets = state.sheets.clone();
+                    let replaced = std::mem::replace(&mut wb.sheets, state.sheets.clone());
                     wb.names = state.names.clone();
+                    // The snapshot brings contents back; results are those
+                    // of the workbook as it was calculated last.
+                    wb.calc.sheets_changed(&replaced, &mut wb.sheets);
                 }
             }
         };
@@ -701,45 +735,7 @@ impl Workbook {
         }
     }
 
-    // ---- recalculation --------------------------------------------------
-
-    /// Recalculate every formula.
-    pub fn recalc(&mut self) {
-        let result = {
-            let wb: &Workbook = self;
-            std::thread::scope(|scope| {
-                // Deep dependency chains recurse; give the pass a large stack.
-                std::thread::Builder::new()
-                    .name("recalc".into())
-                    .stack_size(512 << 20)
-                    .spawn_scoped(scope, || Calc::run(wb))
-                    .ok()
-                    .and_then(|h| h.join().ok())
-            })
-        };
-        let Some(result) = result else {
-            return;
-        };
-        self.generation += 1;
-        self.circular = result.circular;
-        for ((si, r, c), v) in result.values {
-            if let Some(cell) = self.sheets.get_mut(si).and_then(|s| s.cells.get_mut(&(r, c))) {
-                cell.value = v.into_scalar();
-            }
-        }
-        for (si, list) in result.spills.into_iter().enumerate() {
-            if let Some(sh) = self.sheets.get_mut(si) {
-                sh.spills = list
-                    .into_iter()
-                    .map(|(sp, array)| Spill {
-                        row: sp.anchor.0,
-                        col: sp.anchor.1,
-                        array,
-                    })
-                    .collect();
-            }
-        }
-    }
+    // ---- recalculation: see `recalc.rs` ---------------------------------
 
     /// Evaluate formula text against the current state without storing it
     /// (used for previews such as the function-argument dialog).
