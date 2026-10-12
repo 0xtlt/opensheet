@@ -13,6 +13,7 @@
 //! writer can both follow.
 
 use crate::ast::StructuralEdit;
+use crate::features::CellShift;
 use crate::locale::Locale;
 use crate::refs::{MAX_COLS, MAX_ROWS};
 use crate::style::{Color, Font};
@@ -1600,6 +1601,18 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
         drawing.id = id;
     }
 }
+
+/// See `features::on_sheet_deleted`: the drawings of a sheet go with it,
+/// and those of the other sheets name no sheet.
+pub(crate) fn on_sheet_deleted(_wb: &mut Workbook, _deleted: &Sheet, _order: &[&str]) {}
+
+/// See `features::on_sheet_moved`: drawings are kept on their sheet.
+pub(crate) fn on_sheet_moved(_wb: &mut Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+
+/// See `features::on_cells_shifted`. Drawings are pinned to the rows and
+/// the columns of the grid, which stay where they are when only some of
+/// their cells are shifted.
+pub(crate) fn on_cells_shifted(_wb: &mut Workbook, _sheet: usize, _shift: CellShift) {}
 
 #[cfg(test)]
 mod tests {

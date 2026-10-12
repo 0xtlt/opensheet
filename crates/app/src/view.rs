@@ -457,6 +457,7 @@ impl ExcelApp {
             .on_action(cx.listener(Self::on_auto_sum))
             .on_action(cx.listener(Self::on_insert_rows))
             .on_action(cx.listener(Self::on_delete_rows))
+            .on_action(cx.listener(Self::on_open_drop_down))
             .child(
                 canvas(
                     move |bounds, window, cx| {
