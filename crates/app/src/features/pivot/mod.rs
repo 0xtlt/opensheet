@@ -29,7 +29,7 @@ mod sheet;
 mod styles;
 
 use super::{CellEdit, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse, tables};
-use crate::app::{ExcelApp, MenuEntry};
+use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
 use crate::grid::{GridLayout, cell_font, pt_to_px};
 use crate::i18n::{t, t_ctx};
 use crate::ribbon::{group, row, rows};
@@ -811,6 +811,15 @@ impl Feature for Pivots {
             app.wb.snapshot();
             app.wb.sheets[edit.sheet].pivots.retain(|p| !gone.contains(&p.id));
         }
+    }
+}
+
+/// Open a context menu at a point of the window, wide enough for the
+/// long entries of a PivotTable ("Move to Column Labels" in French).
+fn open_menu_at(app: &mut ExcelApp, position: Point<Pixels>, entries: Vec<MenuEntry>, cx: &mut Cx) {
+    if !entries.is_empty() {
+        app.popup = Some(Popup::new(PopupKind::Menu(entries), position, 330.0).max_height(640.0));
+        cx.notify();
     }
 }
 

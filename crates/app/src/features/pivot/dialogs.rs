@@ -668,7 +668,7 @@ impl Render for FieldSettings {
         ];
         let body = if self.tab == 1 { self.layout_tab(cx) } else { self.subtotals_tab(cx) };
         dialog(&self.modal, t("Field Settings", "Paramètres de champ"))
-            .width(500.0)
+            .width(610.0)
             .on_ok(cx.listener(Self::ok))
             .child(names(&self.open.source, &self.name))
             .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
@@ -921,7 +921,7 @@ impl Render for OptionsDialog {
             _ => self.layout_tab(cx),
         };
         dialog(&self.modal, t("PivotTable Options", "Options du tableau croisé dynamique"))
-            .width(520.0)
+            .width(590.0)
             .on_ok(cx.listener(Self::ok))
             .child(labeled(
                 t("PivotTable Name:", "Nom du tableau croisé dynamique :"),
@@ -1231,7 +1231,7 @@ impl Render for FilterPages {
             &self.modal,
             t("Show Report Filter Pages", "Afficher les pages de filtre du rapport"),
         )
-        .width(300.0)
+        .width(380.0)
         .on_ok(cx.listener(Self::ok))
         .child(label(t(
             "Show all report filter pages of:",

@@ -3,7 +3,7 @@
 //! Layout Update".
 
 use super::logic::{self, AreaEntry, DragSource, PaneOp, Target};
-use super::{PivotUi, active_pivot, entry, menus, perform};
+use super::{PivotUi, active_pivot, entry, menus, open_menu_at, perform};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::features::Cx;
 use crate::i18n::t;
@@ -267,7 +267,7 @@ impl FieldsPane {
                     .icon("format-cells")
                     .disabled(moves.sigma || pending || target.is_none()),
                 ];
-                app.open_context_menu(position, entries, cx);
+                open_menu_at(app, position, entries, cx);
             })
             .ok();
     }
@@ -290,7 +290,7 @@ impl FieldsPane {
             add(t("Add to Values", "Ajouter à la zone Valeurs"), Area::Values).icon("pivot-sigma"),
         ];
         self.app
-            .update(cx, |app, cx| app.open_context_menu(position, entries, cx))
+            .update(cx, |app, cx| open_menu_at(app, position, entries, cx))
             .ok();
     }
 

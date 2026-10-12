@@ -3,7 +3,7 @@
 //! labels, the frame of an empty report, double clicks and right clicks.
 
 use super::logic::{self, Target};
-use super::{actions, dialogs, filter, menus};
+use super::{actions, dialogs, filter, menus, open_menu_at};
 use crate::app::ExcelApp;
 use crate::features::{Cx, PaintLayer, Painter, Zone, ZoneEvent, ZoneResponse};
 use crate::i18n::t;
@@ -303,7 +303,7 @@ pub(super) fn mouse_down(
                 app.select_cell(row, col, cx);
             }
             let entries = menus::context_entries(app, row, col);
-            app.open_context_menu(ev.position, entries, cx);
+            open_menu_at(app, ev.position, entries, cx);
             ZoneResponse::Handled
         }
         // While a formula is typed, a click points at the cell.

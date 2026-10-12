@@ -24,7 +24,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 /// Width of the drop-down and of its submenus.
-const WIDTH: f32 = 264.0;
+const WIDTH: f32 = 300.0;
 const SUB_WIDTH: f32 = 232.0;
 const ROW: f32 = 26.0;
 const SEPARATOR: f32 = 9.0;
@@ -799,7 +799,7 @@ impl SortDialog {
             .pl(px(22.))
             .child(
                 Select::new(id, self.keys.clone(), Some(self.key))
-                    .width(260.0)
+                    .width(300.0)
                     .disabled(self.order != order)
                     .on_change(cx.listener(|this, ix: &usize, _, cx| {
                         this.key = *ix;
@@ -815,7 +815,7 @@ impl Render for SortDialog {
         let by_value = (self.key > 0).then(|| self.keys[self.key].to_string());
         let summary = logic::sort_summary(&self.caption, self.order, by_value.as_deref());
         dialog(&self.modal, field_title(t("Sort ({})", "Trier ({})"), &self.caption))
-            .width(340.0)
+            .width(500.0)
             .on_ok(cx.listener(Self::ok))
             .child(
                 widgets::GroupBox::new(t("Sort options", "Options de tri"))

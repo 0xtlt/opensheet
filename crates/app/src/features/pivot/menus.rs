@@ -37,7 +37,7 @@ pub(super) fn options_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
         .disabled(!has_filters),
         unavailable(t("Generate GetPivotData", "Générer GetPivotData")),
     ];
-    app.open_command_menu(entries, 290.0, window, cx);
+    app.open_command_menu(entries, 330.0, window, cx);
 }
 
 pub(super) fn refresh_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
