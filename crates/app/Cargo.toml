@@ -8,5 +8,6 @@ license.workspace = true
 [dependencies]
 opensheet_engine = { path = "../engine" }
 opensheet_io = { path = "../io" }
+opensheet_print = { path = "../print" }
 gpui = "0.2.2"
 unicode-segmentation = "1"

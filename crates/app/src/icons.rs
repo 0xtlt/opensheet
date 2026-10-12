@@ -117,6 +117,10 @@ const ICONS: &[(&str, &str)] = &[
     ("border-inner-v", r#"<path d="M2.500 2.500h11v11h-11zM2.500 8h11" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M8 2.500v11" stroke-width="1.800"/>"#),
     ("border-diag-up", r#"<path d="M2.500 2.500h11v11h-11z" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M2.500 13.500l11-11" stroke-width="1.400"/>"#),
     ("border-diag-down", r#"<path d="M2.500 2.500h11v11h-11z" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M2.500 2.500l11 11" stroke-width="1.400"/>"#),
+    ("page-number", r#"<path d="M4 2h8v12H4z"/><path d="M6.300 6.500h1.200v4M9 6.500h1.200v4M5.800 8h4.800M5.800 9.400h4.800" stroke-width="0.9"/>"#),
+    ("page-count", r#"<path d="M5.500 2h7v10h-7z"/><path d="M3.500 4.500v9.500h7"/><path d="M7.500 5.500h3M7.500 8h3"/>"#),
+    ("page-date", r#"<rect x="2.500" y="3.500" width="11" height="10" rx="1"/><path d="M2.500 6.500h11M5.500 2v3M10.500 2v3"/><path d="M5 9h1.500M7.500 9H9M10 9h1.500M5 11.200h1.500M7.500 11.200H9"/>"#),
+    ("page-font", r#"<path d="M3.500 13 8 3l4.500 10M5.300 9.500h5.400"/>"#),
 ];
 
 pub struct Assets;
