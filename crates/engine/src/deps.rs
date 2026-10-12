@@ -99,7 +99,8 @@ impl Precedents {
 }
 
 /// Functions whose result changes without any cell changing. Excel treats
-/// the same ones as volatile.
+/// the same ones as volatile, but for `GETPIVOTDATA`, which reads a
+/// PivotTable rather than cells and is simply calculated every time here.
 fn is_volatile(name: &str) -> bool {
     matches!(
         name,
@@ -112,6 +113,7 @@ fn is_volatile(name: &str) -> bool {
             | "INDIRECT"
             | "CELL"
             | "INFO"
+            | "GETPIVOTDATA"
     )
 }
 

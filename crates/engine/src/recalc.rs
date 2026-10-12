@@ -141,6 +141,8 @@ pub(crate) struct CalcState {
     rects: Vec<(usize, Rect)>,
     /// Rows were hidden, shown or filtered.
     visibility: bool,
+    /// Something only volatile functions read has changed (a PivotTable).
+    refreshed: bool,
     /// Something changed that was not followed cell by cell.
     untracked: bool,
     /// Per sheet, last row and column holding typed data at the last
@@ -172,6 +174,7 @@ impl Default for CalcState {
             settled: 0,
             rects: Vec::new(),
             visibility: false,
+            refreshed: false,
             // Nothing is known of a workbook that was never calculated.
             untracked: true,
             typed: Vec::new(),
@@ -211,6 +214,15 @@ impl CalcState {
         for (si, (old, new)) in old.iter().zip(new.iter_mut()).enumerate() {
             if old.hidden_rows != new.hidden_rows || old.filtered_rows != new.filtered_rows {
                 self.visibility = true;
+            }
+            // A PivotTable that was touched holds another report or cache.
+            let same = |a: &crate::pivot::PivotTable, b: &crate::pivot::PivotTable| {
+                Arc::ptr_eq(&a.report, &b.report) && Arc::ptr_eq(&a.cache, &b.cache)
+            };
+            if old.pivots.len() != new.pivots.len()
+                || !old.pivots.iter().zip(&new.pivots).all(|(a, b)| same(a, b))
+            {
+                self.refreshed = true;
             }
             new.spills = old.spills.clone();
             let formula = |cell: &Cell| matches!(cell.content, Content::Formula(_));
@@ -299,6 +311,7 @@ impl CalcState {
         self.settled = 0;
         self.rects.clear();
         self.visibility = false;
+        self.refreshed = false;
         self.untracked = false;
         self.stale = false;
     }
@@ -465,7 +478,11 @@ impl Workbook {
         let known = !st.untracked && st.graph.is_some() && st.typed.len() == self.sheets.len();
         // Nothing a formula can read has changed since the last
         // calculation.
-        let quiet = !st.untracked && st.touched.is_empty() && st.rects.is_empty() && !st.visibility;
+        let quiet = !st.untracked
+            && st.touched.is_empty()
+            && st.rects.is_empty()
+            && !st.visibility
+            && !st.refreshed;
         if demand == Demand::Committed && quiet {
             // Formatting, column widths, comments: nothing to calculate.
         } else if demand == Demand::Entered {
