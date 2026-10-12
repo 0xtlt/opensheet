@@ -108,7 +108,7 @@ fn dir_of(part: &str) -> &str {
     }
 }
 
-fn rels_part(part: &str) -> String {
+pub(super) fn rels_part(part: &str) -> String {
     match part.rfind('/') {
         Some(i) => format!("{}/_rels/{}.rels", &part[..i], &part[i + 1..]),
         None => format!("_rels/{part}.rels"),
@@ -1589,6 +1589,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         };
         let name = unique_sheet_name(name, &sheets, i);
         let mut loaded = SheetReader::read(&xml, name, &ctx);
+        super::hyperlink::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
         drop(xml);
         loaded.sheet.charts = read_charts(
             &mut pkg,

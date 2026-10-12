@@ -37,6 +37,7 @@ mod drawing;
 mod dxf;
 mod filter;
 mod formula;
+mod hyperlink;
 mod numfmt;
 mod page;
 mod parts;

@@ -19,7 +19,7 @@ use crate::table::Table;
 use crate::validation::Validation;
 use crate::value::ErrorKind;
 use crate::workbook::{ClearMode, Sheet, Workbook};
-use crate::{comment, condfmt, drawing, filter, page, pivot, protect, table, validation};
+use crate::{comment, condfmt, drawing, filter, hyperlink, page, pivot, protect, table, validation};
 
 /// Per-feature caches of things derived from the cells. Compare against
 /// `Workbook::generation` to know when they are stale. The workbook is
@@ -47,6 +47,7 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     page::on_structural_edit(sheet, edit, edited_sheet);
     pivot::on_structural_edit(sheet, edit, edited_sheet);
     drawing::on_structural_edit(sheet, edit, edited_sheet);
+    hyperlink::on_structural_edit(sheet, edit, edited_sheet);
 }
 
 /// A sheet was renamed from `old` to `new`. Called for every sheet (the
@@ -61,6 +62,7 @@ pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
     page::on_sheet_renamed(sheet, old, new);
     pivot::on_sheet_renamed(sheet, old, new);
     drawing::on_sheet_renamed(sheet, old, new);
+    hyperlink::on_sheet_renamed(sheet, old, new);
 }
 
 /// `wb.sheets[copy]` was just inserted as a copy of the sheet named
@@ -76,6 +78,7 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     page::on_sheet_duplicated(wb, copy, original);
     pivot::on_sheet_duplicated(wb, copy, original);
     drawing::on_sheet_duplicated(wb, copy, original);
+    hyperlink::on_sheet_duplicated(wb, copy, original);
 }
 
 /// The sheet `deleted` was just taken out of the workbook; `order` lists
@@ -92,6 +95,7 @@ pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet, order: &[&str
     page::on_sheet_deleted(wb, deleted, order);
     pivot::on_sheet_deleted(wb, deleted, order);
     drawing::on_sheet_deleted(wb, deleted, order);
+    hyperlink::on_sheet_deleted(wb, deleted, order);
 }
 
 /// The sheet named `moved` changed place among the tabs; `before` and
@@ -108,6 +112,7 @@ pub(crate) fn on_sheet_moved(wb: &mut Workbook, moved: &str, before: &[&str], af
     page::on_sheet_moved(wb, moved, before, after);
     pivot::on_sheet_moved(wb, moved, before, after);
     drawing::on_sheet_moved(wb, moved, before, after);
+    hyperlink::on_sheet_moved(wb, moved, before, after);
 }
 
 /// Cells of `wb.sheets[sheet]` were shifted inside a band (see
@@ -123,6 +128,7 @@ pub(crate) fn on_cells_shifted(wb: &mut Workbook, sheet: usize, shift: CellShift
     page::on_cells_shifted(wb, sheet, shift);
     pivot::on_cells_shifted(wb, sheet, shift);
     drawing::on_cells_shifted(wb, sheet, shift);
+    hyperlink::on_cells_shifted(wb, sheet, shift);
 }
 
 /// Excel's "shift cells": `count` cells are inserted at `at` (or deleted

@@ -96,6 +96,8 @@ pub struct Sheet {
     pub pivots: Vec<crate::pivot::PivotTable>,
     /// Pictures and shapes floating over the cells, see `drawing.rs`.
     pub drawings: Vec<crate::drawing::Drawing>,
+    /// Hyperlinks on cells, see `hyperlink.rs`.
+    pub hyperlinks: Vec<crate::hyperlink::Hyperlink>,
     /// Defined names whose scope is this sheet, keyed by uppercase name
     /// (see `names.rs`). They travel with the sheet when it is moved,
     /// copied or deleted.
@@ -133,6 +135,7 @@ impl Sheet {
             page: crate::page::PageSetup::default(),
             pivots: Vec::new(),
             drawings: Vec::new(),
+            hyperlinks: Vec::new(),
             names: BTreeMap::new(),
         }
     }

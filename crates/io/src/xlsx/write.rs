@@ -854,6 +854,8 @@ impl SheetWriter<'_> {
         condfmt::write(&mut x, sheet, index, self.wb, self.dxfs);
         // dataValidations
         validation::write(&mut x, sheet, self.wb);
+        // hyperlinks
+        super::hyperlink::write(&mut x, sheet);
         // printOptions, pageMargins, pageSetup, headerFooter, rowBreaks,
         // colBreaks
         page::write(&mut x, &sheet.page);

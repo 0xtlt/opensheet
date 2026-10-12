@@ -18,6 +18,7 @@ pub mod filter;
 pub mod find;
 pub mod format;
 pub mod functions;
+pub mod hyperlink;
 pub mod input;
 pub mod locale;
 pub mod metrics;

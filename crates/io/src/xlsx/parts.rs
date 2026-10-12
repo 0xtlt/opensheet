@@ -47,6 +47,9 @@ pub(crate) struct SheetLinks {
     pub tables: Vec<usize>,
     /// The PivotTables, in the order of `Sheet::pivots`; no element.
     pub pivots: Vec<usize>,
+    /// The hyperlinks leading outside the workbook, in the order of
+    /// `Sheet::hyperlinks` (`<hyperlinks>`).
+    pub hyperlinks: Vec<usize>,
 }
 
 impl SheetLinks {
@@ -69,6 +72,7 @@ impl SheetLinks {
             threads: id(threaded),
             tables: sheet.tables.iter().filter_map(|_| id(true)).collect(),
             pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
+            hyperlinks: sheet.hyperlinks.iter().filter_map(|link| id(!link.address.is_empty())).collect(),
         }
     }
 
@@ -142,6 +146,7 @@ impl Extras {
         super::comments::add_parts(wb, &mut extras);
         super::table::add_parts(wb, &mut extras, dxfs);
         super::pivot::add_parts(wb, &mut extras, dxfs);
+        super::hyperlink::add_parts(wb, &mut extras);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),
@@ -187,6 +192,17 @@ impl Extras {
     pub fn relate_sheet(&mut self, sheet: usize, id: usize, kind: &str, target: &str) {
         if let Some(rels) = self.sheet_rels.get_mut(sheet) {
             push_relationship(rels, id, kind, target);
+        }
+    }
+
+    /// Relate the worksheet of sheet `sheet` to something outside the
+    /// package (the address of a hyperlink), under the id [`SheetLinks`]
+    /// gives it.
+    pub fn relate_sheet_outside(&mut self, sheet: usize, id: usize, kind: &str, target: &str) {
+        if let Some(rels) = self.sheet_rels.get_mut(sheet) {
+            w!(rels, "<Relationship Id=\"rId{id}\" Type=\"{kind}\" Target=\"");
+            push_attr(rels, target);
+            rels.push_str("\" TargetMode=\"External\"/>");
         }
     }
 
