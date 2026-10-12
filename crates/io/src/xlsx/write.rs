@@ -940,12 +940,14 @@ impl SheetWriter<'_> {
         SheetLinks::of(sheet).push_elements(&mut x);
         // extLst: one `<ext>` per feature, in the order Excel writes them
         // (conditional formats, then data validations).
-        let mut extensions = String::new();
-        condfmt::write_ext(&mut extensions, sheet, index, self.wb, self.dxfs);
-        validation::write_ext(&mut extensions, sheet, self.wb);
-        if !extensions.is_empty() {
-            w!(x, "<extLst>{extensions}</extLst>");
-        }
+        let mut extensions = super::extlst::ExtList::default();
+        let mut ext = String::new();
+        condfmt::write_ext(&mut ext, sheet, index, self.wb, self.dxfs);
+        extensions.add(std::mem::take(&mut ext));
+        validation::write_ext(&mut ext, sheet, self.wb);
+        extensions.add(ext);
+        super::slicer::write_ext(&mut extensions, sheet);
+        x.push_str(&extensions.finish());
         x.push_str("</worksheet>");
         x
     }
@@ -980,8 +982,16 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         .into_iter()
         .filter(|(_, def)| is_valid_name(&def.name))
         .collect();
-    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) || super::datatools::has_names(wb) {
+    if !names.is_empty()
+        || page::has_names(wb)
+        || super::filter::has_names(wb)
+        || super::datatools::has_names(wb)
+        || super::slicer::has_names(wb)
+    {
         x.push_str("<definedNames>");
+        // The caches of the slicers and of the timelines, which Excel
+        // also lists as names without a value.
+        super::slicer::push_names(&mut x, wb);
         // The cells each imported text file fills.
         super::datatools::push_names(&mut x, wb);
         // The ranges of the sheets' filters, which Excel keeps as hidden

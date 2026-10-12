@@ -21,7 +21,9 @@
 //! fields and items, sources other than a range or a name of this
 //! workbook (the cache is kept, the source is not), caches saved without
 //! their records (the report stays in the cells, as plain values), date
-//! filters, slicers and timelines, the member properties of OLAP sources.
+//! filters other than the two days a timeline sets, the member properties
+//! of OLAP sources. Slicers and timelines are in `slicer.rs` and
+//! `timeline.rs`.
 //! Times are kept to the second.
 
 use super::dxf::Dxfs;
@@ -56,6 +58,9 @@ const CT_TABLE: &str = "application/vnd.openxmlformats-officedocument.spreadshee
 const NS_X14: &str = "http://schemas.microsoft.com/office/spreadsheetml/2009/9/main";
 const EXT_DATA_FIELD: &str = "{E15A36E0-9728-4e99-A89B-3F7291B0FE68}";
 const EXT_PIVOT_FIELD: &str = "{2946ED86-A175-432a-8AC1-64E0C546D7DE}";
+/// What Excel 2013 added: a date filter says there that it means whole days.
+const NS_X15: &str = "http://schemas.microsoft.com/office/spreadsheetml/2010/11/main";
+const EXT_PIVOT_FILTER: &str = "{0605FD5F-26C8-4aeb-8148-2DB25E43C511}";
 
 /// The base items that are no item: the one before, the one after.
 const BASE_PREVIOUS: u32 = 1_048_828;
@@ -156,7 +161,7 @@ const VALUE_FILTERS: [&str; 8] = [
 
 /// A date-time serial as caches write it: `2024-03-01T09:30:00`. A time
 /// of day alone is on the day before 1900 that files give to serial 0.
-fn iso_date(serial: f64) -> String {
+pub(super) fn iso_date(serial: f64) -> String {
     let serial = if serial.is_finite() {
         serial.max(0.0)
     } else {
@@ -182,7 +187,7 @@ fn iso_date(serial: f64) -> String {
 }
 
 /// The reverse of [`iso_date`]; `None` when the text is no date.
-fn date_from_iso(text: &str) -> Option<f64> {
+pub(super) fn date_from_iso(text: &str) -> Option<f64> {
     let text = text.trim().trim_end_matches('Z');
     let (date, time) = text.split_once('T').unwrap_or((text, ""));
     let mut parts = date.splitn(3, '-').map(|part| part.parse::<i64>().ok());
@@ -424,7 +429,7 @@ fn push_field_group(x: &mut String, cache: &PivotCache, index: usize) {
 }
 
 /// The definition part of a cache.
-fn definition_xml(cache: &PivotCache, source: &PivotSource, dxfs: &mut Dxfs) -> String {
+fn definition_xml(cache: &PivotCache, source: &PivotSource, extensions: &str, dxfs: &mut Dxfs) -> String {
     let mut x = String::from(XML_DECL);
     w!(
         x,
@@ -459,7 +464,10 @@ fn definition_xml(cache: &PivotCache, source: &PivotSource, dxfs: &mut Dxfs) -> 
         push_field_group(&mut x, cache, index);
         x.push_str("</cacheField>");
     }
-    x.push_str("</cacheFields></pivotCacheDefinition>");
+    x.push_str("</cacheFields>");
+    // What slicers and timelines know the cache by.
+    x.push_str(extensions);
+    x.push_str("</pivotCacheDefinition>");
     x
 }
 
@@ -642,6 +650,18 @@ fn push_filter(x: &mut String, filter: &PivotFilter, id: usize) {
     use LabelFilter as L;
     use ValueFilter as V;
     let (kind, measure, values, top) = match &filter.kind {
+        FilterKind::Date { start, end } => {
+            // What a timeline sets: both days are whole days.
+            w!(x, "<filter fld=\"{}\" type=\"dateBetween\" evalOrder=\"-1\" id=\"{id}\">", filter.field);
+            x.push_str("<autoFilter ref=\"A1\"><filterColumn colId=\"0\">");
+            let tests = [("greaterThanOrEqual", number_text(*start)), ("lessThanOrEqual", number_text(*end))];
+            push_custom_filters(x, true, &tests);
+            w!(
+                x,
+                "</filterColumn></autoFilter><extLst><ext uri=\"{EXT_PIVOT_FILTER}\" xmlns:x15=\"{NS_X15}\"><x15:pivotFilter useWholeDay=\"1\"/></ext></extLst></filter>"
+            );
+            return;
+        }
         FilterKind::Label(label) => {
             let (at, values): (usize, Vec<&String>) = match label {
                 L::Equals(a) => (0, vec![a]),
@@ -1156,7 +1176,7 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras, dxfs: &mut Dxfs) {
                 extras.add_part(
                     format!("xl/pivotCache/pivotCacheDefinition{n}.xml"),
                     Some(CT_DEFINITION),
-                    definition_xml(&p.cache, &p.source, dxfs),
+                    definition_xml(&p.cache, &p.source, &super::slicer::cache_extensions(wb, &p.cache, n), dxfs),
                 );
                 extras.add_part(
                     format!("xl/pivotCache/_rels/pivotCacheDefinition{n}.xml.rels"),
@@ -1779,6 +1799,8 @@ fn parse_filter<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<PivotFilter> {
     let data_field = tag.attr_u32("iMeasureFld").unwrap_or(0) as usize;
     // The top N is only said in the filter column inside.
     let mut top10: Option<(bool, f64)> = None;
+    // The two days of a date filter are only said there too.
+    let mut bounds: Vec<f64> = Vec::new();
     if !tag.empty {
         let mut depth = 1usize;
         while depth > 0 {
@@ -1789,6 +1811,9 @@ fn parse_filter<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<PivotFilter> {
                             c.attr_bool("top").unwrap_or(true),
                             c.attr_f64("val").unwrap_or(10.0),
                         ));
+                    }
+                    if c.name == "customFilter" {
+                        bounds.extend(c.attr_f64("val"));
                     }
                     depth += usize::from(!c.empty);
                 }
@@ -1801,7 +1826,12 @@ fn parse_filter<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<PivotFilter> {
     let field = field?;
     use LabelFilter as L;
     use ValueFilter as V;
-    let kind = if let Some(at) = LABEL_FILTERS.iter().position(|name| *name == kind) {
+    let kind = if kind == "dateBetween" {
+        match bounds[..] {
+            [start, end] => FilterKind::Date { start: start.floor(), end: end.floor() },
+            _ => return None,
+        }
+    } else if let Some(at) = LABEL_FILTERS.iter().position(|name| *name == kind) {
         FilterKind::Label(match at {
             0 => L::Equals(first),
             1 => L::NotEquals(first),

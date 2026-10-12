@@ -1661,6 +1661,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         // write their reports into the cells.
         super::table::read_all(&mut pkg, &mut wb, &sheet_parts, &style_lookup.dxf_colors);
         super::pivot::read_all(&mut pkg, &mut wb, &sheet_parts, &style_lookup);
+        super::slicer::read_all(&mut pkg, &mut wb, &workbook_xml, &rels, &sheet_parts);
+        super::timeline::read_all(&mut pkg, &mut wb, &workbook_xml, &rels, &sheet_parts);
     } else {
         loaded_as.clear();
     }
@@ -1687,6 +1689,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             || imports.read_name(&key, &raw.text, scope)
             || raw.name.is_empty()
             || key.starts_with("_XLNM.")
+            || super::slicer::is_cache_name(&wb, &raw.name)
         {
             continue;
         }

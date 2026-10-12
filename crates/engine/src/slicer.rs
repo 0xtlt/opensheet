@@ -28,8 +28,8 @@ use std::collections::HashMap;
 /// 2" by 2.63" and 3.47" by 1.43".
 pub const SLICER_SIZE: (f32, f32) = (192.0, 252.0);
 pub const TIMELINE_SIZE: (f32, f32) = (333.0, 137.0);
-/// Height of a slicer button, pixels at 100 % (0.26").
-pub const BUTTON_HEIGHT: f32 = 25.0;
+/// Height of a slicer button, pixels at 100 %: the 241300 EMU of files.
+pub const BUTTON_HEIGHT: f32 = 241_300.0 / 9_525.0;
 
 /// What a slicer filters.
 #[derive(Clone, Debug, PartialEq)]
@@ -521,9 +521,12 @@ impl Workbook {
 
     /// The buttons of a slicer, in the order it shows them.
     pub fn slicer_items(&self, id: u32) -> Vec<SlicerItem> {
-        let Some((_, slicer)) = self.slicer(id) else {
-            return Vec::new();
-        };
+        self.slicer(id).map(|(_, slicer)| self.slicer_items_of(slicer)).unwrap_or_default()
+    }
+
+    /// The buttons a slicer set up like `slicer` shows (a file lists them
+    /// all, whatever the slicer hides).
+    pub fn slicer_items_of(&self, slicer: &Slicer) -> Vec<SlicerItem> {
         let locale = self.locale;
         // Label, value, natural rank, selected, has data.
         let mut items: Vec<(SlicerItem, Value, bool)> = Vec::new();
