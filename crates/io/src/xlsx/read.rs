@@ -35,7 +35,7 @@ const DATE_1904_OFFSET: f64 = 1462.0;
 
 // ---- package ---------------------------------------------------------------
 
-struct Package<R: Read + Seek> {
+pub(super) struct Package<R: Read + Seek> {
     zip: zip::ZipArchive<R>,
     /// Normalised part name → index in the archive.
     index: HashMap<String, usize>,
@@ -70,7 +70,7 @@ impl<R: Read + Seek> Package<R> {
         Ok(Package { zip, index })
     }
 
-    fn read(&mut self, part: &str) -> Result<Option<String>> {
+    pub(super) fn read(&mut self, part: &str) -> Result<Option<String>> {
         let Some(&i) = self.index.get(&normalize_part(part)) else {
             return Ok(None);
         };
@@ -85,12 +85,12 @@ impl<R: Read + Seek> Package<R> {
     }
 }
 
-struct Rel {
-    id: String,
+pub(super) struct Rel {
+    pub(super) id: String,
     /// Last segment of the relationship type ("worksheet", "styles", ...).
-    kind: String,
+    pub(super) kind: String,
     /// Part name, resolved against the source part.
-    target: String,
+    pub(super) target: String,
 }
 
 fn dir_of(part: &str) -> &str {
@@ -150,6 +150,15 @@ fn parse_rels(xml: &str, base_dir: &str) -> Vec<Rel> {
         }
     }
     out
+}
+
+/// The relationships of a part; none when it has no relationships part or
+/// that part cannot be read.
+pub(super) fn relationships<R: Read + Seek>(pkg: &mut Package<R>, part: &str) -> Vec<Rel> {
+    match pkg.read(&rels_part(part)) {
+        Ok(Some(xml)) => parse_rels(&xml, dir_of(part)),
+        _ => Vec::new(),
+    }
 }
 
 // ---- workbook part -----------------------------------------------------------
@@ -1267,12 +1276,6 @@ fn read_charts<R: Read + Seek>(
     palette: &Palette,
     next_id: &mut u32,
 ) -> Vec<Chart> {
-    fn relationships<R: Read + Seek>(pkg: &mut Package<R>, part: &str) -> Vec<Rel> {
-        match pkg.read(&rels_part(part)) {
-            Ok(Some(xml)) => parse_rels(&xml, dir_of(part)),
-            _ => Vec::new(),
-        }
-    }
     let Some(drawing_id) = &loaded.drawing else {
         return Vec::new();
     };
@@ -1442,6 +1445,12 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     let mut loaded_as: Vec<Option<usize>> = vec![None; info.sheets.len()];
     // Chart ids are unique in the workbook; files have no such thing.
     let mut next_chart_id = 1;
+    let comments = super::comments::Context::read(
+        &mut pkg,
+        &rels,
+        &styles.palette,
+        &wb.styles.get(ctx.style(0)).font,
+    );
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),
@@ -1461,6 +1470,13 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             &loaded,
             &styles.palette,
             &mut next_chart_id,
+        );
+        super::comments::read_sheet(
+            &mut pkg,
+            &part,
+            &mut loaded.sheet,
+            (loaded.col_width, loaded.row_height),
+            &comments,
         );
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
