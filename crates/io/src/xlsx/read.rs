@@ -1614,6 +1614,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         &wb.styles.get(ctx.style(0)).font,
     );
     let mut drawings = super::drawing::Loader::new(&mut pkg, &rels);
+    let mut inks = super::ink::Loader::new();
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),
@@ -1650,6 +1651,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             &mut loaded.sheet,
             &styles.palette,
         );
+        inks.read_sheet(&mut pkg, &part, loaded.drawing.as_deref(), &mut loaded.sheet);
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
         sheet_parts.push(part);

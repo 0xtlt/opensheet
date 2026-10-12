@@ -40,6 +40,7 @@ mod dxf;
 mod filter;
 mod formula;
 mod hyperlink;
+mod ink;
 mod numfmt;
 mod page;
 mod parts;
