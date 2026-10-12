@@ -27,6 +27,7 @@ use i18n::t;
 fn bind_keys(cx: &mut App) {
     text_input::bind_keys(cx);
     widgets::bind_keys(cx);
+    features::comments::bind_keys(cx);
     let g = Some("Grid");
     let w = Some("Workbook");
     cx.bind_keys([
@@ -111,6 +112,8 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-t", InsertTable, w),
         KeyBinding::new("ctrl-t", InsertTable, w),
         KeyBinding::new("shift-f2", NewNote, w),
+        KeyBinding::new("cmd-shift-m", NewComment, w),
+        KeyBinding::new("cmd-shift-f2", NewComment, w),
         KeyBinding::new("ctrl-f3", NameManager, w),
         KeyBinding::new("cmd-k", InsertLink, w),
         KeyBinding::new("cmd-q", Quit, None),

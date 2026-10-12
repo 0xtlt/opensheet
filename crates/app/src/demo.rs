@@ -107,6 +107,20 @@ pub fn fill_workbook(wb: &mut Workbook) {
     wb.set_col_width(0, 3, Some(96.0));
     wb.set_col_width(0, 4, Some(96.0));
     wb.set_col_width(0, 5, Some(88.0));
+    // LOCAL TEST DATA (not committed): notes and comments to look at.
+    {
+        use opensheet_engine::comment::{Person, now_utc};
+        let now = now_utc();
+        wb.set_note(0, 1, 0, "Ada Lovelace", "Ada Lovelace:\nPrix à revoir avec le fournisseur avant la fin du mois.");
+        wb.set_note(0, 3, 3, "Thomas", "Thomas:\nTarif 2026");
+        wb.set_note_visible(0, 3, 3, true);
+        wb.set_note(0, 6, 5, "Bob", "Bob:\nDate de la commande, pas de la livraison.");
+        wb.add_comment(0, 2, 2, &Person::new("Ada Lovelace"), now - 0.2, "Quantité confirmée ?");
+        wb.add_reply(0, 2, 2, &Person::new("Bob Martin"), now - 0.1, "Oui, livraison prévue lundi.\nJe mets à jour le tableau.");
+        wb.add_comment(0, 5, 4, &Person::new("Chloé Dupont"), now - 1.5, "Total à vérifier");
+        wb.set_comment_resolved(0, 5, 4, true);
+        wb.add_comment(0, 12, 4, &Person::new("Thomas"), now - 3.0, "Formule à expliquer dans la doc.");
+    }
     wb.commit("Demo");
     wb.clear_history();
     wb.modified = false;

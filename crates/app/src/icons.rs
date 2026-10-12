@@ -117,6 +117,7 @@ const ICONS: &[(&str, &str)] = &[
     ("border-inner-v", r#"<path d="M2.500 2.500h11v11h-11zM2.500 8h11" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M8 2.500v11" stroke-width="1.800"/>"#),
     ("border-diag-up", r#"<path d="M2.500 2.500h11v11h-11z" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M2.500 13.500l11-11" stroke-width="1.400"/>"#),
     ("border-diag-down", r#"<path d="M2.500 2.500h11v11h-11z" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M2.500 2.500l11 11" stroke-width="1.400"/>"#),
+    ("comments-reopen", r#"<path d="M3.5 8a4.5 4.5 0 1 0 1.6-3.4"/><path d="M5.4 1.8v3h3"/>"#),
 ];
 
 pub struct Assets;

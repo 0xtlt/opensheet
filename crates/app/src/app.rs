@@ -97,6 +97,7 @@ actions!(
         ToggleFilter,
         InsertTable,
         NewNote,
+        NewComment,
         NameManager,
         InsertLink,
     ]
@@ -3524,6 +3525,9 @@ impl ExcelApp {
     }
     pub fn on_new_note(&mut self, _: &NewNote, window: &mut Window, cx: &mut Context<Self>) {
         self.run_command(features::comments::Cmd::NewNote, window, cx);
+    }
+    pub fn on_new_comment(&mut self, _: &NewComment, window: &mut Window, cx: &mut Context<Self>) {
+        self.run_command(features::comments::Cmd::NewComment, window, cx);
     }
     pub fn on_name_manager(&mut self, _: &NameManager, window: &mut Window, cx: &mut Context<Self>) {
         self.run_command(features::names::Cmd::Manager, window, cx);

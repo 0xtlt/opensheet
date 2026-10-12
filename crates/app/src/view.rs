@@ -1340,6 +1340,7 @@ impl Render for ExcelApp {
                     .on_action(cx.listener(Self::on_toggle_filter))
                     .on_action(cx.listener(Self::on_insert_table))
                     .on_action(cx.listener(Self::on_new_note))
+                    .on_action(cx.listener(Self::on_new_comment))
                     .on_action(cx.listener(Self::on_name_manager))
                     .on_action(cx.listener(Self::on_insert_link))
                     .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, window, cx)))
