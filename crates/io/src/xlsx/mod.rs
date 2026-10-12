@@ -12,6 +12,13 @@
 //! the writer only call them, at the place the schema gives their elements.
 //! `dxf.rs` holds the differential formats rules and tables share.
 //!
+//! Features stored in parts of their own (`comments.rs`, `table.rs` with
+//! the filters of `filter.rs`, `pivot.rs`, `drawing.rs`) add their parts,
+//! relationships and content types through `parts.rs`, which also numbers
+//! the relationships of each worksheet. `theme.rs` is the theme written
+//! into every package, `stylerefs.rs` what those parts name in the styles
+//! part of a file that is read.
+//!
 //! [`Workbook`]: opensheet_engine::Workbook
 
 /// `write!` into a `String` cannot fail.
@@ -26,13 +33,19 @@ mod color;
 mod comments;
 mod condfmt;
 mod defaults;
+mod drawing;
 mod dxf;
+mod filter;
 mod formula;
 mod numfmt;
 mod page;
 mod parts;
+mod pivot;
 mod protection;
 pub(crate) mod read;
+mod stylerefs;
+mod table;
+mod theme;
 mod validation;
 pub(crate) mod write;
 mod xml;

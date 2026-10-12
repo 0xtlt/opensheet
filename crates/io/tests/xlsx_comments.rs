@@ -446,10 +446,7 @@ fn package_lists_the_comment_parts() {
 
     // The workbook names the people.
     let workbook_rels = targets(&bytes, "xl/_rels/workbook.xml.rels", "xl/");
-    assert_eq!(
-        workbook_rels.last(),
-        Some(&pair("person", "xl/persons/person.xml"))
-    );
+    assert!(workbook_rels.contains(&pair("person", "xl/persons/person.xml")));
     let rels = part(&bytes, "xl/_rels/workbook.xml.rels");
     assert!(rels.contains(&format!(
         "Type=\"{REL_2017}/person\" Target=\"persons/person.xml\"/>"
@@ -459,7 +456,11 @@ fn package_lists_the_comment_parts() {
         .skip(1)
         .map(|rel| rel.split('"').next().unwrap())
         .collect();
-    assert_eq!(ids.len(), 4 + 2 + 1, "sheets, styles, strings, people");
+    assert_eq!(
+        ids.len(),
+        4 + 2 + 2,
+        "sheets, styles, strings, people, theme"
+    );
     assert_eq!(
         ids.iter().collect::<HashSet<_>>().len(),
         ids.len(),

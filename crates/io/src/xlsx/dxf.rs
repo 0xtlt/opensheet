@@ -14,7 +14,7 @@ use super::xml::{Event, Reader, Tag, push_attr};
 use opensheet_engine::style::{Border, BorderStyle, StylePatch, Underline};
 use opensheet_engine::{Color, Locale};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -29,8 +29,12 @@ pub(crate) struct Dxfs {
     /// ids in `styles.xml` already; a dxf with the same code uses the same
     /// id.
     cell_formats: Vec<String>,
-    /// Custom number formats only differential formats use.
+    /// Custom number formats the cells do not use: those of differential
+    /// formats, and those other parts asked for.
     own_formats: Vec<Arc<str>>,
+    /// The formats that stand for the fill of cells (see
+    /// [`Dxfs::cell_fill_id`]).
+    cell_fills: HashSet<u32>,
     locale: &'static Locale,
 }
 
@@ -54,6 +58,7 @@ impl Dxfs {
             index: HashMap::new(),
             cell_formats,
             own_formats: Vec::new(),
+            cell_fills: HashSet::new(),
             locale,
         }
     }
@@ -69,8 +74,30 @@ impl Dxfs {
         id
     }
 
-    /// The id a number format has in this workbook.
-    fn num_fmt_id(&mut self, code: &Arc<str>) -> u32 {
+    /// The `dxfId` of the fill a filter or a sort looks for in the cells
+    /// (`None`: no fill). Excel compares it with the fill of a cell, whose
+    /// colour is the foreground of a solid pattern, so this one is written
+    /// with the colour on both sides: it reads the same as the fill of a
+    /// conditional format, which may share it.
+    pub fn cell_fill_id(&mut self, color: Option<Color>) -> u32 {
+        let id = self.id(&StylePatch {
+            fill: Some(color),
+            ..StylePatch::default()
+        });
+        self.cell_fills.insert(id);
+        id
+    }
+
+    /// The custom number formats the cells do not use, which follow
+    /// theirs in the `<numFmts>` list of `styles.xml`. Complete once
+    /// [`Dxfs::xml`] has run.
+    pub fn own_formats(&self) -> &[Arc<str>] {
+        &self.own_formats
+    }
+
+    /// The id a number format has in this workbook. Parts that name a
+    /// format by id alone (PivotTables) ask here too.
+    pub fn num_fmt_id(&mut self, code: &Arc<str>) -> u32 {
         if let Some(id) = builtin_id(code, self.locale) {
             return id;
         }
@@ -197,8 +224,16 @@ impl Dxfs {
             return x;
         }
         w!(x, "<dxfs count=\"{}\">", self.list.len());
-        for patch in self.list.clone() {
-            self.push_dxf(&mut x, "dxf", &patch);
+        for (id, patch) in self.list.clone().iter().enumerate() {
+            match patch.fill {
+                Some(Some(color)) if self.cell_fills.contains(&(id as u32)) => {
+                    x.push_str("<dxf><fill><patternFill patternType=\"solid\">");
+                    push_color(&mut x, "fgColor", color);
+                    push_color(&mut x, "bgColor", color);
+                    x.push_str("</patternFill></fill></dxf>");
+                }
+                _ => self.push_dxf(&mut x, "dxf", patch),
+            }
         }
         x.push_str("</dxfs>");
         x

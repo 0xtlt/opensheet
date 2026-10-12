@@ -269,7 +269,7 @@ impl MenuEntry {
 
     /// The entry of a feature command: its label, icon and current state.
     pub fn command<C: Command>(cmd: C, app: &ExcelApp) -> MenuEntry {
-        let mut entry = MenuEntry::new(cmd.label(), move |a, window, cx| cmd.run(a, window, cx))
+        let mut entry = MenuEntry::new(cmd.label_in(app), move |a, window, cx| cmd.run(a, window, cx))
             .checked(cmd.checked(app))
             .disabled(!cmd.enabled(app));
         if !cmd.icon().is_empty() {
@@ -708,7 +708,8 @@ impl ExcelApp {
                 let cols = if cur.is_whole_rows() { MAX_COLS } else { cur.cols() };
                 format!("{}{} x {}{}", rows, t("R", "L"), cols, crate::i18n::t_ctx("column", "C", "C"))
             }
-            _ => cell_name(sel.active.0, sel.active.1),
+            // The name of the selected range, else the active cell.
+            _ => features::names::name_box_label(self),
         };
         self.name_box.update(cx, |input, cx| {
             if input.text() != text {
@@ -910,7 +911,8 @@ impl ExcelApp {
             let (r, c) = self.step(lead, dir);
             self.extend_to(r, c, cx);
         } else {
-            let (r, c) = self.step(self.active(), dir);
+            let from = self.active();
+            let (r, c) = features::next_cell(self, from, dir, false).unwrap_or_else(|| self.step(from, dir));
             self.select_cell(r, c, cx);
         }
     }
@@ -936,7 +938,12 @@ impl ExcelApp {
         let cur = sel.current();
         let merged = self.wb.sheets[self.sheet].merge_at(sel.active.0, sel.active.1) == Some(cur);
         if sel.ranges.len() == 1 && (cur.is_single() || merged) {
-            self.move_selection(dir, false, cx);
+            // A feature may know better where an entry leads (Tab on a
+            // protected sheet).
+            match features::next_cell(self, sel.active, dir, true) {
+                Some((r, c)) => self.select_cell(r, c, cx),
+                None => self.move_selection(dir, false, cx),
+            }
             return;
         }
         let cur = self.wb.clamp_to_used(self.sheet, cur);
@@ -1002,28 +1009,12 @@ impl ExcelApp {
         self.refresh(cx);
     }
 
-    /// Jump to a cell / range typed in the name box.
+    /// What Return does in the name box: go to the reference, the name or
+    /// the table typed there, or give a new name to the selection.
     pub fn go_to(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
-        let text = text.trim();
-        if let Some(rect) = Rect::parse(text) {
-            self.select_rect(rect, cx);
-            return true;
-        }
-        if let Some(expr) = self.wb.defined_name(text) {
-            if let opensheet_engine::Expr::Ref(r) = expr {
-                let rect = r.rect();
-                if let Some(sheet) = r.sheet.as_ref().and_then(|s| self.wb.sheet_index(s)) {
-                    self.sheet = sheet;
-                }
-                self.select_rect(rect, cx);
-                return true;
-            }
-        }
-        // The name of a table, or a structured reference.
-        if features::tables::go_to(self, text, cx) {
-            return true;
-        }
-        false
+        // A table name or a structured reference is the tables feature's;
+        // references, names and new names are the names feature's.
+        features::tables::go_to(self, text, cx) || features::names::name_box_entered(self, text, cx)
     }
 
     // ---- editing ------------------------------------------------------------
@@ -1081,7 +1072,8 @@ impl ExcelApp {
         }
         let text = match initial {
             Some(s) => s.to_string(),
-            None => self.wb.edit_text(self.sheet, row, col),
+            // Like the formula bar, the cell does not show a hidden formula.
+            None => self.wb.formula_bar_text(self.sheet, row, col),
         };
         self.ensure_visible(row, col);
         self.editing = Some(Editing {
@@ -1170,6 +1162,11 @@ impl ExcelApp {
                 if source == EditSource::FormulaBar && self.editing.is_none() {
                     let text = self.formula_input.read(cx).text().to_string();
                     let (row, col) = self.active();
+                    // A protected cell refuses here as it does in the grid.
+                    if !self.may(Intent::EditCells(Rect::cell(row, col)), cx) {
+                        window.focus(&self.grid_focus);
+                        return;
+                    }
                     self.editing = Some(Editing {
                         sheet: self.sheet,
                         row,
@@ -1591,8 +1588,11 @@ impl ExcelApp {
 
     pub fn clear(&mut self, mode: ClearMode, cx: &mut Context<Self>) {
         let allowed = match mode {
+            ClearMode::Contents => self.may_all(Intent::EditCells, cx),
             ClearMode::Formats => self.may_all(Intent::FormatCells, cx),
-            _ => self.may_all(Intent::EditCells, cx),
+            ClearMode::Comments => self.may(Intent::EditComment, cx),
+            // Clear All takes the formats away with the contents.
+            ClearMode::All => self.may_all(Intent::EditCells, cx) && self.may_all(Intent::FormatCells, cx),
         };
         if !allowed {
             return;
@@ -1636,19 +1636,20 @@ impl ExcelApp {
         }
         let system = cx.read_from_clipboard().and_then(|item| item.text());
         let dest = self.sel().current();
-        let intent = if mode == PasteMode::Formats {
-            Intent::FormatCells(dest)
-        } else {
-            Intent::EditCells(dest)
-        };
-        if !self.may(intent, cx) {
-            return;
-        }
         let internal = match (&self.clip, &system) {
             (Some(state), Some(text)) => state.clip.text == *text,
             (Some(_), None) => true,
             _ => false,
         };
+        // A paste may cover more cells than are selected: ask for them all.
+        let targets = self.paste_targets(dest, internal, system.as_deref(), mode);
+        let intent = |target: Rect| match mode {
+            PasteMode::Formats => Intent::FormatCells(target),
+            _ => Intent::EditCells(target),
+        };
+        if !targets.into_iter().all(|target| self.may(intent(target), cx)) {
+            return;
+        }
         // Where the cells come from, for the features that follow them
         // (comments, validation, conditional formats).
         let mut from = None;
@@ -1679,6 +1680,33 @@ impl ExcelApp {
             sel.active = active;
             sel.anchor = active;
             self.commit_cells(t("Paste", "Coller"), &[rect], ChangeCause::Paste { from, cut, mode }, cx);
+        }
+    }
+
+    /// The cells a paste at `dest` will write: the block on the clipboard,
+    /// repeated when the selection is a multiple of it, without the rows a
+    /// filter hides.
+    fn paste_targets(&self, dest: Rect, internal: bool, text: Option<&str>, mode: PasteMode) -> Vec<Rect> {
+        let block = |rows: u32, cols: u32| {
+            vec![Rect::new(
+                dest.r0,
+                dest.c0,
+                (dest.r0 + rows.max(1) - 1).min(MAX_ROWS - 1),
+                (dest.c0 + cols.max(1) - 1).min(MAX_COLS - 1),
+            )]
+        };
+        match (&self.clip, text) {
+            (Some(state), _) if internal && state.cut && mode == PasteMode::All => {
+                let src = self.wb.clamp_to_used(state.clip.sheet, state.clip.rect);
+                block(src.rows(), src.cols())
+            }
+            (Some(state), _) if internal => self.wb.paste_blocks(self.sheet, dest, &state.clip),
+            (_, Some(text)) => {
+                let lines = opensheet_engine::ops::parse_tsv(text);
+                let widest = lines.iter().map(Vec::len).max().unwrap_or(1);
+                block(lines.len() as u32, widest as u32)
+            }
+            _ => vec![dest],
         }
     }
 
@@ -2913,6 +2941,10 @@ impl ExcelApp {
                     t("AutoFit Column Width", "Ajuster la largeur de colonne"),
                     |a, window, cx| {
                         let r = a.sel().current();
+                        // One refusal, not one for each column.
+                        if !a.may(Intent::FormatColumns, cx) {
+                            return;
+                        }
                         for col in r.c0..=r.c1.min(r.c0 + 500) {
                             a.autofit_col(col, window, cx);
                         }
@@ -3116,7 +3148,7 @@ impl ExcelApp {
             ColorTarget::Fill => self.set_fill(color, cx),
             ColorTarget::Font => self.set_font_color(color, cx),
             ColorTarget::Tab => {
-                if self.may(Intent::ChangeSheet, cx) {
+                if self.may(Intent::TabColor, cx) {
                     self.wb.set_tab_color(self.sheet, color);
                     self.commit(t("Tab Color", "Couleur d'onglet"), cx);
                 }
