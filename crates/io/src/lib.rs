@@ -12,6 +12,8 @@
 mod csv;
 mod xlsx;
 
+pub use xlsx::{read_thmx, write_thmx};
+
 pub use csv::{
     decode_text, default_delimiter, detect_delimiter, load_csv, parse_delimited, save_csv,
     save_delimited, sheet_to_text, workbook_from_text,

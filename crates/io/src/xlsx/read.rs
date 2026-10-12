@@ -64,7 +64,7 @@ fn decode_xml(bytes: Vec<u8>) -> String {
 }
 
 impl<R: Read + Seek> Package<R> {
-    fn open(reader: R) -> Result<Package<R>> {
+    pub(super) fn open(reader: R) -> Result<Package<R>> {
         let zip = zip::ZipArchive::new(reader)?;
         let mut index = HashMap::new();
         for (i, name) in zip.file_names().enumerate() {

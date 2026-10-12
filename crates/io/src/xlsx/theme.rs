@@ -14,10 +14,12 @@
 //! table style or a theme colour comes out in other colours.
 
 use super::color::parse_rgb;
+use super::read::Package;
 use super::xml::{Event, Reader, XML_DECL, push_attr};
 use opensheet_engine::style::ThemeSlot;
 use opensheet_engine::theme::{Theme, ThemeColors, ThemeFonts, builtin};
 use std::fmt::Write as _;
+use std::io::{Read, Seek, Write};
 use std::sync::Arc;
 
 pub(crate) const CT_THEME: &str = "application/vnd.openxmlformats-officedocument.theme+xml";
@@ -276,6 +278,74 @@ pub(crate) fn parse(xml: &str) -> Theme {
     theme
 }
 
+// ---- theme files ------------------------------------------------------------
+
+/// Read a theme file (`.thmx`): the theme of the package, whatever else
+/// it holds (the files of Office carry slide layouts too). A workbook
+/// will do as well: its theme is read.
+pub fn read_thmx<R: Read + Seek>(reader: R) -> crate::Result<Theme> {
+    let mut package = Package::open(reader)?;
+    // Where the files of Office have their theme, then where a workbook
+    // has its own.
+    let mut xml = None;
+    for part in ["theme/theme/theme1.xml", "theme/theme1.xml", "xl/theme/theme1.xml"] {
+        xml = package.read(part)?;
+        if xml.is_some() {
+            break;
+        }
+    }
+    let xml = xml.ok_or_else(|| crate::IoError::Invalid("no theme in this file".to_string()))?;
+    let xml = xml.trim_start_matches('\u{feff}');
+    if !xml.contains("clrScheme") {
+        return Err(crate::IoError::Invalid("no theme in this file".to_string()));
+    }
+    Ok(parse(xml))
+}
+
+/// Write a theme as a theme file (`.thmx`) other workbooks can take it
+/// from.
+pub fn write_thmx<W: Write + Seek>(theme: &Theme, writer: W) -> crate::Result<W> {
+    const TYPES: &str = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
+        "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
+        "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>",
+        "<Default Extension=\"xml\" ContentType=\"application/xml\"/>",
+        "<Override PartName=\"/theme/theme/themeManager.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.themeManager+xml\"/>",
+        "<Override PartName=\"/theme/theme/theme1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.theme+xml\"/>",
+        "</Types>",
+    );
+    const RELS: &str = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
+        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+        "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"theme/theme/themeManager.xml\"/>",
+        "</Relationships>",
+    );
+    const MANAGER: &str = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
+        "<a:themeManager xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"/>",
+    );
+    const MANAGER_RELS: &str = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
+        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+        "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme\" Target=\"theme1.xml\"/>",
+        "</Relationships>",
+    );
+    let part = xml(theme);
+    let mut zip = zip::ZipWriter::new(writer);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for (name, content) in [
+        ("[Content_Types].xml", TYPES),
+        ("_rels/.rels", RELS),
+        ("theme/theme/themeManager.xml", MANAGER),
+        ("theme/theme/_rels/themeManager.xml.rels", MANAGER_RELS),
+        ("theme/theme/theme1.xml", part.as_str()),
+    ] {
+        zip.start_file(name, options)?;
+        zip.write_all(content.as_bytes())?;
+    }
+    Ok(zip.finish()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,5 +490,42 @@ mod tests {
         let odd = parse("<theme name=\"Bare\"><clrScheme name=\"c\"><accent1><srgbClr val=\"010203\"/></accent1></clrScheme></theme>");
         assert_eq!((odd.name.as_str(), odd.rgb(ThemeSlot::Accent1)), ("Bare", 0x010203));
         assert!(xml(&odd).starts_with(XML_DECL));
+    }
+
+    #[test]
+    fn theme_files() {
+        let mut theme = Theme::builtin("Facet").unwrap();
+        theme.name = "Mine".to_string();
+        let bytes = write_thmx(&theme, std::io::Cursor::new(Vec::new())).unwrap().into_inner();
+        let mut read = read_thmx(std::io::Cursor::new(&bytes)).unwrap();
+        read.source = None;
+        assert_eq!(read, theme);
+        // Not a theme file.
+        assert!(read_thmx(std::io::Cursor::new(b"nothing".to_vec())).is_err());
+        let empty = zip::ZipWriter::new(std::io::Cursor::new(Vec::new())).finish().unwrap().into_inner();
+        assert!(read_thmx(std::io::Cursor::new(empty)).is_err());
+    }
+
+    /// The theme files of an Excel installed on this machine, when there
+    /// is one: each reads as the theme the engine has under its name.
+    #[test]
+    fn the_theme_files_of_excel_are_the_built_in_themes() {
+        let folder = std::path::Path::new("/Applications/Microsoft Excel.app/Contents/Resources/Office Themes");
+        for stock in builtin::THEMES {
+            let Ok(file) = std::fs::File::open(folder.join(format!("{}.thmx", stock.name))) else {
+                continue;
+            };
+            let read = read_thmx(file).unwrap();
+            assert_eq!(read.name, stock.name);
+            assert_eq!(read.colors.part_order(), stock.colors, "{}", stock.name);
+            assert_eq!(&*read.fonts.major, stock.fonts.major, "{}", stock.name);
+            // Excel sets the cells of its own theme in the narrow cut.
+            if stock.name != "Office Theme" {
+                assert_eq!(&*read.fonts.minor, stock.fonts.minor, "{}", stock.name);
+            }
+            // Whatever pictures it fills shapes with, it can be written.
+            let written = xml(&read);
+            assert!(!written.contains(" r:embed=") && parse(&written).colors == read.colors);
+        }
     }
 }

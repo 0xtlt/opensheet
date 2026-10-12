@@ -49,6 +49,8 @@ pub(crate) mod read;
 mod stylerefs;
 mod table;
 mod theme;
+
+pub use theme::{read_thmx, write_thmx};
 mod validation;
 pub(crate) mod write;
 mod xml;
