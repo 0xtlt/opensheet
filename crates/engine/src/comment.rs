@@ -121,6 +121,21 @@ impl Note {
         };
         body.trim_start_matches(['\r', '\n']).to_string()
     }
+
+    /// The comment thread this note becomes: its text without formatting
+    /// or the line naming the author, who is the author of the comment,
+    /// dated `time`.
+    fn as_thread(&self, time: f64) -> Thread {
+        Thread {
+            first: Post {
+                author: Person::new(&self.author),
+                time,
+                text: self.body(),
+            },
+            replies: Vec::new(),
+            resolved: false,
+        }
+    }
 }
 
 // ---- comments ------------------------------------------------------------
@@ -378,13 +393,21 @@ impl Sheet {
                 width: frame.size.0.max(0.0) as f64,
                 height: frame.size.1.max(0.0) as f64,
             },
-            None => Frame {
-                x: cols.span(0, (col + 1).min(MAX_COLS - 1)) + 15.0,
-                y: (rows.span(0, row) - 10.0).max(2.0),
-                width: NOTE_SIZE.0 as f64,
-                height: NOTE_SIZE.1 as f64,
-            },
+            None => self.default_note_frame(row, col),
         })
+    }
+
+    /// Where Excel first puts the box of the note of a cell: what
+    /// `note_frame` answers for a note that was never moved, and where
+    /// the box of a note about to be written opens.
+    pub fn default_note_frame(&self, row: u32, col: u32) -> Frame {
+        let (cols, rows) = (columns(self), rows(self));
+        Frame {
+            x: cols.span(0, (col + 1).min(MAX_COLS - 1)) + 15.0,
+            y: (rows.span(0, row) - 10.0).max(2.0),
+            width: NOTE_SIZE.0 as f64,
+            height: NOTE_SIZE.1 as f64,
+        }
     }
 
     /// The box a frame on the sheet stands for.
@@ -676,22 +699,7 @@ impl Workbook {
         let converted: Vec<((u32, u32), Thread)> = sh
             .comments
             .iter()
-            .filter_map(|(cell, comment)| {
-                let note = comment.as_note()?;
-                let first = Post {
-                    author: Person::new(&note.author),
-                    time,
-                    text: note.body(),
-                };
-                Some((
-                    *cell,
-                    Thread {
-                        first,
-                        replies: Vec::new(),
-                        resolved: false,
-                    },
-                ))
-            })
+            .filter_map(|(cell, comment)| Some((*cell, comment.as_note()?.as_thread(time))))
             .collect();
         if !converted.is_empty() {
             self.snapshot();
@@ -701,6 +709,22 @@ impl Workbook {
             self.sheets[sheet].comments.insert(cell, Comment::Thread(thread));
         }
         count
+    }
+
+    /// Turn the note of one cell into a comment thread, as "Convert to
+    /// Comments" does for all of them: what Excel offers when a comment
+    /// is asked for on a cell that has a note.
+    pub fn convert_note_to_comment(&mut self, sheet: usize, row: u32, col: u32, time: f64) -> bool {
+        let Some(thread) = self
+            .comment_at(sheet, row, col)
+            .and_then(Comment::as_note)
+            .map(|note| note.as_thread(time))
+        else {
+            return false;
+        };
+        self.snapshot();
+        self.sheets[sheet].comments.insert((row, col), Comment::Thread(thread));
+        true
     }
 
     // ---- going through them ---------------------------------------------
@@ -1077,6 +1101,8 @@ mod tests {
             Some((((0, 1), (15.0, 2.0)), ((4, 3), (31.0, 1.0))))
         );
         assert_eq!(w.sheets[0].note_frame(1, 1), None);
+        // The box of a note about to be written opens at the same place.
+        assert_eq!(w.sheets[0].default_note_frame(4, 2), Frame::new(207.0, 70.0, 144.0, 79.0));
         // A box left alone follows its cell and the widths of the columns.
         w.set_col_width(0, 2, Some(100.0));
         w.insert_rows(0, 0, 3);
@@ -1169,6 +1195,27 @@ mod tests {
         // Deleting the comment deletes the thread.
         assert!(w.delete_comment(0, 2, 1));
         assert!(w.comment_at(0, 2, 1).is_none());
+    }
+
+    #[test]
+    fn one_note_becomes_a_comment() {
+        let mut w = wb(&[]);
+        assert!(w.set_note(0, 8, 0, "Ada", "Ada:\nFirst"));
+        assert!(w.set_note(0, 9, 0, "Bob", "Bob:\nSecond"));
+        w.commit("notes");
+        assert!(w.convert_note_to_comment(0, 9, 0, NOON));
+        w.commit("convert one");
+        let first = &thread(&w, "A10").first;
+        assert_eq!(
+            (first.author.name.as_str(), first.text.as_str(), first.time),
+            ("Bob", "Second", NOON)
+        );
+        // The others stay notes; a thread or an empty cell is not converted.
+        assert_eq!(w.comment_at(0, 8, 0).map(Comment::kind), Some(CommentKind::Note));
+        assert!(!w.convert_note_to_comment(0, 9, 0, NOON));
+        assert!(!w.convert_note_to_comment(0, 20, 0, NOON));
+        w.undo();
+        assert_eq!(note_text(&w, "A10").as_deref(), Some("Bob:\nSecond"));
     }
 
     #[test]

@@ -6,7 +6,7 @@
 //! borders) for the parts of a report; `style_patch_at` lays the looks of
 //! the parts a cell belongs to over one another.
 
-use super::compute::{LineKind, Report};
+use super::compute::{Line, LineKind, Report};
 use crate::style::{Border, BorderStyle, Color, StylePatch};
 use crate::workbook::Workbook;
 
@@ -45,6 +45,36 @@ impl PivotStyle {
         ["Light", "Medium", "Dark"]
             .iter()
             .flat_map(|family| (1..=28).map(move |n| format!("PivotStyle{family}{n}")))
+            .collect()
+    }
+
+    /// What the style does to a small sample report, row by row: a header
+    /// row, two items shown above two rows of detail each, and the grand
+    /// total, over a column of labels and three columns of values. This is
+    /// what a thumbnail of the styles gallery draws; an unknown style gives
+    /// empty patches.
+    pub fn sample(&self) -> Vec<Vec<StylePatch>> {
+        use LineKind::{Grand, Group, Header, Item};
+        let rows = [Header, Group, Item, Item, Group, Item, Item, Grand];
+        let cols = [Header, Item, Item, Item];
+        let report = Report {
+            rows: rows.len() as u32,
+            cols: cols.len() as u32,
+            header_rows: 1,
+            label_cols: 1,
+            row_lines: rows
+                .iter()
+                .map(|kind| Line::sample(*kind, (*kind == Item) as u8))
+                .collect(),
+            col_lines: cols.iter().map(|kind| Line::sample(*kind, 0)).collect(),
+            ..Report::default()
+        };
+        (0..report.rows)
+            .map(|r| {
+                (0..report.cols)
+                    .map(|c| patch(self, &report, r, c).unwrap_or_default())
+                    .collect()
+            })
             .collect()
     }
 }
@@ -464,6 +494,28 @@ mod tests {
         assert_eq!(tint(0x156082, 0.4).to_hex(), "46B1E1");
         assert_eq!(tint(0x156082, -0.25).to_hex(), "104862");
         assert_eq!(tint(0xFFFFFF, -0.5).to_hex(), "808080");
+    }
+
+    #[test]
+    fn a_sample_shows_the_parts_of_a_style() {
+        let mut style = PivotStyle::default();
+        let sample = style.sample();
+        assert_eq!((sample.len(), sample[0].len()), (8, 4));
+        // Light 16: a pale header and grand total, bold items above their
+        // detail, plain detail rows.
+        let pale = Some(Some(tint(ACCENTS[0], 0.8)));
+        assert_eq!(sample[0][2].fill, pale);
+        assert_eq!(sample[7][0].fill, pale);
+        assert_eq!(sample[1][0].bold, Some(true));
+        assert!(sample[2][1].is_empty());
+        // The options of the style show in its sample: every other row
+        // below the header is banded.
+        assert!(sample[3][1].is_empty());
+        style.row_stripes = true;
+        assert!(!style.sample()[3][1].is_empty());
+        assert!(style.sample()[2][1].is_empty());
+        style.name = "No such style".to_string();
+        assert!(style.sample().iter().flatten().all(StylePatch::is_empty));
     }
 
     #[test]

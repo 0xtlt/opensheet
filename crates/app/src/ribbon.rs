@@ -112,7 +112,7 @@ impl ExcelApp {
     /// of buttons that open a menu.
     pub fn cmd_large<C: Command>(&self, id: &'static str, cmd: C, dropdown: bool, cx: &mut Cx) -> AnyElement {
         let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
-        self.large_state(id, icon_name, cmd.label(), dropdown, cmd.checked(self), cmd.enabled(self), cx, move |this, window, cx| {
+        self.large_state(id, icon_name, cmd.label_in(self), dropdown, cmd.checked(self), cmd.enabled(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
     }
@@ -141,9 +141,9 @@ impl ExcelApp {
                 .px(px(2.))
                 .text_color(c(color))
                 .child(icon(icon_name, 16.0, color))
-                .child(div().whitespace_nowrap().child(cmd.label()))
+                .child(div().whitespace_nowrap().child(cmd.label_in(self)))
                 .when(dropdown, |d| d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED))),
-            cmd.label(),
+            cmd.label_in(self),
             cmd.checked(self),
             cx,
             move |this, window, cx| this.run_from(id, cmd, window, cx),
@@ -156,7 +156,7 @@ impl ExcelApp {
     pub fn cmd_icon<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
         let color = if cmd.enabled(self) { theme::TEXT } else { theme::TEXT_DISABLED };
         let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
-        self.small(id, icon(icon_name, 16.0, color), cmd.label(), cmd.checked(self), cx, move |this, window, cx| {
+        self.small(id, icon(icon_name, 16.0, color), cmd.label_in(self), cmd.checked(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
         .into_any_element()
@@ -164,7 +164,7 @@ impl ExcelApp {
 
     /// A check box showing `cmd.checked` and running the command.
     pub fn cmd_check<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
-        self.check(id, cmd.label(), cmd.checked(self), cx, move |this, window, cx| {
+        self.check(id, cmd.label_in(self), cmd.checked(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
     }
@@ -1117,6 +1117,10 @@ impl ExcelApp {
                             t("AutoFit Column Width", "Ajuster la largeur de colonne"),
                             |a, window, cx| {
                                 let r = a.wb.clamp_to_used(a.sheet, a.sel().current());
+                                // One refusal, not one for each column.
+                                if !a.may(features::Intent::FormatColumns, cx) {
+                                    return;
+                                }
                                 for col in r.c0..=r.c1.min(r.c0 + 500) {
                                     a.autofit_col(col, window, cx);
                                 }
@@ -1215,9 +1219,8 @@ impl ExcelApp {
                     cx,
                     |this, window, cx| {
                         let entries = vec![
-                            MenuEntry::new(t("Sort A to Z", "Trier de A à Z"), |a, _, cx| a.sort(true, cx)).icon("sort-asc"),
-                            MenuEntry::new(t("Sort Z to A", "Trier de Z à A"), |a, _, cx| a.sort(false, cx))
-                                .icon("sort-desc"),
+                            MenuEntry::command(filters::Cmd::SortAscending, this),
+                            MenuEntry::command(filters::Cmd::SortDescending, this),
                             MenuEntry::command(filters::Cmd::CustomSort, this),
                             MenuEntry::separator(),
                             MenuEntry::command(filters::Cmd::Toggle, this).shortcut("⇧⌘L"),
@@ -1390,8 +1393,9 @@ impl ExcelApp {
                 continue;
             }
             let canonical = def.name;
+            // The function goes into the formula and its arguments open.
             entries.push(MenuEntry::new(locale.fn_to_local(canonical).to_string(), move |a, window, cx| {
-                a.insert_function(canonical, window, cx)
+                misc::function_arguments(a, canonical, window, cx)
             }));
         }
         entries.sort_by(|a, b| a.label.cmp(&b.label));
@@ -1530,7 +1534,7 @@ impl ExcelApp {
                         self.cmd_check("pl-head-print", page::Cmd::PrintHeadings, cx),
                     ])),
                 Some(self.launcher("pl-sheet-launcher", t("Page Setup", "Mise en page"), cx, |this, window, cx| {
-                    page::Cmd::Setup.run(this, window, cx)
+                    page::Cmd::SetupSheet.run(this, window, cx)
                 })),
             )
             .into_any_element(),
@@ -1655,14 +1659,7 @@ impl ExcelApp {
             group(
                 t("Function Library", "Bibliothèque de fonctions"),
                 row(vec![
-                    self.large(
-                        "fx-insert",
-                        "function",
-                        t("Insert Function", "Insérer une fonction"),
-                        false,
-                        cx,
-                        |this, window, cx| this.open_function_menu("fx-insert", None, window, cx),
-                    ),
+                    self.cmd_large("fx-insert", misc::Cmd::InsertFunction, false, cx),
                     self.large(
                         "fx-sum",
                         "calculator",
@@ -1732,22 +1729,8 @@ impl ExcelApp {
                     ])),
             )
             .into_any_element(),
-            group(
-                t("Calculation", "Calcul"),
-                row(vec![self.large(
-                    "fx-calc",
-                    "refresh",
-                    t("Calculate Now", "Calculer maintenant"),
-                    false,
-                    cx,
-                    |this, _, cx| {
-                        this.wb.recalc();
-                        this.refresh(cx);
-                    },
-                )]),
-            )
-            .border_r_0()
-            .into_any_element(),
+            misc::auditing_group(self, cx),
+            misc::calculation_group(self, cx).border_r_0().into_any_element(),
         ]
     }
 
@@ -1768,12 +1751,8 @@ impl ExcelApp {
                     .items_center()
                     .gap(px(2.))
                     .child(rows(vec![
-                        self.icon_btn("dt-asc", "sort-asc", t("Sort A to Z", "Trier de A à Z"), false, cx, |this, _, cx| {
-                            this.sort(true, cx)
-                        }),
-                        self.icon_btn("dt-desc", "sort-desc", t("Sort Z to A", "Trier de Z à A"), false, cx, |this, _, cx| {
-                            this.sort(false, cx)
-                        }),
+                        self.cmd_icon("dt-asc", filters::Cmd::SortAscending, cx),
+                        self.cmd_icon("dt-desc", filters::Cmd::SortDescending, cx),
                     ]))
                     .child(self.cmd_large("dt-sort", filters::Cmd::Sort, false, cx))
                     .child(self.cmd_large("dt-filter", filters::Cmd::Toggle, false, cx))
@@ -1789,7 +1768,7 @@ impl ExcelApp {
                 row(vec![
                     self.cmd_large("dt-ttc", misc::Cmd::TextToColumns, false, cx),
                     self.cmd_large("dt-flash", misc::Cmd::FlashFill, false, cx),
-                    self.cmd_large("dt-dup", tables::Cmd::RemoveDuplicates, false, cx),
+                    self.cmd_large("dt-dup", filters::Cmd::RemoveDuplicates, false, cx),
                     self.cmd_large("dt-valid", validation::Cmd::Menu, true, cx),
                     self.cmd_large("dt-consolidate", misc::Cmd::Consolidate, false, cx),
                 ]),

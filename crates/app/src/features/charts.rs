@@ -192,11 +192,11 @@ impl ExcelApp {
         let Some(id) = self.selected_chart().map(|chart| chart.id) else {
             return;
         };
-        if !self.may(Intent::EditObject(Some(object_id(&Charts, id))), cx) {
-            return;
+        // A protected sheet keeps its charts as they are.
+        if self.may(Intent::EditObject(Some(object_id(&Charts, id))), cx) {
+            self.wb.update_chart(self.sheet, id, f);
+            self.commit(label, cx);
         }
-        self.wb.update_chart(self.sheet, id, f);
-        self.commit(label, cx);
     }
 
     pub fn switch_chart_rows_columns(&mut self, cx: &mut Cx) {

@@ -342,6 +342,29 @@ fn captions_in_every_language() {
 }
 
 #[test]
+fn deleting_the_source_sheet_leaves_nothing_to_refresh_from() {
+    let (mut wb, id) = region_by_year(Locale::en());
+    let before = shown(&wb, id);
+    assert!(wb.delete_sheet(0));
+    wb.commit("delete");
+    // The report stays as it was, on what is now the first sheet.
+    let (si, p) = wb.pivot(id).unwrap();
+    assert_eq!((si, &p.source), (0, &PivotSource::Invalid));
+    assert_eq!(shown(&wb, id), before);
+    assert_eq!(wb.pivot_refresh(id, false), Err(PivotError::InvalidSource));
+    // A new sheet taking the name of the old one is not the source.
+    let added = wb.add_sheet(0);
+    assert!(wb.rename_sheet(added, "Sheet1"));
+    wb.commit("add");
+    assert_eq!(wb.pivot_refresh(id, false), Err(PivotError::InvalidSource));
+    // Undo brings the sheet and the source back together.
+    wb.undo();
+    wb.undo();
+    assert!(matches!(wb.pivot(id).unwrap().1.source, PivotSource::Range { .. }));
+    assert_eq!(wb.pivot_refresh(id, false), Ok(()));
+}
+
+#[test]
 fn compact_form_nests_the_labels_in_one_column() {
     let (wb, id) = region_product(Locale::en());
     assert_report(
@@ -356,14 +379,61 @@ fn compact_form_nests_the_labels_in_one_column() {
          Pears|120
          Grand Total|690",
     );
-    // The inner labels are indented, as Excel indents them.
-    let style = |name: &str| {
+    // The inner labels are indented, as Excel indents them, and all of
+    // them leave room for the expand / collapse buttons of the regions.
+    let style = |wb: &Workbook, name: &str| {
         let (r, c) = parse_cell_name(name).unwrap();
         wb.style_at(1, r, c).clone()
     };
-    assert_eq!(style("A4").indent, 0);
-    assert_eq!(style("A5").indent, 1);
+    assert_eq!(style(&wb, "A4").indent, 1);
+    assert_eq!(style(&wb, "A5").indent, 2);
     assert_eq!(wb.pivot_cell(1, 4, 0).unwrap().indent, 1);
+    // "Grand Total" has no button to make room for.
+    assert_eq!(style(&wb, "A10").indent, 0);
+
+    // Without the buttons the labels move back to the edge.
+    let mut wb = wb;
+    update(&mut wb, id, |p| p.options.show_drill = false);
+    assert_eq!(style(&wb, "A4").indent, 0);
+    assert_eq!(style(&wb, "A5").indent, 1);
+}
+
+#[test]
+fn labels_with_a_button_leave_room_for_it() {
+    // Outline form: the regions carry the buttons, the products do not.
+    let (mut wb, id) = region_product(Locale::en());
+    update(&mut wb, id, |p| p.set_report_layout(FieldLayout::Outline));
+    let indent = |wb: &Workbook, name: &str| {
+        let (r, c) = parse_cell_name(name).unwrap();
+        wb.style_at(1, r, c).indent
+    };
+    assert_eq!(wb.pivot_cell(1, 3, 0).unwrap().button, Some(PivotButton::Collapse));
+    assert_eq!(indent(&wb, "A4"), 1);
+    assert_eq!(wb.pivot_cell(1, 4, 1).unwrap().button, None);
+    assert_eq!(indent(&wb, "B5"), 0);
+
+    // A single field has no button at all.
+    let (mut wb, id) = sales(Locale::en());
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en());
+        p.add_field(SALES_F, Area::Values, None, Locale::en());
+    });
+    assert_eq!(wb.pivot_cell(1, 3, 0).unwrap().button, None);
+    assert_eq!(indent(&wb, "A4"), 0);
+
+    // Column labels: the years above the products are numbers, aligned to
+    // the right; the regions above the years are text and move over.
+    let (mut wb, id) = sales(Locale::en());
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Columns, None, Locale::en());
+        p.add_field(YEAR, Area::Columns, None, Locale::en());
+        p.add_field(SALES_F, Area::Values, None, Locale::en());
+    });
+    let cell = wb.pivot_cell(1, 3, 1).unwrap();
+    assert_eq!((cell.part, cell.button), (PivotPart::ColumnLabel, Some(PivotButton::Collapse)));
+    assert_eq!(indent(&wb, "B4"), 1);
+    assert_eq!(wb.pivot_cell(1, 4, 1).unwrap().part, PivotPart::ColumnLabel);
+    assert_eq!(indent(&wb, "B5"), 0);
 }
 
 #[test]

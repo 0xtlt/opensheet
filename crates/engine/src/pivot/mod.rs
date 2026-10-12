@@ -1791,8 +1791,20 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
     }
 }
 
-/// See `features::on_sheet_deleted`.
-pub(crate) fn on_sheet_deleted(_wb: &mut crate::workbook::Workbook, _deleted: &crate::workbook::Sheet, _order: &[&str]) {}
+/// See `features::on_sheet_deleted`. A PivotTable whose records came from
+/// a range of the sheet keeps its cache, as in Excel, but has nothing left
+/// to refresh from: a sheet later given the same name is not its source.
+pub(crate) fn on_sheet_deleted(wb: &mut crate::workbook::Workbook, deleted: &crate::workbook::Sheet, _order: &[&str]) {
+    for sh in &mut wb.sheets {
+        for p in &mut sh.pivots {
+            if let PivotSource::Range { sheet, .. } = &p.source
+                && same_name(sheet, &deleted.name)
+            {
+                p.source = PivotSource::Invalid;
+            }
+        }
+    }
+}
 
 /// See `features::on_sheet_moved`.
 pub(crate) fn on_sheet_moved(_wb: &mut crate::workbook::Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}

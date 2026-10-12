@@ -15,7 +15,8 @@
 //!   run them (`Cmd::Toggle.run(app, window, cx)`); a command that is not
 //!   written yet ends in `app.not_implemented(self.label(), cx)`. A command
 //!   that opens a drop-down builds a `Vec<MenuEntry>` (`MenuEntry::command`,
-//!   `MenuEntry::submenu`) and calls `app.open_command_menu`.
+//!   `MenuEntry::submenu`) and calls `app.open_command_menu`. A label that
+//!   follows the workbook ("Unprotect Sheet") is given by `label_in`.
 //!
 //! State a feature keeps between events lives in `app.ext_mut::<MyState>()`
 //! (any `Default` type, created on first use, dropped when another workbook
@@ -39,8 +40,10 @@
 //! | Real elements over the grid (a note being typed) | [`Feature::overlay_elements`] |
 //! | Refusing a change (protection, pivot cells) | [`Feature::guard`] with an [`Intent`]; a feature asks before its own changes with `app.may(intent, cx)` |
 //! | Refusing a selection (protection) | [`Feature::can_select`] |
+//! | Where the arrows, Tab and Enter lead (a protected sheet walks its unlocked cells) | [`Feature::next_cell`] |
 //! | Checking an entry (validation) | [`Feature::may_commit`] → [`Verdict`]; the alert's buttons call `app.commit_edit_unchecked`, `app.focus_editor` or `app.cancel_edit` |
 //! | Following edits | [`Feature::cells_written`] (same undo step), [`Feature::cells_changed`] (afterwards), [`Feature::selection_changed`] |
+//! | Alt+Down on a cell | [`Feature::cell_drop_down`] |
 //! | Context menus | [`Feature::context_menu`] with a [`MenuTarget`] |
 //! | Status bar | [`Feature::status_items`] |
 //! | Pictures and shapes | [`Feature::objects`] and the `*_object` hooks; selecting, moving, resizing, nudging, deleting, copy / paste and stacking order come from `objects.rs` |
@@ -298,6 +301,12 @@ pub trait Command: Copy + 'static {
     /// Text on the ribbon and in menus.
     fn label(self) -> &'static str;
 
+    /// The text when it depends on the state of the workbook ("Protect
+    /// Sheet" becomes "Unprotect Sheet").
+    fn label_in(self, _app: &ExcelApp) -> &'static str {
+        self.label()
+    }
+
     /// Name of an icon of `icons.rs`; `""` for none.
     fn icon(self) -> &'static str {
         ""
@@ -364,9 +373,11 @@ pub enum Intent {
     /// Creating, resizing or restyling a table.
     ChangeTable,
     /// What a protected sheet never allows: merging cells, locking or
-    /// unlocking them, data validation, conditional formats, the tab
-    /// colour.
+    /// unlocking them, data validation, conditional formats.
     ChangeSheet,
+    /// Changing the colour of the sheet tab, which neither a protected
+    /// sheet nor a protected workbook allows.
+    TabColor,
     InsertSheet,
     DeleteSheet,
     RenameSheet,
@@ -972,10 +983,25 @@ pub trait Feature: Sync + 'static {
     /// The selection or the current sheet changed.
     fn selection_changed(&self, _app: &mut ExcelApp, _cx: &mut Cx) {}
 
+    /// Where the active cell goes from `from` when the feature has its own
+    /// idea of the next cell: with an arrow key, or after an entry (Tab,
+    /// Enter and their Shift variants) when `entry` is set. A protected
+    /// sheet walks its unlocked cells. `None`: the neighbouring cell.
+    fn next_cell(&self, _app: &ExcelApp, _from: (u32, u32), _dir: Direction, _entry: bool) -> Option<(u32, u32)> {
+        None
+    }
+
     /// May this cell become the active cell or part of the selection? (A
     /// protected sheet can forbid selecting locked cells.)
     fn can_select(&self, _app: &ExcelApp, _row: u32, _col: u32) -> bool {
         true
+    }
+
+    /// Alt+Down on the active cell: open the drop-down the feature hangs
+    /// from it (the list of a filter button) and answer true; false when
+    /// it has none there.
+    fn cell_drop_down(&self, _app: &mut ExcelApp, _window: &mut Window, _cx: &mut Cx) -> bool {
+        false
     }
 
     // ---- menus and status bar ---------------------------------------------
@@ -1093,10 +1119,19 @@ pub(crate) fn can_select(app: &ExcelApp, row: u32, col: u32) -> bool {
     all().iter().all(|f| f.can_select(app, row, col))
 }
 
+/// The first feature that has a drop-down on the active cell opens it.
+pub(crate) fn cell_drop_down(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> bool {
+    all().iter().any(|f| f.cell_drop_down(app, window, cx))
+}
+
 pub(crate) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {
     for f in all() {
         f.selection_changed(app, cx);
     }
+}
+
+pub(crate) fn next_cell(app: &ExcelApp, from: (u32, u32), dir: Direction, entry: bool) -> Option<(u32, u32)> {
+    all().iter().find_map(|f| f.next_cell(app, from, dir, entry))
 }
 
 pub(crate) fn context_menu(app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {

@@ -7,7 +7,9 @@ use super::model::{
     TextOp, TimePeriod,
 };
 use crate::ast::Expr;
+use crate::refs::Rect;
 use crate::style::{Border, BorderStyle, Color, StylePatch};
+use crate::workbook::Workbook;
 
 /// The formats offered by the "with" list of the Highlight Cells and
 /// Top/Bottom dialogs, in the order of the list. The first is the default.
@@ -162,6 +164,17 @@ impl Rule {
             std_dev: 0,
         }
     }
+}
+
+/// The lowest and the highest number in the cells of `ranges`: what the
+/// Highlight Cells dialogs work their proposed values out from (the middle
+/// of the two for "Greater Than", three and seven tenths of the way for
+/// "Between"). `None` when the cells hold no number.
+pub fn number_span(wb: &Workbook, sheet: usize, ranges: &[Rect]) -> Option<(f64, f64)> {
+    let numbers = super::eval::numbers(wb.sheets.get(sheet)?, ranges);
+    let low = numbers.iter().copied().min_by(f64::total_cmp)?;
+    let high = numbers.iter().copied().max_by(f64::total_cmp)?;
+    Some((low, high))
 }
 
 /// The six colours of the data bar gallery, in gallery order (the same for

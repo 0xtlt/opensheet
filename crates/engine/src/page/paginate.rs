@@ -5,7 +5,7 @@
 //! paper. One pixel prints as 0.75 point at a scale of 100 %.
 
 use super::{BreakAxis, PageOrder, PageSetup, floating_objects};
-use crate::refs::{MAX_COLS, Rect};
+use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
 use crate::style::{Font, HAlign};
 use crate::value::Value;
 use crate::workbook::{Content, DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, Sheet, Workbook};
@@ -616,6 +616,138 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
     if !any_ink {
         out.pages.clear();
     }
+    out
+}
+
+/// The whole sheet cut into pages, used or not: what the Page Layout view
+/// shows. The pages follow the same rules as the printed ones (paper,
+/// margins, scale, manual breaks, room taken by print titles and
+/// headings) but start at A1 and go on to the last row and column.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SheetPages {
+    /// Paper width and height in points, turned for the orientation.
+    pub paper: (f64, f64),
+    /// The area inside the margins: left, top, width, height, in points.
+    pub printable: (f64, f64, f64, f64),
+    pub scale_percent: u16,
+    /// The first column of every page across, starting with column A.
+    pub col_starts: Vec<u32>,
+    /// The first row of every page down, starting with row 1.
+    pub row_starts: Vec<u32>,
+}
+
+impl SheetPages {
+    /// Points on paper per sheet pixel.
+    pub fn unit(&self) -> f64 {
+        PX_TO_PT * self.scale_percent as f64 / 100.0
+    }
+
+    /// Which page across holds a column.
+    pub fn col_page(&self, col: u32) -> usize {
+        self.col_starts.partition_point(|s| *s <= col).saturating_sub(1)
+    }
+
+    /// Which page down holds a row.
+    pub fn row_page(&self, row: u32) -> usize {
+        self.row_starts.partition_point(|s| *s <= row).saturating_sub(1)
+    }
+
+    /// The first and last column of a page across.
+    pub fn cols(&self, page: usize) -> (u32, u32) {
+        span_of(&self.col_starts, page, MAX_COLS)
+    }
+
+    /// The first and last row of a page down.
+    pub fn rows(&self, page: usize) -> (u32, u32) {
+        span_of(&self.row_starts, page, MAX_ROWS)
+    }
+}
+
+fn span_of(starts: &[u32], page: usize, count: u32) -> (u32, u32) {
+    let page = page.min(starts.len().saturating_sub(1));
+    let first = starts.get(page).copied().unwrap_or(0);
+    let last = starts.get(page + 1).map_or(count - 1, |next| next - 1);
+    (first, last)
+}
+
+/// The first track of every page along one axis of the whole sheet.
+fn axis_starts(
+    sheet: &Sheet,
+    axis: BreakAxis,
+    available: f64,
+    title: Option<(u32, u32)>,
+    manual: Option<&BTreeSet<u32>>,
+) -> Vec<u32> {
+    let rows = axis == BreakAxis::Rows;
+    let (default, count, sizes, hidden) = if rows {
+        (DEFAULT_ROW_HEIGHT, MAX_ROWS, &sheet.row_heights, &sheet.hidden_rows)
+    } else {
+        (DEFAULT_COL_WIDTH, MAX_COLS, &sheet.col_widths, &sheet.hidden_cols)
+    };
+    // Past this track every one has the default size, none is hidden and
+    // no break is set: the pages repeat and need not be walked.
+    let mut limit = 0u32;
+    let mut reach = |index: Option<u32>| limit = limit.max(index.unwrap_or(0));
+    reach(sizes.keys().next_back().copied());
+    reach(hidden.iter().next_back().copied());
+    reach(manual.and_then(|m| m.iter().next_back().copied()));
+    reach(title.map(|(_, last)| last));
+    if rows {
+        reach(sheet.filtered_rows.iter().next_back().copied());
+    }
+    let limit = limit.min(count - 1);
+    let title_px = title.map_or(0.0, |(a, b)| span_px(sheet, axis, a, b));
+    let (bands, breaks) = bands(&Sizes::new(sheet, rows, 0, limit), available, title, title_px, manual);
+    let mut starts = vec![0u32];
+    starts.extend(breaks.iter().map(|b| b.at));
+    let room = |start: u32| -> f64 {
+        if title.is_some_and(|(_, last)| start > last) {
+            available - title_px
+        } else {
+            available
+        }
+    };
+    // The page being filled when the walk stopped takes default tracks
+    // until it is full, then every page holds the same number of them.
+    let open = bands.last().map_or(0, |b| b.0);
+    let used = span_px(sheet, axis, open, limit);
+    let default = default as f64;
+    let more = (((room(open) - used) + EPS) / default).floor().max(0.0) as u64;
+    let per_page = ((room(limit + 1) + EPS) / default).floor().max(1.0) as u64;
+    let mut next = limit as u64 + 1 + more;
+    while next < count as u64 {
+        starts.push(next as u32);
+        next += per_page;
+    }
+    starts
+}
+
+/// Cut the whole sheet into pages for the Page Layout view. `pagination`
+/// is the sheet's own (it gives the paper and the scale, which "Fit to"
+/// works out from what prints).
+pub fn sheet_pages(wb: &Workbook, sheet: usize, pagination: &Pagination) -> SheetPages {
+    let mut out = SheetPages {
+        paper: pagination.paper,
+        printable: pagination.printable,
+        scale_percent: pagination.scale_percent,
+        col_starts: vec![0],
+        row_starts: vec![0],
+    };
+    let Some(sh) = wb.sheets.get(sheet) else {
+        return out;
+    };
+    let setup = &sh.page;
+    let unit = out.unit();
+    let across = pagination.printable.2 / unit - pagination.heading_size.0;
+    let down = pagination.printable.3 / unit - pagination.heading_size.1;
+    // "Fit to" ignores manual page breaks, as in `paginate`.
+    let (manual_cols, manual_rows) = if setup.fit_to_page {
+        (None, None)
+    } else {
+        (Some(&setup.col_breaks), Some(&setup.row_breaks))
+    };
+    out.col_starts = axis_starts(sh, BreakAxis::Cols, across, setup.title_cols, manual_cols);
+    out.row_starts = axis_starts(sh, BreakAxis::Rows, down, setup.title_rows, manual_rows);
     out
 }
 
