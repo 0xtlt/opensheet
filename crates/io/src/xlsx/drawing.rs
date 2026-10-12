@@ -98,6 +98,15 @@ fn set_frame(sheet: &Sheet, drawing: &mut Drawing, frame: Frame) {
     sheet.settle_drawing(drawing);
 }
 
+/// After a drawing was placed in the box its anchor describes: if it is
+/// turned on its side, that was the box as it stands.
+fn stand_up(sheet: &Sheet, drawing: &mut Drawing) {
+    if on_its_side(drawing.rotation) {
+        let standing = sheet.drawing_frame(drawing);
+        set_frame(sheet, drawing, turned(standing));
+    }
+}
+
 /// The two corners the anchor of a drawing names.
 fn corners(sheet: &Sheet, drawing: &Drawing) -> (Corner, Corner) {
     if !on_its_side(drawing.rotation) {
@@ -884,6 +893,14 @@ fn parse_text<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawTe
     out
 }
 
+/// A text without the characters a file cannot hold again; line breaks
+/// and tabs stay where a text has `lines`.
+fn printable(text: &str, lines: bool) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || (lines && matches!(c, '\n' | '\t')))
+        .collect()
+}
+
 /// What an anchor holds, as its part says it.
 enum RawKind {
     /// The relationship of the drawing part to the image.
@@ -919,9 +936,9 @@ impl RawObject {
         let mut text_box = false;
         each_child(r, tag, |r, t| match t.name {
             "cNvPr" => {
-                let text = |name: &str| t.attr(name).map(|v| v.into_owned()).unwrap_or_default();
-                self.name = text("name");
-                self.alt_text = text("descr");
+                let text = |name: &str| t.attr(name).unwrap_or_default();
+                self.name = printable(&text("name"), false);
+                self.alt_text = printable(&text("descr"), true);
                 r.skip(t);
             }
             "cNvSpPr" | "cNvPicPr" | "cNvCxnSpPr" => {
@@ -1040,7 +1057,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
         text_box,
         fill: fill.filter(|_| !preset.is_line() || !connector),
         outline,
-        text: text.text,
+        text: printable(&text.text, true),
         font,
         align: text.align.unwrap_or(if text.anchor.is_some() {
             TextAlign::Left
@@ -1266,9 +1283,26 @@ impl Loader {
                 // An anchor that is nowhere.
                 _ => continue,
             }
-            if on_its_side(drawing.rotation) {
-                let standing = sheet.drawing_frame(&drawing);
-                set_frame(sheet, &mut drawing, turned(standing));
+            stand_up(sheet, &mut drawing);
+            // An anchor can be made to say what no file written from here
+            // says (a second corner before the first, offsets larger than
+            // their cells, a place beyond the last cell): the drawing is
+            // read as writing it would put it. One that stands on its
+            // side is left alone unless that moves it, since turning it
+            // twice more would only round its numbers again.
+            let mut written = drawing.clone();
+            let (from, to) = corners(sheet, &written);
+            sheet.place_drawing(&mut written, from, to);
+            stand_up(sheet, &mut written);
+            let (here, there) = (sheet.drawing_frame(&drawing), sheet.drawing_frame(&written));
+            let moved = [
+                here.x - there.x,
+                here.y - there.y,
+                here.width - there.width,
+                here.height - there.height,
+            ];
+            if !on_its_side(drawing.rotation) || moved.iter().any(|by| by.abs() > 0.01) {
+                drawing = written;
             }
             // A name of its own on the sheet.
             let taken = |name: &str| {

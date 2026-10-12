@@ -400,6 +400,19 @@ fn assert_same_drawings(a: &Workbook, b: &Workbook) {
         for (da, db) in sa.drawings.iter().zip(&sb.drawings) {
             let mut db = db.clone();
             db.id = da.id;
+            // Where it is first: a difference there is easier to read
+            // without the bytes of a picture around it.
+            let place = |d: &Drawing| {
+                (
+                    d.name.clone(),
+                    d.placement,
+                    (d.anchor, d.offset),
+                    (d.to, d.to_offset),
+                    d.size,
+                    d.rotation,
+                )
+            };
+            assert_eq!(place(da), place(&db), "on {}", sa.name);
             assert_eq!(*da, db, "{} on {}", da.name, sa.name);
             assert_eq!(
                 sa.drawing_frame(da),
@@ -809,4 +822,546 @@ fn parts_say_what_the_model_says() {
     ));
     assert!(pictures.contains("<a:xfrm flipH=\"1\"><a:off "));
     assert!(pictures.contains("<xdr:clientData fPrintsWithSheet=\"0\"/>"));
+}
+
+// ---- parts written the way Excel writes them ------------------------------------
+
+fn relationships(list: &[(&str, &str, &str)]) -> String {
+    let mut x = format!("{DECL}<Relationships xmlns=\"{PKG_REL}\">");
+    for (id, kind, target) in list {
+        x.push_str(&format!(
+            "<Relationship Id=\"{id}\" Type=\"{REL}/{kind}\" Target=\"{target}\"/>"
+        ));
+    }
+    x.push_str("</Relationships>");
+    x
+}
+
+/// An anchor between two cells, as Excel writes them: (column, row) of
+/// each corner, on the lines between cells.
+fn between(from: (u32, u32), to: (u32, u32), edit_as: &str, content: &str) -> String {
+    let edit_as = if edit_as.is_empty() {
+        String::new()
+    } else {
+        format!(" editAs=\"{edit_as}\"")
+    };
+    format!(
+        "<xdr:twoCellAnchor{edit_as}>{}{}{content}</xdr:twoCellAnchor>",
+        corner("from", from.0, 0, from.1, 0),
+        corner("to", to.0, 0, to.1, 0)
+    )
+}
+
+/// The style Excel gives a new shape: everything comes from the theme.
+const EXCEL_SHAPE_STYLE: &str = "<xdr:style><a:lnRef idx=\"2\"><a:schemeClr val=\"accent1\"><a:shade val=\"15000\"/></a:schemeClr></a:lnRef><a:fillRef idx=\"1\"><a:schemeClr val=\"accent1\"/></a:fillRef><a:effectRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:effectRef><a:fontRef idx=\"minor\"><a:schemeClr val=\"lt1\"/></a:fontRef></xdr:style>";
+
+/// A drawing part with what Excel puts in one: shapes styled by the theme,
+/// a text box, a connector, pictures (one turned on its side, one linked,
+/// one in a format the engine does not show), a group, a choice between a
+/// shape and its fallback, anchors of the three kinds, and a chart frame.
+fn excel_drawing() -> String {
+    let creation = "<a:extLst><a:ext uri=\"{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}\"><a16:creationId xmlns:a16=\"http://schemas.microsoft.com/office/drawing/2014/main\" id=\"{00000000-0008-0000-0000-000002000000}\"/></a:ext></a:extLst>";
+    let rectangle = format!(
+        "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"2\" name=\"Rectangle 1\">{creation}</xdr:cNvPr><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x=\"609600\" y=\"190500\"/><a:ext cx=\"1219200\" cy=\"762000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr>{EXCEL_SHAPE_STYLE}<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" rtlCol=\"0\" anchor=\"t\"/><a:lstStyle/><a:p><a:pPr algn=\"l\"/><a:r><a:rPr lang=\"fr-FR\" sz=\"1100\"/><a:t>Bonjour </a:t></a:r><a:r><a:rPr lang=\"fr-FR\" sz=\"1100\" b=\"1\"/><a:t>tout le monde</a:t></a:r></a:p><a:p><a:pPr algn=\"l\"/><a:endParaRPr lang=\"fr-FR\" sz=\"1100\"/></a:p></xdr:txBody></xdr:sp><xdr:clientData/>"
+    );
+    let text_box = "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"3\" name=\"ZoneTexte 2\"/><xdr:cNvSpPr txBox=\"1\"/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:schemeClr val=\"lt1\"/></a:solidFill><a:ln w=\"9525\" cmpd=\"sng\"><a:solidFill><a:schemeClr val=\"lt1\"><a:shade val=\"50000\"/></a:schemeClr></a:solidFill></a:ln></xdr:spPr><xdr:style><a:lnRef idx=\"0\"><a:scrgbClr r=\"0\" g=\"0\" b=\"0\"/></a:lnRef><a:fillRef idx=\"0\"><a:scrgbClr r=\"0\" g=\"0\" b=\"0\"/></a:fillRef><a:effectRef idx=\"0\"><a:scrgbClr r=\"0\" g=\"0\" b=\"0\"/></a:effectRef><a:fontRef idx=\"minor\"><a:schemeClr val=\"dk1\"/></a:fontRef></xdr:style><xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"t\"/><a:lstStyle/><a:p><a:r><a:rPr lang=\"fr-FR\" sz=\"1100\"/><a:t>Une note</a:t></a:r><a:br><a:rPr lang=\"fr-FR\" sz=\"1100\"/></a:br><a:r><a:rPr lang=\"fr-FR\" sz=\"1100\"/><a:t>sur deux lignes</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/>";
+    let arrow = "<xdr:cxnSp macro=\"\"><xdr:nvCxnSpPr><xdr:cNvPr id=\"5\" name=\"Connecteur droit avec flèche 4\"/><xdr:cNvCxnSpPr/></xdr:nvCxnSpPr><xdr:spPr><a:xfrm flipV=\"1\"><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm><a:prstGeom prst=\"straightConnector1\"><a:avLst/></a:prstGeom><a:ln><a:tailEnd type=\"triangle\"/></a:ln></xdr:spPr><xdr:style><a:lnRef idx=\"1\"><a:schemeClr val=\"accent1\"/></a:lnRef><a:fillRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:fillRef><a:effectRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:effectRef><a:fontRef idx=\"minor\"><a:schemeClr val=\"tx1\"/></a:fontRef></xdr:style></xdr:cxnSp><xdr:clientData/>";
+    let picture = |id: u32, name: &str, blip: &str, turn: &str| {
+        format!(
+            "<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"{id}\" name=\"{name}\" descr=\"Un logo\"/><xdr:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{REL}\" {blip}><a:extLst><a:ext uri=\"{{28A0092B-C50C-407E-A947-70E740481C1C}}\"/></a:extLst></a:blip><a:srcRect l=\"10000\" r=\"10000\"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm{turn}><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/>"
+        )
+    };
+    let plain = |id: u32, name: &str, geometry: &str, look: &str| {
+        format!(
+            "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"{id}\" name=\"{name}\"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></a:xfrm>{geometry}{look}</xdr:spPr>"
+        )
+    };
+    let group = format!(
+        "<xdr:grpSp><xdr:nvGrpSpPr><xdr:cNvPr id=\"20\" name=\"Groupe 19\"/><xdr:cNvGrpSpPr/></xdr:nvGrpSpPr><xdr:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"10\" cy=\"10\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"10\" cy=\"10\"/></a:xfrm></xdr:grpSpPr>{}{EXCEL_SHAPE_STYLE}</xdr:sp>{}{EXCEL_SHAPE_STYLE}</xdr:sp></xdr:grpSp><xdr:clientData/>",
+        plain(
+            21,
+            "In a group",
+            "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>",
+            ""
+        ),
+        plain(
+            22,
+            "In a group too",
+            "<a:prstGeom prst=\"ellipse\"><a:avLst/></a:prstGeom>",
+            ""
+        )
+    );
+    let choice = format!(
+        "<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\"><mc:Choice xmlns:a14=\"http://schemas.microsoft.com/office/drawing/2010/main\" Requires=\"a14\">{}</mc:Choice><mc:Fallback>{}</mc:Fallback></mc:AlternateContent>",
+        between(
+            (8, 1),
+            (9, 3),
+            "",
+            &format!(
+                "{}{EXCEL_SHAPE_STYLE}</xdr:sp><xdr:clientData/>",
+                plain(
+                    9,
+                    "Ellipse 8",
+                    "<a:prstGeom prst=\"ellipse\"><a:avLst/></a:prstGeom>",
+                    ""
+                )
+            )
+        ),
+        between(
+            (8, 1),
+            (9, 3),
+            "",
+            &picture(9, "Fallback", "r:embed=\"rId1\"", "")
+        )
+    );
+    let flow = format!(
+        "<xdr:oneCellAnchor>{}<xdr:ext cx=\"952500\" cy=\"476250\"/>{}</xdr:sp><xdr:clientData fLocksWithSheet=\"0\"/></xdr:oneCellAnchor>",
+        corner("from", 1, 0, 8, 0),
+        plain(
+            10,
+            "Organigramme : Processus 9",
+            "<a:prstGeom prst=\"flowChartProcess\"><a:avLst/></a:prstGeom>",
+            "<a:gradFill rotWithShape=\"1\"><a:gsLst><a:gs pos=\"0\"><a:srgbClr val=\"FF0000\"/></a:gs><a:gs pos=\"100000\"><a:srgbClr val=\"0000FF\"/></a:gs></a:gsLst><a:lin ang=\"5400000\" scaled=\"0\"/></a:gradFill><a:ln w=\"25400\"><a:pattFill prst=\"pct50\"><a:fgClr><a:srgbClr val=\"00FF00\"/></a:fgClr><a:bgClr><a:srgbClr val=\"FFFFFF\"/></a:bgClr></a:pattFill><a:round/></a:ln>"
+        )
+    );
+    let free = format!(
+        "<xdr:absoluteAnchor><xdr:pos x=\"4762500\" y=\"1905000\"/><xdr:ext cx=\"476250\" cy=\"476250\"/>{}<xdr:txBody><a:bodyPr anchor=\"ctr\"/><a:p><a:pPr algn=\"ctr\"/><a:r><a:rPr sz=\"2000\" i=\"1\" u=\"dbl\" strike=\"sngStrike\"><a:solidFill><a:srgbClr val=\"112233\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/></a:rPr><a:t>libre</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData fPrintsWithSheet=\"0\"/></xdr:absoluteAnchor>",
+        plain(
+            11,
+            "Forme libre 10",
+            "<a:custGeom><a:avLst/><a:gdLst/><a:pathLst><a:path w=\"10\" h=\"10\"><a:moveTo><a:pt x=\"0\" y=\"0\"/></a:moveTo><a:lnTo><a:pt x=\"10\" y=\"10\"/></a:lnTo></a:path></a:pathLst></a:custGeom>",
+            "<a:noFill/><a:ln w=\"38100\"><a:solidFill><a:srgbClr val=\"00FF00\"/></a:solidFill><a:prstDash val=\"dash\"/></a:ln>"
+        )
+    );
+    let chart = format!(
+        "<xdr:graphicFrame macro=\"\"><xdr:nvGraphicFramePr><xdr:cNvPr id=\"12\" name=\"Graphique 11\"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></xdr:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/chart\"><c:chart xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\" xmlns:r=\"{REL}\" r:id=\"rId7\"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/>"
+    );
+    [
+        format!("{DECL}<xdr:wsDr xmlns:xdr=\"{XDR}\" xmlns:a=\"{A}\">"),
+        between((1, 1), (3, 5), "", &rectangle),
+        between((4, 1), (6, 3), "oneCell", text_box),
+        between((1, 12), (3, 14), "", arrow),
+        // 100 × 40 pixels turned a quarter: the anchor is 40 × 100.
+        format!(
+            "<xdr:twoCellAnchor editAs=\"oneCell\">{}{}{}</xdr:twoCellAnchor>",
+            corner("from", 5, 0, 5, 0),
+            corner("to", 5, 40, 10, 0),
+            picture(4, "Image 3", "r:embed=\"rId1\"", " rot=\"5400000\"")
+        ),
+        between(
+            (6, 5),
+            (7, 6),
+            "",
+            &picture(6, "Image 5", "r:link=\"rId9\"", ""),
+        ),
+        between(
+            (6, 6),
+            (7, 7),
+            "",
+            &picture(7, "Image 6", "r:embed=\"rId2\"", ""),
+        ),
+        between((0, 16), (2, 20), "", &group),
+        choice,
+        flow,
+        free,
+        between((10, 1), (14, 10), "", &chart),
+        between(
+            (1, 6),
+            (2, 7),
+            "",
+            &format!(
+                "{}{EXCEL_SHAPE_STYLE}</xdr:sp><xdr:clientData/>",
+                plain(
+                    13,
+                    "Rectangle 1",
+                    "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>",
+                    ""
+                )
+            ),
+        ),
+        "</xdr:wsDr>".to_string(),
+    ]
+    .concat()
+}
+
+/// A package the way Excel saves one, with the theme of Office 2013.
+/// Parts named in `replace` are changed, or left out for `None`.
+fn excel_package(replace: &[(&str, Option<&[u8]>)]) -> Vec<u8> {
+    let workbook = format!(
+        r#"{DECL}<workbook xmlns="{MAIN}" xmlns:r="{REL}"><sheets><sheet name="Dessins" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+    );
+    let sheet = format!(
+        r#"{DECL}<worksheet xmlns="{MAIN}" xmlns:r="{REL}"><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData><drawing r:id="rId1"/></worksheet>"#
+    );
+    let color = |name: &str, rgb: &str| format!("<a:{name}><a:srgbClr val=\"{rgb}\"/></a:{name}>");
+    let theme = format!(
+        r#"{DECL}<a:theme xmlns:a="{A}" name="Office"><a:themeElements><a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>{}{}{}{}{}{}{}{}{}{}</a:clrScheme><a:fmtScheme name="Office"><a:fillStyleLst/><a:lnStyleLst><a:ln w="6350"/><a:ln w="12700"/><a:ln w="19050"/></a:lnStyleLst></a:fmtScheme></a:themeElements></a:theme>"#,
+        color("dk2", "44546A"),
+        color("lt2", "E7E6E6"),
+        color("accent1", "4472C4"),
+        color("accent2", "ED7D31"),
+        color("accent3", "A5A5A5"),
+        color("accent4", "FFC000"),
+        color("accent5", "5B9BD5"),
+        color("accent6", "70AD47"),
+        color("hlink", "0563C1"),
+        color("folHlink", "954F72"),
+    );
+    let content_types = format!(
+        r#"{DECL}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="emf" ContentType="image/x-emf"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>"#
+    );
+    let image = logo();
+    let mut parts: Vec<(String, Vec<u8>)> = [
+        ("[Content_Types].xml", content_types.into_bytes()),
+        (
+            "_rels/.rels",
+            relationships(&[("rId1", "officeDocument", "xl/workbook.xml")]).into_bytes(),
+        ),
+        ("xl/workbook.xml", workbook.into_bytes()),
+        (
+            "xl/_rels/workbook.xml.rels",
+            relationships(&[
+                ("rId1", "worksheet", "worksheets/sheet1.xml"),
+                ("rId2", "theme", "theme/theme1.xml"),
+            ])
+            .into_bytes(),
+        ),
+        ("xl/theme/theme1.xml", theme.into_bytes()),
+        ("xl/worksheets/sheet1.xml", sheet.into_bytes()),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            relationships(&[("rId1", "drawing", "../drawings/drawing1.xml")]).into_bytes(),
+        ),
+        ("xl/drawings/drawing1.xml", excel_drawing().into_bytes()),
+        (
+            "xl/drawings/_rels/drawing1.xml.rels",
+            relationships(&[
+                ("rId1", "image", "../media/image1.png"),
+                ("rId2", "image", "../media/image2.emf"),
+            ])
+            .into_bytes(),
+        ),
+        ("xl/media/image1.png", image),
+        (
+            "xl/media/image2.emf",
+            b"\x01\0\0\0 not really a metafile".to_vec(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, data)| (name.to_string(), data))
+    .collect();
+    for (name, data) in replace {
+        parts.retain(|(n, _)| n != name);
+        if let Some(data) = data {
+            parts.push((name.to_string(), data.to_vec()));
+        }
+    }
+    let parts: Vec<(&str, &[u8])> = parts
+        .iter()
+        .map(|(name, data)| (name.as_str(), data.as_slice()))
+        .collect();
+    raw_package(&parts)
+}
+
+#[test]
+fn drawings_from_excel() {
+    let bytes = excel_package(&[]);
+    keep("excel-style-drawings.xlsx", &bytes);
+    let wb = load(&bytes);
+    assert_eq!(value(&wb, 0, "A1"), Value::Number(42.0));
+    let sheet = &wb.sheets[0];
+    let names: Vec<&str> = sheet.drawings.iter().map(|d| d.name.as_str()).collect();
+    // The linked picture, the metafile and the group are left out; of the
+    // choice, the shape is taken and not its fallback. Two drawings of one
+    // name: the second gets another.
+    assert_eq!(
+        names,
+        [
+            "Rectangle 1",
+            "ZoneTexte 2",
+            "Connecteur droit avec flèche 4",
+            "Image 3",
+            "Ellipse 8",
+            "Organigramme : Processus 9",
+            "Forme libre 10",
+            "Rectangle 1 8",
+        ]
+    );
+    assert!(sheet.charts.is_empty());
+    let frame = |name: &str| {
+        let f = sheet.drawing_frame(named(&wb, 0, name));
+        (f.x, f.y, f.width, f.height)
+    };
+    let look = |name: &str| named(&wb, 0, name).as_shape().unwrap().clone();
+
+    // A new shape of Excel 2013 to 2021: the theme's first accent, its
+    // outline a shade of it one point wide, white text.
+    let d = named(&wb, 0, "Rectangle 1");
+    assert_eq!(frame("Rectangle 1"), (64.0, 20.0, 128.0, 80.0));
+    assert_eq!(d.placement, Placement::MoveAndSize);
+    assert!(d.locked && d.print && !d.lock_aspect && d.alt_text.is_empty());
+    let s = look("Rectangle 1");
+    assert_eq!(s.preset, ShapePreset::Rect);
+    assert!(!s.text_box);
+    assert_eq!(s.fill, Some(Color(0x4472C4)));
+    assert_eq!(s.outline, Some(Outline::solid(Color(0x172C51), 1.0)));
+    // One font for the whole text: that of its first run.
+    assert_eq!(s.text, "Bonjour tout le monde\n");
+    assert_eq!((s.font.size, s.font.bold), (22, false));
+    assert_eq!(s.font.color, Some(Color(0xFFFFFF)));
+    assert_eq!((s.align, s.anchor), (TextAlign::Left, TextAnchor::Top));
+
+    // A text box: white, a grey hairline, black text; a line break is a
+    // paragraph here.
+    let s = look("ZoneTexte 2");
+    assert!(s.text_box);
+    assert_eq!(s.fill, Some(Color(0xFFFFFF)));
+    assert_eq!(s.outline, Some(Outline::solid(Color(0xBCBCBC), 0.75)));
+    assert_eq!(s.text, "Une note\nsur deux lignes");
+    assert_eq!(s.font.color, None);
+    assert_eq!(named(&wb, 0, "ZoneTexte 2").placement, Placement::MoveOnly);
+    assert_eq!(frame("ZoneTexte 2"), (256.0, 20.0, 128.0, 40.0));
+
+    // An arrow: a connector, half a point wide in this theme.
+    let d = named(&wb, 0, "Connecteur droit avec flèche 4");
+    let s = look(&d.name);
+    assert_eq!(s.preset, ShapePreset::Line);
+    assert_eq!(s.fill, None);
+    assert_eq!(
+        s.outline,
+        Some(Outline {
+            end: LineEnd::Triangle,
+            ..Outline::solid(Color(0x4472C4), 0.5)
+        })
+    );
+    assert!(d.flip_v && !d.flip_h);
+    assert_eq!((s.align, s.anchor), (TextAlign::Center, TextAnchor::Middle));
+
+    // The picture stands on its side in the anchor: 100 × 40 before the
+    // turn, about the same centre.
+    let d = named(&wb, 0, "Image 3");
+    assert_eq!(d.rotation, 90.0);
+    assert_eq!(frame("Image 3"), (290.0, 130.0, 100.0, 40.0));
+    assert_eq!(d.alt_text, "Un logo");
+    assert!(d.lock_aspect);
+    assert_eq!(d.placement, Placement::MoveOnly);
+    let image = d.as_picture().unwrap();
+    assert_eq!((image.format, image.pixels), (ImageFormat::Png, (48, 32)));
+    assert_eq!(&*image.data, logo().as_slice());
+
+    assert_eq!(look("Ellipse 8").preset, ShapePreset::Ellipse);
+    assert_eq!(frame("Ellipse 8"), (512.0, 20.0, 64.0, 40.0));
+
+    // One corner and a size; a geometry the engine does not have is a
+    // rectangle, a gradient its first colour, a pattern its foreground.
+    let d = named(&wb, 0, "Organigramme : Processus 9");
+    assert_eq!(d.placement, Placement::MoveOnly);
+    assert!(!d.locked && d.print);
+    assert_eq!(frame(&d.name), (64.0, 160.0, 100.0, 50.0));
+    let s = look(&d.name);
+    assert_eq!(s.preset, ShapePreset::Rect);
+    assert_eq!(s.fill, Some(Color(0xFF0000)));
+    assert_eq!(s.outline, Some(Outline::solid(Color(0x00FF00), 2.0)));
+
+    // A place on the sheet and a size.
+    let d = named(&wb, 0, "Forme libre 10");
+    assert_eq!(d.placement, Placement::Fixed);
+    assert!(d.locked && !d.print);
+    assert_eq!(frame(&d.name), (500.0, 200.0, 50.0, 50.0));
+    let s = look(&d.name);
+    assert_eq!(s.fill, None);
+    assert_eq!(
+        s.outline,
+        Some(Outline {
+            dash: Dash::Dash,
+            ..Outline::solid(Color(0x00FF00), 3.0)
+        })
+    );
+    assert_eq!(s.text, "libre");
+    assert_eq!(
+        (s.font.size, s.font.italic, s.font.strike),
+        (40, true, true)
+    );
+    assert_eq!(s.font.underline, Underline::Double);
+    assert_eq!(s.font.color, Some(Color(0x112233)));
+    // A font of the theme is the font of the workbook.
+    assert_eq!(s.font.name, opensheet_engine::style::Font::default().name);
+    assert_eq!((s.align, s.anchor), (TextAlign::Center, TextAnchor::Middle));
+
+    // Saved by us and read again, nothing moves.
+    let ours = to_bytes(&wb);
+    keep("excel-style-drawings-saved.xlsx", &ours);
+    let again = load(&ours);
+    assert_same_drawings(&wb, &again);
+    assert_eq!(
+        part_names(&ours)
+            .iter()
+            .filter(|n| n.starts_with("xl/media/"))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_bad_drawing_costs_only_itself() {
+    let drawing = "xl/drawings/drawing1.xml";
+    let load_with = |replace: &[(&str, Option<&[u8]>)], what: &str| {
+        let wb = load(&excel_package(replace));
+        assert_eq!(wb.sheets.len(), 1, "{what}");
+        assert_eq!(value(&wb, 0, "A1"), Value::Number(42.0), "{what}");
+        // And it is saved as such.
+        let again = load(&to_bytes(&wb));
+        assert_same_drawings(&wb, &again);
+        wb
+    };
+    let count = |wb: &Workbook| {
+        let pictures = wb.sheets[0]
+            .drawings
+            .iter()
+            .filter(|d| d.as_picture().is_some())
+            .count();
+        (wb.sheets[0].drawings.len() - pictures, pictures)
+    };
+    assert_eq!(count(&load_with(&[], "as it is")), (7, 1));
+    assert_eq!(
+        count(&load_with(&[(drawing, None)], "no drawing part")),
+        (0, 0)
+    );
+    assert_eq!(
+        count(&load_with(
+            &[("xl/worksheets/_rels/sheet1.xml.rels", None)],
+            "a sheet that leads nowhere"
+        )),
+        (0, 0)
+    );
+    // Without their image, pictures are left out; the shapes stay.
+    assert_eq!(
+        count(&load_with(
+            &[("xl/drawings/_rels/drawing1.xml.rels", None)],
+            "a drawing that leads nowhere"
+        )),
+        (7, 0)
+    );
+    assert_eq!(
+        count(&load_with(&[("xl/media/image1.png", None)], "no image")),
+        (7, 0)
+    );
+    assert_eq!(
+        count(&load_with(
+            &[(
+                "xl/media/image1.png",
+                Some(b"\x89PNG\r\n\x1a\n and no more")
+            )],
+            "half an image"
+        )),
+        (7, 0)
+    );
+    assert_eq!(
+        count(&load_with(
+            &[("xl/media/image1.png", Some(&jpeg()))],
+            "an image that is not what its name says"
+        )),
+        (7, 1)
+    );
+    // No theme: the colours of the one Excel assumes.
+    let wb = load_with(&[("xl/theme/theme1.xml", None)], "no theme");
+    assert_eq!(count(&wb), (7, 1));
+    assert!(
+        named(&wb, 0, "Rectangle 1")
+            .as_shape()
+            .unwrap()
+            .fill
+            .is_some()
+    );
+
+    for junk in [
+        "not xml at all",
+        "<xdr:wsDr><xdr:twoCellAnchor><xdr:sp>",
+        "<wsDr><twoCellAnchor editAs=\"bogus\"><from><col>99999999</col><colOff>1e999</colOff><row>-4</row><rowOff>NaN</rowOff></from><to><col>0</col><row>0</row></to><sp><nvSpPr><cNvPr id=\"x\" name=\"&#0;\"/></nvSpPr><spPr><xfrm rot=\"1e999\" flipH=\"2\"><off x=\"-1\" y=\"-1\"/></xfrm><prstGeom/><solidFill><srgbClr val=\"zz\"><shade val=\"1e999\"/><tint/></srgbClr></solidFill><ln w=\"-5\"><solidFill><schemeClr val=\"none\"/></solidFill><prstDash val=\"bogus\"/><headEnd type=\"bogus\"/></ln></spPr><style><lnRef idx=\"4000000000\"><srgbClr val=\"010203\"/></lnRef><fillRef idx=\"-1\"/><fontRef/></style><txBody><bodyPr anchor=\"bogus\"/><p><pPr algn=\"bogus\"/><r><rPr sz=\"1e999\" u=\"bogus\" strike=\"bogus\"><latin typeface=\"\"/></rPr><t>x</t></r><fld><t>y</t></fld><br/></p><p/></txBody></sp></twoCellAnchor>",
+        "<wsDr><oneCellAnchor><from/><sp/></oneCellAnchor><oneCellAnchor><ext cx=\"1e999\" cy=\"-1\"/><pic><blipFill><blip embed=\"rId1\"/></blipFill></pic></oneCellAnchor><absoluteAnchor><pos x=\"9e99\" y=\"9e99\"/><ext cx=\"9e99\" cy=\"9e99\"/><pic><blipFill><blip embed=\"rId1\"/></blipFill><spPr><xfrm rot=\"5400000\"/></spPr></pic></absoluteAnchor><absoluteAnchor><pos/><sp/></absoluteAnchor></wsDr>",
+    ] {
+        let wb = load_with(&[(drawing, Some(junk.as_bytes()))], junk);
+        for d in &wb.sheets[0].drawings {
+            let frame = wb.sheets[0].drawing_frame(d);
+            assert!(
+                [frame.x, frame.y, frame.width, frame.height]
+                    .iter()
+                    .all(|v| v.is_finite() && *v >= 0.0),
+                "{junk}: {frame:?}"
+            );
+            assert!(d.rotation.is_finite());
+        }
+    }
+    // Wrappers nested without end are not followed to the bottom.
+    let deep = format!(
+        "<wsDr><twoCellAnchor>{}<sp/>{}</twoCellAnchor></wsDr>",
+        "<AlternateContent><Choice>".repeat(5_000),
+        "</Choice></AlternateContent>".repeat(5_000)
+    );
+    assert_eq!(
+        count(&load_with(&[(drawing, Some(deep.as_bytes()))], "deep")),
+        (0, 0)
+    );
+}
+
+#[test]
+fn damaged_drawing_parts_never_panic() {
+    // Cut the drawing part short at every character, in a package laid
+    // out like Excel's: the workbook loads with the drawings that are
+    // whole.
+    let drawing = excel_drawing();
+    let mut seen = 0;
+    for cut in (0..drawing.len()).filter(|i| drawing.is_char_boundary(*i)) {
+        let wb = load(&excel_package(&[(
+            "xl/drawings/drawing1.xml",
+            Some(&drawing.as_bytes()[..cut]),
+        )]));
+        assert_eq!(value(&wb, 0, "A1"), Value::Number(42.0));
+        assert!(wb.sheets[0].drawings.len() <= 8, "cut at {cut}");
+        seen += wb.sheets[0].drawings.len();
+        if cut % 97 == 0 {
+            load(&to_bytes(&wb));
+        }
+    }
+    assert!(seen > 20_000, "{seen}");
+
+    // The same at many places in a package of ours, in the parts of the
+    // sheet with pictures and a chart, and in an image.
+    let ours = to_bytes(&sample());
+    let names = part_names(&ours);
+    let parts: Vec<(String, Vec<u8>)> = names
+        .iter()
+        .map(|n| (n.clone(), raw_part(&ours, n)))
+        .collect();
+    let mut attempts = 0;
+    for (victim, data) in parts.iter().filter(|(name, _)| {
+        name == "xl/drawings/drawing2.xml"
+            || name == "xl/drawings/_rels/drawing2.xml.rels"
+            || name == "xl/worksheets/_rels/sheet3.xml.rels"
+            || name == "xl/media/image1.png"
+    }) {
+        let text = String::from_utf8(data.clone()).ok();
+        let step = if text.is_some() { 7 } else { 3 };
+        for cut in (0..data.len()).step_by(step) {
+            if text.as_ref().is_some_and(|t| !t.is_char_boundary(cut)) {
+                continue;
+            }
+            let damaged: Vec<(&str, &[u8])> = parts
+                .iter()
+                .map(|(n, d)| {
+                    (
+                        n.as_str(),
+                        if n == victim { &d[..cut] } else { d.as_slice() },
+                    )
+                })
+                .collect();
+            let wb = read_xlsx(Cursor::new(raw_package(&damaged)), Locale::en())
+                .expect("the rest of the workbook loads");
+            assert_eq!(wb.sheets.len(), 4);
+            assert_eq!(wb.sheets[0].drawings.len(), 18, "{victim} cut at {cut}");
+            assert!(wb.sheets[1].drawings.len() <= 6, "{victim} cut at {cut}");
+            attempts += 1;
+        }
+    }
+    assert!(attempts > 1500, "{attempts}");
 }

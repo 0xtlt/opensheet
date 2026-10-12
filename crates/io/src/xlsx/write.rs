@@ -855,8 +855,8 @@ impl SheetWriter<'_> {
         // printOptions, pageMargins, pageSetup, headerFooter, rowBreaks,
         // colBreaks
         page::write(&mut x, &sheet.page);
-        // drawing, legacyDrawing: what lives in parts of its own (charts,
-        // the boxes of notes).
+        // drawing, legacyDrawing, tableParts: what lives in parts of its
+        // own (charts, pictures and shapes; the boxes of notes; tables).
         SheetLinks::of(sheet).push_elements(&mut x);
         // extLst: one `<ext>` per feature, in the order Excel writes them
         // (conditional formats, then data validations).
