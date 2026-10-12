@@ -12,6 +12,7 @@ use super::{
     DASHES, DISPLAY_UNITS, EMU_PER_PT, EMU_PER_PX, FRAME_GREY, LABEL_POSITIONS, LEGACY_MARKER_SIZE,
     LEGACY_MARKERS, MARKERS, OUTLINE_WIDTH, Plot, SLICE_OUTLINE_WIDTH, TICK_LABELS, TICK_MARKS,
     TREND_WIDTH, Track, foreign, innermost_level, is_stroked, list_separator, named, scheme_slot,
+    write::MINOR_GREY,
 };
 use crate::xlsx::color::{Palette, adjust_luminance, blend, parse_rgb};
 use crate::xlsx::formula::from_file_text;
@@ -20,9 +21,9 @@ use opensheet_engine::ast::{Expr, RefExpr};
 use opensheet_engine::chart::{
     Axes, Axis, AxisCrossing, BlanksAs, Chart, ChartKind, ChartTitle, DEFAULT_CHART_SIZE,
     DEFAULT_HOLE_SIZE, Dash, DataLabels, DataTable, DisplayUnit, ErrorAmount, ErrorBars,
-    ErrorDirection, Family, Fill, ForeignChart, Grouping, LegendPos, Line, Marker, MarkerShape,
-    PointFormat, Series, SeriesName, ShapeFormat, TickMark, TrendKind, Trendline, View3D,
-    palette_color,
+    ErrorDirection, Family, Fill, ForeignChart, Grouping, LabelOffset, LegendPos, Line,
+    ManualLayout, Marker, MarkerShape, PointFormat, Series, SeriesName, ShapeFormat, TextFormat,
+    TickMark, TrendKind, Trendline, View3D, palette_color,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
 use opensheet_engine::{Color, Locale};
@@ -321,11 +322,66 @@ fn parse_series_name<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> SeriesName {
 
 // ---- text ------------------------------------------------------------------------
 
-/// The text of a DrawingML text body: the runs of a paragraph joined, one
-/// line per paragraph.
-fn parse_rich<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> String {
+/// Run properties (`a:defRPr`, `a:rPr`): what they say goes into `text`,
+/// what they leave out stays as it is. A font of the theme (`+mn-lt`) is
+/// no font of its own.
+fn parse_run_properties<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+    text: &mut TextFormat,
+) {
+    if let Some(size) = tag.attr_f64("sz").filter(|s| (100.0..=400_000.0).contains(s)) {
+        text.size = Some((size / 100.0) as f32);
+    }
+    if let Some(bold) = tag.attr_bool("b") {
+        text.bold = Some(bold);
+    }
+    if let Some(italic) = tag.attr_bool("i") {
+        text.italic = Some(italic);
+    }
+    if let Some(underline) = tag.attr("u") {
+        text.underline = Some(underline != "none");
+    }
+    each_child(r, tag, |r, t| match t.name {
+        "solidFill" => {
+            if let Some(color) = parse_solid_fill(r, t, palette) {
+                text.color = Some(color);
+            }
+        }
+        "latin" => {
+            if let Some(font) = t.attr("typeface").filter(|f| !f.is_empty() && !f.starts_with('+')) {
+                text.font = Some(Arc::from(&*font));
+            }
+            r.skip(t);
+        }
+        _ => r.skip(t),
+    });
+}
+
+/// Sizes Excel gives the texts of a chart, in points: its title, the
+/// titles of its axes, everything else.
+const TITLE_POINTS: f32 = 14.0;
+const AXIS_TITLE_POINTS: f32 = 10.0;
+const LABEL_POINTS: f32 = 9.0;
+/// The dark grey Excel writes them in.
+const TEXT_GREY: Color = Color(0x595959);
+
+/// A DrawingML text body (`c:rich`, `c:txPr`): its text, the runs of a
+/// paragraph joined, one line per paragraph; and its font, which is what
+/// the first paragraph says of its runs and the first run of itself.
+/// `points` is the size Excel gives such a text: like its regular dark
+/// grey letters, it is automatic, said or not.
+fn parse_rich<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+    points: f32,
+) -> (String, TextFormat) {
     let mut text = String::new();
+    let mut format = TextFormat::default();
     let mut paragraphs = 0;
+    let mut runs = 0;
     each_child(r, tag, |r, t| match t.name {
         "p" => {
             if paragraphs > 0 {
@@ -333,10 +389,18 @@ fn parse_rich<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> String {
             }
             paragraphs += 1;
             each_child(r, t, |r, t| match t.name {
-                "r" | "fld" => each_child(r, t, |r, t| match t.name {
-                    "t" => text.push_str(&r.text(t)),
+                "pPr" if paragraphs == 1 => each_child(r, t, |r, t| match t.name {
+                    "defRPr" => parse_run_properties(r, t, palette, &mut format),
                     _ => r.skip(t),
                 }),
+                "r" | "fld" => {
+                    runs += 1;
+                    each_child(r, t, |r, t| match t.name {
+                        "rPr" if runs == 1 => parse_run_properties(r, t, palette, &mut format),
+                        "t" => text.push_str(&r.text(t)),
+                        _ => r.skip(t),
+                    })
+                }
                 "br" => {
                     text.push('\n');
                     r.skip(t);
@@ -346,25 +410,111 @@ fn parse_rich<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> String {
         }
         _ => r.skip(t),
     });
-    text
+    format.size = format.size.filter(|s| (s - points).abs() > 0.001);
+    format.bold = format.bold.filter(|on| *on);
+    format.italic = format.italic.filter(|on| *on);
+    format.underline = format.underline.filter(|on| *on);
+    format.color = format.color.filter(|c| *c != TEXT_GREY);
+    (text, format)
+}
+
+/// `<c:layout>` as a file has it.
+#[derive(Default)]
+struct RawLayout {
+    /// The rectangle is the inside of the plot area.
+    inner: bool,
+    /// `x`, `y`: measured from the edges of the chart rather than from
+    /// where the element would be by itself.
+    x_edge: bool,
+    y_edge: bool,
+    /// `w`, `h`: the right and the bottom edges rather than a size.
+    w_edge: bool,
+    h_edge: bool,
+    x: Option<f64>,
+    y: Option<f64>,
+    w: Option<f64>,
+    h: Option<f64>,
+}
+
+fn parse_layout<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawLayout> {
+    let mut layout = None;
+    each_child(r, tag, |r, t| match t.name {
+        "manualLayout" => {
+            let mut raw = RawLayout::default();
+            each_child(r, t, |r, t| match t.name {
+                "layoutTarget" => raw.inner = val(r, t).as_deref() == Some("inner"),
+                "xMode" => raw.x_edge = val(r, t).as_deref() == Some("edge"),
+                "yMode" => raw.y_edge = val(r, t).as_deref() == Some("edge"),
+                "wMode" => raw.w_edge = val(r, t).as_deref() == Some("edge"),
+                "hMode" => raw.h_edge = val(r, t).as_deref() == Some("edge"),
+                "x" => raw.x = number(r, t),
+                "y" => raw.y = number(r, t),
+                "w" => raw.w = number(r, t),
+                "h" => raw.h = number(r, t),
+                _ => r.skip(t),
+            });
+            layout = Some(raw);
+        }
+        _ => r.skip(t),
+    });
+    layout
+}
+
+impl RawLayout {
+    /// The corner an element was put at, and the size it was given when
+    /// it can have one. `None` for what the model has no place for: an
+    /// element shifted from where it would be by itself.
+    fn placed(&self, sized: bool) -> Option<ManualLayout> {
+        let (x, y) = (self.x?, self.y?);
+        if !self.x_edge || !self.y_edge {
+            return None;
+        }
+        let size = |v: Option<f64>, edge: bool, from: f64| {
+            v.map(|v| if edge { v - from } else { v }).filter(|v| sized && *v > 0.0)
+        };
+        Some(ManualLayout {
+            x,
+            y,
+            w: size(self.w, self.w_edge, x),
+            h: size(self.h, self.h_edge, y),
+        })
+    }
+
+    /// How far a data label was dragged from its point.
+    fn shift(&self) -> Option<(f64, f64)> {
+        if self.x_edge || self.y_edge {
+            return None;
+        }
+        let (dx, dy) = (self.x.unwrap_or(0.0), self.y.unwrap_or(0.0));
+        (dx != 0.0 || dy != 0.0).then_some((dx, dy))
+    }
 }
 
 struct Title {
     text: ChartTitle,
     /// Drawn over the plot.
     overlay: bool,
+    format: TextFormat,
+    layout: Option<ManualLayout>,
 }
 
 /// `<c:title>`: text typed into the chart, the text of the cell the title
-/// is linked to, or (no text at all) the title Excel makes up.
-fn parse_title<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Title {
+/// is linked to, or (no text at all) the title Excel makes up. `points`
+/// is the size Excel gives such a title.
+fn parse_title<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, points: f32) -> Title {
     let mut title = Title {
         text: ChartTitle::Auto,
         overlay: false,
+        format: TextFormat::default(),
+        layout: None,
     };
     each_child(r, tag, |r, t| match t.name {
         "tx" => each_child(r, t, |r, t| match t.name {
-            "rich" => title.text = ChartTitle::Text(parse_rich(r, t)),
+            "rich" => {
+                let (text, format) = parse_rich(r, t, palette, points);
+                title.text = ChartTitle::Text(text);
+                title.format = format;
+            }
             "strRef" => {
                 if let (_, Some(text)) = parse_str_ref(r, t) {
                     title.text = ChartTitle::Text(text);
@@ -372,7 +522,12 @@ fn parse_title<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Title {
             }
             _ => r.skip(t),
         }),
+        "layout" => title.layout = parse_layout(r, t).and_then(|l| l.placed(false)),
         "overlay" => title.overlay = flag(r, t),
+        // The font of a title without a text of its own.
+        "txPr" if title.text == ChartTitle::Auto => {
+            title.format = parse_rich(r, t, palette, points).1
+        }
         _ => r.skip(t),
     });
     title
@@ -383,14 +538,18 @@ struct Legend {
     overlay: bool,
     /// Entries deleted from the legend.
     hidden: Vec<u32>,
+    format: TextFormat,
+    layout: Option<ManualLayout>,
 }
 
-fn parse_legend<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Legend {
+fn parse_legend<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Legend {
     let mut legend = Legend {
         // A legend that does not say where it is sits on the right.
         pos: LegendPos::Right,
         overlay: false,
         hidden: Vec::new(),
+        format: TextFormat::default(),
+        layout: None,
     };
     each_child(r, tag, |r, t| match t.name {
         "legendPos" => {
@@ -416,7 +575,9 @@ fn parse_legend<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Legend {
                 legend.hidden.push(index as u32);
             }
         }
+        "layout" => legend.layout = parse_layout(r, t).and_then(|l| l.placed(true)),
         "overlay" => legend.overlay = flag(r, t),
+        "txPr" => legend.format = parse_rich(r, t, palette, LABEL_POINTS).1,
         _ => r.skip(t),
     });
     // An entry is deleted once.
@@ -426,9 +587,15 @@ fn parse_legend<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Legend {
 }
 
 /// `<c:dLbls>`: what the labels show, or `None` when they are deleted or
-/// show nothing. Labels of single points (`dLbl`) are not looked at.
-fn parse_labels<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<DataLabels> {
+/// show nothing; and the labels that were dragged away from their points.
+/// What else the label of a single point (`dLbl`) says is not looked at.
+fn parse_labels<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+) -> (Option<DataLabels>, Vec<LabelOffset>) {
     let mut deleted = false;
+    let mut moved: Vec<LabelOffset> = Vec::new();
     let mut labels = DataLabels {
         value: false,
         leader_lines: false,
@@ -436,6 +603,22 @@ fn parse_labels<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<DataLabels> {
     };
     each_child(r, tag, |r, t| match t.name {
         "delete" => deleted = flag(r, t),
+        "dLbl" => {
+            let (mut index, mut shift) = (None, None);
+            each_child(r, t, |r, t| match t.name {
+                "idx" => index = integer(r, t, 0, u32::MAX as i64),
+                "layout" => shift = parse_layout(r, t).and_then(|l| l.shift()),
+                _ => r.skip(t),
+            });
+            if let (Some(index), Some((dx, dy))) = (index, shift) {
+                moved.push(LabelOffset {
+                    index: index as u32,
+                    dx,
+                    dy,
+                });
+            }
+        }
+        "txPr" => labels.text = parse_rich(r, t, palette, LABEL_POINTS).1,
         "numFmt" => {
             if t.attr_bool("sourceLinked") != Some(true) {
                 labels.number_format = t.attr("formatCode").map(Cow::into_owned);
@@ -457,7 +640,14 @@ fn parse_labels<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<DataLabels> {
         "showLeaderLines" => labels.leader_lines = flag(r, t),
         _ => r.skip(t),
     });
-    (!deleted && labels.any()).then_some(labels)
+    // In order, and one for each point: the first the file has.
+    moved.sort_by_key(|o| o.index);
+    moved.dedup_by_key(|o| o.index);
+    let labels = (!deleted && labels.any()).then_some(labels);
+    if labels.is_none() {
+        moved.clear();
+    }
+    (labels, moved)
 }
 
 // ---- colours and lines -----------------------------------------------------------
@@ -817,6 +1007,7 @@ struct RawSeries {
     explosion: u32,
     /// Labels of its own: `Some(None)` when they show nothing.
     labels: Option<Option<DataLabels>>,
+    label_offsets: Vec<LabelOffset>,
     trendlines: Vec<RawTrend>,
     error_bars: Vec<ErrorBars>,
 }
@@ -836,6 +1027,7 @@ fn parse_series<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Raw
         points: Vec::new(),
         explosion: 0,
         labels: None,
+        label_offsets: Vec::new(),
         trendlines: Vec::new(),
         error_bars: Vec::new(),
     };
@@ -850,7 +1042,11 @@ fn parse_series<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Raw
             s.explosion = integer(r, t, 0, u32::MAX as i64).map_or(0, |n| n as u32);
         }
         "dPt" => s.points.extend(parse_point(r, t, palette)),
-        "dLbls" => s.labels = Some(parse_labels(r, t)),
+        "dLbls" => {
+            let (labels, moved) = parse_labels(r, t, palette);
+            s.labels = Some(labels);
+            s.label_offsets = moved;
+        }
         "trendline" => s.trendlines.push(parse_trendline(r, t, palette)),
         "errBars" => s.error_bars.extend(parse_error_bars(r, t)),
         "cat" | "xVal" => s.categories = parse_data_ref(r, t),
@@ -959,7 +1155,7 @@ fn parse_plot<'a>(
         "scatterStyle" | "radarStyle" => style = val(r, t),
         "varyColors" => p.vary_colors = Some(flag(r, t)),
         "ser" => p.series.push(parse_series(r, t, palette)),
-        "dLbls" => p.labels = parse_labels(r, t),
+        "dLbls" => p.labels = parse_labels(r, t, palette).0,
         "gapWidth" => p.gap_width = integer(r, t, 0, 500).map(|n| n as u32),
         "overlap" => p.overlap = integer(r, t, -100, 100).map(|n| n as i32),
         "firstSliceAng" => p.first_slice = integer(r, t, 0, 360).map(|n| n as u32),
@@ -1195,9 +1391,23 @@ struct RawAxis {
     crosses: AxisCrossing,
     /// Runs along the bottom or the top of the plot.
     horizontal: Option<bool>,
+    /// The line of the axis. What is automatic about it depends on the
+    /// chart the axis is in.
+    line: Option<Stroke>,
 }
 
-fn parse_axis<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawAxis {
+/// `<c:majorGridlines>`, `<c:minorGridlines>`: how the lines are drawn,
+/// Excel's own thin grey being automatic.
+fn parse_gridlines<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, automatic: Color) -> Line {
+    let mut stroke = None;
+    each_child(r, tag, |r, t| match t.name {
+        "spPr" => stroke = parse_shape(r, t, palette).line,
+        _ => r.skip(t),
+    });
+    line_of(stroke, true, automatic, OUTLINE_WIDTH)
+}
+
+fn parse_axis<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawAxis {
     let element = match tag.name {
         "valAx" => AxisElement::Value,
         "serAx" => AxisElement::Series,
@@ -1213,6 +1423,7 @@ fn parse_axis<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawAxis {
         },
         crosses: AxisCrossing::Auto,
         horizontal: None,
+        line: None,
     };
     let scale = element == AxisElement::Value;
     let a = &mut raw.axis;
@@ -1229,18 +1440,26 @@ fn parse_axis<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawAxis {
         "axPos" => raw.horizontal = val(r, t).map(|side| matches!(&*side, "b" | "t")),
         "majorGridlines" => {
             a.major_gridlines = true;
-            r.skip(t);
+            a.major_gridline = parse_gridlines(r, t, palette, FRAME_GREY);
         }
         "minorGridlines" => {
             a.minor_gridlines = true;
-            r.skip(t);
+            a.minor_gridline = parse_gridlines(r, t, palette, MINOR_GREY);
         }
         "title" => {
-            a.title = match parse_title(r, t).text {
+            let title = parse_title(r, t, palette, AXIS_TITLE_POINTS);
+            a.title = match title.text {
                 ChartTitle::Text(text) => Some(text),
                 _ => None,
+            };
+            // The model has titles with a text only.
+            if a.title.is_some() {
+                a.title_text = title.format;
+                a.title_layout = title.layout;
             }
         }
+        "spPr" => raw.line = parse_shape(r, t, palette).line,
+        "txPr" => a.text = parse_rich(r, t, palette, LABEL_POINTS).1,
         "numFmt" => {
             if t.attr_bool("sourceLinked") != Some(true) {
                 a.number_format = t.attr("formatCode").map(Cow::into_owned);
@@ -1294,7 +1513,7 @@ fn parse_axis<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawAxis {
             // Without a unit there is no label to show or hide.
             a.display_unit_label = label || a.display_unit == DisplayUnit::None;
         }
-        // The formatting of line and labels, label skipping, extensions.
+        // Label skipping, extensions.
         _ => r.skip(t),
     });
     raw
@@ -1352,6 +1571,13 @@ fn axis_of(own: Option<&RawAxis>, other: Option<&RawAxis>, default: Axis) -> Axi
     }
 }
 
+/// The line of an axis in the model's terms. `lined`: whether an axis in
+/// that place has a line when nobody says: all but the value scale of a
+/// chart with categories.
+fn axis_line(raw: Option<&RawAxis>, lined: bool) -> Line {
+    line_of(raw.and_then(|a| a.line), lined, FRAME_GREY, OUTLINE_WIDTH)
+}
+
 // ---- chart -----------------------------------------------------------------------
 
 /// `<c:view3D>`, as far as it says.
@@ -1405,6 +1631,7 @@ struct RawChart {
     plots: Vec<RawPlot>,
     axes: Vec<RawAxis>,
     table: Option<DataTable>,
+    plot_layout: Option<RawLayout>,
     plot_area: Shape,
     legend: Option<Legend>,
     blanks: BlanksAs,
@@ -1418,20 +1645,23 @@ fn parse_raw(xml: &str, palette: &Palette) -> RawChart {
         match r.next() {
             Event::Open(t) if t.name == "chartSpace" => {}
             Event::Open(t) if t.name == "chart" => each_child(&mut r, &t, |r, t| match t.name {
-                "title" => raw.title = Some(parse_title(r, t)),
+                "title" => raw.title = Some(parse_title(r, t, palette, TITLE_POINTS)),
                 "autoTitleDeleted" => raw.title_deleted = flag(r, t),
                 "view3D" => raw.view = Some(parse_view(r, t)),
                 "plotArea" => each_child(r, t, |r, t| match t.name {
-                    "catAx" | "dateAx" | "valAx" | "serAx" => raw.axes.push(parse_axis(r, t)),
+                    "catAx" | "dateAx" | "valAx" | "serAx" => {
+                        raw.axes.push(parse_axis(r, t, palette))
+                    }
+                    "layout" => raw.plot_layout = parse_layout(r, t),
                     "dTable" => raw.table = Some(parse_table(r, t)),
                     "spPr" => raw.plot_area = parse_shape(r, t, palette),
-                    // A chart type, or the layout and extensions.
+                    // A chart type, or extensions.
                     element => match plot_of(element) {
                         Some(base) => raw.plots.push(parse_plot(r, t, base, palette)),
                         None => r.skip(t),
                     },
                 }),
-                "legend" => raw.legend = Some(parse_legend(r, t)),
+                "legend" => raw.legend = Some(parse_legend(r, t, palette)),
                 "dispBlanksAs" => {
                     raw.blanks = match val(r, t).as_deref() {
                         Some("zero") => BlanksAs::Zero,
@@ -1541,8 +1771,12 @@ impl RawChart {
         if !kind.is_round() {
             let defaults = Axes::for_kind(kind);
             let pair = axes_of(&self.axes, &plots[0]);
+            // Both axes of an X/Y chart are scales with a line.
+            let scales = plots[0].plot.is_xy();
             chart.axes.category = axis_of(pair.category, pair.value, defaults.category);
+            chart.axes.category.line = axis_line(pair.category, true);
             chart.axes.value = axis_of(pair.value, pair.category, defaults.value);
+            chart.axes.value.line = axis_line(pair.value, scales);
             if let Some(at) = secondary.iter().position(|s| *s) {
                 let second = axes_of(&self.axes, &plots[at]);
                 // A category axis shared with the primary series is no
@@ -1575,6 +1809,8 @@ impl RawChart {
                     },
                     None => defaults.secondary_value,
                 };
+                chart.axes.secondary_category.line = axis_line(category, true);
+                chart.axes.secondary_value.line = axis_line(second.value, scales);
             }
         }
 
@@ -1683,6 +1919,9 @@ impl RawChart {
             if own_labels != chart_wide.as_ref().map(|l| drawn_as.labels(l)) {
                 series.labels = Some(own_labels.unwrap_or_else(DataLabels::none));
             }
+            if chart.labels_for(&series).is_some() {
+                series.label_offsets = d.raw.label_offsets;
+            }
             if drawn_as.takes_trendlines() {
                 series.trendlines = d
                     .raw
@@ -1760,6 +1999,8 @@ impl RawChart {
             Some(title) => {
                 chart.title = title.text;
                 chart.title_overlay = title.overlay;
+                chart.title_text = title.format;
+                chart.title_layout = title.layout;
             }
             None if self.title_deleted || series_in_file != 1 => chart.title = ChartTitle::None,
             None => chart.title = ChartTitle::Auto,
@@ -1768,6 +2009,14 @@ impl RawChart {
             chart.legend = legend.pos;
             chart.legend_overlay = legend.overlay;
             chart.legend_hidden = legend.hidden;
+            chart.legend_text = legend.format;
+            chart.legend_layout = legend.layout;
+        }
+        // A plot area put somewhere has a size: without one, it is where
+        // the chart puts it.
+        if let Some(layout) = self.plot_layout.as_ref() {
+            chart.plot_layout = layout.placed(true).filter(|m| m.w.is_some() && m.h.is_some());
+            chart.plot_layout_outer = chart.plot_layout.is_some() && !layout.inner;
         }
         // The chart area is white in a thin grey frame unless told
         // otherwise, the plot area nothing at all.

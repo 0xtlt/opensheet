@@ -27,8 +27,9 @@ use crate::xlsx::xml::{XML_DECL, push_attr, push_cell_text, push_text};
 use opensheet_engine::ast::{CellRef, RefExpr};
 use opensheet_engine::chart::{
     Axis, AxisCrossing, BlanksAs, Chart, ChartKind, ChartTitle, DEFAULT_CHART_SIZE, Dash,
-    DataLabels, DisplayUnit, ErrorAmount, ErrorDirection, Family, Fill, Grouping, LegendPos, Line,
-    Marker, MarkerShape, Series, SeriesName, ShapeFormat, TrendKind, palette_color,
+    DataLabels, DisplayUnit, ErrorAmount, ErrorDirection, Family, Fill, Grouping, LabelOffset,
+    LegendPos, Line, ManualLayout, Marker, MarkerShape, Series, SeriesName, ShapeFormat,
+    TextFormat, TrendKind, palette_color,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::workbook::Content;
@@ -47,7 +48,7 @@ pub(crate) const CT_CHART: &str =
     "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
 
 /// Minor gridlines: lighter than the major ones.
-const MINOR_GREY: Color = Color(0xF2F2F2);
+pub(super) const MINOR_GREY: Color = Color(0xF2F2F2);
 /// Titles, labels and legends: dark grey rather than black.
 const TEXT_GREY: &str = "595959";
 /// A line that is not drawn.
@@ -224,10 +225,148 @@ fn hairline(color: Color) -> String {
     x
 }
 
-/// `<c:title>` of a chart or of an axis, in letters of that size (in
-/// hundredths of a point). Without a text it is the title Excel makes up.
-/// `upright` titles run along a vertical axis, from bottom to top.
-fn push_title(x: &mut String, text: Option<&str>, size: u32, upright: bool, overlay: bool) {
+/// The line of an axis or of its gridlines, in `<c:spPr>`: thin and of
+/// the colour `automatic` unless the model says otherwise.
+fn rule_xml(line: &Line, automatic: Color) -> String {
+    if line.shown == Some(false) {
+        return format!("<c:spPr>{NO_LINE}</c:spPr>");
+    }
+    let mut x = String::from("<c:spPr>");
+    push_stroke(
+        &mut x,
+        line.width.unwrap_or(OUTLINE_WIDTH),
+        line.color.unwrap_or(automatic),
+        line.dash,
+        false,
+    );
+    x.push_str("</c:spPr>");
+    x
+}
+
+/// Where an element of a chart is.
+#[derive(Clone, Copy, PartialEq)]
+enum Placed {
+    /// A title: a corner.
+    Corner,
+    /// The legend: a corner and, when it was resized, a size.
+    Frame,
+    /// The plot area: the rectangle between the axes, or (`false`) the box
+    /// around it and what its axes write.
+    Plot { inner: bool },
+}
+
+/// `<c:layout>` of an element put somewhere by hand, as Excel writes it:
+/// its edges measured from those of the chart.
+fn layout_xml(layout: &ManualLayout, placed: Placed) -> String {
+    let mut x = String::from("<c:layout><c:manualLayout>");
+    if let Placed::Plot { inner } = placed {
+        w!(
+            x,
+            "<c:layoutTarget val=\"{}\"/>",
+            if inner { "inner" } else { "outer" }
+        );
+    }
+    w!(
+        x,
+        "<c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"{}\"/><c:y val=\"{}\"/>",
+        num(layout.x),
+        num(layout.y)
+    );
+    if placed != Placed::Corner {
+        for (element, size) in [("w", layout.w), ("h", layout.h)] {
+            if let Some(size) = size.filter(|v| v.is_finite() && *v > 0.0) {
+                w!(x, "<c:{element} val=\"{}\"/>", num(size));
+            }
+        }
+    }
+    x.push_str("</c:manualLayout></c:layout>");
+    x
+}
+
+/// Whether a manual layout can be written: files hold plain numbers.
+fn placeable(layout: &&ManualLayout) -> bool {
+    layout.x.is_finite() && layout.y.is_finite()
+}
+
+/// Run properties (`a:defRPr`, `a:rPr`): what the format says, and
+/// `rest` (attributes the element always has, such as `lang`).
+/// `size` and `bold` are what stands for an automatic size and weight
+/// where they are spelled out all the same.
+fn run_properties(element: &str, text: &TextFormat, rest: &str, size: Option<u32>, bold: Option<bool>) -> String {
+    let mut x = format!("<a:{element}{rest}");
+    let size = text
+        .size
+        .filter(|s| s.is_finite())
+        .map(|s| (s.clamp(1.0, 4000.0) * 100.0).round() as u32)
+        .or(size);
+    if let Some(size) = size {
+        w!(x, " sz=\"{size}\"");
+    }
+    if let Some(bold) = text.bold.or(bold) {
+        w!(x, " b=\"{}\"", bold as u8);
+    }
+    if let Some(italic) = text.italic {
+        w!(x, " i=\"{}\"", italic as u8);
+    }
+    if let Some(underline) = text.underline {
+        w!(x, " u=\"{}\"", if underline { "sng" } else { "none" });
+    }
+    let font = text.font.as_deref().filter(|f| !f.is_empty());
+    if text.color.is_none() && font.is_none() {
+        x.push_str("/>");
+        return x;
+    }
+    x.push('>');
+    if let Some(color) = text.color {
+        x.push_str(&solid_fill(color));
+    }
+    if let Some(font) = font {
+        x.push_str("<a:latin typeface=\"");
+        push_attr(&mut x, font);
+        x.push_str("\"/>");
+    }
+    w!(x, "</a:{element}>");
+    x
+}
+
+/// `<c:txPr>` of the labels of an axis, of the legend or of data labels;
+/// nothing where the text is left to Excel. A text with a font of its own
+/// says its size as well, be it the 9 points such texts have anyway.
+fn text_xml(text: &TextFormat) -> String {
+    if text.is_auto() {
+        return String::new();
+    }
+    format!(
+        "<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>{}</a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr>",
+        run_properties("defRPr", text, "", Some(900), None)
+    )
+}
+
+/// A title of a chart or of an axis.
+struct TitleSpec<'a> {
+    /// Without a text it is the title Excel makes up.
+    text: Option<&'a str>,
+    /// The size of its letters when it has none of its own, in hundredths
+    /// of a point.
+    size: u32,
+    /// Running along a vertical axis, from bottom to top.
+    upright: bool,
+    overlay: bool,
+    format: &'a TextFormat,
+    layout: Option<&'a ManualLayout>,
+}
+
+/// `<c:title>` of a chart or of an axis.
+fn push_title(x: &mut String, spec: TitleSpec) {
+    let TitleSpec {
+        text,
+        size,
+        upright,
+        overlay,
+        format,
+        layout,
+    } = spec;
+    let properties = run_properties("defRPr", format, "", Some(size), Some(false));
     x.push_str("<c:title>");
     if let Some(text) = text {
         x.push_str("<c:tx><c:rich>");
@@ -239,9 +378,21 @@ fn push_title(x: &mut String, text: Option<&str>, size: u32, upright: bool, over
         x.push_str("<a:lstStyle/>");
         // One paragraph per line.
         for paragraph in text.split('\n') {
-            w!(x, "<a:p><a:pPr><a:defRPr sz=\"{size}\" b=\"0\"/></a:pPr>");
+            w!(x, "<a:p><a:pPr>{properties}</a:pPr>");
             if !paragraph.is_empty() {
-                x.push_str("<a:r><a:t>");
+                x.push_str("<a:r>");
+                // Like Excel, a text with a font of its own says so on
+                // its runs as well.
+                if !format.is_auto() {
+                    x.push_str(&run_properties(
+                        "rPr",
+                        format,
+                        " lang=\"en-US\"",
+                        None,
+                        None,
+                    ));
+                }
+                x.push_str("<a:t>");
                 push_text(x, paragraph);
                 x.push_str("</a:t></a:r>");
             }
@@ -249,13 +400,16 @@ fn push_title(x: &mut String, text: Option<&str>, size: u32, upright: bool, over
         }
         x.push_str("</c:rich></c:tx>");
     }
+    if let Some(layout) = layout.filter(placeable) {
+        x.push_str(&layout_xml(layout, Placed::Corner));
+    }
     w!(x, "<c:overlay val=\"{}\"/>", overlay as u8);
     if text.is_none() {
         // Excel writes the title it makes up small and bold unless told
         // otherwise: it is drawn like any other title.
         w!(
             x,
-            "<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"{size}\" b=\"0\"/></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr>"
+            "<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr>{properties}</a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr>"
         );
     }
     x.push_str("</c:title>");
@@ -272,12 +426,45 @@ fn push_number_format(x: &mut String, code: &str) {
 /// `<c:dLbls>` of a series of that plot, or of all its series.
 /// `separator` is what stands between the parts of a label unless the
 /// labels say what does.
-fn labels_xml(labels: &DataLabels, plot: Plot, separator: &str) -> String {
+fn labels_xml(labels: &DataLabels, plot: Plot, separator: &str, moved: &[LabelOffset]) -> String {
     let labels = plot.labels(labels);
+    let shown = label_parts(&labels, separator);
     let mut x = String::from("<c:dLbls>");
+    // The labels dragged away from their points: each says once more
+    // what it shows.
+    let mut seen = BTreeSet::new();
+    for offset in moved {
+        if offset.dx.is_finite() && offset.dy.is_finite() && seen.insert(offset.index) {
+            w!(
+                x,
+                "<c:dLbl><c:idx val=\"{}\"/><c:layout><c:manualLayout><c:x val=\"{}\"/><c:y val=\"{}\"/></c:manualLayout></c:layout>{shown}</c:dLbl>",
+                offset.index,
+                num(offset.dx),
+                num(offset.dy)
+            );
+        }
+    }
+    x.push_str(&shown);
+    if plot.is_round() {
+        w!(
+            x,
+            "<c:showLeaderLines val=\"{}\"/>",
+            labels.leader_lines as u8
+        );
+    }
+    x.push_str("</c:dLbls>");
+    x
+}
+
+/// What data labels show and how, for all the labels of a series or for
+/// one of them: the elements `c:dLbls` and `c:dLbl` share. `labels` are
+/// those a file can hold ([`Plot::labels`]).
+fn label_parts(labels: &DataLabels, separator: &str) -> String {
+    let mut x = String::new();
     if let Some(code) = labels.number_format.as_deref().filter(|c| !c.is_empty()) {
         push_number_format(&mut x, code);
     }
+    x.push_str(&text_xml(&labels.text));
     // An automatic position has no name: it is the absence of one.
     if let Some(position) = name_of(&LABEL_POSITIONS, labels.position) {
         w!(x, "<c:dLblPos val=\"{position}\"/>");
@@ -306,14 +493,6 @@ fn labels_xml(labels: &DataLabels, plot: Plot, separator: &str) -> String {
         push_text(&mut x, separator);
         x.push_str("</c:separator>");
     }
-    if plot.is_round() {
-        w!(
-            x,
-            "<c:showLeaderLines val=\"{}\"/>",
-            labels.leader_lines as u8
-        );
-    }
-    x.push_str("</c:dLbls>");
     x
 }
 
@@ -453,8 +632,9 @@ struct AxisSpec<'a> {
     /// Scales: the points sit between the tick marks of the category axis
     /// (bars, lines) rather than on them (areas, X/Y charts).
     between: bool,
-    /// Whether the line of the axis itself is drawn. Not in the model:
-    /// like Excel, all but the value scale of a chart with categories.
+    /// Whether the line of the axis itself is drawn when the model leaves
+    /// it alone: like Excel, all but the value scale of a chart with
+    /// categories.
     line: bool,
 }
 
@@ -498,18 +678,28 @@ fn push_axis(x: &mut String, spec: AxisSpec) {
         w!(
             x,
             "<c:majorGridlines>{}</c:majorGridlines>",
-            hairline(FRAME_GREY)
+            rule_xml(&a.major_gridline, FRAME_GREY)
         );
     }
     if a.minor_gridlines {
         w!(
             x,
             "<c:minorGridlines>{}</c:minorGridlines>",
-            hairline(MINOR_GREY)
+            rule_xml(&a.minor_gridline, MINOR_GREY)
         );
     }
     if let Some(title) = &a.title {
-        push_title(x, Some(title), 1000, matches!(spec.side, 'l' | 'r'), false);
+        push_title(
+            x,
+            TitleSpec {
+                text: Some(title),
+                size: 1000,
+                upright: matches!(spec.side, 'l' | 'r'),
+                overlay: false,
+                format: &a.title_text,
+                layout: a.title_layout.as_ref(),
+            },
+        );
     }
     match a.number_format.as_deref().filter(|code| !code.is_empty()) {
         Some(code) => push_number_format(x, code),
@@ -522,11 +712,18 @@ fn push_axis(x: &mut String, spec: AxisSpec) {
         name_of(&TICK_MARKS, a.minor_ticks).unwrap_or("none"),
         name_of(&TICK_LABELS, a.labels).unwrap_or("nextTo")
     );
-    if spec.line {
-        x.push_str(&hairline(FRAME_GREY));
+    // An axis without a line of its own gets one by being given a colour
+    // or a width.
+    let lined = a
+        .line
+        .shown
+        .unwrap_or(spec.line || a.line.color.is_some() || a.line.width.is_some());
+    if lined {
+        x.push_str(&rule_xml(&a.line, FRAME_GREY));
     } else {
         w!(x, "<c:spPr>{NO_LINE}</c:spPr>");
     }
+    x.push_str(&text_xml(&a.text));
     w!(x, "<c:crossAx val=\"{}\"/>", spec.crosses.0);
     match spec.crosses.1 {
         AxisCrossing::At(at) if at.is_finite() => {
@@ -1108,8 +1305,24 @@ impl ChartWriter<'_> {
         }
         self.push_points(x, s, (plot, kind), points, ink);
         match &s.labels {
-            Some(own) if own.any() => {
-                x.push_str(&labels_xml(own, plot, &list_separator(self.wb.locale)))
+            Some(own) if own.any() => x.push_str(&labels_xml(
+                own,
+                plot,
+                &list_separator(self.wb.locale),
+                &s.label_offsets,
+            )),
+            // Labels that were dragged are said on their series, whose
+            // labels the chart's then are.
+            None if !s.label_offsets.is_empty()
+                && chart.data_labels
+                && chart.label_options.any() =>
+            {
+                x.push_str(&labels_xml(
+                    &chart.label_options,
+                    plot,
+                    &list_separator(self.wb.locale),
+                    &s.label_offsets,
+                ))
             }
             // "None for this one" only has to be said where the others
             // have labels.
@@ -1200,7 +1413,7 @@ impl ChartWriter<'_> {
         }
         if chart.data_labels && chart.label_options.any() {
             let separator = list_separator(self.wb.locale);
-            x.push_str(&labels_xml(&chart.label_options, plot, &separator));
+            x.push_str(&labels_xml(&chart.label_options, plot, &separator, &[]));
         }
         let (category, value) = if group.secondary {
             (ids.second_category, ids.second_value)
@@ -1384,12 +1597,21 @@ impl ChartWriter<'_> {
         // A title element without text is the title Excel makes up: the name
         // of the series when there is one series, a placeholder otherwise.
         match &chart.title {
-            ChartTitle::Text(text) => {
-                push_title(&mut x, Some(text), 1400, false, chart.title_overlay);
-                x.push_str("<c:autoTitleDeleted val=\"0\"/>");
-            }
-            ChartTitle::Auto => {
-                push_title(&mut x, None, 1400, false, chart.title_overlay);
+            ChartTitle::Text(_) | ChartTitle::Auto => {
+                push_title(
+                    &mut x,
+                    TitleSpec {
+                        text: match &chart.title {
+                            ChartTitle::Text(text) => Some(text),
+                            _ => None,
+                        },
+                        size: 1400,
+                        upright: false,
+                        overlay: chart.title_overlay,
+                        format: &chart.title_text,
+                        layout: chart.title_layout.as_ref(),
+                    },
+                );
                 x.push_str("<c:autoTitleDeleted val=\"0\"/>");
             }
             ChartTitle::None => x.push_str("<c:autoTitleDeleted val=\"1\"/>"),
@@ -1425,7 +1647,20 @@ impl ChartWriter<'_> {
                 );
             }
         }
-        x.push_str("<c:plotArea><c:layout/>");
+        x.push_str("<c:plotArea>");
+        let sized = |m: &&ManualLayout| {
+            let given = |v: Option<f64>| v.is_some_and(|v| v.is_finite() && v > 0.0);
+            placeable(m) && given(m.w) && given(m.h)
+        };
+        match chart.plot_layout.as_ref().filter(sized) {
+            Some(layout) => x.push_str(&layout_xml(
+                layout,
+                Placed::Plot {
+                    inner: !chart.plot_layout_outer,
+                },
+            )),
+            None => x.push_str("<c:layout/>"),
+        }
         for group in &groups {
             self.push_group(&mut x, chart, group, &ids);
         }
@@ -1465,10 +1700,14 @@ impl ChartWriter<'_> {
                     );
                 }
             }
+            if let Some(layout) = chart.legend_layout.as_ref().filter(placeable) {
+                x.push_str(&layout_xml(layout, Placed::Frame));
+            }
             w!(
                 x,
-                "<c:overlay val=\"{}\"/></c:legend>",
-                chart.legend_overlay as u8
+                "<c:overlay val=\"{}\"/>{}</c:legend>",
+                chart.legend_overlay as u8,
+                text_xml(&chart.legend_text)
             );
         }
         let blanks = match chart.blanks {

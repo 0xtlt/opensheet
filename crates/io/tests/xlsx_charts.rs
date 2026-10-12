@@ -3,13 +3,14 @@
 
 mod common;
 
-use common::{assert_well_formed, enter, package, part, part_names};
+use common::{assert_well_formed, enter, keep_sample, package, part, part_names};
 use opensheet_engine::ast::{Expr, RefExpr};
 use opensheet_engine::chart::{
     Axes, Axis, AxisCrossing, BlanksAs, Chart, ChartKind, ChartTitle, DEFAULT_CHART_SIZE, Dash,
     DataLabels, DataTable, DisplayUnit, ErrorAmount, ErrorBars, ErrorDirection, Family, Fill,
-    LabelPosition, LegendPos, Line, Marker, MarkerShape, PointFormat, Series, SeriesName,
-    ShapeFormat, TickLabels, TickMark, TrendKind, Trendline, View3D,
+    LabelOffset, LabelPosition, LegendPos, Line, ManualLayout, Marker, MarkerShape, PointFormat,
+    Series, SeriesName, ShapeFormat, TextFormat, TickLabels, TickMark, TrendKind, Trendline,
+    View3D,
 };
 use opensheet_engine::parser::parse_formula;
 use opensheet_engine::{Color, Locale, Rect, Value, Workbook};
@@ -1401,6 +1402,52 @@ const CONTENT: &[(&str, &[&str])] = &[
     ),
     ("a:r", &["a:rPr", "a:t"]),
     (
+        "a:rPr",
+        &[
+            "a:ln",
+            "a:noFill|a:solidFill|a:gradFill|a:pattFill",
+            "a:latin",
+        ],
+    ),
+    ("c:layout", &["c:manualLayout", "c:extLst"]),
+    (
+        "c:manualLayout",
+        &[
+            "c:layoutTarget",
+            "c:xMode",
+            "c:yMode",
+            "c:wMode",
+            "c:hMode",
+            "c:x",
+            "c:y",
+            "c:w",
+            "c:h",
+            "c:extLst",
+        ],
+    ),
+    (
+        "c:dLbl",
+        &[
+            "c:idx",
+            // Either this alone, or what follows.
+            "c:delete",
+            "c:layout",
+            "c:tx",
+            "c:numFmt",
+            "c:spPr",
+            "c:txPr",
+            "c:dLblPos",
+            "c:showLegendKey",
+            "c:showVal",
+            "c:showCatName",
+            "c:showSerName",
+            "c:showPercent",
+            "c:showBubbleSize",
+            "c:separator",
+            "c:extLst",
+        ],
+    ),
+    (
         "xdr:wsDr",
         &["xdr:twoCellAnchor|xdr:oneCellAnchor|xdr:absoluteAnchor"],
     ),
@@ -1445,6 +1492,7 @@ const REPEATABLE: &[&str] = &[
     "c:bubbleChart",
     "c:ser",
     "c:dPt",
+    "c:dLbl",
     "c:trendline",
     "c:errBars",
     "c:pt",
@@ -2021,7 +2069,17 @@ fn charts_from_other_applications() {
             ..Axis::new()
         }
     );
-    assert_eq!(columns.axes.value, Axes::for_kind(ChartKind::Column).value);
+    // The scale has the line of the other axis, which Excel's own has not.
+    assert_eq!(
+        columns.axes.value,
+        Axis {
+            line: Line {
+                shown: Some(true),
+                ..Line::default()
+            },
+            ..Axes::for_kind(ChartKind::Column).value
+        }
+    );
     // A chart area without a fill in the frame Excel draws; a plot area
     // with the same frame, which it does not have by itself.
     assert_eq!(
@@ -2135,6 +2193,11 @@ fn charts_from_other_applications() {
         Axis {
             major_gridlines: true,
             crossing: AxisCrossing::Min,
+            // The fixture gives every axis a line.
+            line: Line {
+                shown: Some(true),
+                ..Line::default()
+            },
             ..Axis::new()
         }
     );
@@ -4090,6 +4153,7 @@ fn data_label_options() {
         position: LabelPosition::BestFit,
         number_format: Some("0.0%;\"<none>\"".into()),
         leader_lines: false,
+        text: TextFormat::default(),
     };
     let mut pie = plain(ChartKind::Pie);
     pie.data_labels = true;
@@ -4740,7 +4804,9 @@ const BLANK: &str = r#"<c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/>
 /// dialects, the chart area, print settings.
 fn excel_part(chart: &str) -> String {
     format!(
-        r#"{DECL}<c:chartSpace {NS_C} xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="fr-FR"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart><c:title><c:overlay val="0"/>{BLANK}{TEXT}</c:title><c:autoTitleDeleted val="0"/>{chart}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:extLst><c:ext uri="{{56B9EC1D-385E-4148-901F-78D8002777C0}}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="fr-FR"/></a:p></c:txPr><c:printSettings><c:headerFooter/><c:pageMargins b="0.75" l="0.7" r="0.7" t="0.75" header="0.3" footer="0.3"/><c:pageSetup/></c:printSettings></c:chartSpace>"#
+        r#"{DECL}<c:chartSpace {NS_C} xmlns:c16r2="http://schemas.microsoft.com/office/drawing/2015/06/chart"><c:date1904 val="0"/><c:lang val="fr-FR"/><c:roundedCorners val="0"/><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent><c:chart><c:title><c:overlay val="0"/>{BLANK}{title_text}</c:title><c:autoTitleDeleted val="0"/>{chart}<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/><c:extLst><c:ext uri="{{56B9EC1D-385E-4148-901F-78D8002777C0}}" xmlns:c16r3="http://schemas.microsoft.com/office/drawing/2017/03/chart"><c16r3:dataDisplayOptions16><c16r3:dispNaAsBlank val="1"/></c16r3:dataDisplayOptions16></c:ext></c:extLst></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="tx1"><a:lumMod val="15000"/><a:lumOff val="85000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr/></a:pPr><a:endParaRPr lang="fr-FR"/></a:p></c:txPr><c:printSettings><c:headerFooter/><c:pageMargins b="0.75" l="0.7" r="0.7" t="0.75" header="0.3" footer="0.3"/><c:pageSetup/></c:printSettings></c:chartSpace>"#,
+        // The title Excel makes up is written in 14 points.
+        title_text = TEXT.replace("sz=\"900\"", "sz=\"1400\""),
     )
 }
 
@@ -5543,4 +5609,304 @@ fn untouched_charts_keep_the_colours_of_their_theme() {
         Some(Color(0x4472C4))
     );
     assert_eq!(part(&to_bytes(&reread), "xl/charts/chart1.xml"), spelled);
+}
+
+// ---- manual layouts, fonts, gridline formats -------------------------------------
+
+/// Charts whose elements were dragged, resized and given fonts and lines
+/// of their own.
+fn laid_out() -> Vec<Chart> {
+    let font = |name: &str, size: f32| TextFormat {
+        font: Some(name.into()),
+        size: Some(size),
+        ..TextFormat::default()
+    };
+    let mut column = chart(ChartKind::Column, vec![monthly('B'), monthly('C')]);
+    column.title = ChartTitle::Text("Dragged & formatted".into());
+    column.title_layout = Some(ManualLayout::at(0.05, 0.03));
+    column.title_text = TextFormat {
+        font: Some("Georgia".into()),
+        size: Some(20.0),
+        bold: Some(true),
+        italic: Some(true),
+        underline: Some(true),
+        color: Some(Color(0xC00000)),
+    };
+    column.legend = LegendPos::Right;
+    column.legend_layout = Some(ManualLayout {
+        x: 0.62,
+        y: 0.08,
+        w: Some(0.33),
+        h: Some(0.125),
+    });
+    column.legend_text = TextFormat {
+        italic: Some(true),
+        color: Some(Color(0x0070C0)),
+        ..TextFormat::default()
+    };
+    column.plot_layout = Some(ManualLayout {
+        x: 0.15,
+        y: 0.25,
+        w: Some(0.7),
+        h: Some(0.5),
+    });
+    column.axes.category.title = Some("Month".into());
+    column.axes.category.title_layout = Some(ManualLayout::at(0.7, 0.9));
+    column.axes.category.title_text = font("Courier New", 12.0);
+    column.axes.category.text = TextFormat {
+        size: Some(8.0),
+        bold: Some(true),
+        ..TextFormat::default()
+    };
+    column.axes.category.line = Line {
+        color: Some(Color(0x7030A0)),
+        width: Some(2.25),
+        ..Line::default()
+    };
+    column.axes.value.title = Some("Units".into());
+    column.axes.value.title_text.underline = Some(true);
+    column.axes.value.text = font("Arial", 11.0);
+    column.axes.value.minor_gridlines = true;
+    column.axes.value.major_gridline = Line {
+        color: Some(Color(0xFF0000)),
+        width: Some(1.5),
+        dash: Dash::Dash,
+        ..Line::default()
+    };
+    column.axes.value.minor_gridline = Line {
+        dash: Dash::RoundDot,
+        ..Line::default()
+    };
+    // A scale with a line of its own, which it has not by itself.
+    column.axes.value.line.color = Some(Color(0x00B050));
+    column.data_labels = true;
+    column.label_options.text = TextFormat {
+        size: Some(7.0),
+        color: Some(Color(0x404040)),
+        ..TextFormat::default()
+    };
+    // Labels of its own for the second series, two of them dragged; one
+    // dragged label on the series that follows the chart.
+    column.series[1].labels = Some(DataLabels {
+        position: LabelPosition::InsideEnd,
+        text: font("Verdana", 10.0),
+        ..DataLabels::default()
+    });
+    column.series[1].label_offsets = vec![
+        LabelOffset {
+            index: 0,
+            dx: 0.025,
+            dy: -0.05,
+        },
+        LabelOffset {
+            index: 3,
+            dx: -0.0125,
+            dy: 0.0,
+        },
+    ];
+    column.series[0].set_label_offset(2, 0.0, -0.075);
+
+    // The box around the plot rather than its inside, no gridlines drawn
+    // although the axis has them, an automatic title with a font.
+    let mut pie = plain(ChartKind::Pie);
+    pie.title = ChartTitle::Auto;
+    pie.title_text.color = Some(Color(0x7030A0));
+    pie.title_layout = Some(ManualLayout::at(0.6, 0.0));
+    pie.plot_layout = Some(ManualLayout {
+        x: 0.1,
+        y: 0.2,
+        w: Some(0.5),
+        h: Some(0.75),
+    });
+    pie.plot_layout_outer = true;
+    pie.data_labels = true;
+    pie.series[0].set_label_offset(1, 0.1, 0.1);
+
+    let mut scatter = plain(ChartKind::Scatter);
+    scatter.legend_layout = Some(ManualLayout::at(0.4, 0.4));
+    scatter.axes.category.major_gridline.shown = Some(false);
+    scatter.axes.category.line.shown = Some(false);
+    scatter.axes.value.line.dash = Dash::LongDash;
+    vec![column, pie, scatter]
+}
+
+#[test]
+fn layouts_fonts_and_gridline_formats_round_trip() {
+    let parts = assert_round_trip(laid_out());
+    let column = &parts[0];
+    // As Excel writes them: edges measured from those of the chart, the
+    // inside of the plot area.
+    assert!(column.contains(
+        "</c:tx><c:layout><c:manualLayout><c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"0.05\"/><c:y val=\"0.03\"/></c:manualLayout></c:layout><c:overlay val=\"0\"/></c:title>"
+    ));
+    assert!(column.contains(
+        "<c:plotArea><c:layout><c:manualLayout><c:layoutTarget val=\"inner\"/><c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"0.15\"/><c:y val=\"0.25\"/><c:w val=\"0.7\"/><c:h val=\"0.5\"/></c:manualLayout></c:layout>"
+    ));
+    assert!(column.contains(
+        "<c:legend><c:legendPos val=\"r\"/><c:layout><c:manualLayout><c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"0.62\"/><c:y val=\"0.08\"/><c:w val=\"0.33\"/><c:h val=\"0.125\"/></c:manualLayout></c:layout><c:overlay val=\"0\"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"900\" i=\"1\"><a:solidFill><a:srgbClr val=\"0070C0\"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr></c:legend>"
+    ));
+    // The font of a title: on the paragraph and on its runs.
+    let props = "sz=\"2000\" b=\"1\" i=\"1\" u=\"sng\"><a:solidFill><a:srgbClr val=\"C00000\"/></a:solidFill><a:latin typeface=\"Georgia\"/>";
+    assert!(column.contains(&format!(
+        "<a:p><a:pPr><a:defRPr {props}</a:defRPr></a:pPr><a:r><a:rPr lang=\"en-US\" {props}</a:rPr><a:t>Dragged &amp; formatted</a:t></a:r></a:p>"
+    )));
+    assert!(column.contains(
+        "<c:majorGridlines><c:spPr><a:ln w=\"19050\"><a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill><a:prstDash val=\"dash\"/></a:ln></c:spPr></c:majorGridlines><c:minorGridlines><c:spPr><a:ln w=\"9525\"><a:solidFill><a:srgbClr val=\"F2F2F2\"/></a:solidFill><a:prstDash val=\"sysDot\"/></a:ln></c:spPr></c:minorGridlines>"
+    ));
+    // The line and the labels of an axis.
+    assert!(column.contains(
+        "<c:tickLblPos val=\"nextTo\"/><c:spPr><a:ln w=\"28575\"><a:solidFill><a:srgbClr val=\"7030A0\"/></a:solidFill></a:ln></c:spPr><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"800\" b=\"1\"/></a:pPr><a:endParaRPr lang=\"en-US\"/></a:p></c:txPr><c:crossAx"
+    ));
+    // A dragged label says where it went and, once more, what it shows.
+    assert!(column.contains(
+        "<c:dLbls><c:dLbl><c:idx val=\"0\"/><c:layout><c:manualLayout><c:x val=\"0.025\"/><c:y val=\"-0.05\"/></c:manualLayout></c:layout><c:txPr>"
+    ));
+    assert!(column.contains(
+        "<c:dLbl><c:idx val=\"2\"/><c:layout><c:manualLayout><c:x val=\"0\"/><c:y val=\"-0.075\"/></c:manualLayout></c:layout><c:txPr>"
+    ));
+    assert!(parts[1].contains(
+        "<c:plotArea><c:layout><c:manualLayout><c:layoutTarget val=\"outer\"/><c:xMode val=\"edge\"/>"
+    ));
+    assert!(parts[2].contains(&format!(
+        "<c:majorGridlines><c:spPr>{}</c:spPr></c:majorGridlines>",
+        "<a:ln><a:noFill/></a:ln>"
+    )));
+
+    // A file to open in Excel: the three charts on a sheet of their data.
+    let mut wb = data_workbook();
+    for (i, mut c) in laid_out().into_iter().enumerate() {
+        c.anchor = (1, 8 * i as u32);
+        wb.add_chart(1, c).unwrap();
+    }
+    wb.commit("charts");
+    let bytes = to_bytes(&wb);
+    keep_sample("objects-chart-layout.xlsx", &bytes);
+    // Read and written again, the parts are the same text: from what was
+    // kept of them, and from the model alone.
+    let mut loaded = load(&bytes);
+    assert_same_charts(&wb, &loaded);
+    for chart in loaded.sheets.iter_mut().flat_map(|s| &mut s.charts) {
+        assert!(chart.unchanged_source().is_some());
+        chart.foreign = None;
+    }
+    let generated = to_bytes(&loaded);
+    for name in part_names(&bytes) {
+        assert_eq!(part(&bytes, &name), part(&generated, &name), "{name}");
+    }
+}
+
+#[test]
+fn layouts_and_fonts_of_an_excel_chart_survive_a_change() {
+    // What Excel writes after the title, the legend, the plot area and a
+    // label were dragged, the legend made bold, the gridlines red.
+    let title = "<c:title><c:tx><c:rich><a:bodyPr rot=\"0\" spcFirstLastPara=\"1\" vertOverflow=\"ellipsis\" vert=\"horz\" wrap=\"square\" anchor=\"ctr\" anchorCtr=\"1\"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz=\"1400\" b=\"0\" i=\"0\" u=\"none\" strike=\"noStrike\" kern=\"1200\" spc=\"0\" baseline=\"0\"><a:solidFill><a:schemeClr val=\"tx1\"><a:lumMod val=\"65000\"/><a:lumOff val=\"35000\"/></a:schemeClr></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:pPr><a:r><a:rPr lang=\"fr-FR\" sz=\"1800\" i=\"1\"><a:latin typeface=\"Georgia\" panose=\"02040502050405020303\" pitchFamily=\"18\" charset=\"0\"/></a:rPr><a:t>Ventes</a:t></a:r></a:p></c:rich></c:tx><c:layout><c:manualLayout><c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"0.125\"/><c:y val=\"0.0625\"/></c:manualLayout></c:layout><c:overlay val=\"0\"/></c:title><c:autoTitleDeleted val=\"0\"/>";
+    let legend = format!(
+        "<c:legend><c:legendPos val=\"b\"/><c:layout><c:manualLayout><c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"0.5\"/><c:y val=\"0.75\"/><c:w val=\"0.375\"/><c:h val=\"0.125\"/></c:manualLayout></c:layout><c:overlay val=\"0\"/>{BLANK}{}</c:legend>",
+        TEXT.replace("b=\"0\"", "b=\"1\"")
+    );
+    let red = SHAPE.replace(
+        "<a:schemeClr val=\"tx1\"><a:lumMod val=\"15000\"/><a:lumOff val=\"85000\"/></a:schemeClr>",
+        "<a:srgbClr val=\"FF0000\"/>",
+    );
+    let value_axis = excel_axis("val", 'l', (12, 11, "autoZero")).replacen(SHAPE, &red, 1);
+    let column = |index: u32, column: char, labels: &str| {
+        let (tx, data) = excel_data(column, false);
+        format!(
+            "<c:ser><c:idx val=\"{index}\"/><c:order val=\"{index}\"/>{tx}<c:spPr><a:solidFill><a:schemeClr val=\"accent{}\"/></a:solidFill><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:invertIfNegative val=\"0\"/>{labels}{data}{}</c:ser>",
+            index + 1,
+            unique_id(index)
+        )
+    };
+    let shown = "<c:showLegendKey val=\"0\"/><c:showVal val=\"1\"/><c:showCatName val=\"0\"/><c:showSerName val=\"0\"/><c:showPercent val=\"0\"/><c:showBubbleSize val=\"0\"/>";
+    let labels = format!(
+        "<c:dLbls><c:dLbl><c:idx val=\"1\"/><c:layout><c:manualLayout><c:x val=\"2.5000000000000001E-2\"/><c:y val=\"-0.125\"/></c:manualLayout></c:layout>{shown}</c:dLbl>{BLANK}{TEXT}{shown}</c:dLbls>"
+    );
+    let chart_part = format!(
+        "<c:plotArea><c:layout><c:manualLayout><c:layoutTarget val=\"inner\"/><c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"0.25\"/><c:y val=\"0.25\"/><c:w val=\"0.5\"/><c:h val=\"0.375\"/></c:manualLayout></c:layout><c:barChart><c:barDir val=\"col\"/><c:grouping val=\"clustered\"/><c:varyColors val=\"0\"/>{}{}<c:dLbls>{shown}</c:dLbls><c:gapWidth val=\"219\"/><c:overlap val=\"-27\"/><c:axId val=\"11\"/><c:axId val=\"12\"/></c:barChart>{}{value_axis}{BLANK}</c:plotArea>{legend}",
+        column(0, 'C', &labels),
+        column(1, 'D', &labels.replace("<c:idx val=\"1\"/>", "<c:idx val=\"9\"/>")),
+        excel_axis("cat", 'b', (11, 12, "autoZero")),
+    );
+    let xml = excel_part(&chart_part).replacen(
+        &format!(
+            "<c:title><c:overlay val=\"0\"/>{BLANK}{}</c:title><c:autoTitleDeleted val=\"0\"/>",
+            TEXT.replace("sz=\"900\"", "sz=\"1400\"")
+        ),
+        title,
+        1,
+    );
+    assert!(xml.contains("Ventes"));
+    let read = excel(&xml);
+    assert_eq!(read.title_layout, Some(ManualLayout::at(0.125, 0.0625)));
+    assert_eq!(
+        read.title_text,
+        TextFormat {
+            font: Some("Georgia".into()),
+            size: Some(18.0),
+            italic: Some(true),
+            ..TextFormat::default()
+        }
+    );
+    assert_eq!(
+        read.legend_layout,
+        Some(ManualLayout {
+            x: 0.5,
+            y: 0.75,
+            w: Some(0.375),
+            h: Some(0.125),
+        })
+    );
+    // Excel's own nine points of dark grey are nothing of the legend's.
+    assert_eq!(
+        read.legend_text,
+        TextFormat {
+            bold: Some(true),
+            ..TextFormat::default()
+        }
+    );
+    assert_eq!(
+        read.plot_layout,
+        Some(ManualLayout {
+            x: 0.25,
+            y: 0.25,
+            w: Some(0.5),
+            h: Some(0.375),
+        })
+    );
+    assert!(!read.plot_layout_outer);
+    assert_eq!(
+        read.axes.value.major_gridline,
+        Line {
+            color: Some(Color(0xFF0000)),
+            ..Line::default()
+        }
+    );
+    assert_eq!(read.axes.category.text, TextFormat::default());
+    assert_eq!(read.axes.category.line, Line::default());
+    assert_eq!(read.axes.value.line, Line::default());
+    assert!(read.data_labels);
+    assert_eq!(read.label_options.text, TextFormat::default());
+    let moved = |index| {
+        vec![LabelOffset {
+            index,
+            dx: 0.025,
+            dy: -0.125,
+        }]
+    };
+    assert_eq!(read.series[0].label_offsets, moved(1));
+    assert_eq!(read.series[1].label_offsets, moved(9));
+    assert_eq!(read.series[0].labels, None);
+
+    // Changed, the chart is written from the model: nothing of this is lost.
+    let mut wb = load(&foreign_package(&[
+        ("xl/charts/chart1.xml", &xml),
+        ("xl/theme/theme1.xml", THEME_2023),
+    ]));
+    let id = wb.sheets[0].charts[0].id;
+    wb.update_chart(0, id, |c| c.legend_overlay = true);
+    assert!(wb.sheets[0].charts[0].unchanged_source().is_none());
+    let again = reload(&wb);
+    let mut expected = read.content();
+    expected.legend_overlay = true;
+    assert_same_content("regenerated", &expected, &again.sheets[0].charts[0]);
 }
