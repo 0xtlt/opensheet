@@ -237,9 +237,15 @@ fn sample() -> Workbook {
     };
     let column = vec![Rect::parse("A1:A5").unwrap()];
     let rules = vec![
-        CondFormat::new(column.clone(), Rule::greater_than(parse_formula("15", en).unwrap()))
-            .with_format(bad.clone()),
-        CondFormat::new(column.clone(), Rule::DataBar(DataBar::preset(BarColor::Blue, true))),
+        CondFormat::new(
+            column.clone(),
+            Rule::greater_than(parse_formula("15", en).unwrap()),
+        )
+        .with_format(bad.clone()),
+        CondFormat::new(
+            column.clone(),
+            Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+        ),
         CondFormat::new(column, Rule::IconSet(IconRule::preset(IconSet::ThreeStars))),
         CondFormat::new(
             vec![Rect::parse("B1:B5").unwrap()],
@@ -294,7 +300,10 @@ fn assert_same(a: &Workbook, b: &Workbook) {
         );
         assert_eq!(sa.validations, sb.validations, "{name}: data validation");
         assert_eq!(sa.protection, sb.protection, "{name}: protection");
-        assert_eq!(sa.cond_formats, sb.cond_formats, "{name}: conditional formats");
+        assert_eq!(
+            sa.cond_formats, sb.cond_formats,
+            "{name}: conditional formats"
+        );
         assert_eq!(sa.page, sb.page, "{name}: page setup");
         assert_eq!(sa.hidden_cols, sb.hidden_cols, "{name}: hidden columns");
         assert_eq!(sa.hidden_rows, sb.hidden_rows, "{name}: hidden rows");
@@ -661,10 +670,13 @@ fn package_is_a_valid_zip_of_well_formed_parts() {
     assert!(styles.contains("numFmtId=\"4\"") && styles.contains("numFmtId=\"49\""));
     assert!(styles.contains("<protection locked=\"0\"/>"));
     assert!(styles.contains("<protection hidden=\"1\"/>"));
-    assert!(styles.contains(concat!(
-        "<dxfs count=\"1\"><dxf><font><b/><color rgb=\"FF9C0006\"/></font>",
-        "<fill><patternFill><bgColor rgb=\"FFFFC7CE\"/></patternFill></fill></dxf></dxfs>"
-    )), "{styles}");
+    assert!(
+        styles.contains(concat!(
+            "<dxfs count=\"1\"><dxf><font><b/><color rgb=\"FF9C0006\"/></font>",
+            "<fill><patternFill><bgColor rgb=\"FFFFC7CE\"/></patternFill></fill></dxf></dxfs>"
+        )),
+        "{styles}"
+    );
 
     // Each distinct string is stored once.
     let strings = part(&bytes, "xl/sharedStrings.xml");

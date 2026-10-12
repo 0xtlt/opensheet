@@ -519,13 +519,18 @@ fn conditional_formats_and_page_setup() {
             color: None
         })
     );
-    assert_eq!(cf.format.border_right, None, "a side the format says nothing about");
+    assert_eq!(
+        cf.format.border_right, None,
+        "a side the format says nothing about"
+    );
 
     // The page: one flag of the sheet properties, the margins, and the
     // print area, which the file keeps among the names.
-    let mut page = PageSetup::default();
-    page.fit_to_page = true;
-    page.print_area = vec![Rect::parse("A1:F12").unwrap()];
+    let page = PageSetup {
+        fit_to_page: true,
+        print_area: vec![Rect::parse("A1:F12").unwrap()],
+        ..PageSetup::default()
+    };
     assert_eq!(first.page, page);
     assert_eq!(first.page.margins, Margins::NORMAL);
     assert_eq!(wb.sheets[1].page, PageSetup::default());

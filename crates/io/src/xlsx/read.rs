@@ -1563,7 +1563,10 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         );
         // Note boxes are placed with the sizes the file gives its columns
         // and rows.
-        let default_sizes = (loaded.sheet.default_col_width, loaded.sheet.default_row_height);
+        let default_sizes = (
+            loaded.sheet.default_col_width,
+            loaded.sheet.default_row_height,
+        );
         super::comments::read_sheet(&mut pkg, &part, &mut loaded.sheet, default_sizes, &comments);
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);

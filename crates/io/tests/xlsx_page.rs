@@ -126,7 +126,15 @@ fn page_setup_round_trips() {
         let pages: Vec<_> = pagination
             .pages
             .iter()
-            .map(|page| (page.number, page.rows, page.cols, page.title_rows, page.title_cols))
+            .map(|page| {
+                (
+                    page.number,
+                    page.rows,
+                    page.cols,
+                    page.title_rows,
+                    page.title_cols,
+                )
+            })
             .collect();
         (pagination.paper, pagination.scale_percent, pages)
     };
@@ -139,7 +147,11 @@ fn page_setup_round_trips() {
 
     // A second generation is the same file.
     let again = to_bytes(&loaded);
-    for name in ["xl/workbook.xml", "xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"] {
+    for name in [
+        "xl/workbook.xml",
+        "xl/worksheets/sheet1.xml",
+        "xl/worksheets/sheet2.xml",
+    ] {
         assert_eq!(part(&bytes, name), part(&again, name), "{name}");
     }
 }
@@ -317,10 +329,16 @@ fn page_setup_from_excel() {
     assert!(hf.different_first && !hf.different_odd_even);
     assert!(!hf.scale_with_doc && hf.align_with_margins);
     assert!(hf.pictures.is_empty(), "header pictures are not read");
-    assert_eq!(page.row_breaks.iter().copied().collect::<Vec<_>>(), [25, 40]);
+    assert_eq!(
+        page.row_breaks.iter().copied().collect::<Vec<_>>(),
+        [25, 40]
+    );
     assert_eq!(page.col_breaks.iter().copied().collect::<Vec<_>>(), [4]);
     assert_eq!(page.print_area, [rect("A1:H50")]);
-    assert_eq!((page.title_rows, page.title_cols), (Some((0, 2)), Some((0, 1))));
+    assert_eq!(
+        (page.title_rows, page.title_cols),
+        (Some((0, 2)), Some((0, 1)))
+    );
     assert_eq!(wb.sheets[0].tab_color, Some(Color(0xED7D31)));
 
     // The names say which sheet they are for by its place in the file,
@@ -361,9 +379,13 @@ fn page_setup_from_excel() {
     )), "{workbook}");
     let sheet = part(&saved, "xl/worksheets/sheet1.xml");
     assert_worksheet_order("sheet1.xml", &sheet);
-    assert!(sheet.contains("<pageSetup paperSize=\"9\" scale=\"67\" fitToHeight=\"0\" orientation=\"landscape\"/>"));
+    assert!(sheet.contains(
+        "<pageSetup paperSize=\"9\" scale=\"67\" fitToHeight=\"0\" orientation=\"landscape\"/>"
+    ));
     assert!(sheet.contains("<pageMargins left=\"0.7086614173228347\" right=\"0.7086614173228347\" top=\"0.7480314960629921\""));
-    assert!(part(&saved, "xl/worksheets/sheet3.xml").contains("<pageSetup orientation=\"landscape\"/>"));
+    assert!(
+        part(&saved, "xl/worksheets/sheet3.xml").contains("<pageSetup orientation=\"landscape\"/>")
+    );
     let again = load(&saved);
     for (a, b) in wb.sheets.iter().zip(&again.sheets) {
         assert_eq!(a.page, b.page, "{}", a.name);

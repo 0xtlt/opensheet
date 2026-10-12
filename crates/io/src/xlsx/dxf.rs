@@ -139,7 +139,11 @@ impl Dxfs {
             x.push_str("</font>");
         }
         if let Some(code) = &patch.num_fmt {
-            w!(x, "<numFmt numFmtId=\"{}\" formatCode=\"", self.num_fmt_id(code));
+            w!(
+                x,
+                "<numFmt numFmtId=\"{}\" formatCode=\"",
+                self.num_fmt_id(code)
+            );
             push_attr(x, code);
             x.push_str("\"/>");
         }
@@ -373,7 +377,10 @@ pub(crate) fn read_dxf<'a>(
             let code: Option<Cow<str>> = t
                 .attr("formatCode")
                 .filter(|code| !code.trim().is_empty())
-                .or_else(|| t.attr_u32("numFmtId").and_then(|id| builtin_code(id, locale)));
+                .or_else(|| {
+                    t.attr_u32("numFmtId")
+                        .and_then(|id| builtin_code(id, locale))
+                });
             patch.num_fmt = code.map(|code| {
                 if code.eq_ignore_ascii_case("General") {
                     Arc::from("General")
@@ -488,7 +495,10 @@ mod tests {
         assert_eq!(dxfs.id(&with("0.0000")), 1);
         assert_eq!(dxfs.id(&with("0.00")), 0);
         let xml = dxfs.xml();
-        assert!(xml.starts_with("<dxfs count=\"2\"><dxf><numFmt numFmtId=\"2\""), "{xml}");
+        assert!(
+            xml.starts_with("<dxfs count=\"2\"><dxf><numFmt numFmtId=\"2\""),
+            "{xml}"
+        );
         assert_eq!(
             Dxfs::new(Vec::new(), Locale::en()).xml(),
             "<dxfs count=\"0\"/>"
@@ -510,7 +520,11 @@ mod tests {
         ));
         assert_eq!(patch.bold, Some(true));
         assert_eq!(patch.italic, Some(false));
-        assert_eq!(patch.font_color, Some(Some(Color(0xC65911))), "accent 2, darker 25 %");
+        assert_eq!(
+            patch.font_color,
+            Some(Some(Color(0xC65911))),
+            "accent 2, darker 25 %"
+        );
         assert_eq!(patch.num_fmt.as_deref(), Some("0.00%"));
         assert_eq!(patch.fill, Some(Some(Color(0xFF0000))));
         assert_eq!(patch.border_left, None);
@@ -546,6 +560,9 @@ mod tests {
         // Cut short, or empty.
         assert_eq!(read("<dxf/>"), StylePatch::default());
         assert_eq!(read("<dxf><font><b/>").bold, Some(true));
-        assert_eq!(read("<dxf><border><left style=\"thin\"><color rgb=\"zz").border_left, Some(Border::thin()));
+        assert_eq!(
+            read("<dxf><border><left style=\"thin\"><color rgb=\"zz").border_left,
+            Some(Border::thin())
+        );
     }
 }

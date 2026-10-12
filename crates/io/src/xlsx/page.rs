@@ -13,8 +13,7 @@
 use super::write::push_number;
 use super::xml::{Event, Reader, Tag, decode_cell_text, push_cell_text, push_text};
 use opensheet_engine::page::{
-    HeaderFooter, Margins, Orientation, PageOrder, PageSetup, PaperSize, PrintComments,
-    PrintErrors,
+    HeaderFooter, Margins, Orientation, PageOrder, PageSetup, PaperSize, PrintComments, PrintErrors,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
 use opensheet_engine::{Sheet, Workbook};
@@ -293,7 +292,11 @@ fn push_page_setup(x: &mut String, page: &PageSetup) {
         w!(x, " firstPageNumber=\"{}\"", number as u32);
     }
     if page.fit_width != plain.fit_width {
-        w!(x, " fitToWidth=\"{}\"", (page.fit_width as u32).min(MAX_FIT));
+        w!(
+            x,
+            " fitToWidth=\"{}\"",
+            (page.fit_width as u32).min(MAX_FIT)
+        );
     }
     if page.fit_height != plain.fit_height {
         w!(
@@ -370,10 +373,18 @@ fn push_header_footer(x: &mut String, hf: &HeaderFooter) {
         ("firstFooter", &hf.first_footer),
     ];
     let flags = [
-        ("differentOddEven", hf.different_odd_even, plain.different_odd_even),
+        (
+            "differentOddEven",
+            hf.different_odd_even,
+            plain.different_odd_even,
+        ),
         ("differentFirst", hf.different_first, plain.different_first),
         ("scaleWithDoc", hf.scale_with_doc, plain.scale_with_doc),
-        ("alignWithMargins", hf.align_with_margins, plain.align_with_margins),
+        (
+            "alignWithMargins",
+            hf.align_with_margins,
+            plain.align_with_margins,
+        ),
     ];
     if texts.iter().all(|(_, text)| text.is_empty())
         && flags.iter().all(|(_, flag, default)| flag == default)
@@ -435,7 +446,10 @@ pub(crate) fn write(x: &mut String, page: &PageSetup) {
 pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
     for (index, sheet) in wb.sheets.iter().enumerate() {
         let names = [
-            ("_xlnm.Print_Area", sheet.page.print_area_formula(&sheet.name)),
+            (
+                "_xlnm.Print_Area",
+                sheet.page.print_area_formula(&sheet.name),
+            ),
             (
                 "_xlnm.Print_Titles",
                 sheet.page.print_titles_formula(&sheet.name),
@@ -626,7 +640,10 @@ mod tests {
             }
         );
         assert_eq!(page.paper, None);
-        assert_eq!((page.scale, page.fit_width, page.fit_height), (100, 32767, 1));
+        assert_eq!(
+            (page.scale, page.fit_width, page.fit_height),
+            (100, 32767, 1)
+        );
         assert_eq!(page.orientation, Orientation::Portrait);
         assert_eq!(page.comments, PrintComments::None);
         assert_eq!(page.errors, PrintErrors::Displayed);
@@ -643,7 +660,10 @@ mod tests {
         odd.scale = 0;
         odd.row_breaks.extend([0, 3, MAX_ROWS]);
         let xml = written(&odd);
-        assert!(xml.contains("left=\"0.7\"") && xml.contains("top=\"0.75\""), "{xml}");
+        assert!(
+            xml.contains("left=\"0.7\"") && xml.contains("top=\"0.75\""),
+            "{xml}"
+        );
         assert!(xml.contains(" scale=\"10\" "), "{xml}");
         assert!(xml.contains("<rowBreaks count=\"1\" manualBreakCount=\"1\"><brk id=\"3\""));
     }
@@ -669,8 +689,16 @@ mod tests {
     fn print_names() {
         let mut sheet = Sheet::new("Data");
         assert!(!read_name("RATE", "1", Some(&mut sheet)));
-        assert!(read_name(PRINT_AREA, "Data!$A$1:$C$9,Data!$E$1:$F$9", Some(&mut sheet)));
-        assert!(read_name(PRINT_TITLES, "Data!$A:$B,Data!$1:$2", Some(&mut sheet)));
+        assert!(read_name(
+            PRINT_AREA,
+            "Data!$A$1:$C$9,Data!$E$1:$F$9",
+            Some(&mut sheet)
+        ));
+        assert!(read_name(
+            PRINT_TITLES,
+            "Data!$A:$B,Data!$1:$2",
+            Some(&mut sheet)
+        ));
         assert_eq!(sheet.page.print_area.len(), 2);
         assert_eq!(sheet.page.title_rows, Some((0, 1)));
         assert_eq!(sheet.page.title_cols, Some((0, 1)));

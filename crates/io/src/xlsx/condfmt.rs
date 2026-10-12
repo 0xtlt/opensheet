@@ -638,10 +638,7 @@ fn read_data_bar<'a>(
     ctx: &Context,
     x14: bool,
 ) -> Option<(DataBar, bool)> {
-    let length = |name: &str, default: u8| {
-        tag.attr_u32(name)
-            .map_or(default, |n| n.min(100) as u8)
-    };
+    let length = |name: &str, default: u8| tag.attr_u32(name).map_or(default, |n| n.min(100) as u8);
     let mut bar = DataBar::legacy(Color::BLACK);
     bar.min_length = length("minLength", 10);
     bar.max_length = length("maxLength", 90);
@@ -792,7 +789,10 @@ fn read_rule<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, ctx: &Context, x14: bool) ->
             .unwrap_or_default(),
         stop_if_true: tag.attr_bool("stopIfTrue").unwrap_or(false),
         priority: tag.attr_u32("priority").filter(|p| *p > 0),
-        id: tag.attr("id").map(|id| id.trim().to_string()).filter(|_| x14),
+        id: tag
+            .attr("id")
+            .map(|id| id.trim().to_string())
+            .filter(|_| x14),
         fill_missing: false,
     };
     let mut formulas: Vec<Option<Expr>> = Vec::new();
@@ -926,10 +926,11 @@ impl CondFormats {
                 "sqref" => ranges = parse_sqref(&r.text(t)),
                 _ => r.skip(t),
             });
-            self.extension.extend(rules.into_iter().map(|parsed| Placed {
-                ranges: ranges.clone(),
-                parsed,
-            }));
+            self.extension
+                .extend(rules.into_iter().map(|parsed| Placed {
+                    ranges: ranges.clone(),
+                    parsed,
+                }));
         });
     }
 

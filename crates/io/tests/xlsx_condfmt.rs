@@ -60,7 +60,12 @@ fn sample() -> Workbook {
     for row in 1..20u32 {
         wb.set_value(0, row, 0, Value::Number((row * 7 % 100) as f64));
         wb.set_value(0, row, 1, Value::Number(row as f64 - 8.0));
-        wb.set_value(0, row, 2, Value::text(["abc", "xyz", "zab"][row as usize % 3]));
+        wb.set_value(
+            0,
+            row,
+            2,
+            Value::text(["abc", "xyz", "zab"][row as usize % 3]),
+        );
     }
     enter(&mut wb, 0, "H1", "5");
     enter(&mut wb, 0, "H2", "15");
@@ -106,17 +111,10 @@ fn sample() -> Workbook {
         rule("A2:F20", Rule::Formula(f("MOD(ROW(),2)=0"))).with_format(fill(0xF2F2F2)),
         rule("C2:C20 E2:E5", Rule::Formula(f("$A2>B2"))).with_format(red.clone()),
         // Another sheet in the formula: only the extension list can say it.
-        rule(
-            "A2:A20",
-            Rule::Formula(f("'Limits & more'!$A$1<A2")),
-        )
-        .with_format(fill(0xDDEBF7)),
-        rule(
-            "B2:B20",
-            Rule::greater_than(f("'Limits & more'!$B$1")),
-        )
-        .with_format(red.clone())
-        .with_stop_if_true(true),
+        rule("A2:A20", Rule::Formula(f("'Limits & more'!$A$1<A2"))).with_format(fill(0xDDEBF7)),
+        rule("B2:B20", Rule::greater_than(f("'Limits & more'!$B$1")))
+            .with_format(red.clone())
+            .with_stop_if_true(true),
         rule("A2:A20", Rule::top_items(3)).with_format(fill(0xC6EFCE)),
         rule("A2:A20", Rule::bottom_percent(10)).with_format(fill(0xFFEB9C)),
         rule("B2:B20", Rule::above_average()).with_format(fill(0xC6EFCE)),
@@ -217,7 +215,10 @@ fn sample() -> Workbook {
     old_bar.min_length = 20;
     old_bar.max_length = 80;
     rules.push(rule("A2:A20", Rule::DataBar(old_bar)));
-    rules.push(rule("A2:A20", Rule::DataBar(DataBar::legacy(Color(0x63C384)))));
+    rules.push(rule(
+        "A2:A20",
+        Rule::DataBar(DataBar::legacy(Color(0x63C384))),
+    ));
     rules.push(rule(
         "B2:B20",
         Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
@@ -301,7 +302,11 @@ fn sample() -> Workbook {
         "B2:B20",
         Rule::IconSet(IconRule::preset(IconSet::FiveQuarters)),
     ));
-    for set in [IconSet::ThreeStars, IconSet::ThreeTriangles, IconSet::FiveBoxes] {
+    for set in [
+        IconSet::ThreeStars,
+        IconSet::ThreeTriangles,
+        IconSet::FiveBoxes,
+    ] {
         rules.push(rule("A2:A20", Rule::IconSet(IconRule::preset(set))));
     }
     rules.push(rule(
@@ -337,7 +342,10 @@ fn rules_round_trip() {
     let bytes = to_bytes(&original);
     common::keep_sample("conditional-formats.xlsx", &bytes);
     let loaded = load(&bytes);
-    let (before, after) = (&original.sheets[0].cond_formats, &loaded.sheets[0].cond_formats);
+    let (before, after) = (
+        &original.sheets[0].cond_formats,
+        &loaded.sheets[0].cond_formats,
+    );
     assert_eq!(before.len(), 51);
     assert_eq!(before.len(), after.len());
     for (i, (a, b)) in before.iter().zip(after).enumerate() {
@@ -394,22 +402,50 @@ fn rules_are_written_the_way_excel_writes_them() {
         "<cfRule type=\"aboveAverage\" dxfId=\"4\" priority=\"10\"/>",
         "<cfRule type=\"aboveAverage\" dxfId=\"5\" priority=\"11\" aboveAverage=\"0\" stdDev=\"2\" equalAverage=\"1\"/>"
     ));
-    contains("<conditionalFormatting sqref=\"A2:F20\"><cfRule type=\"expression\" dxfId=\"3\" priority=\"4\"><formula>MOD(ROW(),2)=0</formula></cfRule></conditionalFormatting>");
-    contains("<conditionalFormatting sqref=\"C2:C20 E2:E5\"><cfRule type=\"expression\" dxfId=\"0\" priority=\"5\"><formula>$A2&gt;B2</formula></cfRule></conditionalFormatting>");
-    contains("<cfRule type=\"duplicateValues\" dxfId=\"0\" priority=\"12\"/><cfRule type=\"uniqueValues\" dxfId=\"4\" priority=\"13\"/>");
+    contains(
+        "<conditionalFormatting sqref=\"A2:F20\"><cfRule type=\"expression\" dxfId=\"3\" priority=\"4\"><formula>MOD(ROW(),2)=0</formula></cfRule></conditionalFormatting>",
+    );
+    contains(
+        "<conditionalFormatting sqref=\"C2:C20 E2:E5\"><cfRule type=\"expression\" dxfId=\"0\" priority=\"5\"><formula>$A2&gt;B2</formula></cfRule></conditionalFormatting>",
+    );
+    contains(
+        "<cfRule type=\"duplicateValues\" dxfId=\"0\" priority=\"12\"/><cfRule type=\"uniqueValues\" dxfId=\"4\" priority=\"13\"/>",
+    );
     // Text, blank, error and date rules spell their test out as a formula
     // for the first cell, next to the attributes.
-    contains("<cfRule type=\"containsText\" dxfId=\"0\" priority=\"14\" operator=\"containsText\" text=\"ab\"><formula>NOT(ISERROR(SEARCH(\"ab\",C2)))</formula></cfRule>");
-    contains("<cfRule type=\"notContainsText\" dxfId=\"6\" priority=\"15\" operator=\"notContains\" text=\"a&lt;b&gt;&amp;&quot;c&quot;\"><formula>ISERROR(SEARCH(\"a&lt;b&gt;&amp;\"\"c\"\"\",C2))</formula></cfRule>");
-    contains("<cfRule type=\"beginsWith\" dxfId=\"7\" priority=\"16\" operator=\"beginsWith\"><formula>LEFT(C2,LEN($H$3))=$H$3</formula></cfRule>");
-    contains("<cfRule type=\"endsWith\" dxfId=\"8\" priority=\"17\" operator=\"endsWith\" text=\"z\"><formula>RIGHT(C2,LEN(\"z\"))=\"z\"</formula></cfRule>");
-    contains("<cfRule type=\"containsBlanks\" dxfId=\"9\" priority=\"18\"><formula>LEN(TRIM(D2))=0</formula></cfRule>");
-    contains("<cfRule type=\"notContainsBlanks\" dxfId=\"10\" priority=\"19\"><formula>LEN(TRIM(D2))&gt;0</formula></cfRule>");
-    contains("<cfRule type=\"containsErrors\" dxfId=\"0\" priority=\"20\"><formula>ISERROR(D2)</formula></cfRule>");
-    contains("<cfRule type=\"notContainsErrors\" priority=\"21\"><formula>NOT(ISERROR(D2))</formula></cfRule>");
-    contains("<cfRule type=\"expression\" priority=\"22\" stopIfTrue=\"1\"><formula>TRUE</formula></cfRule>");
-    contains("<cfRule type=\"timePeriod\" dxfId=\"0\" priority=\"23\" timePeriod=\"yesterday\"><formula>FLOOR(E2,1)=TODAY()-1</formula></cfRule>");
-    contains(" timePeriod=\"last7Days\"><formula>AND(TODAY()-FLOOR(E2,1)&lt;=6,FLOOR(E2,1)&lt;=TODAY())</formula>");
+    contains(
+        "<cfRule type=\"containsText\" dxfId=\"0\" priority=\"14\" operator=\"containsText\" text=\"ab\"><formula>NOT(ISERROR(SEARCH(\"ab\",C2)))</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"notContainsText\" dxfId=\"6\" priority=\"15\" operator=\"notContains\" text=\"a&lt;b&gt;&amp;&quot;c&quot;\"><formula>ISERROR(SEARCH(\"a&lt;b&gt;&amp;\"\"c\"\"\",C2))</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"beginsWith\" dxfId=\"7\" priority=\"16\" operator=\"beginsWith\"><formula>LEFT(C2,LEN($H$3))=$H$3</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"endsWith\" dxfId=\"8\" priority=\"17\" operator=\"endsWith\" text=\"z\"><formula>RIGHT(C2,LEN(\"z\"))=\"z\"</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"containsBlanks\" dxfId=\"9\" priority=\"18\"><formula>LEN(TRIM(D2))=0</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"notContainsBlanks\" dxfId=\"10\" priority=\"19\"><formula>LEN(TRIM(D2))&gt;0</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"containsErrors\" dxfId=\"0\" priority=\"20\"><formula>ISERROR(D2)</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"notContainsErrors\" priority=\"21\"><formula>NOT(ISERROR(D2))</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"expression\" priority=\"22\" stopIfTrue=\"1\"><formula>TRUE</formula></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"timePeriod\" dxfId=\"0\" priority=\"23\" timePeriod=\"yesterday\"><formula>FLOOR(E2,1)=TODAY()-1</formula></cfRule>",
+    );
+    contains(
+        " timePeriod=\"last7Days\"><formula>AND(TODAY()-FLOOR(E2,1)&lt;=6,FLOOR(E2,1)&lt;=TODAY())</formula>",
+    );
     contains(" priority=\"32\" timePeriod=\"nextMonth\">");
 
     // Colour scales, old data bars and old icon sets: thresholds, then
@@ -418,11 +454,21 @@ fn rules_are_written_the_way_excel_writes_them() {
         "<cfRule type=\"colorScale\" priority=\"33\"><colorScale><cfvo type=\"min\"/><cfvo type=\"percentile\" val=\"50\"/><cfvo type=\"max\"/>",
         "<color rgb=\"FFF8696B\"/><color rgb=\"FFFFEB84\"/><color rgb=\"FF63BE7B\"/></colorScale></cfRule>"
     ));
-    contains("<colorScale><cfvo type=\"num\" val=\"-5\"/><cfvo type=\"percent\" val=\"40\"/><cfvo type=\"formula\" val=\"$H$2*2\"/>");
-    contains("<cfRule type=\"dataBar\" priority=\"37\"><dataBar minLength=\"20\" maxLength=\"80\" showValue=\"0\"><cfvo type=\"min\"/><cfvo type=\"percentile\" val=\"90\"/><color rgb=\"FF638EC6\"/></dataBar></cfRule>");
-    contains("<cfRule type=\"dataBar\" priority=\"38\"><dataBar><cfvo type=\"min\"/><cfvo type=\"max\"/><color rgb=\"FF63C384\"/></dataBar></cfRule>");
-    contains("<cfRule type=\"iconSet\" priority=\"44\"><iconSet iconSet=\"3Arrows\"><cfvo type=\"percent\" val=\"0\"/><cfvo type=\"percent\" val=\"33\"/><cfvo type=\"percent\" val=\"67\"/></iconSet></cfRule>");
-    contains("<cfRule type=\"iconSet\" priority=\"45\"><iconSet><cfvo type=\"percent\" val=\"0\"/>");
+    contains(
+        "<colorScale><cfvo type=\"num\" val=\"-5\"/><cfvo type=\"percent\" val=\"40\"/><cfvo type=\"formula\" val=\"$H$2*2\"/>",
+    );
+    contains(
+        "<cfRule type=\"dataBar\" priority=\"37\"><dataBar minLength=\"20\" maxLength=\"80\" showValue=\"0\"><cfvo type=\"min\"/><cfvo type=\"percentile\" val=\"90\"/><color rgb=\"FF638EC6\"/></dataBar></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"dataBar\" priority=\"38\"><dataBar><cfvo type=\"min\"/><cfvo type=\"max\"/><color rgb=\"FF63C384\"/></dataBar></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"iconSet\" priority=\"44\"><iconSet iconSet=\"3Arrows\"><cfvo type=\"percent\" val=\"0\"/><cfvo type=\"percent\" val=\"33\"/><cfvo type=\"percent\" val=\"67\"/></iconSet></cfRule>",
+    );
+    contains(
+        "<cfRule type=\"iconSet\" priority=\"45\"><iconSet><cfvo type=\"percent\" val=\"0\"/>",
+    );
     contains(concat!(
         "<iconSet iconSet=\"4Rating\" showValue=\"0\" reverse=\"1\"><cfvo type=\"percent\" val=\"0\"/><cfvo type=\"num\" val=\"-2.5\" gte=\"0\"/>",
         "<cfvo type=\"percentile\" val=\"50\"/><cfvo type=\"formula\" val=\"$H$2\" gte=\"0\"/></iconSet>"
@@ -447,9 +493,9 @@ fn rules_are_written_the_way_excel_writes_them() {
         "<x14:negativeFillColor rgb=\"FFFF0000\"/><x14:axisColor rgb=\"FF000000\"/></x14:dataBar>"
     ));
     // Every option at once.
-    contains(concat!(
-        "<dataBar showValue=\"0\"><cfvo type=\"num\" val=\"0\"/><cfvo type=\"percent\" val=\"90\"/><color rgb=\"FFD6007B\"/></dataBar>"
-    ));
+    contains(
+        "<dataBar showValue=\"0\"><cfvo type=\"num\" val=\"0\"/><cfvo type=\"percent\" val=\"90\"/><color rgb=\"FFD6007B\"/></dataBar>",
+    );
     contains(concat!(
         "<x14:dataBar minLength=\"5\" maxLength=\"75\" showValue=\"0\" border=\"1\" gradient=\"0\" direction=\"rightToLeft\" ",
         "negativeBarColorSameAsPositive=\"1\" negativeBarBorderColorSameAsPositive=\"0\" axisPosition=\"middle\">",
@@ -457,7 +503,9 @@ fn rules_are_written_the_way_excel_writes_them() {
         "<x14:borderColor rgb=\"FF7B0046\"/><x14:negativeBorderColor rgb=\"FF00B050\"/><x14:axisColor rgb=\"FF808080\"/></x14:dataBar></x14:cfRule>",
         "<xm:sqref>B2:B20 A2:A5</xm:sqref>"
     ));
-    contains("<x14:dataBar minLength=\"0\" maxLength=\"100\" border=\"1\" direction=\"leftToRight\" axisPosition=\"none\">");
+    contains(
+        "<x14:dataBar minLength=\"0\" maxLength=\"100\" border=\"1\" direction=\"leftToRight\" axisPosition=\"none\">",
+    );
 
     // Only in the extension list: the icon sets of 2010, icons picked one
     // by one, and whatever looks at another sheet (format included).
@@ -480,8 +528,12 @@ fn rules_are_written_the_way_excel_writes_them() {
         "<x14:cfRule type=\"cellIs\" priority=\"7\" stopIfTrue=\"1\" operator=\"greaterThan\" id=\"{0C0FD1F0-0000-4000-0001-000000000007}\">",
         "<xm:f>'Limits &amp; more'!$B$1</xm:f><x14:dxf><font><color rgb=\"FF9C0006\"/></font>"
     ));
-    contains("<x14:colorScale><x14:cfvo type=\"min\"/><x14:cfvo type=\"formula\"><xm:f>'Limits &amp; more'!$A$1</xm:f></x14:cfvo><x14:color rgb=\"FFFFFFFF\"/><x14:color rgb=\"FF5A8AC6\"/></x14:colorScale>");
-    contains("<x14:cfvo type=\"formula\"><xm:f>'Limits &amp; more'!$B$1</xm:f></x14:cfvo><x14:cfvo type=\"autoMax\"/><x14:fillColor rgb=\"FFFF555A\"/>");
+    contains(
+        "<x14:colorScale><x14:cfvo type=\"min\"/><x14:cfvo type=\"formula\"><xm:f>'Limits &amp; more'!$A$1</xm:f></x14:cfvo><x14:color rgb=\"FFFFFFFF\"/><x14:color rgb=\"FF5A8AC6\"/></x14:colorScale>",
+    );
+    contains(
+        "<x14:cfvo type=\"formula\"><xm:f>'Limits &amp; more'!$B$1</xm:f></x14:cfvo><x14:cfvo type=\"autoMax\"/><x14:fillColor rgb=\"FFFF555A\"/>",
+    );
     assert!(!sheet.contains("<formula>'Limits") && !sheet.contains("val=\"'Limits"));
     assert!(!sheet.contains("<cfRule type=\"iconSet\" priority=\"48\""));
 
@@ -492,7 +544,9 @@ fn rules_are_written_the_way_excel_writes_them() {
         "uri=\"{78C0D931-6437-407d-A8EE-F0AAD7539E65}\"><x14:conditionalFormattings>",
         "<x14:conditionalFormatting xmlns:xm=\"http://schemas.microsoft.com/office/excel/2006/main\">"
     ));
-    let validations = sheet.find("uri=\"{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}\"").unwrap();
+    let validations = sheet
+        .find("uri=\"{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}\"")
+        .unwrap();
     assert!(sheet.rfind("</x14:conditionalFormattings></ext>").unwrap() < validations);
     assert!(sheet.ends_with("</x14:dataValidations></ext></extLst></worksheet>"));
 
@@ -506,7 +560,9 @@ fn rules_are_written_the_way_excel_writes_them() {
     )));
     assert!(styles.contains("<dxf><numFmt numFmtId=\"10\" formatCode=\"0.00%\"/></dxf>"));
     let dxfs = styles.find("<dxfs").unwrap();
-    assert!(styles[..dxfs].ends_with("</cellStyles>") && styles[dxfs..].contains("</dxfs><tableStyles"));
+    assert!(
+        styles[..dxfs].ends_with("</cellStyles>") && styles[dxfs..].contains("</dxfs><tableStyles")
+    );
 
     // A sheet without rules says nothing of them.
     let other = part(&bytes, "xl/worksheets/sheet2.xml");
@@ -661,12 +717,18 @@ fn rules_from_excel() {
     let Rule::IconSet(arrows) = &rules[1].rule else {
         panic!("{:?}", rules[1].rule);
     };
-    assert_eq!((arrows.set, arrows.reverse, arrows.show_value), (IconSet::ThreeArrows, true, false));
+    assert_eq!(
+        (arrows.set, arrows.reverse, arrows.show_value),
+        (IconSet::ThreeArrows, true, false)
+    );
     assert_eq!(arrows.thresholds[2].value, Cfvo::number(25.0));
     assert!(!arrows.thresholds[2].gte);
 
     assert_eq!(rules[2].rule, Rule::DateOccurring(TimePeriod::Last7Days));
-    assert_eq!(rules[2].format, HighlightFormat::LightRedFillDarkRedText.patch());
+    assert_eq!(
+        rules[2].format,
+        HighlightFormat::LightRedFillDarkRedText.patch()
+    );
     // A "begins with" whose formula is not one Excel writes for it is
     // kept as the formula it is; the older spelling of the test is known.
     assert_eq!(rules[3].rule, Rule::Formula(f("EXACT(LEFT(C1,2),\"al\")")));
@@ -710,7 +772,12 @@ fn rules_from_excel() {
     assert_eq!(top.font_color, Some(Some(Color(0xFFFFFF))));
     assert_eq!(top.fill, Some(Some(Color(0x305496))));
     assert_eq!(
-        [top.border_left, top.border_right, top.border_top, top.border_bottom],
+        [
+            top.border_left,
+            top.border_right,
+            top.border_top,
+            top.border_bottom
+        ],
         [Some(Border::thin()); 4]
     );
 
@@ -751,7 +818,11 @@ fn rules_from_excel() {
         .and_then(|a| a.bar)
         .expect("B2 has a bar");
     assert!(bar.negative && bar.fill == Color(0xFF0000));
-    assert_eq!(wb.sheets[0].cells.len(), 9, "nothing else came out of the extension list");
+    assert_eq!(
+        wb.sheets[0].cells.len(),
+        9,
+        "nothing else came out of the extension list"
+    );
 
     // Saved again and read again, the rules are the same.
     let saved = to_bytes(&wb);
@@ -785,7 +856,10 @@ fn damaged_rules_cost_nothing_else() {
             wb.sheets[0].cond_formats.len()
         );
     }
-    assert!(counts.len() >= 10, "rules are lost a few at a time: {counts:?}");
+    assert!(
+        counts.len() >= 10,
+        "rules are lost a few at a time: {counts:?}"
+    );
     // The same for the formats.
     let start = styles.find("<dxfs").unwrap();
     for cut in (start..styles.len())
@@ -824,7 +898,10 @@ fn damaged_rules_cost_nothing_else() {
 </worksheet>"#,
         deep = "(".repeat(4000),
     );
-    let wb = load(&excel_file(&nonsense, "<styleSheet><dxfs><dxf><font><sz val=\"-3\"/><color rgb=\"\"/></font></dxf><dxf>"));
+    let wb = load(&excel_file(
+        &nonsense,
+        "<styleSheet><dxfs><dxf><font><sz val=\"-3\"/><color rgb=\"\"/></font></dxf><dxf>",
+    ));
     let summary: Vec<String> = wb.sheets[0]
         .cond_formats
         .iter()
@@ -877,7 +954,10 @@ fn damaged_rules_cost_nothing_else() {
     let Rule::DataBar(bar) = &rules[5].rule else {
         panic!("{:?}", rules[5].rule);
     };
-    assert_eq!((bar.axis, bar.direction), (BarAxis::Automatic, BarDirection::Context));
+    assert_eq!(
+        (bar.axis, bar.direction),
+        (BarAxis::Automatic, BarDirection::Context)
+    );
     assert_eq!(bar.border, Some(Color::BLACK));
     // Whatever was read makes a file that reads the same.
     let saved = to_bytes(&wb);
@@ -927,7 +1007,9 @@ fn rules_that_cannot_be_written_are_left_out() {
     assert_eq!(sheet.matches("<cfRule ").count(), 4, "{sheet}");
     assert!(sheet.contains("<cfRule type=\"iconSet\" priority=\"5\"><iconSet iconSet=\"3Flags\">"));
     assert!(sheet.contains("<cfRule type=\"top10\" dxfId=\"0\" priority=\"6\" rank=\"1000\"/>"));
-    assert!(sheet.contains("<cfRule type=\"expression\" priority=\"7\"><formula>#REF!&gt;0</formula></cfRule>"));
+    assert!(sheet.contains(
+        "<cfRule type=\"expression\" priority=\"7\"><formula>#REF!&gt;0</formula></cfRule>"
+    ));
     assert!(sheet.contains("<cfRule type=\"colorScale\" priority=\"8\"><colorScale>"));
     assert!(!sheet.contains("extLst") && !sheet.contains("stopIfTrue"));
     assert!(part(&bytes, "xl/styles.xml").contains("<dxfs count=\"1\">"));
