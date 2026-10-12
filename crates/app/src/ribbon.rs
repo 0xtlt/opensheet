@@ -7,7 +7,7 @@
 use crate::app::*;
 use crate::features::{
     self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, protection, tables, validation,
+    pivot, protection, tables, themes, validation,
 };
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -1506,11 +1506,11 @@ impl ExcelApp {
                     .flex()
                     .items_center()
                     .gap(px(2.))
-                    .child(self.cmd_large("pl-themes", misc::Cmd::Themes, true, cx))
+                    .child(self.cmd_large("pl-themes", themes::Cmd::Themes, true, cx))
                     .child(rows(vec![
-                        self.cmd_labeled("pl-theme-colors", misc::Cmd::ThemeColors, true, cx),
-                        self.cmd_labeled("pl-theme-fonts", misc::Cmd::ThemeFonts, true, cx),
-                        self.cmd_labeled("pl-theme-effects", misc::Cmd::ThemeEffects, true, cx),
+                        self.cmd_labeled("pl-theme-colors", themes::Cmd::Colors, true, cx),
+                        self.cmd_labeled("pl-theme-fonts", themes::Cmd::Fonts, true, cx),
+                        self.cmd_labeled("pl-theme-effects", themes::Cmd::Effects, true, cx),
                     ])),
             )
             .into_any_element(),

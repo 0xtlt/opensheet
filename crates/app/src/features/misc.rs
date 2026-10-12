@@ -5,7 +5,7 @@
 //! Function Arguments, formula auditing (Show Formulas, tracer arrows,
 //! Error Checking, Evaluate Formula, the Watch Window) and the Calculation
 //! group. And the commands of the ribbon nobody wrote yet (sharing,
-//! proofing, themes, outlines, links, ...): they say they are not
+//! proofing, outlines, links, ...): they say they are not
 //! available; a feature that takes one over moves it to its own module.
 
 mod audit;
@@ -45,11 +45,6 @@ commands! {
         Draw = "brush", t_ctx("button", "Draw", "Dessiner");
         Eraser = "clear", t("Eraser", "Gomme");
         InkToShape = "shapes", t("Ink to Shape", "Entrée manuscrite en forme");
-        // Page Layout
-        Themes = "cell-styles", t("Themes", "Thèmes");
-        ThemeColors = "fill", t("Colors", "Couleurs");
-        ThemeFonts = "font-grow", t("Fonts", "Polices");
-        ThemeEffects = "shapes", t("Effects", "Effets");
         // Formulas
         InsertFunction = "function", t("Insert Function", "Insérer une fonction");
         TracePrecedents = "misc-trace-precedents", t("Trace Precedents", "Repérer les antécédents");
