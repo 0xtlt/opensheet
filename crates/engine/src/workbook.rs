@@ -340,6 +340,7 @@ impl DefinedName {
 struct SheetsState {
     sheets: Vec<Sheet>,
     names: BTreeMap<String, DefinedName>,
+    cell_styles: Vec<crate::cell_style::CellStyle>,
 }
 
 #[derive(Clone)]
@@ -403,6 +404,9 @@ pub struct Workbook {
     /// Defined names of workbook scope, keyed by uppercase name. Those
     /// scoped to a sheet are in `Sheet::names`.
     pub names: BTreeMap<String, DefinedName>,
+    /// The cell styles the user made and the built-in ones that were
+    /// changed, see `cell_style.rs`.
+    pub cell_styles: Vec<crate::cell_style::CellStyle>,
     pub locale: &'static Locale,
     /// Set by `recalc` when a circular reference was found.
     pub circular: bool,
@@ -433,6 +437,7 @@ impl Workbook {
             sheets: vec![Sheet::new(format!("{}1", locale.sheet_prefix))],
             styles: StyleTable::default(),
             names: BTreeMap::new(),
+            cell_styles: Vec::new(),
             locale,
             circular: false,
             modified: false,
@@ -580,6 +585,7 @@ impl Workbook {
             before: Box::new(SheetsState {
                 sheets: self.sheets.clone(),
                 names: self.names.clone(),
+                cell_styles: self.cell_styles.clone(),
             }),
             after: None,
         });
@@ -601,6 +607,7 @@ impl Workbook {
                 *after = Some(Box::new(SheetsState {
                     sheets: self.sheets.clone(),
                     names: self.names.clone(),
+                    cell_styles: self.cell_styles.clone(),
                 }));
             }
         }
@@ -783,6 +790,7 @@ impl Workbook {
                 if let Some(state) = target {
                     let replaced = std::mem::replace(&mut wb.sheets, state.sheets.clone());
                     wb.names = state.names.clone();
+                    wb.cell_styles = state.cell_styles.clone();
                     // The snapshot brings contents back; results are those
                     // of the workbook as it was calculated last.
                     wb.calc.sheets_changed(&replaced, &mut wb.sheets);

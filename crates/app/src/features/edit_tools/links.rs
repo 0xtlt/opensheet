@@ -15,7 +15,7 @@ use gpui::{
     Context, CursorStyle, Entity, Focusable, MouseButton, PathPromptOptions, SharedString, Window, div, prelude::*, px,
 };
 use opensheet_engine::ast::{Expr, write_sheet_name};
-use opensheet_engine::hyperlink::{Hyperlink, LINK_COLOR, LinkAction, LinkKind, auto_link};
+use opensheet_engine::hyperlink::{Hyperlink, LINK_STYLE, LinkAction, LinkKind, auto_link};
 use opensheet_engine::ops::PasteMode;
 use opensheet_engine::protect::Action;
 use opensheet_engine::workbook::ClearMode;
@@ -167,7 +167,7 @@ pub(super) fn follow(app: &mut ExcelApp, row: u32, col: u32, window: &mut Window
             }
         }
     }
-    if app.wb.style_at(sheet, row, col).font.color == Some(LINK_COLOR) && app.wb.looks_like_link(sheet, row, col) {
+    if app.wb.cell_style_at(sheet, row, col) == LINK_STYLE {
         app.wb.format_as_link(sheet, app.wb.clamp_to_used(sheet, range), true);
         app.commit(t("Followed Hyperlink", "Lien hypertexte visité"), cx);
     }

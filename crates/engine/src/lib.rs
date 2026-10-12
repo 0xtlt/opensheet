@@ -4,6 +4,7 @@
 //! evaluator, function library, number formats and editing operations.
 
 pub mod ast;
+pub mod cell_style;
 pub mod chart;
 pub mod chart_layout;
 pub mod chart_trend;

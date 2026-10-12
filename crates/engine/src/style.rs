@@ -183,6 +183,9 @@ pub struct Style {
     pub locked: bool,
     /// Protection: the formula is not shown while the sheet is protected.
     pub hidden: bool,
+    /// The cell style the cell was given (`None` = Normal), see
+    /// `cell_style.rs`.
+    pub cell_style: Option<Arc<str>>,
 }
 
 impl Default for Style {
@@ -200,6 +203,7 @@ impl Default for Style {
             borders: Borders::default(),
             locked: true,
             hidden: false,
+            cell_style: None,
         }
     }
 }

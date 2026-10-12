@@ -11,14 +11,14 @@ use crate::eval::Calc;
 use crate::features::CellShift;
 use crate::ops::shift_interval;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
-use crate::style::{Color, Underline};
 use crate::value::Value;
 use crate::workbook::{Content, Sheet, Workbook};
 
-/// The font colour of a link (the Hyperlink colour of the Office theme).
-pub const LINK_COLOR: Color = Color(0x0563C1);
-/// The font colour of a link that was followed.
-pub const FOLLOWED_COLOR: Color = Color(0x954F72);
+pub use crate::cell_style::{FOLLOWED_COLOR, LINK_COLOR};
+
+/// The cell styles of links and of links that were followed.
+pub const LINK_STYLE: &str = "Hyperlink";
+pub const FOLLOWED_STYLE: &str = "Followed Hyperlink";
 
 /// A link on a range of cells.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -305,31 +305,31 @@ impl Workbook {
         carve(&mut self.sheets[sheet].hyperlinks, ranges)
     }
 
-    /// Give cells the look of a link: blue and underlined (purple once
-    /// `followed`).
+    /// Give cells the look of a link: the Hyperlink cell style (the
+    /// Followed Hyperlink one once `followed`).
     pub fn format_as_link(&mut self, sheet: usize, range: Rect, followed: bool) {
-        let color = if followed { FOLLOWED_COLOR } else { LINK_COLOR };
-        self.update_style(sheet, range, &|style| {
-            style.font.color = Some(color);
-            style.font.underline = Underline::Single;
-        });
+        let style = if followed { FOLLOWED_STYLE } else { LINK_STYLE };
+        // The style is one of Excel's: it is always there.
+        let _ = self.apply_cell_style(sheet, &[range], style);
     }
 
-    /// Whether a cell has the look `format_as_link` gives.
+    /// Whether a cell has one of the two styles `format_as_link` gives.
     pub fn looks_like_link(&self, sheet: usize, row: u32, col: u32) -> bool {
-        let font = &self.style_at(sheet, row, col).font;
-        font.underline == Underline::Single && matches!(font.color, Some(LINK_COLOR) | Some(FOLLOWED_COLOR))
+        let style = self.cell_style_at(sheet, row, col);
+        same_name(style, LINK_STYLE) || same_name(style, FOLLOWED_STYLE)
     }
 
-    /// Take the look of a link off cells that have it.
+    /// Take the look of a link off the cells that have it: their font is
+    /// the Normal one again.
     pub fn unformat_links(&mut self, sheet: usize, range: Rect) {
         let range = self.clamp_to_used(sheet, range);
+        let normal = self.styles.default_style().font.clone();
         for row in range.r0..=range.r1 {
             for col in range.c0..=range.c1 {
                 if self.looks_like_link(sheet, row, col) {
                     self.update_style(sheet, Rect::cell(row, col), &|style| {
-                        style.font.color = None;
-                        style.font.underline = Underline::None;
+                        style.font = normal.clone();
+                        style.cell_style = None;
                     });
                 }
             }
@@ -620,14 +620,18 @@ mod tests {
     fn the_look_of_a_link() {
         let mut w = wb(&[("A1", "x"), ("A2", "y")]);
         w.format_as_link(0, rect("A1"), false);
-        w.update_style(0, rect("A2"), &|s| s.font.underline = Underline::Single);
+        w.update_style(0, rect("A2"), &|s| s.font.underline = crate::style::Underline::Single);
         w.commit("format");
         assert!(w.looks_like_link(0, 0, 0));
+        assert_eq!(w.cell_style_at(0, 0, 0), "Hyperlink");
+        assert_eq!(w.style_at(0, 0, 0).font.color, Some(LINK_COLOR));
         assert!(!w.looks_like_link(0, 1, 0));
+        w.format_as_link(0, rect("A1"), true);
+        assert_eq!(w.style_at(0, 0, 0).font.color, Some(FOLLOWED_COLOR));
         w.unformat_links(0, rect("A1:A2"));
         w.commit("unformat");
-        assert_eq!(w.style_at(0, 0, 0).font.color, None);
+        assert_eq!(w.style_at(0, 0, 0), w.styles.default_style());
         // Underlining that was not a link's stays.
-        assert_eq!(w.style_at(0, 1, 0).font.underline, Underline::Single);
+        assert_eq!(w.style_at(0, 1, 0).font.underline, crate::style::Underline::Single);
     }
 }
