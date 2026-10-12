@@ -227,3 +227,32 @@ fn a_timeline_goes_through_a_file() {
     assert_eq!(back.display_text(1, 5, 1).text, "350");
     assert_eq!(to_bytes(&back), bytes);
 }
+
+#[test]
+fn calculated_fields_and_items_go_through_a_file() {
+    let (mut wb, pivot) = book();
+    wb.pivot_set_calculated_field(pivot, "Half & more", "=Sales/2", false).unwrap();
+    wb.pivot_set_calculated_item(pivot, 0, "E+W", "=East+West", false).unwrap();
+    wb.commit("calculated");
+    assert_eq!(column(&wb, 1, 0, 3..=7), ["East", "North", "West", "E+W", "Grand Total"]);
+    assert_eq!(wb.display_text(1, 6, 2).text, "310");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("pivot-calculated.xlsx", &bytes);
+    all_well_formed(&bytes);
+    let cache = part(&bytes, "xl/pivotCache/pivotCacheDefinition1.xml");
+    assert!(cache.contains("<cacheField name=\"Half &amp; more\" numFmtId=\"0\" formula=\"Sales/2\" databaseField=\"0\"/>"), "{cache}");
+    assert!(cache.contains("<s v=\"E+W\" f=\"1\"/>"), "{cache}");
+    assert!(
+        cache.contains("<calculatedItems count=\"1\"><calculatedItem formula=\"East+West\"><pivotArea cacheIndex=\"1\" outline=\"0\" fieldPosition=\"0\"><references count=\"1\"><reference field=\"0\" count=\"1\"><x v=\"3\"/></reference></references></pivotArea></calculatedItem></calculatedItems>"),
+        "{cache}"
+    );
+    let table = part(&bytes, "xl/pivotTables/pivotTable1.xml");
+    assert!(table.contains("dragToRow=\"0\" dragToCol=\"0\" dragToPage=\"0\""), "{table}");
+    assert!(table.contains("<item f=\"1\" x=\"3\"/>"), "{table}");
+    let back = load(&bytes);
+    let (_, p) = back.pivots().next().unwrap();
+    assert_eq!(p.cache.fields[4].formula.as_deref(), Some("Sales/2"));
+    assert_eq!(p.cache.calc_items, wb.pivots().next().unwrap().1.cache.calc_items);
+    assert_eq!(back.display_text(1, 6, 2).text, "310");
+    assert_eq!(to_bytes(&back), bytes);
+}

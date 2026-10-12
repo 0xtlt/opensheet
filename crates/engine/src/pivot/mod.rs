@@ -17,6 +17,7 @@
 //! writes. The caller commits.
 
 mod cache;
+mod calc;
 mod commands;
 mod compute;
 mod getdata;
@@ -26,7 +27,8 @@ mod style;
 mod tests;
 mod text;
 
-pub use cache::{CacheField, FieldGroup, GroupBy, GroupKind, PivotCache};
+pub use cache::{CacheField, CalcItem, FieldGroup, GroupBy, GroupKind, PivotCache};
+pub use calc::{CalcFormula, ListLabels};
 pub use commands::PivotDestination;
 pub use compute::{Report, ReportLine, ReportLineKind};
 pub use getdata::get_pivot_data;
@@ -566,6 +568,26 @@ pub enum PivotError {
     InvalidName,
     /// The cell is not a value of a PivotTable.
     NotAValue,
+    /// The formula of a calculated field or item cannot be read.
+    BadFormula,
+    /// "References, names, and arrays are not supported in PivotTable
+    /// formulas."
+    FormulaReference,
+    /// The formula uses a function whose result varies (RAND, NOW) or
+    /// that reads a PivotTable.
+    FormulaFunction,
+    /// The formula computes from itself.
+    FormulaCircular,
+    /// Another field or item has the name.
+    FormulaNameTaken,
+    /// Calculated items do not go with averages, standard deviations and
+    /// variances, with custom subtotals, with a field that is twice in
+    /// the values, with a grouped field, nor in the filter area.
+    ItemsWithAverages,
+    ItemsWithCustomSubtotals,
+    ItemsWithRepeatedField,
+    ItemsInGroupedField,
+    ItemsInPageField,
 }
 
 /// The part of a PivotTable a cell belongs to.
@@ -861,10 +883,12 @@ impl PivotTable {
             }
         }
         let mut used = vec![false; nf];
+        // Calculated fields are value fields only.
+        let calculated: Vec<bool> = self.cache.fields.iter().map(|f| f.formula.is_some()).collect();
         let mut keep_axis = |list: &mut Vec<AxisField>| {
             let mut values = false;
             list.retain(|a| match a {
-                AxisField::Field(f) if *f < nf && !used[*f] => {
+                AxisField::Field(f) if *f < nf && !used[*f] && !calculated[*f] => {
                     used[*f] = true;
                     true
                 }
@@ -878,7 +902,7 @@ impl PivotTable {
         keep_axis(&mut self.row_fields);
         keep_axis(&mut self.col_fields);
         self.page_fields.retain(|p| {
-            let ok = p.field < nf && !used[p.field];
+            let ok = p.field < nf && !used[p.field] && !calculated[p.field];
             if ok {
                 used[p.field] = true;
             }
@@ -1094,6 +1118,10 @@ impl PivotTable {
         if field >= self.fields.len() {
             return;
         }
+        // A calculated field has no items: it is only ever a value field.
+        if area != Area::Values && self.cache.fields[field].formula.is_some() {
+            return;
+        }
         if area == Area::Values {
             let function = if self.cache.is_numeric(self.cache.database_field(field)) {
                 Aggregation::Sum
@@ -1131,7 +1159,8 @@ impl PivotTable {
                     let at = position.unwrap_or(usize::MAX).min(self.page_fields.len());
                     self.page_fields.insert(at, PageField { field, item: None });
                     // Label and value filters only apply on an axis.
-                    self.filters.retain(|f| f.field != field);
+                    self.filters
+                        .retain(|f| f.field != field || matches!(f.kind, FilterKind::Date { .. }));
                 }
             }
         }

@@ -3165,6 +3165,7 @@ fn a_cache_built_by_hand() {
             .collect(),
             map: Vec::new(),
         }),
+        formula: None,
     });
     assert!(!cache.is_valid());
     cache.complete_groups(Locale::en());
@@ -3411,5 +3412,155 @@ fn groups_of_groups() {
     assert_eq!(
         cells(&wb, 1, Rect::new(3, 0, 7, 1)),
         "Lyon|1\nParis|2\nRome|4\nTurin|8\nGrand Total|15"
+    );
+}
+
+// ---- calculated fields and items ----------------------------------------------
+
+#[test]
+fn a_calculated_field_applies_to_the_sums() {
+    let (mut wb, id) = sales(Locale::en());
+    update(&mut wb, id, |p| p.add_field(REGION, Area::Rows, None, Locale::en()));
+    // Sales per unit: 370 / 27 in the East, not the sum of the six ratios.
+    let field = wb.pivot_set_calculated_field(id, "Price", "=Sales/Units", false).unwrap();
+    wb.commit("field");
+    assert_eq!(field, 5);
+    let (_, p) = wb.pivot(id).unwrap();
+    assert_eq!(p.cache.fields[5].formula.as_deref(), Some("Sales/Units"));
+    assert_eq!(p.data_fields[0].name, "Sum of Price");
+    assert_eq!(at(&wb, id, "A4"), Value::text("East"));
+    assert_close(at(&wb, id, "B4"), 370.0 / 27.0);
+    assert_close(at(&wb, id, "B5"), 320.0 / 29.0);
+    assert_close(at(&wb, id, "B6"), 690.0 / 56.0);
+    // Modify, with a function and a field computed from another one.
+    wb.pivot_set_calculated_field(id, "price", "=ROUND(Sales/Units;0)", false).unwrap_err();
+    wb.pivot_set_calculated_field(id, "price", "=ROUND(Sales/Units,0)", false).unwrap();
+    wb.pivot_set_calculated_field(id, "Double price", "=Price*2", false).unwrap();
+    wb.commit("more");
+    assert_close(at(&wb, id, "B4"), 14.0);
+    assert_close(at(&wb, id, "C4"), 28.0);
+    let (_, p) = wb.pivot(id).unwrap();
+    assert_eq!(p.cache.fields[6].formula.as_deref(), Some("Price*2"));
+    assert_eq!(
+        p.calculated_fields(Locale::fr()),
+        [(5, "Price".to_string(), "ARRONDI(Sales/Units;0)".to_string()), (6, "Double price".to_string(), "Price*2".to_string())]
+    );
+    // What Excel refuses.
+    assert_eq!(wb.pivot_set_calculated_field(id, "Sales", "=1", false), Err(PivotError::FormulaNameTaken));
+    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=A1*2", false), Err(PivotError::FormulaReference));
+    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=Nothing+1", false), Err(PivotError::FormulaReference));
+    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=RAND()", false), Err(PivotError::FormulaFunction));
+    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=Sales+", false), Err(PivotError::BadFormula));
+    assert_eq!(wb.pivot_set_calculated_field(id, "Price", "='Double price'/2", false), Err(PivotError::FormulaCircular));
+    // A calculated field is a value field only, and survives a refresh.
+    update(&mut wb, id, |p| p.add_field(5, Area::Rows, None, Locale::en()));
+    assert_eq!(wb.pivot(id).unwrap().1.row_fields.len(), 1);
+    wb.set_cell_text(0, 1, 4, "20").unwrap();
+    wb.pivot_refresh(id, false).unwrap();
+    wb.commit("refresh");
+    assert_close(at(&wb, id, "B4"), 10.0);
+    // Division by nothing shows as in a cell.
+    wb.pivot_set_calculated_field(id, "Price", "=Sales/(Units-Units)", false).unwrap();
+    assert_eq!(at(&wb, id, "B4"), Value::Error(ErrorKind::Div0));
+    // Deleting takes it out of the values; undo brings it all back.
+    wb.pivot_delete_calculated_field(id, 6, false).unwrap();
+    wb.pivot_delete_calculated_field(id, 5, false).unwrap();
+    wb.commit("delete");
+    let (_, p) = wb.pivot(id).unwrap();
+    assert_eq!((p.cache.fields.len(), p.data_fields.len()), (5, 0));
+    assert!(wb.undo());
+    assert_eq!(wb.pivot(id).unwrap().1.data_fields.len(), 2);
+}
+
+#[test]
+fn names_in_formulas_are_quoted_when_they_must() {
+    let rows = [["Unit price", "Q1", "Sold"], ["2", "5", "10"], ["3", "7", "20"]];
+    let (mut wb, id) = pivot_on(&rows, Locale::en());
+    let field = wb.pivot_set_calculated_field(id, "Turnover", "='unit price'*Sold+q1", false).unwrap();
+    wb.commit("field");
+    let (_, p) = wb.pivot(id).unwrap();
+    assert_eq!(p.cache.fields[field].formula.as_deref(), Some("'Unit price'*Sold+'Q1'"));
+    // (2 + 3) * 30 + 12, on the only row of a report without row fields.
+    assert_close(at(&wb, id, "A4"), 162.0);
+}
+
+#[test]
+fn a_calculated_item_computes_from_the_items_of_its_field() {
+    let (mut wb, id) = sales(Locale::en());
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en());
+        p.add_field(YEAR, Area::Columns, None, Locale::en());
+        p.add_field(SALES_F, Area::Values, None, Locale::en());
+    });
+    // A new item goes after the others, as in Excel.
+    let item = wb.pivot_set_calculated_item(id, REGION, "Gap", "=East-West", false).unwrap();
+    wb.commit("item");
+    assert_eq!(item, 2);
+    assert!(wb.pivot(id).unwrap().1.cache.is_calc_item(REGION, 2));
+    assert_report(
+        &wb,
+        id,
+        "Sum of Sales|Column Labels||
+         Row Labels|2023|2024|Grand Total
+         East|250|120|370
+         West|200|120|320
+         Gap|50|0|50
+         Grand Total|500|240|740",
+    );
+    // A second item computed from the first; the later one in solve order
+    // gives the value where two formulas meet.
+    wb.pivot_set_calculated_item(id, REGION, "Twice", "=Gap*2", false).unwrap();
+    wb.pivot_set_calculated_item(id, YEAR, "Both", "='2023'+'2024'", false).unwrap();
+    wb.commit("more");
+    let (_, p) = wb.pivot(id).unwrap();
+    assert_eq!(p.solve_order(Locale::en()), ["Gap = East-West", "Twice = Gap*2", "Both = '2023'+'2024'"]);
+    assert_eq!(p.calculated_items(REGION, Locale::en()).len(), 2);
+    // Row "Twice", column "Both": (2023 + 2024) of Twice = 100.
+    assert_eq!(shown(&wb, id).lines().nth(5).unwrap(), "Twice|100|0|100|200");
+    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "East", "=1", false), Err(PivotError::FormulaNameTaken));
+    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "Gap", "=Gap+1", false), Err(PivotError::FormulaCircular));
+    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "N", "=Apples+1", false), Err(PivotError::FormulaReference));
+    // Excel's restrictions.
+    update(&mut wb, id, |p| p.set_function(0, Aggregation::Average, Locale::en()));
+    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "N", "=East", false), Err(PivotError::ItemsWithAverages));
+    update(&mut wb, id, |p| p.set_function(0, Aggregation::Sum, Locale::en()));
+    // Unticked, a calculated item leaves the report and its totals.
+    update(&mut wb, id, |p| {
+        p.set_item_hidden(REGION, 3, true);
+        p.set_item_hidden(YEAR, 2, true);
+    });
+    assert_eq!(shown(&wb, id).lines().last().unwrap(), "Grand Total|500|240|740");
+    // Deleting an item, and refreshing, keep the others.
+    wb.pivot_delete_calculated_item(id, REGION, 3, false).unwrap();
+    wb.pivot_refresh(id, false).unwrap();
+    wb.commit("delete");
+    let (_, p) = wb.pivot(id).unwrap();
+    assert_eq!(p.solve_order(Locale::en()), ["Gap = East-West", "Both = '2023'+'2024'"]);
+    assert_eq!(p.cache.items(REGION).len(), 3);
+    wb.pivot_set_solve_order(id, &[1, 0], false).unwrap();
+    assert_eq!(wb.pivot(id).unwrap().1.solve_order(Locale::en())[0], "Both = '2023'+'2024'");
+}
+
+#[test]
+fn list_formulas_writes_a_sheet() {
+    let (mut wb, id) = sales(Locale::en());
+    update(&mut wb, id, |p| p.add_field(REGION, Area::Rows, None, Locale::en()));
+    wb.pivot_set_calculated_field(id, "Price", "=Sales/Units", false).unwrap();
+    wb.pivot_set_calculated_item(id, REGION, "All of it", "=East+West", false).unwrap();
+    let labels = ListLabels {
+        calculated_field: "Calculated Field".into(),
+        calculated_item: "Calculated Item".into(),
+        solve_order: "Solve Order".into(),
+        field: "Field".into(),
+        item: "Item".into(),
+        formula: "Formula".into(),
+        note: vec!["Note:".into()],
+    };
+    let sheet = wb.pivot_list_formulas(id, &labels).unwrap();
+    wb.commit("list");
+    assert_eq!(sheet, 1);
+    assert_eq!(
+        cells(&wb, sheet, Rect::new(0, 0, 9, 2)),
+        "Calculated Field||\nSolve Order|Field|Formula\n1|Price|=Sales/Units\n||\nCalculated Item||\nSolve Order|Item|Formula\n1|'All of it'|=East+West\n||\n||\nNote:||"
     );
 }

@@ -17,8 +17,7 @@
 //! (`rowItems`, `colItems`) is written from the report as last computed.
 //!
 //! Not kept, and lost by a PivotTable read from a file: formats applied
-//! to parts of the report (`formats`, conditional formats), calculated
-//! fields and items, sources other than a range or a name of this
+//! to parts of the report (`formats`, conditional formats), sources other than a range or a name of this
 //! workbook (the cache is kept, the source is not), caches saved without
 //! their records (the report stays in the cells, as plain values), date
 //! filters other than the two days a timeline sets, the member properties
@@ -35,7 +34,7 @@ use super::write::{NS_DOC_REL, NS_MAIN, NS_PKG_REL, push_number};
 use super::xml::{Event, Reader, Tag, XML_DECL, decode_cell_text};
 use opensheet_engine::datetime::{date_to_serial, serial_to_ymd};
 use opensheet_engine::pivot::{
-    Aggregation, AxisField, BaseItem, CacheField, DataField, FieldGroup, FieldLayout, FieldSort,
+    Aggregation, AxisField, BaseItem, CacheField, CalcItem, DataField, FieldGroup, FieldLayout, FieldSort,
     FilterKind, GroupBy, GroupKind, LabelFilter, PageField, PivotCache, PivotField, PivotFilter,
     PivotItem, PivotSource, PivotTable, ReportLine, ReportLineKind, ShowAs, SortOrder, Subtotals,
     Top10By, ValueFilter,
@@ -455,9 +454,26 @@ fn definition_xml(cache: &PivotCache, source: &PivotSource, extensions: &str, dx
         x.push_str("<cacheField");
         push_text_attr(&mut x, "name", &field.name);
         w!(x, " numFmtId=\"{}\"", dxfs.num_fmt_id(&field.num_fmt));
+        if let Some(formula) = &field.formula {
+            // A calculated field: a formula and nothing else.
+            push_text_attr(&mut x, "formula", formula);
+            x.push_str(" databaseField=\"0\"/>");
+            continue;
+        }
         if field.is_database() {
             x.push('>');
+            let from = x.len();
             push_shared_items(&mut x, field, cache.is_date(index));
+            // The calculated items among them say that they are.
+            for item in cache.calc_items.iter().filter(|item| item.field == index) {
+                let mut plain = String::from("<s");
+                push_text_attr(&mut plain, "v", &item.name);
+                let marked = format!("{plain} f=\"1\"/>");
+                plain.push_str("/>");
+                if let Some(at) = x[from..].find(&plain) {
+                    x.replace_range(from + at..from + at + plain.len(), &marked);
+                }
+            }
         } else {
             x.push_str(" databaseField=\"0\">");
         }
@@ -465,6 +481,22 @@ fn definition_xml(cache: &PivotCache, source: &PivotSource, extensions: &str, dx
         x.push_str("</cacheField>");
     }
     x.push_str("</cacheFields>");
+    // calculatedItems: each formula, and the item it computes.
+    let items: Vec<(&opensheet_engine::pivot::CalcItem, u32)> =
+        cache.calc_items.iter().filter_map(|item| Some((item, cache.calc_item_index(item)?))).collect();
+    if !items.is_empty() {
+        w!(x, "<calculatedItems count=\"{}\">", items.len());
+        for (item, at) in items {
+            x.push_str("<calculatedItem");
+            push_text_attr(&mut x, "formula", &item.formula);
+            w!(
+                x,
+                "><pivotArea cacheIndex=\"1\" outline=\"0\" fieldPosition=\"0\"><references count=\"1\"><reference field=\"{}\" count=\"1\"><x v=\"{at}\"/></reference></references></pivotArea></calculatedItem>",
+                item.field
+            );
+        }
+        x.push_str("</calculatedItems>");
+    }
     // What slicers and timelines know the cache by.
     x.push_str(extensions);
     x.push_str("</pivotCacheDefinition>");
@@ -872,6 +904,10 @@ fn push_pivot_field(
     if !field.subtotal_top {
         x.push_str(" subtotalTop=\"0\"");
     }
+    if p.cache.fields[index].formula.is_some() {
+        // A calculated field cannot be dragged anywhere but the values.
+        x.push_str(" dragToRow=\"0\" dragToCol=\"0\" dragToPage=\"0\"");
+    }
     w!(x, " showAll=\"{}\"", u8::from(field.show_all));
     if field.blank_line {
         x.push_str(" insertBlankRow=\"1\"");
@@ -931,6 +967,9 @@ fn push_pivot_field(
             }
             if item.collapsed {
                 x.push_str(" sd=\"0\"");
+            }
+            if p.cache.is_calc_item(index, item.x) {
+                x.push_str(" f=\"1\"");
             }
             w!(x, " x=\"{}\"/>", item.x);
         }
@@ -1347,6 +1386,7 @@ struct RawCache {
     /// The date fields the file groups in place, with the field that
     /// holds their period here (see [`split_date_groups`]).
     moved: Vec<(usize, usize)>,
+    calc_items: Vec<CalcItem>,
 }
 
 /// A cache that was read: what PivotTables on it share.
@@ -1396,6 +1436,7 @@ fn split_date_groups(
             records: Vec::new(),
             num_fmt: Arc::from("General"),
             group: Some(group),
+            formula: None,
         });
     }
     moved
@@ -1411,11 +1452,35 @@ fn parse_definition(
     let mut fields: Vec<CacheField> = Vec::new();
     let mut listed = Vec::new();
     let mut found = false;
+    // The calculated items: field, item, formula.
+    let mut calculated: Vec<(usize, u32, String)> = Vec::new();
     loop {
         match r.next() {
             Event::Open(t) => match t.name {
                 "pivotCacheDefinition" => found = true,
-                "cacheSource" | "cacheFields" => {}
+                "cacheSource" | "cacheFields" | "calculatedItems" => {}
+                "calculatedItem" if !t.empty => {
+                    // The formula, then the field and the item it is for.
+                    let formula = t.attr("formula").map(|v| decode_cell_text(&v).into_owned());
+                    let (mut field, mut item) = (None, None);
+                    let mut depth = 1usize;
+                    while depth > 0 {
+                        match r.next() {
+                            Event::Open(c) => {
+                                match c.name {
+                                    "reference" => field = c.attr_u32("field").map(|f| f as usize),
+                                    "x" => item = c.attr_u32("v"),
+                                    _ => {}
+                                }
+                                depth += usize::from(!c.empty);
+                            }
+                            Event::Close(_) => depth -= 1,
+                            Event::Eof => break,
+                            Event::Text(_) => {}
+                        }
+                    }
+                    calculated.extend(formula.zip(field).zip(item).map(|((formula, field), item)| (field, item, formula)));
+                }
                 "worksheetSource" => {
                     let text = |name: &str| t.attr(name).map(|v| decode_cell_text(&v).into_owned());
                     // A source in another workbook cannot be read again.
@@ -1441,6 +1506,11 @@ fn parse_definition(
                         records: Vec::new(),
                         num_fmt: lookup.num_fmt(t.attr_u32("numFmtId").unwrap_or(0)),
                         group: None,
+                        // A calculated field has no column in the source.
+                        formula: t
+                            .attr("formula")
+                            .filter(|_| !t.attr_bool("databaseField").unwrap_or(true))
+                            .map(|v| decode_cell_text(&v).into_owned()),
                     };
                     let mut lists = false;
                     let mut dates = false;
@@ -1477,6 +1547,17 @@ fn parse_definition(
             _ => {}
         }
     }
+    let calc_items = calculated
+        .into_iter()
+        .filter_map(|(field, item, formula)| match fields.get(field)?.shared.get(item as usize)? {
+            Value::Text(name) => Some(CalcItem {
+                field,
+                name: name.to_string(),
+                formula,
+            }),
+            _ => None,
+        })
+        .collect();
     let moved = split_date_groups(&mut fields, locale);
     listed.resize(fields.len(), false);
     (found && !fields.is_empty()).then_some(RawCache {
@@ -1484,6 +1565,7 @@ fn parse_definition(
         fields,
         listed,
         moved,
+        calc_items,
     })
 }
 
@@ -1572,6 +1654,7 @@ fn read_cache<R: Read + Seek>(
     let mut cache = PivotCache {
         fields: raw.fields,
         rows,
+        calc_items: raw.calc_items,
     };
     cache.complete_groups(locale);
     cache.is_valid().then(|| ReadCache {

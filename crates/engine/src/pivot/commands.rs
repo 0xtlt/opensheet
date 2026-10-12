@@ -422,6 +422,7 @@ impl Workbook {
         let (old, source) = (p.cache.clone(), p.source.clone());
         let mut cache = PivotCache::read(self, &source)?;
         cache.carry_groups(&old, self.locale);
+        cache.carry_calculated(&old);
         let batch = self.pivot_rebound(&old, &Arc::new(cache));
         self.pivot_install(batch, overwrite)
     }
@@ -438,6 +439,7 @@ impl Workbook {
         for (old, source) in caches {
             let mut cache = PivotCache::read(self, &source)?;
             cache.carry_groups(&old, self.locale);
+            cache.carry_calculated(&old);
             batch.extend(self.pivot_rebound(&old, &Arc::new(cache)));
         }
         if batch.is_empty() {
@@ -453,6 +455,7 @@ impl Workbook {
         let mut p = self.sheets[si].pivots[pi].clone();
         let mut cache = PivotCache::read(self, &source)?;
         cache.carry_groups(&p.cache, self.locale);
+        cache.carry_calculated(&p.cache);
         p.rebind(Arc::new(cache));
         p.source = source;
         self.pivot_install(vec![(si, Some(pi), p)], overwrite)
