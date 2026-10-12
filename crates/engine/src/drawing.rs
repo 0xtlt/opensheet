@@ -1,25 +1,2160 @@
-//! Pictures and shapes floating over the cells (`Sheet::drawings`).
+//! Pictures and shapes floating over the cells (`Sheet::drawings`, in
+//! drawing order: the last one is on top).
 //!
-//! Skeleton: the model and the behaviour are still to be written.
+//! A drawing is placed like a chart: a cell holding its top-left corner,
+//! an offset inside that cell and a size, in pixels at 100 %. It also
+//! says how it follows the cells ([`Placement`]); one that is sized with
+//! the cells is pinned to a second cell under its bottom-right corner, as
+//! in a file. Where a drawing is on the sheet is therefore always asked of
+//! `Sheet::drawing_frame`, which knows the column widths and row heights.
+//!
+//! Shapes are described, not drawn: [`ShapePreset::path`] gives the
+//! outline of each preset as a few path commands that a screen and a PDF
+//! writer can both follow.
 
 use crate::ast::StructuralEdit;
-use crate::workbook::{Sheet, Workbook};
+use crate::locale::Locale;
+use crate::refs::{MAX_COLS, MAX_ROWS};
+use crate::style::{Color, Font};
+use crate::validation::localized;
+use crate::workbook::{DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, Sheet, Workbook};
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
-/// A picture or a shape.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Drawing {
-    pub id: u32,
+// ---- pictures ------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ImageFormat {
+    Png,
+    Jpeg,
+    Gif,
+    Bmp,
 }
 
-/// Cache of values derived from the cells (see `features::Caches`).
-#[derive(Debug, Default)]
-pub struct Cache;
+impl ImageFormat {
+    /// The extension of the part in a file (`xl/media/image1.png`).
+    pub fn extension(self) -> &'static str {
+        match self {
+            ImageFormat::Png => "png",
+            ImageFormat::Jpeg => "jpeg",
+            ImageFormat::Gif => "gif",
+            ImageFormat::Bmp => "bmp",
+        }
+    }
 
-/// See `features::on_structural_edit`.
-pub(crate) fn on_structural_edit(_sheet: &mut Sheet, _edit: StructuralEdit, _edited_sheet: &str) {}
+    /// The content type of the part.
+    pub fn mime(self) -> &'static str {
+        match self {
+            ImageFormat::Png => "image/png",
+            ImageFormat::Jpeg => "image/jpeg",
+            ImageFormat::Gif => "image/gif",
+            ImageFormat::Bmp => "image/bmp",
+        }
+    }
+}
 
-/// See `features::on_sheet_renamed`.
+/// What the header of an image file says.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ImageInfo {
+    pub format: ImageFormat,
+    /// Width and height in pixels.
+    pub pixels: (u32, u32),
+    /// Pixels per inch, horizontally and vertically; 96 when the file
+    /// does not say.
+    pub dpi: (f32, f32),
+}
+
+impl ImageInfo {
+    /// The size the picture has when inserted, in pixels at 100 %: its
+    /// physical size, as Excel shows it.
+    pub fn natural_size(&self) -> (f32, f32) {
+        (
+            self.pixels.0 as f32 * 96.0 / self.dpi.0,
+            self.pixels.1 as f32 * 96.0 / self.dpi.1,
+        )
+    }
+}
+
+fn be16(data: &[u8], at: usize) -> Option<u32> {
+    Some(u16::from_be_bytes(data.get(at..at + 2)?.try_into().ok()?) as u32)
+}
+
+fn be32(data: &[u8], at: usize) -> Option<u32> {
+    Some(u32::from_be_bytes(data.get(at..at + 4)?.try_into().ok()?))
+}
+
+fn le16(data: &[u8], at: usize) -> Option<u32> {
+    Some(u16::from_le_bytes(data.get(at..at + 2)?.try_into().ok()?) as u32)
+}
+
+fn le32(data: &[u8], at: usize) -> Option<i32> {
+    Some(i32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?))
+}
+
+/// A resolution worth believing, else the 96 of the screen.
+fn dpi(x: f32, y: f32) -> (f32, f32) {
+    let sane = |v: f32| v.is_finite() && (1.0..=10_000.0).contains(&v);
+    if sane(x) && sane(y) { (x, y) } else { (96.0, 96.0) }
+}
+
+fn png_info(data: &[u8]) -> Option<ImageInfo> {
+    let pixels = (be32(data, 16)?, be32(data, 20)?);
+    let mut resolution = (96.0, 96.0);
+    // Chunks: length, type, data, checksum. The resolution, when given,
+    // comes before the image data.
+    let mut at = 8;
+    while let (Some(length), Some(kind)) = (be32(data, at), data.get(at + 4..at + 8)) {
+        match kind {
+            b"pHYs" if data.get(at + 16) == Some(&1) => {
+                let per_metre = (be32(data, at + 8)? as f32, be32(data, at + 12)? as f32);
+                resolution = dpi(per_metre.0 * 0.0254, per_metre.1 * 0.0254);
+            }
+            b"IDAT" | b"IEND" => break,
+            _ => {}
+        }
+        at += 12 + length as usize;
+    }
+    Some(ImageInfo {
+        format: ImageFormat::Png,
+        pixels,
+        dpi: resolution,
+    })
+}
+
+fn jpeg_info(data: &[u8]) -> Option<ImageInfo> {
+    let mut resolution = (96.0, 96.0);
+    let mut at = 2;
+    loop {
+        // Segments: 0xFF, a marker, then (for most) a length that counts
+        // itself and the data.
+        while *data.get(at)? == 0xff && *data.get(at + 1)? == 0xff {
+            at += 1;
+        }
+        if *data.get(at)? != 0xff {
+            return None;
+        }
+        let marker = *data.get(at + 1)?;
+        at += 2;
+        if matches!(marker, 0x01 | 0xd0..=0xd8) {
+            continue;
+        }
+        let length = be16(data, at)? as usize;
+        match marker {
+            // Start of frame: sample size, height, width.
+            0xc0..=0xcf if !matches!(marker, 0xc4 | 0xc8 | 0xcc) => {
+                return Some(ImageInfo {
+                    format: ImageFormat::Jpeg,
+                    pixels: (be16(data, at + 5)?, be16(data, at + 3)?),
+                    dpi: resolution,
+                });
+            }
+            0xe0 if data.get(at + 2..at + 7) == Some(b"JFIF\0") => {
+                let density = (be16(data, at + 10)? as f32, be16(data, at + 12)? as f32);
+                match data.get(at + 9) {
+                    Some(1) => resolution = dpi(density.0, density.1),
+                    Some(2) => resolution = dpi(density.0 * 2.54, density.1 * 2.54),
+                    _ => {}
+                }
+            }
+            0xd9 | 0xda => return None,
+            _ => {}
+        }
+        at += length.max(2);
+    }
+}
+
+fn bmp_info(data: &[u8]) -> Option<ImageInfo> {
+    let header = le32(data, 14)?;
+    let (pixels, resolution) = if header == 12 {
+        ((le16(data, 18)?, le16(data, 20)?), (96.0, 96.0))
+    } else {
+        // The height is negative when the rows run top to bottom.
+        let size = (le32(data, 18)?.unsigned_abs(), le32(data, 22)?.unsigned_abs());
+        let per_metre = (le32(data, 38).unwrap_or(0) as f32, le32(data, 42).unwrap_or(0) as f32);
+        (size, dpi(per_metre.0 * 0.0254, per_metre.1 * 0.0254))
+    };
+    Some(ImageInfo {
+        format: ImageFormat::Bmp,
+        pixels,
+        dpi: resolution,
+    })
+}
+
+/// Recognise an image and read its size from its header, without decoding
+/// it. `None` for anything but PNG, JPEG, GIF and BMP, and for images
+/// without pixels.
+pub fn image_info(data: &[u8]) -> Option<ImageInfo> {
+    let info = if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        png_info(data)?
+    } else if data.starts_with(&[0xff, 0xd8]) {
+        jpeg_info(data)?
+    } else if data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a") {
+        ImageInfo {
+            format: ImageFormat::Gif,
+            pixels: (le16(data, 6)?, le16(data, 8)?),
+            dpi: (96.0, 96.0),
+        }
+    } else if data.starts_with(b"BM") {
+        bmp_info(data)?
+    } else {
+        return None;
+    };
+    (info.pixels.0 > 0 && info.pixels.1 > 0).then_some(info)
+}
+
+/// A picture: the bytes of the image file exactly as inserted.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Picture {
+    pub format: ImageFormat,
+    /// Shared, so that undo snapshots do not copy images.
+    pub data: Arc<[u8]>,
+    /// Width and height of the image in pixels.
+    pub pixels: (u32, u32),
+}
+
+impl Picture {
+    /// `None` when the bytes are not an image of a supported format.
+    pub fn new(data: impl Into<Arc<[u8]>>) -> Option<Picture> {
+        let data = data.into();
+        let info = image_info(&data)?;
+        Some(Picture {
+            format: info.format,
+            data,
+            pixels: info.pixels,
+        })
+    }
+}
+
+// ---- shapes --------------------------------------------------------------
+
+/// One step of an outline. Coordinates are fractions of the frame: (0, 0)
+/// is its top-left corner and (1, 1) its bottom-right one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PathCommand {
+    MoveTo(f32, f32),
+    LineTo(f32, f32),
+    /// A cubic Bézier curve: two control points, then the end point.
+    CurveTo(f32, f32, f32, f32, f32, f32),
+    Close,
+}
+
+/// The geometries of Excel's shape gallery that are supported (`prst` of
+/// `<a:prstGeom>`), with their default proportions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShapePreset {
+    Rect,
+    RoundRect,
+    Ellipse,
+    /// Isosceles triangle.
+    Triangle,
+    RightTriangle,
+    Diamond,
+    Pentagon,
+    Hexagon,
+    RightArrow,
+    LeftArrow,
+    UpArrow,
+    DownArrow,
+    Star5,
+    /// A straight line from the top-left to the bottom-right corner of
+    /// the frame (flipping gives the other diagonal). Arrowheads are part
+    /// of the outline.
+    Line,
+    /// A rectangular speech bubble; its tail points below the frame.
+    Callout,
+}
+
+/// How far a quarter circle's control points sit from its ends.
+const KAPPA: f32 = 0.552_284_8;
+
+impl ShapePreset {
+    pub const ALL: [ShapePreset; 15] = [
+        ShapePreset::Rect,
+        ShapePreset::RoundRect,
+        ShapePreset::Ellipse,
+        ShapePreset::Triangle,
+        ShapePreset::RightTriangle,
+        ShapePreset::Diamond,
+        ShapePreset::Pentagon,
+        ShapePreset::Hexagon,
+        ShapePreset::RightArrow,
+        ShapePreset::LeftArrow,
+        ShapePreset::UpArrow,
+        ShapePreset::DownArrow,
+        ShapePreset::Star5,
+        ShapePreset::Line,
+        ShapePreset::Callout,
+    ];
+
+    /// The `prst` attribute. Excel writes a line with arrowheads as
+    /// `straightConnector1`; both spellings are read as a line.
+    pub fn ooxml_name(self) -> &'static str {
+        match self {
+            ShapePreset::Rect => "rect",
+            ShapePreset::RoundRect => "roundRect",
+            ShapePreset::Ellipse => "ellipse",
+            ShapePreset::Triangle => "triangle",
+            ShapePreset::RightTriangle => "rtTriangle",
+            ShapePreset::Diamond => "diamond",
+            ShapePreset::Pentagon => "pentagon",
+            ShapePreset::Hexagon => "hexagon",
+            ShapePreset::RightArrow => "rightArrow",
+            ShapePreset::LeftArrow => "leftArrow",
+            ShapePreset::UpArrow => "upArrow",
+            ShapePreset::DownArrow => "downArrow",
+            ShapePreset::Star5 => "star5",
+            ShapePreset::Line => "line",
+            ShapePreset::Callout => "wedgeRectCallout",
+        }
+    }
+
+    pub fn from_ooxml_name(name: &str) -> Option<ShapePreset> {
+        if name == "straightConnector1" {
+            return Some(ShapePreset::Line);
+        }
+        ShapePreset::ALL.into_iter().find(|p| p.ooxml_name() == name)
+    }
+
+    /// A line has no inside: it is stroked, never filled.
+    pub fn is_line(self) -> bool {
+        self == ShapePreset::Line
+    }
+
+    /// Length of the head of a block arrow along its axis, as a fraction
+    /// of the frame: half the shorter side, as Excel draws it.
+    fn arrow_head(along: f32, across: f32) -> f32 {
+        if along <= 0.0 {
+            0.5
+        } else {
+            (along.min(across) * 0.5 / along).min(1.0)
+        }
+    }
+
+    /// The outline of the shape in a frame of the given size. The size
+    /// only sets the proportions (round corners stay round, arrow heads
+    /// keep their angle): coordinates are fractions of the frame, to be
+    /// multiplied by its width and height. Flips, then the rotation about
+    /// the centre of the frame, are applied by whoever draws.
+    pub fn path(self, width: f32, height: f32) -> Vec<PathCommand> {
+        use PathCommand::{Close, CurveTo, LineTo, MoveTo};
+        let polygon = |points: &[(f32, f32)]| -> Vec<PathCommand> {
+            let mut path: Vec<PathCommand> = points
+                .iter()
+                .enumerate()
+                .map(|(i, (x, y))| if i == 0 { MoveTo(*x, *y) } else { LineTo(*x, *y) })
+                .collect();
+            path.push(Close);
+            path
+        };
+        // A star's points and a pentagon's corners lie on an ellipse a
+        // little larger than the frame, so that the figure fills it.
+        let (reach_x, reach_y, centre_y) = (0.5 * 1.051_46, 0.5 * 1.105_57, 0.5 * 1.105_57);
+        let on_ellipse = |degrees: f32, scale: f32| {
+            let angle = degrees.to_radians();
+            (
+                0.5 + angle.cos() * reach_x * scale,
+                centre_y - angle.sin() * reach_y * scale,
+            )
+        };
+        match self {
+            ShapePreset::Rect => polygon(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]),
+            ShapePreset::RoundRect => {
+                let radius = width.min(height) / 6.0;
+                let rx = if width > 0.0 { radius / width } else { 0.0 };
+                let ry = if height > 0.0 { radius / height } else { 0.0 };
+                let (kx, ky) = (rx * (1.0 - KAPPA), ry * (1.0 - KAPPA));
+                vec![
+                    MoveTo(rx, 0.0),
+                    LineTo(1.0 - rx, 0.0),
+                    CurveTo(1.0 - kx, 0.0, 1.0, ky, 1.0, ry),
+                    LineTo(1.0, 1.0 - ry),
+                    CurveTo(1.0, 1.0 - ky, 1.0 - kx, 1.0, 1.0 - rx, 1.0),
+                    LineTo(rx, 1.0),
+                    CurveTo(kx, 1.0, 0.0, 1.0 - ky, 0.0, 1.0 - ry),
+                    LineTo(0.0, ry),
+                    CurveTo(0.0, ky, kx, 0.0, rx, 0.0),
+                    Close,
+                ]
+            }
+            ShapePreset::Ellipse => {
+                let k = 0.5 * KAPPA;
+                vec![
+                    MoveTo(1.0, 0.5),
+                    CurveTo(1.0, 0.5 + k, 0.5 + k, 1.0, 0.5, 1.0),
+                    CurveTo(0.5 - k, 1.0, 0.0, 0.5 + k, 0.0, 0.5),
+                    CurveTo(0.0, 0.5 - k, 0.5 - k, 0.0, 0.5, 0.0),
+                    CurveTo(0.5 + k, 0.0, 1.0, 0.5 - k, 1.0, 0.5),
+                    Close,
+                ]
+            }
+            ShapePreset::Triangle => polygon(&[(0.0, 1.0), (0.5, 0.0), (1.0, 1.0)]),
+            ShapePreset::RightTriangle => polygon(&[(0.0, 1.0), (0.0, 0.0), (1.0, 1.0)]),
+            ShapePreset::Diamond => polygon(&[(0.0, 0.5), (0.5, 0.0), (1.0, 0.5), (0.5, 1.0)]),
+            ShapePreset::Pentagon => {
+                let corners: Vec<(f32, f32)> = [162.0, 90.0, 18.0, 306.0, 234.0]
+                    .iter()
+                    .map(|a| on_ellipse(*a, 1.0))
+                    .collect();
+                polygon(&corners)
+            }
+            ShapePreset::Hexagon => {
+                let inset = if width > 0.0 {
+                    (width.min(height) * 0.25 / width).min(0.5)
+                } else {
+                    0.25
+                };
+                polygon(&[
+                    (0.0, 0.5),
+                    (inset, 0.0),
+                    (1.0 - inset, 0.0),
+                    (1.0, 0.5),
+                    (1.0 - inset, 1.0),
+                    (inset, 1.0),
+                ])
+            }
+            ShapePreset::RightArrow | ShapePreset::LeftArrow => {
+                let neck = 1.0 - ShapePreset::arrow_head(width, height);
+                let right = [
+                    (0.0, 0.25),
+                    (neck, 0.25),
+                    (neck, 0.0),
+                    (1.0, 0.5),
+                    (neck, 1.0),
+                    (neck, 0.75),
+                    (0.0, 0.75),
+                ];
+                let mirrored = self == ShapePreset::LeftArrow;
+                polygon(&right.map(|(x, y)| if mirrored { (1.0 - x, y) } else { (x, y) }))
+            }
+            ShapePreset::UpArrow | ShapePreset::DownArrow => {
+                let neck = 1.0 - ShapePreset::arrow_head(height, width);
+                let down = [
+                    (0.25, 0.0),
+                    (0.25, neck),
+                    (0.0, neck),
+                    (0.5, 1.0),
+                    (1.0, neck),
+                    (0.75, neck),
+                    (0.75, 0.0),
+                ];
+                let mirrored = self == ShapePreset::UpArrow;
+                polygon(&down.map(|(x, y)| if mirrored { (x, 1.0 - y) } else { (x, y) }))
+            }
+            ShapePreset::Star5 => {
+                // Points and hollows alternate; the hollows lie at 0.382
+                // of the way out, where the lines of a pentagram cross.
+                let corners: Vec<(f32, f32)> = (0..10)
+                    .map(|i| on_ellipse(162.0 - 36.0 * i as f32, if i % 2 == 0 { 1.0 } else { 0.381_96 }))
+                    .collect();
+                polygon(&corners)
+            }
+            ShapePreset::Line => vec![MoveTo(0.0, 0.0), LineTo(1.0, 1.0)],
+            ShapePreset::Callout => polygon(&[
+                (0.0, 0.0),
+                (1.0, 0.0),
+                (1.0, 1.0),
+                (5.0 / 12.0, 1.0),
+                (0.5 - 0.208_33, 0.5 + 0.625),
+                (2.0 / 12.0, 1.0),
+                (0.0, 1.0),
+            ]),
+        }
+    }
+
+    /// The part of the frame the text is laid out in, before its margins
+    /// (`TEXT_MARGIN`): left, top, right and bottom as fractions of the
+    /// frame of the given size.
+    pub fn text_rect(self, width: f32, height: f32) -> [f32; 4] {
+        match self {
+            ShapePreset::Rect | ShapePreset::Line | ShapePreset::Callout => [0.0, 0.0, 1.0, 1.0],
+            ShapePreset::RoundRect => {
+                // Clear of the round corners.
+                let inset = width.min(height) / 6.0 * 0.292_89;
+                let x = if width > 0.0 { inset / width } else { 0.0 };
+                let y = if height > 0.0 { inset / height } else { 0.0 };
+                [x, y, 1.0 - x, 1.0 - y]
+            }
+            ShapePreset::Ellipse => [0.146_45, 0.146_45, 0.853_55, 0.853_55],
+            ShapePreset::Triangle => [0.25, 0.5, 0.75, 1.0],
+            ShapePreset::RightTriangle => [1.0 / 12.0, 7.0 / 12.0, 7.0 / 12.0, 11.0 / 12.0],
+            ShapePreset::Diamond => [0.25, 0.25, 0.75, 0.75],
+            ShapePreset::Pentagon => [0.190_98, 0.236_07, 0.809_02, 1.0],
+            ShapePreset::Hexagon => [0.125, 0.25, 0.875, 0.75],
+            ShapePreset::RightArrow => [0.0, 0.25, 1.0 - ShapePreset::arrow_head(width, height) / 2.0, 0.75],
+            ShapePreset::LeftArrow => [ShapePreset::arrow_head(width, height) / 2.0, 0.25, 1.0, 0.75],
+            ShapePreset::UpArrow => [0.25, ShapePreset::arrow_head(height, width) / 2.0, 0.75, 1.0],
+            ShapePreset::DownArrow => [0.25, 0.0, 0.75, 1.0 - ShapePreset::arrow_head(height, width) / 2.0],
+            ShapePreset::Star5 => [0.309_02, 0.381_97, 0.690_98, 0.763_93],
+        }
+    }
+}
+
+/// Space kept between the text rectangle of a shape and its text, in
+/// pixels at 100 %: left and right, top and bottom (0.1 and 0.05 inch).
+pub const TEXT_MARGIN: (f32, f32) = (9.6, 4.8);
+
+/// The dash of an outline (`val` of `<a:prstDash>`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Dash {
+    #[default]
+    Solid,
+    /// Round dots.
+    SysDot,
+    /// Square dots.
+    SysDash,
+    Dash,
+    DashDot,
+    LongDash,
+    LongDashDot,
+    LongDashDotDot,
+    Dot,
+    SysDashDot,
+    SysDashDotDot,
+}
+
+impl Dash {
+    /// The first eight in the order of Excel's Dashes menu.
+    pub const ALL: [Dash; 11] = [
+        Dash::Solid,
+        Dash::SysDot,
+        Dash::SysDash,
+        Dash::Dash,
+        Dash::DashDot,
+        Dash::LongDash,
+        Dash::LongDashDot,
+        Dash::LongDashDotDot,
+        Dash::Dot,
+        Dash::SysDashDot,
+        Dash::SysDashDotDot,
+    ];
+
+    pub fn ooxml_name(self) -> &'static str {
+        match self {
+            Dash::Solid => "solid",
+            Dash::SysDot => "sysDot",
+            Dash::SysDash => "sysDash",
+            Dash::Dash => "dash",
+            Dash::DashDot => "dashDot",
+            Dash::LongDash => "lgDash",
+            Dash::LongDashDot => "lgDashDot",
+            Dash::LongDashDotDot => "lgDashDotDot",
+            Dash::Dot => "dot",
+            Dash::SysDashDot => "sysDashDot",
+            Dash::SysDashDotDot => "sysDashDotDot",
+        }
+    }
+
+    pub fn from_ooxml_name(name: &str) -> Option<Dash> {
+        Dash::ALL.into_iter().find(|d| d.ooxml_name() == name)
+    }
+
+    /// Lengths of the dashes and of the gaps between them, in multiples
+    /// of the line width; empty for a solid line.
+    pub fn pattern(self) -> &'static [f32] {
+        match self {
+            Dash::Solid => &[],
+            Dash::SysDot => &[1.0, 1.0],
+            Dash::SysDash => &[3.0, 1.0],
+            Dash::Dash => &[4.0, 3.0],
+            Dash::DashDot => &[4.0, 3.0, 1.0, 3.0],
+            Dash::LongDash => &[8.0, 3.0],
+            Dash::LongDashDot => &[8.0, 3.0, 1.0, 3.0],
+            Dash::LongDashDotDot => &[8.0, 3.0, 1.0, 3.0, 1.0, 3.0],
+            Dash::Dot => &[1.0, 3.0],
+            Dash::SysDashDot => &[3.0, 1.0, 1.0, 1.0],
+            Dash::SysDashDotDot => &[3.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        }
+    }
+}
+
+/// What a line ends with (`type` of `<a:headEnd>` / `<a:tailEnd>`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum LineEnd {
+    #[default]
+    None,
+    /// The filled arrowhead of Excel's arrows.
+    Triangle,
+    Stealth,
+    Diamond,
+    Oval,
+    /// An open arrowhead (two strokes).
+    Open,
+}
+
+impl LineEnd {
+    pub const ALL: [LineEnd; 6] = [
+        LineEnd::None,
+        LineEnd::Triangle,
+        LineEnd::Stealth,
+        LineEnd::Diamond,
+        LineEnd::Oval,
+        LineEnd::Open,
+    ];
+
+    pub fn ooxml_name(self) -> &'static str {
+        match self {
+            LineEnd::None => "none",
+            LineEnd::Triangle => "triangle",
+            LineEnd::Stealth => "stealth",
+            LineEnd::Diamond => "diamond",
+            LineEnd::Oval => "oval",
+            LineEnd::Open => "arrow",
+        }
+    }
+
+    pub fn from_ooxml_name(name: &str) -> Option<LineEnd> {
+        LineEnd::ALL.into_iter().find(|e| e.ooxml_name() == name)
+    }
+}
+
+/// The line around a shape, or the line itself (`<a:ln>`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Outline {
+    pub color: Color,
+    /// Width in points.
+    pub width: f32,
+    pub dash: Dash,
+    /// At the first point of the path (`headEnd`).
+    pub start: LineEnd,
+    /// At the last point of the path (`tailEnd`).
+    pub end: LineEnd,
+}
+
+impl Outline {
+    pub fn solid(color: Color, width: f32) -> Outline {
+        Outline {
+            color,
+            width,
+            dash: Dash::Solid,
+            start: LineEnd::None,
+            end: LineEnd::None,
+        }
+    }
+}
+
+/// Horizontal alignment of the text of a shape (`algn` of `<a:pPr>`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+    Justify,
+}
+
+impl TextAlign {
+    pub const ALL: [TextAlign; 4] = [TextAlign::Left, TextAlign::Center, TextAlign::Right, TextAlign::Justify];
+
+    pub fn ooxml_name(self) -> &'static str {
+        match self {
+            TextAlign::Left => "l",
+            TextAlign::Center => "ctr",
+            TextAlign::Right => "r",
+            TextAlign::Justify => "just",
+        }
+    }
+
+    pub fn from_ooxml_name(name: &str) -> Option<TextAlign> {
+        TextAlign::ALL.into_iter().find(|a| a.ooxml_name() == name)
+    }
+}
+
+/// Vertical position of the text in a shape (`anchor` of `<a:bodyPr>`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TextAnchor {
+    #[default]
+    Top,
+    Middle,
+    Bottom,
+}
+
+impl TextAnchor {
+    pub const ALL: [TextAnchor; 3] = [TextAnchor::Top, TextAnchor::Middle, TextAnchor::Bottom];
+
+    pub fn ooxml_name(self) -> &'static str {
+        match self {
+            TextAnchor::Top => "t",
+            TextAnchor::Middle => "ctr",
+            TextAnchor::Bottom => "b",
+        }
+    }
+
+    pub fn from_ooxml_name(name: &str) -> Option<TextAnchor> {
+        TextAnchor::ALL.into_iter().find(|a| a.ooxml_name() == name)
+    }
+}
+
+/// A shape: a preset geometry with a fill, an outline and text.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shape {
+    pub preset: ShapePreset,
+    /// Inserted as a text box (`txBox` in the file): it behaves like any
+    /// rectangle, the flag only keeps what it was.
+    pub text_box: bool,
+    /// `None`: no fill.
+    pub fill: Option<Color>,
+    /// `None`: no outline.
+    pub outline: Option<Outline>,
+    /// Paragraphs are separated by line feeds.
+    pub text: String,
+    /// The font of the whole text; its colour `None` is black.
+    pub font: Font,
+    pub align: TextAlign,
+    pub anchor: TextAnchor,
+}
+
+/// The entries of the Insert ▸ Shapes gallery: a geometry with the look
+/// Excel gives it at first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShapeTool {
+    Rectangle,
+    RoundedRectangle,
+    Ellipse,
+    Triangle,
+    RightTriangle,
+    Diamond,
+    Pentagon,
+    Hexagon,
+    RightArrow,
+    LeftArrow,
+    UpArrow,
+    DownArrow,
+    Star5,
+    Line,
+    /// A line with an arrowhead at its end.
+    Arrow,
+    /// A line with an arrowhead at both ends.
+    DoubleArrow,
+    TextBox,
+    Callout,
+}
+
+/// Fill of new shapes and colour of new lines (first accent of the Office
+/// theme), and the darker shade of their outline.
+const ACCENT: Color = Color(0x156082);
+const ACCENT_DARK: Color = Color(0x042433);
+
+impl ShapeTool {
+    pub const ALL: [ShapeTool; 18] = [
+        ShapeTool::Rectangle,
+        ShapeTool::RoundedRectangle,
+        ShapeTool::Ellipse,
+        ShapeTool::Triangle,
+        ShapeTool::RightTriangle,
+        ShapeTool::Diamond,
+        ShapeTool::Pentagon,
+        ShapeTool::Hexagon,
+        ShapeTool::RightArrow,
+        ShapeTool::LeftArrow,
+        ShapeTool::UpArrow,
+        ShapeTool::DownArrow,
+        ShapeTool::Star5,
+        ShapeTool::Line,
+        ShapeTool::Arrow,
+        ShapeTool::DoubleArrow,
+        ShapeTool::TextBox,
+        ShapeTool::Callout,
+    ];
+
+    pub fn preset(self) -> ShapePreset {
+        match self {
+            ShapeTool::Rectangle | ShapeTool::TextBox => ShapePreset::Rect,
+            ShapeTool::RoundedRectangle => ShapePreset::RoundRect,
+            ShapeTool::Ellipse => ShapePreset::Ellipse,
+            ShapeTool::Triangle => ShapePreset::Triangle,
+            ShapeTool::RightTriangle => ShapePreset::RightTriangle,
+            ShapeTool::Diamond => ShapePreset::Diamond,
+            ShapeTool::Pentagon => ShapePreset::Pentagon,
+            ShapeTool::Hexagon => ShapePreset::Hexagon,
+            ShapeTool::RightArrow => ShapePreset::RightArrow,
+            ShapeTool::LeftArrow => ShapePreset::LeftArrow,
+            ShapeTool::UpArrow => ShapePreset::UpArrow,
+            ShapeTool::DownArrow => ShapePreset::DownArrow,
+            ShapeTool::Star5 => ShapePreset::Star5,
+            ShapeTool::Line | ShapeTool::Arrow | ShapeTool::DoubleArrow => ShapePreset::Line,
+            ShapeTool::Callout => ShapePreset::Callout,
+        }
+    }
+
+    /// A new shape as Excel first draws it.
+    pub fn shape(self) -> Shape {
+        let preset = self.preset();
+        let mut shape = Shape {
+            preset,
+            text_box: false,
+            fill: Some(ACCENT),
+            outline: Some(Outline::solid(ACCENT_DARK, 1.0)),
+            text: String::new(),
+            font: Font {
+                color: Some(Color::WHITE),
+                ..Font::default()
+            },
+            align: TextAlign::Center,
+            anchor: TextAnchor::Middle,
+        };
+        if preset.is_line() {
+            let arrow = |pointed: bool| if pointed { LineEnd::Triangle } else { LineEnd::None };
+            shape.fill = None;
+            shape.font.color = None;
+            shape.outline = Some(Outline {
+                start: arrow(self == ShapeTool::DoubleArrow),
+                end: arrow(self != ShapeTool::Line),
+                ..Outline::solid(ACCENT, 1.0)
+            });
+        }
+        if self == ShapeTool::TextBox {
+            shape.text_box = true;
+            shape.fill = Some(Color::WHITE);
+            shape.outline = Some(Outline::solid(Color(0xBCBCBC), 0.75));
+            shape.font.color = None;
+            shape.align = TextAlign::Left;
+            shape.anchor = TextAnchor::Top;
+        }
+        shape
+    }
+
+    /// The size a shape gets from a single click, in pixels at 100 %.
+    pub fn default_size(self) -> (f32, f32) {
+        match self {
+            ShapeTool::RightArrow | ShapeTool::LeftArrow | ShapeTool::TextBox => (96.0, 48.0),
+            ShapeTool::UpArrow | ShapeTool::DownArrow => (48.0, 96.0),
+            ShapeTool::Line | ShapeTool::Arrow | ShapeTool::DoubleArrow => (96.0, 0.0),
+            ShapeTool::Callout => (144.0, 72.0),
+            _ => (96.0, 96.0),
+        }
+    }
+
+    /// The name Excel gives such a shape, before its number.
+    pub fn name(self, locale: &Locale) -> &'static str {
+        localized(
+            locale,
+            match self {
+                ShapeTool::Rectangle => ["Rectangle", "Rectangle", "Rectángulo", "Rechteck", "Rettangolo"],
+                ShapeTool::RoundedRectangle => [
+                    "Rounded Rectangle",
+                    "Rectangle arrondi",
+                    "Rectángulo redondeado",
+                    "Abgerundetes Rechteck",
+                    "Rettangolo smussato",
+                ],
+                ShapeTool::Ellipse => ["Oval", "Ellipse", "Óvalo", "Ellipse", "Ovale"],
+                ShapeTool::Triangle => [
+                    "Isosceles Triangle",
+                    "Triangle isocèle",
+                    "Triángulo isósceles",
+                    "Gleichschenkliges Dreieck",
+                    "Triangolo isoscele",
+                ],
+                ShapeTool::RightTriangle => [
+                    "Right Triangle",
+                    "Triangle rectangle",
+                    "Triángulo rectángulo",
+                    "Rechtwinkliges Dreieck",
+                    "Triangolo rettangolo",
+                ],
+                ShapeTool::Diamond => ["Diamond", "Losange", "Rombo", "Raute", "Diamante"],
+                ShapeTool::Pentagon => [
+                    "Regular Pentagon",
+                    "Pentagone régulier",
+                    "Pentágono regular",
+                    "Regelmäßiges Fünfeck",
+                    "Pentagono regolare",
+                ],
+                ShapeTool::Hexagon => ["Hexagon", "Hexagone", "Hexágono", "Sechseck", "Esagono"],
+                ShapeTool::RightArrow => [
+                    "Right Arrow",
+                    "Flèche droite",
+                    "Flecha derecha",
+                    "Pfeil nach rechts",
+                    "Freccia a destra",
+                ],
+                ShapeTool::LeftArrow => [
+                    "Left Arrow",
+                    "Flèche gauche",
+                    "Flecha izquierda",
+                    "Pfeil nach links",
+                    "Freccia a sinistra",
+                ],
+                ShapeTool::UpArrow => [
+                    "Up Arrow",
+                    "Flèche vers le haut",
+                    "Flecha arriba",
+                    "Pfeil nach oben",
+                    "Freccia su",
+                ],
+                ShapeTool::DownArrow => [
+                    "Down Arrow",
+                    "Flèche vers le bas",
+                    "Flecha abajo",
+                    "Pfeil nach unten",
+                    "Freccia in giù",
+                ],
+                ShapeTool::Star5 => [
+                    "5-Point Star",
+                    "Étoile à 5 branches",
+                    "Estrella de 5 puntas",
+                    "Stern mit 5 Zacken",
+                    "Stella a 5 punte",
+                ],
+                ShapeTool::Line => [
+                    "Straight Connector",
+                    "Lien droit",
+                    "Conector recto",
+                    "Gerader Verbinder",
+                    "Connettore dritto",
+                ],
+                ShapeTool::Arrow | ShapeTool::DoubleArrow => [
+                    "Straight Arrow Connector",
+                    "Connecteur droit avec flèche",
+                    "Conector recto de flecha",
+                    "Gerader pfeilförmiger Verbinder",
+                    "Connettore dritto a freccia",
+                ],
+                ShapeTool::TextBox => ["TextBox", "ZoneTexte", "CuadroTexto", "Textfeld", "CasellaDiTesto"],
+                ShapeTool::Callout => [
+                    "Rectangular Callout",
+                    "Rectangle",
+                    "Llamada rectangular",
+                    "Rechteckige Legende",
+                    "Callout rettangolare",
+                ],
+            },
+        )
+    }
+}
+
+/// The name Excel gives a picture, before its number.
+fn picture_name(locale: &Locale) -> &'static str {
+    localized(locale, ["Picture", "Image", "Imagen", "Bild", "Immagine"])
+}
+
+// ---- drawings ------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DrawingKind {
+    Picture(Picture),
+    Shape(Shape),
+}
+
+/// How a drawing follows the cells under it (`editAs` of its anchor;
+/// `twoCell` when a file leaves it out).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Placement {
+    /// "Move and size with cells" (`twoCell`): both corners are pinned to
+    /// cells, so resizing, hiding, inserting or deleting the rows and
+    /// columns it covers stretches or squeezes it.
+    #[default]
+    MoveAndSize,
+    /// "Move but don't size with cells" (`oneCell`): the top-left corner
+    /// is pinned to a cell, the size is kept.
+    MoveOnly,
+    /// "Don't move or size with cells" (`absolute`): it stays where it is
+    /// on the sheet. Its anchor is then always cell A1.
+    Fixed,
+}
+
+impl Placement {
+    pub const ALL: [Placement; 3] = [Placement::MoveAndSize, Placement::MoveOnly, Placement::Fixed];
+
+    pub fn ooxml_name(self) -> &'static str {
+        match self {
+            Placement::MoveAndSize => "twoCell",
+            Placement::MoveOnly => "oneCell",
+            Placement::Fixed => "absolute",
+        }
+    }
+
+    pub fn from_ooxml_name(name: &str) -> Option<Placement> {
+        Placement::ALL.into_iter().find(|p| p.ooxml_name() == name)
+    }
+}
+
+/// A picture or a shape.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Drawing {
+    /// Unique among the drawings of the workbook (assigned by
+    /// `Workbook::add_drawing`); charts are numbered apart.
+    pub id: u32,
+    /// "Picture 1", "Rectangle 2": unique on the sheet.
+    pub name: String,
+    /// Description for screen readers (`descr`).
+    pub alt_text: String,
+    pub kind: DrawingKind,
+    /// Cell holding the top-left corner (row, col).
+    pub anchor: (u32, u32),
+    /// Offset of the corner inside that cell, pixels at 100 % (x, y).
+    pub offset: (f32, f32),
+    /// Width and height, pixels at 100 %. For `Placement::MoveAndSize`
+    /// this is the size when the drawing was last placed: the real one
+    /// follows the cells, ask `Sheet::drawing_frame`.
+    pub size: (f32, f32),
+    /// Cell holding the bottom-right corner and the offset inside it:
+    /// what pins a `MoveAndSize` drawing. Kept up to date for the other
+    /// placements but not read.
+    pub to: (u32, u32),
+    pub to_offset: (f32, f32),
+    pub placement: Placement,
+    /// Degrees, clockwise, about the centre of the frame.
+    pub rotation: f32,
+    pub flip_h: bool,
+    pub flip_v: bool,
+    /// "Lock aspect ratio": resizing keeps the proportions.
+    pub lock_aspect: bool,
+    /// Cannot be changed while the sheet is protected without "Edit
+    /// objects" (`fLocksWithSheet`).
+    pub locked: bool,
+    /// "Print object" (`fPrintsWithSheet`).
+    pub print: bool,
+}
+
+impl Drawing {
+    fn new(kind: DrawingKind, size: (f32, f32), placement: Placement, lock_aspect: bool) -> Drawing {
+        Drawing {
+            id: 0,
+            name: String::new(),
+            alt_text: String::new(),
+            kind,
+            anchor: (0, 0),
+            offset: (0.0, 0.0),
+            size,
+            to: (0, 0),
+            to_offset: (0.0, 0.0),
+            placement,
+            rotation: 0.0,
+            flip_h: false,
+            flip_v: false,
+            lock_aspect,
+            locked: true,
+            print: true,
+        }
+    }
+
+    /// A picture at its natural size, as Excel inserts it: it moves with
+    /// its cell without being sized with it, and keeps its proportions.
+    pub fn picture(picture: Picture) -> Drawing {
+        let size =
+            image_info(&picture.data).map_or((picture.pixels.0 as f32, picture.pixels.1 as f32), |i| i.natural_size());
+        Drawing::new(DrawingKind::Picture(picture), size, Placement::MoveOnly, true)
+    }
+
+    /// A shape of the given size, moved and sized with its cells.
+    pub fn shape(shape: Shape, size: (f32, f32)) -> Drawing {
+        Drawing::new(DrawingKind::Shape(shape), size, Placement::MoveAndSize, false)
+    }
+
+    pub fn as_picture(&self) -> Option<&Picture> {
+        match &self.kind {
+            DrawingKind::Picture(picture) => Some(picture),
+            DrawingKind::Shape(_) => None,
+        }
+    }
+
+    pub fn as_shape(&self) -> Option<&Shape> {
+        match &self.kind {
+            DrawingKind::Shape(shape) => Some(shape),
+            DrawingKind::Picture(_) => None,
+        }
+    }
+
+    pub fn as_shape_mut(&mut self) -> Option<&mut Shape> {
+        match &mut self.kind {
+            DrawingKind::Shape(shape) => Some(shape),
+            DrawingKind::Picture(_) => None,
+        }
+    }
+
+    /// A straight line (it is hit along its length, not in its frame).
+    fn is_line(&self) -> bool {
+        self.as_shape().is_some_and(|shape| shape.preset.is_line())
+    }
+}
+
+/// Where a drawing is on its sheet: pixels at 100 % from the top-left
+/// corner of cell A1, before rotation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Frame {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Frame {
+    pub fn new(x: f64, y: f64, width: f64, height: f64) -> Frame {
+        Frame { x, y, width, height }
+    }
+}
+
+/// A corner of a frame as files give it: the cell (row, col) holding it
+/// and its offset inside that cell (x, y), in pixels at 100 %.
+pub type Corner = ((u32, u32), (f32, f32));
+
+/// Moves along the stacking order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ZOrder {
+    BringToFront,
+    SendToBack,
+    BringForward,
+    SendBackward,
+}
+
+static NO_CELLS: BTreeSet<u32> = BTreeSet::new();
+
+/// The columns (or the rows) of a sheet as a run of sizes in pixels.
+pub(crate) struct Track<'a> {
+    default: f64,
+    sizes: &'a BTreeMap<u32, f32>,
+    /// Cells of no size: hidden by hand, or by a filter.
+    hidden: [&'a BTreeSet<u32>; 2],
+    count: u32,
+}
+
+impl Track<'_> {
+    fn is_hidden(&self, index: u32) -> bool {
+        self.hidden.iter().any(|set| set.contains(&index))
+    }
+
+    fn own_size(&self, index: u32) -> f64 {
+        self.sizes.get(&index).map_or(self.default, |s| (*s as f64).max(0.0))
+    }
+
+    fn size(&self, index: u32) -> f64 {
+        if self.is_hidden(index) {
+            0.0
+        } else {
+            self.own_size(index)
+        }
+    }
+
+    /// Pixels from the leading edge of cell `a` to that of cell `b`.
+    pub(crate) fn span(&self, a: u32, b: u32) -> f64 {
+        if b < a {
+            return -self.span(b, a);
+        }
+        let mut total = (b - a) as f64 * self.default;
+        total += self
+            .sizes
+            .range(a..b)
+            .map(|(_, s)| (*s as f64).max(0.0) - self.default)
+            .sum::<f64>();
+        total -= self.hidden[0].range(a..b).map(|i| self.own_size(*i)).sum::<f64>();
+        total -= self.hidden[1]
+            .range(a..b)
+            .filter(|i| !self.hidden[0].contains(i))
+            .map(|i| self.own_size(*i))
+            .sum::<f64>();
+        total
+    }
+
+    /// Where a corner pinned to a cell is, from the edge of the sheet. An
+    /// offset larger than its cell (it was narrowed since) stops at the
+    /// far edge of the cell.
+    pub(crate) fn position(&self, index: u32, offset: f32) -> f64 {
+        let index = index.min(self.count - 1);
+        self.span(0, index) + (offset as f64).clamp(0.0, self.size(index))
+    }
+
+    /// The cell holding the point `distance` pixels from the edge of the
+    /// sheet, and how far into the cell it lies. A point on the line
+    /// between two cells belongs to the second.
+    pub(crate) fn locate(&self, distance: f64) -> (u32, f32) {
+        let last = self.count - 1;
+        let mut index = 0;
+        let mut rest = if distance.is_finite() { distance.max(0.0) } else { 0.0 };
+        while index < last {
+            // Up to the next cell with a size of its own, all have the
+            // default size: step over them at once.
+            let special = [
+                self.sizes.range(index..).next().map(|(i, _)| *i),
+                self.hidden[0].range(index..).next().copied(),
+                self.hidden[1].range(index..).next().copied(),
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+            .map_or(last, |i| i.min(last));
+            if special > index {
+                let run = (special - index) as f64 * self.default;
+                if self.default > 0.0 && rest < run {
+                    let whole = (rest / self.default).floor();
+                    return (index + whole as u32, (rest - whole * self.default) as f32);
+                }
+                rest -= run;
+                index = special;
+            } else {
+                let size = self.size(index);
+                if rest < size {
+                    break;
+                }
+                rest -= size;
+                index += 1;
+            }
+        }
+        (index, rest.min(self.size(index).max(0.0)) as f32)
+    }
+
+    /// A corner given as a cell and an offset, moved to the cell it
+    /// really falls in when the offset runs past its cell. Corners in
+    /// hidden cells are left alone: they come back with their cell.
+    fn normalised(&self, index: u32, offset: f32) -> (u32, f32) {
+        let index = index.min(self.count - 1);
+        let offset = if offset.is_finite() { offset } else { 0.0 };
+        if offset >= 0.0 && (self.is_hidden(index) || (offset as f64) < self.size(index).max(f64::MIN_POSITIVE)) {
+            (index, offset)
+        } else {
+            self.locate(self.span(0, index) + offset as f64)
+        }
+    }
+}
+
+pub(crate) fn columns(sheet: &Sheet) -> Track<'_> {
+    Track {
+        default: DEFAULT_COL_WIDTH as f64,
+        sizes: &sheet.col_widths,
+        hidden: [&sheet.hidden_cols, &NO_CELLS],
+        count: MAX_COLS,
+    }
+}
+
+pub(crate) fn rows(sheet: &Sheet) -> Track<'_> {
+    Track {
+        default: DEFAULT_ROW_HEIGHT as f64,
+        sizes: &sheet.row_heights,
+        hidden: [&sheet.hidden_rows, &sheet.filtered_rows],
+        count: MAX_ROWS,
+    }
+}
+
+impl Sheet {
+    /// Where a drawing is on the sheet now, given the widths of its
+    /// columns and the heights of its rows.
+    pub fn drawing_frame(&self, drawing: &Drawing) -> Frame {
+        let (cols, rows) = (columns(self), rows(self));
+        let (x, y) = if drawing.placement == Placement::Fixed {
+            // Not tied to its cell: the offsets are not held inside it.
+            let x = cols.span(0, drawing.anchor.1.min(MAX_COLS - 1)) + drawing.offset.0 as f64;
+            let y = rows.span(0, drawing.anchor.0.min(MAX_ROWS - 1)) + drawing.offset.1 as f64;
+            (x.max(0.0), y.max(0.0))
+        } else {
+            (
+                cols.position(drawing.anchor.1, drawing.offset.0),
+                rows.position(drawing.anchor.0, drawing.offset.1),
+            )
+        };
+        let (width, height) = if drawing.placement == Placement::MoveAndSize {
+            let right = cols.position(drawing.to.1, drawing.to_offset.0);
+            let bottom = rows.position(drawing.to.0, drawing.to_offset.1);
+            ((right - x).max(0.0), (bottom - y).max(0.0))
+        } else {
+            (drawing.size.0.max(0.0) as f64, drawing.size.1.max(0.0) as f64)
+        };
+        Frame { x, y, width, height }
+    }
+
+    /// Bring the placement of a drawing in order after its `anchor`,
+    /// `offset`, `size` or `placement` were set by hand: offsets are
+    /// brought back inside their cells, a `Fixed` drawing is anchored to
+    /// A1 and the bottom-right corner is computed from the size. (The
+    /// functions of `Workbook` do it themselves; a file reader calls it
+    /// once the column widths and row heights of the sheet are known,
+    /// unless it has both corners: then `place_drawing`.)
+    pub fn settle_drawing(&self, drawing: &mut Drawing) {
+        let (cols, rows) = (columns(self), rows(self));
+        let clean = |v: f32| if v.is_finite() { v.max(0.0) } else { 0.0 };
+        drawing.size = (clean(drawing.size.0), clean(drawing.size.1));
+        if drawing.placement == Placement::Fixed {
+            let frame = self.drawing_frame(drawing);
+            drawing.anchor = (0, 0);
+            drawing.offset = (frame.x as f32, frame.y as f32);
+        } else {
+            let (col, dx) = cols.normalised(drawing.anchor.1, drawing.offset.0);
+            let (row, dy) = rows.normalised(drawing.anchor.0, drawing.offset.1);
+            drawing.anchor = (row, col);
+            drawing.offset = (dx, dy);
+        }
+        let frame = Frame {
+            width: drawing.size.0 as f64,
+            height: drawing.size.1 as f64,
+            ..self.drawing_frame(drawing)
+        };
+        let (col, dx) = cols.locate(frame.x + frame.width);
+        let (row, dy) = rows.locate(frame.y + frame.height);
+        drawing.to = (row, col);
+        drawing.to_offset = (dx, dy);
+    }
+
+    /// Place a drawing between two corners: the `from` and `to` of an
+    /// anchor in a file. The size follows from the sheet's columns and
+    /// rows.
+    pub fn place_drawing(&self, drawing: &mut Drawing, from: Corner, to: Corner) {
+        (drawing.anchor, drawing.offset) = from;
+        (drawing.to, drawing.to_offset) = to;
+        let (cols, rows) = (columns(self), rows(self));
+        let width = cols.position(to.0.1, to.1.0) - cols.position(from.0.1, from.1.0);
+        let height = rows.position(to.0.0, to.1.1) - rows.position(from.0.0, from.1.1);
+        drawing.size = (width.max(0.0) as f32, height.max(0.0) as f32);
+        if drawing.placement != Placement::MoveAndSize {
+            self.settle_drawing(drawing);
+        }
+    }
+
+    /// The two corners of a drawing as a file writes them (`from` and
+    /// `to`), computed from where the drawing is now.
+    pub fn drawing_corners(&self, drawing: &Drawing) -> (Corner, Corner) {
+        let (cols, rows) = (columns(self), rows(self));
+        let frame = self.drawing_frame(drawing);
+        let (c0, dx0) = cols.locate(frame.x);
+        let (r0, dy0) = rows.locate(frame.y);
+        let (c1, dx1) = cols.locate(frame.x + frame.width);
+        let (r1, dy1) = rows.locate(frame.y + frame.height);
+        (((r0, c0), (dx0, dy0)), ((r1, c1), (dx1, dy1)))
+    }
+
+    /// A name no drawing of the sheet has yet: "Rectangle 3".
+    fn drawing_name(&self, base: &str) -> String {
+        let mut number = self.drawings.len() + self.charts.len() + 1;
+        loop {
+            let name = format!("{base} {number}");
+            if !self.drawings.iter().any(|d| d.name.eq_ignore_ascii_case(&name)) {
+                return name;
+            }
+            number += 1;
+        }
+    }
+}
+
+impl Workbook {
+    fn next_drawing_id(&self) -> u32 {
+        self.sheets
+            .iter()
+            .flat_map(|s| s.drawings.iter().map(|d| d.id))
+            .max()
+            .unwrap_or(0)
+            + 1
+    }
+
+    /// Add a drawing on top of the others; returns its id. It gets a name
+    /// when it has none and its placement is settled. Recorded for undo,
+    /// like every function below that changes a drawing.
+    pub fn add_drawing(&mut self, sheet: usize, mut drawing: Drawing) -> Option<u32> {
+        if sheet >= self.sheets.len() {
+            return None;
+        }
+        self.snapshot();
+        drawing.id = self.next_drawing_id();
+        let sh = &mut self.sheets[sheet];
+        if drawing.name.is_empty() {
+            let base = match &drawing.kind {
+                DrawingKind::Picture(_) => picture_name(self.locale),
+                DrawingKind::Shape(shape) => {
+                    let tool = ShapeTool::ALL.into_iter().find(|tool| {
+                        let model = tool.shape();
+                        let ends = |s: &Shape| s.outline.map(|o| (o.start, o.end));
+                        model.preset == shape.preset && model.text_box == shape.text_box && ends(&model) == ends(shape)
+                    });
+                    let fallback = ShapeTool::ALL.into_iter().find(|tool| tool.preset() == shape.preset);
+                    tool.or(fallback).unwrap_or(ShapeTool::Rectangle).name(self.locale)
+                }
+            };
+            drawing.name = sh.drawing_name(base);
+        }
+        sh.settle_drawing(&mut drawing);
+        let id = drawing.id;
+        sh.drawings.push(drawing);
+        Some(id)
+    }
+
+    /// Insert an image file with its top-left corner on a cell (row,
+    /// col), at its natural size. `None` when the bytes are not a PNG,
+    /// JPEG, GIF or BMP image.
+    pub fn add_picture(&mut self, sheet: usize, data: Vec<u8>, at: (u32, u32)) -> Option<u32> {
+        let mut drawing = Drawing::picture(Picture::new(data)?);
+        drawing.anchor = at;
+        self.add_drawing(sheet, drawing)
+    }
+
+    /// Insert a shape of the gallery in a frame (use
+    /// `ShapeTool::default_size` after a plain click).
+    pub fn add_shape(&mut self, sheet: usize, tool: ShapeTool, frame: Frame) -> Option<u32> {
+        let mut drawing = Drawing::shape(tool.shape(), (frame.width as f32, frame.height as f32));
+        drawing.name = self.sheets.get(sheet)?.drawing_name(tool.name(self.locale));
+        // A frame is a place on the sheet: anchored to A1 the offsets are
+        // its coordinates, and settling finds the cell.
+        drawing.offset = (frame.x as f32, frame.y as f32);
+        self.add_drawing(sheet, drawing)
+    }
+
+    pub fn remove_drawing(&mut self, sheet: usize, id: u32) -> bool {
+        if self.drawing(sheet, id).is_none() {
+            return false;
+        }
+        self.snapshot();
+        self.sheets[sheet].drawings.retain(|d| d.id != id);
+        true
+    }
+
+    pub fn drawing(&self, sheet: usize, id: u32) -> Option<&Drawing> {
+        self.sheets.get(sheet)?.drawings.iter().find(|d| d.id == id)
+    }
+
+    /// Where a drawing is on its sheet.
+    pub fn drawing_frame(&self, sheet: usize, id: u32) -> Option<Frame> {
+        let sh = self.sheets.get(sheet)?;
+        sh.drawings.iter().find(|d| d.id == id).map(|d| sh.drawing_frame(d))
+    }
+
+    /// Change a drawing: its look, text, name, rotation, placement, or
+    /// its `anchor`, `offset` and `size`. `size` holds the current size
+    /// when `f` is called and the placement is settled afterwards.
+    pub fn update_drawing(&mut self, sheet: usize, id: u32, f: impl FnOnce(&mut Drawing)) -> bool {
+        let Some(index) = self
+            .sheets
+            .get(sheet)
+            .and_then(|sh| sh.drawings.iter().position(|d| d.id == id))
+        else {
+            return false;
+        };
+        self.snapshot();
+        let sh = &mut self.sheets[sheet];
+        let mut drawing = sh.drawings.remove(index);
+        let frame = sh.drawing_frame(&drawing);
+        drawing.size = (frame.width as f32, frame.height as f32);
+        f(&mut drawing);
+        drawing.id = id;
+        sh.settle_drawing(&mut drawing);
+        sh.drawings.insert(index, drawing);
+        true
+    }
+
+    /// Move and / or resize a drawing to a frame on the sheet.
+    pub fn set_drawing_frame(&mut self, sheet: usize, id: u32, frame: Frame) -> bool {
+        self.update_drawing(sheet, id, |drawing| {
+            drawing.anchor = (0, 0);
+            drawing.offset = (frame.x.max(0.0) as f32, frame.y.max(0.0) as f32);
+            drawing.size = (frame.width as f32, frame.height as f32);
+        })
+    }
+
+    /// Copy a drawing next to itself (Duplicate); returns the id of the
+    /// copy, which is on top.
+    pub fn duplicate_drawing(&mut self, sheet: usize, id: u32) -> Option<u32> {
+        let sh = self.sheets.get(sheet)?;
+        let original = sh.drawings.iter().find(|d| d.id == id)?;
+        let frame = sh.drawing_frame(original);
+        let mut copy = original.clone();
+        let base = copy
+            .name
+            .trim_end_matches(|c: char| c.is_ascii_digit())
+            .trim_end()
+            .to_string();
+        copy.name = if base.is_empty() {
+            String::new()
+        } else {
+            sh.drawing_name(&base)
+        };
+        copy.anchor = (0, 0);
+        copy.offset = ((frame.x + 16.0) as f32, (frame.y + 16.0) as f32);
+        copy.size = (frame.width as f32, frame.height as f32);
+        self.add_drawing(sheet, copy)
+    }
+
+    /// Move a drawing in the stacking order. Returns false when it is
+    /// already there.
+    pub fn reorder_drawing(&mut self, sheet: usize, id: u32, order: ZOrder) -> bool {
+        let Some(sh) = self.sheets.get(sheet) else {
+            return false;
+        };
+        let Some(from) = sh.drawings.iter().position(|d| d.id == id) else {
+            return false;
+        };
+        let top = sh.drawings.len() - 1;
+        let to = match order {
+            ZOrder::BringToFront => top,
+            ZOrder::SendToBack => 0,
+            ZOrder::BringForward => (from + 1).min(top),
+            ZOrder::SendBackward => from.saturating_sub(1),
+        };
+        if to == from {
+            return false;
+        }
+        self.snapshot();
+        let drawings = &mut self.sheets[sheet].drawings;
+        let drawing = drawings.remove(from);
+        drawings.insert(to, drawing);
+        true
+    }
+
+    /// The topmost drawing under a point of the sheet (pixels at 100 %
+    /// from the corner of A1). Rotation is taken into account; a line is
+    /// hit within a few pixels of it, anything else anywhere in its
+    /// frame.
+    pub fn drawing_at(&self, sheet: usize, x: f64, y: f64) -> Option<u32> {
+        let sh = self.sheets.get(sheet)?;
+        // How close to a line a click must be.
+        const REACH: f64 = 4.0;
+        sh.drawings.iter().rev().find_map(|drawing| {
+            let frame = sh.drawing_frame(drawing);
+            // The point as the unrotated drawing sees it.
+            let (cx, cy) = (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0);
+            let (sin, cos) = (-(drawing.rotation as f64)).to_radians().sin_cos();
+            let (dx, dy) = (x - cx, y - cy);
+            let (px, py) = (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+            let hit = if drawing.is_line() {
+                let (mut x0, mut x1) = (frame.x, frame.x + frame.width);
+                let (mut y0, mut y1) = (frame.y, frame.y + frame.height);
+                if drawing.flip_h {
+                    (x0, x1) = (x1, x0);
+                }
+                if drawing.flip_v {
+                    (y0, y1) = (y1, y0);
+                }
+                let (lx, ly) = (x1 - x0, y1 - y0);
+                let length = lx * lx + ly * ly;
+                let along = if length > 0.0 {
+                    (((px - x0) * lx + (py - y0) * ly) / length).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                (px - x0 - along * lx).hypot(py - y0 - along * ly) <= REACH
+            } else {
+                px >= frame.x && px <= frame.x + frame.width && py >= frame.y && py <= frame.y + frame.height
+            };
+            hit.then_some(drawing.id)
+        })
+    }
+}
+
+/// Where a corner pinned to cell `position` goes when rows or columns are
+/// inserted or deleted. `far` is the bottom-right corner of a drawing: one
+/// resting exactly on the line where cells are inserted stays before them.
+pub(crate) fn moved_corner(
+    position: u32,
+    offset: f32,
+    far: bool,
+    insert: bool,
+    at: u32,
+    count: u32,
+    max: u32,
+) -> (u32, f32) {
+    if insert {
+        let before = position < at || (far && position == at && offset <= 0.0);
+        if before {
+            (position, offset)
+        } else {
+            ((position + count).min(max - 1), offset)
+        }
+    } else if position >= at + count {
+        (position - count, offset)
+    } else if position >= at {
+        // The cell is gone: the corner lands where the deleted cells were.
+        (at, 0.0)
+    } else {
+        (position, offset)
+    }
+}
+
+/// See `features::on_structural_edit`: drawings follow their cells like
+/// charts do, and those sized with their cells grow or shrink with the
+/// rows and columns inserted or deleted under them.
+pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited_sheet: &str) {
+    if sheet.drawings.is_empty() || !sheet.name.eq_ignore_ascii_case(edited_sheet) {
+        return;
+    }
+    let (row_axis, insert, at, count) = match edit {
+        StructuralEdit::InsertRows { at, count } => (true, true, at, count),
+        StructuralEdit::DeleteRows { at, count } => (true, false, at, count),
+        StructuralEdit::InsertCols { at, count } => (false, true, at, count),
+        StructuralEdit::DeleteCols { at, count } => (false, false, at, count),
+    };
+    let mut drawings = std::mem::take(&mut sheet.drawings);
+    for drawing in drawings.iter_mut().filter(|d| d.placement != Placement::Fixed) {
+        if row_axis {
+            (drawing.anchor.0, drawing.offset.1) =
+                moved_corner(drawing.anchor.0, drawing.offset.1, false, insert, at, count, MAX_ROWS);
+            (drawing.to.0, drawing.to_offset.1) =
+                moved_corner(drawing.to.0, drawing.to_offset.1, true, insert, at, count, MAX_ROWS);
+        } else {
+            (drawing.anchor.1, drawing.offset.0) =
+                moved_corner(drawing.anchor.1, drawing.offset.0, false, insert, at, count, MAX_COLS);
+            (drawing.to.1, drawing.to_offset.0) =
+                moved_corner(drawing.to.1, drawing.to_offset.0, true, insert, at, count, MAX_COLS);
+        }
+        if drawing.placement == Placement::MoveAndSize {
+            let frame = sheet.drawing_frame(drawing);
+            drawing.size = (frame.width as f32, frame.height as f32);
+        } else {
+            sheet.settle_drawing(drawing);
+        }
+    }
+    sheet.drawings = drawings;
+}
+
+/// See `features::on_sheet_renamed`: drawings name no sheet.
 pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
 
-/// See `features::on_sheet_duplicated`.
-pub(crate) fn on_sheet_duplicated(_wb: &mut Workbook, _copy: usize, _original: &str) {}
+/// See `features::on_sheet_duplicated`: the drawings of the copy get ids
+/// of their own (they share the bytes of their pictures).
+pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &str) {
+    let next = wb.next_drawing_id();
+    for (drawing, id) in wb.sheets[copy].drawings.iter_mut().zip(next..) {
+        drawing.id = id;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::wb;
+
+    /// The first bytes of a PNG file of the given size and resolution.
+    fn png(width: u32, height: u32, per_metre: Option<u32>) -> Vec<u8> {
+        let mut data = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut chunk = |kind: &[u8; 4], body: &[u8]| {
+            data.extend_from_slice(&(body.len() as u32).to_be_bytes());
+            data.extend_from_slice(kind);
+            data.extend_from_slice(body);
+            data.extend_from_slice(&[0; 4]);
+        };
+        let mut header = Vec::new();
+        header.extend_from_slice(&width.to_be_bytes());
+        header.extend_from_slice(&height.to_be_bytes());
+        header.extend_from_slice(&[8, 6, 0, 0, 0]);
+        chunk(b"IHDR", &header);
+        if let Some(density) = per_metre {
+            let mut body = Vec::new();
+            body.extend_from_slice(&density.to_be_bytes());
+            body.extend_from_slice(&density.to_be_bytes());
+            body.push(1);
+            chunk(b"pHYs", &body);
+        }
+        chunk(b"IDAT", &[1, 2, 3]);
+        chunk(b"IEND", &[]);
+        data
+    }
+
+    fn jpeg(width: u16, height: u16, dpi: Option<u16>) -> Vec<u8> {
+        let mut data = vec![0xff, 0xd8];
+        if let Some(dpi) = dpi {
+            data.extend_from_slice(&[0xff, 0xe0, 0, 16]);
+            data.extend_from_slice(b"JFIF\0\x01\x02\x01");
+            data.extend_from_slice(&dpi.to_be_bytes());
+            data.extend_from_slice(&dpi.to_be_bytes());
+            data.extend_from_slice(&[0, 0]);
+        }
+        // A table before the frame header, and a progressive frame.
+        data.extend_from_slice(&[0xff, 0xdb, 0, 4, 9, 9, 0xff, 0xc4, 0, 3, 7]);
+        data.extend_from_slice(&[0xff, 0xc2, 0, 11, 8]);
+        data.extend_from_slice(&height.to_be_bytes());
+        data.extend_from_slice(&width.to_be_bytes());
+        data.extend_from_slice(&[3, 0, 0, 0, 0xff, 0xd9]);
+        data
+    }
+
+    fn bmp(width: i32, height: i32) -> Vec<u8> {
+        let mut data = b"BM".to_vec();
+        data.extend_from_slice(&[0; 12]);
+        data.extend_from_slice(&40i32.to_le_bytes());
+        data.extend_from_slice(&width.to_le_bytes());
+        data.extend_from_slice(&height.to_le_bytes());
+        data.extend_from_slice(&[1, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        data.extend_from_slice(&7874i32.to_le_bytes());
+        data.extend_from_slice(&7874i32.to_le_bytes());
+        data.extend_from_slice(&[0; 8]);
+        data
+    }
+
+    #[test]
+    fn image_headers() {
+        let info = image_info(&png(640, 480, None)).unwrap();
+        assert_eq!(
+            (info.format, info.pixels, info.dpi),
+            (ImageFormat::Png, (640, 480), (96.0, 96.0))
+        );
+        assert_eq!(info.natural_size(), (640.0, 480.0));
+        // 300 dpi: the picture is inserted at its printed size.
+        let info = image_info(&png(3000, 1500, Some(11811))).unwrap();
+        assert!((info.dpi.0 - 300.0).abs() < 0.01);
+        let (w, h) = info.natural_size();
+        assert!((w - 960.0).abs() < 0.1 && (h - 480.0).abs() < 0.1);
+
+        let info = image_info(&jpeg(800, 600, None)).unwrap();
+        assert_eq!(
+            (info.format, info.pixels, info.dpi),
+            (ImageFormat::Jpeg, (800, 600), (96.0, 96.0))
+        );
+        let info = image_info(&jpeg(1440, 720, Some(144))).unwrap();
+        assert_eq!((info.pixels, info.natural_size()), ((1440, 720), (960.0, 480.0)));
+
+        let mut gif = b"GIF89a".to_vec();
+        gif.extend_from_slice(&[0x40, 0x01, 0xf0, 0x00, 0, 0, 0]);
+        let info = image_info(&gif).unwrap();
+        assert_eq!((info.format, info.pixels), (ImageFormat::Gif, (320, 240)));
+
+        // Rows stored top to bottom have a negative height; 7874 pixels per metre is 200 dpi.
+        let info = image_info(&bmp(200, -100)).unwrap();
+        assert_eq!((info.format, info.pixels), (ImageFormat::Bmp, (200, 100)));
+        assert!((info.natural_size().0 - 96.0).abs() < 0.1);
+
+        assert!(image_info(b"").is_none());
+        assert!(image_info(b"GIF89a").is_none());
+        assert!(image_info(b"%PDF-1.7 not an image").is_none());
+        assert!(image_info(&png(0, 10, None)).is_none());
+        assert!(image_info(&[0xff, 0xd8, 0xff, 0xd9]).is_none());
+        assert!(image_info(&png(640, 480, None)[..20]).is_none());
+        assert_eq!(ImageFormat::Jpeg.extension(), "jpeg");
+        assert_eq!(ImageFormat::Png.mime(), "image/png");
+    }
+
+    #[test]
+    fn pictures() {
+        let mut w = wb(&[]);
+        assert_eq!(w.add_picture(0, b"not an image".to_vec(), (0, 0)), None);
+        let bytes = png(128, 40, None);
+        let id = w.add_picture(0, bytes.clone(), (2, 1)).unwrap();
+        w.commit("picture");
+        let picture = w.drawing(0, id).unwrap();
+        assert_eq!(picture.name, "Picture 1");
+        assert_eq!((picture.anchor, picture.size), ((2, 1), (128.0, 40.0)));
+        assert_eq!(
+            (picture.placement, picture.lock_aspect, picture.locked),
+            (Placement::MoveOnly, true, true)
+        );
+        let stored = picture.as_picture().unwrap();
+        assert_eq!((stored.format, stored.pixels), (ImageFormat::Png, (128, 40)));
+        assert_eq!(&stored.data[..], &bytes[..]);
+        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 40.0, 128.0, 40.0)));
+        // The copy of a sheet shares the bytes and has ids of its own.
+        let copy = w.duplicate_sheet(0).unwrap();
+        w.commit("copy");
+        let twin = &w.sheets[copy].drawings[0];
+        assert_ne!(twin.id, id);
+        assert!(Arc::ptr_eq(
+            &twin.as_picture().unwrap().data,
+            &w.sheets[0].drawings[0].as_picture().unwrap().data
+        ));
+        w.undo();
+        w.undo();
+        assert!(w.drawing(0, id).is_none());
+        w.redo();
+        assert!(w.drawing(0, id).is_some());
+        // In French a picture is an "Image".
+        w.locale = Locale::fr();
+        let second = w.add_picture(0, jpeg(10, 10, None), (0, 0)).unwrap();
+        assert_eq!(w.drawing(0, second).unwrap().name, "Image 2");
+    }
+
+    #[test]
+    fn shapes_of_the_gallery() {
+        let mut w = wb(&[]);
+        let mut ids = Vec::new();
+        for (i, tool) in ShapeTool::ALL.into_iter().enumerate() {
+            let (width, height) = tool.default_size();
+            let frame = Frame::new(10.0 + 100.0 * i as f64, 30.0, width as f64, height as f64);
+            ids.push(w.add_shape(0, tool, frame).unwrap());
+        }
+        w.commit("shapes");
+        let named = |id: u32| w.drawing(0, id).unwrap().name.clone();
+        assert_eq!(named(ids[0]), "Rectangle 1");
+        assert_eq!(named(ids[2]), "Oval 3");
+        assert_eq!(named(ids[14]), "Straight Arrow Connector 15");
+        assert_eq!(named(ids[16]), "TextBox 17");
+        let shape = |tool: ShapeTool| tool.shape();
+        let rectangle = shape(ShapeTool::Rectangle);
+        assert_eq!(
+            (rectangle.fill, rectangle.align, rectangle.anchor),
+            (Some(Color(0x156082)), TextAlign::Center, TextAnchor::Middle)
+        );
+        assert_eq!(rectangle.font.color, Some(Color::WHITE));
+        let ends = |tool: ShapeTool| shape(tool).outline.map(|o| (o.start, o.end)).unwrap();
+        assert_eq!(ends(ShapeTool::Line), (LineEnd::None, LineEnd::None));
+        assert_eq!(ends(ShapeTool::Arrow), (LineEnd::None, LineEnd::Triangle));
+        assert_eq!(ends(ShapeTool::DoubleArrow), (LineEnd::Triangle, LineEnd::Triangle));
+        assert!(shape(ShapeTool::Arrow).fill.is_none());
+        let text_box = shape(ShapeTool::TextBox);
+        assert!(text_box.text_box && text_box.preset == ShapePreset::Rect);
+        assert_eq!(
+            (text_box.fill, text_box.align, text_box.anchor),
+            (Some(Color::WHITE), TextAlign::Left, TextAnchor::Top)
+        );
+        // Shapes are moved and sized with their cells and sit where they were drawn.
+        let second = w.drawing(0, ids[1]).unwrap();
+        assert_eq!(
+            (second.placement, second.anchor, second.offset),
+            (Placement::MoveAndSize, (1, 1), (46.0, 10.0))
+        );
+        assert_eq!((second.to, second.to_offset), ((6, 3), (14.0, 6.0)));
+        assert_eq!(w.drawing_frame(0, ids[1]), Some(Frame::new(110.0, 30.0, 96.0, 96.0)));
+        // A shape given without a name is named after what it looks like.
+        let unnamed = w
+            .add_drawing(0, Drawing::shape(ShapeTool::DoubleArrow.shape(), (50.0, 0.0)))
+            .unwrap();
+        assert_eq!(named_in(&w, unnamed), "Straight Arrow Connector 19");
+        w.locale = Locale::de();
+        let star = w
+            .add_drawing(0, Drawing::shape(ShapeTool::Star5.shape(), (50.0, 50.0)))
+            .unwrap();
+        assert_eq!(named_in(&w, star), "Stern mit 5 Zacken 20");
+    }
+
+    fn named_in(w: &Workbook, id: u32) -> String {
+        w.drawing(0, id).unwrap().name.clone()
+    }
+
+    #[test]
+    fn frames_follow_column_widths() {
+        let mut w = wb(&[]);
+        let sized = w
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(80.0, 30.0, 100.0, 50.0))
+            .unwrap();
+        let moved = w
+            .add_shape(0, ShapeTool::Ellipse, Frame::new(80.0, 30.0, 100.0, 50.0))
+            .unwrap();
+        let fixed = w
+            .add_shape(0, ShapeTool::Diamond, Frame::new(80.0, 30.0, 100.0, 50.0))
+            .unwrap();
+        w.update_drawing(0, moved, |d| d.placement = Placement::MoveOnly);
+        w.update_drawing(0, fixed, |d| d.placement = Placement::Fixed);
+        w.commit("shapes");
+        assert_eq!(w.drawing(0, fixed).unwrap().anchor, (0, 0));
+        assert_eq!(w.drawing(0, fixed).unwrap().offset, (80.0, 30.0));
+        let frame = |w: &Workbook, id: u32| w.drawing_frame(0, id).unwrap();
+        for id in [sized, moved, fixed] {
+            assert_eq!(frame(&w, id), Frame::new(80.0, 30.0, 100.0, 50.0));
+        }
+        // Column A (before all three) and column B (under them) get wider.
+        w.set_col_width(0, 0, Some(100.0));
+        w.set_col_width(0, 1, Some(164.0));
+        w.commit("widths");
+        assert_eq!(frame(&w, sized), Frame::new(116.0, 30.0, 200.0, 50.0));
+        assert_eq!(frame(&w, moved), Frame::new(116.0, 30.0, 100.0, 50.0));
+        assert_eq!(frame(&w, fixed), Frame::new(80.0, 30.0, 100.0, 50.0));
+        // Hiding the rows under a drawing squeezes the one sized with them.
+        w.set_rows_hidden(0, 2, 2, true);
+        w.commit("hide");
+        assert_eq!(frame(&w, sized).height, 30.0);
+        assert_eq!(frame(&w, moved).height, 50.0);
+        // The stored size is brought up to date whenever the drawing is changed.
+        assert_eq!(w.drawing(0, sized).unwrap().size, (100.0, 50.0));
+        w.update_drawing(0, sized, |d| d.alt_text = "A box".into());
+        assert_eq!(w.drawing(0, sized).unwrap().size, (200.0, 30.0));
+        assert_eq!(frame(&w, sized), Frame::new(116.0, 30.0, 200.0, 30.0));
+        // The corners a file would hold.
+        let corners = w.sheets[0].drawing_corners(w.drawing(0, moved).unwrap());
+        assert_eq!(corners, (((1, 1), (16.0, 10.0)), ((5, 1), (116.0, 0.0))));
+        // Narrowing the anchor column below the offset pulls the corner back to its edge.
+        w.set_col_width(0, 1, Some(10.0));
+        assert_eq!(frame(&w, moved).x, 110.0);
+    }
+
+    #[test]
+    fn moving_and_resizing() {
+        let mut w = wb(&[]);
+        let id = w
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 96.0, 96.0))
+            .unwrap();
+        w.commit("shape");
+        assert!(w.set_drawing_frame(0, id, Frame::new(200.0, 110.0, 60.0, 25.0)));
+        w.commit("move");
+        let d = w.drawing(0, id).unwrap();
+        assert_eq!((d.anchor, d.offset, d.size), ((5, 3), (8.0, 10.0), (60.0, 25.0)));
+        assert_eq!((d.to, d.to_offset), ((6, 4), (4.0, 15.0)));
+        // Setting the cell by hand works too, and offsets past the cell are carried over.
+        w.update_drawing(0, id, |d| {
+            d.anchor = (0, 0);
+            d.offset = (70.0, 45.0);
+            d.rotation = 90.0;
+            d.flip_h = true;
+        });
+        w.commit("turn");
+        let d = w.drawing(0, id).unwrap();
+        assert_eq!(
+            (d.anchor, d.offset, d.rotation, d.flip_h),
+            ((2, 1), (6.0, 5.0), 90.0, true)
+        );
+        w.undo();
+        w.undo();
+        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(0.0, 0.0, 96.0, 96.0)));
+        assert!(!w.set_drawing_frame(0, 999, Frame::new(0.0, 0.0, 1.0, 1.0)));
+        assert!(!w.update_drawing(3, id, |_| {}));
+        // The id cannot be changed by an update.
+        w.update_drawing(0, id, |d| d.id = 77);
+        assert!(w.drawing(0, id).is_some());
+    }
+
+    #[test]
+    fn stacking_order_and_duplicates() {
+        let mut w = wb(&[]);
+        let a = w
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 50.0, 50.0))
+            .unwrap();
+        let b = w
+            .add_shape(0, ShapeTool::Ellipse, Frame::new(20.0, 20.0, 50.0, 50.0))
+            .unwrap();
+        let c = w.add_picture(0, png(50, 50, None), (2, 0)).unwrap();
+        w.commit("three");
+        let order = |w: &Workbook| w.sheets[0].drawings.iter().map(|d| d.id).collect::<Vec<_>>();
+        assert_eq!(order(&w), [a, b, c]);
+        assert!(w.reorder_drawing(0, a, ZOrder::BringForward));
+        assert_eq!(order(&w), [b, a, c]);
+        assert!(w.reorder_drawing(0, c, ZOrder::SendToBack));
+        assert_eq!(order(&w), [c, b, a]);
+        assert!(w.reorder_drawing(0, c, ZOrder::BringToFront));
+        assert!(w.reorder_drawing(0, c, ZOrder::SendBackward));
+        assert_eq!(order(&w), [b, c, a]);
+        assert!(!w.reorder_drawing(0, a, ZOrder::BringToFront));
+        assert!(!w.reorder_drawing(0, b, ZOrder::SendBackward));
+        assert!(!w.reorder_drawing(0, 999, ZOrder::SendToBack));
+        w.commit("order");
+        // The topmost drawing under the pointer is hit.
+        assert_eq!(w.drawing_at(0, 30.0, 30.0), Some(a));
+        assert_eq!(w.drawing_at(0, 60.0, 60.0), Some(b));
+        assert_eq!(w.drawing_at(0, 5.0, 60.0), Some(c));
+        assert_eq!(w.drawing_at(0, 300.0, 300.0), None);
+
+        let copy = w.duplicate_drawing(0, b).unwrap();
+        w.commit("duplicate");
+        assert_eq!(order(&w), [b, c, a, copy]);
+        let (original, twin) = (w.drawing(0, b).unwrap(), w.drawing(0, copy).unwrap());
+        assert_eq!((original.name.as_str(), twin.name.as_str()), ("Oval 2", "Oval 4"));
+        assert_eq!(twin.kind, original.kind);
+        assert_eq!(w.drawing_frame(0, copy), Some(Frame::new(36.0, 36.0, 50.0, 50.0)));
+        assert!(w.remove_drawing(0, b));
+        assert!(!w.remove_drawing(0, b));
+        w.commit("remove");
+        assert_eq!(order(&w), [c, a, copy]);
+        w.undo();
+        w.undo();
+        assert_eq!(order(&w), [b, c, a]);
+    }
+
+    #[test]
+    fn hits_respect_rotation_and_lines() {
+        let mut w = wb(&[]);
+        // A wide bar turned by a quarter stands upright around its centre (100, 100).
+        let bar = w
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(50.0, 90.0, 100.0, 20.0))
+            .unwrap();
+        assert_eq!(w.drawing_at(0, 60.0, 100.0), Some(bar));
+        w.update_drawing(0, bar, |d| d.rotation = 90.0);
+        assert_eq!(w.drawing_at(0, 60.0, 100.0), None);
+        assert_eq!(w.drawing_at(0, 100.0, 60.0), Some(bar));
+        w.remove_drawing(0, bar);
+        // A line is hit along its length only.
+        let line = w
+            .add_shape(0, ShapeTool::Arrow, Frame::new(200.0, 200.0, 100.0, 100.0))
+            .unwrap();
+        assert_eq!(w.drawing_at(0, 250.0, 252.0), Some(line));
+        assert_eq!(w.drawing_at(0, 290.0, 210.0), None);
+        w.update_drawing(0, line, |d| d.flip_v = true);
+        assert_eq!(w.drawing_at(0, 290.0, 210.0), Some(line));
+        assert_eq!(w.drawing_at(0, 250.0, 252.0), Some(line));
+        assert_eq!(w.drawing_at(0, 210.0, 210.0), None);
+        let flat = w
+            .add_shape(0, ShapeTool::Line, Frame::new(10.0, 500.0, 96.0, 0.0))
+            .unwrap();
+        assert_eq!(w.drawing_at(0, 50.0, 502.0), Some(flat));
+        assert_eq!(w.drawing_at(0, 50.0, 510.0), None);
+    }
+
+    #[test]
+    fn structural_edits() {
+        let mut w = wb(&[]);
+        // All three cover rows 3 to 6 (pixels 50 to 110) and columns B to C.
+        let frame = Frame::new(80.0, 50.0, 100.0, 60.0);
+        let sized = w.add_shape(0, ShapeTool::Rectangle, frame).unwrap();
+        let moved = w.add_picture(0, png(100, 60, None), (2, 1)).unwrap();
+        let fixed = w.add_shape(0, ShapeTool::Diamond, frame).unwrap();
+        w.update_drawing(0, moved, |d| d.offset = (16.0, 10.0));
+        w.update_drawing(0, fixed, |d| d.placement = Placement::Fixed);
+        w.commit("drawings");
+        let frames = |w: &Workbook| [sized, moved, fixed].map(|id| w.drawing_frame(0, id).unwrap());
+        assert_eq!(frames(&w), [frame; 3]);
+        // Rows inserted above push down what moves with the cells.
+        w.insert_rows(0, 0, 2);
+        w.commit("insert");
+        let lower = Frame::new(80.0, 90.0, 100.0, 60.0);
+        assert_eq!(frames(&w), [lower, lower, frame]);
+        // Rows inserted in the middle stretch what is sized with them.
+        w.insert_rows(0, 6, 1);
+        w.commit("insert");
+        assert_eq!(frames(&w), [Frame::new(80.0, 90.0, 100.0, 80.0), lower, frame]);
+        assert_eq!(w.drawing(0, sized).unwrap().size, (100.0, 80.0));
+        // A column deleted under it takes away the part that lay there.
+        w.delete_cols(0, 2, 1);
+        w.commit("delete");
+        assert_eq!(frames(&w)[0], Frame::new(80.0, 90.0, 48.0, 80.0));
+        assert_eq!(frames(&w)[1], lower);
+        // Deleting the anchor row drops the drawing on the line of the deletion.
+        w.delete_rows(0, 3, 2);
+        w.commit("delete");
+        assert_eq!(frames(&w)[0], Frame::new(80.0, 60.0, 48.0, 70.0));
+        assert_eq!(frames(&w)[1], Frame::new(80.0, 60.0, 100.0, 60.0));
+        assert_eq!(frames(&w)[2], frame);
+        // Edits on another sheet change nothing, and everything undoes.
+        let other = w.add_sheet(1);
+        w.commit("sheet");
+        let before = frames(&w);
+        w.insert_rows(other, 0, 5);
+        w.commit("insert");
+        assert_eq!(frames(&w), before);
+        for _ in 0..6 {
+            w.undo();
+        }
+        assert_eq!(frames(&w), [frame; 3]);
+    }
+
+    #[test]
+    fn a_far_corner_on_a_gridline_does_not_grow() {
+        let mut w = wb(&[]);
+        // Exactly rows 2 and 3: the bottom edge is the top of row 4.
+        let id = w
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(64.0, 20.0, 64.0, 40.0))
+            .unwrap();
+        assert_eq!(w.drawing(0, id).unwrap().to, (3, 2));
+        w.insert_rows(0, 3, 4);
+        w.insert_cols(0, 2, 1);
+        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 20.0, 64.0, 40.0)));
+        w.insert_rows(0, 2, 1);
+        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 20.0, 64.0, 60.0)));
+        // A drawing wholly inside deleted rows collapses onto the line, as in Excel.
+        w.delete_rows(0, 0, 10);
+        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 0.0, 64.0, 0.0)));
+    }
+
+    #[test]
+    fn corners_from_a_file() {
+        let mut w = wb(&[]);
+        w.set_col_width(0, 1, Some(100.0));
+        w.commit("width");
+        let sheet = &w.sheets[0];
+        let mut shape = Drawing::shape(ShapeTool::Hexagon.shape(), (0.0, 0.0));
+        sheet.place_drawing(&mut shape, ((1, 1), (10.0, 5.0)), ((4, 2), (20.0, 15.0)));
+        assert_eq!(shape.size, (110.0, 70.0));
+        assert_eq!(sheet.drawing_frame(&shape), Frame::new(74.0, 25.0, 110.0, 70.0));
+        assert_eq!(
+            sheet.drawing_corners(&shape),
+            (((1, 1), (10.0, 5.0)), ((4, 2), (20.0, 15.0)))
+        );
+        // An absolute anchor becomes a place on the sheet.
+        let mut fixed = Drawing::shape(ShapeTool::Hexagon.shape(), (0.0, 0.0));
+        fixed.placement = Placement::Fixed;
+        sheet.place_drawing(&mut fixed, ((1, 1), (10.0, 5.0)), ((4, 2), (20.0, 15.0)));
+        assert_eq!(
+            (fixed.anchor, fixed.offset, fixed.size),
+            ((0, 0), (74.0, 25.0), (110.0, 70.0))
+        );
+        assert_eq!(
+            sheet.drawing_corners(&fixed),
+            (((1, 1), (10.0, 5.0)), ((4, 2), (20.0, 15.0)))
+        );
+        // A corner in a hidden column keeps its offset for when the column comes back.
+        let mut hidden = Drawing::shape(ShapeTool::Hexagon.shape(), (30.0, 30.0));
+        hidden.placement = Placement::MoveOnly;
+        hidden.anchor = (0, 3);
+        hidden.offset = (12.0, 0.0);
+        w.set_cols_hidden(0, 3, 3, true);
+        w.sheets[0].settle_drawing(&mut hidden);
+        assert_eq!((hidden.anchor, hidden.offset), ((0, 3), (12.0, 0.0)));
+        assert_eq!(w.sheets[0].drawing_frame(&hidden).x, 228.0);
+        w.set_cols_hidden(0, 3, 3, false);
+        assert_eq!(w.sheets[0].drawing_frame(&hidden).x, 240.0);
+    }
+
+    /// The corners of a path, scaled to a frame.
+    fn points(preset: ShapePreset, width: f32, height: f32) -> Vec<(f32, f32)> {
+        preset
+            .path(width, height)
+            .into_iter()
+            .filter_map(|command| match command {
+                PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => Some((x * width, y * height)),
+                PathCommand::CurveTo(.., x, y) => Some((x * width, y * height)),
+                PathCommand::Close => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn outlines() {
+        for preset in ShapePreset::ALL {
+            let path = preset.path(120.0, 80.0);
+            assert!(matches!(path[0], PathCommand::MoveTo(..)), "{preset:?}");
+            assert_eq!(
+                matches!(path.last(), Some(PathCommand::Close)),
+                !preset.is_line(),
+                "{preset:?}"
+            );
+            // Every outline spans its frame, the tail of the callout apart.
+            let xs: Vec<f32> = points(preset, 1.0, 1.0).iter().map(|p| p.0).collect();
+            let ys: Vec<f32> = points(preset, 1.0, 1.0).iter().map(|p| p.1).collect();
+            let min = |v: &[f32]| v.iter().copied().fold(f32::MAX, f32::min);
+            let max = |v: &[f32]| v.iter().copied().fold(f32::MIN, f32::max);
+            assert!(
+                min(&xs).abs() < 1e-3 && (max(&xs) - 1.0).abs() < 1e-3,
+                "{preset:?} {xs:?}"
+            );
+            assert!(min(&ys).abs() < 1e-3, "{preset:?} {ys:?}");
+            let bottom = if preset == ShapePreset::Callout { 1.125 } else { 1.0 };
+            assert!((max(&ys) - bottom).abs() < 1e-3, "{preset:?} {ys:?}");
+            let [l, t, r, b] = preset.text_rect(120.0, 80.0);
+            assert!(
+                0.0 <= l && l < r && r <= 1.0 && 0.0 <= t && t < b && b <= 1.0,
+                "{preset:?}"
+            );
+        }
+        // Round corners stay round whatever the proportions: a sixth of the shorter side.
+        let corners = points(ShapePreset::RoundRect, 300.0, 60.0);
+        assert!((corners[0].0 - 10.0).abs() < 1e-3 && (corners[2].1 - 10.0).abs() < 1e-3);
+        // The head of an arrow is half the shorter side long.
+        let arrow = points(ShapePreset::RightArrow, 300.0, 60.0);
+        assert!((arrow[1].0 - 270.0).abs() < 1e-3 && (arrow[3].0 - 300.0).abs() < 1e-3);
+        let up = points(ShapePreset::UpArrow, 60.0, 300.0);
+        assert!((up[3].1 - 0.0).abs() < 1e-3 && (up[1].1 - 30.0).abs() < 1e-3);
+        assert_eq!(points(ShapePreset::LeftArrow, 100.0, 100.0)[3], (0.0, 50.0));
+        assert_eq!(points(ShapePreset::DownArrow, 100.0, 100.0)[3], (50.0, 100.0));
+        // A five-pointed star: ten corners, the top point in the middle.
+        let star = points(ShapePreset::Star5, 100.0, 100.0);
+        assert_eq!(star.len(), 10);
+        assert!((star[2].0 - 50.0).abs() < 1e-3 && star[2].1.abs() < 1e-3);
+        assert!((star[1].0 - 38.2).abs() < 0.1 && (star[1].1 - 38.2).abs() < 0.1);
+        let pentagon = points(ShapePreset::Pentagon, 100.0, 100.0);
+        assert_eq!(pentagon.len(), 5);
+        assert!((pentagon[0].1 - 38.2).abs() < 0.1 && (pentagon[3].0 - 80.9).abs() < 0.1);
+        assert_eq!(points(ShapePreset::Line, 40.0, 30.0), [(0.0, 0.0), (40.0, 30.0)]);
+        assert_eq!(ShapePreset::Ellipse.path(10.0, 10.0).len(), 6);
+    }
+
+    #[test]
+    fn file_names() {
+        for preset in ShapePreset::ALL {
+            assert_eq!(ShapePreset::from_ooxml_name(preset.ooxml_name()), Some(preset));
+        }
+        assert_eq!(
+            ShapePreset::from_ooxml_name("straightConnector1"),
+            Some(ShapePreset::Line)
+        );
+        assert_eq!(ShapePreset::from_ooxml_name("cloud"), None);
+        assert_eq!(ShapePreset::Callout.ooxml_name(), "wedgeRectCallout");
+        for dash in Dash::ALL {
+            assert_eq!(Dash::from_ooxml_name(dash.ooxml_name()), Some(dash));
+            assert_eq!(dash.pattern().len() % 2, 0);
+        }
+        for end in LineEnd::ALL {
+            assert_eq!(LineEnd::from_ooxml_name(end.ooxml_name()), Some(end));
+        }
+        for align in TextAlign::ALL {
+            assert_eq!(TextAlign::from_ooxml_name(align.ooxml_name()), Some(align));
+        }
+        for anchor in TextAnchor::ALL {
+            assert_eq!(TextAnchor::from_ooxml_name(anchor.ooxml_name()), Some(anchor));
+        }
+        for placement in Placement::ALL {
+            assert_eq!(Placement::from_ooxml_name(placement.ooxml_name()), Some(placement));
+        }
+        for tool in ShapeTool::ALL {
+            for locale in Locale::all() {
+                assert!(!tool.name(locale).is_empty());
+            }
+        }
+        assert_eq!(ShapeTool::TextBox.name(Locale::fr()), "ZoneTexte");
+    }
+}
