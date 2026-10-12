@@ -1356,7 +1356,7 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
             }
             painter.owner = id.owner;
             feature.paint_object(&mut painter, object, rect);
-            if input.app.object_sel == Some(*id) && !feature.object_own_handles(input.app, id.id) {
+            if input.app.is_object_selected(*id) && !feature.object_own_handles(input.app, id.id) {
                 crate::objects::paint_selection(&mut painter, rect);
             }
         }

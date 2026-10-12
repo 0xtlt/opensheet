@@ -382,8 +382,11 @@ pub struct ExcelApp {
     pub rename_input: Entity<TextInput>,
     pub find_input: Entity<TextInput>,
     pub editing: Option<Editing>,
-    /// The selected chart, picture or shape of the current sheet.
+    /// The selected chart, picture or shape of the current sheet; when
+    /// several are selected, the one selected last.
     pub object_sel: Option<ObjectId>,
+    /// The other selected objects (see `objects.rs`).
+    pub object_more: Vec<ObjectId>,
     /// The object put aside by Copy / Cut: its feature and its data.
     pub(crate) object_clip: Option<(usize, Rc<dyn Any>)>,
     pub clip: Option<ClipState>,
@@ -516,6 +519,7 @@ impl ExcelApp {
             find_input,
             editing: None,
             object_sel: None,
+            object_more: Vec::new(),
             object_clip: None,
             clip: None,
             drag: None,
@@ -565,6 +569,7 @@ impl ExcelApp {
         self.sheet = 0;
         self.editing = None;
         self.object_sel = None;
+        self.object_more.clear();
         self.object_clip = None;
         self.context_tab = None;
         self.clip = None;
@@ -2286,7 +2291,13 @@ impl ExcelApp {
                 if self.editing.is_some() && !self.commit_edit(None, window, cx) {
                     return;
                 }
-                self.select_object(Some(id), cx);
+                // Shift or ⌘ adds the object to the selection, or takes
+                // it out: then there is nothing to drag.
+                if !self.click_object(id, shift || add, cx) {
+                    window.focus(&self.grid_focus);
+                    self.refresh(cx);
+                    return;
+                }
                 if ev.click_count >= 2 && matches!(hit, Hit::Object(_)) {
                     let event = self.zone_event(&layout, ev.position, ev.button, ev.modifiers, ev.click_count);
                     let focus = window.focused(cx);
@@ -2895,7 +2906,7 @@ impl ExcelApp {
         };
         let target = match hit {
             Hit::Object(id) | Hit::ObjectHandle(id, _) => {
-                self.select_object(Some(id), cx);
+                self.click_object(id, false, cx);
                 clipboard(&mut menu);
                 let order = |label: &'static str, mv: features::ZMove| {
                     MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
@@ -3395,6 +3406,11 @@ impl ExcelApp {
         self.redo(cx);
     }
     pub fn on_select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
+        // With an object selected: every object of the sheet.
+        if self.object_sel.is_some() {
+            self.select_all_objects(cx);
+            return;
+        }
         // First press selects the data region, second the whole sheet.
         let (r, c) = self.active();
         let region = self.wb.current_region(self.sheet, r, c);

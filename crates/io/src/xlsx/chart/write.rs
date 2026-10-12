@@ -67,6 +67,10 @@ pub(crate) struct Drawing {
     pub rels: String,
     /// (`n` of `xl/charts/chart{n}.xml`, content)
     pub charts: Vec<(usize, String)>,
+    /// Where the anchor of each chart of the sheet is in `xml`, in the
+    /// order of `Sheet::charts`: the pictures and shapes are woven in
+    /// between them, in stacking order (`drawing::add_parts`).
+    pub chart_anchors: Vec<std::ops::Range<usize>>,
 }
 
 /// The drawing of every sheet that has charts.
@@ -101,9 +105,12 @@ pub(crate) fn drawings(wb: &Workbook) -> Vec<Drawing> {
         let mut rels = String::from(XML_DECL);
         w!(rels, "<Relationships xmlns=\"{NS_PKG_REL}\">");
         let mut charts = Vec::with_capacity(sheet.charts.len());
+        let mut chart_anchors = Vec::with_capacity(sheet.charts.len());
         for (i, chart) in sheet.charts.iter().enumerate() {
             chart_count += 1;
+            let start = xml.len();
             push_anchor(&mut xml, chart, i + 1, &cols, &rows);
+            chart_anchors.push(start..xml.len());
             w!(
                 rels,
                 "<Relationship Id=\"rId{}\" Type=\"{NS_DOC_REL}/chart\" Target=\"../charts/chart{chart_count}.xml\"/>",
@@ -119,6 +126,7 @@ pub(crate) fn drawings(wb: &Workbook) -> Vec<Drawing> {
             xml,
             rels,
             charts,
+            chart_anchors,
         });
     }
     out
@@ -159,9 +167,19 @@ fn push_anchor(x: &mut String, chart: &Chart, number: usize, cols: &Track, rows:
     push_corner(x, "to", right, bottom);
     w!(
         x,
-        "<xdr:graphicFrame macro=\"\"><xdr:nvGraphicFramePr><xdr:cNvPr id=\"{}\" name=\"Chart {number}\"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>",
+        "<xdr:graphicFrame macro=\"\"><xdr:nvGraphicFramePr><xdr:cNvPr id=\"{}\" name=\"",
         number + 1
     );
+    if chart.name.is_empty() {
+        w!(x, "Chart {number}");
+    } else {
+        push_attr(x, &chart.name);
+    }
+    x.push('"');
+    if chart.hidden {
+        x.push_str(" hidden=\"1\"");
+    }
+    x.push_str("/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>");
     x.push_str("<xdr:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></xdr:xfrm>");
     w!(
         x,

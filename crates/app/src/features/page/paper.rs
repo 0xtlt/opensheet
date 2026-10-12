@@ -210,7 +210,26 @@ impl ObjectPainter for PaperPainter {
                 if let Some(image) = self.image(picture) {
                     canvas.save();
                     turn(canvas, true);
-                    canvas.image(&image, RectF::new(0.0, 0.0, w, h));
+                    // A cropped picture shows the part of its image that
+                    // falls in its frame.
+                    let whole = picture.adjust.uncropped(opensheet_engine::drawing::Frame::new(0.0, 0.0, w, h));
+                    canvas.clip_rect(RectF::new(0.0, 0.0, w, h));
+                    canvas.image(&image, RectF::new(whole.x, whole.y, whole.width, whole.height));
+                    canvas.restore();
+                }
+            }
+            // The members of a group, each where the group puts it.
+            DrawingKind::Group(_) => {
+                for leaf in drawing.leaves(opensheet_engine::drawing::Frame::new(0.0, 0.0, w, h)) {
+                    let member = Drawing {
+                        rotation: leaf.rotation,
+                        flip_h: leaf.flip_h,
+                        flip_v: leaf.flip_v,
+                        ..leaf.drawing.clone()
+                    };
+                    canvas.save();
+                    canvas.translate(leaf.frame.x, leaf.frame.y);
+                    self.paint_drawing(wb, _sheet, &member, (leaf.frame.width, leaf.frame.height), canvas);
                     canvas.restore();
                 }
             }

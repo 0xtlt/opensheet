@@ -90,7 +90,7 @@ impl Command for Cmd {
             Cmd::SelectCondFormats => misc::select_special(app, Special::ConditionalFormats { same: false }, cx),
             Cmd::SelectConstants => misc::select_special(app, Special::Constants(Kinds::ALL), cx),
             Cmd::SelectValidation => misc::select_special(app, Special::DataValidation { same: false }, cx),
-            Cmd::SelectObjects => misc::select_special(app, Special::Objects, cx),
+            Cmd::SelectObjects => app.toggle_object_pointer(cx),
             Cmd::PasteMenu => {
                 let mut entries = vec![
                     MenuEntry::new(t("Paste", "Coller"), |a, _, cx| a.paste(PasteMode::All, cx)).icon("paste").shortcut("⌘V"),

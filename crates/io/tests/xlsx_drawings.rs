@@ -1069,9 +1069,9 @@ fn drawings_from_excel() {
     assert_eq!(value(&wb, 0, "A1"), Value::Number(42.0));
     let sheet = &wb.sheets[0];
     let names: Vec<&str> = sheet.drawings.iter().map(|d| d.name.as_str()).collect();
-    // The linked picture, the metafile and the group are left out; of the
-    // choice, the shape is taken and not its fallback. Two drawings of one
-    // name: the second gets another.
+    // The linked picture and the metafile are left out; of the choice,
+    // the shape is taken and not its fallback. Two drawings of one name:
+    // the second gets another.
     assert_eq!(
         names,
         [
@@ -1079,10 +1079,11 @@ fn drawings_from_excel() {
             "ZoneTexte 2",
             "Connecteur droit avec flèche 4",
             "Image 3",
+            "Groupe 19",
             "Ellipse 8",
             "Organigramme : Processus 9",
             "Forme libre 10",
-            "Rectangle 1 8",
+            "Rectangle 1 9",
         ]
     );
     assert!(sheet.charts.is_empty());
@@ -1220,7 +1221,7 @@ fn a_bad_drawing_costs_only_itself() {
             .count();
         (wb.sheets[0].drawings.len() - pictures, pictures)
     };
-    assert_eq!(count(&load_with(&[], "as it is")), (7, 1));
+    assert_eq!(count(&load_with(&[], "as it is")), (8, 1));
     assert_eq!(
         count(&load_with(&[(drawing, None)], "no drawing part")),
         (0, 0)
@@ -1238,11 +1239,11 @@ fn a_bad_drawing_costs_only_itself() {
             &[("xl/drawings/_rels/drawing1.xml.rels", None)],
             "a drawing that leads nowhere"
         )),
-        (7, 0)
+        (8, 0)
     );
     assert_eq!(
         count(&load_with(&[("xl/media/image1.png", None)], "no image")),
-        (7, 0)
+        (8, 0)
     );
     assert_eq!(
         count(&load_with(
@@ -1252,18 +1253,18 @@ fn a_bad_drawing_costs_only_itself() {
             )],
             "half an image"
         )),
-        (7, 0)
+        (8, 0)
     );
     assert_eq!(
         count(&load_with(
             &[("xl/media/image1.png", Some(&jpeg()))],
             "an image that is not what its name says"
         )),
-        (7, 1)
+        (8, 1)
     );
     // No theme: the colours of the one Excel assumes.
     let wb = load_with(&[("xl/theme/theme1.xml", None)], "no theme");
-    assert_eq!(count(&wb), (7, 1));
+    assert_eq!(count(&wb), (8, 1));
     assert!(
         named(&wb, 0, "Rectangle 1")
             .as_shape()
@@ -1315,7 +1316,7 @@ fn damaged_drawing_parts_never_panic() {
             Some(&drawing.as_bytes()[..cut]),
         )]));
         assert_eq!(value(&wb, 0, "A1"), Value::Number(42.0));
-        assert!(wb.sheets[0].drawings.len() <= 8, "cut at {cut}");
+        assert!(wb.sheets[0].drawings.len() <= 9, "cut at {cut}");
         seen += wb.sheets[0].drawings.len();
         if cut % 97 == 0 {
             load(&to_bytes(&wb));
@@ -1362,4 +1363,207 @@ fn damaged_drawing_parts_never_panic() {
         }
     }
     assert!(attempts > 1500, "{attempts}");
+}
+
+// ---- one stacking order ----------------------------------------------------------
+
+/// A chart of A1:A3 of the first sheet.
+fn small_chart(wb: &mut Workbook) -> u32 {
+    for (i, value) in ["3", "1", "2"].into_iter().enumerate() {
+        wb.set_cell_text(0, i as u32, 0, value).unwrap();
+    }
+    let name = wb.sheets[0].name.clone();
+    let values = match parse_formula(&format!("'{name}'!$A$1:$A$3"), Locale::en()) {
+        Ok(Expr::Ref(range)) => range,
+        other => panic!("not a reference: {other:?}"),
+    };
+    let chart = Chart {
+        series: vec![Series::new(values)],
+        anchor: (5, 3),
+        ..Chart::new(ChartKind::Column)
+    };
+    wb.add_chart(0, chart).expect("a chart")
+}
+
+#[test]
+fn anchors_are_written_in_stacking_order() {
+    use opensheet_engine::drawing::{ObjectRef, ZOrder};
+    let mut wb = Workbook::new(Locale::en());
+    let under = shape(&mut wb, 0, ShapeTool::Rectangle, (10.0, 10.0, 80.0, 40.0));
+    let first = small_chart(&mut wb);
+    let between = wb.add_picture(0, logo(), (2, 2)).expect("a picture");
+    let second = small_chart(&mut wb);
+    let over = shape(&mut wb, 0, ShapeTool::Ellipse, (40.0, 40.0, 80.0, 40.0));
+    wb.update_chart(0, second, |chart| {
+        chart.name = "Sales".to_string();
+        chart.hidden = true;
+    });
+    change(&mut wb, 0, between, |d| d.hidden = true);
+    // The second chart under everything, the ellipse under the picture.
+    wb.reorder_objects(0, &[ObjectRef::Chart(second)], ZOrder::SendToBack);
+    wb.reorder_objects(0, &[ObjectRef::Drawing(over)], ZOrder::SendBackward);
+    wb.reorder_objects(0, &[ObjectRef::Drawing(over)], ZOrder::SendBackward);
+    wb.commit("objects");
+    let expected = vec![
+        ObjectRef::Chart(second),
+        ObjectRef::Drawing(under),
+        ObjectRef::Drawing(over),
+        ObjectRef::Chart(first),
+        ObjectRef::Drawing(between),
+    ];
+    assert_eq!(wb.object_stack(0), expected);
+
+    let bytes = to_bytes(&wb);
+    keep("objects-stacking.xlsx", &bytes);
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    // One anchor per object, in that order.
+    let names: Vec<&str> = xml
+        .split("<xdr:cNvPr ")
+        .skip(1)
+        .map(|rest| {
+            let from = rest.find("name=\"").unwrap() + 6;
+            &rest[from..from + rest[from..].find('"').unwrap()]
+        })
+        .collect();
+    assert_eq!(names, ["Sales", "Rectangle 1", "Oval 5", "Chart 2", "Picture 3"]);
+    assert_eq!(xml.matches("hidden=\"1\"").count(), 2);
+    assert_eq!(xml.matches("<xdr:twoCellAnchor").count(), 5);
+    assert_eq!(xml.matches("</xdr:wsDr>").count(), 1);
+
+    let back = load(&bytes);
+    let kinds = |wb: &Workbook| -> Vec<(bool, String, bool)> {
+        wb.object_stack(0)
+            .into_iter()
+            .map(|object| match object {
+                ObjectRef::Chart(id) => {
+                    let chart = wb.chart(0, id).unwrap();
+                    (true, chart.name.clone(), chart.hidden)
+                }
+                ObjectRef::Drawing(id) => {
+                    let drawing = wb.drawing(0, id).unwrap();
+                    (false, drawing.name.clone(), drawing.hidden)
+                }
+            })
+            .collect()
+    };
+    assert_eq!(kinds(&back), kinds(&wb));
+    // And once more: what was read is written the same.
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+}
+
+// ---- groups -----------------------------------------------------------------------
+
+/// What a drawing shows: every picture and shape in it with its name,
+/// where it is and how it is turned.
+fn shown(wb: &Workbook, sheet: usize, name: &str) -> Vec<(String, [i64; 4], f32, bool, bool)> {
+    let sh = &wb.sheets[sheet];
+    sh.drawing_leaves(named(wb, sheet, name))
+        .iter()
+        .map(|leaf| {
+            let f = leaf.frame;
+            // To a hundredth of a pixel: files count in EMU.
+            let round = |v: f64| (v * 100.0).round() as i64;
+            (
+                leaf.drawing.name.clone(),
+                [round(f.x), round(f.y), round(f.width), round(f.height)],
+                leaf.rotation,
+                leaf.flip_h,
+                leaf.flip_v,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn groups_round_trip() {
+    let mut wb = Workbook::new(Locale::en());
+    let a = shape(&mut wb, 0, ShapeTool::Rectangle, (100.0, 60.0, 120.0, 60.0));
+    let b = shape(&mut wb, 0, ShapeTool::Ellipse, (260.0, 80.0, 60.0, 90.0));
+    let logo_id = wb.add_picture(0, logo(), (9, 1)).expect("a picture");
+    let c = shape(&mut wb, 0, ShapeTool::Arrow, (60.0, 300.0, 80.0, 40.0));
+    change(&mut wb, 0, b, |d| d.rotation = 30.0);
+    change(&mut wb, 0, a, |d| d.as_shape_mut().unwrap().text = "In a group".to_string());
+    let inner = wb.group_drawings(0, &[a, b]).expect("a group");
+    let outer = wb.group_drawings(0, &[inner, logo_id, c]).expect("a group of a group");
+    change(&mut wb, 0, outer, |d| {
+        d.name = "Everything".to_string();
+        d.rotation = 15.0;
+        d.alt_text = "Shapes held together".to_string();
+    });
+    // Stretched after grouping: the members stretch with it.
+    let frame = wb.drawing_frame(0, outer).unwrap();
+    wb.set_drawing_frame(0, outer, Frame::new(frame.x, frame.y, frame.width * 1.5, frame.height));
+    wb.commit("groups");
+
+    let bytes = to_bytes(&wb);
+    keep("objects-groups.xlsx", &bytes);
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    assert_eq!(xml.matches("<xdr:grpSp>").count(), 2);
+    assert_eq!(xml.matches("<xdr:twoCellAnchor").count(), 1);
+    assert!(xml.contains("<a:chOff "), "{xml}");
+    // Every object of the part has an id of its own.
+    let ids: Vec<&str> = xml
+        .split("<xdr:cNvPr id=\"")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('"').unwrap()])
+        .collect();
+    assert_eq!(ids.len(), 6);
+    assert_eq!(ids.iter().collect::<HashSet<_>>().len(), 6);
+    // The picture in the group has its image.
+    let rels = part(&bytes, "xl/drawings/_rels/drawing1.xml.rels");
+    assert!(rels.contains("../media/image1.png"), "{rels}");
+
+    let back = load(&bytes);
+    assert_eq!(back.sheets[0].drawings.len(), 1);
+    let group = named(&back, 0, "Everything");
+    assert_eq!((group.rotation, group.alt_text.as_str()), (15.0, "Shapes held together"));
+    assert_eq!(shown(&back, 0, "Everything"), shown(&wb, 0, "Everything"));
+    assert_eq!(shown(&back, 0, "Everything").len(), 4);
+    let text = |wb: &Workbook| {
+        wb.sheets[0].drawing_leaves(named(wb, 0, "Everything"))[0]
+            .drawing
+            .as_shape()
+            .map(|s| s.text.clone())
+    };
+    assert_eq!(text(&back), Some("In a group".to_string()));
+    // Written again, the part says the same.
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+    // Ungrouped after the round trip, the members are where they were
+    // drawn (the outer group was stretched and turned since).
+    let mut again = load(&bytes);
+    let id = named(&again, 0, "Everything").id;
+    assert_eq!(again.ungroup_drawing(0, id).len(), 3);
+}
+
+#[test]
+fn a_group_whose_children_have_a_scale_of_their_own() {
+    // The group is 200 x 100 pixels on the sheet; its children are placed
+    // in a box of 4 000 000 x 2 000 000 EMU starting at (1 000 000, 0).
+    let child = |id: u32, name: &str, x: u32, y: u32, cx: u32, cy: u32| {
+        format!(
+            "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"{id}\" name=\"{name}\"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x=\"{x}\" y=\"{y}\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"FF0000\"/></a:solidFill></xdr:spPr></xdr:sp>"
+        )
+    };
+    let group = format!(
+        "<xdr:grpSp><xdr:nvGrpSpPr><xdr:cNvPr id=\"2\" name=\"Groupe 1\"/><xdr:cNvGrpSpPr><a:grpSpLocks noChangeAspect=\"1\"/></xdr:cNvGrpSpPr></xdr:nvGrpSpPr><xdr:grpSpPr><a:xfrm><a:off x=\"609600\" y=\"190500\"/><a:ext cx=\"1905000\" cy=\"952500\"/><a:chOff x=\"1000000\" y=\"0\"/><a:chExt cx=\"4000000\" cy=\"2000000\"/></a:xfrm></xdr:grpSpPr>{}{}</xdr:grpSp><xdr:clientData/>",
+        child(3, "Left", 1_000_000, 0, 2_000_000, 2_000_000),
+        child(4, "Right", 4_000_000, 1_000_000, 1_000_000, 1_000_000),
+    );
+    let drawing = format!(
+        "{DECL}<xdr:wsDr xmlns:xdr=\"{XDR}\" xmlns:a=\"{A}\"><xdr:absoluteAnchor><xdr:pos x=\"952500\" y=\"476250\"/><xdr:ext cx=\"1905000\" cy=\"952500\"/>{group}</xdr:absoluteAnchor></xdr:wsDr>"
+    );
+    let bytes = excel_package(&[("xl/drawings/drawing1.xml", Some(drawing.as_bytes()))]);
+    let wb = load(&bytes);
+    let group = named(&wb, 0, "Groupe 1");
+    assert!(group.lock_aspect);
+    assert_eq!(group.placement, Placement::Fixed);
+    assert_eq!(
+        shown(&wb, 0, "Groupe 1"),
+        vec![
+            ("Left".to_string(), [10000, 5000, 10000, 10000], 0.0, false, false),
+            ("Right".to_string(), [25000, 10000, 5000, 5000], 0.0, false, false),
+        ]
+    );
 }

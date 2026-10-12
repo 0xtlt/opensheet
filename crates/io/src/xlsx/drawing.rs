@@ -3,17 +3,21 @@
 //! files of the pictures (`xl/media/image1.png`).
 //!
 //! A sheet has one drawing part for everything that floats over its cells.
-//! The charts build it (`chart/write.rs`); [`add_parts`] puts the pictures
-//! and shapes of the sheet after them, so the charts of a sheet lie under
-//! its other drawings, which keep their order among themselves. An image
-//! used several times, on one sheet or on several, is stored once.
+//! The charts build it (`chart/write.rs`); [`add_parts`] weaves the
+//! pictures and shapes of the sheet among them, so that the anchors of
+//! the part are in the stacking order charts and drawings share
+//! (`Sheet::object_stack`), which is how a file says it. An image used
+//! several times, on one sheet or on several, is stored once.
 //!
 //! Kept: where a drawing is and how it follows the cells, rotation and
 //! flips, name and description, the locks, the image of a picture as it
 //! was inserted; of a shape, its preset geometry, fill, outline (width,
 //! dash, ends) and text with one font, alignment and position.
 //!
-//! Not kept, because the engine has nothing for it: groups (left out),
+//! Groups are kept with their members (a chart in a group is left out
+//! of it; the chart reader shows it as a chart of its own).
+//!
+//! Not kept, because the engine has nothing for it:
 //! cropping and effects of pictures, pictures that are linked rather than
 //! embedded or of a format the engine does not show (EMF, SVG, TIFF),
 //! geometries outside the engine's gallery (read as rectangles, connectors
@@ -33,8 +37,8 @@ use super::read::{Package, Rel, relationships};
 use super::write::{NS_DOC_REL, NS_PKG_REL};
 use super::xml::{Event, Reader, Tag, XML_DECL, push_attr, push_text};
 use opensheet_engine::drawing::{
-    Corner, Dash, Drawing, DrawingKind, Frame, LineEnd, Outline, Picture, Placement, Shape,
-    ShapePreset, TextAlign, TextAnchor,
+    Corner, Dash, Drawing, DrawingKind, Frame, LineEnd, ObjectRef, Outline, Picture, Placement,
+    Shape, ShapePreset, TextAlign, TextAnchor,
 };
 use opensheet_engine::style::{Font, Underline};
 use opensheet_engine::{Color, MAX_COLS, MAX_ROWS, Sheet, Workbook};
@@ -137,6 +141,9 @@ fn push_identity(x: &mut String, drawing: &Drawing, id: usize) {
         x.push_str(" descr=\"");
         push_attr(x, &drawing.alt_text);
         x.push('"');
+    }
+    if drawing.hidden {
+        x.push_str(" hidden=\"1\"");
     }
     x.push_str("/>");
 }
@@ -340,33 +347,89 @@ fn push_picture(x: &mut String, drawing: &Drawing, id: usize, frame: Frame, imag
     x.push_str("<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic>");
 }
 
-/// One anchor with its object. `id` is the object's own in the part,
-/// `image` the relationship to the image of a picture.
-fn push_anchor(x: &mut String, sheet: &Sheet, drawing: &Drawing, id: usize, image: Option<usize>) {
-    // Excel anchors everything by two cells and says apart how the
-    // object follows them.
-    x.push_str("<xdr:twoCellAnchor");
-    if drawing.placement != Placement::MoveAndSize {
-        w!(x, " editAs=\"{}\"", drawing.placement.ooxml_name());
+/// What the objects of one drawing part share while they are written:
+/// the ids they take in turn, and the image files the part relates to.
+struct PartWriter<'a> {
+    /// The id the next object gets (`id` of its `cNvPr`).
+    next_id: usize,
+    /// The relationship of the first image; the charts have those before.
+    first_image: usize,
+    /// The image files of the part, by name in `xl/media/`.
+    images: Vec<String>,
+    media: &'a mut Media,
+    extras: &'a mut Extras,
+}
+
+impl PartWriter<'_> {
+    /// The relationship of the part to the image of a picture.
+    fn image(&mut self, picture: &Picture) -> usize {
+        let name = self.media.name(picture, self.extras);
+        let place = self.images.iter().position(|known| *known == name);
+        let place = place.unwrap_or_else(|| {
+            self.images.push(name);
+            self.images.len() - 1
+        });
+        self.first_image + place
     }
-    x.push('>');
-    let (from, to) = corners(sheet, drawing);
-    push_corner(x, "from", from);
-    push_corner(x, "to", to);
-    let frame = sheet.drawing_frame(drawing);
-    match (&drawing.kind, image) {
-        (DrawingKind::Shape(shape), _) => push_shape(x, drawing, shape, id, frame),
-        (DrawingKind::Picture(_), Some(image)) => push_picture(x, drawing, id, frame, image),
-        (DrawingKind::Picture(_), None) => {}
+
+    /// A picture, a shape, or a group with its members, in `frame`.
+    fn push_object(&mut self, x: &mut String, drawing: &Drawing, frame: Frame) {
+        let id = self.next_id;
+        self.next_id += 1;
+        match &drawing.kind {
+            DrawingKind::Shape(shape) => push_shape(x, drawing, shape, id, frame),
+            DrawingKind::Picture(picture) => {
+                let image = self.image(picture);
+                push_picture(x, drawing, id, frame, image);
+            }
+            DrawingKind::Group(group) => {
+                x.push_str("<xdr:grpSp><xdr:nvGrpSpPr>");
+                push_identity(x, drawing, id);
+                push_non_visual(x, "cNvGrpSpPr", "", "grpSpLocks", drawing);
+                x.push_str("</xdr:nvGrpSpPr><xdr:grpSpPr>");
+                // The members are placed in the coordinates of the sheet:
+                // the group's own box is also the box of its children.
+                let mut xfrm = String::new();
+                push_xfrm(&mut xfrm, drawing, frame);
+                let children = format!(
+                    "<a:chOff x=\"{}\" y=\"{}\"/><a:chExt cx=\"{}\" cy=\"{}\"/></a:xfrm>",
+                    emu(frame.x),
+                    emu(frame.y),
+                    emu(frame.width),
+                    emu(frame.height)
+                );
+                x.push_str(&xfrm.replace("</a:xfrm>", &children));
+                x.push_str("</xdr:grpSpPr>");
+                for member in &group.members {
+                    self.push_object(x, member, group.member_frame(frame, member));
+                }
+                x.push_str("</xdr:grpSp>");
+            }
+        }
     }
-    x.push_str("<xdr:clientData");
-    if !drawing.locked {
-        x.push_str(" fLocksWithSheet=\"0\"");
+
+    /// One anchor with its object.
+    fn push_anchor(&mut self, x: &mut String, sheet: &Sheet, drawing: &Drawing) {
+        // Excel anchors everything by two cells and says apart how the
+        // object follows them.
+        x.push_str("<xdr:twoCellAnchor");
+        if drawing.placement != Placement::MoveAndSize {
+            w!(x, " editAs=\"{}\"", drawing.placement.ooxml_name());
+        }
+        x.push('>');
+        let (from, to) = corners(sheet, drawing);
+        push_corner(x, "from", from);
+        push_corner(x, "to", to);
+        self.push_object(x, drawing, sheet.drawing_frame(drawing));
+        x.push_str("<xdr:clientData");
+        if !drawing.locked {
+            x.push_str(" fLocksWithSheet=\"0\"");
+        }
+        if !drawing.print {
+            x.push_str(" fPrintsWithSheet=\"0\"");
+        }
+        x.push_str("/></xdr:twoCellAnchor>");
     }
-    if !drawing.print {
-        x.push_str(" fPrintsWithSheet=\"0\"");
-    }
-    x.push_str("/></xdr:twoCellAnchor>");
 }
 
 /// Put `more` before the closing tag `end` of a part.
@@ -423,26 +486,27 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
                     ),
                     rels: format!("{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\">{RELS_END}"),
                     charts: Vec::new(),
+                    chart_anchors: Vec::new(),
                 });
                 parts.len() - 1
             });
         // The charts come first: they have the first ids and the first
         // relationships of the part.
         let charts = sheet.charts.len();
-        let mut anchors = String::new();
-        let mut images: Vec<String> = Vec::new();
-        for (k, drawing) in sheet.drawings.iter().enumerate() {
-            let image = drawing.as_picture().map(|picture| {
-                let name = media.name(picture, extras);
-                let place = images.iter().position(|known| *known == name);
-                let place = place.unwrap_or_else(|| {
-                    images.push(name);
-                    images.len() - 1
-                });
-                charts + 1 + place
-            });
-            push_anchor(&mut anchors, sheet, drawing, charts + 2 + k, image);
+        let mut anchors: Vec<String> = Vec::new();
+        let mut writer = PartWriter {
+            next_id: charts + 2,
+            first_image: charts + 1,
+            images: Vec::new(),
+            media: &mut media,
+            extras,
+        };
+        for drawing in &sheet.drawings {
+            let mut anchor = String::new();
+            writer.push_anchor(&mut anchor, sheet, drawing);
+            anchors.push(anchor);
         }
+        let images = writer.images;
         let mut rels = String::new();
         for (k, name) in images.iter().enumerate() {
             push_relationship(
@@ -452,8 +516,38 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
                 &format!("../media/{name}"),
             );
         }
-        insert_before_end(&mut parts[at].xml, ROOT_END, &anchors);
-        insert_before_end(&mut parts[at].rels, RELS_END, &rels);
+        // The anchors of the part are in stacking order, bottom-most
+        // first, whatever they hold: those of the charts are taken out
+        // and put back among the others.
+        let part = &mut parts[at];
+        let chart_anchors: Vec<String> = part
+            .chart_anchors
+            .iter()
+            .map(|range| part.xml[range.clone()].to_string())
+            .collect();
+        if let Some(first) = part.chart_anchors.first() {
+            part.xml.truncate(first.start);
+            part.xml.push_str(ROOT_END);
+        }
+        part.chart_anchors.clear();
+        let mut woven = String::new();
+        for object in sheet.object_stack() {
+            let anchor = match object {
+                ObjectRef::Chart(id) => sheet
+                    .charts
+                    .iter()
+                    .position(|chart| chart.id == id)
+                    .and_then(|i| chart_anchors.get(i)),
+                ObjectRef::Drawing(id) => sheet
+                    .drawings
+                    .iter()
+                    .position(|drawing| drawing.id == id)
+                    .and_then(|i| anchors.get(i)),
+            };
+            woven.push_str(anchor.map_or("", |anchor| anchor));
+        }
+        insert_before_end(&mut part.xml, ROOT_END, &woven);
+        insert_before_end(&mut part.rels, RELS_END, &rels);
     }
     // One part per sheet, numbered in the order of the sheets.
     parts.sort_by_key(|part| part.sheet);
@@ -906,15 +1000,26 @@ enum RawKind {
     /// The relationship of the drawing part to the image.
     Picture(String),
     Shape(Shape),
+    /// The members of a group, with the box their places are given in
+    /// (`chOff` and `chExt`, in pixels).
+    Group {
+        members: Vec<RawObject>,
+        child_box: Option<(f64, f64, f64, f64)>,
+    },
 }
 
 struct RawObject {
     name: String,
     alt_text: String,
+    hidden: bool,
     lock_aspect: bool,
     rotation: f32,
     flip_h: bool,
     flip_v: bool,
+    /// The box `a:xfrm` gives the object, in pixels: where a member of a
+    /// group is among the others (an object that stands alone is where
+    /// its anchor says).
+    xfrm_box: Option<(f64, f64, f64, f64)>,
     kind: RawKind,
 }
 
@@ -923,10 +1028,12 @@ impl RawObject {
         RawObject {
             name: String::new(),
             alt_text: String::new(),
+            hidden: false,
             lock_aspect: false,
             rotation: 0.0,
             flip_h: false,
             flip_v: false,
+            xfrm_box: None,
             kind,
         }
     }
@@ -939,12 +1046,13 @@ impl RawObject {
                 let text = |name: &str| t.attr(name).unwrap_or_default();
                 self.name = printable(&text("name"), false);
                 self.alt_text = printable(&text("descr"), true);
+                self.hidden = t.attr_bool("hidden").unwrap_or(false);
                 r.skip(t);
             }
-            "cNvSpPr" | "cNvPicPr" | "cNvCxnSpPr" => {
+            "cNvSpPr" | "cNvPicPr" | "cNvCxnSpPr" | "cNvGrpSpPr" => {
                 text_box = t.attr_bool("txBox").unwrap_or(false);
                 each_child(r, t, |r, locks| {
-                    if matches!(locks.name, "spLocks" | "picLocks" | "cxnSpLocks") {
+                    if matches!(locks.name, "spLocks" | "picLocks" | "cxnSpLocks" | "grpSpLocks") {
                         self.lock_aspect = locks.attr_bool("noChangeAspect").unwrap_or(false);
                     }
                     r.skip(locks);
@@ -955,15 +1063,61 @@ impl RawObject {
         text_box
     }
 
-    /// `<a:xfrm>`: only how the object is turned; where it is, the anchor
-    /// says.
-    fn parse_xfrm<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
+    /// `<a:xfrm>`: how the object is turned and the box it is given
+    /// (where an object that stands alone is, its anchor says). Returns
+    /// the box of the children of a group (`chOff`, `chExt`).
+    fn parse_xfrm<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<(f64, f64, f64, f64)> {
         let angle = tag.attr_f64("rot").filter(|angle| angle.is_finite());
         self.rotation = angle.map_or(0.0, |angle| (angle / ANGLE_UNITS).rem_euclid(360.0) as f32);
         self.flip_h = tag.attr_bool("flipH").unwrap_or(false);
         self.flip_v = tag.attr_bool("flipV").unwrap_or(false);
-        r.skip(tag);
+        let pair = |t: &Tag, a: &str, b: &str| {
+            let length = |name: &str| t.attr_f64(name).map_or(0.0, px);
+            (length(a), length(b))
+        };
+        let (mut off, mut ext, mut child_off, mut child_ext) = (None, None, None, None);
+        each_child(r, tag, |r, t| {
+            match t.name {
+                "off" => off = Some(pair(t, "x", "y")),
+                "ext" => ext = Some(pair(t, "cx", "cy")),
+                "chOff" => child_off = Some(pair(t, "x", "y")),
+                "chExt" => child_ext = Some(pair(t, "cx", "cy")),
+                _ => {}
+            }
+            r.skip(t);
+        });
+        if let (Some((x, y)), Some((width, height))) = (off, ext) {
+            self.xfrm_box = Some((x, y, width, height));
+        }
+        match (child_off, child_ext) {
+            (Some((x, y)), Some((width, height))) => Some((x, y, width, height)),
+            _ => None,
+        }
     }
+}
+
+/// A group with the pictures, shapes and groups in it; the charts and
+/// the other things a group may hold are left out.
+fn parse_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme, depth: usize) -> RawObject {
+    let mut object = RawObject::new(RawKind::Picture(String::new()));
+    let mut members = Vec::new();
+    let mut child_box = None;
+    each_child(r, tag, |r, t| match t.name {
+        "nvGrpSpPr" => {
+            object.parse_identity(r, t);
+        }
+        "grpSpPr" => each_child(r, t, |r, c| match c.name {
+            "xfrm" => child_box = object.parse_xfrm(r, c),
+            _ => r.skip(c),
+        }),
+        _ => {
+            let mut member = None;
+            parse_content(r, t, theme, depth + 1, &mut member);
+            members.extend(member);
+        }
+    });
+    object.kind = RawKind::Group { members, child_box };
+    object
 }
 
 fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawObject> {
@@ -980,7 +1134,9 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<RawObject> {
             r.skip(c);
         }),
         "spPr" => each_child(r, t, |r, c| match c.name {
-            "xfrm" => object.parse_xfrm(r, c),
+            "xfrm" => {
+                object.parse_xfrm(r, c);
+            }
             _ => r.skip(c),
         }),
         _ => r.skip(t),
@@ -1003,7 +1159,9 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
     each_child(r, tag, |r, t| match t.name {
         "nvSpPr" | "nvCxnSpPr" => text_box = object.parse_identity(r, t),
         "spPr" => each_child(r, t, |r, c| match c.name {
-            "xfrm" => object.parse_xfrm(r, c),
+            "xfrm" => {
+                object.parse_xfrm(r, c);
+            }
             "prstGeom" => {
                 preset = c
                     .attr("prst")
@@ -1081,14 +1239,19 @@ struct RawAnchor {
     locked: bool,
     print: bool,
     object: Option<RawObject>,
+    /// Which anchor of the part this is, counting from 1 and counting
+    /// those of the charts: the place in the stacking order.
+    index: u32,
 }
 
 /// Wrappers deep enough to be on purpose are not followed.
 const MAX_NESTING: usize = 4;
+/// Nor are groups in groups beyond what a hand would make.
+const MAX_GROUPS: usize = 16;
 
-/// Read what an anchor holds: a picture or a shape, possibly inside a
-/// choice between it and a fallback for older applications. Chart frames
-/// are the charts' business, groups are left out.
+/// Read what an anchor holds: a picture, a shape or a group of them,
+/// possibly inside a choice between it and a fallback for older
+/// applications. Chart frames are the charts' business.
 fn parse_content<'a>(
     r: &mut Reader<'a>,
     t: &Tag<'a>,
@@ -1099,6 +1262,7 @@ fn parse_content<'a>(
     match t.name {
         "pic" if object.is_none() => *object = parse_picture(r, t),
         "sp" | "cxnSp" if object.is_none() => *object = Some(parse_shape(r, t, theme)),
+        "grpSp" if object.is_none() && depth < MAX_GROUPS => *object = Some(parse_group(r, t, theme, depth)),
         "AlternateContent" | "Choice" if depth < MAX_NESTING => {
             each_child(r, t, |r, c| parse_content(r, c, theme, depth + 1, object))
         }
@@ -1123,6 +1287,7 @@ fn parse_anchor<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawAnch
         locked: true,
         print: true,
         object: None,
+        index: 0,
     };
     let pair = |t: &Tag, a: &str, b: &str| {
         let length = |name: &str| t.attr_f64(name).map_or(0.0, px);
@@ -1154,12 +1319,15 @@ fn parse_anchor<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawAnch
 fn parse_part(xml: &str, theme: &Theme) -> Vec<RawAnchor> {
     let mut out = Vec::new();
     let mut r = Reader::new(xml);
+    let mut index = 0;
     loop {
         match r.next() {
             Event::Open(t) => match t.name {
                 "wsDr" | "AlternateContent" | "Choice" => {}
                 "twoCellAnchor" | "oneCellAnchor" | "absoluteAnchor" => {
-                    let anchor = parse_anchor(&mut r, &t, theme);
+                    let mut anchor = parse_anchor(&mut r, &t, theme);
+                    index += 1;
+                    anchor.index = index;
                     if anchor.object.is_some() {
                         out.push(anchor);
                     }
@@ -1239,33 +1407,14 @@ impl Loader {
             let Some(object) = anchor.object else {
                 continue;
             };
-            let mut drawing = match object.kind {
-                RawKind::Shape(shape) => Drawing::shape(shape, (0.0, 0.0)),
-                RawKind::Picture(embed) => {
-                    let Some(target) = rels
-                        .iter()
-                        .find(|rel| rel.id == embed && rel.kind == "image")
-                        .map(|rel| rel.target.clone())
-                    else {
-                        continue;
-                    };
-                    let image = self.images.entry(target).or_insert_with_key(|target| {
-                        pkg.read_bytes(target).ok().flatten().and_then(Picture::new)
-                    });
-                    match image {
-                        Some(picture) => Drawing::picture(picture.clone()),
-                        None => continue,
-                    }
-                }
+            let name = object.name.clone();
+            let Some(mut drawing) = self.build(pkg, &rels, object) else {
+                continue;
             };
             drawing.placement = anchor.placement;
-            drawing.rotation = object.rotation;
-            drawing.flip_h = object.flip_h;
-            drawing.flip_v = object.flip_v;
-            drawing.lock_aspect = object.lock_aspect;
             drawing.locked = anchor.locked;
             drawing.print = anchor.print;
-            drawing.alt_text = object.alt_text;
+            drawing.z = anchor.index;
             let size = |(width, height): (f64, f64)| (width as f32, height as f32);
             match (anchor.from, anchor.to, anchor.pos, anchor.ext) {
                 (Some(from), Some(to), _, _) => sheet.place_drawing(&mut drawing, from, to),
@@ -1311,23 +1460,86 @@ impl Loader {
                         .drawings
                         .iter()
                         .any(|other| other.name.eq_ignore_ascii_case(name))
+                    || sheet
+                        .charts
+                        .iter()
+                        .any(|other| other.name.eq_ignore_ascii_case(name))
             };
-            let base = match (&drawing.kind, object.name.trim()) {
+            let base = match (&drawing.kind, name.trim()) {
                 (DrawingKind::Picture(_), "") => "Picture",
                 (DrawingKind::Shape(_), "") => "Shape",
+                (DrawingKind::Group(_), "") => "Group",
                 (_, name) => name,
             };
-            let mut name = object.name.clone();
+            let mut name = name.clone();
             let mut number = sheet.drawings.len() + 1;
             while taken(&name) {
                 name = format!("{base} {number}");
                 number += 1;
             }
             drawing.name = name;
-            drawing.id = self.next_id;
-            self.next_id += 1;
+            // The members of a group are measured in its size on the
+            // sheet, whatever unit the file gave their places in.
+            let frame = sheet.drawing_frame(&drawing);
+            drawing.measure_members_in((frame.width as f32, frame.height as f32));
             sheet.drawings.push(drawing);
         }
+    }
+
+    /// The drawing an object of a part describes, with an id of its own
+    /// (and its members', for a group) but no place yet. `None` for a
+    /// picture whose image is missing and for a group left with nothing.
+    fn build<R: Read + Seek>(
+        &mut self,
+        pkg: &mut Package<R>,
+        rels: &[Rel],
+        object: RawObject,
+    ) -> Option<Drawing> {
+        let mut drawing = match object.kind {
+            RawKind::Shape(shape) => Drawing::shape(shape, (0.0, 0.0)),
+            RawKind::Picture(embed) => {
+                let target = rels
+                    .iter()
+                    .find(|rel| rel.id == embed && rel.kind == "image")
+                    .map(|rel| rel.target.clone())?;
+                let image = self.images.entry(target).or_insert_with_key(|target| {
+                    pkg.read_bytes(target).ok().flatten().and_then(Picture::new)
+                });
+                Drawing::picture(image.clone()?)
+            }
+            RawKind::Group { members, child_box } => {
+                // Where its members are is given in a box of its own;
+                // without one, in the box of the group.
+                let (left, top, width, height) = child_box.or(object.xfrm_box).unwrap_or_default();
+                let mut held = Vec::new();
+                for member in members {
+                    let place = member.xfrm_box;
+                    let name = member.name.clone();
+                    let Some(mut drawing) = self.build(pkg, rels, member) else {
+                        continue;
+                    };
+                    let (x, y, w, h) = place.unwrap_or((left, top, width, height));
+                    drawing.offset = ((x - left) as f32, (y - top) as f32);
+                    drawing.size = (w.clamp(0.0, MAX_PX) as f32, h.clamp(0.0, MAX_PX) as f32);
+                    drawing.name = name;
+                    held.push(drawing);
+                }
+                if held.is_empty() {
+                    return None;
+                }
+                Drawing::group(held, (width.clamp(0.0, MAX_PX) as f32, height.clamp(0.0, MAX_PX) as f32))
+            }
+        };
+        // After its members: an object that is left out takes no id.
+        drawing.id = self.next_id;
+        self.next_id += 1;
+        drawing.rotation = object.rotation;
+        drawing.flip_h = object.flip_h;
+        drawing.flip_v = object.flip_v;
+        drawing.lock_aspect = object.lock_aspect;
+        drawing.alt_text = object.alt_text;
+        drawing.hidden = object.hidden;
+        Some(drawing)
     }
 }
 

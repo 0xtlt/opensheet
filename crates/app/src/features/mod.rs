@@ -245,7 +245,9 @@ pub mod validation;
 pub type Cx<'a> = Context<'a, ExcelApp>;
 
 /// Every feature, in the order hooks are called. Floating objects are
-/// drawn in this order too (the objects of later features on top).
+/// drawn in this order too (the objects of later features on top), except
+/// charts, pictures and shapes, which share one stacking order
+/// (`objects::stack`).
 pub fn all() -> &'static [&'static dyn Feature] {
     static ALL: [&dyn Feature; 17] = [
         &format_cells::FormatCells,
@@ -1236,5 +1238,7 @@ pub(crate) fn objects(app: &ExcelApp, sheet: usize) -> Vec<(ObjectId, ObjectInfo
     for (i, f) in all().iter().enumerate() {
         out.extend(f.objects(app, sheet).into_iter().map(|o| (ObjectId { owner: i, id: o.id }, o)));
     }
+    // Charts, pictures and shapes share one stacking order.
+    crate::objects::stack(app, sheet, &mut out);
     out
 }

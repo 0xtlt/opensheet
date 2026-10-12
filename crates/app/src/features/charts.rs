@@ -38,6 +38,7 @@ use gpui::{
 };
 use opensheet_engine::chart::{Chart, ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::chart_layout::{ChartElement, ChartLayout};
+use opensheet_engine::drawing::{ObjectRef, ZOrder};
 use std::any::Any;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -612,6 +613,7 @@ impl Feature for Charts {
         app.wb.sheets[sheet]
             .charts
             .iter()
+            .filter(|chart| !chart.hidden)
             .map(|chart| ObjectInfo {
                 id: chart.id,
                 place: Placement {
@@ -686,24 +688,15 @@ impl Feature for Charts {
         app.wb.add_chart(app.sheet, chart)
     }
 
+    /// Charts share the stacking order of pictures and shapes.
     fn reorder_object(&self, app: &mut ExcelApp, id: u32, mv: ZMove) {
-        let sheet = app.sheet;
-        let Some(from) = app.wb.sheets[sheet].charts.iter().position(|c| c.id == id) else {
-            return;
+        let order = match mv {
+            ZMove::ToFront => ZOrder::BringToFront,
+            ZMove::Forward => ZOrder::BringForward,
+            ZMove::Backward => ZOrder::SendBackward,
+            ZMove::ToBack => ZOrder::SendToBack,
         };
-        let last = app.wb.sheets[sheet].charts.len() - 1;
-        let to = match mv {
-            ZMove::ToFront => last,
-            ZMove::Forward => (from + 1).min(last),
-            ZMove::Backward => from.saturating_sub(1),
-            ZMove::ToBack => 0,
-        };
-        if to != from {
-            app.wb.snapshot();
-            let charts = &mut app.wb.sheets[sheet].charts;
-            let chart = charts.remove(from);
-            charts.insert(to, chart);
-        }
+        app.wb.reorder_objects(app.sheet, &[ObjectRef::Chart(id)], order);
     }
 
     /// A double click on the chart itself opens "Format Chart Area".

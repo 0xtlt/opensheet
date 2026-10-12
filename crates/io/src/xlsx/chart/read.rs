@@ -89,6 +89,13 @@ pub(crate) struct Frame {
     ext: Option<(f64, f64)>,
     /// Relationship ids of the charts shown in the frame.
     pub charts: Vec<String>,
+    /// Which anchor of the part this is, counting from 1 and counting
+    /// those that hold pictures and shapes: the place in the stacking
+    /// order.
+    pub index: u32,
+    /// `name` and `hidden` of the graphic frame.
+    pub name: String,
+    pub hidden: bool,
 }
 
 fn emu_to_px(text: &str) -> f64 {
@@ -144,6 +151,10 @@ fn parse_frame<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Frame {
                         {
                             frame.charts.push(id.into_owned());
                         }
+                        if inner.name == "cNvPr" && frame.charts.is_empty() {
+                            frame.name = inner.attr("name").unwrap_or_default().into_owned();
+                            frame.hidden = inner.attr_bool("hidden").unwrap_or(false);
+                        }
                         if !inner.empty {
                             depth += 1;
                         }
@@ -163,6 +174,7 @@ fn parse_frame<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Frame {
 pub(crate) fn parse_drawing(xml: &str) -> Vec<Frame> {
     let mut out = Vec::new();
     let mut r = Reader::new(xml);
+    let mut index = 0;
     loop {
         match r.next() {
             Event::Open(t) => match t.name {
@@ -170,7 +182,9 @@ pub(crate) fn parse_drawing(xml: &str) -> Vec<Frame> {
                 // choice between the real thing and a picture of it.
                 "wsDr" | "AlternateContent" | "Choice" => {}
                 "twoCellAnchor" | "oneCellAnchor" | "absoluteAnchor" => {
-                    let frame = parse_frame(&mut r, &t);
+                    let mut frame = parse_frame(&mut r, &t);
+                    index += 1;
+                    frame.index = index;
                     if !frame.charts.is_empty() {
                         out.push(frame);
                     }

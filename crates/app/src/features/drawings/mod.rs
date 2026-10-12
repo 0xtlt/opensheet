@@ -2,13 +2,17 @@
 //! on them with the mouse, and the "Picture Format" and "Shape Format"
 //! tabs, the Format pane and the menus that go with them.
 //!
-//! Selecting, moving, nudging, deleting, copying, pasting and restacking
-//! come from `objects.rs` through the `*_object` hooks below. What that
+//! Selecting (one object or several), moving, nudging, deleting, copying,
+//! pasting, restacking and aligning come from `objects.rs` through the
+//! `*_object` hooks below; a command of this feature works on every
+//! selected drawing (`edit`), and on the members of a selected group. What that
 //! file cannot know is done here: a drawing is hit where it is drawn (a
 //! line along its length, a turned shape where it was turned to), and it
 //! has handles of its own (the eight of its turned frame and the one that
 //! turns it, or the two ends of a line).
 //!
+//! * `adjust.rs`: cropping, transparency, corrections, colours and the
+//!   effects that are drawn: their menus and what they change.
 //! * `geometry.rs`: flips, rotation, outlines, handles: plain numbers.
 //! * `paint.rs`: where a drawing is in each pane, and what draws it.
 //! * `picture.rs`: the bitmaps of pictures.
@@ -23,6 +27,7 @@
 //! Positions are always asked of the engine (`Sheet::drawing_frame`): a
 //! drawing sized with its cells follows them without being touched.
 
+mod adjust;
 pub(crate) mod geometry;
 mod paint;
 mod pane;
@@ -45,7 +50,11 @@ use gpui::{
     AnyElement, ClipboardEntry, ClipboardItem, CursorStyle, Entity, EntityInputHandler, ExternalPaths, Focusable,
     MouseButton, MouseDownEvent, Pixels, Point, Subscription, Window, div, prelude::*, px,
 };
-use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, ImageFormat, Shape, ShapeTool, TextAlign, TextAnchor, ZOrder};
+use crate::objects::Align;
+use opensheet_engine::drawing::{
+    Drawing, DrawingKind, Effects, Frame, ImageFormat, Picture, PictureAdjust, Shape, ShapePreset, ShapeTool, TextAlign,
+    TextAnchor, ZOrder,
+};
 use opensheet_engine::style::{HAlign, Style, VAlign};
 use paint::Grip;
 use std::any::Any;
@@ -76,7 +85,19 @@ commands! {
         SendToBack = "send-backward", t("Send to Back", "Mettre à l'arrière-plan");
         SelectionPane = "columns", t("Selection Pane", "Volet Sélection");
         Align = "align-objects", t("Align", "Aligner");
+        AlignLeft = "align-left", t("Align Left", "Aligner à gauche");
+        AlignCenter = "align-center", t("Align Center", "Aligner au centre");
+        AlignRight = "align-right", t("Align Right", "Aligner à droite");
+        AlignTop = "align-top", t("Align Top", "Aligner en haut");
+        AlignMiddle = "align-middle", t("Align Middle", "Aligner au milieu");
+        AlignBottom = "align-bottom", t("Align Bottom", "Aligner en bas");
+        DistributeHorizontally = "", t("Distribute Horizontally", "Répartir horizontalement");
+        DistributeVertically = "", t("Distribute Vertically", "Répartir verticalement");
+        SnapToGrid = "", t("Snap to Grid", "Aligner sur la grille");
         Group = "group-objects", t("Group", "Grouper");
+        GroupObjects = "group-objects", t("Group", "Grouper");
+        Regroup = "", t("Regroup", "Regrouper");
+        Ungroup = "", t("Ungroup", "Dissocier");
         Rotate = "refresh", t("Rotate", "Rotation");
         RotateRight = "drawings-rotate-right", t("Rotate Right 90°", "Faire pivoter de 90° à droite");
         RotateLeft = "drawings-rotate-left", t("Rotate Left 90°", "Faire pivoter à gauche de 90°");
@@ -99,6 +120,9 @@ commands! {
         PictureBorder = "borders", t("Picture Border", "Bordure de l'image");
         PictureEffects = "shapes", t("Picture Effects", "Effets de l'image");
         Crop = "crop", t("Crop", "Rogner");
+        CropPicture = "crop", t("Crop", "Rogner");
+        CropFill = "", t("Fill", "Remplissage");
+        CropFit = "", t("Fit", "Ajuster");
         // Shape Format
         EditShape = "shapes", t("Edit Shape", "Modifier la forme");
         EditPoints = "", t("Edit Points", "Modifier les points");
@@ -136,8 +160,35 @@ impl Command for Cmd {
             Cmd::BringForward | Cmd::BringToFront | Cmd::SendBackward | Cmd::SendToBack | Cmd::Align => {
                 app.object_sel.is_some()
             }
-            // One object is selected at a time: there is nothing to group.
-            Cmd::Group | Cmd::EditPoints => false,
+            Cmd::AlignLeft => app.can_align(Align::Left),
+            Cmd::AlignCenter => app.can_align(Align::Center),
+            Cmd::AlignRight => app.can_align(Align::Right),
+            Cmd::AlignTop => app.can_align(Align::Top),
+            Cmd::AlignMiddle => app.can_align(Align::Middle),
+            Cmd::AlignBottom => app.can_align(Align::Bottom),
+            Cmd::DistributeHorizontally => app.can_align(Align::DistributeHorizontally),
+            Cmd::DistributeVertically => app.can_align(Align::DistributeVertically),
+            Cmd::Group => drawing.is_some(),
+            // Pictures and shapes only: a chart stays out of groups.
+            Cmd::GroupObjects => {
+                let all = app.selected_objects();
+                all.len() >= 2 && all.iter().all(|id| id.owner == owner())
+            }
+            Cmd::Ungroup => selected_ids(app)
+                .into_iter()
+                .any(|id| app.wb.drawing(app.sheet, id).is_some_and(|drawing| drawing.as_group().is_some())),
+            Cmd::Regroup => regroupable(app).is_some(),
+            Cmd::EditPoints => false,
+            Cmd::Crop
+            | Cmd::CropPicture
+            | Cmd::CropFill
+            | Cmd::CropFit
+            | Cmd::Corrections
+            | Cmd::Color
+            | Cmd::Transparency
+            | Cmd::PictureEffects
+            | Cmd::PictureBorder => drawing.is_some_and(is_picture),
+            Cmd::ShapeEffects => drawing.is_some(),
             Cmd::Rotate
             | Cmd::RotateRight
             | Cmd::RotateLeft
@@ -150,7 +201,10 @@ impl Command for Cmd {
             Cmd::FormatPicture | Cmd::ResetPicture | Cmd::ResetPictureOnly | Cmd::ResetPictureAndSize | Cmd::ChangePicture => {
                 drawing.is_some_and(is_picture)
             }
-            Cmd::FormatShape | Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::TextFill | Cmd::EditShape => shape.is_some(),
+            Cmd::FormatShape | Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::TextFill => {
+                drawing.is_some_and(|drawing| !is_picture(drawing))
+            }
+            Cmd::EditShape => shape.is_some(),
             Cmd::EditText => shape.is_some_and(|shape| !shape.preset.is_line()),
             _ => true,
         }
@@ -190,15 +244,34 @@ impl Command for Cmd {
             Cmd::FlipVertical => flip(app, false, cx),
             Cmd::FlipHorizontal => flip(app, true, cx),
             Cmd::Align => tabs::open_align_menu(app, window, cx),
+            Cmd::AlignLeft => app.align_objects(Align::Left, cx),
+            Cmd::AlignCenter => app.align_objects(Align::Center, cx),
+            Cmd::AlignRight => app.align_objects(Align::Right, cx),
+            Cmd::AlignTop => app.align_objects(Align::Top, cx),
+            Cmd::AlignMiddle => app.align_objects(Align::Middle, cx),
+            Cmd::AlignBottom => app.align_objects(Align::Bottom, cx),
+            Cmd::DistributeHorizontally => app.align_objects(Align::DistributeHorizontally, cx),
+            Cmd::DistributeVertically => app.align_objects(Align::DistributeVertically, cx),
+            Cmd::SnapToGrid => app.toggle_snap_to_grid(cx),
             Cmd::Group => {
-                let off = |label: &'static str| MenuEntry::new(label, |_, _, _| {}).disabled(true);
                 let entries = vec![
-                    off(t("Group", "Grouper")),
-                    off(t("Regroup", "Regrouper")),
-                    off(t("Ungroup", "Dissocier")),
+                    MenuEntry::command(Cmd::GroupObjects, app),
+                    MenuEntry::command(Cmd::Regroup, app),
+                    MenuEntry::command(Cmd::Ungroup, app),
                 ];
                 app.open_command_menu(entries, 180.0, window, cx);
             }
+            Cmd::GroupObjects => group(app, cx),
+            Cmd::Ungroup => ungroup(app, cx),
+            Cmd::Regroup => regroup(app, cx),
+            Cmd::Crop => adjust::open_crop_menu(app, window, cx),
+            Cmd::CropPicture => adjust::toggle_crop(app, cx),
+            Cmd::CropFill => adjust::crop_to_frame(app, false, cx),
+            Cmd::CropFit => adjust::crop_to_frame(app, true, cx),
+            Cmd::Transparency => adjust::open_transparency(app, window, cx),
+            Cmd::Corrections => adjust::open_corrections(app, window, cx),
+            Cmd::Color => adjust::open_color(app, window, cx),
+            Cmd::ShapeEffects | Cmd::PictureEffects => adjust::open_effects(app, window, cx),
             Cmd::SelectionPane => pane::toggle_selection(app, cx),
             Cmd::AltText | Cmd::ViewAltText => pane::open_alt_text(app, window, cx),
             Cmd::Size | Cmd::MoreRotation => pane::open_format(app, pane::Section::Size, window, cx),
@@ -244,8 +317,9 @@ impl Command for Cmd {
                 let entries = vec![MenuEntry::command(Cmd::ChangePictureFromFile, app)];
                 app.open_command_menu(entries, 220.0, window, cx);
             }
-            // Cropping, corrections, recolouring, effects, styles and the
-            // online sources are not available: the status bar says so.
+            // Styles, artistic effects, removing the background,
+            // compressing and the online sources are not available: the
+            // status bar says so.
             _ => app.not_implemented(self.label(), cx),
         }
     }
@@ -266,6 +340,11 @@ struct DrawingUi {
     /// What the mouse is dragging: a new shape, or a handle.
     drag: Option<tool::Drag>,
     text: Option<TextEdit>,
+    /// The picture being cropped: it shows whole, with the marks that
+    /// move the edges of its frame.
+    crop: Option<u32>,
+    /// The drawings the last Ungroup let go: Regroup takes them back.
+    ungrouped: Vec<u32>,
     /// The fields and the view the ribbon and the panes keep.
     tabs: tabs::TabState,
     panes: pane::PaneState,
@@ -307,24 +386,148 @@ fn edit_drawing(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: i
     true
 }
 
-/// Change the selected drawing, as one undo step.
-fn edit(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl FnOnce(&mut Drawing)) -> bool {
-    match selected(app).map(|drawing| drawing.id) {
-        Some(id) => edit_drawing(app, id, label, cx, change),
-        None => false,
+/// The selected pictures and shapes, the one selected last first.
+fn selected_ids(app: &ExcelApp) -> Vec<u32> {
+    app.selected_objects()
+        .into_iter()
+        .filter(|id| id.owner == owner())
+        .map(|id| id.id)
+        .collect()
+}
+
+/// Change the selected drawings, as one undo step. False when none is
+/// selected or the sheet's protection holds one of them.
+fn edit(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Drawing)) -> bool {
+    let ids = selected_ids(app);
+    if ids.is_empty() || !ids.iter().all(|id| app.may(Intent::EditObject(Some(object_id(&Drawings, *id))), cx)) {
+        return false;
+    }
+    for id in ids {
+        app.wb.update_drawing(app.sheet, id, &change);
+    }
+    app.commit(label, cx);
+    true
+}
+
+/// Do something to a drawing, or to every member of the group it is.
+fn each_leaf(drawing: &mut Drawing, change: &dyn Fn(&mut Drawing)) {
+    match &mut drawing.kind {
+        DrawingKind::Group(group) => {
+            for member in &mut group.members {
+                each_leaf(member, change);
+            }
+        }
+        _ => change(drawing),
     }
 }
 
-/// Change the selected shape (nothing happens for a picture).
-fn edit_shape(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl FnOnce(&mut Shape)) -> bool {
-    if selected(app).and_then(Drawing::as_shape).is_none() {
+/// True when a drawing is, or as a group holds, something `test` likes.
+fn any_leaf(drawing: &Drawing, test: &dyn Fn(&Drawing) -> bool) -> bool {
+    match &drawing.kind {
+        DrawingKind::Group(group) => group.members.iter().any(|member| any_leaf(member, test)),
+        _ => test(drawing),
+    }
+}
+
+/// Change the selected pictures and shapes, and those in the selected
+/// groups, as one undo step.
+fn edit_leaves(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Drawing)) -> bool {
+    edit(app, label, cx, |drawing| each_leaf(drawing, &change))
+}
+
+/// Change the selected shapes, and those in the selected groups (nothing
+/// happens to a picture).
+fn edit_shape(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Shape)) -> bool {
+    let is_shape = |drawing: &Drawing| drawing.as_shape().is_some();
+    let any = selected_ids(app)
+        .into_iter()
+        .any(|id| app.wb.drawing(app.sheet, id).is_some_and(|drawing| any_leaf(drawing, &is_shape)));
+    if !any {
         return false;
     }
-    edit(app, label, cx, |drawing| {
+    edit_leaves(app, label, cx, |drawing| {
         if let Some(shape) = drawing.as_shape_mut() {
             change(shape);
         }
     })
+}
+
+/// Change the selected pictures, and those in the selected groups.
+fn edit_picture(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Picture)) -> bool {
+    let is_picture = |drawing: &Drawing| drawing.as_picture().is_some();
+    let any = selected_ids(app)
+        .into_iter()
+        .any(|id| app.wb.drawing(app.sheet, id).is_some_and(|drawing| any_leaf(drawing, &is_picture)));
+    if !any {
+        return false;
+    }
+    edit_leaves(app, label, cx, |drawing| {
+        if let Some(picture) = drawing.as_picture_mut() {
+            change(picture);
+        }
+    })
+}
+
+/// "Group": the selected pictures and shapes become one object.
+fn group(app: &mut ExcelApp, cx: &mut Cx) {
+    let ids = selected_ids(app);
+    if !Cmd::GroupObjects.enabled(app) || !app.may_edit_selected_objects(cx) {
+        return;
+    }
+    end_text_edit(app, cx);
+    let Some(id) = app.wb.group_drawings(app.sheet, &ids) else {
+        return;
+    };
+    app.commit(t("Group Objects", "Grouper les objets"), cx);
+    app.select_object(Some(object_id(&Drawings, id)), cx);
+}
+
+/// "Ungroup": the members of the selected groups are objects of the
+/// sheet again, all selected.
+fn ungroup(app: &mut ExcelApp, cx: &mut Cx) {
+    if !Cmd::Ungroup.enabled(app) || !app.may_edit_selected_objects(cx) {
+        return;
+    }
+    let mut freed = Vec::new();
+    for id in selected_ids(app) {
+        let members = app.wb.ungroup_drawing(app.sheet, id);
+        if members.is_empty() {
+            // Not a group: it stays selected with the others.
+            freed.push(id);
+        } else {
+            app.ext_mut::<DrawingUi>().ungrouped = members.clone();
+            freed.extend(members);
+        }
+    }
+    app.commit(t("Ungroup Objects", "Dissocier les objets"), cx);
+    // The topmost leads.
+    let ids: Vec<_> = freed.into_iter().rev().map(|id| object_id(&Drawings, id)).collect();
+    app.select_objects(&ids, cx);
+}
+
+/// What Regroup would hold together again: the drawings the last Ungroup
+/// let go, while they are all still on the sheet and one of them is
+/// selected.
+fn regroupable(app: &ExcelApp) -> Option<Vec<u32>> {
+    let ids = app.ext::<DrawingUi>().map(|ui| ui.ungrouped.clone())?;
+    let selected = selected_ids(app);
+    let whole = ids.len() >= 2 && ids.iter().all(|id| app.wb.drawing(app.sheet, *id).is_some());
+    (whole && ids.iter().any(|id| selected.contains(id))).then_some(ids)
+}
+
+fn regroup(app: &mut ExcelApp, cx: &mut Cx) {
+    let Some(ids) = regroupable(app) else {
+        return;
+    };
+    if !ids.iter().all(|id| app.may(Intent::EditObject(Some(object_id(&Drawings, *id))), cx)) {
+        return;
+    }
+    let Some(id) = app.wb.group_drawings(app.sheet, &ids) else {
+        return;
+    };
+    app.ext_mut::<DrawingUi>().ungrouped.clear();
+    app.commit(t("Regroup Objects", "Regrouper les objets"), cx);
+    app.select_object(Some(object_id(&Drawings, id)), cx);
 }
 
 fn turn(app: &mut ExcelApp, degrees: f32, cx: &mut Cx) {
@@ -357,18 +560,46 @@ fn natural_size(drawing: &Drawing) -> Option<(f32, f32)> {
     )
 }
 
-/// "Reset Picture": upright and unflipped again; with `size`, back to the
-/// size it was inserted at.
+/// "Reset Picture": what was done to how the picture shows is undone
+/// (colours, transparency, effects, rotation and flips); with `size`,
+/// its crop too, and it is back at the size it was inserted at.
 fn reset_picture(app: &mut ExcelApp, size: bool, cx: &mut Cx) {
     let label = if size { Cmd::ResetPictureAndSize.label() } else { Cmd::ResetPictureOnly.label() };
+    end_crop(app, cx);
     edit(app, label, cx, |drawing| {
+        let Some(natural) = natural_size(drawing) else {
+            return;
+        };
         drawing.rotation = 0.0;
         drawing.flip_h = false;
         drawing.flip_v = false;
-        if let (true, Some(natural)) = (size, natural_size(drawing)) {
+        drawing.effects = Effects::default();
+        if let Some(picture) = drawing.as_picture_mut() {
+            picture.adjust = PictureAdjust {
+                crop: if size { [0.0; 4] } else { picture.adjust.crop },
+                shape: if size { ShapePreset::Rect } else { picture.adjust.shape },
+                ..PictureAdjust::default()
+            };
+        }
+        if size {
             drawing.size = natural;
         }
     });
+}
+
+/// The picture being cropped.
+fn cropping(app: &ExcelApp) -> Option<u32> {
+    app.ext::<DrawingUi>()?.crop
+}
+
+/// Leave the crop marks. False when no picture was being cropped.
+fn end_crop(app: &mut ExcelApp, cx: &mut Cx) -> bool {
+    if cropping(app).is_none() {
+        return false;
+    }
+    app.ext_mut::<DrawingUi>().crop = None;
+    cx.notify();
+    true
 }
 
 /// What a formatting command of the Home tab does to a shape: `change` is
@@ -568,6 +799,12 @@ impl Feature for Drawings {
                 id: SHAPE_TAB,
                 title: t("Shape Format", "Format de forme"),
             }],
+            // Charts selected together with other objects are arranged
+            // from this tab too.
+            None if app.selected_objects().len() > 1 => vec![ContextTab {
+                id: SHAPE_TAB,
+                title: t("Shape Format", "Format de forme"),
+            }],
             None => Vec::new(),
         }
     }
@@ -586,6 +823,9 @@ impl Feature for Drawings {
         if p.layer == PaintLayer::Top {
             tool::paint_tool(p);
         }
+        // "Select Objects" works on every kind of object; this feature
+        // lends it its place among the painters.
+        crate::objects::paint_pointer(p);
     }
 
     fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
@@ -607,15 +847,22 @@ impl Feature for Drawings {
     }
 
     fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+        if let Some(response) = crate::objects::pointer_mouse_down(app, zone, ev, cx) {
+            return response;
+        }
         tool::mouse_down(app, zone, ev, window, cx)
     }
 
     fn zone_drag(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
-        tool::mouse_drag(app, zone, ev, cx);
+        if !crate::objects::pointer_drag(app, zone, ev, cx) {
+            tool::mouse_drag(app, zone, ev, cx);
+        }
     }
 
     fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
-        tool::mouse_up(app, zone, ev, window, cx);
+        if !crate::objects::pointer_up(app, zone, ev, cx) {
+            tool::mouse_up(app, zone, ev, window, cx);
+        }
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
@@ -643,6 +890,7 @@ impl Feature for Drawings {
         };
         sh.drawings
             .iter()
+            .filter(|drawing| !drawing.hidden)
             .map(|drawing| {
                 let ((anchor, offset), _) = sh.drawing_corners(drawing);
                 let frame = sh.drawing_frame(drawing);
@@ -671,12 +919,13 @@ impl Feature for Drawings {
         };
         let frame = sheet.drawing_frame(drawing);
         let natural = (frame.width as f32, frame.height as f32);
-        let is_selected = app.object_sel == Some(object_id(&Drawings, drawing.id));
+        let is_selected = app.is_object_selected(object_id(&Drawings, drawing.id));
         let typing = editing_text(app) == Some(drawing.id);
+        let crop = drawing.as_picture().filter(|_| cropping(app) == Some(drawing.id));
         let zoom = p.zoom();
         for pane in paint::panes(p.layout) {
             let placed = paint::placed(p.layout, sheet, drawing, &pane);
-            if !pane.shows(paint::extent(&placed, zoom)) {
+            if !pane.shows(paint::extent(&placed, zoom)) && crop.is_none() {
                 continue;
             }
             let clip = p.layout.bounds_px(pane.clip.0, pane.clip.1, pane.clip.2, pane.clip.3);
@@ -688,6 +937,22 @@ impl Feature for Drawings {
                 clip,
             };
             let mut items = Vec::new();
+            if let Some(picture) = crop {
+                // The whole image, and the marks in place of the handles.
+                paint::draw_cropping(picture, &placed, natural, &brush, &mut items);
+                p.push(Draw::Clipped { clip, items });
+                let (x0, y0, x1, y1) = placed.extent();
+                let pan = tool::Handle { id: drawing.id, grip: Grip::Pan };
+                p.zone((x0.max(pane.clip.0), y0.max(pane.clip.1), x1.min(pane.clip.2), y1.min(pane.clip.3)), pan)
+                    .cursor(CursorStyle::OpenHand);
+                for (i, at) in placed.handles().into_iter().enumerate() {
+                    if pane.contains(at.0, at.1) {
+                        let mark = tool::Handle { id: drawing.id, grip: Grip::Crop(i as u8) };
+                        p.zone((at.0 - 8.0, at.1 - 8.0, at.0 + 8.0, at.1 + 8.0), mark).cursor(CursorStyle::Crosshair);
+                    }
+                }
+                continue;
+            }
             paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items);
             if is_selected {
                 paint::draw_selection(drawing, &placed, &brush, &mut items);
@@ -707,8 +972,8 @@ impl Feature for Drawings {
                         2 => CursorStyle::ResizeUpDown,
                         _ => CursorStyle::ResizeUpRightDownLeft,
                     },
-                    Grip::LineEnd(_) => CursorStyle::Crosshair,
-                    Grip::Rotate => CursorStyle::PointingHand,
+                    Grip::LineEnd(_) | Grip::Crop(_) => CursorStyle::Crosshair,
+                    Grip::Rotate | Grip::Pan => CursorStyle::PointingHand,
                 };
                 p.zone((at.0 - 6.0, at.1 - 6.0, at.0 + 6.0, at.1 + 6.0), tool::Handle { id: drawing.id, grip })
                     .cursor(cursor);
@@ -716,15 +981,15 @@ impl Feature for Drawings {
         }
     }
 
-    /// Only moves come here: resizing is done by the drawing's own
-    /// handles.
+    /// Moves come here, and the sizes other selected objects are given
+    /// when one of them is resized (a drawing's own handles resize it).
     fn place_object(&self, app: &mut ExcelApp, id: u32, place: Placement) {
         let sheet = app.sheet;
-        let Some(frame) = app.wb.drawing_frame(sheet, id) else {
+        if app.wb.drawing(sheet, id).is_none() {
             return;
-        };
+        }
         let (x, y) = app.wb.sheets[sheet].corner_point((place.anchor, place.offset));
-        app.wb.set_drawing_frame(sheet, id, Frame::new(x, y, frame.width, frame.height));
+        app.wb.set_drawing_frame(sheet, id, Frame::new(x, y, place.size.0 as f64, place.size.1 as f64));
     }
 
     fn object_label(&self, _id: u32, verb: ObjectVerb) -> &'static str {
@@ -741,6 +1006,9 @@ impl Feature for Drawings {
         // What was being typed in it goes with it.
         if editing_text(app) == Some(id) {
             app.ext_mut::<DrawingUi>().text = None;
+        }
+        if cropping(app) == Some(id) {
+            app.ext_mut::<DrawingUi>().crop = None;
         }
         app.wb.remove_drawing(app.sheet, id);
     }
@@ -795,6 +1063,10 @@ impl Feature for Drawings {
         // description typed in a pane is kept.
         if editing_text(app).is_some() && editing_text(app) != id {
             end_text_edit(app, cx);
+        }
+        // Cropping too, and when other objects join the selection.
+        if cropping(app).is_some() && (cropping(app) != id || app.selected_objects().len() > 1) {
+            end_crop(app, cx);
         }
         if id.is_none() {
             pane::keep_descriptions(app, cx);
@@ -916,9 +1188,10 @@ impl Feature for Drawings {
         }
     }
 
-    /// Escape puts down the shape that was waiting to be drawn.
+    /// Escape puts down the shape that was waiting to be drawn, or ends
+    /// "Select Objects".
     fn cancel(&self, app: &mut ExcelApp, cx: &mut Cx) -> bool {
-        tool::disarm(app, cx)
+        tool::disarm(app, cx) || end_crop(app, cx) || app.end_object_pointer(cx)
     }
 }
 

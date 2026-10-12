@@ -982,6 +982,15 @@ pub struct Chart {
     pub blanks: BlanksAs,
     /// Set by the file reader; see `ForeignChart`.
     pub foreign: Option<Arc<ForeignChart>>,
+    /// "Chart 1": the name of the object in the Selection pane, unique
+    /// among the charts, pictures and shapes of its sheet (given by
+    /// `Workbook::add_chart` when empty).
+    pub name: String,
+    /// Place in the stacking order shared with pictures and shapes
+    /// (`Sheet::object_stack`); 0: not placed yet, above all that are.
+    pub z: u32,
+    /// Hidden from the Selection pane: not drawn, printed or clickable.
+    pub hidden: bool,
 }
 
 /// Default hole of a doughnut (Excel: 75 %).
@@ -1098,6 +1107,9 @@ impl Chart {
             data_table: None,
             blanks: BlanksAs::Gap,
             foreign: None,
+            name: String::new(),
+            z: 0,
+            hidden: false,
         }
     }
 
@@ -1158,8 +1170,9 @@ impl Chart {
     }
 
     /// What the chart shows, without where it sits: a copy with `id`,
-    /// `anchor`, `offset`, `size` and `foreign` reset. Two charts with the
-    /// same content draw the same picture of the same cells.
+    /// `anchor`, `offset`, `size`, `foreign` and what its frame says
+    /// (`name`, `z`, `hidden`) reset. Two charts with the same content
+    /// draw the same picture of the same cells.
     pub fn content(&self) -> Chart {
         Chart {
             id: 0,
@@ -1167,6 +1180,9 @@ impl Chart {
             offset: (0.0, 0.0),
             size: DEFAULT_CHART_SIZE,
             foreign: None,
+            name: String::new(),
+            z: 0,
+            hidden: false,
             ..self.clone()
         }
     }
@@ -1558,7 +1574,13 @@ impl Workbook {
         self.snapshot();
         chart.id = self.next_chart_id();
         let id = chart.id;
-        self.sheets[sheet].charts.push(chart);
+        let base = crate::validation::localized(self.locale, ["Chart", "Graphique", "Gráfico", "Diagramm", "Grafico"]);
+        let sh = &mut self.sheets[sheet];
+        if chart.name.is_empty() || sh.charts.iter().any(|c| c.name.eq_ignore_ascii_case(&chart.name)) {
+            chart.name = sh.drawing_name(base);
+        }
+        chart.z = sh.top_z();
+        sh.charts.push(chart);
         Some(id)
     }
 

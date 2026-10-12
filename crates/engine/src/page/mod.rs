@@ -519,11 +519,25 @@ fn drawing_object(sheet: &Sheet, drawing: &Drawing) -> Option<FloatingObject> {
 }
 
 /// The charts, pictures and shapes of a sheet that print, in drawing
-/// order.
+/// order (the one order they share); hidden ones do not print.
 pub fn floating_objects(sheet: &Sheet) -> Vec<FloatingObject> {
-    let mut out: Vec<FloatingObject> = sheet.charts.iter().map(FloatingObject::of_chart).collect();
-    out.extend(sheet.drawings.iter().filter_map(|drawing| drawing_object(sheet, drawing)));
-    out
+    use crate::drawing::ObjectRef;
+    sheet
+        .object_stack()
+        .into_iter()
+        .filter_map(|object| match object {
+            ObjectRef::Chart(id) => sheet
+                .charts
+                .iter()
+                .find(|chart| chart.id == id && !chart.hidden)
+                .map(FloatingObject::of_chart),
+            ObjectRef::Drawing(id) => sheet
+                .drawings
+                .iter()
+                .find(|drawing| drawing.id == id && !drawing.hidden)
+                .and_then(|drawing| drawing_object(sheet, drawing)),
+        })
+        .collect()
 }
 
 // ------------------------------------------------------------------ edits
