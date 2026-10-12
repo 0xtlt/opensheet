@@ -84,6 +84,9 @@ pub struct Sheet {
     pub advanced_filter: Option<crate::filter::AdvancedFilter>,
     /// The settings of the last Data > Consolidate into this sheet.
     pub consolidation: Option<crate::consolidate::Consolidation>,
+    /// Scenarios and data tables (What-If Analysis), see `whatif.rs`.
+    pub scenarios: Vec<crate::whatif::Scenario>,
+    pub data_tables: Vec<crate::whatif::DataTable>,
     /// Tables ("Format as Table"), see `table.rs`.
     pub tables: Vec<crate::table::Table>,
     /// Conditional formats, in priority order, see `condfmt.rs`.
@@ -131,6 +134,8 @@ impl Sheet {
             filtered_rows: BTreeSet::new(),
             advanced_filter: None,
             consolidation: None,
+            scenarios: Vec::new(),
+            data_tables: Vec::new(),
             tables: Vec::new(),
             cond_formats: Vec::new(),
             validations: Vec::new(),

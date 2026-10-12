@@ -22,8 +22,8 @@ pub enum CalcMode {
     /// After every change.
     #[default]
     Automatic,
-    /// Excel leaves data tables out; there are none here, so this is
-    /// `Automatic`.
+    /// The same, except that data tables (`whatif.rs`) wait for
+    /// `Workbook::calculate_now`.
     AutomaticExceptTables,
     /// On request only (`Workbook::calculate_now`, `calculate_sheet`). A
     /// formula is still calculated when it is entered.
@@ -360,12 +360,21 @@ impl Workbook {
     /// (a file being loaded, the locale).
     pub fn recalc(&mut self) {
         self.calculate(Demand::Everything);
+        self.calculate_data_tables();
     }
 
     /// Calculate what changed since the last calculation and everything
     /// that depends on it (F9). With automatic calculation there is never
     /// anything left to do.
     pub fn calculate_now(&mut self) {
+        self.calculate(Demand::Now);
+        self.calculate_data_tables();
+    }
+
+    /// Calculate what depends on the cells changed since the last
+    /// calculation, whatever the mode, leaving data tables as they are:
+    /// the step of a what-if search.
+    pub(crate) fn calculate_changes(&mut self) {
         self.calculate(Demand::Now);
     }
 
@@ -502,6 +511,7 @@ impl Workbook {
                 self.calculate(Demand::Committed)
             }
         }
+        self.data_tables_after_change();
         self.calc.settled = self.calc.touched.len();
     }
 
