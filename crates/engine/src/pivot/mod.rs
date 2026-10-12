@@ -20,6 +20,7 @@ mod cache;
 mod commands;
 mod compute;
 mod getdata;
+mod slicing;
 mod style;
 #[cfg(test)]
 mod tests;
@@ -438,6 +439,13 @@ pub enum FilterKind {
         count: f64,
         by: Top10By,
     },
+    /// Keep the records whose date lies between two days, both included
+    /// (what a timeline sets). Unlike the others it applies wherever the
+    /// field is, in the report or not.
+    Date {
+        start: f64,
+        end: f64,
+    },
 }
 
 /// A label or value filter on a row or column field (`filter`).
@@ -516,6 +524,9 @@ pub struct PivotTable {
     pub data_fields: Vec<DataField>,
     /// Label and value filters, applied in order.
     pub filters: Vec<PivotFilter>,
+    /// The fields a slicer filters: their unchecked items are left out
+    /// even while the field is in none of the areas.
+    pub sliced: Vec<usize>,
     pub options: PivotOptions,
     pub style: PivotStyle,
     /// The cells the report occupies since it was last written
@@ -645,6 +656,7 @@ impl PivotTable {
             page_fields: Vec::new(),
             data_fields: Vec::new(),
             filters: Vec::new(),
+            sliced: Vec::new(),
             options: PivotOptions::default(),
             style: PivotStyle::default(),
             location: None,
@@ -893,10 +905,13 @@ impl PivotTable {
         self.filters.retain(|f| {
             f.field < nf
                 && match f.kind {
-                    FilterKind::Label(_) => true,
+                    FilterKind::Label(_) | FilterKind::Date { .. } => true,
                     FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => data_field < nd,
                 }
         });
+        self.sliced.retain(|f| *f < nf);
+        self.sliced.sort_unstable();
+        self.sliced.dedup();
         for f in &mut self.fields {
             if f.sort.by_value.is_some_and(|d| d >= nd) {
                 f.sort.by_value = None;
@@ -1043,7 +1058,7 @@ impl PivotTable {
             .filter_map(|mut f| {
                 f.field = field(f.field)?;
                 match &mut f.kind {
-                    FilterKind::Label(_) => {}
+                    FilterKind::Label(_) | FilterKind::Date { .. } => {}
                     FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => {
                         *data_field = data(*data_field)?
                     }
@@ -1051,6 +1066,7 @@ impl PivotTable {
                 Some(f)
             })
             .collect();
+        self.sliced = self.sliced.iter().filter_map(|f| field(*f)).collect();
         for f in &mut self.fields {
             f.sort.by_value = f.sort.by_value.and_then(data);
         }
@@ -1064,7 +1080,9 @@ impl PivotTable {
         self.row_fields.retain(|a| *a != AxisField::Field(field));
         self.col_fields.retain(|a| *a != AxisField::Field(field));
         self.page_fields.retain(|p| p.field != field);
-        self.filters.retain(|f| f.field != field);
+        // What a timeline set stays: it filters the field wherever it is.
+        self.filters
+            .retain(|f| f.field != field || matches!(f.kind, FilterKind::Date { .. }));
         self.normalize();
     }
 
@@ -1128,7 +1146,7 @@ impl PivotTable {
         self.data_fields.remove(index);
         self.filters.retain(|f| match f.kind {
             FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => data_field != index,
-            FilterKind::Label(_) => true,
+            FilterKind::Label(_) | FilterKind::Date { .. } => true,
         });
         for f in &mut self.fields {
             if f.sort.by_value == Some(index) {
@@ -1430,12 +1448,33 @@ impl PivotTable {
     /// value test or a Top 10).
     pub fn set_value_filter(&mut self, field: usize, filter: Option<FilterKind>) {
         self.filters
-            .retain(|f| f.field != field || matches!(f.kind, FilterKind::Label(_)));
+            .retain(|f| f.field != field || matches!(f.kind, FilterKind::Label(_) | FilterKind::Date { .. }));
         if let Some(kind) = filter
-            && !matches!(kind, FilterKind::Label(_))
+            && !matches!(kind, FilterKind::Label(_) | FilterKind::Date { .. })
         {
             self.filters.push(PivotFilter { field, kind });
         }
+    }
+
+    /// Set, replace or remove (`None`) the days a date field is limited
+    /// to, first and last day included.
+    pub fn set_date_filter(&mut self, field: usize, days: Option<(f64, f64)>) {
+        self.filters
+            .retain(|f| f.field != field || !matches!(f.kind, FilterKind::Date { .. }));
+        if let Some((start, end)) = days {
+            self.filters.push(PivotFilter {
+                field,
+                kind: FilterKind::Date { start, end },
+            });
+        }
+    }
+
+    /// The days a date field is limited to.
+    pub fn date_filter(&self, field: usize) -> Option<(f64, f64)> {
+        self.filters.iter().find_map(|f| match f.kind {
+            FilterKind::Date { start, end } if f.field == field => Some((start, end)),
+            _ => None,
+        })
     }
 
     // ---- layout ------------------------------------------------------------

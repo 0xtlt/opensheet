@@ -27,7 +27,7 @@ pub enum PivotDestination {
 }
 
 /// A PivotTable to write: on `sheet`, replacing the one at `index` or new.
-type Pending = (usize, Option<usize>, PivotTable);
+pub(super) type Pending = (usize, Option<usize>, PivotTable);
 
 struct Placed {
     sheet: usize,
@@ -281,7 +281,7 @@ impl Workbook {
     }
 
     /// Compute and write PivotTables, all or none.
-    fn pivot_install(&mut self, batch: Vec<Pending>, overwrite: bool) -> Result<(), PivotError> {
+    pub(super) fn pivot_install(&mut self, batch: Vec<Pending>, overwrite: bool) -> Result<(), PivotError> {
         let locale = self.locale;
         let mut placed = Vec::with_capacity(batch.len());
         for (sheet, index, mut pivot) in batch {
@@ -347,8 +347,26 @@ impl Workbook {
         self.pivot_install(vec![(si, Some(pi), p)], overwrite)
     }
 
+    /// `pivot_update` for several PivotTables at once (those a slicer
+    /// drives): all their reports are written, or none.
+    pub fn pivot_update_many(
+        &mut self,
+        ids: &[u32],
+        overwrite: bool,
+        edit: impl Fn(&mut PivotTable),
+    ) -> Result<(), PivotError> {
+        let mut batch = Vec::with_capacity(ids.len());
+        for id in ids {
+            let (si, pi) = self.pivot_position(*id)?;
+            let mut p = self.sheets[si].pivots[pi].clone();
+            edit(&mut p);
+            batch.push((si, Some(pi), p));
+        }
+        self.pivot_install(batch, overwrite)
+    }
+
     /// Every PivotTable built on `old`, moved onto `new`.
-    fn pivot_rebound(&self, old: &Arc<PivotCache>, new: &Arc<PivotCache>) -> Vec<Pending> {
+    pub(super) fn pivot_rebound(&self, old: &Arc<PivotCache>, new: &Arc<PivotCache>) -> Vec<Pending> {
         let mut batch = Vec::new();
         for (si, sh) in self.sheets.iter().enumerate() {
             for (pi, p) in sh.pivots.iter().enumerate() {

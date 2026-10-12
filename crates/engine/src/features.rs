@@ -51,6 +51,7 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     crate::consolidate::on_structural_edit(sheet, edit, edited_sheet);
     crate::whatif::on_structural_edit(sheet, edit, edited_sheet);
     crate::text_columns::on_structural_edit(sheet, edit, edited_sheet);
+    crate::slicer::on_structural_edit(sheet, edit, edited_sheet);
 }
 
 /// A sheet was renamed from `old` to `new`. Called for every sheet (the
@@ -83,6 +84,7 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     pivot::on_sheet_duplicated(wb, copy, original);
     drawing::on_sheet_duplicated(wb, copy, original);
     hyperlink::on_sheet_duplicated(wb, copy, original);
+    crate::slicer::on_sheet_duplicated(wb, copy, original);
 }
 
 /// The sheet `deleted` was just taken out of the workbook; `order` lists

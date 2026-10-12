@@ -936,6 +936,13 @@ impl<'a> Engine<'a> {
         let mut used: Vec<(usize, Option<Option<u32>>)> =
             p.page_fields.iter().map(|pf| (pf.field, Some(pf.item))).collect();
         used.extend(self.rows.fields.iter().chain(&self.cols.fields).map(|f| (*f, None)));
+        // A slicer or a timeline filters its field wherever it is.
+        let dated = p.filters.iter().filter(|x| matches!(x.kind, FilterKind::Date { .. })).map(|x| x.field);
+        for f in p.sliced.iter().copied().chain(dated) {
+            if !used.iter().any(|(u, _)| *u == f) {
+                used.push((f, None));
+            }
+        }
         for (f, page) in used {
             let Some(pf) = p.fields.get(f) else {
                 continue;
@@ -972,6 +979,15 @@ impl<'a> Engine<'a> {
                                 *v = false;
                             }
                         }
+                    }
+                }
+            }
+            for filter in p.filters.iter().filter(|x| x.field == f) {
+                if let FilterKind::Date { start, end } = filter.kind {
+                    for (v, item) in vis.iter_mut().zip(p.cache.items(f)) {
+                        // Whole days: a time of day does not put a record
+                        // outside its day.
+                        *v &= matches!(item, Value::Number(n) if n.floor() >= start && n.floor() <= end);
                     }
                 }
             }
@@ -1021,7 +1037,7 @@ impl<'a> Engine<'a> {
         let p = self.p;
         for filter in &p.filters {
             let (data, test): (usize, Rejects) = match &filter.kind {
-                FilterKind::Label(_) => continue,
+                FilterKind::Label(_) | FilterKind::Date { .. } => continue,
                 FilterKind::Value { data_field, test } => {
                     let test = *test;
                     (
