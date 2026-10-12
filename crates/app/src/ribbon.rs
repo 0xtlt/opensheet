@@ -1844,7 +1844,7 @@ impl ExcelApp {
                         cx,
                         |this, _, cx| this.set_view_mode(ViewMode::PageLayout, cx),
                     ),
-                    self.cmd_large("vw-custom", page::Cmd::CustomViews, false, cx),
+                    self.cmd_large("vw-custom", features::custom_views::Cmd::Open, false, cx),
                 ]),
             )
             .into_any_element(),

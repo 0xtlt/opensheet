@@ -170,6 +170,8 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Zoom In", "Zoom avant"), ZoomIn),
                 MenuItem::action(t("Zoom Out", "Zoom arrière"), ZoomOut),
                 MenuItem::action(t("Actual Size", "Taille réelle"), ZoomReset),
+                MenuItem::separator(),
+                MenuItem::action(t("Custom Views…", "Affichages personnalisés…"), features::custom_views::CustomViewsDialog),
             ],
         },
     ]);

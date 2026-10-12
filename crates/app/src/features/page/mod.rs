@@ -75,7 +75,6 @@ commands! {
         PrintGridlines = "", t("Print", "Imprimer");
         PrintHeadings = "", t("Print", "Imprimer");
         Ruler = "", t("Ruler", "Règle");
-        CustomViews = "eye", t("Custom Views", "Affichages personnalisés");
         HeaderFooter = "header-footer", t("Header & Footer", "En-tête et pied de page");
         HfHeader = "header-footer", t("Header", "En-tête");
         HfFooter = "header-footer", t("Footer", "Pied de page");
@@ -711,9 +710,8 @@ impl Command for Cmd {
             }
             Cmd::HfScaleWithDoc => views::toggle_option(app, cx, |hf| hf.scale_with_doc = !hf.scale_with_doc),
             Cmd::HfAlignMargins => views::toggle_option(app, cx, |hf| hf.align_with_margins = !hf.align_with_margins),
-            // Greyed out (see `enabled`); custom views are not part of
-            // page setup and have no model.
-            Cmd::Background | Cmd::CustomViews => app.not_implemented(self.label(), cx),
+            // Greyed out (see `enabled`).
+            Cmd::Background => app.not_implemented(self.label(), cx),
         }
     }
 }
