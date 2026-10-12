@@ -1102,6 +1102,9 @@ fn note_editor(app: &mut ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<A
             .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, _, cx| {
                 clicked.update(cx, |area, cx| area.caret_to_point(event.position, cx));
             })
+            // A press anywhere else finishes the note, also where nothing
+            // takes the keyboard (the ribbon).
+            .on_mouse_down_out(cx.listener(|app, _: &MouseDownEvent, _, cx| finish_note_edit(app, cx)))
             .child(
                 div()
                     .absolute()

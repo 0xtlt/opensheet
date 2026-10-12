@@ -1270,3 +1270,24 @@ fn marks_and_boxes_are_painted_where_excel_puts_them(cx: &mut TestAppContext) {
     let handles = zones.iter().filter(|zone| matches!(zone.payload::<Spot>(), Some(Spot::Grip(_, _, Grip::Handle(_))))).count();
     assert_eq!(handles, 8);
 }
+
+#[gpui::test]
+fn a_press_on_the_ribbon_finishes_the_note_too(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    select(&app, cx, (3, 1));
+    cx.simulate_keystrokes("shift-f2");
+    cx.simulate_input("Typed");
+    redraw(cx);
+    // Above the grid: the ribbon, which never takes the keyboard.
+    let above = app.update(cx, |app, _| {
+        let layout = app.current_layout().unwrap();
+        layout.to_window(300.0, -60.0)
+    });
+    click(cx, above);
+    assert_eq!(editing(&app, cx), None);
+    assert_eq!(note_text(&app, cx, (3, 1)), Some(format!("{}:\nTyped", user_name())));
+    // The keyboard is back on the grid.
+    cx.simulate_input("9");
+    cx.simulate_keystrokes("enter");
+    app.update(cx, |app, _| assert_eq!(app.wb.sheets[0].value_at(3, 1), opensheet_engine::Value::Number(9.0)));
+}
