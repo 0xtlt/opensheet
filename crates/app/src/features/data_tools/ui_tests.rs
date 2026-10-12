@@ -473,3 +473,287 @@ fn consolidate_refusals(cx: &mut TestAppContext) {
     assert!(modal_open(&app, cx));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
 }
+
+// ----------------------------------------------------------- What-If Analysis
+
+fn number(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> f64 {
+    match value(app, cx, name) {
+        Value::Number(n) => n,
+        other => panic!("{name} holds {other:?}"),
+    }
+}
+
+fn modal_count(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> usize {
+    let mut count = 0;
+    // Close them one by one, counting, then nothing is left open.
+    while modal_open(app, cx) {
+        app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+        count += 1;
+    }
+    count
+}
+
+#[gpui::test]
+fn what_if_menu_opens_the_three_dialogs(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    run(&app, cx, Cmd::WhatIf);
+    assert!(!modal_open(&app, cx));
+    for cmd in [Cmd::ScenarioManager, Cmd::GoalSeek, Cmd::DataTable] {
+        run(&app, cx, cmd);
+        assert!(modal_open(&app, cx), "{cmd:?}");
+        cx.simulate_keystrokes("escape");
+        redraw(cx);
+        assert!(!modal_open(&app, cx), "{cmd:?}");
+    }
+}
+
+#[gpui::test]
+fn goal_seek_ok_keeps_and_cancel_restores(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "1"), ("B1", "=A1*3+2")]);
+    select(&app, cx, "B1");
+    // Set cell is the active cell; the value and the changing cell are typed.
+    run(&app, cx, Cmd::GoalSeek);
+    cx.simulate_keystrokes("tab tab");
+    cx.simulate_input("14");
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("A1");
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    // The status dialog is up, the sheet shows the solution, nothing is
+    // committed yet.
+    assert!(modal_open(&app, cx));
+    assert!((number(&app, cx, "A1") - 4.0).abs() < 1e-6);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "A1"), Value::Number(1.0));
+    assert_eq!(value(&app, cx, "B1"), Value::Number(5.0));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
+
+    // Again, kept with Return, undone in one step.
+    let dialog = app.update_in(cx, |app, window, cx| whatif::open_goal_seek(app, window, cx));
+    redraw(cx);
+    dialog.update(cx, |dialog, cx| dialog.set("$B$1", "14", "$A$1", cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert!((number(&app, cx, "B1") - 14.0).abs() < 1e-6);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Goal Seek"));
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "A1"), Value::Number(1.0));
+}
+
+#[gpui::test]
+fn goal_seek_refusals(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "1"), ("B1", "=A1*3+2")]);
+    select(&app, cx, "B1");
+    // No formula in the set cell, a formula in the changing cell, a value
+    // that is no number, a reference that is none.
+    for (set, value, changing) in [("A1", "5", "A1"), ("B1", "5", "B1"), ("B1", "five", "A1"), ("B1", "5", "")] {
+        let dialog = app.update_in(cx, |app, window, cx| whatif::open_goal_seek(app, window, cx));
+        redraw(cx);
+        dialog.update(cx, |dialog, cx| dialog.set(set, value, changing, cx));
+        cx.simulate_keystrokes("enter");
+        redraw(cx);
+        // A message; once read, the dialog is still there.
+        cx.simulate_keystrokes("enter");
+        redraw(cx);
+        assert_eq!(modal_count(&app, cx), 1, "{set} {value} {changing}");
+    }
+    assert_eq!(value(&app, cx, "A1"), Value::Number(1.0));
+}
+
+#[gpui::test]
+fn scenarios_from_the_manager(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "100"), ("A2", "0.1"), ("A3", "=A1*(1+A2)")]);
+    select(&app, cx, "A1:A2");
+    let manager = app.update_in(cx, |app, window, cx| whatif::open_scenario_manager(app, window, cx));
+    redraw(cx);
+    // Add: the changing cells are the selection, the values what they hold.
+    for (name, values) in [("Low", ["50", "0.05"]), ("High", ["200", "0.2"])] {
+        let scenario = manager.update_in(cx, |manager, window, cx| manager.edit(None, window, cx)).expect("Add Scenario");
+        redraw(cx);
+        cx.simulate_keystrokes("tab");
+        cx.simulate_input(name);
+        let values_dialog = scenario.update_in(cx, |dialog, window, cx| dialog.next(window, cx)).expect("Scenario Values");
+        redraw(cx);
+        values_dialog.update(cx, |dialog, cx| dialog.set(&values, cx));
+        cx.simulate_keystrokes("enter");
+        redraw(cx);
+    }
+    let names = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| -> Vec<String> {
+        app.update(cx, |app, _| app.wb.sheets[app.sheet].scenarios.iter().map(|s| s.name.clone()).collect())
+    };
+    assert_eq!(names(&app, cx), ["Low", "High"]);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Add Scenario"));
+    // The manager is still there, on the scenario just added: Return shows it.
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A1"), Value::Number(200.0));
+    assert!((number(&app, cx, "A3") - 240.0).abs() < 1e-9);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Show Scenario"));
+    // A name already taken is refused and the dialog stays.
+    let scenario = manager.update_in(cx, |manager, window, cx| manager.edit(None, window, cx)).expect("Add Scenario");
+    redraw(cx);
+    scenario.update(cx, |dialog, cx| dialog.set("low", "A1", cx));
+    assert!(scenario.update_in(cx, |dialog, window, cx| dialog.next(window, cx)).is_none());
+    redraw(cx);
+    cx.simulate_keystrokes("enter escape");
+    redraw(cx);
+    // Edit the first one: its values are proposed again.
+    manager.update(cx, |manager, cx| manager.select(0, cx));
+    let scenario = manager.update_in(cx, |manager, window, cx| manager.edit(Some(0), window, cx)).expect("Edit Scenario");
+    redraw(cx);
+    let values_dialog = scenario.update_in(cx, |dialog, window, cx| dialog.next(window, cx)).expect("Scenario Values");
+    redraw(cx);
+    values_dialog.update(cx, |dialog, cx| dialog.set(&["60"], cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    let low = app.update(cx, |app, _| app.wb.sheets[0].scenarios[0].clone());
+    assert_eq!((low.cells[0].value.as_str(), low.cells[1].value.as_str()), ("60", "0.05"));
+    assert!(low.comment.contains("Created by") && low.comment.contains("Modified by"), "{}", low.comment);
+    // Delete the second, then undo brings it back.
+    manager.update(cx, |manager, cx| {
+        manager.select(1, cx);
+        manager.delete(cx);
+    });
+    assert_eq!(names(&app, cx), ["Low"]);
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(names(&app, cx), ["Low", "High"]);
+}
+
+#[gpui::test]
+fn scenario_summary_makes_a_sheet(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "100"), ("A3", "=A1*2")]);
+    edit(&app, cx, |wb| {
+        let cell = |value: &str| opensheet_engine::whatif::ScenarioCell {
+            row: 0,
+            col: 0,
+            value: value.into(),
+        };
+        for (name, value) in [("Low", "50"), ("High", "200")] {
+            let scenario = opensheet_engine::whatif::Scenario {
+                name: name.into(),
+                cells: vec![cell(value)],
+                ..Default::default()
+            };
+            wb.scenario_add(0, scenario).unwrap();
+        }
+    });
+    let manager = app.update_in(cx, |app, window, cx| whatif::open_scenario_manager(app, window, cx));
+    redraw(cx);
+    let summary = manager.update_in(cx, |manager, window, cx| manager.summary(window, cx)).expect("Scenario Summary");
+    redraw(cx);
+    summary.update(cx, |dialog, cx| dialog.set("A3", cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    // Both dialogs are gone and the report is the sheet in view.
+    assert!(!modal_open(&app, cx));
+    let (sheet, name, count) = app.update(cx, |app, _| (app.sheet, app.wb.sheets[app.sheet].name.clone(), app.wb.sheets.len()));
+    assert_eq!((sheet, name.as_str(), count), (0, "Scenario Summary", 2));
+    assert_eq!(value(&app, cx, "E3"), text("Low"));
+    assert_eq!(value(&app, cx, "F5"), Value::Number(200.0));
+    assert_eq!(value(&app, cx, "C7"), text("$A$3"));
+    assert_eq!(value(&app, cx, "E7"), Value::Number(100.0));
+    cx.simulate_keystrokes("cmd-z");
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets.len()), 1);
+    assert_eq!(value(&app, cx, "A1"), Value::Number(100.0));
+}
+
+#[gpui::test]
+fn scenarios_respect_protection(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("A1", "100")]);
+    edit(&app, cx, |wb| {
+        let mut protection = opensheet_engine::protect::SheetProtection::default();
+        protection.set(opensheet_engine::protect::Permission::EditScenarios, false);
+        wb.protect_sheet(0, protection, "");
+    });
+    let manager = app.update_in(cx, |app, window, cx| whatif::open_scenario_manager(app, window, cx));
+    redraw(cx);
+    assert!(manager.update_in(cx, |manager, window, cx| manager.edit(None, window, cx)).is_none());
+    redraw(cx);
+    // The manager, and the message over it.
+    assert_eq!(modal_count(&app, cx), 2);
+}
+
+#[gpui::test]
+fn data_table_from_the_dialog(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(
+        &app,
+        cx,
+        &[("B1", "10"), ("B2", "3"), ("B3", "=B1*B2"), ("D1", "=B3"), ("E1", "10"), ("F1", "20"), ("D2", "1"), ("D3", "2")],
+    );
+    select(&app, cx, "D1:F3");
+    run(&app, cx, Cmd::DataTable);
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("B1");
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("B2");
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "F3"), Value::Number(40.0));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Data Table"));
+    // The formula bar shows Excel's array formula.
+    assert_eq!(app.update(cx, |app, _| app.wb.formula_bar_text(0, 2, 5)), "{=TABLE(B1,B2)}");
+    // The table follows the model.
+    fill(&app, cx, &[("B3", "=B1*B2+1")]);
+    assert_eq!(value(&app, cx, "F3"), Value::Number(41.0));
+
+    // One result cannot be typed over or cleared: Excel's message.
+    select(&app, cx, "F3");
+    cx.simulate_keystrokes("delete");
+    redraw(cx);
+    assert_eq!(modal_count(&app, cx), 1);
+    assert_eq!(value(&app, cx, "F3"), Value::Number(41.0));
+    cx.simulate_input("7");
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    modal_count(&app, cx);
+    app.update_in(cx, |app, window, cx| {
+        if app.is_editing() {
+            app.cancel_edit(window, cx);
+        }
+    });
+    assert_eq!(value(&app, cx, "F3"), Value::Number(41.0));
+    // Cleared as a whole, it is gone; undo brings it back, live.
+    select(&app, cx, "E2:F3");
+    cx.simulate_keystrokes("delete");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "F3"), Value::Empty);
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].data_tables.is_empty()));
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "F3"), Value::Number(41.0));
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].data_tables.len()), 1);
+}
+
+#[gpui::test]
+fn data_table_refusals(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    fill(&app, cx, &[("B1", "10"), ("D1", "=B1"), ("E1", "1"), ("D2", "2")]);
+    for (selection, row, column) in [("D1:E2", "", ""), ("D1:E2", "nowhere", ""), ("D1:E2", "E2", ""), ("D1", "B1", "")] {
+        select(&app, cx, selection);
+        let dialog = app.update_in(cx, |app, window, cx| whatif::open_data_table(app, window, cx));
+        redraw(cx);
+        dialog.update(cx, |dialog, cx| dialog.set(row, column, cx));
+        cx.simulate_keystrokes("enter");
+        redraw(cx);
+        assert_eq!(modal_count(&app, cx), 2, "{selection} {row:?}");
+    }
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].data_tables.is_empty()));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
+}

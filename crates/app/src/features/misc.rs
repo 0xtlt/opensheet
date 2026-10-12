@@ -77,7 +77,6 @@ commands! {
         // Data
         GetData = "data", t("Get Data", "Obtenir des données");
         RefreshAll = "refresh", t("Refresh All", "Actualiser tout");
-        WhatIf = "calculator", t("What-If Analysis", "Analyse de scénarios");
         GroupRows = "group-objects", t_ctx("outline", "Group", "Grouper");
         UngroupRows = "group-objects", t_ctx("outline", "Ungroup", "Dissocier");
         Subtotal = "calculator", t("Subtotal", "Sous-total");

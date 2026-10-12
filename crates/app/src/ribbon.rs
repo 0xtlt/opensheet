@@ -1778,7 +1778,7 @@ impl ExcelApp {
             .into_any_element(),
             group(
                 t("Forecast", "Prévision"),
-                row(vec![self.cmd_large("dt-whatif", misc::Cmd::WhatIf, true, cx)]),
+                row(vec![self.cmd_large("dt-whatif", data_tools::Cmd::WhatIf, true, cx)]),
             )
             .into_any_element(),
             group(

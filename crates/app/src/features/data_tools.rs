@@ -11,11 +11,12 @@ mod advanced;
 mod consolidate;
 mod flash;
 mod text_wizard;
+mod whatif;
 #[cfg(test)]
 mod ui_tests;
 
-use super::{Command, Cx, Feature};
-use crate::app::ExcelApp;
+use super::{CellEdit, Command, Cx, Feature, Intent};
+use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
 use crate::shell::Alert;
 use gpui::{App, Context, KeyBinding, SharedString, Stateful, Window, actions, prelude::*};
@@ -30,6 +31,10 @@ commands! {
         FlashFill = "fill-down", t("Flash Fill", "Remplissage instantané");
         AdvancedFilter = "filter", t("Advanced", "Avancé");
         Consolidate = "grid", t("Consolidate", "Consolider");
+        WhatIf = "calculator", t("What-If Analysis", "Analyse de scénarios");
+        ScenarioManager = "", t("Scenario Manager…", "Gestionnaire de scénarios…");
+        GoalSeek = "", t("Goal Seek…", "Valeur cible…");
+        DataTable = "", t("Data Table…", "Table de données…");
     }
 }
 
@@ -54,6 +59,23 @@ impl Command for Cmd {
             Cmd::Consolidate => {
                 consolidate::open(app, window, cx);
             }
+            Cmd::WhatIf => {
+                let entries = vec![
+                    MenuEntry::command(Cmd::ScenarioManager, app),
+                    MenuEntry::command(Cmd::GoalSeek, app),
+                    MenuEntry::command(Cmd::DataTable, app),
+                ];
+                app.open_command_menu(entries, 250.0, window, cx);
+            }
+            Cmd::ScenarioManager => {
+                whatif::open_scenario_manager(app, window, cx);
+            }
+            Cmd::GoalSeek => {
+                whatif::open_goal_seek(app, window, cx);
+            }
+            Cmd::DataTable => {
+                whatif::open_data_table(app, window, cx);
+            }
         }
     }
 }
@@ -61,6 +83,20 @@ impl Command for Cmd {
 impl Feature for DataTools {
     fn name(&self) -> &'static str {
         "data-tools"
+    }
+
+    // The results of a data table change together or not at all.
+    fn guard(&self, app: &ExcelApp, intent: &Intent) -> Option<SharedString> {
+        match intent {
+            Intent::EditCells(rect) => whatif::table_guard(app, *rect),
+            _ => None,
+        }
+    }
+
+    // A data table cleared or overwritten as a whole is no table any
+    // more, in the undo step of what replaced it.
+    fn cells_written(&self, app: &mut ExcelApp, edit: &CellEdit, _cx: &mut Cx) {
+        app.wb.remove_data_tables_in(edit.sheet, edit.rect);
     }
 }
 
