@@ -19,6 +19,7 @@ pub mod format;
 pub mod functions;
 pub mod input;
 pub mod locale;
+pub mod metrics;
 pub mod names;
 pub mod ops;
 pub mod page;

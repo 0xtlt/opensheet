@@ -1,0 +1,298 @@
+//! The Format tab and the Format pane of charts driven in GPUI's headless
+//! window: every element gets its pane, fields store what is typed, the
+//! commands of the tab act on the selected element. How the pane looks is
+//! not what these tests see.
+
+use super::pane::FormatPane;
+use super::*;
+use crate::features::charts::elements::{element_name, listed};
+use crate::i18n::{Lang, set_lang};
+use gpui::{Modifiers, TestAppContext, VisualTestContext, point};
+use opensheet_engine::Rect;
+use opensheet_engine::chart::{Chart, ChartKind, DataTable, ErrorAmount, ErrorBars, ErrorDirection, Line, TrendKind, Trendline};
+use opensheet_engine::chart_layout::AxisId;
+
+fn open(cx: &mut TestAppContext) -> (Entity<ExcelApp>, &mut VisualTestContext) {
+    set_lang(Lang::En);
+    cx.update(crate::bind_keys);
+    let (app, cx) = cx.add_window_view(ExcelApp::new);
+    redraw(cx);
+    (app, cx)
+}
+
+fn redraw(cx: &mut VisualTestContext) {
+    cx.run_until_parked();
+    cx.simulate_mouse_move(point(px(2.), px(2.)), None, Modifiers::none());
+    cx.run_until_parked();
+}
+
+/// A chart of a small table, selected.
+fn with_chart(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, kind: ChartKind) -> u32 {
+    let id = app.update_in(cx, |app, window, cx| {
+        let rows = [["Month", "North", "South", "West"], ["Jan", "12", "8", "5"], ["Feb", "15", "11", "7"], ["Mar", "9", "14", "10"]];
+        for (r, row) in rows.iter().enumerate() {
+            for (c, text) in row.iter().enumerate() {
+                let _ = app.wb.set_cell_text(0, r as u32, c as u32, text);
+            }
+        }
+        app.commit("setup", cx);
+        app.select_rect(Rect::new(0, 0, 3, 3), cx);
+        app.insert_chart(kind, window, cx);
+        app.selected_chart().expect("a chart was inserted").id
+    });
+    redraw(cx);
+    id
+}
+
+fn chart(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Chart {
+    app.update(cx, |app, _| app.selected_chart().cloned().expect("a selected chart"))
+}
+
+fn select(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, element: ChartElement) {
+    app.update_in(cx, |app, window, cx| {
+        app.select_chart_element(element, cx);
+        open_pane(app, window, cx);
+    });
+    redraw(cx);
+}
+
+fn pane(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<FormatPane> {
+    app.update(cx, |app, _| {
+        let entry = app.panes.iter().find(|p| p.id == PANE).expect("the pane is open");
+        entry.view.clone().downcast::<FormatPane>().expect("the Format pane")
+    })
+}
+
+/// Type into a field of the pane and leave it with Return.
+fn type_in(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, field: Field, text: &str) {
+    let pane = pane(app, cx);
+    pane.update(cx, |pane, cx| {
+        let input = pane.field_input(field).expect("the field is shown");
+        input.update(cx, |input, cx| input.set_text(text, cx));
+        pane.commit_field(field, cx);
+    });
+    redraw(cx);
+}
+
+#[gpui::test]
+fn every_element_of_every_family_has_its_pane(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    for kind in [
+        ChartKind::Column,
+        ChartKind::StackedBar,
+        ChartKind::LineMarkers,
+        ChartKind::Area,
+        ChartKind::Pie,
+        ChartKind::Doughnut,
+        ChartKind::Scatter,
+        ChartKind::Bubble,
+        ChartKind::RadarMarkers,
+        ChartKind::Column3D,
+        ChartKind::Pie3D,
+    ] {
+        with_chart(&app, cx, kind);
+        // Everything a chart can show, where the kind allows it.
+        app.update(cx, |app, cx| {
+            app.edit_chart("setup", cx, |c| {
+                c.data_labels = true;
+                c.axes.category.title = Some("Months".into());
+                c.axes.value.title = Some("Units".into());
+                c.axes.value.minor_gridlines = true;
+                c.data_table = Some(DataTable::default());
+                if let Some(last) = c.series.last_mut() {
+                    last.secondary = true;
+                }
+                c.series[0].trendlines.push(Trendline::new(TrendKind::Polynomial(2)));
+                c.series[0].trendlines.push(Trendline {
+                    name: Some("Mine".into()),
+                    intercept: Some(1.0),
+                    ..Trendline::new(TrendKind::Linear)
+                });
+                for (i, amount) in [ErrorAmount::Fixed(1.0), ErrorAmount::Percent(5.0), ErrorAmount::StdDev(1.0), ErrorAmount::StdErr].into_iter().enumerate() {
+                    c.series[0].error_bars.push(ErrorBars {
+                        horizontal: i == 1,
+                        direction: ErrorDirection::Both,
+                        amount,
+                        end_cap: true,
+                    });
+                }
+            });
+        });
+        redraw(cx);
+        let mut all = app.update(cx, |app, _| {
+            let chart = app.selected_chart().unwrap();
+            listed(chart, &app.wb.chart_data(app.sheet, chart))
+        });
+        all.extend([ChartElement::Point(0, 1), ChartElement::LegendEntry(0)]);
+        assert!(all.len() >= 5, "{kind:?}: {all:?}");
+        for element in all {
+            select(&app, cx, element);
+            let title = app.update(cx, |app, _| app.panes.iter().find(|p| p.id == PANE).map(|p| p.title.to_string()));
+            assert_eq!(title.as_deref(), Some(elements::pane_title(element)), "{kind:?} {element:?}");
+            // Every tab of the pane draws.
+            let pane = pane(&app, cx);
+            for tab in 0..3 {
+                pane.update(cx, |pane, cx| pane.show_tab(tab, cx));
+                redraw(cx);
+            }
+            pane.update(cx, |pane, cx| pane.show_tab(0, cx));
+        }
+        app.update(cx, |app, cx| app.delete_selected_object(cx));
+        redraw(cx);
+    }
+}
+
+#[gpui::test]
+fn fields_store_what_is_typed_as_one_undo_step(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Column);
+    select(&app, cx, ChartElement::Series(0));
+    pane(&app, cx).update(cx, |pane, cx| pane.show_tab(1, cx));
+    redraw(cx);
+    // The field shows what Excel does for the kind until it is changed.
+    let shown = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, field: Field| {
+        let pane = pane(app, cx);
+        pane.update(cx, |pane, cx| pane.field_input(field).map(|input| input.read(cx).text().to_string()))
+    };
+    assert_eq!(shown(&app, cx, Field::GapWidth).as_deref(), Some("219 %"));
+    type_in(&app, cx, Field::GapWidth, "80");
+    assert_eq!(chart(&app, cx).gap_width, Some(80));
+    assert_eq!(shown(&app, cx, Field::GapWidth).as_deref(), Some("80 %"));
+    // Leaving the field without a change is not an undo step, and what
+    // cannot be read leaves the chart alone: one undo takes it all back.
+    type_in(&app, cx, Field::GapWidth, "80 %");
+    type_in(&app, cx, Field::GapWidth, "wide");
+    assert_eq!(chart(&app, cx).gap_width, Some(80));
+    assert_eq!(shown(&app, cx, Field::GapWidth).as_deref(), Some("80 %"));
+    cx.simulate_keystrokes("cmd-z");
+    redraw(cx);
+    assert_eq!(chart(&app, cx).gap_width, None);
+    type_in(&app, cx, Field::GapWidth, "80");
+    // A step of the spinner applies at once, unit or not in the field.
+    pane(&app, cx).update(cx, |pane, cx| pane.step_field(Field::GapWidth, 5.0, cx));
+    redraw(cx);
+    assert_eq!(chart(&app, cx).gap_width, Some(85));
+    assert_eq!(shown(&app, cx, Field::GapWidth).as_deref(), Some("85 %"));
+    cx.simulate_keystrokes("cmd-z");
+    redraw(cx);
+    assert_eq!(chart(&app, cx).gap_width, Some(80));
+
+    // An axis: the bounds show the automatic scale, typing sets them,
+    // emptying the field hands them back.
+    select(&app, cx, ChartElement::Axis(AxisId::Value));
+    assert_eq!(shown(&app, cx, Field::AxisMax).as_deref(), Some("16"));
+    assert_eq!(shown(&app, cx, Field::AxisMajor).as_deref(), Some("2"));
+    type_in(&app, cx, Field::AxisMax, "40");
+    assert_eq!(chart(&app, cx).axes.value.max, Some(40.0));
+    type_in(&app, cx, Field::AxisMax, "");
+    assert_eq!(chart(&app, cx).axes.value.max, None);
+    assert_eq!(shown(&app, cx, Field::AxisMax).as_deref(), Some("16"));
+    type_in(&app, cx, Field::NumberFormat, "0.0");
+    assert_eq!(chart(&app, cx).axes.value.number_format.as_deref(), Some("0.0"));
+}
+
+#[gpui::test]
+fn the_pane_waits_for_a_chart(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Line);
+    select(&app, cx, ChartElement::Legend);
+    app.update(cx, |app, cx| app.deselect_object(cx));
+    redraw(cx);
+    // Still open, with nothing to format; a chart selected again fills it.
+    assert!(app.update(cx, |app, _| app.pane_open(PANE)));
+    app.update(cx, |app, cx| app.delete_selected_object(cx));
+    redraw(cx);
+}
+
+#[gpui::test]
+fn the_format_tab_acts_on_the_selected_element(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Column);
+    // The Chart Elements box lists the elements by name and selects them.
+    let entries = app.update(cx, |app, _| element_menu(app));
+    let labels: Vec<String> = entries.iter().map(|e| e.label.to_string()).collect();
+    assert_eq!(labels[0], "Chart Area");
+    assert!(labels.contains(&"Vertical (Value) Axis Major Gridlines".to_string()), "{labels:?}");
+    assert!(labels.contains(&"Series \"South\"".to_string()), "{labels:?}");
+    assert!(entries[0].checked && entries.iter().filter(|e| e.checked).count() == 1);
+    let at = labels.iter().position(|l| l == "Series \"South\"").unwrap();
+    let action = entries[at].action.clone().unwrap();
+    app.update_in(cx, |app, window, cx| action(app, window, cx));
+    assert_eq!(app.update(cx, |app, _| app.chart_element()), ChartElement::Series(1));
+    let name = app.update(cx, |app, _| {
+        let chart = app.selected_chart().unwrap();
+        element_name(chart, &app.wb.chart_data(app.sheet, chart), app.chart_element())
+    });
+    assert_eq!(name, "Series \"South\"");
+
+    // Shape Fill and Shape Outline colour the series; Reset undoes both.
+    let enabled = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cmd: Cmd| app.update(cx, |app, _| cmd.enabled(app));
+    assert!(enabled(&app, cx, Cmd::ShapeFill) && enabled(&app, cx, Cmd::ShapeOutline) && !enabled(&app, cx, Cmd::ShapeEffects));
+    app.update_in(cx, |app, window, cx| app.run_command(Cmd::ShapeFill, window, cx));
+    redraw(cx);
+    assert!(app.update(cx, |app, _| app.popup.is_some()));
+    app.update_in(cx, |app, window, cx| {
+        app.close_popup(window, cx);
+        apply_shape_color(app, false, Some(Color(0xC00000)), cx);
+        apply_shape_color(app, true, Some(Color(0x000000)), cx);
+    });
+    let series = chart(&app, cx).series[1].clone();
+    assert_eq!(series.color, Some(Color(0xC00000)));
+    assert_eq!((series.line.shown, series.line.color), (Some(true), Some(Color(0x000000))));
+    app.update_in(cx, |app, window, cx| app.run_command(Cmd::ResetStyle, window, cx));
+    let series = chart(&app, cx).series[1].clone();
+    assert_eq!((series.color, series.line), (None, Line::default()));
+    // A legend has neither fill nor outline in the model: both are greyed.
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::Legend, cx));
+    assert!(!enabled(&app, cx, Cmd::ShapeFill) && !enabled(&app, cx, Cmd::ShapeOutline));
+    // "No Fill" on the plot area, a colour on the chart area.
+    app.update(cx, |app, cx| {
+        app.select_chart_element(ChartElement::PlotArea, cx);
+        apply_shape_color(app, false, None, cx);
+        app.select_chart_element(ChartElement::ChartArea, cx);
+        apply_shape_color(app, false, Some(Color(0xF2F2F2)), cx);
+    });
+    let c = chart(&app, cx);
+    assert_eq!((c.plot_area.fill, c.chart_area.fill), (Fill::None, Fill::Solid(Color(0xF2F2F2))));
+
+    // Size: the fields of the tab show the chart's size and set it.
+    app.update(cx, |app, _| app.context_tab = Some(FORMAT_TAB));
+    redraw(cx);
+    let (height, width) = app.update_in(cx, |app, window, cx| size_fields(app, window, cx));
+    assert_eq!(height.read_with(cx, |input, _| input.text().to_string()), "3\"");
+    assert_eq!(width.read_with(cx, |input, _| input.text().to_string()), "5\"");
+    width.update(cx, |input, cx| input.set_text("6", cx));
+    app.update_in(cx, |app, window, cx| on_size_event(app, Field::Width, &width, &InputEvent::Enter { shift: false }, window, cx));
+    assert_eq!(chart(&app, cx).size, (576.0, 288.0));
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Resize Chart"));
+}
+
+#[gpui::test]
+fn a_field_never_writes_to_another_element_nor_for_nothing(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Line);
+    select(&app, cx, ChartElement::ChartArea);
+    let field_text = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        pane(app, cx).update(cx, |pane, cx| pane.field_input(Field::LineWidth).map(|i| i.read(cx).text().to_string()))
+    };
+    // A width typed for the border of the chart, then a click on a series
+    // before the field is left: the series does not get it.
+    pane(&app, cx).update(cx, |pane, cx| {
+        let input = pane.field_input(Field::LineWidth).expect("the width of the border");
+        input.update(cx, |input, cx| input.set_text("3", cx));
+    });
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::Series(0), cx));
+    redraw(cx);
+    pane(&app, cx).update(cx, |pane, cx| pane.commit_field(Field::LineWidth, cx));
+    redraw(cx);
+    assert_eq!(chart(&app, cx).series[0].line.width, None);
+    // The field now reads the automatic width of the line; leaving it as
+    // it reads is not a change.
+    assert_eq!(field_text(&app, cx).as_deref(), Some("2.25 pt"));
+    pane(&app, cx).update(cx, |pane, cx| pane.commit_field(Field::LineWidth, cx));
+    assert_eq!(chart(&app, cx).series[0].line.width, None);
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Insert Chart"));
+    type_in(&app, cx, Field::LineWidth, "1.5");
+    let c = chart(&app, cx);
+    assert_eq!((c.chart_area.border.width, c.series[0].line.width), (None, Some(1.5)));
+}

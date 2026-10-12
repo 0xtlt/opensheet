@@ -6,8 +6,8 @@
 //! file for a damaged one.
 
 use super::scheme_slot;
-use crate::xlsx::color::OFFICE_THEME;
 use crate::xlsx::formula::from_file_text;
+use crate::xlsx::theme;
 use crate::xlsx::xml::unescape;
 use opensheet_engine::ast::Expr;
 use std::borrow::Cow;
@@ -147,13 +147,13 @@ fn declares_other_encoding(xml: &str) -> bool {
 }
 
 /// The text of a chart part as it reads without the theme of its
-/// workbook. Packages are written without a theme, and Excel then takes
-/// theme colours for those of its default theme: in a chart that comes
-/// from a workbook with another one, every theme colour is replaced by
-/// the colour it stands for (which takes the same adjustments). Theme
-/// fonts stay what they are, and become the default theme's.
+/// workbook. Packages are written with one theme, the engine's
+/// ([`theme`]), whatever the file had: in a chart that comes from a
+/// workbook with another one, every theme colour is replaced by the
+/// colour it stands for (which takes the same adjustments). Theme fonts
+/// stay what they are, and become those of the theme that is written.
 pub(crate) fn without_theme<'a>(xml: &'a str, theme: &[u32; 12]) -> Cow<'a, str> {
-    if *theme == OFFICE_THEME || !xml.contains("schemeClr") {
+    if *theme == theme::COLORS || !xml.contains("schemeClr") {
         return Cow::Borrowed(xml);
     }
     let mut out = String::with_capacity(xml.len());
@@ -416,14 +416,14 @@ mod tests {
 
     #[test]
     fn theme_colours_are_spelled_out() {
-        let mut theme = OFFICE_THEME;
+        let mut theme = theme::COLORS;
         let xml = "<c:spPr><a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill><a:ln><a:solidFill><a:schemeClr val=\"tx1\"><a:lumMod val=\"15000\"/></a:schemeClr></a:solidFill></a:ln><x:schemeClr val='bg1' /><a:schemeClr val=\"phClr\"><a:tint val=\"1\"/></a:schemeClr></c:spPr>";
-        // The theme Excel assumes: as it is, to the byte.
+        // The theme packages are written with: as it is, to the byte.
         assert!(matches!(without_theme(xml, &theme), Cow::Borrowed(_)));
-        theme[4] = 0x156082;
+        theme[4] = 0x4472C4;
         assert_eq!(
             without_theme(xml, &theme),
-            "<c:spPr><a:solidFill><a:srgbClr val=\"156082\"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"000000\"><a:lumMod val=\"15000\"/></a:srgbClr></a:solidFill></a:ln><x:srgbClr val=\"FFFFFF\"/><a:schemeClr val=\"phClr\"><a:tint val=\"1\"/></a:schemeClr></c:spPr>"
+            "<c:spPr><a:solidFill><a:srgbClr val=\"4472C4\"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val=\"000000\"><a:lumMod val=\"15000\"/></a:srgbClr></a:solidFill></a:ln><x:srgbClr val=\"FFFFFF\"/><a:schemeClr val=\"phClr\"><a:tint val=\"1\"/></a:schemeClr></c:spPr>"
         );
         // Text that is not XML is not touched.
         for damaged in [

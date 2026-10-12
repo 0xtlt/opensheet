@@ -221,8 +221,9 @@ impl Workbook {
         Ok(())
     }
 
-    /// Write a report into the cells: values, number formats and the
-    /// indentation of compact labels. Other formatting of the cells stays.
+    /// Write a report into the cells: values, number formats, the
+    /// indentation of compact labels and the room for the expand / collapse
+    /// buttons. Other formatting of the cells stays.
     fn pivot_write(&mut self, x: &Placed) {
         let (p, report) = (&x.pivot, &x.report);
         let general: Arc<str> = Arc::from("General");
@@ -251,7 +252,12 @@ impl Workbook {
         for r in 0..rows {
             for c in 0..cols {
                 let (row, col) = (x.body.r0 + r, x.body.c0 + c);
-                let style = styled(self, row, col, report.format_of(r, c, p), report.indent(r, c));
+                let indent = match (report.indent(r, c), report.drill_margin(r, c, p)) {
+                    (Some(depth), margin) => Some(depth + margin as u8),
+                    (None, true) => Some(1),
+                    (None, false) => None,
+                };
+                let style = styled(self, row, col, report.format_of(r, c, p), indent);
                 put(&mut self.sheets[x.sheet], row, col, report.value(r, c).clone(), style);
             }
         }

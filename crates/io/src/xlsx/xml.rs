@@ -139,6 +139,12 @@ impl<'a> Reader<'a> {
         Event::Eof
     }
 
+    /// What is left to read. A second reader over it reads the same
+    /// events as this one would.
+    pub fn rest(&self) -> &'a str {
+        &self.src[self.pos..]
+    }
+
     // Not an `Iterator`: the stream ends with an explicit `Eof` event, which
     // keeps the `match` loops of the callers flat.
     #[allow(clippy::should_implement_trait)]

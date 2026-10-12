@@ -638,6 +638,8 @@ struct PaneCtx<'a> {
     /// Tables, pivot tables or conditional formats restyle cells of this
     /// sheet: every visible cell goes through `Workbook::display`.
     layered: bool,
+    /// The sheet shows formulas instead of their results.
+    formulas: bool,
     digit_w: RefCell<HashMap<(SharedString, u32, bool), f32>>,
     zones: RefCell<Vec<Zone>>,
 }
@@ -787,8 +789,24 @@ impl<'a> PaneCtx<'a> {
 
         self.feature_layer(PaintLayer::Under, visible, clip, &mut items);
 
-        // Gridlines.
-        if sheet.show_gridlines {
+        // Gridlines. Page Break Preview shows them only over what prints.
+        let gridline_areas = if sheet.show_gridlines {
+            features::page::gridline_areas(self.input.app)
+        } else {
+            None
+        };
+        for area in gridline_areas.iter().flatten().filter_map(|area| area.intersection(&visible)) {
+            let line = c(theme::GRIDLINE);
+            let (ax0, ay0, ax1, ay1) = layout.rect_px(area);
+            let (ax0, ay0, ax1, ay1) = (ax0.max(clip.0), ay0.max(clip.1), ax1.min(clip.2), ay1.min(clip.3));
+            for (_, y, h) in ys.iter().filter(|(row, _, _)| *row >= area.r0 && *row <= area.r1) {
+                items.push(solid(layout, ax0, y + h - self.hair, ax1, y + h, line));
+            }
+            for (_, x, w) in xs.iter().filter(|(col, _, _)| *col >= area.c0 && *col <= area.c1) {
+                items.push(solid(layout, x + w - self.hair, ay0, x + w, ay1, line));
+            }
+        }
+        if sheet.show_gridlines && gridline_areas.is_none() {
             let line = c(theme::GRIDLINE);
             for (_, y, h) in &ys {
                 items.push(solid(layout, clip.0, y + h - self.hair, clip.2, y + h, line));
@@ -895,7 +913,16 @@ impl<'a> PaneCtx<'a> {
                     None => wb.styles.get(*style_id),
                 };
                 let merged = in_merge(*row, *col);
-                let value = sheet.value_at(*row, *col);
+                let mut value = sheet.value_at(*row, *col);
+                // Show Formulas: formulas as they were typed, values
+                // without their number format.
+                let mut num_fmt: &str = &style.num_fmt;
+                if self.formulas {
+                    if let Some(text) = features::misc::shown_formula(wb, self.input.sheet, *row, *col) {
+                        value = Value::text(text);
+                    }
+                    num_fmt = "General";
+                }
                 let mut hide_text = false;
                 let mut inset = (0.0f32, 0.0f32);
                 if pass == 0 {
@@ -939,7 +966,7 @@ impl<'a> PaneCtx<'a> {
                 if value.is_empty() || hide_text {
                     continue;
                 }
-                let formatted = format::format_value(&value, &style.num_fmt, wb.locale);
+                let formatted = format::format_value(&value, num_fmt, wb.locale);
                 if formatted.text.is_empty() {
                     continue;
                 }
@@ -1010,7 +1037,7 @@ impl<'a> PaneCtx<'a> {
                         // Numbers never spill: lose precision, then show ###.
                         let dw = self.digit_width(&font, font_px);
                         let mut fitted = false;
-                        if style.is_general() {
+                        if style.is_general() || self.formulas {
                             if let Value::Number(n) = value {
                                 let mut chars = (avail / dw).floor() as usize;
                                 while chars >= 1 {
@@ -1252,6 +1279,7 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         ts,
         hair: if input.scale >= 2.0 { 0.5 } else { 1.0 },
         layered: !sheet.tables.is_empty() || !sheet.pivots.is_empty() || !sheet.cond_formats.is_empty(),
+        formulas: features::misc::shows_formulas(input.app),
         digit_w: RefCell::new(HashMap::new()),
         zones: RefCell::new(Vec::new()),
     };
