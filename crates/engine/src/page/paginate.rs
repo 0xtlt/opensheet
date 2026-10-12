@@ -174,7 +174,11 @@ impl PageLayout {
 /// Row height in pixels as it prints: zero when hidden by hand or by a
 /// filter.
 pub fn visible_row_height(sheet: &Sheet, row: u32) -> f64 {
-    if sheet.filtered_rows.contains(&row) { 0.0 } else { sheet.row_height(row) as f64 }
+    if sheet.filtered_rows.contains(&row) {
+        0.0
+    } else {
+        sheet.row_height(row) as f64
+    }
 }
 
 /// Column width in pixels as it prints: zero when hidden.
@@ -267,7 +271,11 @@ fn bands(
     let mut out = Vec::new();
     let mut breaks = Vec::new();
     let room = |start: u32| -> f64 {
-        if title.is_some_and(|(_, t1)| start > t1) { available - title_px } else { available }
+        if title.is_some_and(|(_, t1)| start > t1) {
+            available - title_px
+        } else {
+            available
+        }
     };
     // The band being filled: its first index, the last visible index put
     // on it, the pixels used and the pixels it can hold.
@@ -381,7 +389,12 @@ fn collect_ink(wb: &Workbook, sheet: usize, measure: Option<&dyn TextMeasure>) -
     }
 
     for sp in &sh.spills {
-        ink.push(Rect::new(sp.row, sp.col, sp.row + sp.array.rows as u32 - 1, sp.col + sp.array.cols as u32 - 1));
+        ink.push(Rect::new(
+            sp.row,
+            sp.col,
+            sp.row + sp.array.rows as u32 - 1,
+            sp.col + sp.array.cols as u32 - 1,
+        ));
     }
     for object in floating_objects(sh) {
         ink.push(object.cells(sh));
@@ -449,13 +462,22 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
         let last_row = rects.iter().map(|r| r.r1).max().unwrap_or(0);
         out.heading_size = (heading_width(last_row), DEFAULT_ROW_HEIGHT as f64);
     }
-    let axes: Vec<(Sizes, Sizes)> =
-        rects.iter().map(|r| (Sizes::new(sh, false, r.c0, r.c1), Sizes::new(sh, true, r.r0, r.r1))).collect();
-    let title_cols_px = setup.title_cols.map_or(0.0, |(a, b)| span_px(sh, BreakAxis::Cols, a, b));
-    let title_rows_px = setup.title_rows.map_or(0.0, |(a, b)| span_px(sh, BreakAxis::Rows, a, b));
+    let axes: Vec<(Sizes, Sizes)> = rects
+        .iter()
+        .map(|r| (Sizes::new(sh, false, r.c0, r.c1), Sizes::new(sh, true, r.r0, r.r1)))
+        .collect();
+    let title_cols_px = setup
+        .title_cols
+        .map_or(0.0, |(a, b)| span_px(sh, BreakAxis::Cols, a, b));
+    let title_rows_px = setup
+        .title_rows
+        .map_or(0.0, |(a, b)| span_px(sh, BreakAxis::Rows, a, b));
     // "Fit to" ignores manual page breaks, as Excel does.
-    let (manual_cols, manual_rows) =
-        if setup.fit_to_page { (None, None) } else { (Some(&setup.col_breaks), Some(&setup.row_breaks)) };
+    let (manual_cols, manual_rows) = if setup.fit_to_page {
+        (None, None)
+    } else {
+        (Some(&setup.col_breaks), Some(&setup.row_breaks))
+    };
     let cut = |percent: u16| -> Vec<PrintRange> {
         let unit = PX_TO_PT * percent as f64 / 100.0;
         let across = printable.2 / unit - out.heading_size.0;
@@ -520,9 +542,10 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
             if x.is_single() && (cols.get(x.c0) <= 0.0 || rows.get(x.r0) <= 0.0) {
                 continue;
             }
-            let (Some((c0, c1)), Some((r0, r1))) =
-                (bands_touching(&range.col_bands, x.c0, x.c1), bands_touching(&range.row_bands, x.r0, x.r1))
-            else {
+            let (Some((c0, c1)), Some((r0, r1))) = (
+                bands_touching(&range.col_bands, x.c0, x.c1),
+                bands_touching(&range.row_bands, x.r0, x.r1),
+            ) else {
                 continue;
             };
             for cb in c0..=c1 {
@@ -616,7 +639,9 @@ impl Pagination {
     /// The page printing a cell in its own rows and columns (not as a
     /// repeated title).
     pub fn page_of(&self, row: u32, col: u32) -> Option<&Page> {
-        self.pages.iter().find(|p| row >= p.rows.0 && row <= p.rows.1 && col >= p.cols.0 && col <= p.cols.1)
+        self.pages
+            .iter()
+            .find(|p| row >= p.rows.0 && row <= p.rows.1 && col >= p.cols.0 && col <= p.cols.1)
     }
 
     /// Where the rows and columns of a page fall on the paper.
@@ -629,7 +654,11 @@ impl Pagination {
             let mut pos = start;
             let mut add = |(first, last): (u32, u32), spans: &mut Vec<Span>| {
                 for index in first..=last {
-                    let px = if rows { visible_row_height(sheet, index) } else { visible_col_width(sheet, index) };
+                    let px = if rows {
+                        visible_row_height(sheet, index)
+                    } else {
+                        visible_col_width(sheet, index)
+                    };
                     if px > 0.0 {
                         spans.push(Span {
                             index,
@@ -659,7 +688,10 @@ impl Pagination {
             title_cols,
             title_rows,
             body: (body_x, body_y, right - body_x, bottom - body_y),
-            body_px: (axis_offset(sheet, false, page.cols.0), axis_offset(sheet, true, page.rows.0)),
+            body_px: (
+                axis_offset(sheet, false, page.cols.0),
+                axis_offset(sheet, true, page.rows.0),
+            ),
         }
     }
 }

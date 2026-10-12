@@ -78,7 +78,12 @@ impl Path {
     }
 
     pub fn rect(r: RectF) -> Path {
-        Path::new().move_to(r.x, r.y).line_to(r.right(), r.y).line_to(r.right(), r.bottom()).line_to(r.x, r.bottom()).close()
+        Path::new()
+            .move_to(r.x, r.y)
+            .line_to(r.right(), r.y)
+            .line_to(r.right(), r.bottom())
+            .line_to(r.x, r.bottom())
+            .close()
     }
 
     pub fn line(x0: f64, y0: f64, x1: f64, y1: f64) -> Path {
@@ -89,7 +94,11 @@ impl Path {
     pub fn polyline(points: &[(f64, f64)]) -> Path {
         let mut path = Path::new();
         for (i, (x, y)) in points.iter().enumerate() {
-            path = if i == 0 { path.move_to(*x, *y) } else { path.line_to(*x, *y) };
+            path = if i == 0 {
+                path.move_to(*x, *y)
+            } else {
+                path.line_to(*x, *y)
+            };
         }
         path
     }
@@ -97,7 +106,10 @@ impl Path {
     /// The ellipse inscribed in `r`.
     pub fn ellipse(r: RectF) -> Path {
         let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-        Path::new().move_to(cx + r.w / 2.0, cy).arc(cx, cy, r.w / 2.0, r.h / 2.0, 0.0, 360.0).close()
+        Path::new()
+            .move_to(cx + r.w / 2.0, cy)
+            .arc(cx, cy, r.w / 2.0, r.h / 2.0, 0.0, 360.0)
+            .close()
     }
 
     /// Continue the path with an arc of the ellipse centred on (cx, cy):
@@ -241,12 +253,28 @@ pub enum Op {
     /// Apply a transformation `[a b c d e f]` to what follows:
     /// x' = a·x + c·y + e, y' = b·x + d·y + f.
     Transform([f64; 6]),
-    Fill { path: Path, paint: Paint },
-    Stroke { path: Path, stroke: Stroke },
+    Fill {
+        path: Path,
+        paint: Paint,
+    },
+    Stroke {
+        path: Path,
+        stroke: Stroke,
+    },
     /// One line of text in one face, its baseline starting at (x, y).
-    Text { face: Arc<Face>, size: f64, x: f64, y: f64, text: String, paint: Paint },
+    Text {
+        face: Arc<Face>,
+        size: f64,
+        x: f64,
+        y: f64,
+        text: String,
+        paint: Paint,
+    },
     /// An image stretched over a rectangle.
-    Image { image: Arc<Image>, rect: RectF },
+    Image {
+        image: Arc<Image>,
+        rect: RectF,
+    },
 }
 
 /// Everything drawn on one page.

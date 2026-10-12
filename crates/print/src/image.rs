@@ -212,7 +212,11 @@ fn decode_png(data: &[u8]) -> Option<Image> {
                 let bit = index * depth as usize;
                 let value = (row[bit / 8] >> (8 - depth as usize - bit % 8)) & ((1 << depth) - 1);
                 // Palette indices stay as they are; grey levels stretch.
-                if color_type == 3 { value } else { (value as u16 * 255 / ((1 << depth) - 1)) as u8 }
+                if color_type == 3 {
+                    value
+                } else {
+                    (value as u16 * 255 / ((1 << depth) - 1)) as u8
+                }
             }
         }
     };
@@ -226,7 +230,9 @@ fn decode_png(data: &[u8]) -> Option<Image> {
                 0 => {
                     let v = s(0);
                     // A grey level named by `tRNS` is transparent.
-                    let clear = transparency.len() >= 2 && depth <= 8 && transparency[1] as u16 * 255 / ((1u16 << depth) - 1) == v as u16;
+                    let clear = transparency.len() >= 2
+                        && depth <= 8
+                        && transparency[1] as u16 * 255 / ((1u16 << depth) - 1) == v as u16;
                     (v, v, v, if clear { 0 } else { 255 })
                 }
                 2 => {
@@ -268,7 +274,14 @@ pub(crate) mod tests {
     use std::io::Write;
 
     /// Build a PNG file from filtered rows.
-    pub(crate) fn png(width: u32, height: u32, depth: u8, color_type: u8, rows: &[u8], extra: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
+    pub(crate) fn png(
+        width: u32,
+        height: u32,
+        depth: u8,
+        color_type: u8,
+        rows: &[u8],
+        extra: &[(&[u8; 4], &[u8])],
+    ) -> Vec<u8> {
         let mut out = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
         let mut chunk = |kind: &[u8; 4], body: &[u8]| {
             out.extend((body.len() as u32).to_be_bytes());
@@ -301,18 +314,34 @@ pub(crate) mod tests {
         assert_eq!(img.pixels, Pixels::Rgb(vec![255, 0, 0, 0, 255, 0, 255, 0, 10, 0, 0, 0]));
         // RGBA with the "sub" filter.
         let file = png(2, 1, 8, 6, &[1, 10, 20, 30, 128, 1, 1, 1, 1], &[]);
-        assert_eq!(Image::from_file_bytes(&file).unwrap().pixels, Pixels::Rgba(vec![10, 20, 30, 128, 11, 21, 31, 129]));
+        assert_eq!(
+            Image::from_file_bytes(&file).unwrap().pixels,
+            Pixels::Rgba(vec![10, 20, 30, 128, 11, 21, 31, 129])
+        );
         // A palette of two colours at one bit per pixel, the first clear.
-        let file = png(3, 1, 1, 3, &[0, 0b0100_0000], &[(b"PLTE", &[1, 2, 3, 4, 5, 6]), (b"tRNS", &[0])]);
+        let file = png(
+            3,
+            1,
+            1,
+            3,
+            &[0, 0b0100_0000],
+            &[(b"PLTE", &[1, 2, 3, 4, 5, 6]), (b"tRNS", &[0])],
+        );
         assert_eq!(
             Image::from_file_bytes(&file).unwrap().pixels,
             Pixels::Rgba(vec![1, 2, 3, 0, 4, 5, 6, 255, 1, 2, 3, 0])
         );
         // Grey with alpha, and 16-bit grey.
         let file = png(1, 1, 8, 4, &[0, 200, 50], &[]);
-        assert_eq!(Image::from_file_bytes(&file).unwrap().pixels, Pixels::Rgba(vec![200, 200, 200, 50]));
+        assert_eq!(
+            Image::from_file_bytes(&file).unwrap().pixels,
+            Pixels::Rgba(vec![200, 200, 200, 50])
+        );
         let file = png(1, 1, 16, 0, &[0, 0x80, 0x01], &[]);
-        assert_eq!(Image::from_file_bytes(&file).unwrap().pixels, Pixels::Rgb(vec![0x80, 0x80, 0x80]));
+        assert_eq!(
+            Image::from_file_bytes(&file).unwrap().pixels,
+            Pixels::Rgb(vec![0x80, 0x80, 0x80])
+        );
         // Truncated data and other formats are refused.
         assert!(Image::from_file_bytes(&file[..30]).is_none());
         assert!(Image::from_file_bytes(b"GIF89a").is_none());

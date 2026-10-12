@@ -23,8 +23,8 @@ use std::sync::Arc;
 pub struct DocInfo {
     pub title: String,
     pub author: String,
-    /// When the file was made, as a date serial number; `None` leaves the
-    /// date out.
+    /// When the file was made, as a date serial number in this machine's
+    /// local time; `None` leaves the date out.
     pub created: Option<f64>,
 }
 
@@ -101,7 +101,11 @@ impl Objects {
         } else {
             (data, "")
         };
-        let _ = write!(self.out, "{id} 0 obj\n<< {dict} /Length {}{filter} >>\nstream\n", data.len());
+        let _ = write!(
+            self.out,
+            "{id} 0 obj\n<< {dict} /Length {}{filter} >>\nstream\n",
+            data.len()
+        );
         self.out.extend_from_slice(data);
         self.out.extend_from_slice(b"\nendstream\nendobj\n");
     }
@@ -160,7 +164,12 @@ impl Resources {
 
 fn rgb(paint: &Paint) -> String {
     let c = paint.color;
-    format!("{} {} {}", num(c.r() as f64 / 255.0), num(c.g() as f64 / 255.0), num(c.b() as f64 / 255.0))
+    format!(
+        "{} {} {}",
+        num(c.r() as f64 / 255.0),
+        num(c.g() as f64 / 255.0),
+        num(c.b() as f64 / 255.0)
+    )
 }
 
 fn path_ops(path: &Path, out: &mut String) {
@@ -169,7 +178,16 @@ fn path_ops(path: &Path, out: &mut String) {
             Segment::MoveTo(x, y) => writeln!(out, "{} {} m", num(*x), num(*y)),
             Segment::LineTo(x, y) => writeln!(out, "{} {} l", num(*x), num(*y)),
             Segment::CurveTo(x1, y1, x2, y2, x, y) => {
-                writeln!(out, "{} {} {} {} {} {} c", num(*x1), num(*y1), num(*x2), num(*y2), num(*x), num(*y))
+                writeln!(
+                    out,
+                    "{} {} {} {} {} {} c",
+                    num(*x1),
+                    num(*y1),
+                    num(*x2),
+                    num(*y2),
+                    num(*x),
+                    num(*y)
+                )
             }
             Segment::Close => writeln!(out, "h"),
         };
@@ -243,7 +261,14 @@ fn content(scene: &Scene, res: &mut Resources) -> String {
                     out.push_str("Q\n");
                 }
             }
-            Op::Text { face, size, x, y, text, paint } => {
+            Op::Text {
+                face,
+                size,
+                x,
+                y,
+                text,
+                paint,
+            } => {
                 let font = res.font(face);
                 let mut hex = String::with_capacity(text.len() * 4);
                 for ch in text.chars() {
@@ -272,7 +297,13 @@ fn content(scene: &Scene, res: &mut Resources) -> String {
                 }
                 // The rendering mode outlives the text object: put it back.
                 let reset = if bold { " 0 Tr" } else { "" };
-                let _ = writeln!(out, "1 0 {} -1 {} {} Tm <{hex}> Tj{reset} ET", num(slant), num(*x), num(*y));
+                let _ = writeln!(
+                    out,
+                    "1 0 {} -1 {} {} Tm <{hex}> Tj{reset} ET",
+                    num(slant),
+                    num(*x),
+                    num(*y)
+                );
                 if wrapped {
                     out.push_str("Q\n");
                 }
@@ -333,11 +364,19 @@ fn write_font(objects: &mut Objects, index: usize, font: &FontUse) -> usize {
     let face = &font.face;
     let (Some(ttf), None) = (face.ttf(), face.standard()) else {
         let base = face.standard().map_or("Helvetica", |s| s.base_font());
-        objects.write(id, &format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>"));
+        objects.write(
+            id,
+            &format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>"),
+        );
         return id;
     };
     let (descendant, descriptor, file, unicode) = (objects.alloc(), objects.alloc(), objects.alloc(), objects.alloc());
-    let name: String = ttf.names.postscript.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+    let name: String = ttf
+        .names
+        .postscript
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
     let name = if name.is_empty() { format!("Font{index}") } else { name };
     let base = format!("{}+{name}", subset_tag(index));
     let scale = 1000.0 / ttf.units_per_em as f64;
@@ -402,7 +441,10 @@ fn write_font(objects: &mut Objects, index: usize, font: &FontUse) -> usize {
 /// Write the objects of an image; returns the number of the image object.
 fn write_image(objects: &mut Objects, image: &Image) -> usize {
     let id = objects.alloc();
-    let size = format!("/Type /XObject /Subtype /Image /Width {} /Height {}", image.width, image.height);
+    let size = format!(
+        "/Type /XObject /Subtype /Image /Width {} /Height {}",
+        image.width, image.height
+    );
     match &image.pixels {
         Pixels::Jpeg(data) => {
             // The file is stored as it is; the dictionary only has to
@@ -423,7 +465,12 @@ fn write_image(objects: &mut Objects, image: &Image) -> usize {
             objects.out.extend_from_slice(b"\nendstream\nendobj\n");
         }
         Pixels::Rgb(data) => {
-            objects.stream(id, &format!("{size} /ColorSpace /DeviceRGB /BitsPerComponent 8"), data, true);
+            objects.stream(
+                id,
+                &format!("{size} /ColorSpace /DeviceRGB /BitsPerComponent 8"),
+                data,
+                true,
+            );
         }
         Pixels::Rgba(data) => {
             // Colour and transparency are separate images in PDF.
@@ -436,7 +483,12 @@ fn write_image(objects: &mut Objects, image: &Image) -> usize {
                 &colour,
                 true,
             );
-            objects.stream(mask, &format!("{size} /ColorSpace /DeviceGray /BitsPerComponent 8"), &alpha, true);
+            objects.stream(
+                mask,
+                &format!("{size} /ColorSpace /DeviceGray /BitsPerComponent 8"),
+                &alpha,
+                true,
+            );
         }
     }
     id
@@ -459,11 +511,29 @@ fn jpeg_components(data: &[u8]) -> u8 {
     3
 }
 
-/// `D:YYYYMMDDHHmmSS` for a date serial number.
-fn pdf_date(serial: f64) -> String {
+/// `D:YYYYMMDDHHmmSS` for a date serial number, followed by the offset
+/// from universal time (`+02'00'`) when it is known: without it, readers
+/// take the local time for universal time.
+fn pdf_date(serial: f64, offset_minutes: Option<i32>) -> String {
     let (y, m, d) = datetime::serial_to_ymd(serial);
     let (h, min, s) = datetime::serial_to_hms(serial);
-    format!("D:{y:04}{m:02}{d:02}{h:02}{min:02}{s:02}")
+    let mut out = format!("D:{y:04}{m:02}{d:02}{h:02}{min:02}{s:02}");
+    if let Some(offset) = offset_minutes {
+        let sign = if offset < 0 { '-' } else { '+' };
+        let _ = write!(out, "{sign}{:02}'{:02}'", offset.abs() / 60, offset.abs() % 60);
+    }
+    out
+}
+
+/// Minutes between this machine's time zone and universal time at a local
+/// date and time; `None` for a moment the zone's clocks skip or repeat.
+fn local_offset_minutes(serial: f64) -> Option<i32> {
+    use chrono::{Local, NaiveDate, TimeZone};
+    let (y, m, d) = datetime::serial_to_ymd(serial);
+    let (h, min, s) = datetime::serial_to_hms(serial);
+    let local = NaiveDate::from_ymd_opt(y as i32, m, d)?.and_hms_opt(h, min, s)?;
+    let offset = Local.from_local_datetime(&local).single()?.offset().local_minus_utc();
+    Some(offset / 60)
 }
 
 /// Write a PDF whose pages are `scenes[order[0]]`, `scenes[order[1]]`...
@@ -504,7 +574,10 @@ pub fn write_pdf(scenes: &[Scene], order: &[usize], info: &DocInfo) -> Vec<u8> {
         );
         kids.push(format!("{id} 0 R"));
     }
-    objects.write(pages, &format!("<< /Type /Pages /Count {} /Kids [{}] >>", kids.len(), kids.join(" ")));
+    objects.write(
+        pages,
+        &format!("<< /Type /Pages /Count {} /Kids [{}] >>", kids.len(), kids.join(" ")),
+    );
     objects.write(catalog, &format!("<< /Type /Catalog /Pages {pages} 0 R >>"));
 
     let mut dict = String::from("<< /ProcSet [/PDF /Text /ImageB /ImageC]");
@@ -543,7 +616,11 @@ pub fn write_pdf(scenes: &[Scene], order: &[usize], info: &DocInfo) -> Vec<u8> {
         let _ = write!(info_dict, " /Author {}", text_string(&info.author));
     }
     if let Some(serial) = info.created {
-        let _ = write!(info_dict, " /CreationDate ({})", pdf_date(serial));
+        let _ = write!(
+            info_dict,
+            " /CreationDate ({})",
+            pdf_date(serial, local_offset_minutes(serial))
+        );
     }
     info_dict.push_str(" >>");
     objects.write(info_id, &info_dict);
@@ -586,7 +663,9 @@ mod tests {
         assert_eq!(num(f64::NAN), "0");
         assert_eq!(text_string("Budget (2026)"), "(Budget \\(2026\\))");
         assert_eq!(text_string("Été"), "<FEFF00C9007400E9>");
-        assert_eq!(pdf_date(46307.65625), "D:20261012154500");
+        assert_eq!(pdf_date(46307.65625, None), "D:20261012154500");
+        assert_eq!(pdf_date(46307.65625, Some(120)), "D:20261012154500+02'00'");
+        assert_eq!(pdf_date(46307.65625, Some(-210)), "D:20261012154500-03'30'");
         assert_eq!(subset_tag(0), "AAAAAA");
         assert_eq!(subset_tag(27), "BBAAAA");
     }
@@ -594,7 +673,15 @@ mod tests {
     /// The offsets of the cross-reference table point at the objects.
     fn check_xref(pdf: &[u8]) -> usize {
         let text = String::from_utf8_lossy(pdf);
-        let start: usize = text.rsplit("startxref\n").next().unwrap().lines().next().unwrap().parse().unwrap();
+        let start: usize = text
+            .rsplit("startxref\n")
+            .next()
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
         assert!(pdf[start..].starts_with(b"xref\n"));
         let table = String::from_utf8_lossy(&pdf[start..]);
         let mut lines = table.lines().skip(1);
@@ -602,7 +689,10 @@ mod tests {
         for (id, line) in lines.take(count).enumerate().skip(1) {
             assert_eq!(line.len(), 19, "{line:?}");
             let offset: usize = line[..10].parse().unwrap();
-            assert!(pdf[offset..].starts_with(format!("{id} 0 obj\n").as_bytes()), "object {id}");
+            assert!(
+                pdf[offset..].starts_with(format!("{id} 0 obj\n").as_bytes()),
+                "object {id}"
+            );
         }
         count - 1
     }
@@ -612,14 +702,26 @@ mod tests {
         let fonts = FontDb::standard_only();
         let mut canvas = Canvas::new(&fonts);
         canvas.fill_rect(RectF::new(10.0, 10.0, 100.0, 50.0), Color(0xFFCC00));
-        canvas.line(10.0, 70.0, 110.0, 70.0, Stroke::solid(Color::BLACK, 0.75).dashed(&[3.0, 1.5]));
+        canvas.line(
+            10.0,
+            70.0,
+            110.0,
+            70.0,
+            Stroke::solid(Color::BLACK, 0.75).dashed(&[3.0, 1.5]),
+        );
         let style = TextStyle {
             family: "Arial",
             bold: true,
             italic: false,
             size: 12.0,
         };
-        canvas.text("Café (1)", 10.0, 100.0, &style, Paint::translucent(Color(0x0000FF), 0.5));
+        canvas.text(
+            "Café (1)",
+            10.0,
+            100.0,
+            &style,
+            Paint::translucent(Color(0x0000FF), 0.5),
+        );
         let image = Arc::new(Image::from_rgba(1, 1, vec![255, 0, 0, 128]).unwrap());
         canvas.image(&image, RectF::new(10.0, 120.0, 20.0, 20.0));
         canvas.image(&image, RectF::new(40.0, 120.0, 20.0, 20.0));
@@ -646,7 +748,8 @@ mod tests {
         assert!(text.contains("/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding"));
         assert!(text.contains("/Title (Test)"));
         assert!(text.contains("/Author <FEFF005A006F00E9>"));
-        assert!(text.contains("/CreationDate (D:20261012120000)"));
+        // Followed by this machine's offset from universal time.
+        assert!(text.contains("/CreationDate (D:20261012120000"));
         assert!(text.contains("/GS0 << /Type /ExtGState /ca 0.502 /CA 0.502 >>"));
         assert_eq!(text.matches("/Subtype /Image").count(), 2);
         // The same input gives the same bytes.

@@ -209,7 +209,8 @@ pub fn plan(wb: &Workbook, job: &PrintJob) -> PrintPlan {
             next_number = Some(last + 1);
         }
         let part = out.sheets.len();
-        out.pages.extend((0..pagination.pages.len()).map(|page| PlannedPage { part, page }));
+        out.pages
+            .extend((0..pagination.pages.len()).map(|page| PlannedPage { part, page }));
         out.sheets.push(PlannedSheet { sheet, pagination });
     }
     // With a first page number of 5, three pages read "5 of 7".
@@ -223,7 +224,10 @@ pub fn plan(wb: &Workbook, job: &PrintJob) -> PrintPlan {
     out.output = if job.collate {
         (0..copies).flat_map(|_| range.iter().copied()).collect()
     } else {
-        range.iter().flat_map(|page| std::iter::repeat_n(*page, copies)).collect()
+        range
+            .iter()
+            .flat_map(|page| std::iter::repeat_n(*page, copies))
+            .collect()
     };
     out
 }
@@ -263,8 +267,15 @@ pub fn print_pdf(wb: &Workbook, job: &PrintJob) -> Vec<u8> {
     let mut distinct: Vec<usize> = plan.output.clone();
     distinct.sort_unstable();
     distinct.dedup();
-    let scenes: Vec<Scene> = distinct.iter().filter_map(|index| render_page(wb, job, &plan, *index)).collect();
-    let order: Vec<usize> = plan.output.iter().filter_map(|index| distinct.binary_search(index).ok()).collect();
+    let scenes: Vec<Scene> = distinct
+        .iter()
+        .filter_map(|index| render_page(wb, job, &plan, *index))
+        .collect();
+    let order: Vec<usize> = plan
+        .output
+        .iter()
+        .filter_map(|index| distinct.binary_search(index).ok())
+        .collect();
     let info = DocInfo {
         title: job.file_name.clone(),
         author: job.author.clone(),

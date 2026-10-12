@@ -61,7 +61,11 @@ fn save(dir: &tempfile::TempDir, name: &str, pdf: &[u8]) -> PathBuf {
 /// Output of a command-line tool; `None` when it is not installed.
 fn tool(name: &str, args: &[&str]) -> Option<String> {
     let output = Command::new(name).args(args).output().ok()?;
-    assert!(output.status.success(), "{name} failed: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{name} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
@@ -82,13 +86,24 @@ fn pdftotext(file: &std::path::Path, args: &[&str]) -> Option<String> {
 fn page_count(pdf: &[u8]) -> usize {
     assert!(pdf.starts_with(b"%PDF-1.7\n") && pdf.ends_with(b"%%EOF\n"));
     let text = String::from_utf8_lossy(pdf);
-    let start: usize = text.rsplit("startxref\n").next().unwrap().lines().next().unwrap().parse().unwrap();
+    let start: usize = text
+        .rsplit("startxref\n")
+        .next()
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
     let table = String::from_utf8_lossy(&pdf[start..]).into_owned();
     let mut lines = table.lines().skip(1);
     let count: usize = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
     for (id, line) in lines.take(count).enumerate().skip(1) {
         let offset: usize = line[..10].parse().unwrap();
-        assert!(pdf[offset..].starts_with(format!("{id} 0 obj\n").as_bytes()), "object {id}");
+        assert!(
+            pdf[offset..].starts_with(format!("{id} 0 obj\n").as_bytes()),
+            "object {id}"
+        );
     }
     let pages = text.split("/Type /Pages /Count ").nth(1).unwrap();
     pages.split(' ').next().unwrap().parse().unwrap()
@@ -117,7 +132,9 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 fn report() -> Workbook {
     let mut wb = Workbook::new(Locale::en());
     wb.rename_sheet(0, "Sales");
-    let heads = ["Region", "Product", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Total", "Notes"];
+    let heads = [
+        "Region", "Product", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Total", "Notes",
+    ];
     for (c, head) in heads.iter().enumerate() {
         wb.set_cell_text(0, 0, c as u32, head).unwrap();
     }
@@ -131,7 +148,8 @@ fn report() -> Workbook {
         }
         wb.set_cell_text(0, r, 12, &format!("=SUM(C{0}:L{0})", r + 1)).unwrap();
         if r % 9 == 0 {
-            wb.set_cell_text(0, r, 13, "Check with the regional office before closing").unwrap();
+            wb.set_cell_text(0, r, 13, "Check with the regional office before closing")
+                .unwrap();
         }
     }
     style(&mut wb, "A1:N1", |s| {
@@ -142,10 +160,15 @@ fn report() -> Workbook {
     });
     style(&mut wb, "C2:M121", |s| s.num_fmt = "#,##0.00;[Red]-#,##0.00".into());
     style(&mut wb, "M2:M121", |s| s.font.bold = true);
-    wb.apply_borders(0, Rect::parse("A1:N1").unwrap(), BorderPreset::Bottom, Border {
-        style: BorderStyle::Medium,
-        color: None,
-    });
+    wb.apply_borders(
+        0,
+        Rect::parse("A1:N1").unwrap(),
+        BorderPreset::Bottom,
+        Border {
+            style: BorderStyle::Medium,
+            color: None,
+        },
+    );
     wb.set_print_titles(0, Some((0, 0)), Some((0, 1)));
     wb.update_page_setup(0, |p| {
         p.paper = Some(PaperSize::LETTER);
@@ -175,7 +198,10 @@ fn multi_page_report() {
     let path = save(&dir, "report.pdf", &pdf);
 
     if let Some(info) = pdfinfo(&path, &[]) {
-        assert!(info.contains(&format!("Pages:           {}", plan.pages.len())), "{info}");
+        assert!(
+            info.contains(&format!("Pages:           {}", plan.pages.len())),
+            "{info}"
+        );
         assert!(info.contains("612 x 792 pts (letter)"), "{info}");
         assert!(info.contains("Title:           Budget.xlsx"), "{info}");
     }
@@ -208,7 +234,11 @@ fn landscape_fit_to_one_page() {
     let mut wb = Workbook::new(Locale::fr());
     for r in 0..50u32 {
         for c in 0..18u32 {
-            let text = if r == 0 { format!("Colonne {}", c + 1) } else { format!("{}", (r * 13 + c * 7) % 500) };
+            let text = if r == 0 {
+                format!("Colonne {}", c + 1)
+            } else {
+                format!("{}", (r * 13 + c * 7) % 500)
+            };
             wb.set_cell_text(0, r, c, &text).unwrap();
         }
     }
@@ -217,10 +247,15 @@ fn landscape_fit_to_one_page() {
         s.fill = Some(Color(0xDDEBF7));
     });
     wb.apply_borders(0, Rect::parse("A1:R50").unwrap(), BorderPreset::All, Border::thin());
-    wb.apply_borders(0, Rect::parse("A1:R50").unwrap(), BorderPreset::ThickOutside, Border {
-        style: BorderStyle::Thick,
-        color: None,
-    });
+    wb.apply_borders(
+        0,
+        Rect::parse("A1:R50").unwrap(),
+        BorderPreset::ThickOutside,
+        Border {
+            style: BorderStyle::Thick,
+            color: None,
+        },
+    );
     wb.update_page_setup(0, |p| {
         p.orientation = Orientation::Landscape;
         p.fit_to_page = true;
@@ -250,7 +285,11 @@ fn landscape_fit_to_one_page() {
         assert!(text.contains("Colonne 18"), "{text}");
         assert!(text.contains("Page 1 de 1"), "{text}");
         // Column letters and row numbers are printed.
-        assert!(text.lines().any(|l| l.split_whitespace().collect::<Vec<_>>().starts_with(&["A", "B", "C"])), "{text}");
+        assert!(
+            text.lines()
+                .any(|l| l.split_whitespace().collect::<Vec<_>>().starts_with(&["A", "B", "C"])),
+            "{text}"
+        );
     }
 }
 
@@ -290,11 +329,19 @@ fn showcase() -> Workbook {
         wb.apply_borders(0, Rect::cell(row, col), BorderPreset::Outside, border(*line, None));
     }
     enter(&mut wb, "H5", "Rouge");
-    wb.apply_borders(0, Rect::parse("H5").unwrap(), BorderPreset::Outside, border(BorderStyle::Medium, Some(Color(0xC00000))));
+    wb.apply_borders(
+        0,
+        Rect::parse("H5").unwrap(),
+        BorderPreset::Outside,
+        border(BorderStyle::Medium, Some(Color(0xC00000))),
+    );
 
     // Fills and font styles.
     enter(&mut wb, "A7", "Remplissages");
-    for (i, color) in [0xFFFF00u32, 0x92D050, 0x00B0F0, 0xFFC000, 0x7030A0, 0xD9D9D9].iter().enumerate() {
+    for (i, color) in [0xFFFF00u32, 0x92D050, 0x00B0F0, 0xFFC000, 0x7030A0, 0xD9D9D9]
+        .iter()
+        .enumerate()
+    {
         let c = *color;
         wb.set_cell_text(0, 6, 1 + i as u32, &format!("{c:06X}")).unwrap();
         wb.update_style(0, Rect::cell(6, 1 + i as u32), &move |s| {
@@ -334,7 +381,14 @@ fn showcase() -> Workbook {
 
     // Alignment.
     enter(&mut wb, "A12", "Alignement");
-    for (i, (text, h)) in [("Gauche", HAlign::Left), ("Centre", HAlign::Center), ("Droite", HAlign::Right)].iter().enumerate() {
+    for (i, (text, h)) in [
+        ("Gauche", HAlign::Left),
+        ("Centre", HAlign::Center),
+        ("Droite", HAlign::Right),
+    ]
+    .iter()
+    .enumerate()
+    {
         let h = *h;
         wb.set_cell_text(0, 11, 1 + i as u32, text).unwrap();
         wb.update_style(0, Rect::cell(11, 1 + i as u32), &move |s| s.h_align = h);
@@ -349,22 +403,42 @@ fn showcase() -> Workbook {
     enter(&mut wb, "G12", "Sur deux");
     style(&mut wb, "G12:H12", |s| s.h_align = HAlign::CenterAcross);
     wb.set_row_height(0, 12, Some(44.0));
-    for (i, (text, v)) in [("Haut", VAlign::Top), ("Milieu", VAlign::Center), ("Bas", VAlign::Bottom)].iter().enumerate() {
+    for (i, (text, v)) in [
+        ("Haut", VAlign::Top),
+        ("Milieu", VAlign::Center),
+        ("Bas", VAlign::Bottom),
+    ]
+    .iter()
+    .enumerate()
+    {
         let v = *v;
         wb.set_cell_text(0, 12, 1 + i as u32, text).unwrap();
         wb.update_style(0, Rect::cell(12, 1 + i as u32), &move |s| s.v_align = v);
     }
-    wb.apply_borders(0, Rect::parse("B12:H13").unwrap(), BorderPreset::All, border(BorderStyle::Hair, None));
+    wb.apply_borders(
+        0,
+        Rect::parse("B12:H13").unwrap(),
+        BorderPreset::All,
+        border(BorderStyle::Hair, None),
+    );
 
     // Wrapped, justified, shrunk and rotated text.
     enter(&mut wb, "A15", "Texte");
-    enter(&mut wb, "B15", "Renvoi à la ligne automatique : l'été, les élèves français goûtent des crêpes à Noël.");
+    enter(
+        &mut wb,
+        "B15",
+        "Renvoi à la ligne automatique : l'été, les élèves français goûtent des crêpes à Noël.",
+    );
     wb.merge(0, Rect::parse("B15:C15").unwrap());
     style(&mut wb, "B15", |s| {
         s.wrap = true;
         s.v_align = VAlign::Top;
     });
-    enter(&mut wb, "D15", "Texte justifié sur toute la largeur de la cellule fusionnée, sauf la dernière ligne.");
+    enter(
+        &mut wb,
+        "D15",
+        "Texte justifié sur toute la largeur de la cellule fusionnée, sauf la dernière ligne.",
+    );
     wb.merge(0, Rect::parse("D15:E15").unwrap());
     style(&mut wb, "D15", |s| {
         s.h_align = HAlign::Justify;
@@ -404,7 +478,7 @@ fn showcase() -> Workbook {
     enter(&mut wb, "B22", "VRAI");
     enter(&mut wb, "C22", "=C21*2");
     for col in 0..8 {
-        wb.set_col_width(0, col, Some(if col == 1 { 120.0 } else { 88.0 }));
+        wb.set_col_width(0, col, Some(if col == 1 { 170.0 } else { 88.0 }));
     }
     wb.commit("showcase");
     wb.update_page_setup(0, |p| {
@@ -412,6 +486,10 @@ fn showcase() -> Workbook {
             "&L&\"Times New Roman,Italic\"&12Été 2026&C&B&UEn-tête&U&B normal &KFF0000rouge&R&A".into();
         p.header_footer.odd_footer = "&LH&Y2&YO et E=mc&X2&X&C&P / &N&R&D\n&T".into();
         p.margins = Margins::NARROW;
+        // One page wide whatever the fonts of the machine make of the
+        // overflowing texts.
+        p.fit_to_page = true;
+        p.fit_height = 0;
     });
     wb.commit("page setup");
     wb
@@ -447,7 +525,10 @@ fn formatting_showcase() {
         }
         // French numbers group with a narrow no-break space, printed as
         // a space; the negative number is red but reads the same.
-        assert!(text.contains("1 234 567,89 €") || text.contains("1\u{202f}234\u{202f}567,89 €"), "{text}");
+        assert!(
+            text.contains("1 234 567,89 €") || text.contains("1\u{202f}234\u{202f}567,89 €"),
+            "{text}"
+        );
         // The number too wide for its cell shows as hashes.
         assert!(text.contains("####"), "{text}");
         // The cut text lost its end; the neighbour is there.
@@ -468,7 +549,10 @@ fn formatting_showcase() {
     assert!(text.contains("/BaseFont /Courier"));
     let path = save(&dir, "showcase-standard.pdf", &pdf);
     if let Some(text) = pdftotext(&path, &[]) {
-        assert!(text.contains("Démonstration de la mise en forme à l'impression"), "{text}");
+        assert!(
+            text.contains("Démonstration de la mise en forme à l'impression"),
+            "{text}"
+        );
         assert!(text.contains("Été 2026") && text.contains("Pointillés"), "{text}");
     }
     // Printed twice, the bytes are the same.
@@ -493,7 +577,9 @@ fn drawing_matches_measuring() {
         .ops
         .iter()
         .filter_map(|op| match op {
-            Op::Text { face, size, x, y, text, .. } => Some((text.as_str(), *x, *y, face.text_width(text, *size))),
+            Op::Text {
+                face, size, x, y, text, ..
+            } => Some((text.as_str(), *x, *y, face.text_width(text, *size))),
             _ => None,
         })
         .collect();
@@ -514,7 +600,10 @@ fn drawing_matches_measuring() {
     assert!((x - (50.4 + 96.0 + 2.25)).abs() < 1e-6);
     // And the PDF positions them at the same numbers.
     let pdf = print_pdf(&wb, &job);
-    let content: Vec<String> = streams(&pdf).into_iter().map(|s| String::from_utf8_lossy(&s).into_owned()).collect();
+    let content: Vec<String> = streams(&pdf)
+        .into_iter()
+        .map(|s| String::from_utf8_lossy(&s).into_owned())
+        .collect();
     let page = content.iter().find(|s| s.contains(" Tm <")).unwrap();
     assert!(page.contains("1 0 0 -1 110.512 79.3505 Tm <313233342E35> Tj"), "{page}");
 }
@@ -546,9 +635,20 @@ fn print_options() {
     };
     let fills = |wb: &Workbook| -> usize {
         let plan = plan(wb, &job);
-        render_page(wb, &job, &plan, 0).unwrap().ops.iter().filter(|op| matches!(op, Op::Fill { .. })).count()
+        render_page(wb, &job, &plan, 0)
+            .unwrap()
+            .ops
+            .iter()
+            .filter(|op| matches!(op, Op::Fill { .. }))
+            .count()
     };
-    assert_eq!(texts(&wb), vec![("#DIV/0!".to_string(), Color::BLACK), ("text".to_string(), Color(0xFF0000))]);
+    assert_eq!(
+        texts(&wb),
+        vec![
+            ("#DIV/0!".to_string(), Color::BLACK),
+            ("text".to_string(), Color(0xFF0000))
+        ]
+    );
     assert_eq!(fills(&wb), 1);
     // Errors as dashes, as #N/A, or not at all.
     wb.update_page_setup(0, |p| p.errors = PrintErrors::Dash);
@@ -619,7 +719,10 @@ impl ObjectPainter for Sketch {
         canvas.line(20.0, h - 30.0, 280.0, h - 30.0, Stroke::solid(Color::BLACK, 1.0));
         // A quarter of a pie, translucent over a full disc.
         let (cx, cy, r) = (w - 110.0, h / 2.0 + 10.0, 80.0);
-        canvas.fill_path(Path::ellipse(RectF::new(cx - r, cy - r, 2.0 * r, 2.0 * r)), Color(0xE97132));
+        canvas.fill_path(
+            Path::ellipse(RectF::new(cx - r, cy - r, 2.0 * r, 2.0 * r)),
+            Color(0xE97132),
+        );
         let slice = Path::new().move_to(cx, cy).arc(cx, cy, r, r, -90.0, 90.0).close();
         canvas.fill_path(slice.clone(), Paint::translucent(Color(0x196B24), 0.6));
         canvas.stroke_path(slice, Stroke::solid(Color::WHITE, 2.0));
@@ -667,7 +770,10 @@ fn charts_are_painted_by_the_application() {
     assert_eq!(plan.pages.len(), 1);
     let scene = render_page(&wb, &job, &plan, 0).unwrap();
     // The chart sits at B3 plus its offset: (50.4 + 72 × 0.75, 54 + 44 × 0.75).
-    let moved = scene.ops.iter().any(|op| matches!(op, Op::Transform(m) if (m[4] - 104.4).abs() < 1e-9 && (m[5] - 87.0).abs() < 1e-9));
+    let moved = scene
+        .ops
+        .iter()
+        .any(|op| matches!(op, Op::Transform(m) if (m[4] - 104.4).abs() < 1e-9 && (m[5] - 87.0).abs() < 1e-9));
     assert!(moved);
     let saves = scene.ops.iter().filter(|op| matches!(op, Op::Save)).count();
     let restores = scene.ops.iter().filter(|op| matches!(op, Op::Restore)).count();
@@ -771,7 +877,11 @@ fn embedded_fonts_are_subsets_with_text_maps() {
     // A subset, not the better part of a megabyte the whole font takes.
     assert!(pdf.len() < 150_000, "{}", pdf.len());
     let streams = streams(&pdf);
-    let map = streams.iter().map(|s| String::from_utf8_lossy(s).into_owned()).find(|s| s.contains("beginbfchar")).unwrap();
+    let map = streams
+        .iter()
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .find(|s| s.contains("beginbfchar"))
+        .unwrap();
     // É, è, ë, € map back to text.
     for code in ["<00C9>", "<00E8>", "<00EB>", "<20AC>"] {
         assert!(map.contains(code), "{code} missing from {map}");
@@ -781,7 +891,10 @@ fn embedded_fonts_are_subsets_with_text_maps() {
     let font_file = streams.iter().find(|s| s.starts_with(&[0, 1, 0, 0])).unwrap();
     assert!(font_file.len() > 1000);
     let width_of_e = face.text_width("e", 1000.0);
-    assert!(text.contains(&format!("{}", (width_of_e * 10000.0).round() / 10000.0)), "{width_of_e}");
+    assert!(
+        text.contains(&format!("{}", (width_of_e * 10000.0).round() / 10000.0)),
+        "{width_of_e}"
+    );
 }
 
 /// A PNG file of one colour with a darker frame.
@@ -833,10 +946,15 @@ fn header_pictures_and_other_scripts() {
         s.v_align = VAlign::Center;
         s.fill = Some(Color(0xFFE699));
     });
-    wb.apply_borders(0, Rect::parse("I5:L6").unwrap(), BorderPreset::Outside, Border {
-        style: BorderStyle::Medium,
-        color: None,
-    });
+    wb.apply_borders(
+        0,
+        Rect::parse("I5:L6").unwrap(),
+        BorderPreset::Outside,
+        Border {
+            style: BorderStyle::Medium,
+            color: None,
+        },
+    );
     wb.commit("cells");
     let slot = |section| HfSlot {
         variant: HfVariant::Odd,
@@ -882,7 +1000,12 @@ fn header_pictures_and_other_scripts() {
     // Both pages draw the merged cell's text, each clipped to its part.
     for index in 0..2 {
         let scene = render_page(&wb, &job, &plan, index).unwrap();
-        assert!(scene.ops.iter().any(|op| matches!(op, Op::Text { text, .. } if text == "Merged across two pages")));
+        assert!(
+            scene
+                .ops
+                .iter()
+                .any(|op| matches!(op, Op::Text { text, .. } if text == "Merged across two pages"))
+        );
     }
     // With the standard fonts, what Windows Latin 1 lacks is a question
     // mark; the file is still sound.
@@ -898,7 +1021,12 @@ fn header_pictures_and_other_scripts() {
     assert_eq!(page_count(&pdf), 2);
     let path = save(&dir, "scripts.pdf", &pdf);
     let face = system.face("Aptos Narrow", false, false);
-    let covered = |text: &str| system.runs(&face, text).iter().all(|(f, run)| run.chars().all(|c| f.has_glyph(c)));
+    let covered = |text: &str| {
+        system
+            .runs(&face, text)
+            .iter()
+            .all(|(f, run)| run.chars().all(|c| f.has_glyph(c)))
+    };
     if let Some(text) = pdftotext(&path, &[]) {
         for sample in ["→", "Ω", "汉字", "かな", "한글"] {
             if covered(sample) {
@@ -943,8 +1071,14 @@ fn gridlines_give_way_to_text_and_merged_cells() {
     // Columns are 48 pt wide from x = 50.4, rows 15 pt high from y = 54.
     let col = |c: f64| 50.4 + 48.0 * c;
     let row = |r: f64| 54.0 + 15.0 * r;
-    let vertical_at = |x: f64, y: f64| grid.iter().any(|l| (l.0 - x).abs() < 1e-6 && (l.2 - x).abs() < 1e-6 && l.1 <= y && y <= l.3);
-    let horizontal_at = |x: f64, y: f64| grid.iter().any(|l| (l.1 - y).abs() < 1e-6 && (l.3 - y).abs() < 1e-6 && l.0 <= x && x <= l.2);
+    let vertical_at = |x: f64, y: f64| {
+        grid.iter()
+            .any(|l| (l.0 - x).abs() < 1e-6 && (l.2 - x).abs() < 1e-6 && l.1 <= y && y <= l.3)
+    };
+    let horizontal_at = |x: f64, y: f64| {
+        grid.iter()
+            .any(|l| (l.1 - y).abs() < 1e-6 && (l.3 - y).abs() < 1e-6 && l.0 <= x && x <= l.2)
+    };
     // The grid is closed all around A1:E6.
     assert!(vertical_at(col(0.0), row(0.5)) && vertical_at(col(5.0), row(5.5)));
     assert!(horizontal_at(col(0.5), row(0.0)) && horizontal_at(col(4.5), row(6.0)));
@@ -955,7 +1089,11 @@ fn gridlines_give_way_to_text_and_merged_cells() {
     let end = col(0.0) + 2.25 + face.text_width("A long text that flows over its neighbours", 11.0) + 2.25;
     assert!(end > col(3.0) && end < col(5.0));
     for c in [1.0, 2.0, 3.0, 4.0] {
-        assert_eq!(vertical_at(col(c), row(0.5)), col(c) >= end, "line after column {c} on row 1");
+        assert_eq!(
+            vertical_at(col(c), row(0.5)),
+            col(c) >= end,
+            "line after column {c} on row 1"
+        );
         assert!(vertical_at(col(c), row(1.5)), "line after column {c} on row 2");
     }
     // No lines inside the merged area, lines around it.
@@ -1014,5 +1152,10 @@ fn titles_repeat_and_everything_scales() {
     // Not scaling the header with the document.
     wb.update_page_setup(0, |p| p.header_footer.scale_with_doc = false);
     let scene = render_page(&wb, &job, &plan, 1).unwrap();
-    assert!(scene.ops.iter().any(|op| matches!(op, Op::Text { text, size, .. } if text == "Big" && *size == 20.0)));
+    assert!(
+        scene
+            .ops
+            .iter()
+            .any(|op| matches!(op, Op::Text { text, size, .. } if text == "Big" && *size == 20.0))
+    );
 }

@@ -81,7 +81,11 @@ pub struct Names {
 /// Mac Roman, upper half, as far as font names use it.
 fn mac_roman(byte: u8) -> char {
     const HIGH: &str = "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»… ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ";
-    if byte < 0x80 { byte as char } else { HIGH.chars().nth((byte - 0x80) as usize).unwrap_or('?') }
+    if byte < 0x80 {
+        byte as char
+    } else {
+        HIGH.chars().nth((byte - 0x80) as usize).unwrap_or('?')
+    }
 }
 
 /// Read the `name` table.
@@ -127,7 +131,10 @@ pub fn parse_names(table: &[u8]) -> Names {
         let text: String = if platform == 1 {
             bytes.iter().map(|b| mac_roman(*b)).collect()
         } else {
-            let units: Vec<u16> = bytes.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+            let units: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect();
             String::from_utf16_lossy(&units)
         };
         if text.is_empty() {

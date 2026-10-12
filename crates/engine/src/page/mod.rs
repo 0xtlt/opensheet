@@ -46,7 +46,11 @@ impl Orientation {
 
     /// Anything but "landscape" (including "default") is portrait.
     pub fn from_ooxml(s: &str) -> Orientation {
-        if s == "landscape" { Orientation::Landscape } else { Orientation::Portrait }
+        if s == "landscape" {
+            Orientation::Landscape
+        } else {
+            Orientation::Portrait
+        }
     }
 }
 
@@ -69,7 +73,11 @@ impl PageOrder {
     }
 
     pub fn from_ooxml(s: &str) -> PageOrder {
-        if s == "overThenDown" { PageOrder::OverThenDown } else { PageOrder::DownThenOver }
+        if s == "overThenDown" {
+            PageOrder::OverThenDown
+        } else {
+            PageOrder::DownThenOver
+        }
     }
 }
 
@@ -193,16 +201,18 @@ impl Margins {
 
     /// The preset these margins are, if any (to tick it in the gallery).
     pub fn preset(&self) -> Option<MarginPreset> {
-        [MarginPreset::Normal, MarginPreset::Wide, MarginPreset::Narrow].into_iter().find(|p| {
-            let m = Margins::from_preset(*p);
-            let close = |a: f64, b: f64| (a - b).abs() < 0.005;
-            close(m.left, self.left)
-                && close(m.right, self.right)
-                && close(m.top, self.top)
-                && close(m.bottom, self.bottom)
-                && close(m.header, self.header)
-                && close(m.footer, self.footer)
-        })
+        [MarginPreset::Normal, MarginPreset::Wide, MarginPreset::Narrow]
+            .into_iter()
+            .find(|p| {
+                let m = Margins::from_preset(*p);
+                let close = |a: f64, b: f64| (a - b).abs() < 0.005;
+                close(m.left, self.left)
+                    && close(m.right, self.right)
+                    && close(m.top, self.top)
+                    && close(m.bottom, self.bottom)
+                    && close(m.header, self.header)
+                    && close(m.footer, self.footer)
+            })
     }
 }
 
@@ -233,6 +243,10 @@ pub struct PageSetup {
     /// last page when several sheets print together.
     pub first_page_number: Option<i32>,
     pub page_order: PageOrder,
+    /// "Print quality" in dots per inch, across and down; `None` = the
+    /// printer's own. Kept for the file: PDF output has no resolution.
+    pub horizontal_dpi: Option<u32>,
+    pub vertical_dpi: Option<u32>,
     pub black_and_white: bool,
     pub draft: bool,
     pub comments: PrintComments,
@@ -269,6 +283,8 @@ impl Default for PageSetup {
             fit_height: 1,
             first_page_number: None,
             page_order: PageOrder::DownThenOver,
+            horizontal_dpi: None,
+            vertical_dpi: None,
             black_and_white: false,
             draft: false,
             comments: PrintComments::None,
@@ -461,7 +477,11 @@ impl FloatingObject {
             let mut left = (offset + size) as f64;
             let mut i = first;
             loop {
-                let s = if rows { visible_row_height(sheet, i) } else { visible_col_width(sheet, i) };
+                let s = if rows {
+                    visible_row_height(sheet, i)
+                } else {
+                    visible_col_width(sheet, i)
+                };
                 // An object ending exactly on a cell boundary does not
                 // reach into the next cell.
                 if left <= s + 1e-6 || i + 1 >= max {
@@ -634,7 +654,12 @@ impl Workbook {
                 BreakAxis::Cols => (range.rect.c0, range.rect.c1, &range.col_breaks),
             };
             breaks.iter().any(|b| b.at == from).then(|| {
-                let start = breaks.iter().map(|b| b.at).filter(|at| *at < from).max().unwrap_or(first);
+                let start = breaks
+                    .iter()
+                    .map(|b| b.at)
+                    .filter(|at| *at < from)
+                    .max()
+                    .unwrap_or(first);
                 (first, last, start)
             })
         });
@@ -759,9 +784,15 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     let p = &mut sheet.page;
     if rows {
         // A break belongs to the row below it: it goes when that row does.
-        p.row_breaks = p.row_breaks.iter().filter_map(|r| shift_index(*r, insert, at, count, MAX_ROWS)).collect();
+        p.row_breaks = p
+            .row_breaks
+            .iter()
+            .filter_map(|r| shift_index(*r, insert, at, count, MAX_ROWS))
+            .collect();
         p.row_breaks.remove(&0);
-        p.title_rows = p.title_rows.and_then(|(a, b)| shift_span(a, b, insert, at, count, MAX_ROWS));
+        p.title_rows = p
+            .title_rows
+            .and_then(|(a, b)| shift_span(a, b, insert, at, count, MAX_ROWS));
         p.print_area = p
             .print_area
             .iter()
@@ -773,9 +804,15 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
             })
             .collect();
     } else {
-        p.col_breaks = p.col_breaks.iter().filter_map(|c| shift_index(*c, insert, at, count, MAX_COLS)).collect();
+        p.col_breaks = p
+            .col_breaks
+            .iter()
+            .filter_map(|c| shift_index(*c, insert, at, count, MAX_COLS))
+            .collect();
         p.col_breaks.remove(&0);
-        p.title_cols = p.title_cols.and_then(|(a, b)| shift_span(a, b, insert, at, count, MAX_COLS));
+        p.title_cols = p
+            .title_cols
+            .and_then(|(a, b)| shift_span(a, b, insert, at, count, MAX_COLS));
         p.print_area = p
             .print_area
             .iter()

@@ -174,7 +174,11 @@ impl PaperSize {
     /// The paper of a new sheet: Letter where Excel is in English, A4
     /// elsewhere.
     pub fn default_for(locale: &Locale) -> PaperSize {
-        if locale.id == "en" { PaperSize::LETTER } else { PaperSize::A4 }
+        if locale.id == "en" {
+            PaperSize::LETTER
+        } else {
+            PaperSize::A4
+        }
     }
 
     /// `None` for a code that is not in Excel's list (a printer-specific

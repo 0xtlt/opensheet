@@ -107,7 +107,12 @@ impl Pane<'_> {
     fn rect(&self, sheet: &Sheet, cells: Rect) -> RectF {
         let x = self.col_x(sheet, cells.c0);
         let y = self.row_y(sheet, cells.r0);
-        RectF::new(x, y, self.col_x(sheet, cells.c1 + 1) - x, self.row_y(sheet, cells.r1 + 1) - y)
+        RectF::new(
+            x,
+            y,
+            self.col_x(sheet, cells.c1 + 1) - x,
+            self.row_y(sheet, cells.r1 + 1) - y,
+        )
     }
 }
 
@@ -194,7 +199,10 @@ fn wrap_text(fonts: &FontDb, face: &Arc<Face>, size: f64, text: &str, max_width:
 /// the top of the line its baseline is: the glyphs sit in the middle.
 fn line_box(face: &Face, size: f64) -> (f64, f64) {
     let height = LINE_HEIGHT * size;
-    (height, (height - (face.ascent() + face.descent()) * size) / 2.0 + face.ascent() * size)
+    (
+        height,
+        (height - (face.ascent() + face.descent()) * size) / 2.0 + face.ascent() * size,
+    )
 }
 
 /// How heavy a border is, to decide which of two borders on the same
@@ -213,7 +221,11 @@ fn border_weight(style: BorderStyle) -> u8 {
 }
 
 fn heavier(a: Border, b: Border) -> Border {
-    if border_weight(b.style) > border_weight(a.style) { b } else { a }
+    if border_weight(b.style) > border_weight(a.style) {
+        b
+    } else {
+        a
+    }
 }
 
 struct Renderer<'a> {
@@ -227,7 +239,11 @@ struct Renderer<'a> {
 
 impl<'a> Renderer<'a> {
     fn ink(&self, color: Color) -> Color {
-        if self.setup.black_and_white { Color::BLACK } else { color }
+        if self.setup.black_and_white {
+            Color::BLACK
+        } else {
+            color
+        }
     }
 
     fn display(&self, row: u32, col: u32) -> CellDisplay<'a> {
@@ -330,7 +346,8 @@ impl<'a> Renderer<'a> {
                 let spaces = line.matches(' ').count();
                 // Justified lines stretch to both edges, except the last
                 // of each paragraph.
-                let word_gap = if style.h_align == HAlign::Justify && !ends_paragraph && spaces > 0 && width < available {
+                let word_gap = if style.h_align == HAlign::Justify && !ends_paragraph && spaces > 0 && width < available
+                {
                     (available - width) / spaces as f64
                 } else {
                     0.0
@@ -475,7 +492,17 @@ impl<'a> Renderer<'a> {
             } else {
                 canvas.face_text(&text.face, &line.text, line.x, line.baseline, text.size, paint);
             }
-            decorate(canvas, &text.face, text.size, paint, text.underline, text.strike, line.x, line.baseline, line.width);
+            decorate(
+                canvas,
+                &text.face,
+                text.size,
+                paint,
+                text.underline,
+                text.strike,
+                line.x,
+                line.baseline,
+                line.width,
+            );
         }
         canvas.restore();
     }
@@ -491,7 +518,10 @@ impl<'a> Renderer<'a> {
             cols,
             rows,
             unit: self.layout.unit,
-            origin_px: (axis_offset(sh, false, cols[0].index), axis_offset(sh, true, rows[0].index)),
+            origin_px: (
+                axis_offset(sh, false, cols[0].index),
+                axis_offset(sh, true, rows[0].index),
+            ),
         };
         let bounds = pane.bounds();
         let area = pane.cells();
@@ -570,7 +600,14 @@ impl<'a> Renderer<'a> {
                         canvas.translate(r.x, r.y);
                         canvas.scale(pane.unit, pane.unit);
                         let size = (r.w / pane.unit, r.h / pane.unit);
-                        painter.paint_adornment(self.job.wb, self.job.sheet, (rows[i].index, cols[j].index), adornment, size, canvas);
+                        painter.paint_adornment(
+                            self.job.wb,
+                            self.job.sheet,
+                            (rows[i].index, cols[j].index),
+                            adornment,
+                            size,
+                            canvas,
+                        );
                         canvas.restore_to(depth);
                     }
                 }
@@ -584,7 +621,14 @@ impl<'a> Renderer<'a> {
             for j in 0..nc {
                 let (display, merge) = cell(i, j);
                 if merge.is_none() {
-                    texts.extend(self.plan_text(&pane, rows[i].index, cols[j].index, cell_rect(i, j), false, &display.style));
+                    texts.extend(self.plan_text(
+                        &pane,
+                        rows[i].index,
+                        cols[j].index,
+                        cell_rect(i, j),
+                        false,
+                        &display.style,
+                    ));
                 }
             }
         }
@@ -592,10 +636,18 @@ impl<'a> Renderer<'a> {
             texts.extend(self.plan_text(&pane, m.r0, m.c0, pane.rect(sh, *m), true, &display.style));
         }
         // Text of cells beside the pane may flow into it.
-        let holds_text = |cell: &opensheet_engine::Cell| matches!(cell.content, Content::Value(_) | Content::Formula(_));
+        let holds_text =
+            |cell: &opensheet_engine::Cell| matches!(cell.content, Content::Value(_) | Content::Formula(_));
         for row in rows {
-            let before = sh.cells.range((row.index, 0)..(row.index, area.c0)).rev().find(|(_, c)| holds_text(c));
-            let after = sh.cells.range((row.index, area.c1 + 1)..=(row.index, u32::MAX)).find(|(_, c)| holds_text(c));
+            let before = sh
+                .cells
+                .range((row.index, 0)..(row.index, area.c0))
+                .rev()
+                .find(|(_, c)| holds_text(c));
+            let after = sh
+                .cells
+                .range((row.index, area.c1 + 1)..=(row.index, u32::MAX))
+                .find(|(_, c)| holds_text(c));
             for ((r, c), _) in before.into_iter().chain(after) {
                 if sh.merge_at(*r, *c).is_some() || visible_col_width(sh, *c) <= 0.0 {
                     continue;
@@ -649,7 +701,9 @@ impl<'a> Renderer<'a> {
                 let mut start: Option<usize> = None;
                 for i in 0..=nr {
                     let hidden = i == nr
-                        || (j > 0 && j < nc && (same_merge(cell(i, j - 1).1, cell(i, j).1) || crossed.contains(&(i, j - 1))));
+                        || (j > 0
+                            && j < nc
+                            && (same_merge(cell(i, j - 1).1, cell(i, j).1) || crossed.contains(&(i, j - 1))));
                     match (hidden, start) {
                         (false, None) => start = Some(i),
                         (true, Some(s)) => {
@@ -678,12 +732,14 @@ impl<'a> Renderer<'a> {
                     let above = if i > 0 {
                         cell(i - 1, j).0.style.borders.bottom
                     } else {
-                        outside(rows[0].index.checked_sub(1), Some(cols[j].index)).map_or(Border::NONE, |d| d.style.borders.bottom)
+                        outside(rows[0].index.checked_sub(1), Some(cols[j].index))
+                            .map_or(Border::NONE, |d| d.style.borders.bottom)
                     };
                     let below = if i < nr {
                         cell(i, j).0.style.borders.top
                     } else {
-                        outside(Some(rows[nr - 1].index + 1), Some(cols[j].index)).map_or(Border::NONE, |d| d.style.borders.top)
+                        outside(Some(rows[nr - 1].index + 1), Some(cols[j].index))
+                            .map_or(Border::NONE, |d| d.style.borders.top)
                     };
                     if !(i > 0 && i < nr && same_merge(cell(i - 1, j).1, cell(i, j).1)) {
                         border = heavier(above, below);
@@ -709,12 +765,14 @@ impl<'a> Renderer<'a> {
                     let left = if j > 0 {
                         cell(i, j - 1).0.style.borders.right
                     } else {
-                        outside(Some(rows[i].index), cols[0].index.checked_sub(1)).map_or(Border::NONE, |d| d.style.borders.right)
+                        outside(Some(rows[i].index), cols[0].index.checked_sub(1))
+                            .map_or(Border::NONE, |d| d.style.borders.right)
                     };
                     let right = if j < nc {
                         cell(i, j).0.style.borders.left
                     } else {
-                        outside(Some(rows[i].index), Some(cols[nc - 1].index + 1)).map_or(Border::NONE, |d| d.style.borders.left)
+                        outside(Some(rows[i].index), Some(cols[nc - 1].index + 1))
+                            .map_or(Border::NONE, |d| d.style.borders.left)
                     };
                     if !(j > 0 && j < nc && same_merge(cell(i, j - 1).1, cell(i, j).1)) {
                         border = heavier(left, right);
@@ -798,11 +856,19 @@ impl<'a> Renderer<'a> {
         canvas.line(bx, by, bx, by + bh, stroke());
         canvas.line(bx + hw, by, bx + hw, by + bh, stroke());
         for col in &self.layout.cols {
-            label(canvas, &col_to_letters(col.index), RectF::new(col.pos, by, col.size, hh));
+            label(
+                canvas,
+                &col_to_letters(col.index),
+                RectF::new(col.pos, by, col.size, hh),
+            );
             canvas.line(col.pos + col.size, by, col.pos + col.size, by + hh, stroke());
         }
         for row in &self.layout.rows {
-            label(canvas, &(row.index + 1).to_string(), RectF::new(bx, row.pos, hw, row.size));
+            label(
+                canvas,
+                &(row.index + 1).to_string(),
+                RectF::new(bx, row.pos, hw, row.size),
+            );
             canvas.line(bx, row.pos + row.size, bx + hw, row.pos + row.size, stroke());
         }
     }
@@ -864,9 +930,11 @@ impl<'a> Renderer<'a> {
                 continue;
             }
             let sections = HfSections::parse(code);
-            for (section, align) in
-                [(HfSection::Left, Align::Left), (HfSection::Center, Align::Center), (HfSection::Right, Align::Right)]
-            {
+            for (section, align) in [
+                (HfSection::Left, Align::Left),
+                (HfSection::Center, Align::Center),
+                (HfSection::Right, Align::Right),
+            ] {
                 let source = sections.get(section);
                 if source.is_empty() {
                     continue;
@@ -930,7 +998,11 @@ impl<'a> Renderer<'a> {
                 let total: f64 = lines.iter().map(|(_, height, _)| height).sum();
                 // Headers hang from the header margin; footers stand on
                 // the footer margin.
-                let mut y = if footer { paper_h - margins.footer * 72.0 - total } else { margins.header * 72.0 };
+                let mut y = if footer {
+                    paper_h - margins.footer * 72.0 - total
+                } else {
+                    margins.header * 72.0
+                };
                 for (pieces, height, ascent) in lines {
                     let width: f64 = pieces.iter().map(Piece::width).sum();
                     let mut x = match align {
@@ -948,7 +1020,16 @@ impl<'a> Renderer<'a> {
                                 canvas.image(&image, RectF::new(x, y, w, h));
                                 x += w;
                             }
-                            Piece::Text { text, face, size, rise, width, color, underline, strike } => {
+                            Piece::Text {
+                                text,
+                                face,
+                                size,
+                                rise,
+                                width,
+                                color,
+                                underline,
+                                strike,
+                            } => {
                                 let paint = Paint::from(color);
                                 canvas.face_text(&face, &text, x, baseline - rise, size, paint);
                                 decorate(canvas, &face, size, paint, underline, strike, x, baseline - rise, width);
@@ -1015,7 +1096,13 @@ fn decorate(
     }
     if strike {
         let y = baseline - face.strikeout_offset() * size;
-        canvas.line(x, y, x + width, y, Stroke::solid(paint, (face.strikeout_thickness() * size).max(0.3)));
+        canvas.line(
+            x,
+            y,
+            x + width,
+            y,
+            Stroke::solid(paint, (face.strikeout_thickness() * size).max(0.3)),
+        );
     }
 }
 
@@ -1071,20 +1158,32 @@ mod tests {
         assert_eq!(lines("aaaa aaaaaaaaaa", 30.0), vec!["aaaa", "aaaaa", "aaaaa"]);
         // Line breaks typed in the cell are kept, blank lines too.
         assert_eq!(lines("one\n\ntwo\r\nthree", 500.0), vec!["one", "", "two", "three"]);
-        assert_eq!(wrap("aaaa aaaa\nb", 23.0), vec![
-            ("aaaa".to_string(), false),
-            ("aaaa".to_string(), true),
-            ("b".to_string(), true)
-        ]);
+        assert_eq!(
+            wrap("aaaa aaaa\nb", 23.0),
+            vec![
+                ("aaaa".to_string(), false),
+                ("aaaa".to_string(), true),
+                ("b".to_string(), true)
+            ]
+        );
         assert_eq!(lines("", 10.0), vec![""]);
     }
 
     #[test]
     fn heavier_border_wins() {
         let border = |style| Border { style, color: None };
-        assert_eq!(heavier(border(BorderStyle::Thin), border(BorderStyle::Thick)).style, BorderStyle::Thick);
-        assert_eq!(heavier(border(BorderStyle::Double), border(BorderStyle::Medium)).style, BorderStyle::Double);
-        assert_eq!(heavier(Border::NONE, border(BorderStyle::Hair)).style, BorderStyle::Hair);
+        assert_eq!(
+            heavier(border(BorderStyle::Thin), border(BorderStyle::Thick)).style,
+            BorderStyle::Thick
+        );
+        assert_eq!(
+            heavier(border(BorderStyle::Double), border(BorderStyle::Medium)).style,
+            BorderStyle::Double
+        );
+        assert_eq!(
+            heavier(Border::NONE, border(BorderStyle::Hair)).style,
+            BorderStyle::Hair
+        );
         // Of two equal borders, the one of the cell above or left stays.
         let red = Border {
             style: BorderStyle::Thin,

@@ -28,7 +28,10 @@ fn pages(wb: &Workbook) -> Pagination {
 
 /// (first row, last row, first col, last col) of every page.
 fn cells(p: &Pagination) -> Vec<(u32, u32, u32, u32)> {
-    p.pages.iter().map(|p| (p.rows.0, p.rows.1, p.cols.0, p.cols.1)).collect()
+    p.pages
+        .iter()
+        .map(|p| (p.rows.0, p.rows.1, p.cols.0, p.cols.1))
+        .collect()
 }
 
 /// Every character is 7 pixels wide.
@@ -74,7 +77,12 @@ fn defaults_follow_excel() {
     for c in [PrintComments::None, PrintComments::AtEnd, PrintComments::AsDisplayed] {
         assert_eq!(PrintComments::from_ooxml(c.as_ooxml()), c);
     }
-    for e in [PrintErrors::Displayed, PrintErrors::Blank, PrintErrors::Dash, PrintErrors::NA] {
+    for e in [
+        PrintErrors::Displayed,
+        PrintErrors::Blank,
+        PrintErrors::Dash,
+        PrintErrors::NA,
+    ] {
         assert_eq!(PrintErrors::from_ooxml(e.as_ooxml()), e);
     }
     assert_eq!(Orientation::from_ooxml("landscape"), Orientation::Landscape);
@@ -90,7 +98,10 @@ fn print_names_round_trip() {
     p.title_rows = Some((0, 1));
     p.title_cols = Some((0, 0));
     assert_eq!(p.print_area_formula("Sheet1").unwrap(), "Sheet1!$A$1:$C$9,Sheet1!$E$5");
-    assert_eq!(p.print_area_formula("Q1 'draft'").unwrap(), "'Q1 ''draft'''!$A$1:$C$9,'Q1 ''draft'''!$E$5");
+    assert_eq!(
+        p.print_area_formula("Q1 'draft'").unwrap(),
+        "'Q1 ''draft'''!$A$1:$C$9,'Q1 ''draft'''!$E$5"
+    );
     assert_eq!(p.print_titles_formula("Sheet1").unwrap(), "Sheet1!$A:$A,Sheet1!$1:$2");
 
     let mut q = PageSetup::default();
@@ -121,23 +132,24 @@ fn letter_portrait_pages() {
     assert_eq!(p.ranges[0].row_bands, vec![(0, 44), (45, 89), (90, 99)]);
     assert_eq!(
         p.ranges[0].row_breaks,
-        vec![
-            PageBreak {
-                at: 45,
-                manual: false
-            },
-            PageBreak {
-                at: 90,
-                manual: false
-            }
-        ]
+        vec![PageBreak { at: 45, manual: false }, PageBreak { at: 90, manual: false }]
     );
     // Down, then over.
     assert_eq!(
         cells(&p),
-        vec![(0, 44, 0, 9), (45, 89, 0, 9), (90, 99, 0, 9), (0, 44, 10, 11), (45, 89, 10, 11), (90, 99, 10, 11)]
+        vec![
+            (0, 44, 0, 9),
+            (45, 89, 0, 9),
+            (90, 99, 0, 9),
+            (0, 44, 10, 11),
+            (45, 89, 10, 11),
+            (90, 99, 10, 11)
+        ]
     );
-    assert_eq!(p.pages.iter().map(|p| p.number).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6]);
+    assert_eq!(
+        p.pages.iter().map(|p| p.number).collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5, 6]
+    );
     assert_eq!(p.last_number(), Some(6));
     let first = &p.pages[0];
     assert!((first.origin.0 - 50.4).abs() < 1e-9 && (first.origin.1 - 54.0).abs() < 1e-9);
@@ -156,7 +168,14 @@ fn page_order_and_first_number() {
     let p = pages(&wb);
     assert_eq!(
         cells(&p),
-        vec![(0, 44, 0, 9), (0, 44, 10, 11), (45, 89, 0, 9), (45, 89, 10, 11), (90, 99, 0, 9), (90, 99, 10, 11)]
+        vec![
+            (0, 44, 0, 9),
+            (0, 44, 10, 11),
+            (45, 89, 0, 9),
+            (45, 89, 10, 11),
+            (90, 99, 0, 9),
+            (90, 99, 10, 11)
+        ]
     );
     assert_eq!(p.pages[0].number, 5);
     assert_eq!(p.last_number(), Some(10));
@@ -220,13 +239,7 @@ fn manual_breaks_and_hidden_rows() {
     wb.sheets[0].filtered_rows.extend(20..40);
     let p = pages(&wb);
     assert_eq!(p.ranges[0].row_bands, vec![(0, 7), (13, 77), (78, 99)]);
-    assert_eq!(
-        p.ranges[0].row_breaks[0],
-        PageBreak {
-            at: 13,
-            manual: true
-        }
-    );
+    assert_eq!(p.ranges[0].row_breaks[0], PageBreak { at: 13, manual: true });
     // Hidden columns likewise.
     wb.set_cols_hidden(0, 0, 0, true);
     assert_eq!(pages(&wb).ranges[0].col_bands, vec![(1, 1), (2, 4)]);
@@ -317,7 +330,10 @@ fn print_titles_repeat() {
     wb.set_print_area(0, &[Rect::new(10, 2, 30, 4)]);
     let p = pages(&wb);
     assert_eq!(p.pages.len(), 1);
-    assert_eq!((p.pages[0].title_rows, p.pages[0].title_cols), (Some((0, 1)), Some((0, 0))));
+    assert_eq!(
+        (p.pages[0].title_rows, p.pages[0].title_cols),
+        (Some((0, 1)), Some((0, 0)))
+    );
 }
 
 #[test]
@@ -591,7 +607,10 @@ fn duplicated_sheet_keeps_its_setup() {
     );
     // Renaming leaves the ranges alone.
     assert!(wb.rename_sheet(copy, "Copy"));
-    assert_eq!(wb.sheets[copy].page.print_area_formula("Copy").unwrap(), "Copy!$A$1:$B$5");
+    assert_eq!(
+        wb.sheets[copy].page.print_area_formula("Copy").unwrap(),
+        "Copy!$A$1:$B$5"
+    );
 }
 
 #[test]
@@ -601,7 +620,10 @@ fn dragging_a_page_break() {
     // manual and nothing else changes.
     assert!(wb.move_page_break(0, BreakAxis::Rows, 45, 30, None));
     let p = pages(&wb);
-    assert_eq!(wb.sheets[0].page.row_breaks.iter().copied().collect::<Vec<_>>(), vec![30]);
+    assert_eq!(
+        wb.sheets[0].page.row_breaks.iter().copied().collect::<Vec<_>>(),
+        vec![30]
+    );
     assert_eq!(p.scale_percent, 100);
     assert_eq!(p.ranges[0].row_bands, vec![(0, 29), (30, 74), (75, 99)]);
     // Dragged down to row 61: 60 rows must fit where 45 did, so the scale

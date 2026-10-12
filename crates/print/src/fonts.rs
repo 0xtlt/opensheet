@@ -58,7 +58,10 @@ pub(crate) enum Glyph {
 /// Spaces fonts often lack: they print as the plain space (the narrow
 /// no-break space is the thousands separator of French numbers).
 fn is_space_like(ch: char) -> bool {
-    matches!(ch, '\t' | '\u{a0}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}')
+    matches!(
+        ch,
+        '\t' | '\u{a0}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+    )
 }
 
 impl Face {
@@ -110,9 +113,9 @@ impl Face {
                 .glyph(ch)
                 .or_else(|| is_space_like(ch).then(|| f.glyph(' ')).flatten())
                 .map(Glyph::Index),
-            FaceKind::Standard(_) => {
-                crate::std14::win_ansi(ch).or_else(|| is_space_like(ch).then_some(b' ')).map(Glyph::Code)
-            }
+            FaceKind::Standard(_) => crate::std14::win_ansi(ch)
+                .or_else(|| is_space_like(ch).then_some(b' '))
+                .map(Glyph::Code),
         }
     }
 
@@ -220,7 +223,10 @@ fn system_dirs() -> Vec<PathBuf> {
         dirs.extend(std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Microsoft\\Windows\\Fonts")));
     } else {
         dirs.extend(["/usr/share/fonts", "/usr/local/share/fonts"].map(PathBuf::from));
-        dirs.extend(home.iter().flat_map(|h| [h.join(".fonts"), h.join(".local/share/fonts")]));
+        dirs.extend(
+            home.iter()
+                .flat_map(|h| [h.join(".fonts"), h.join(".local/share/fonts")]),
+        );
     }
     dirs
 }
@@ -256,8 +262,9 @@ fn generic(lower: &str) -> Generic {
     let has = |words: &[&str]| words.iter().any(|w| lower.contains(w));
     if has(&["courier", "consolas", "mono", "menlo", "typewriter", "fixed"]) {
         Generic::Mono
-    } else if has(&["times", "cambria", "georgia", "garamond", "serif", "roman", "book", "palatino", "century"])
-        && !lower.contains("sans")
+    } else if has(&[
+        "times", "cambria", "georgia", "garamond", "serif", "roman", "book", "palatino", "century",
+    ]) && !lower.contains("sans")
     {
         Generic::Serif
     } else {
@@ -267,8 +274,21 @@ fn generic(lower: &str) -> Generic {
 
 fn generic_families(kind: Generic) -> &'static [&'static str] {
     match kind {
-        Generic::Sans => &["Helvetica Neue", "Arial", "Helvetica", "Liberation Sans", "DejaVu Sans", "Noto Sans"],
-        Generic::Serif => &["Times New Roman", "Times", "Georgia", "Liberation Serif", "DejaVu Serif"],
+        Generic::Sans => &[
+            "Helvetica Neue",
+            "Arial",
+            "Helvetica",
+            "Liberation Sans",
+            "DejaVu Sans",
+            "Noto Sans",
+        ],
+        Generic::Serif => &[
+            "Times New Roman",
+            "Times",
+            "Georgia",
+            "Liberation Serif",
+            "DejaVu Serif",
+        ],
         Generic::Mono => &["Menlo", "Courier New", "Courier", "Liberation Mono", "DejaVu Sans Mono"],
     }
 }
@@ -370,7 +390,11 @@ fn scan_dir(dir: &Path, depth: u32, out: &mut Vec<FaceInfo>) {
             }
             continue;
         }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
         if ext == "ttf" || ext == "ttc" {
             out.extend(scan_file(&path));
         }
@@ -435,7 +459,11 @@ impl FontDb {
             let s = &info.style;
             // An exact family name beats a face that only belongs to the
             // wider typographic family (a "Light" or "Condensed" cut).
-            let named = if info.family.to_lowercase() == lower_family { 0 } else { 2000 };
+            let named = if info.family.to_lowercase() == lower_family {
+                0
+            } else {
+                2000
+            };
             let slant = if s.italic == italic { 0 } else { 10_000 };
             let width = (s.width as i32 - 5).abs() * 1000;
             named + slant + width + (s.weight as i32 - target).abs()
@@ -447,8 +475,11 @@ impl FontDb {
             return font.clone();
         }
         let info = &self.infos[index];
-        let data =
-            state.files.entry(info.path.clone()).or_insert_with(|| std::fs::read(&info.path).ok().map(Arc::from)).clone();
+        let data = state
+            .files
+            .entry(info.path.clone())
+            .or_insert_with(|| std::fs::read(&info.path).ok().map(Arc::from))
+            .clone();
         // A font whose licence forbids embedding (and nothing else) is
         // not used.
         let font = data
@@ -522,7 +553,10 @@ impl FontDb {
         let found = FALLBACK_FAMILIES.iter().find_map(|family| {
             // Only a font really installed under that name: `face` would
             // answer with a substitute.
-            self.by_name.contains_key(&family.to_lowercase()).then(|| self.face(family, false, false)).filter(|f| f.has_glyph(ch))
+            self.by_name
+                .contains_key(&family.to_lowercase())
+                .then(|| self.face(family, false, false))
+                .filter(|f| f.has_glyph(ch))
         });
         self.state.lock().unwrap().fallbacks.insert(ch, found.clone());
         found
@@ -537,7 +571,11 @@ impl FontDb {
             if ch.is_control() && ch != '\t' {
                 continue;
             }
-            let chosen = if face.has_glyph(ch) { face.clone() } else { self.fallback(ch).unwrap_or_else(|| face.clone()) };
+            let chosen = if face.has_glyph(ch) {
+                face.clone()
+            } else {
+                self.fallback(ch).unwrap_or_else(|| face.clone())
+            };
             match out.last_mut() {
                 Some((last, run)) if Arc::ptr_eq(last, &chosen) => run.push(ch),
                 _ => out.push((chosen, ch.to_string())),
@@ -562,7 +600,10 @@ impl FontDb {
         if text.chars().all(|c| face.has_glyph(c)) {
             return face.text_width(text, size);
         }
-        self.runs(face, text).iter().map(|(f, run)| f.text_width(run, size)).sum()
+        self.runs(face, text)
+            .iter()
+            .map(|(f, run)| f.text_width(run, size))
+            .sum()
     }
 }
 
@@ -589,7 +630,10 @@ mod tests {
         assert!(!face.is_embedded());
         assert_eq!(face.family(), "Helvetica");
         assert_eq!(db.face("Cambria", true, false).standard(), Some(Standard::TimesBold));
-        assert_eq!(db.face("Consolas", false, true).standard(), Some(Standard::CourierOblique));
+        assert_eq!(
+            db.face("Consolas", false, true).standard(),
+            Some(Standard::CourierOblique)
+        );
         // The same request gives the same face.
         assert!(Arc::ptr_eq(&face, &db.face("aptos narrow ", false, false)));
         // Helvetica: "Hello" is 722 + 556 + 222 + 222 + 556 thousandths.

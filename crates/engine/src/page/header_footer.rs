@@ -340,7 +340,11 @@ fn parse_color(s: &str) -> Option<(Color, usize)> {
         let lighter = b[2] == b'+';
         let channel = |shift: u32| -> u32 {
             let v = ((base >> shift) & 0xFF) as f32;
-            let out = if lighter { v + (255.0 - v) * amount } else { v * (1.0 - amount) };
+            let out = if lighter {
+                v + (255.0 - v) * amount
+            } else {
+                v * (1.0 - amount)
+            };
             (out.round().clamp(0.0, 255.0) as u32) << shift
         };
         return Some((Color(channel(16) | channel(8) | channel(0)), 6));
@@ -519,7 +523,11 @@ pub fn expand(section: &str, ctx: &HfContext) -> Vec<HfRun> {
             Tok::Page(delta) => push(&mut runs, &fmt, &(ctx.page as i64 + delta).to_string()),
             Tok::Pages => push(&mut runs, &fmt, &ctx.pages.to_string()),
             Tok::Date => {
-                let text = format::format_value(&Value::Number(ctx.now.floor()), ctx.locale.short_date_format, ctx.locale);
+                let text = format::format_value(
+                    &Value::Number(ctx.now.floor()),
+                    ctx.locale.short_date_format,
+                    ctx.locale,
+                );
                 push(&mut runs, &fmt, &text.text);
             }
             Tok::Time => {
@@ -538,17 +546,33 @@ pub fn expand(section: &str, ctx: &HfContext) -> Vec<HfRun> {
             Tok::Bold => fmt.bold = !fmt.bold,
             Tok::Italic => fmt.italic = !fmt.italic,
             Tok::Underline => {
-                fmt.underline = if fmt.underline == Underline::Single { Underline::None } else { Underline::Single }
+                fmt.underline = if fmt.underline == Underline::Single {
+                    Underline::None
+                } else {
+                    Underline::Single
+                }
             }
             Tok::DoubleUnderline => {
-                fmt.underline = if fmt.underline == Underline::Double { Underline::None } else { Underline::Double }
+                fmt.underline = if fmt.underline == Underline::Double {
+                    Underline::None
+                } else {
+                    Underline::Double
+                }
             }
             Tok::Strike => fmt.strike = !fmt.strike,
             Tok::Superscript => {
-                fmt.script = if fmt.script == Script::Superscript { Script::Normal } else { Script::Superscript }
+                fmt.script = if fmt.script == Script::Superscript {
+                    Script::Normal
+                } else {
+                    Script::Superscript
+                }
             }
             Tok::Subscript => {
-                fmt.script = if fmt.script == Script::Subscript { Script::Normal } else { Script::Subscript }
+                fmt.script = if fmt.script == Script::Subscript {
+                    Script::Normal
+                } else {
+                    Script::Subscript
+                }
             }
             Tok::Color(c) => fmt.color = Some(c),
         }
@@ -647,7 +671,10 @@ pub fn to_dialog_text(section: &str, locale: &Locale) -> String {
                 continue;
             }
         };
-        let name = FIELDS.iter().find(|(c, _)| *c == code).map_or("", |(_, names)| names[li]);
+        let name = FIELDS
+            .iter()
+            .find(|(c, _)| *c == code)
+            .map_or("", |(_, names)| names[li]);
         out.push_str("&[");
         out.push_str(name);
         out.push(']');
@@ -787,7 +814,10 @@ mod tests {
     #[test]
     fn formatting_codes() {
         let en = ctx(Locale::en());
-        let runs = expand("a&Bb&Ic&B&I&\"Arial,Bold Italic\"&8d&\"-,Regular\"&K FF0000e&KFF0000f", &en);
+        let runs = expand(
+            "a&Bb&Ic&B&I&\"Arial,Bold Italic\"&8d&\"-,Regular\"&K FF0000e&KFF0000f",
+            &en,
+        );
         let fmts: Vec<(String, HfFormat)> = runs
             .into_iter()
             .map(|r| match r {
@@ -838,7 +868,10 @@ mod tests {
         assert_eq!(l.len(), 4);
         assert_eq!(text(&l[1]), "two bold");
         assert!(l[2].is_empty());
-        assert_eq!(plain_text("&L&A&CConfidential&RPage &P", &en), "T&L, Confidential, Page 3");
+        assert_eq!(
+            plain_text("&L&A&CConfidential&RPage &P", &en),
+            "T&L, Confidential, Page 3"
+        );
         assert_eq!(plain_text("&CPage &P de &N", &ctx(Locale::fr())), "Page 3 de 12");
         assert_eq!(plain_text("&L&A&RPage &P", &ctx(Locale::fr())), "T&L; Page 3");
     }
@@ -895,7 +928,10 @@ mod tests {
         };
         assert_eq!(slot.vml_id(), "RFEVEN");
         assert_eq!(HfSlot::from_vml_id("RFEVEN"), Some(slot));
-        assert_eq!(HfSlot::from_vml_id("LH").map(|s| (s.variant, s.footer)), Some((HfVariant::Odd, false)));
+        assert_eq!(
+            HfSlot::from_vml_id("LH").map(|s| (s.variant, s.footer)),
+            Some((HfVariant::Odd, false))
+        );
         assert_eq!(HfSlot::from_vml_id("XH"), None);
     }
 }
