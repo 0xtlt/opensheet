@@ -626,6 +626,8 @@ struct PaneCtx<'a> {
     /// Tables, pivot tables or conditional formats restyle cells of this
     /// sheet: every visible cell goes through `Workbook::display`.
     layered: bool,
+    /// The sheet shows formulas instead of their results.
+    formulas: bool,
     digit_w: RefCell<HashMap<(SharedString, u32, bool), f32>>,
     zones: RefCell<Vec<Zone>>,
 }
@@ -883,7 +885,16 @@ impl<'a> PaneCtx<'a> {
                     None => wb.styles.get(*style_id),
                 };
                 let merged = in_merge(*row, *col);
-                let value = sheet.value_at(*row, *col);
+                let mut value = sheet.value_at(*row, *col);
+                // Show Formulas: formulas as they were typed, values
+                // without their number format.
+                let mut num_fmt: &str = &style.num_fmt;
+                if self.formulas {
+                    if let Some(text) = features::misc::shown_formula(wb, self.input.sheet, *row, *col) {
+                        value = Value::text(text);
+                    }
+                    num_fmt = "General";
+                }
                 let mut hide_text = false;
                 let mut inset = (0.0f32, 0.0f32);
                 if pass == 0 {
@@ -927,7 +938,7 @@ impl<'a> PaneCtx<'a> {
                 if value.is_empty() || hide_text {
                     continue;
                 }
-                let formatted = format::format_value(&value, &style.num_fmt, wb.locale);
+                let formatted = format::format_value(&value, num_fmt, wb.locale);
                 if formatted.text.is_empty() {
                     continue;
                 }
@@ -998,7 +1009,7 @@ impl<'a> PaneCtx<'a> {
                         // Numbers never spill: lose precision, then show ###.
                         let dw = self.digit_width(&font, font_px);
                         let mut fitted = false;
-                        if style.is_general() {
+                        if style.is_general() || self.formulas {
                             if let Value::Number(n) = value {
                                 let mut chars = (avail / dw).floor() as usize;
                                 while chars >= 1 {
@@ -1240,6 +1251,7 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         ts,
         hair: if input.scale >= 2.0 { 0.5 } else { 1.0 },
         layered: !sheet.tables.is_empty() || !sheet.pivots.is_empty() || !sheet.cond_formats.is_empty(),
+        formulas: features::misc::shows_formulas(input.app),
         digit_w: RefCell::new(HashMap::new()),
         zones: RefCell::new(Vec::new()),
     };

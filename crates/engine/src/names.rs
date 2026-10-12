@@ -192,6 +192,114 @@ impl Workbook {
         }
     }
 
+    /// The cells a reference typed in the Name Box or in Go To stands for,
+    /// read from the cell (`sheet`, `row`, `col`): `B2:C5`, `Sheet2!A1`,
+    /// several areas separated by the list separator, a structured
+    /// reference, `A1#`, a defined name or the name of a table.
+    ///
+    /// `None` when the text is none of these. Names defined with a formula
+    /// that only gives a reference once calculated (`OFFSET`, `INDEX`) are
+    /// not followed.
+    pub fn reference_areas(
+        &self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        text: &str,
+    ) -> Option<Vec<Reference>> {
+        let src = text.trim();
+        let src = src.strip_prefix('=').unwrap_or(src);
+        let expr = parse_formula(src, self.locale).ok()?;
+        let mut areas = Vec::new();
+        self.expr_areas(&expr, sheet, row, col, 0, &mut areas)?;
+        (!areas.is_empty()).then_some(areas)
+    }
+
+    /// Collect the areas an expression made of references only stands for.
+    fn expr_areas(
+        &self,
+        expr: &Expr,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        depth: u32,
+        out: &mut Vec<Reference>,
+    ) -> Option<()> {
+        // Names may be defined in terms of one another, even in a circle.
+        const MAX_NAME_DEPTH: u32 = 16;
+        match expr {
+            Expr::Paren(inner) => self.expr_areas(inner, sheet, row, col, depth, out),
+            Expr::Ref(r) => {
+                let on = match &r.sheet {
+                    Some(name) => self.sheet_index(name)?,
+                    None => sheet,
+                };
+                out.push(Reference::new(on, r.rect()));
+                Some(())
+            }
+            Expr::Union(items) => items
+                .iter()
+                .try_for_each(|item| self.expr_areas(item, sheet, row, col, depth, out)),
+            Expr::Intersect(a, b) => {
+                let (mut left, mut right) = (Vec::new(), Vec::new());
+                self.expr_areas(a, sheet, row, col, depth, &mut left)?;
+                self.expr_areas(b, sheet, row, col, depth, &mut right)?;
+                let before = out.len();
+                for l in &left {
+                    for r in right.iter().filter(|r| r.sheet == l.sheet) {
+                        if let Some(common) = l.rect.intersection(&r.rect) {
+                            out.push(Reference::new(l.sheet, common));
+                        }
+                    }
+                }
+                (out.len() > before).then_some(())
+            }
+            Expr::Table(reference) => {
+                out.push(crate::structured::resolve(self, reference, sheet, row, col).ok()?);
+                Some(())
+            }
+            Expr::Spill(anchor) => {
+                let mut cells = Vec::new();
+                self.expr_areas(anchor, sheet, row, col, depth, &mut cells)?;
+                let [cell] = cells.as_slice() else {
+                    return None;
+                };
+                let spill = self
+                    .sheets
+                    .get(cell.sheet)?
+                    .spills
+                    .iter()
+                    .find(|sp| (sp.row, sp.col) == (cell.rect.r0, cell.rect.c0))?;
+                let rect = crate::refs::Rect::new(
+                    spill.row,
+                    spill.col,
+                    spill.row + spill.array.rows as u32 - 1,
+                    spill.col + spill.array.cols as u32 - 1,
+                );
+                out.push(Reference::new(cell.sheet, rect));
+                Some(())
+            }
+            Expr::Name(name) | Expr::SheetName(_, name) => {
+                let from = match expr {
+                    Expr::SheetName(scope, _) => self.sheet_index(scope)?,
+                    _ => sheet,
+                };
+                match self.lookup_name(from, name) {
+                    Some((_, def)) if depth < MAX_NAME_DEPTH => {
+                        self.expr_areas(&def.expr_at(row, col), from, row, col, depth + 1, out)
+                    }
+                    Some(_) => None,
+                    None => {
+                        let (table_sheet, table) = self.table_by_name(name)?;
+                        out.push(Reference::new(table_sheet, table.data_range()?));
+                        Some(())
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Check that `name` can be given to a name of `scope`. `replacing` is
     /// the name being renamed or redefined, which is allowed to keep its
     /// spelling.
@@ -428,5 +536,73 @@ impl Workbook {
             }
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::refs::Rect;
+
+    fn areas(wb: &Workbook, sheet: usize, text: &str) -> Option<Vec<(usize, String)>> {
+        wb.reference_areas(sheet, 0, 0, text)
+            .map(|list| list.iter().map(|r| (r.sheet, r.rect.name())).collect())
+    }
+
+    #[test]
+    fn reference_areas_of_typed_text() {
+        let mut wb = Workbook::new(Locale::en());
+        wb.add_sheet(1);
+        let range = |text: &str| parse_formula(text, Locale::en()).unwrap();
+        wb.add_name(NameScope::Workbook, "Sales", range("Sheet2!$B$2:$B$9"), "")
+            .unwrap();
+        wb.add_name(NameScope::Workbook, "Both", range("(Sheet1!$A$1:$A$3,Sheet1!$C$1)"), "")
+            .unwrap();
+        wb.add_name(NameScope::Workbook, "Alias", range("Sales"), "")
+            .unwrap();
+        wb.add_name(NameScope::Workbook, "Rate", range("0.2"), "")
+            .unwrap();
+        wb.add_name(NameScope::Sheet(1), "Local", range("Sheet2!$D$4"), "")
+            .unwrap();
+        wb.commit("names");
+
+        let one = |sheet: usize, name: &str| Some(vec![(sheet, name.to_string())]);
+        assert_eq!(areas(&wb, 0, "b2:c5"), one(0, "B2:C5"));
+        assert_eq!(areas(&wb, 0, " $D$7 "), one(0, "D7"));
+        assert_eq!(areas(&wb, 0, "Sheet2!A1"), one(1, "A1"));
+        assert_eq!(areas(&wb, 0, "C:D"), one(0, "C:D"));
+        assert_eq!(
+            areas(&wb, 0, "A1:A3,C2"),
+            Some(vec![(0, "A1:A3".to_string()), (0, "C2".to_string())])
+        );
+        assert_eq!(areas(&wb, 0, "A1:C3 B2:D4"), one(0, "B2:C3"));
+        assert_eq!(areas(&wb, 0, "sales"), one(1, "B2:B9"));
+        assert_eq!(areas(&wb, 0, "Alias"), one(1, "B2:B9"));
+        assert_eq!(
+            areas(&wb, 0, "Both"),
+            Some(vec![(0, "A1:A3".to_string()), (0, "C1".to_string())])
+        );
+        // A sheet's own name is only seen from that sheet, or through it.
+        assert_eq!(areas(&wb, 1, "Local"), one(1, "D4"));
+        assert_eq!(areas(&wb, 0, "Local"), None);
+        assert_eq!(areas(&wb, 0, "Sheet2!Local"), one(1, "D4"));
+        // Not references.
+        for text in ["Rate", "Nothing", "Missing!A1", "1+1", "", "A1:A3 C1"] {
+            assert_eq!(areas(&wb, 0, text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn reference_areas_follow_spills_and_circular_names() {
+        let mut wb = Workbook::new(Locale::en());
+        wb.set_cell_text(0, 0, 0, "=SEQUENCE(3,2)").unwrap();
+        let name = |text: &str| parse_formula(text, Locale::en()).unwrap();
+        wb.add_name(NameScope::Workbook, "Ping", name("Pong"), "").unwrap();
+        wb.add_name(NameScope::Workbook, "Pong", name("Ping"), "").unwrap();
+        wb.commit("setup");
+        let spill = wb.reference_areas(0, 0, 0, "A1#").unwrap();
+        assert_eq!(spill, vec![Reference::new(0, Rect::new(0, 0, 2, 1))]);
+        assert_eq!(wb.reference_areas(0, 0, 0, "B1#"), None);
+        assert_eq!(wb.reference_areas(0, 0, 0, "Ping"), None);
     }
 }

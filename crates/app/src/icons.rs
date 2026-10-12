@@ -117,6 +117,15 @@ const ICONS: &[(&str, &str)] = &[
     ("border-inner-v", r#"<path d="M2.500 2.500h11v11h-11zM2.500 8h11" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M8 2.500v11" stroke-width="1.800"/>"#),
     ("border-diag-up", r#"<path d="M2.500 2.500h11v11h-11z" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M2.500 13.500l11-11" stroke-width="1.400"/>"#),
     ("border-diag-down", r#"<path d="M2.500 2.500h11v11h-11z" stroke-dasharray="1 1.600" stroke-width="0.8"/><path d="M2.500 2.500l11 11" stroke-width="1.400"/>"#),
+    ("misc-trace-precedents", r#"<rect x="9" y="9" width="5" height="4.500"/><circle cx="3" cy="3.500" r="1.100" fill="black"/><path d="M3.600 4.100 8.600 8.900M8.800 5.900v3.200H5.600"/>"#),
+    ("misc-trace-dependents", r#"<rect x="2" y="2.500" width="5" height="4.500"/><circle cx="4.500" cy="4.750" r="1.100" fill="black"/><path d="M7.400 7.400 12.600 12.600M12.800 9.600v3.200H9.600"/>"#),
+    ("misc-remove-arrows", r#"<path d="M2.500 3.500 8 9M8.200 6v3.200H5"/><path d="M10 10l4 4M14 10l-4 4"/>"#),
+    ("misc-show-formulas", r#"<rect x="2.500" y="3.500" width="11" height="9"/><path d="M5.500 6.800h5M5.500 9.200h5"/>"#),
+    ("misc-error-checking", r#"<path d="M8 2.500 14 13H2z"/><path d="M8 6.500v3.200"/><circle cx="8" cy="11.300" r="0.600" fill="black"/>"#),
+    ("misc-evaluate", r#"<path d="M3 4.500h6M3 8h4M3 11.500h2"/><path d="M9.500 9.500l2 2 2.500-4"/>"#),
+    ("misc-watch", r#"<rect x="2.500" y="8.500" width="11" height="5"/><circle cx="5.500" cy="4.500" r="2"/><circle cx="10.500" cy="4.500" r="2"/><path d="M7.500 4.500h1"/>"#),
+    ("misc-calc-now", r#"<rect x="2.500" y="2" width="8" height="12" rx="1"/><path d="M4.500 4.500h4v2h-4z"/><path d="M12.500 6v6M11.100 10.600l1.400 1.400 1.400-1.400"/>"#),
+    ("misc-calc-sheet", r#"<rect x="2.500" y="2.500" width="11" height="11"/><path d="M2.500 6.200h11M6.200 2.500v11"/><path d="M8.500 9.800h3M10 8.300v3"/>"#),
 ];
 
 pub struct Assets;

@@ -706,7 +706,8 @@ impl ExcelApp {
                 let cols = if cur.is_whole_rows() { MAX_COLS } else { cur.cols() };
                 format!("{}{} x {}{}", rows, t("R", "L"), cols, crate::i18n::t_ctx("column", "C", "C"))
             }
-            _ => cell_name(sel.active.0, sel.active.1),
+            // The name of the selected range, else the active cell.
+            _ => features::names::name_box_label(self),
         };
         self.name_box.update(cx, |input, cx| {
             if input.text() != text {
@@ -996,24 +997,10 @@ impl ExcelApp {
         self.refresh(cx);
     }
 
-    /// Jump to a cell / range typed in the name box.
+    /// What Return does in the name box: go to the reference, the name or
+    /// the table typed there, or give a new name to the selection.
     pub fn go_to(&mut self, text: &str, cx: &mut Context<Self>) -> bool {
-        let text = text.trim();
-        if let Some(rect) = Rect::parse(text) {
-            self.select_rect(rect, cx);
-            return true;
-        }
-        if let Some(expr) = self.wb.defined_name(text) {
-            if let opensheet_engine::Expr::Ref(r) = expr {
-                let rect = r.rect();
-                if let Some(sheet) = r.sheet.as_ref().and_then(|s| self.wb.sheet_index(s)) {
-                    self.sheet = sheet;
-                }
-                self.select_rect(rect, cx);
-                return true;
-            }
-        }
-        false
+        features::names::name_box_entered(self, text, cx)
     }
 
     // ---- editing ------------------------------------------------------------
