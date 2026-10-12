@@ -7,7 +7,8 @@
 //! when data is typed next to them, inserting and deleting table rows and
 //! columns, calculated columns, and the built-in table styles.
 
-use crate::ast::{Expr, RefExpr, RefKind, StructuralEdit};
+use crate::ast::{Expr, StructuralEdit, TableCols, TableRef, TableRows, same_name};
+use crate::features::CellShift;
 use crate::filter::AutoFilter;
 use crate::ops::shift_interval;
 use crate::parser::ParseError;
@@ -290,6 +291,19 @@ impl Table {
             banded_cols: self.banded_cols,
             first_col: self.first_col,
             last_col: self.last_col,
+        }
+    }
+
+    /// Replace by `f(formula)` the totals formulas the table remembers
+    /// while its totals row is hidden (`TotalsFunction::Custom`).
+    pub(crate) fn map_formulas(&mut self, f: &mut dyn FnMut(&Expr) -> Expr) {
+        for column in &mut self.columns {
+            if let TotalsFunction::Custom(formula) = &mut column.totals {
+                let mapped = f(formula);
+                if mapped != **formula {
+                    *formula = Arc::new(mapped);
+                }
+            }
         }
     }
 
@@ -902,167 +916,113 @@ impl Cache {
 
 // ---- shifting cells ---------------------------------------------------------
 
-/// Excel's "shift cells": `count` cells are inserted at `at` (or deleted
-/// from there) in every line of a band, and the cells beyond move away (or
-/// close up). This is how table rows and columns come and go without
-/// touching what lies beside the table.
-struct Shift {
-    sheet: usize,
-    /// Cells move down / up inside columns `lo..=hi`; otherwise right /
-    /// left inside rows `lo..=hi`.
-    down: bool,
-    lo: u32,
-    hi: u32,
-    at: u32,
-    count: u32,
-    insert: bool,
+/// True when shifting cells would tear another table or a merged area
+/// that is not wholly inside the band.
+fn tears(shift: &CellShift, sheet: &Sheet, own: Option<u32>) -> bool {
+    let area = shift.area();
+    sheet
+        .tables
+        .iter()
+        .any(|t| Some(t.id) != own && t.range.intersects(&area))
+        || sheet
+            .merges
+            .iter()
+            .any(|m| m.intersects(&area) && !(area.contains(m.r0, m.c0) && area.contains(m.r1, m.c1)))
 }
 
-impl Shift {
-    fn limit(&self) -> u32 {
-        if self.down { MAX_ROWS } else { MAX_COLS }
-    }
+/// True when shifting cells is not allowed: it would tear a table, a
+/// merged area or the sheet's filter.
+fn blocked(shift: &CellShift, sheet: &Sheet, own: Option<u32>) -> bool {
+    tears(shift, sheet, own)
+        || sheet
+            .auto_filter
+            .as_ref()
+            .is_some_and(|f| f.range.intersects(&shift.area()))
+}
 
-    /// The cells that move or go: the band from `at` to the sheet's edge.
-    fn area(&self) -> Rect {
-        if self.down {
-            Rect::new(self.at, self.lo, MAX_ROWS - 1, self.hi)
+/// Shift cells of a sheet: move the cells, the merged areas inside the
+/// band and the references to them, then let every feature follow (notes,
+/// validation, conditional formats). The caller has taken the undo
+/// snapshot.
+fn shift_cells(wb: &mut Workbook, sheet: usize, shift: CellShift) {
+    let area = shift.area();
+    let edited = wb.sheets[sheet].name.clone();
+    let sh = &mut wb.sheets[sheet];
+    let keys: Vec<(u32, u32)> = sh
+        .cells
+        .range((area.r0, 0)..=(area.r1, u32::MAX))
+        .filter(|((_, c), _)| area.c0 <= *c && *c <= area.c1)
+        .map(|(k, _)| *k)
+        .collect();
+    let lifted: Vec<((u32, u32), Cell)> = keys
+        .into_iter()
+        .filter_map(|k| sh.cells.remove(&k).map(|cell| (k, cell)))
+        .collect();
+    for ((row, col), cell) in lifted {
+        let pos = if shift.down {
+            shift.moved(row).map(|row| (row, col))
         } else {
-            Rect::new(self.lo, self.at, self.hi, MAX_COLS - 1)
-        }
-    }
-
-    /// True when the move would tear another table or a merged area that
-    /// is not wholly inside the band.
-    fn tears(&self, sheet: &Sheet, own: Option<u32>) -> bool {
-        let area = self.area();
-        sheet
-            .tables
-            .iter()
-            .any(|t| Some(t.id) != own && t.range.intersects(&area))
-            || sheet
-                .merges
-                .iter()
-                .any(|m| m.intersects(&area) && !(area.contains(m.r0, m.c0) && area.contains(m.r1, m.c1)))
-    }
-
-    /// True when the move is not allowed: it would tear a table, a merged
-    /// area or the sheet's filter.
-    fn blocked(&self, sheet: &Sheet, own: Option<u32>) -> bool {
-        self.tears(sheet, own)
-            || sheet
-                .auto_filter
-                .as_ref()
-                .is_some_and(|f| f.range.intersects(&self.area()))
-    }
-
-    /// Where a position at or after `at` ends up; `None` when its cell is
-    /// deleted or pushed off the sheet.
-    fn moved(&self, pos: u32) -> Option<u32> {
-        if self.insert {
-            Some(pos + self.count).filter(|p| *p < self.limit())
-        } else {
-            (pos >= self.at + self.count).then(|| pos - self.count)
-        }
-    }
-
-    /// A reference after the move: those to cells inside the band follow
-    /// them, the others stay.
-    fn fix(&self, r: &RefExpr, edited: &str, own: &str) -> Expr {
-        let target = r.sheet.as_deref().unwrap_or(own);
-        if !target.eq_ignore_ascii_case(edited) || r.kind != RefKind::Cells {
-            return Expr::Ref(r.clone());
-        }
-        let end = r.end.unwrap_or(r.start);
-        let (across, along) = if self.down {
-            ((r.start.col, end.col), (r.start.row, end.row))
-        } else {
-            ((r.start.row, end.row), (r.start.col, end.col))
+            shift.moved(col).map(|col| (row, col))
         };
-        if across.0.min(across.1) < self.lo || across.0.max(across.1) > self.hi {
-            return Expr::Ref(r.clone());
+        if let Some(pos) = pos {
+            sh.cells.insert(pos, cell);
         }
-        let (lo, hi) = (along.0.min(along.1), along.0.max(along.1));
-        let Some((lo, hi)) = shift_interval(lo, hi, self.insert, self.at, self.count, self.limit()) else {
-            return Expr::Error(ErrorKind::Ref);
-        };
-        let (start, end) = if along.0 > along.1 { (hi, lo) } else { (lo, hi) };
-        let mut out = r.clone();
-        if self.down {
-            out.start.row = start;
-            if let Some(e) = &mut out.end {
-                e.row = end;
-            }
-        } else {
-            out.start.col = start;
-            if let Some(e) = &mut out.end {
-                e.col = end;
-            }
-        }
-        Expr::Ref(out)
     }
-
-    /// Move the cells, the merged areas inside the band and the references
-    /// to them. The caller has taken the undo snapshot.
-    fn apply(&self, wb: &mut Workbook) {
-        let area = self.area();
-        let edited = wb.sheets[self.sheet].name.clone();
-        let sh = &mut wb.sheets[self.sheet];
-        let keys: Vec<(u32, u32)> = sh
-            .cells
-            .range((area.r0, 0)..=(area.r1, u32::MAX))
-            .filter(|((_, c), _)| area.c0 <= *c && *c <= area.c1)
-            .map(|(k, _)| *k)
-            .collect();
-        let lifted: Vec<((u32, u32), Cell)> = keys
-            .into_iter()
-            .filter_map(|k| sh.cells.remove(&k).map(|cell| (k, cell)))
-            .collect();
-        for ((row, col), cell) in lifted {
-            let pos = if self.down {
-                self.moved(row).map(|row| (row, col))
+    sh.merges = std::mem::take(&mut sh.merges)
+        .into_iter()
+        .filter_map(|m| {
+            if !(area.contains(m.r0, m.c0) && area.contains(m.r1, m.c1)) {
+                return Some(m);
+            }
+            let (lo, hi) = if shift.down { (m.r0, m.r1) } else { (m.c0, m.c1) };
+            let (lo, hi) = shift_interval(lo, hi, shift.insert, shift.at, shift.count, shift.limit())?;
+            let m = if shift.down {
+                Rect::new(lo, m.c0, hi, m.c1)
             } else {
-                self.moved(col).map(|col| (row, col))
+                Rect::new(m.r0, lo, m.r1, hi)
             };
-            if let Some(pos) = pos {
-                sh.cells.insert(pos, cell);
-            }
-        }
-        sh.merges = std::mem::take(&mut sh.merges)
-            .into_iter()
-            .filter_map(|m| {
-                if !(area.contains(m.r0, m.c0) && area.contains(m.r1, m.c1)) {
-                    return Some(m);
-                }
-                let (lo, hi) = if self.down { (m.r0, m.r1) } else { (m.c0, m.c1) };
-                let (lo, hi) = shift_interval(lo, hi, self.insert, self.at, self.count, self.limit())?;
-                let m = if self.down {
-                    Rect::new(lo, m.c0, hi, m.c1)
-                } else {
-                    Rect::new(m.r0, lo, m.r1, hi)
-                };
-                (!m.is_single()).then_some(m)
-            })
-            .collect();
-        for sh in &mut wb.sheets {
-            let own = sh.name.clone();
-            for cell in sh.cells.values_mut() {
-                if let Content::Formula(e) = &cell.content {
-                    let fixed = e.map_refs(&mut |r| self.fix(r, &edited, &own));
-                    if fixed != **e {
-                        cell.content = Content::Formula(Arc::new(fixed));
-                    }
+            (!m.is_single()).then_some(m)
+        })
+        .collect();
+    for sh in &mut wb.sheets {
+        let own = sh.name.clone();
+        for cell in sh.cells.values_mut() {
+            if let Content::Formula(e) = &cell.content {
+                let fixed = e.map_refs(&mut |r| shift.fix(r, &edited, &own));
+                if fixed != **e {
+                    cell.content = Content::Formula(Arc::new(fixed));
                 }
             }
-            for chart in &mut sh.charts {
-                chart.map_refs(&mut |r| match self.fix(r, &edited, &own) {
-                    Expr::Ref(r) => Some(r),
-                    _ => None,
-                });
-            }
         }
-        for def in wb.names.values_mut() {
-            def.expr = Arc::new(def.expr.map_refs(&mut |r| self.fix(r, &edited, &edited)));
+        for def in sh.names.values_mut() {
+            def.expr = Arc::new(def.expr.map_refs(&mut |r| shift.fix(r, &edited, &own)));
+        }
+        for chart in &mut sh.charts {
+            chart.map_refs(&mut |r| match shift.fix(r, &edited, &own) {
+                Expr::Ref(r) => Some(r),
+                _ => None,
+            });
+        }
+    }
+    for def in wb.names.values_mut() {
+        def.expr = Arc::new(def.expr.map_refs(&mut |r| shift.fix(r, &edited, &edited)));
+    }
+    crate::features::on_cells_shifted(wb, sheet, shift);
+}
+
+/// Give the cells of `blank` the conditional formats and the validation
+/// rules of `model` (one row or one column of cells, copied over them), or
+/// none with `None`: cells a table makes for itself must look like their
+/// neighbours in the table, whatever the cells before them look like.
+fn dress(wb: &mut Workbook, sheet: usize, blank: Rect, model: Option<Rect>) {
+    match model {
+        Some(model) => {
+            wb.copy_cond_formats(sheet, model, sheet, blank);
+            wb.tile_validation(sheet, model, sheet, &[blank]);
+        }
+        None => {
+            wb.clear_cond_formats(sheet, &[blank]);
+            wb.clear_validation(sheet, &[blank]);
         }
     }
 }
@@ -1137,14 +1097,16 @@ fn escape_column(name: &str) -> String {
     out
 }
 
-/// `SUBTOTAL(code, range)`: what the totals row holds under a column. A
-/// plain range for now; it becomes `Table[Column]` once the formula
-/// language has structured references.
-fn totals_expr(code: u32, column: Rect) -> Expr {
-    Expr::Func(
-        Arc::from("SUBTOTAL"),
-        vec![Expr::Number(code as f64), Expr::Ref(RefExpr::range(column))],
-    )
+/// `SUBTOTAL(code, Table[Column])`: what the totals row holds under a
+/// column, as Excel writes it (shown as `=SUBTOTAL(109,[Column])` in the
+/// table itself).
+fn totals_expr(code: u32, table: &str, column: &str) -> Expr {
+    let column = Expr::Table(TableRef {
+        table: Some(Arc::from(table)),
+        rows: TableRows::Unspecified,
+        cols: TableCols::One(Arc::from(column)),
+    });
+    Expr::Func(Arc::from("SUBTOTAL"), vec![Expr::Number(code as f64), column])
 }
 
 /// The formula a column's cells share, as it reads in the first data row:
@@ -1230,6 +1192,29 @@ impl Workbook {
     /// The table a cell belongs to.
     pub fn table_at(&self, sheet: usize, row: u32, col: u32) -> Option<&Table> {
         self.sheets.get(sheet)?.tables.iter().find(|t| t.contains(row, col))
+    }
+
+    /// The table a formula typed in a cell belongs to, for its references
+    /// without a table name (`[@Qty]`): the table holding the cell, or the
+    /// one that grows over it once something is entered there (the cell is
+    /// right under its last data row, or right beside its rows), which is
+    /// how a formula typed next to a table starts a calculated column.
+    pub fn table_for_entry(&self, sheet: usize, row: u32, col: u32) -> Option<&Table> {
+        let sh = self.sheets.get(sheet)?;
+        let free = |cells: Rect, own: u32| {
+            !sh.tables.iter().any(|t| t.id != own && t.range.intersects(&cells))
+                && !sh.merges.iter().any(|m| m.intersects(&cells))
+        };
+        self.table_at(sheet, row, col).or_else(|| {
+            sh.tables.iter().find(|t| {
+                let range = t.range;
+                let last = range.r1 - t.totals_row as u32;
+                let under = !t.totals_row && row == range.r1 + 1 && range.c0 <= col && col <= range.c1;
+                let beside = col == range.c1 + 1 && range.r0 <= row && row <= last;
+                (under && free(Rect::new(row, range.c0, row, range.c1), t.id))
+                    || (beside && free(Rect::new(range.r0, col, last, col), t.id))
+            })
+        })
     }
 
     /// The table with id `id` on a sheet.
@@ -1382,8 +1367,7 @@ impl Workbook {
         let full = Rect::new(range.r0, range.c0, range.r1 + extra, range.c1);
         check_free(sh, &full, None)?;
         let replaces_filter = sh.auto_filter.as_ref().is_some_and(|f| f.range.intersects(&full));
-        let room = Shift {
-            sheet,
+        let room = CellShift {
             down: true,
             lo: range.c0,
             hi: range.c1,
@@ -1393,7 +1377,7 @@ impl Workbook {
         };
         // The sheet's filter is in the way only when it is not the one
         // the table takes over.
-        if !has_headers && (room.tears(sh, None) || (!replaces_filter && room.blocked(sh, None))) {
+        if !has_headers && (tears(&room, sh, None) || (!replaces_filter && blocked(&room, sh, None))) {
             return Err(TableError::Blocked);
         }
         self.snapshot();
@@ -1401,7 +1385,9 @@ impl Workbook {
             self.sheets[sheet].auto_filter = None;
         }
         if !has_headers {
-            room.apply(self);
+            shift_cells(self, sheet, room);
+            // The row made for the headers has no rule of the data.
+            dress(self, sheet, Rect::new(range.r0, range.c0, range.r0, range.c1), None);
         }
         let headers = (full.c0..=full.c1)
             .map(|c| {
@@ -1486,9 +1472,12 @@ impl Workbook {
             return Err(TableError::NameTaken);
         }
         self.snapshot();
+        let mut old = String::new();
         if let Some(table) = self.table_mut(sheet, id) {
-            table.name = name.to_string();
+            old = std::mem::replace(&mut table.name, name.to_string());
         }
+        // The formulas that named the table follow.
+        self.rename_table_refs(&old, name);
         Ok(())
     }
 
@@ -1497,12 +1486,55 @@ impl Workbook {
         let Some(range) = self.table(sheet, id).map(|t| t.range) else {
             return false;
         };
+        let name = self.table(sheet, id).map(|t| t.name.clone()).unwrap_or_default();
         self.snapshot();
         self.sheets[sheet].tables.retain(|t| t.id != id);
+        self.table_refs_to_errors(&[name]);
         // First show the rows its filter hid, so they are cleared too.
         self.refilter(sheet);
         self.clear(sheet, range, ClearMode::All);
         true
+    }
+
+    /// Structured references to tables that are no more read `#REF!`, as
+    /// in Excel. Takes the undo snapshot when a formula changes.
+    fn table_refs_to_errors(&mut self, tables: &[String]) -> bool {
+        if tables.is_empty() {
+            return false;
+        }
+        let gone = |name: &str| tables.iter().any(|t| same_name(t, name));
+        self.rewrite_formulas(&|wb, _, e| {
+            Some(e.map(&mut |x| match x {
+                Expr::Table(t) if t.table.as_deref().is_some_and(gone) => Expr::Error(ErrorKind::Ref),
+                // The bare name of a table stands for its data.
+                Expr::Name(n) if gone(&n) && wb.defined_name(&n).is_none() => Expr::Error(ErrorKind::Ref),
+                other => other,
+            }))
+        })
+    }
+
+    /// Make the formulas follow columns of the table named `table` whose
+    /// names changed: (old name, new name).
+    fn rename_columns_in_formulas(&mut self, table: &str, renames: &[(String, String)]) {
+        // When a new name is the old name of another column (two headers
+        // swapped), no reference may be renamed twice: the columns go
+        // through names no column has.
+        let clash = renames
+            .iter()
+            .any(|(_, new)| renames.iter().any(|(old, _)| same_name(old, new)));
+        if !clash {
+            for (old, new) in renames {
+                self.rename_table_column_refs(table, old, new);
+            }
+            return;
+        }
+        let parked: Vec<String> = (0..renames.len()).map(|i| format!("\u{1}{i}")).collect();
+        for ((old, _), park) in renames.iter().zip(&parked) {
+            self.rename_table_column_refs(table, old, park);
+        }
+        for ((_, new), park) in renames.iter().zip(&parked) {
+            self.rename_table_column_refs(table, park, new);
+        }
     }
 
     /// Table Design > Convert to Range: the cells keep their contents and
@@ -1547,6 +1579,9 @@ impl Workbook {
                 self.set_style_id(sheet, row, col, new);
             }
         }
+        // Structured references become the plain ranges they stood for.
+        let name = self.table(sheet, id).map(|t| t.name.clone()).unwrap_or_default();
+        self.table_refs_to_ranges(&name);
         self.sheets[sheet].tables.retain(|t| t.id != id);
         self.refilter(sheet);
         true
@@ -1599,8 +1634,7 @@ impl Workbook {
     /// columns down from there.
     fn make_room(&mut self, sheet: usize, id: u32, row: u32) -> Result<(), TableError> {
         let table = self.table(sheet, id).ok_or(TableError::NotFound)?;
-        let room = Shift {
-            sheet,
+        let room = CellShift {
             down: true,
             lo: table.range.c0,
             hi: table.range.c1,
@@ -1608,11 +1642,14 @@ impl Workbook {
             count: 1,
             insert: true,
         };
-        if row >= MAX_ROWS || room.blocked(&self.sheets[sheet], Some(id)) {
+        if row >= MAX_ROWS || blocked(&room, &self.sheets[sheet], Some(id)) {
             return Err(TableError::Blocked);
         }
+        let freed = Rect::new(row, room.lo, row, room.hi);
         self.snapshot();
-        room.apply(self);
+        shift_cells(self, sheet, room);
+        // A header or a totals row has no rule of the data rows.
+        dress(self, sheet, freed, None);
         Ok(())
     }
 
@@ -1767,17 +1804,16 @@ impl Workbook {
                 Some(label) => Content::Value(Value::text(label)),
                 None => Content::Empty,
             };
-            let content = match (&column.totals, table.column_range(i)) {
-                (TotalsFunction::None, _) => label(),
-                (TotalsFunction::Custom(formula), _) => match self.cell(sheet, row, col).map(|c| &c.content) {
+            let content = match &column.totals {
+                TotalsFunction::None => label(),
+                TotalsFunction::Custom(formula) => match self.cell(sheet, row, col).map(|c| &c.content) {
                     Some(Content::Formula(_)) => continue,
                     _ => Content::Formula(formula.clone()),
                 },
-                (function, Some(range)) => match function.subtotal_code() {
-                    Some(code) => Content::Formula(Arc::new(totals_expr(code, range))),
+                function => match function.subtotal_code() {
+                    Some(code) => Content::Formula(Arc::new(totals_expr(code, &table.name, &column.name))),
                     None => label(),
                 },
-                (_, None) => Content::Empty,
             };
             cells.push((col, content));
         }
@@ -1829,10 +1865,12 @@ impl Workbook {
         if !self.table(sheet, id).is_some_and(|t| column < t.columns.len()) {
             return Ok(false);
         }
-        let formula = Arc::new(crate::parser::parse_formula(
-            text.strip_prefix('=').unwrap_or(text),
-            self.locale,
-        )?);
+        let Some(name) = self.table(sheet, id).map(|t| t.name.clone()) else {
+            return Ok(false);
+        };
+        let typed = crate::parser::parse_formula(text.strip_prefix('=').unwrap_or(text), self.locale)?;
+        // Like every stored formula, it names the table it reads.
+        let formula = Arc::new(typed.with_table_qualified(&name));
         self.snapshot();
         if let Some(table) = self.table_mut(sheet, id) {
             table.columns[column].totals = TotalsFunction::Custom(formula.clone());
@@ -1859,7 +1897,7 @@ impl Workbook {
         }
         match &settings.totals {
             TotalsFunction::Custom(formula) => Some((**formula).clone()),
-            function => Some(totals_expr(function.subtotal_code()?, table.column_range(column)?)),
+            function => Some(totals_expr(function.subtotal_code()?, &table.name, &settings.name)),
         }
     }
 
@@ -1922,7 +1960,23 @@ impl Workbook {
         for (column, name) in columns.iter_mut().zip(names) {
             column.name = name;
         }
+        // What the formulas must be told: the columns left outside, and
+        // those a column coming in forced to take another name.
+        let name = table.name.clone();
+        let mut left = Vec::new();
+        let mut renames = Vec::new();
+        for (i, column) in table.columns.iter().enumerate() {
+            let col = old.c0 + i as u32;
+            if col < range.c0 || col > range.c1 {
+                left.push(column.name.clone());
+            } else if columns[(col - range.c0) as usize].name != column.name {
+                renames.push((column.name.clone(), columns[(col - range.c0) as usize].name.clone()));
+            }
+        }
         let (criteria, last) = (criteria_of(table), table.filter_range().r1);
+        for column in &left {
+            self.delete_table_column_refs(&name, column);
+        }
         let mut dropped = false;
         if let Some(table) = self.table_mut(sheet, id) {
             if let Some(filter) = &mut table.auto_filter {
@@ -1945,6 +1999,7 @@ impl Workbook {
                 shift_filtered_rows(&mut self.sheets[sheet], kept + 1, last, last - kept, false);
             }
         }
+        self.rename_columns_in_formulas(&name, &renames);
         self.write_headers(sheet, id);
         self.write_totals(sheet, id);
         if dropped {
@@ -1963,8 +2018,7 @@ impl Workbook {
         if count == 0 || at < first || at > end || range.r1 + count >= MAX_ROWS {
             return Err(TableError::InvalidRange);
         }
-        let shift = Shift {
-            sheet,
+        let shift = CellShift {
             down: true,
             lo: range.c0,
             hi: range.c1,
@@ -1973,14 +2027,14 @@ impl Workbook {
             insert: true,
         };
         let sh = &self.sheets[sheet];
-        if shift.blocked(sh, Some(id)) {
+        if blocked(&shift, sh, Some(id)) {
             return Err(TableError::Blocked);
         }
         let formulas: Vec<Option<Expr>> = (0..table.columns.len())
             .map(|i| column_formula(sh, table.column_range(i)?, None))
             .collect();
         self.snapshot();
-        shift.apply(self);
+        shift_cells(self, sheet, shift);
         // The new rows are shown, whatever the table's filter would say.
         shift_filtered_rows(&mut self.sheets[sheet], at, end - 1, count, true);
         if let Some(table) = self.table_mut(sheet, id) {
@@ -1988,8 +2042,14 @@ impl Workbook {
             table.sync_filter();
         }
         // The new rows look like the data row they were inserted under (or
-        // over, at the top).
+        // over, at the top), down to its rules.
         let model = if at > first { at - 1 } else { at + count };
+        dress(
+            self,
+            sheet,
+            Rect::new(at, range.c0, at + count - 1, range.c1),
+            Some(Rect::new(model, range.c0, model, range.c1)),
+        );
         for (i, formula) in formulas.into_iter().enumerate() {
             let col = range.c0 + i as u32;
             let style = self.sheets[sheet].style_id_at(model, col);
@@ -2018,8 +2078,7 @@ impl Workbook {
         }
         let all = count == data.rows();
         let (at, count) = if all { (at + 1, count - 1) } else { (at, count) };
-        let shift = Shift {
-            sheet,
+        let shift = CellShift {
             down: true,
             lo: range.c0,
             hi: range.c1,
@@ -2027,7 +2086,7 @@ impl Workbook {
             count,
             insert: false,
         };
-        if count > 0 && shift.blocked(&self.sheets[sheet], Some(id)) {
+        if count > 0 && blocked(&shift, &self.sheets[sheet], Some(id)) {
             return Err(TableError::Blocked);
         }
         self.snapshot();
@@ -2040,7 +2099,7 @@ impl Workbook {
             );
         }
         if count > 0 {
-            shift.apply(self);
+            shift_cells(self, sheet, shift);
             shift_filtered_rows(&mut self.sheets[sheet], at, data.r1, count, false);
             if let Some(table) = self.table_mut(sheet, id) {
                 table.range.r1 -= count;
@@ -2060,8 +2119,7 @@ impl Workbook {
         if count == 0 || at < range.c0 || at > range.c1 + 1 || range.c1 + count >= MAX_COLS {
             return Err(TableError::InvalidRange);
         }
-        let shift = Shift {
-            sheet,
+        let shift = CellShift {
             down: false,
             lo: range.r0,
             hi: range.r1,
@@ -2069,11 +2127,11 @@ impl Workbook {
             count,
             insert: true,
         };
-        if shift.blocked(&self.sheets[sheet], Some(id)) {
+        if blocked(&shift, &self.sheets[sheet], Some(id)) {
             return Err(TableError::Blocked);
         }
         self.snapshot();
-        shift.apply(self);
+        shift_cells(self, sheet, shift);
         let prefix = self.locale.column_prefix;
         if let Some(table) = self.table_mut(sheet, id) {
             let index = (at - range.c0) as usize;
@@ -2091,8 +2149,14 @@ impl Workbook {
             table.sync_filter();
         }
         // The new columns look like the one on their left (or right, when
-        // they come first).
+        // they come first), down to its rules.
         let model = if at > range.c0 { at - 1 } else { at + count };
+        dress(
+            self,
+            sheet,
+            Rect::new(range.r0, at, range.r1, at + count - 1),
+            Some(Rect::new(range.r0, model, range.r1, model)),
+        );
         for row in range.r0..=range.r1 {
             let style = self.sheets[sheet].style_id_at(row, model);
             for col in at..at + count {
@@ -2119,8 +2183,7 @@ impl Workbook {
             self.delete_table(sheet, id);
             return Ok(());
         }
-        let shift = Shift {
-            sheet,
+        let shift = CellShift {
             down: false,
             lo: range.r0,
             hi: range.r1,
@@ -2128,12 +2191,20 @@ impl Workbook {
             count,
             insert: false,
         };
-        if shift.blocked(&self.sheets[sheet], Some(id)) {
+        if blocked(&shift, &self.sheets[sheet], Some(id)) {
             return Err(TableError::Blocked);
         }
         let criteria = criteria_of(table);
+        let name = table.name.clone();
+        let doomed: Vec<String> = (at..at + count)
+            .filter_map(|c| Some(table.columns[table.column_at(c)?].name.clone()))
+            .collect();
         self.snapshot();
-        shift.apply(self);
+        // What read the columns reads `#REF!`, as in Excel.
+        for column in &doomed {
+            self.delete_table_column_refs(&name, column);
+        }
+        shift_cells(self, sheet, shift);
         let mut dropped = false;
         if let Some(table) = self.table_mut(sheet, id) {
             let index = (at - range.c0) as usize;
@@ -2213,7 +2284,8 @@ impl Workbook {
     }
 
     /// Extend a table over rows and columns just entered: the new rows
-    /// take the formats and the calculated columns of the last data row.
+    /// take the formats, the rules (conditional formats, validation) and
+    /// the calculated columns of the last data row.
     fn grow_table(&mut self, sheet: usize, id: u32, range: Rect) {
         let Some(table) = self.table(sheet, id) else {
             return;
@@ -2227,6 +2299,16 @@ impl Workbook {
             .collect();
         self.snapshot();
         self.apply_resize(sheet, id, range);
+        // Rows that join the table take the rules of its last data row
+        // with its formats: a list or a highlight goes on down the column.
+        if range.r1 > old.r1 {
+            dress(
+                self,
+                sheet,
+                Rect::new(old.r1 + 1, old.c0, range.r1, old.c1),
+                Some(Rect::new(last, old.c0, last, old.c1)),
+            );
+        }
         for (i, formula) in formulas.into_iter().enumerate() {
             let col = old.c0 + i as u32;
             let style = self.sheets[sheet].style_id_at(last, col);
@@ -2255,31 +2337,49 @@ impl Workbook {
         };
         let prefix = self.locale.column_prefix;
         let mut names: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
-        for col in hit.c0..=hit.c1 {
-            let i = (col - table.range.c0) as usize;
-            let text = self.header_text(sheet, hit.r0, col);
-            let others: HashSet<String> = names
-                .iter()
-                .enumerate()
-                .filter(|(j, _)| *j != i)
-                .map(|(_, n)| n.to_lowercase())
-                .collect();
-            names[i] = if text.trim().is_empty() {
-                numbered(prefix, i + 1, &others)
-            } else if others.contains(&text.to_lowercase()) {
-                numbered(&text, 2, &others)
+        let edited = (hit.c0 - table.range.c0) as usize..=(hit.c1 - table.range.c0) as usize;
+        let texts: Vec<String> = (hit.c0..=hit.c1).map(|col| self.header_text(sheet, hit.r0, col)).collect();
+        // The other columns keep their names. Headers entered together (a
+        // paste) are judged together: the names they replace are free,
+        // and a default name does not take one of those just entered.
+        let mut taken: HashSet<String> = names
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| !edited.contains(j))
+            .map(|(_, n)| n.to_lowercase())
+            .collect();
+        let mut reserved = taken.clone();
+        reserved.extend(texts.iter().filter(|t| !t.trim().is_empty()).map(|t| t.to_lowercase()));
+        for (i, text) in edited.zip(texts) {
+            let name = if text.trim().is_empty() {
+                numbered(prefix, i + 1, &reserved)
+            } else if taken.contains(&text.to_lowercase()) {
+                numbered(&text, 2, &reserved)
             } else {
                 text
             };
+            taken.insert(name.to_lowercase());
+            reserved.insert(name.to_lowercase());
+            names[i] = name;
         }
-        let renamed = table.columns.iter().zip(&names).any(|(c, n)| c.name != *n);
+        let renames: Vec<(String, String)> = table
+            .columns
+            .iter()
+            .zip(&names)
+            .filter(|(c, n)| c.name != **n)
+            .map(|(c, n)| (c.name.clone(), n.clone()))
+            .collect();
+        let renamed = !renames.is_empty();
         if renamed {
+            let table_name = table.name.clone();
             self.snapshot();
             if let Some(table) = self.table_mut(sheet, id) {
                 for (column, name) in table.columns.iter_mut().zip(names) {
                     column.name = name;
                 }
             }
+            // The formulas that named the columns follow.
+            self.rename_columns_in_formulas(&table_name, &renames);
         }
         // Headers are text, whatever was typed.
         self.write_headers(sheet, id);
@@ -2301,11 +2401,19 @@ impl Workbook {
             let i = (col - table.range.c0) as usize;
             let (totals, label) = match self.cell(sheet, hit.r0, col).map(|c| &c.content) {
                 Some(Content::Formula(e)) => {
+                    // The column itself, as `[Column]` or as its cells.
+                    let whole_column = |over: &Expr| match over {
+                        Expr::Ref(r) => r.sheet.is_none() && Some(r.rect()) == table.column_range(i),
+                        Expr::Table(t) => {
+                            t.is_to(&table.name, true)
+                                && matches!(t.rows, TableRows::Unspecified | TableRows::Data)
+                                && matches!(&t.cols, TableCols::One(c) if same_name(c, &table.columns[i].name))
+                        }
+                        _ => false,
+                    };
                     let listed = match &**e {
                         Expr::Func(name, args) if &**name == "SUBTOTAL" => match args.as_slice() {
-                            [Expr::Number(code), Expr::Ref(r)]
-                                if r.sheet.is_none() && Some(r.rect()) == table.column_range(i) =>
-                            {
+                            [Expr::Number(code), over] if whole_column(over) => {
                                 TotalsFunction::from_subtotal_code(*code as u32)
                             }
                             _ => None,
@@ -2432,6 +2540,10 @@ fn adjusted(mut table: Table, edit: StructuralEdit) -> Option<Table> {
 
 /// See `features::on_structural_edit`.
 pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited_sheet: &str) {
+    let own = sheet.name.clone();
+    for table in &mut sheet.tables {
+        table.map_formulas(&mut |e| e.adjusted(edit, edited_sheet, &own));
+    }
     if sheet.name != edited_sheet || sheet.tables.is_empty() {
         return;
     }
@@ -2441,9 +2553,35 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
         .collect();
 }
 
+/// What must be done while the tables are still whole, before the rows or
+/// columns of `edits` (applied in that order) are inserted into or deleted
+/// from a sheet: structured references to the columns, or to the whole
+/// tables, that the deletions take read `#REF!`, as in Excel.
+pub(crate) fn before_structural_edits(wb: &mut Workbook, sheet: usize, edits: &[StructuralEdit]) {
+    let Some(sh) = wb.sheets.get(sheet).filter(|s| !s.tables.is_empty()) else {
+        return;
+    };
+    let mut tables = Vec::new();
+    let mut columns = Vec::new();
+    for table in &sh.tables {
+        let after = edits.iter().try_fold(table.clone(), |t, edit| adjusted(t, *edit));
+        match after {
+            None => tables.push(table.name.clone()),
+            Some(after) => {
+                let gone = table.columns.iter().filter(|c| after.column_index(&c.name).is_none());
+                columns.extend(gone.map(|c| (table.name.clone(), c.name.clone())));
+            }
+        }
+    }
+    wb.table_refs_to_errors(&tables);
+    for (table, column) in columns {
+        wb.delete_table_column_refs(&table, &column);
+    }
+}
+
 /// What a structural edit leaves for a pass that can see the workbook:
 /// columns inserted into tables get their names ("Column4") and header
-/// cells, and the totals rows are written again for the new data ranges.
+/// cells, and the totals rows are written again.
 pub(crate) fn after_structural_edit(wb: &mut Workbook, sheet: usize) {
     let Some(sh) = wb.sheets.get(sheet) else {
         return;
@@ -2465,17 +2603,27 @@ pub(crate) fn after_structural_edit(wb: &mut Workbook, sheet: usize) {
     }
 }
 
-/// See `features::on_sheet_renamed`. Tables are known by their own names.
-pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
+/// See `features::on_sheet_renamed`. Tables are known by their own names;
+/// only the totals formulas they remember may name the sheet.
+pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
+    for table in &mut sheet.tables {
+        table.map_formulas(&mut |e| e.with_sheet_renamed(old, new));
+    }
+}
 
 /// See `features::on_sheet_duplicated`. The tables of the copy get ids and
-/// names of their own: the original's name with a number appended.
+/// names of their own (the original's name with a number appended), and
+/// the formulas of the copy read the copy's tables.
 pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &str) {
     let Some(sh) = wb.sheets.get_mut(copy) else {
         return;
     };
     let mut tables = std::mem::take(&mut sh.tables);
+    if tables.is_empty() {
+        return;
+    }
     let mut taken: HashSet<String> = HashSet::new();
+    let mut renames: Vec<(String, Arc<str>)> = Vec::new();
     for (table, id) in tables.iter_mut().zip(wb.next_table_id()..) {
         table.id = id;
         let name = (2u32..)
@@ -2483,9 +2631,67 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
             .find(|name| !wb.name_taken(name, None) && !taken.contains(&name.to_lowercase()))
             .unwrap_or_default();
         taken.insert(name.to_lowercase());
-        table.name = name;
+        renames.push((std::mem::replace(&mut table.name, name.clone()), Arc::from(name)));
     }
-    wb.sheets[copy].tables = tables;
+    // All the tables at once: a new name may be the old name of another.
+    let renamed = |name: &str| renames.iter().find(|(old, _)| same_name(old, name)).map(|(_, new)| new.clone());
+    let follow = |e: &Expr| -> Expr {
+        e.map(&mut |x| match x {
+            Expr::Table(mut t) => {
+                if let Some(new) = t.table.as_deref().and_then(renamed) {
+                    t.table = Some(new);
+                }
+                Expr::Table(t)
+            }
+            Expr::Name(n) => Expr::Name(renamed(&n).unwrap_or(n)),
+            other => other,
+        })
+    };
+    let sh = &mut wb.sheets[copy];
+    sh.tables = tables;
+    for cell in sh.cells.values_mut() {
+        if let Content::Formula(e) = &cell.content {
+            let new = follow(e);
+            if new != **e {
+                cell.content = Content::Formula(Arc::new(new));
+            }
+        }
+    }
+    for def in sh.names.values_mut() {
+        def.expr = Arc::new(follow(&def.expr));
+    }
+    crate::features::map_formulas(sh, &mut |e| follow(e));
+}
+
+/// See `features::on_sheet_deleted`. The tables of the sheet went with it:
+/// what read them reads `#REF!`. The totals formulas the other tables
+/// remember follow like the formulas of cells.
+pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet, order: &[&str]) {
+    let gone: Vec<String> = deleted.tables.iter().map(|t| t.name.clone()).collect();
+    wb.table_refs_to_errors(&gone);
+    for table in wb.sheets.iter_mut().flat_map(|sh| &mut sh.tables) {
+        table.map_formulas(&mut |e| e.with_sheet_deleted(&deleted.name, order));
+    }
+}
+
+/// See `features::on_sheet_moved`: tables stay on their sheet; 3-D
+/// references in the totals formulas they remember follow their end sheets.
+pub(crate) fn on_sheet_moved(wb: &mut Workbook, moved: &str, before: &[&str], after: &[&str]) {
+    for table in wb.sheets.iter_mut().flat_map(|sh| &mut sh.tables) {
+        table.map_formulas(&mut |e| e.with_sheet_moved(moved, before, after));
+    }
+}
+
+/// See `features::on_cells_shifted`. A shift never tears a table (it is
+/// refused); the totals formulas tables remember follow the cells.
+pub(crate) fn on_cells_shifted(wb: &mut Workbook, sheet: usize, shift: CellShift) {
+    let edited = wb.sheets[sheet].name.clone();
+    for sh in &mut wb.sheets {
+        let own = sh.name.clone();
+        for table in &mut sh.tables {
+            table.map_formulas(&mut |e| e.map_refs(&mut |r| shift.fix(r, &edited, &own)));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2783,7 +2989,12 @@ mod tests {
             [text(&w, "A5"), text(&w, "B5"), text(&w, "C5"), text(&w, "A6")],
             ["Total", "", "60", "note"]
         );
-        assert_eq!(formula(&w, "C5"), "=SUBTOTAL(109,C2:C4)");
+        // As Excel writes it; it names the table in the cell (and in files).
+        assert_eq!(formula(&w, "C5"), "=SUBTOTAL(109,[Sales])");
+        assert_eq!(
+            w.totals_formula(0, id, 2).unwrap().to_text(Locale::en()),
+            "SUBTOTAL(109,Table1[Sales])"
+        );
         assert_eq!(table.columns[2].totals, TotalsFunction::Sum);
         assert_eq!(table.columns[0].totals_label.as_deref(), Some("Total"));
 
@@ -2814,7 +3025,7 @@ mod tests {
             );
             assert!(w.set_totals_function(0, id, 2, function));
             w.commit("function");
-            assert_eq!(formula(&w, "C5"), format!("=SUBTOTAL({code},C2:C4)"));
+            assert_eq!(formula(&w, "C5"), format!("=SUBTOTAL({code},[Sales])"));
             assert_eq!(text(&w, "C5"), shown);
         }
         assert_eq!(TotalsFunction::None.subtotal_code(), None);
@@ -2850,7 +3061,7 @@ mod tests {
         assert_eq!(formula(&w, "B5"), "=COUNTIF(B2:B4,\"North\")");
         assert_eq!(
             w.totals_formula(0, id, 2).unwrap().to_text(Locale::en()),
-            "SUBTOTAL(104,C2:C4)"
+            "SUBTOTAL(104,Table1[Sales])"
         );
         assert_eq!(w.totals_formula(0, id, 0), None);
 
@@ -2875,7 +3086,7 @@ mod tests {
         let id = w.add_table(0, rect("A1:B2"), true).unwrap();
         w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
         w.commit("totals");
-        assert_eq!(formula(&w, "B3"), "=SUBTOTAL(103,B2)");
+        assert_eq!(formula(&w, "B3"), "=SUBTOTAL(103,[v])");
         assert_eq!(text(&w, "B3"), "1");
     }
 
@@ -3107,7 +3318,7 @@ mod tests {
         assert_eq!(w.resize_table(0, id, rect("A1:C7")), Ok(()));
         w.commit("resize");
         assert_eq!([text(&w, "A5"), text(&w, "A7"), text(&w, "C7")], ["", "Total", "65"]);
-        assert_eq!(formula(&w, "C7"), "=SUBTOTAL(109,C2:C6)");
+        assert_eq!(formula(&w, "C7"), "=SUBTOTAL(109,[Sales])");
     }
 
     #[test]
@@ -3248,7 +3459,8 @@ mod tests {
         );
         assert_eq!(text(&w, "E3"), "beside");
         assert_eq!([formula(&w, "F1"), formula(&w, "F2")], ["=C4", "=SUM(C2:C5)"]);
-        assert_eq!(formula(&w, "C6"), "=SUBTOTAL(109,C2:C5)");
+        assert_eq!(formula(&w, "C6"), "=SUBTOTAL(109,[Sales])");
+        assert_eq!(text(&w, "C6"), "60");
         // The new row has the calculated column and the look of its
         // neighbour.
         assert_eq!([formula(&w, "D3"), formula(&w, "D4")], ["=C3+1", "=C4+1"]);
@@ -3258,7 +3470,7 @@ mod tests {
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:D8"));
         assert_eq!(
             [text(&w, "A8"), formula(&w, "C8"), formula(&w, "D7")],
-            ["Total", "=SUBTOTAL(109,C2:C7)", "=C7+1"]
+            ["Total", "=SUBTOTAL(109,[Sales])", "=C7+1"]
         );
         assert_eq!(w.table_insert_rows(0, id, 0, 1), Err(TableError::InvalidRange));
         assert_eq!(w.table_insert_rows(0, id, 8, 1), Err(TableError::InvalidRange));
@@ -3274,7 +3486,7 @@ mod tests {
         );
         assert_eq!(
             [formula(&w, "F1"), formula(&w, "F2"), formula(&w, "C5")],
-            ["=C3", "=SUM(C2:C4)", "=SUBTOTAL(109,C2:C4)"]
+            ["=C3", "=SUM(C2:C4)", "=SUBTOTAL(109,[Sales])"]
         );
         assert_eq!(w.table_delete_rows(0, id, 4, 1), Err(TableError::InvalidRange));
         // A reference to a deleted table cell is lost.
@@ -3326,7 +3538,7 @@ mod tests {
         );
         assert_eq!(
             [formula(&w, "I1"), formula(&w, "I2"), formula(&w, "E5")],
-            ["=SUM(E2:E4)", "=D2", "=SUBTOTAL(109,E2:E4)"]
+            ["=SUM(E2:E4)", "=D2", "=SUBTOTAL(109,[Sales])"]
         );
         let filter = w.table(0, id).unwrap().auto_filter.as_ref().unwrap();
         assert_eq!(filter.columns.keys().copied().collect::<Vec<_>>(), [4]);
@@ -3342,7 +3554,7 @@ mod tests {
         assert_eq!(names(&w, id), ["Product", "Region", "Sales"]);
         assert_eq!(
             [text(&w, "E3"), formula(&w, "G1"), formula(&w, "C5")],
-            ["beside", "=SUM(C2:C4)", "=SUBTOTAL(109,C2:C4)"]
+            ["beside", "=SUM(C2:C4)", "=SUBTOTAL(109,[Sales])"]
         );
         // Deleting a filtered column drops its criterion and shows the rows.
         w.set_filter_criteria(0, FilterScope::Table(id), 2, only(&["10"]));
@@ -3372,13 +3584,14 @@ mod tests {
         assert_eq!(table.range, rect("A3:C8"));
         assert_eq!(table.auto_filter.as_ref().unwrap().range, rect("A3:C7"));
         // The new first data row is part of the total.
-        assert_eq!(formula(&w, "C8"), "=SUBTOTAL(109,C4:C7)");
+        assert_eq!(formula(&w, "C8"), "=SUBTOTAL(109,[Sales])");
+        assert_eq!(text(&w, "C8"), "40");
         assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [5]);
         w.delete_rows(0, 3, 1);
         w.delete_rows(0, 0, 2);
         w.commit("delete");
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:C5"));
-        assert_eq!(formula(&w, "C5"), "=SUBTOTAL(109,C2:C4)");
+        assert_eq!(formula(&w, "C5"), "=SUBTOTAL(109,[Sales])");
 
         // A column inserted inside is a new table column with a name and a
         // header cell; criteria follow.
@@ -3399,7 +3612,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [3]
         );
-        assert_eq!(formula(&w, "D5"), "=SUBTOTAL(109,D2:D4)");
+        assert_eq!(formula(&w, "D5"), "=SUBTOTAL(109,[Sales])");
         w.insert_cols(0, 0, 1);
         w.delete_cols(0, 2, 1);
         w.commit("columns");
@@ -3571,7 +3784,7 @@ mod tests {
             [text(&w, "A3"), text(&w, "A4"), text(&w, "C4"), text(&w, "A5")],
             ["Ink", "Total", "30", "under"]
         );
-        assert_eq!(formula(&w, "C4"), "=SUBTOTAL(109,C2:C3)");
+        assert_eq!(formula(&w, "C4"), "=SUBTOTAL(109,[Sales])");
 
         // A table right under it keeps the cells from moving up: the rows
         // close up inside the table, which keeps its size.

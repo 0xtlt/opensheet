@@ -6,6 +6,7 @@
 //! over the workbook's; `Sheet2!Name` reaches the name of another sheet.
 
 use crate::ast::{Expr, same_name};
+use crate::features::Rewritten;
 use crate::locale::Locale;
 use crate::parser::{ParseError, parse_formula};
 use crate::refs::{Reference, parse_cell_name};
@@ -44,6 +45,10 @@ pub enum FormulaSite {
     },
     /// The definition of a name of that scope.
     Name(NameScope),
+    /// A formula a feature of that sheet keeps outside the cells: that of
+    /// a conditional format or of a validation rule, or the totals
+    /// formula a table remembers while its totals row is hidden.
+    Sheet(usize),
 }
 
 impl FormulaSite {
@@ -51,16 +56,16 @@ impl FormulaSite {
     pub fn cell(self) -> Option<(usize, u32, u32)> {
         match self {
             FormulaSite::Cell { sheet, row, col } => Some((sheet, row, col)),
-            FormulaSite::Name(_) => None,
+            FormulaSite::Name(_) | FormulaSite::Sheet(_) => None,
         }
     }
 
     /// The sheet from which the formula looks names up, if it has one.
     pub fn sheet(self) -> Option<usize> {
         match self {
-            FormulaSite::Cell { sheet, .. } | FormulaSite::Name(NameScope::Sheet(sheet)) => {
-                Some(sheet)
-            }
+            FormulaSite::Cell { sheet, .. }
+            | FormulaSite::Name(NameScope::Sheet(sheet))
+            | FormulaSite::Sheet(sheet) => Some(sheet),
             FormulaSite::Name(NameScope::Workbook) => None,
         }
     }
@@ -352,10 +357,11 @@ impl Workbook {
             .is_some_and(|names| names.remove(&name.to_uppercase()).is_some())
     }
 
-    /// Rewrite the formulas of the workbook: those of the cells and those
-    /// of the defined names. `f` is given the workbook as it is before any
-    /// change, where the formula is stored and the formula; it returns the
-    /// new formula, or `None` to leave it alone.
+    /// Rewrite the formulas of the workbook: those of the cells, those of
+    /// the defined names and those the features keep (conditional formats,
+    /// validation rules, totals of tables). `f` is given the workbook as
+    /// it is before any change, where the formula is stored and the
+    /// formula; it returns the new formula, or `None` to leave it alone.
     ///
     /// The undo snapshot is taken when something changes; the caller
     /// commits. Returns whether something changed.
@@ -368,6 +374,7 @@ impl Workbook {
             Name(NameScope, String),
         }
         let mut changes: Vec<(Slot, Expr)> = Vec::new();
+        let mut kept: Vec<(usize, Rewritten)> = Vec::new();
         {
             let wb: &Workbook = self;
             let mut visit = |slot: Slot, site: FormulaSite, e: &Expr| {
@@ -396,6 +403,8 @@ impl Workbook {
                         &def.expr,
                     );
                 }
+                let rewritten = Rewritten::of(sh, &mut |e| f(wb, FormulaSite::Sheet(si), e));
+                kept.extend(rewritten.map(|r| (si, r)));
             }
             for (key, def) in wb.names.iter() {
                 let scope = NameScope::Workbook;
@@ -406,10 +415,16 @@ impl Workbook {
                 );
             }
         }
-        if changes.is_empty() {
+        if changes.is_empty() && kept.is_empty() {
             return false;
         }
         self.snapshot();
+        if !kept.is_empty() {
+            for (si, rewritten) in kept {
+                rewritten.store(&mut self.sheets[si]);
+            }
+            self.caches.cond.invalidate();
+        }
         for (slot, new) in changes {
             match slot {
                 Slot::Cell(si, row, col) => {
