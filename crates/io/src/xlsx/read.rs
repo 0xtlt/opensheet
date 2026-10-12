@@ -15,6 +15,7 @@ use opensheet_engine::ast::Expr;
 use opensheet_engine::chart::Chart;
 use opensheet_engine::datetime::date_to_serial;
 use opensheet_engine::protect::WorkbookProtection;
+use opensheet_engine::{CalcMode, IterativeCalc};
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
     Border, BorderStyle, Borders, DEFAULT_FONT, DEFAULT_FONT_SIZE, Font, HAlign, Style, StyleId,
@@ -185,6 +186,9 @@ struct WorkbookPart {
     names: Vec<RawName>,
     date1904: bool,
     protection: WorkbookProtection,
+    /// `<calcPr>`: when formulas are calculated, and iterative calculation.
+    calc_mode: CalcMode,
+    iterative: IterativeCalc,
 }
 
 fn parse_workbook_part(xml: &str) -> WorkbookPart {
@@ -200,6 +204,22 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
                 }
                 "workbookProtection" => {
                     out.protection = protection::read_workbook(&t);
+                    r.skip(&t);
+                }
+                "calcPr" => {
+                    out.calc_mode = match t.attr("calcMode").as_deref() {
+                        Some("manual") => CalcMode::Manual,
+                        Some("autoNoTable") => CalcMode::AutomaticExceptTables,
+                        _ => CalcMode::Automatic,
+                    };
+                    let usual = IterativeCalc::default();
+                    let count = t.attr_u32("iterateCount").filter(|n| *n >= 1);
+                    let delta = t.attr_f64("iterateDelta").filter(|d| d.is_finite() && *d >= 0.0);
+                    out.iterative = IterativeCalc {
+                        enabled: t.attr_bool("iterate").unwrap_or(false),
+                        max_iterations: count.unwrap_or(usual.max_iterations),
+                        max_change: delta.unwrap_or(usual.max_change),
+                    };
                     r.skip(&t);
                 }
                 "sheet" => {
@@ -1644,6 +1664,10 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     // Formulas the engine cannot calculate keep their cached result.
     super::formula::keep_cached_results(&mut wb);
 
+    // Everything is calculated once on loading, whatever the mode: the
+    // file's cached results are not trusted.
+    wb.set_iterative_calc(info.iterative);
+    wb.set_calc_mode(info.calc_mode);
     wb.recalc();
     wb.clear_history();
     wb.modified = false;

@@ -829,9 +829,6 @@ impl ExcelApp {
             .text_size(px(11.5))
             .text_color(c(theme::TEXT_MUTED))
             .child(div().child(mode))
-            .when(self.wb.circular, |d| {
-                d.child(div().child(t("Circular References", "Références circulaires")))
-            })
             .children(feature_items)
             .when_some(self.status_message.clone(), |d, msg| d.child(div().child(msg)))
             .child(div().flex_1())

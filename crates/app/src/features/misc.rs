@@ -247,6 +247,14 @@ impl Feature for Misc {
         audit::adjust_layout(app, layout);
     }
 
+    fn status_items(&self, app: &ExcelApp) -> Vec<super::StatusItem> {
+        calc::status_items(app)
+    }
+
+    fn cells_changed(&self, app: &mut ExcelApp, _edit: &super::CellEdit, cx: &mut Cx) {
+        calc::after_change(app, cx);
+    }
+
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
         if matches!(target, MenuTarget::Cell(..)) {
             menu.add(MenuSection::Extra, MenuEntry::command(Cmd::Link, app).shortcut("⌘K"));
