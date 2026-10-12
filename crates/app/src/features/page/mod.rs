@@ -57,7 +57,7 @@ commands! {
         Orientation = "page", t("Orientation", "Orientation");
         Portrait = "", t("Portrait", "Portrait");
         Landscape = "", t("Landscape", "Paysage");
-        Size = "page", t("Size", "Taille");
+        Size = "page", crate::i18n::t_ctx("paper", "Size", "Taille");
         MoreSizes = "", t("More Paper Sizes…", "Autres tailles de papier…");
         PrintArea = "print", t("Print Area", "ZoneImpr");
         SetPrintArea = "", t("Set Print Area", "Définir");

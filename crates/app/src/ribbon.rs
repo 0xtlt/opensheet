@@ -997,7 +997,7 @@ impl ExcelApp {
 
         // Number
         let number = launcher_group(
-            t("Number", "Nombre"),
+            crate::i18n::t_ctx("group", "Number", "Nombre"),
             rows(vec![
                 row(vec![self.combo(
                     "rb-numfmt",

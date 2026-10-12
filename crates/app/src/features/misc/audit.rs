@@ -670,7 +670,7 @@ impl Render for ErrorChecking {
                             .on_click(cx.listener(|this, _, window, cx| this.step(false, false, window, cx))),
                     )
                     .child(
-                        Button::new("next", t("Next", "Suivant"))
+                        Button::new("next", crate::i18n::t_ctx("dialog", "Next", "Suivant"))
                             .primary()
                             .on_click(cx.listener(|this, _, window, cx| this.step(true, false, window, cx))),
                     ),
