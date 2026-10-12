@@ -365,7 +365,7 @@ impl Render for Dialog {
             .chain(std::iter::once(words::custom_format_name().into()))
             .collect();
         let format = Select::new("format", formats, Some(self.format))
-            .width(280.0)
+            .width(320.0)
             .on_change(cx.listener(|this, ix: &usize, window, cx| this.pick_format(*ix, window, cx)));
         let with = t("with", "avec");
         let choice = |options: Vec<SharedString>, width: f32, this: &Self, cx: &mut Context<Self>| {
@@ -404,7 +404,7 @@ impl Render for Dialog {
         };
 
         dialog(&self.modal, self.kind.title())
-            .width(if self.kind == Kind::Between { 640.0 } else { 560.0 })
+            .width(if self.kind == Kind::Between { 690.0 } else { 600.0 })
             .on_ok(cx.listener(Self::ok))
             .child(div().line_height(px(17.)).child(self.kind.prompt()))
             .child(row.child(format))

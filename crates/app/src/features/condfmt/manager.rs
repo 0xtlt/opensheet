@@ -339,7 +339,7 @@ impl Manager {
 
 const COL_FORMAT: f32 = 150.0;
 const COL_APPLIES: f32 = 210.0;
-const COL_STOP: f32 = 110.0;
+const COL_STOP: f32 = 150.0;
 const LINE: f32 = 34.0;
 
 impl Render for Manager {
@@ -465,7 +465,7 @@ impl Render for Manager {
                 "Gestionnaire des règles de mise en forme conditionnelle",
             ),
         )
-        .width(820.0)
+        .width(880.0)
         .on_ok(cx.listener(Self::ok))
         .child(labeled(
             t("Show formatting rules for:", "Afficher les règles de mise en forme pour :"),
