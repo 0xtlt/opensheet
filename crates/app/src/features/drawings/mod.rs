@@ -296,18 +296,23 @@ fn is_picture(drawing: &Drawing) -> bool {
     matches!(drawing.kind, DrawingKind::Picture(_))
 }
 
-/// Change the selected drawing, as one undo step. False when there is
-/// none or the sheet's protection forbids it.
-fn edit(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl FnOnce(&mut Drawing)) -> bool {
-    let Some(id) = selected(app).map(|drawing| drawing.id) else {
-        return false;
-    };
-    if !app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
+/// Change a drawing of the current sheet, as one undo step. False when
+/// it is not there or the sheet's protection forbids it.
+fn edit_drawing(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: impl FnOnce(&mut Drawing)) -> bool {
+    if app.wb.drawing(app.sheet, id).is_none() || !app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
         return false;
     }
     app.wb.update_drawing(app.sheet, id, change);
     app.commit(label, cx);
     true
+}
+
+/// Change the selected drawing, as one undo step.
+fn edit(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl FnOnce(&mut Drawing)) -> bool {
+    match selected(app).map(|drawing| drawing.id) {
+        Some(id) => edit_drawing(app, id, label, cx, change),
+        None => false,
+    }
 }
 
 /// Change the selected shape (nothing happens for a picture).
@@ -786,9 +791,13 @@ impl Feature for Drawings {
     }
 
     fn object_selected(&self, app: &mut ExcelApp, id: Option<u32>, cx: &mut Cx) {
-        // Typing in a shape ends when the selection leaves it.
+        // Typing in a shape ends when the selection leaves it, and a
+        // description typed in a pane is kept.
         if editing_text(app).is_some() && editing_text(app) != id {
             end_text_edit(app, cx);
+        }
+        if id.is_none() {
+            pane::keep_descriptions(app, cx);
         }
         pane::selection_changed(app, cx);
     }

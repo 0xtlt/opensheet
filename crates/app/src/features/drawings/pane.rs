@@ -5,7 +5,7 @@
 use super::geometry::normalise_angle;
 use super::tabs::{self, dashes, in_units, length_field, set_side};
 use crate::widgets::text_area::{AreaEvent, TextArea};
-use super::{Cmd, Drawings, DrawingUi, edit, edit_shape, is_picture, reset_picture, selected};
+use super::{Cmd, Drawings, DrawingUi, edit, edit_drawing, edit_shape, is_picture, reset_picture, selected};
 use crate::app::ExcelApp;
 use crate::features::{self, Command, Cx, ObjectId, ZMove};
 use crate::i18n::{lang, t, t_ctx};
@@ -21,14 +21,29 @@ use gpui::{
 use opensheet_engine::drawing::{Drawing, LineEnd, Placement, TextAnchor};
 use opensheet_engine::style::Color;
 
-const FORMAT: &str = "drawing-format";
-const ALT_TEXT: &str = "drawing-alt-text";
-const SELECTION: &str = "drawing-selection";
+pub(super) const FORMAT: &str = "drawing-format";
+pub(super) const ALT_TEXT: &str = "drawing-alt-text";
+pub(super) const SELECTION: &str = "drawing-selection";
 
 /// What the panes keep between events.
 #[derive(Default)]
 pub(super) struct PaneState {
     format: Option<Entity<FormatPane>>,
+    alt_text: Option<Entity<AltTextPane>>,
+}
+
+/// The selection is leaving a drawing: a description typed in a pane and
+/// not confirmed yet (the box still has the keyboard) becomes its
+/// description, before the pane turns to what is selected next.
+pub(super) fn keep_descriptions(app: &mut ExcelApp, cx: &mut Cx) {
+    let panes = &app.ext_mut::<DrawingUi>().panes;
+    let typed = [
+        panes.format.as_ref().and_then(|pane| pane.read(cx).typed_description(cx)),
+        panes.alt_text.as_ref().and_then(|pane| pane.read(cx).typed_description(cx)),
+    ];
+    for (id, text) in typed.into_iter().flatten() {
+        edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| drawing.alt_text = text);
+    }
 }
 
 /// The two pages of the Format pane.
@@ -178,10 +193,19 @@ impl FormatPane {
         self.app.update(cx, |app, cx| edit(app, label, cx, change)).ok();
     }
 
+    /// The drawing the description box was filled from and what was typed
+    /// there since, when it differs.
+    fn typed_description(&self, cx: &gpui::App) -> Option<(u32, String)> {
+        let shown = self.shown.as_ref()?;
+        let typed = self.alt_text.read(cx).text();
+        (shown.alt_text != typed).then(|| (shown.id, typed.to_string()))
+    }
+
     fn apply_alt_text(&mut self, cx: &mut Context<Self>) {
-        let typed = self.alt_text.read(cx).text().to_string();
-        if self.shown.as_ref().is_some_and(|shown| shown.alt_text != typed) {
-            self.change(Cmd::AltText.label(), cx, |drawing| drawing.alt_text = typed);
+        if let Some((id, typed)) = self.typed_description(cx) {
+            self.app
+                .update(cx, |app, cx| edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| drawing.alt_text = typed))
+                .ok();
         }
     }
 
@@ -628,11 +652,18 @@ struct AltTextPane {
 }
 
 impl AltTextPane {
+    /// The drawing the box was filled from and what was typed there
+    /// since, when it differs.
+    fn typed_description(&self, cx: &gpui::App) -> Option<(u32, String)> {
+        let (id, shown) = self.shown.as_ref()?;
+        let typed = self.text.read(cx).text();
+        (shown != typed).then(|| (*id, typed.to_string()))
+    }
+
     fn apply(&mut self, cx: &mut Context<Self>) {
-        let typed = self.text.read(cx).text().to_string();
-        if self.shown.as_ref().is_some_and(|(_, shown)| *shown != typed) {
+        if let Some((id, typed)) = self.typed_description(cx) {
             self.app
-                .update(cx, |app, cx| edit(app, Cmd::AltText.label(), cx, |drawing| drawing.alt_text = typed))
+                .update(cx, |app, cx| edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| drawing.alt_text = typed))
                 .ok();
         }
     }
@@ -644,7 +675,11 @@ impl Render for AltTextPane {
             let drawing = selected(app.read(cx))?;
             Some((drawing.id, drawing.alt_text.clone()))
         });
-        if now != self.shown && !self.text.read(cx).focus_handle(cx).is_focused(window) {
+        // The box follows the drawing, except while its own description is
+        // being typed.
+        let typing = self.text.read(cx).focus_handle(cx).is_focused(window);
+        let same_drawing = matches!((&now, &self.shown), (Some((a, _)), Some((b, _))) if a == b);
+        if now != self.shown && !(typing && same_drawing) {
             let text = now.as_ref().map(|(_, text)| text.clone()).unwrap_or_default();
             self.text.update(cx, |area, cx| area.set_text(text, cx));
             self.shown = now.clone();
@@ -694,6 +729,7 @@ pub(super) fn open_alt_text(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx
         }
     });
     window.focus(&view.read(cx).text.read(cx).focus_handle(cx));
+    app.ext_mut::<DrawingUi>().panes.alt_text = Some(view.clone());
     app.open_pane(ALT_TEXT, Cmd::AltText.label(), view, cx);
 }
 

@@ -599,3 +599,60 @@ fn the_tabs_and_the_menu_follow_what_is_selected(cx: &mut TestAppContext) {
     assert_eq!(changed.as_shape().unwrap().outline.unwrap().width, 3.0);
     assert_eq!(frame(&app, cx, shape).3, 160);
 }
+
+#[gpui::test]
+fn the_panes_and_the_drop_downs_open_on_the_selected_drawing(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let shape = add(&app, cx, ShapeTool::Rectangle, (100.0, 60.0, 120.0, 80.0));
+    let at = on_sheet(&app, cx, 150.0, 100.0);
+    click(cx, at);
+    let open_panes = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| [pane::FORMAT, pane::ALT_TEXT, pane::SELECTION].map(|id| app.pane_open(id)))
+    };
+    // The Format pane, on either page, then the Selection pane.
+    run(&app, cx, Cmd::FormatShape);
+    run(&app, cx, Cmd::Size);
+    assert_eq!(open_panes(&app, cx), [true, false, false]);
+    run(&app, cx, Cmd::SelectionPane);
+    assert_eq!(open_panes(&app, cx), [true, false, true]);
+    run(&app, cx, Cmd::SelectionPane);
+    assert_eq!(open_panes(&app, cx), [true, false, false]);
+    // Every drop-down of the tab opens and is drawn.
+    for cmd in [Cmd::ShapeFill, Cmd::ShapeOutline, Cmd::TextFill, Cmd::Shapes] {
+        run(&app, cx, cmd);
+        app.update(cx, |app, cx| {
+            assert!(matches!(app.popup.as_ref().map(|popup| &popup.kind), Some(crate::app::PopupKind::View(_))), "{cmd:?}");
+            app.popup = None;
+            cx.notify();
+        });
+    }
+    for cmd in [Cmd::Rotate, Cmd::Align, Cmd::EditShape, Cmd::Pictures] {
+        run(&app, cx, cmd);
+        app.update(cx, |app, cx| {
+            assert!(matches!(app.popup.as_ref().map(|popup| &popup.kind), Some(crate::app::PopupKind::Menu(_))), "{cmd:?}");
+            app.popup = None;
+            cx.notify();
+        });
+    }
+    // What is not available says so.
+    run(&app, cx, Cmd::ShapeEffects);
+    app.update(cx, |app, _| assert!(app.status_message.as_ref().is_some_and(|message| message.contains(Cmd::ShapeEffects.label()))));
+    // A description typed in the Alt Text pane is kept when the selection
+    // goes elsewhere, as one undo step.
+    run(&app, cx, Cmd::AltText);
+    assert_eq!(open_panes(&app, cx), [true, true, false]);
+    cx.simulate_input("A blue box");
+    assert_eq!(drawing(&app, cx, shape).alt_text, "");
+    let cell = on_sheet(&app, cx, 500.0, 300.0);
+    click(cx, cell);
+    assert_eq!(drawing(&app, cx, shape).alt_text, "A blue box");
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Alt Text"));
+    // The panes stay open with nothing selected, and follow a picture.
+    app.update(cx, |app, cx| tool::insert_pictures(app, vec![png(40, 40)], Some((300.0, 300.0)), cx));
+    redraw(cx);
+    run(&app, cx, Cmd::FormatPicture);
+    app.update(cx, |app, _| {
+        let title = app.panes.iter().find(|pane| pane.id == pane::FORMAT).map(|pane| pane.title.to_string());
+        assert_eq!(title.as_deref(), Some("Format Picture"));
+    });
+}
