@@ -3,11 +3,15 @@
 //! for, the widths of the columns after an update, the wording of the
 //! messages.
 
+use crate::features::{ChangeCause, Intent};
 use crate::i18n::t;
+use opensheet_engine::ast::StructuralEdit;
+use opensheet_engine::ops::PasteMode;
 use opensheet_engine::pivot::{
     Aggregation, Area, AxisField, BaseItem, FieldGroup, FieldLayout, FilterKind, GroupKind, LabelFilter, PivotButton,
     PivotCell, PivotError, PivotPart, PivotSource, PivotTable, ShowAs, SortOrder, Subtotals, Top10By, ValueFilter,
 };
+use opensheet_engine::workbook::ClearMode;
 use opensheet_engine::{Expr, Locale, Rect, Style, Value, Workbook};
 
 // ----------------------------------------------------------------- messages
@@ -80,6 +84,55 @@ pub fn replace_question(sheet_name: &str) -> String {
         "{} contient déjà des données. Voulez-vous les remplacer ?",
     )
     .replace("{}", sheet_name)
+}
+
+/// Why a change to the sheet is refused, if a PivotTable is in its way.
+/// The cells of a PivotTable belong to its report: they are not typed
+/// over, cleared, pasted on nor sorted, and no row or column is inserted
+/// or deleted through them. A range covering a PivotTable whole may be
+/// cleared or overwritten: the PivotTable goes with it.
+pub fn refusal(wb: &Workbook, sheet: usize, intent: &Intent) -> Option<&'static str> {
+    if wb.sheets.get(sheet)?.pivots.is_empty() {
+        return None;
+    }
+    let cut = |edit: StructuralEdit| wb.pivot_blocks_edit(sheet, edit).then(would_affect_pivot);
+    match *intent {
+        Intent::EditCells(rect) => {
+            if wb.pivots_in(sheet, rect).iter().all(|(_, whole)| *whole) {
+                None
+            } else if rect.is_single() {
+                Some(cannot_change_part())
+            } else {
+                Some(would_affect_pivot())
+            }
+        }
+        Intent::Sort(rect) => (!wb.pivots_in(sheet, rect).is_empty()).then(would_affect_pivot),
+        Intent::InsertRows { at, count } => cut(StructuralEdit::InsertRows { at, count }),
+        Intent::InsertColumns { at, count } => cut(StructuralEdit::InsertCols { at, count }),
+        Intent::DeleteRows { first, last } => cut(StructuralEdit::DeleteRows {
+            at: first,
+            count: last - first + 1,
+        }),
+        Intent::DeleteColumns { first, last } => cut(StructuralEdit::DeleteCols {
+            at: first,
+            count: last - first + 1,
+        }),
+        _ => None,
+    }
+}
+
+/// Whether an edit replaces what its cells hold (rather than only their
+/// formats, comments, validation or widths): only then does a PivotTable
+/// lying whole under it go away with its report.
+pub fn replaces_contents(cause: ChangeCause) -> bool {
+    match cause {
+        ChangeCause::Typing | ChangeCause::Fill => true,
+        ChangeCause::Clear(mode) => matches!(mode, ClearMode::Contents | ClearMode::All),
+        ChangeCause::Paste { mode, .. } => !matches!(
+            mode,
+            PasteMode::Formats | PasteMode::Comments | PasteMode::Validation | PasteMode::ColumnWidths
+        ),
+    }
 }
 
 // ------------------------------------------------------------ the field list
@@ -2011,6 +2064,66 @@ mod tests {
         assert_eq!(MoveTo::Beginning.target(2, 3), 0);
         assert_eq!(MoveTo::End.target(0, 3), 2);
         assert_eq!(MoveTo::End.target(0, 0), 0);
+    }
+
+    #[test]
+    fn the_cells_of_a_pivot_refuse_edits() {
+        let (mut wb, id) = workbook();
+        for op in [PaneOp::Check(REGION), PaneOp::Check(SALES)] {
+            run(&mut wb, id, op);
+        }
+        // The report is A3:B6 of the second sheet.
+        let body = wb.pivot(id).unwrap().1.location.unwrap();
+        assert_eq!(body, Rect::new(2, 0, 5, 1));
+        let refused = |intent: Intent| refusal(&wb, 1, &intent);
+        // Typing into a cell, clearing or pasting over part of the report.
+        assert_eq!(refused(Intent::EditCells(Rect::cell(3, 1))), Some(cannot_change_part()));
+        assert_eq!(refused(Intent::EditCells(Rect::new(3, 0, 4, 1))), Some(would_affect_pivot()));
+        assert_eq!(refused(Intent::EditCells(Rect::new(4, 1, 9, 5))), Some(would_affect_pivot()));
+        // The whole report, or cells beside it, may be cleared.
+        assert_eq!(refused(Intent::EditCells(body)), None);
+        assert_eq!(refused(Intent::EditCells(Rect::new(0, 0, 20, 8))), None);
+        assert_eq!(refused(Intent::EditCells(Rect::cell(3, 2))), None);
+        // Formatting its cells is allowed, sorting them is not.
+        assert_eq!(refused(Intent::FormatCells(Rect::cell(3, 1))), None);
+        assert_eq!(refused(Intent::Sort(Rect::new(3, 0, 5, 1))), Some(would_affect_pivot()));
+        assert_eq!(refused(Intent::Sort(Rect::new(8, 0, 9, 1))), None);
+        // Rows and columns: not through the report, but before it, after
+        // it, or all of it at once.
+        assert_eq!(refused(Intent::InsertRows { at: 4, count: 1 }), Some(would_affect_pivot()));
+        assert_eq!(refused(Intent::InsertRows { at: 2, count: 1 }), None);
+        assert_eq!(refused(Intent::InsertRows { at: 6, count: 3 }), None);
+        assert_eq!(refused(Intent::DeleteRows { first: 3, last: 3 }), Some(would_affect_pivot()));
+        assert_eq!(refused(Intent::DeleteRows { first: 2, last: 5 }), None);
+        assert_eq!(refused(Intent::DeleteRows { first: 0, last: 1 }), None);
+        assert_eq!(refused(Intent::InsertColumns { at: 1, count: 1 }), Some(would_affect_pivot()));
+        assert_eq!(refused(Intent::InsertColumns { at: 0, count: 1 }), None);
+        assert_eq!(refused(Intent::DeleteColumns { first: 1, last: 1 }), Some(would_affect_pivot()));
+        assert_eq!(refused(Intent::DeleteColumns { first: 0, last: 1 }), None);
+        // The data sheet has no PivotTable: nothing is refused there.
+        assert_eq!(refusal(&wb, 0, &Intent::EditCells(Rect::cell(1, 1))), None);
+        assert_eq!(refusal(&wb, 0, &Intent::Sort(Rect::new(0, 0, 4, 3))), None);
+    }
+
+    #[test]
+    fn only_edits_of_the_contents_take_a_pivot_away() {
+        let paste = |mode| ChangeCause::Paste {
+            from: None,
+            cut: false,
+            mode,
+        };
+        assert!(replaces_contents(ChangeCause::Typing));
+        assert!(replaces_contents(ChangeCause::Fill));
+        assert!(replaces_contents(ChangeCause::Clear(ClearMode::Contents)));
+        assert!(replaces_contents(ChangeCause::Clear(ClearMode::All)));
+        assert!(!replaces_contents(ChangeCause::Clear(ClearMode::Formats)));
+        assert!(!replaces_contents(ChangeCause::Clear(ClearMode::Comments)));
+        assert!(replaces_contents(paste(PasteMode::All)));
+        assert!(replaces_contents(paste(PasteMode::Values)));
+        assert!(replaces_contents(paste(PasteMode::ValuesAndNumberFormats)));
+        assert!(!replaces_contents(paste(PasteMode::Formats)));
+        assert!(!replaces_contents(paste(PasteMode::ColumnWidths)));
+        assert!(!replaces_contents(paste(PasteMode::Validation)));
     }
 
     #[test]

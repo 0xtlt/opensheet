@@ -28,7 +28,7 @@ mod pane;
 mod sheet;
 mod styles;
 
-use super::{CellEdit, ChangeCause, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse, tables};
+use super::{CellEdit, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse, tables};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{GridLayout, cell_font, pt_to_px};
 use crate::i18n::{t, t_ctx};
@@ -42,10 +42,7 @@ use gpui::{
     prelude::*, px,
 };
 use logic::Target;
-use opensheet_engine::ast::StructuralEdit;
-use opensheet_engine::ops::PasteMode;
 use opensheet_engine::pivot::{PivotButton, PivotCell, PivotError, PivotTable, Report};
-use opensheet_engine::workbook::ClearMode;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -793,59 +790,14 @@ impl Feature for Pivots {
         }
     }
 
-    /// The cells of a PivotTable belong to its report: they are not typed
-    /// over, cleared, pasted on nor sorted, and no row or column is
-    /// inserted or deleted through them. A range covering a PivotTable
-    /// whole may be cleared or overwritten: the PivotTable goes with it.
     fn guard(&self, app: &ExcelApp, intent: &Intent) -> Option<SharedString> {
-        let sheet = app.sheet;
-        if app.wb.sheets[sheet].pivots.is_empty() {
-            return None;
-        }
-        let cut = |edit: StructuralEdit| {
-            app.wb
-                .pivot_blocks_edit(sheet, edit)
-                .then(|| SharedString::from(logic::would_affect_pivot()))
-        };
-        match *intent {
-            Intent::EditCells(rect) => {
-                if app.wb.pivots_in(sheet, rect).iter().all(|(_, whole)| *whole) {
-                    None
-                } else if rect.is_single() {
-                    Some(logic::cannot_change_part().into())
-                } else {
-                    Some(logic::would_affect_pivot().into())
-                }
-            }
-            Intent::Sort(rect) => {
-                (!app.wb.pivots_in(sheet, rect).is_empty()).then(|| logic::would_affect_pivot().into())
-            }
-            Intent::InsertRows { at, count } => cut(StructuralEdit::InsertRows { at, count }),
-            Intent::InsertColumns { at, count } => cut(StructuralEdit::InsertCols { at, count }),
-            Intent::DeleteRows { first, last } => cut(StructuralEdit::DeleteRows {
-                at: first,
-                count: last - first + 1,
-            }),
-            Intent::DeleteColumns { first, last } => cut(StructuralEdit::DeleteCols {
-                at: first,
-                count: last - first + 1,
-            }),
-            _ => None,
-        }
+        logic::refusal(&app.wb, app.sheet, intent).map(SharedString::from)
     }
 
     /// Cells covering a PivotTable whole were cleared or overwritten: its
     /// definition goes in the same undo step.
     fn cells_written(&self, app: &mut ExcelApp, edit: &CellEdit, _cx: &mut Cx) {
-        let formats_only = matches!(
-            edit.cause,
-            ChangeCause::Clear(ClearMode::Formats)
-                | ChangeCause::Paste {
-                    mode: PasteMode::Formats,
-                    ..
-                }
-        );
-        if formats_only {
+        if !logic::replaces_contents(edit.cause) {
             return;
         }
         let gone: Vec<u32> = app
