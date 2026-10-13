@@ -43,7 +43,6 @@ fn logged(outcome: &Outcome) -> Vec<&str> {
 }
 
 #[test]
-#[ignore = "needs the script engine"]
 fn the_header_row_is_formatted() {
     let mut wb = workbook();
     let outcome = run("header", &mut wb, Rect::cell(0, 0));
@@ -67,7 +66,6 @@ fn the_header_row_is_formatted() {
 }
 
 #[test]
-#[ignore = "needs the script engine"]
 fn a_total_row_is_added_under_the_list() {
     let mut wb = workbook();
     let outcome = run("total", &mut wb, Rect::cell(2, 1));
@@ -83,7 +81,6 @@ fn a_total_row_is_added_under_the_list() {
 }
 
 #[test]
-#[ignore = "needs the script engine"]
 fn a_table_is_made_and_sorted() {
     let mut wb = workbook();
     run("table", &mut wb, Rect::cell(1, 1));
@@ -103,7 +100,6 @@ fn a_table_is_made_and_sorted() {
 }
 
 #[test]
-#[ignore = "needs the script engine"]
 fn hidden_rows_and_columns_are_shown_on_every_sheet() {
     let mut wb = workbook();
     let second = wb.add_sheet(1);
@@ -120,7 +116,6 @@ fn hidden_rows_and_columns_are_shown_on_every_sheet() {
 }
 
 #[test]
-#[ignore = "needs the script engine"]
 fn a_summary_sheet_lists_the_others() {
     let mut wb = workbook();
     let second = wb.add_sheet(1);
@@ -146,7 +141,6 @@ fn a_summary_sheet_lists_the_others() {
 }
 
 #[test]
-#[ignore = "needs the script engine"]
 fn cells_above_the_average_are_filled() {
     let mut wb = workbook();
     // Units: 140, 120, 85 — the average is 115.

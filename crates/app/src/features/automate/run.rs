@@ -213,6 +213,11 @@ pub(crate) fn start(app: &mut ExcelApp, name: &str, source: &str, window: &mut W
         active_sheet: app.sheet,
         selection: selection.ranges.last().copied().unwrap_or(Rect::cell(selection.active.0, selection.active.1)),
         active_cell: selection.active,
+        workbook_name: app
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .map_or_else(|| app.title.clone(), |name| name.to_string_lossy().into_owned()),
         ..Context::default()
     };
     let mut fork = app.wb.fork();
@@ -261,6 +266,24 @@ pub(crate) fn stop(app: &mut ExcelApp, cx: &mut Cx) {
     }
 }
 
+/// The columns the script asked to fit were sized by the engine without
+/// fonts: fit them again with the ones the window draws with.
+fn refit(app: &mut ExcelApp, outcome: &Outcome, window: &Window) {
+    let ts = window.text_system().clone();
+    for fit in outcome.autofit.iter().filter(|fit| fit.columns) {
+        let Some(sheet) = app.wb.sheets.get(fit.sheet) else {
+            continue;
+        };
+        let columns: std::collections::BTreeSet<u32> =
+            sheet.cells.keys().map(|(_, column)| *column).filter(|column| (fit.first..=fit.last).contains(column)).collect();
+        for column in columns {
+            if let Some(width) = crate::grid::autofit_col_width(&app.wb, fit.sheet, column, &app.fonts, &ts) {
+                app.wb.set_col_width(fit.sheet, column, Some(width));
+            }
+        }
+    }
+}
+
 /// The script ended: show what it logged, and take over its changes or
 /// say why not.
 fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window: &mut Window, cx: &mut Cx) {
@@ -299,6 +322,7 @@ fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window:
         Some(line) => output.push(line),
         None => {
             app.wb.adopt(fork);
+            refit(app, &outcome, window);
             app.commit(t("Run Script", "Exécuter le script"), cx);
             // The window follows what the script put in front.
             if let Some(sheet) = outcome.activated.filter(|sheet| *sheet < app.wb.sheets.len() && *sheet != app.sheet) {
