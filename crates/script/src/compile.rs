@@ -70,6 +70,20 @@ fn syntax_error(source: &str, diagnostic: &OxcDiagnostic) -> ScriptError {
     }
 }
 
+/// The name `main` gives its first parameter, when the text can be read
+/// that far.
+pub(crate) fn workbook_parameter(source: &str) -> Option<String> {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, source, SourceType::ts()).parse();
+    parsed.program.body.iter().find_map(|statement| match statement {
+        Statement::FunctionDeclaration(f) if f.id.as_ref().is_some_and(|id| id.name == "main") => {
+            let name = f.params.items.first()?.pattern.get_identifier_name()?;
+            Some(name.to_string())
+        }
+        _ => None,
+    })
+}
+
 /// Compile a script, or say what is wrong with its text.
 pub(crate) fn compile(source: &str) -> Result<Compiled, Vec<ScriptError>> {
     let allocator = Allocator::default();

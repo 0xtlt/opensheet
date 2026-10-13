@@ -66,7 +66,15 @@ impl Script {
 
     /// Read the text of an `.osts` file; `name` is the name of the file
     /// without its extension.
+    ///
+    /// The file is a JSON object. Excel writes the keys `version`, `body`
+    /// (the TypeScript text), `description`, `noCodeMetadata`,
+    /// `parameterInfo` and `apiInfo`, the last two being JSON kept as
+    /// text; older files have the first three only. Nothing but `body`
+    /// and `description` is needed to run a script.
     pub fn from_osts(name: &str, text: &str) -> Result<Script, String> {
+        // Files saved by Windows tools may start with a byte order mark.
+        let text = text.trim_start_matches('\u{feff}');
         let value: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
         let field = |key: &str| value.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string();
         if value.get("body").and_then(|v| v.as_str()).is_none() {
@@ -79,17 +87,25 @@ impl Script {
         })
     }
 
-    /// The text of the `.osts` file of this script.
+    /// The text of the `.osts` file of this script, with the keys Excel
+    /// writes, in its order.
     pub fn to_osts(&self) -> String {
-        serde_json::json!({
-            "version": OSTS_VERSION,
-            "body": self.body,
-            "description": self.description,
-            "noCodeMetadata": "",
-            "parameterInfo": "{\"version\":1,\"originalParameterOrder\":[],\"parameterSchema\":{\"type\":\"object\",\"default\":{},\"x-ms-visibility\":\"internal\"},\"returnSchema\":{\"type\":\"object\",\"properties\":{}},\"signature\":{\"comment\":\"\",\"parameters\":[{\"name\":\"workbook\",\"comment\":\"\"}]}}",
-            "apiInfo": "{\"variant\":\"synchronous\",\"variantVersion\":2}",
-        })
-        .to_string()
+        let text = |s: &str| serde_json::Value::from(s).to_string();
+        // What Excel records of `main`: the name of its parameter (scripts
+        // with more parameters do not run here, see `run`).
+        let workbook = compile::workbook_parameter(&self.body).unwrap_or_else(|| "workbook".to_string());
+        let parameter_info = format!(
+            "{{\"version\":1,\"originalParameterOrder\":[],\"parameterSchema\":{{\"type\":\"object\",\"default\":{{}},\"x-ms-visibility\":\"internal\"}},\"returnSchema\":{{\"type\":\"object\",\"properties\":{{}}}},\"signature\":{{\"comment\":\"\",\"parameters\":[{{\"name\":{},\"comment\":\"\"}}]}}}}",
+            text(&workbook)
+        );
+        format!(
+            "{{\"version\":{},\"body\":{},\"description\":{},\"noCodeMetadata\":\"\",\"parameterInfo\":{},\"apiInfo\":{}}}",
+            text(OSTS_VERSION),
+            text(&self.body),
+            text(&self.description),
+            text(&parameter_info),
+            text("{\"variant\":\"synchronous\",\"variantVersion\":2}"),
+        )
     }
 }
 
@@ -241,5 +257,34 @@ mod tests {
         assert_eq!(back, script);
         assert!(Script::from_osts("x", "{}").is_err());
         assert!(Script::from_osts("x", "not json").is_err());
+    }
+
+    #[test]
+    fn osts_files_are_written_as_excel_writes_them() {
+        let script = Script {
+            name: "Mark".to_string(),
+            description: "Colours A1".to_string(),
+            body: "function main(wb: ExcelScript.Workbook) {\n\twb.getActiveWorksheet().getRange(\"A1\").getFormat().getFill().setColor(\"yellow\");\n}".to_string(),
+        };
+        // The file Excel makes of this script, parameter named `wb`.
+        let excel = concat!(
+            r#"{"version":"0.3.0","body":"function main(wb: ExcelScript.Workbook) {\n\twb.getActiveWorksheet().getRange(\"A1\").getFormat().getFill().setColor(\"yellow\");\n}","#,
+            r#""description":"Colours A1","noCodeMetadata":"","#,
+            r#""parameterInfo":"{\"version\":1,\"originalParameterOrder\":[],\"parameterSchema\":{\"type\":\"object\",\"default\":{},\"x-ms-visibility\":\"internal\"},\"returnSchema\":{\"type\":\"object\",\"properties\":{}},\"signature\":{\"comment\":\"\",\"parameters\":[{\"name\":\"wb\",\"comment\":\"\"}]}}","#,
+            r#""apiInfo":"{\"variant\":\"synchronous\",\"variantVersion\":2}"}"#,
+        );
+        assert_eq!(script.to_osts(), excel);
+        assert_eq!(Script::from_osts("Mark", excel), Ok(script.clone()));
+        // The strings kept inside are JSON themselves.
+        let file: serde_json::Value = serde_json::from_str(&script.to_osts()).unwrap();
+        for key in ["parameterInfo", "apiInfo"] {
+            assert!(serde_json::from_str::<serde_json::Value>(file[key].as_str().unwrap()).is_ok(), "{key}");
+        }
+        // An older file, with a byte order mark and three keys.
+        let old = "\u{feff}{\"version\":\"0.2.0\",\"body\":\"function main(workbook: ExcelScript.Workbook) {}\",\"description\":\"\"}";
+        assert_eq!(Script::from_osts("Old", old).map(|s| s.body), Ok("function main(workbook: ExcelScript.Workbook) {}".to_string()));
+        // A text that cannot be read keeps the usual parameter name.
+        let broken = Script { body: "function main(".to_string(), ..Script::default() };
+        assert!(broken.to_osts().contains(r#"\"name\":\"workbook\""#));
     }
 }
