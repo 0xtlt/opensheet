@@ -3566,6 +3566,11 @@ impl ExcelApp {
             self.cancel_edit(window, cx);
             return;
         }
+        // The drop-down of a folded ribbon group.
+        if crate::ribbon_fold::close_panel() {
+            cx.notify();
+            return;
+        }
         // A tool of a feature waiting for a click on the sheet.
         if features::cancel(self, cx) {
             return;

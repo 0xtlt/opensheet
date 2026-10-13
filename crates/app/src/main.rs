@@ -11,6 +11,7 @@ mod i18n_tables;
 mod icons;
 mod objects;
 mod ribbon;
+mod ribbon_fold;
 mod shell;
 mod text_input;
 mod theme;
