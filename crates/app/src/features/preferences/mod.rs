@@ -17,6 +17,9 @@
 //! Checking. The rest is done here through the feature hooks: the decimal
 //! point put into typed numbers and the green corner of cells in error.
 
+pub mod autocorrect;
+mod pane_autocorrect;
+mod pane_lists;
 pub mod settings;
 #[cfg(test)]
 mod ui_tests;
@@ -121,6 +124,24 @@ pub fn shows_sheet_tabs() -> bool {
     settings::get().show_sheet_tabs
 }
 
+/// "Replace internet and network paths with hyperlinks": whether an
+/// address typed into a cell becomes a link.
+pub fn links_typed_addresses() -> bool {
+    settings::get().link_addresses
+}
+
+/// Give a workbook what the application decides for every workbook: the
+/// custom lists of the user and what tables do by themselves. Called
+/// when a workbook comes into the window and when those settings change.
+pub fn apply_to_workbook(wb: &mut Workbook) {
+    let settings = settings::get();
+    wb.user_lists = settings.custom_lists;
+    wb.table_auto = opensheet_engine::table::TableAuto {
+        expand: settings.tables_expand,
+        fill_formulas: settings.tables_fill_formulas,
+    };
+}
+
 /// Whether Error Checking looks for formulas that result in an error.
 pub fn checks_error_values() -> bool {
     settings::get().check_error_values
@@ -164,6 +185,11 @@ impl Feature for Preferences {
             }
         }
         Verdict::Accept
+    }
+
+    /// AutoCorrect looks at the last word of a confirmed entry.
+    fn cells_changed(&self, app: &mut ExcelApp, edit: &super::CellEdit, cx: &mut Cx) {
+        autocorrect::cells_changed(app, edit, cx);
     }
 
     /// Background error checking: a green corner on the cells whose

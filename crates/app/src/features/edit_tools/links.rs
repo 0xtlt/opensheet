@@ -255,7 +255,8 @@ pub(super) fn cells_written(app: &mut ExcelApp, edit: &CellEdit) {
     match edit.cause {
         ChangeCause::Typing if edit.rect.is_single() || app.wb.sheets[sheet].merge_at(row, col) == Some(edit.rect) => {
             let typed = match app.wb.cell(sheet, row, col).map(|cell| &cell.content) {
-                Some(Content::Value(Value::Text(text))) => auto_link(text),
+                // A preference (AutoCorrect) can leave addresses as text.
+                Some(Content::Value(Value::Text(text))) if crate::features::preferences::links_typed_addresses() => auto_link(text),
                 _ => None,
             };
             let free = app.wb.hyperlink_at(sheet, row, col).is_none();

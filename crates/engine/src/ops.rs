@@ -1094,23 +1094,30 @@ impl Workbook {
         }
     }
 
-    /// Continue a built-in list (weekday / month names): the entry `offset`
-    /// places after `s`.
+    /// Continue a custom list (weekday and month names, then the lists of
+    /// the user): the entry `offset` places after `s`.
     fn next_in_list(&self, s: &str, _unused: i64, offset: i64, _n: i64) -> Option<String> {
-        let lists: [&[&str]; 4] = [
+        let builtin: [&[&str]; 4] = [
             &self.locale.days,
             &self.locale.days_short,
             &self.locale.months,
             &self.locale.months_short,
         ];
+        let lists = builtin
+            .iter()
+            .map(|list| list.to_vec())
+            .chain(self.user_lists.iter().map(|list| list.iter().map(String::as_str).collect()));
         let lower = s.trim_end_matches('.').to_lowercase();
+        if lower.is_empty() {
+            return None;
+        }
         for list in lists {
             if let Some(i) = list.iter().position(|x| x.to_lowercase() == lower) {
                 let len = list.len() as i64;
                 let j = (i as i64 + offset).rem_euclid(len) as usize;
                 let name = list[j];
                 // Preserve the capitalisation style of the source.
-                let out = if s.chars().all(|c| !c.is_lowercase()) {
+                let out = if s.chars().all(|c| !c.is_lowercase()) && s.chars().any(|c| c.is_uppercase()) {
                     name.to_uppercase()
                 } else if s.chars().next().is_some_and(|c| c.is_uppercase()) {
                     let mut ch = name.chars();
@@ -1118,6 +1125,8 @@ impl Workbook {
                         Some(f) => f.to_uppercase().collect::<String>() + ch.as_str(),
                         None => String::new(),
                     }
+                } else if s.chars().any(|c| c.is_lowercase()) {
+                    name.to_lowercase()
                 } else {
                     name.to_string()
                 };
@@ -1760,10 +1769,18 @@ impl Workbook {
         Ok(())
     }
 
-    /// The built-in custom lists of the Sort dialog in the workbook's
-    /// language: short and long weekday names, short and long month names.
+    /// The custom lists in the workbook's language: the built-in ones
+    /// (short and long weekday names, short and long month names), then
+    /// those of the user. The Sort dialog offers them and the fill handle
+    /// continues them.
     pub fn custom_lists(&self) -> Vec<Vec<String>> {
-        let locale = self.locale;
+        let mut lists = Self::builtin_lists(self.locale);
+        lists.extend(self.user_lists.iter().filter(|list| !list.is_empty()).cloned());
+        lists
+    }
+
+    /// The four lists every workbook has, which cannot be changed.
+    pub fn builtin_lists(locale: &crate::locale::Locale) -> Vec<Vec<String>> {
         // Weeks start on Sunday in the English lists, on Monday elsewhere.
         let first = if locale.id == "en" { 0 } else { 1 };
         let days = |names: &[&str; 7]| (0..7).map(|i| names[(i + first) % 7].to_string()).collect::<Vec<_>>();
@@ -2449,6 +2466,31 @@ mod tests {
         assert_eq!(lists[0], ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"]);
         assert_eq!(lists[1][6], "dimanche");
         assert_eq!(lists[2][1], "févr");
+    }
+
+    #[test]
+    fn the_lists_of_the_user_sort_and_fill() {
+        let mut w = wb(&[("A1", "South"), ("A2", "north"), ("A3", "West"), ("A4", "East"), ("C1", "north"), ("D1", "WEST"), ("E1", "Mon")]);
+        w.user_lists = vec![vec!["North".into(), "East".into(), "South".into(), "West".into()], Vec::new()];
+        let lists = w.custom_lists();
+        // After the four built-in ones; an empty list is none.
+        assert_eq!(lists.len(), 5);
+        assert_eq!(lists[4], ["North", "East", "South", "West"]);
+        let level = SortLevel {
+            custom_list: Some(lists[4].clone()),
+            ..SortLevel::values(0, false)
+        };
+        sort(&mut w, "A1:A4", vec![level], false);
+        assert_eq!(column(&w, 0, 1, 4), ["north", "East", "South", "West"]);
+        // The fill handle continues the list, around its end, in the
+        // capitals of what was typed.
+        w.autofill(0, rect("C1"), rect("C1:C6"));
+        assert_eq!(column(&w, 2, 1, 6), ["north", "east", "south", "west", "north", "east"]);
+        w.autofill(0, rect("D1"), rect("D1:D3"));
+        assert_eq!(column(&w, 3, 1, 3), ["WEST", "NORTH", "EAST"]);
+        // The built-in lists still come first.
+        w.autofill(0, rect("E1"), rect("E1:E3"));
+        assert_eq!(column(&w, 4, 1, 3), ["Mon", "Tue", "Wed"]);
     }
 
     #[test]

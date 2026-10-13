@@ -63,7 +63,10 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Barre de titre, ruban à onglets (Accueil, Insertion, Mise en page, Formules, Données, Révision, Affichage…) avec ses onglets contextuels (tableau, tableau croisé, graphique, graphique croisé, segment, chronologie, forme, image), barre de formule avec zone Nom, onglets de feuilles, barre d'état avec Moyenne / Nb / Somme et zoom.
 - Boîtes de dialogue, volets latéraux et menus contextuels d'Excel, dont Format de cellule et ses six onglets.
 - Grille de 1 048 576 lignes × 16 384 colonnes, défilement fluide, zoom 10–400 %, volets figés.
-- Préférences (⌘,) : général, affichage, modification, calcul, vérification des erreurs.
+- Préférences (⌘,) : général, affichage, modification, calcul, vérification des erreurs, correction automatique, listes personnalisées, tableaux et filtres.
+- Correction automatique pendant la saisie (liste modifiable, 2e majuscule, début de phrase, jours) ; ⌘Z rend ce qui a été tapé.
+- Listes personnalisées : celles d'Excel (jours, mois) et les vôtres, utilisées par la poignée de recopie et par le tri.
+- Le ruban suit la largeur de la fenêtre comme dans Excel : un groupe passe sur trois lignes, puis en icônes, puis en un seul bouton.
 - Fenêtre étroite : le ruban replie ses groupes un à un (boutons sans libellé, puis un seul bouton qui ouvre le groupe), dans les cinq langues.
 - Affichages personnalisés : enregistrer et rappeler lignes et colonnes masquées, filtre, mise en page, zoom et sélection.
 
@@ -72,7 +75,8 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Formules : références relatives / absolues, autres feuilles, plages colorées pendant la saisie, sélection des références à la souris ou au clavier, fermeture automatique des parenthèses.
 - Sélection à la souris et au clavier (Maj, ⌘ pour les sélections multiples, ⌘+flèches, lignes et colonnes entières), Atteindre et Sélectionner les cellules (formules, vides, antécédents…).
 - Copier / couper / coller, menu du bouton Coller et boîte Collage spécial : formules, valeurs, formats, largeurs de colonnes, opérations (ajouter, multiplier…), blancs non compris, transposer, coller avec liaison. Échange avec les autres applications en texte tabulé.
-- Rechercher et remplacer : dans la feuille ou le classeur, dans les formules ou les valeurs, casse, cellule entière, Remplacer tout en une seule annulation.
+- Rechercher et remplacer : dans la feuille ou le classeur, dans les formules ou les valeurs, casse, cellule entière, Remplacer tout en une seule annulation, Rechercher tout avec sa liste de résultats.
+- Image de cellules : Coller ▸ Image, Image liée (elle suit ses cellules, comme l'appareil photo d'Excel), Copier comme image.
 - Liens hypertexte : page web, fichier, emplacement du classeur, adresse de courrier ; clic pour suivre, création automatique à la saisie d'une adresse.
 - Poignée de recopie avec séries (nombres, dates, « Article 1 », jours, mois), double-clic pour recopier vers le bas, ⌘D / ⌘R.
 - Annuler / rétablir sur toutes les opérations.
@@ -152,7 +156,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Mise en page et impression**
 - Marges, orientation, papier, zone d'impression, sauts de page, titres à répéter, mise à l'échelle, en-têtes et pieds de page, arrière-plan de feuille.
 - Vue Mise en page et Aperçu des sauts de page ; aperçu avant impression.
-- Impression vers un fichier PDF (polices incorporées) ou vers Aperçu.
+- Impression vers une imprimante (choix de l'imprimante, copies, pages, recto verso), vers un fichier PDF (polices incorporées) ou vers Aperçu.
 
 **Structure et fichiers**
 - Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
@@ -180,19 +184,21 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) ; elle n'est pas imprimée et reste au-dessus des autres objets.
 - Scripts Office : les types ne sont pas vérifiés (une faute de frappe sur un membre n'apparaît qu'à l'exécution) ; pas encore de membres pour la mise en forme conditionnelle, la validation, les tableaux croisés, les commentaires, les formes, les images et les segments ; pas de plages à plusieurs zones ni de protection de feuille ; pas de `fetch`. L'éditeur n'a ni complétion ni recherche.
 - Classeurs avec macros : les contrôles de formulaire, les contrôles ActiveX et les feuilles de dialogue ne sont pas lus, donc pas réécrits ; un bouton affecté à une macro est perdu à l'enregistrement.
-- Préférences : les volets absents d'OpenSheet sont grisés (correction automatique, listes personnalisées, compatibilité…) ; pas de style de référence L1C1.
-- Mise en page : l'impression passe par un PDF.
+- Préférences : les volets absents d'OpenSheet sont grisés (graphique, saisie semi-automatique, enregistrement, compatibilité, sécurité, ruban) ; pas de style de référence L1C1.
+- Correction automatique : la liste de départ est courte (signes et quelques fautes courantes par langue), sans boîte d'exceptions.
+- Révision ▸ Autoriser la modification des plages : pas encore.
+- Impression : seuls les préréglages « par défaut » et « derniers utilisés » existent ; ceux de macOS ne sont pas lus.
 - @mentions : sans annuaire d'organisation, la liste propose les personnes déjà présentes dans le classeur, l'utilisateur, ou une adresse saisie en entier ; aucun message n'est envoyé à la personne mentionnée.
 - Synonymes : macOS n'en fournit qu'en anglais. Traduction : macOS 26 ou plus récent, langues téléchargées dans Réglages Système. Orthographe : pas de correction automatique ; les formes dans un groupe ou un SmartArt ne sont pas vérifiées.
 - Accessibilité : les graphiques ne sont pas contrôlés (ils n'ont pas de texte de remplacement).
 - Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
-- Rechercher et remplacer : pas de « Rechercher tout » avec sa liste de résultats.
-- Collage spécial : pas de collage en image ; un collage transposé ne reporte ni la mise en forme conditionnelle ni la validation.
+- Rechercher et remplacer : la boîte bloque la fenêtre tant qu'elle est ouverte (celle d'Excel reste à côté).
+- Collage spécial : un collage transposé ne reporte ni les commentaires ni les liens hypertexte. Image liée : sa formule ne se modifie pas dans la barre de formule.
 - Obtenir des données : fichiers texte et CSV seulement (pas de bases de données, de web ni de Power Query).
 - Sparklines : pas d'axe de dates. Plan : pas de styles automatiques ; la marge du plan n'apparaît pas en vue Mise en page.
-- Thèmes : les effets sont enregistrés mais ne changent pas le dessin ; les jeux personnalisés ne durent que la session.
+- Thèmes : les effets sont enregistrés mais ne changent pas le dessin.
 - Calcul : un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
-- Ruban : en se repliant, un groupe perd d'abord ses libellés au lieu de se réorganiser sur trois lignes comme dans Excel ; l'ordre de repli va toujours de droite à gauche.
+- Ruban : quelques grands boutons hors rangée (Trier et filtrer, Rechercher et sélectionner, Audit de formules) passent directement en icône ; les onglets contextuels se replient encore de droite à gauche.
 
 ### Vitesse du recalcul
 

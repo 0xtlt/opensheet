@@ -3,7 +3,7 @@
 //! and keeps it in the menu, under "Custom".
 
 use super::gallery::swatch_strip;
-use super::{ThemesUi, new_custom_name, set_colors, set_fonts};
+use super::{custom_sets, keep_colors, keep_fonts, new_custom_name, set_colors, set_fonts};
 use crate::app::ExcelApp;
 use crate::features::Cx;
 use crate::i18n::t;
@@ -40,21 +40,11 @@ fn typed_name(field: &Entity<TextInput>, proposed: &str, cx: &gpui::App) -> Stri
     if typed.is_empty() { proposed.to_string() } else { typed }
 }
 
-/// Keep `item` in a list of the user's own, in place of one of the same
-/// name.
-fn keep<T>(list: &mut Vec<T>, item: T, name_of: impl Fn(&T) -> &str) {
-    let name = name_of(&item).to_string();
-    match list.iter().position(|other| name_of(other).eq_ignore_ascii_case(&name)) {
-        Some(at) => list[at] = item,
-        None => list.push(item),
-    }
-}
-
 // ------------------------------------------------------------ Customize Colors
 
 pub(super) fn open_colors(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let colors = app.wb.theme().colors.clone();
-    let taken: Vec<String> = app.ext_mut::<ThemesUi>().colors.iter().map(|set| set.name.clone()).collect();
+    let taken: Vec<String> = custom_sets().colors.iter().map(|set| set.name.clone()).collect();
     let proposed = new_custom_name(&taken);
     app.open_modal(window, cx, move |modal, _, cx| CustomColors {
         name: input(cx, proposed.clone()),
@@ -77,7 +67,7 @@ impl CustomColors {
         colors.name = typed_name(&self.name, &self.proposed, cx);
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
-            keep(&mut app.ext_mut::<ThemesUi>().colors, colors.clone(), |set| &set.name);
+            keep_colors(&colors);
             set_colors(app, colors, cx);
         });
     }
@@ -180,7 +170,7 @@ fn sample_page(colors: &ThemeColors) -> gpui::Div {
 
 pub(super) fn open_fonts(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let fonts = app.wb.theme().fonts.clone();
-    let taken: Vec<String> = app.ext_mut::<ThemesUi>().fonts.iter().map(|pair| pair.name.clone()).collect();
+    let taken: Vec<String> = custom_sets().fonts.iter().map(|pair| pair.name.clone()).collect();
     let proposed = new_custom_name(&taken);
     let names: Vec<SharedString> = app.fonts.names.iter().cloned().map(SharedString::from).collect();
     let resolver = app.fonts.clone();
@@ -217,7 +207,7 @@ impl CustomFonts {
         let fonts = ThemeFonts::new(typed_name(&self.name, &self.proposed, cx), &major, &minor);
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
-            keep(&mut app.ext_mut::<ThemesUi>().fonts, fonts.clone(), |pair| &pair.name);
+            keep_fonts(&fonts);
             set_fonts(app, fonts, cx);
         });
     }

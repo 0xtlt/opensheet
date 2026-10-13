@@ -188,7 +188,7 @@ fn tile(app: &ExcelApp, index: usize, script: ScriptRef, name: String, cx: &mut 
 /// The scripts of the gallery: the user's most recent ones, then the
 /// samples, fewer of each as the window narrows.
 fn gallery(app: &ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
-    let each = match app.ribbon_level {
+    let each = match crate::ribbon_fold::level() {
         0 => 3,
         1 => 2,
         2 => 1,
