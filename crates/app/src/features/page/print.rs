@@ -1,9 +1,10 @@
 //! The Print screen (File > Print, ⌘P): a preview of the pages as they
 //! will print, beside the settings of the job. The preview paints the
-//! scenes the PDF is written from; printing hands that PDF to the system
-//! (`lp`), saves it, or opens it in Preview.
+//! scenes the PDF is written from; printing hands that PDF to a printer
+//! of the system (`printer.rs`), saves it, or opens it in Preview.
 
 use super::paper::PaperPainter;
+use super::printer::{self, Printer, Sides, Ticket, Tool};
 use super::{PageUi, change, scene, setup, show_breaks, views};
 use crate::app::ExcelApp;
 use crate::features::Cx;
@@ -19,8 +20,8 @@ use gpui::{
 use opensheet_engine::page::{MarginPreset, Margins, Orientation, PageSetup, PaperSize};
 use opensheet_engine::{Locale, Rect};
 use opensheet_print::{PrintJob, PrintPlan, PrintWhat, plan, print_pdf, render_page};
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Command;
 use std::rc::Rc;
 
 /// What the Print screen remembers from one opening to the next.
@@ -28,49 +29,47 @@ use std::rc::Rc;
 pub(crate) struct Memory {
     printer: Option<String>,
     show_margins: bool,
+    /// The settings of the last job sent to a printer ("Last Used
+    /// Settings").
+    last_used: Option<Used>,
 }
 
-/// The printers `lpstat -p -d` lists (run in the C locale), and the
-/// default one.
-pub(crate) fn parse_printers(output: &str) -> (Vec<String>, Option<String>) {
-    let mut printers = Vec::new();
-    let mut default = None;
-    for line in output.lines() {
-        if let Some(rest) = line.strip_prefix("printer ") {
-            if let Some(name) = rest.split_whitespace().next() {
-                printers.push(name.to_string());
-            }
-        } else if let Some(name) = line.strip_prefix("system default destination: ") {
-            default = Some(name.trim().to_string());
+/// The settings of a job that a preset brings back.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Used {
+    pub copies: u32,
+    pub collate: bool,
+    pub sides: Sides,
+}
+
+impl Default for Used {
+    /// "Default Settings": one copy, on one side.
+    fn default() -> Self {
+        Used {
+            copies: 1,
+            collate: true,
+            sides: Sides::One,
         }
     }
-    (printers, default)
 }
 
-fn printers() -> (Vec<String>, Option<String>) {
-    Command::new("lpstat")
-        .args(["-p", "-d"])
-        .env("LC_ALL", "C")
-        .env("LANG", "C")
-        .output()
-        .map(|out| parse_printers(&String::from_utf8_lossy(&out.stdout)))
-        .unwrap_or_default()
+/// What the system says when a job is printed and it has no printer.
+fn no_printer() -> String {
+    format!(
+        "{}\n\n{}",
+        t(
+            "To print this file, you must set up a printer.",
+            "Vous devez configurer une imprimante avant d’imprimer ce fichier."
+        ),
+        t(
+            "To set up a printer, choose Apple menu > System Settings, click Printers & Scanners, and then click the Add (+) button.",
+            "Pour configurer une imprimante, choisissez le menu Apple > Réglages Système, cliquez sur « Imprimantes et scanners », puis sur le bouton Ajouter (+)."
+        ),
+    )
 }
 
-/// The arguments of `lp` for a job.
-pub(crate) fn lp_arguments(printer: &str, copies: u32, collate: bool, title: &str, file: &str) -> Vec<String> {
-    let mut args = vec![
-        "-d".to_string(),
-        printer.to_string(),
-        "-n".to_string(),
-        copies.max(1).to_string(),
-    ];
-    if copies > 1 {
-        args.extend(["-o".to_string(), format!("collate={collate}")]);
-    }
-    args.extend(["-t".to_string(), title.to_string(), file.to_string()]);
-    args
-}
+/// The pane of System Settings where printers are added.
+const PRINTERS_PANE: &str = "x-apple.systempreferences:com.apple.Print-Scan-Settings.extension";
 
 /// The four ways of the Scaling list, as an index: no scaling, the sheet
 /// on one page, all columns on one page, all rows on one page. `None`
@@ -130,12 +129,19 @@ struct Preview {
     margins: [f64; 6],
 }
 
-struct PrintDialog {
+pub(super) struct PrintDialog {
     modal: Modal,
     painter: Rc<PaperPainter>,
-    printers: Vec<String>,
-    /// Index into `printers`; one past the end is "Save as PDF".
+    printers: Vec<Printer>,
+    /// Index into `printers` of the one chosen.
     target: usize,
+    /// Which printers print on both sides, once each has answered.
+    two_sided: HashMap<String, bool>,
+    sides: Sides,
+    /// "Default Settings" or "Last Used Settings"; `None` once a setting
+    /// was changed by hand.
+    preset: Option<usize>,
+    last_used: Option<Used>,
     copies: Entity<TextInput>,
     /// Active sheets, entire workbook or selection.
     what: usize,
@@ -184,19 +190,25 @@ pub(crate) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     }
     // A sheet that was previewed shows its page breaks from then on.
     show_breaks(app, app.sheet);
-    let (printers, default) = printers();
+    let (printers, default) = printer::printers();
     let memory = &app.ext_mut::<PageUi>().print;
+    // The printer used last, else the default one of the system.
     let wanted = memory.printer.clone().or(default);
     let target = wanted
-        .and_then(|name| printers.iter().position(|p| *p == name))
+        .and_then(|name| printers.iter().position(|p| p.name == name))
         .unwrap_or(0);
     let show_margins = memory.show_margins;
+    let last_used = memory.last_used;
     let painter = Rc::new(PaperPainter::new(cx));
     app.open_modal(window, cx, move |modal, _, cx| PrintDialog {
         modal,
         painter,
         printers,
         target,
+        two_sided: HashMap::new(),
+        sides: Sides::One,
+        preset: Some(0),
+        last_used,
         copies: widgets::number_input(cx, Some(1.0), 1.0, 999.0, 1.0),
         what: 0,
         ignore_area: false,
@@ -319,13 +331,96 @@ impl PrintDialog {
     }
 
     fn remember(&self, cx: &mut Context<Self>) {
-        let printer = self.printers.get(self.target).cloned();
+        let printer = self.printers.get(self.target).map(|printer| printer.name.clone());
         let show_margins = self.show_margins;
+        let last_used = self.last_used;
         self.modal.update_app(cx, |app, _| {
             let memory = &mut app.ext_mut::<PageUi>().print;
             memory.printer = printer;
             memory.show_margins = show_margins;
+            memory.last_used = last_used;
         });
+    }
+
+    /// The printer chosen, if the system has any.
+    fn printer(&self) -> Option<&Printer> {
+        self.printers.get(self.target)
+    }
+
+    /// Whether the printer chosen prints on both sides (false until it
+    /// has answered).
+    fn can_print_both_sides(&self) -> bool {
+        self.printer().is_some_and(|printer| self.two_sided.get(&printer.name) == Some(&true))
+    }
+
+    /// Ask the printer chosen what it can do, once, away from the window.
+    fn ask_printer(&mut self, cx: &mut Context<Self>) {
+        let Some(name) = self.printer().map(|printer| printer.name.clone()) else {
+            return;
+        };
+        if self.two_sided.contains_key(&name) {
+            return;
+        }
+        // Not asked twice while the answer is on its way.
+        self.two_sided.insert(name.clone(), false);
+        let program = Tool::Lpoptions.program();
+        let asked = cx.background_executor().spawn({
+            let name = name.clone();
+            async move { printer::two_sided(program, &name) }
+        });
+        cx.spawn(async move |this, cx| {
+            let able = asked.await;
+            this.update(cx, |this, cx| {
+                this.two_sided.insert(name, able);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(super) fn choose_printer(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.target = index.min(self.printers.len().saturating_sub(1));
+        cx.notify();
+    }
+
+    pub(super) fn set_sides(&mut self, sides: Sides, cx: &mut Context<Self>) {
+        self.sides = sides;
+        self.preset = None;
+        cx.notify();
+    }
+
+    /// Bring a preset back: the default settings, or those of the last
+    /// job.
+    pub(super) fn apply_preset(&mut self, index: usize, cx: &mut Context<Self>) {
+        let used = match index {
+            0 => Used::default(),
+            _ => match self.last_used {
+                Some(used) => used,
+                None => return,
+            },
+        };
+        self.preset = Some(index);
+        self.sides = used.sides;
+        self.collate = used.collate;
+        self.copies.update(cx, |input, cx| input.set_text(used.copies.to_string(), cx));
+        cx.notify();
+    }
+
+    /// The settings of the job as they stand.
+    fn used(&self, cx: &App) -> Used {
+        Used {
+            copies: self.copies(cx),
+            collate: self.collate,
+            sides: if self.can_print_both_sides() { self.sides } else { Sides::One },
+        }
+    }
+
+    /// "Add Printer…": the pane of System Settings where it is done.
+    fn add_printer(&mut self, cx: &mut Context<Self>) {
+        if let Err(err) = Tool::Open.run(&[PRINTERS_PANE.to_string()]) {
+            self.tell(err.to_string().into(), cx);
+        }
     }
 
     fn finish(&mut self, status: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -334,20 +429,29 @@ impl PrintDialog {
         self.modal.close(window, cx);
     }
 
-    /// The Print button: send the job to the chosen printer, or save it.
-    fn print(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let Some(printer) = self.printers.get(self.target).cloned() else {
-            self.save_pdf(&(), window, cx);
+    /// The Print button: send the job to the printer chosen. Without a
+    /// printer the system's own words say what to do.
+    pub(super) fn print(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
+        let Some(printer) = self.printer().cloned() else {
+            self.tell(no_printer().into(), cx);
             return;
         };
-        let (copies, collate) = (self.copies(cx), self.collate);
+        let used = self.used(cx);
         let Some((path, title)) = self.temp_file(cx) else {
             return;
         };
-        let arguments = lp_arguments(&printer, copies, collate, &title, &path.to_string_lossy());
-        match Command::new("lp").args(&arguments).output() {
+        let arguments = printer::lp_arguments(&Ticket {
+            printer: &printer.name,
+            copies: used.copies,
+            collate: used.collate,
+            sides: self.can_print_both_sides().then_some(used.sides),
+            title: &title,
+            file: &path.to_string_lossy(),
+        });
+        match Tool::Lp.run(&arguments) {
             Ok(out) if out.status.success() => {
-                let status = format!("{} {printer}", t("Sent to printer", "Envoyé à l'imprimante"));
+                self.last_used = Some(used);
+                let status = format!("{} {}", t("Sent to printer", "Envoyé à l'imprimante"), printer.title);
                 self.finish(status, window, cx);
             }
             Ok(out) => self.tell(String::from_utf8_lossy(&out.stderr).trim().to_string().into(), cx),
@@ -389,11 +493,12 @@ impl PrintDialog {
         .detach();
     }
 
-    fn open_in_preview(&mut self, _: &(), _: &mut Window, cx: &mut Context<Self>) {
+    fn open_in_preview(&mut self, _: &(), cx: &mut Context<Self>) {
         let Some((path, _)) = self.temp_file(cx) else {
             return;
         };
-        if let Err(err) = Command::new("open").args(["-a", "Preview"]).arg(&path).spawn() {
+        let arguments = ["-a".to_string(), "Preview".to_string(), path.to_string_lossy().into_owned()];
+        if let Err(err) = Tool::Open.run(&arguments) {
             self.tell(err.to_string().into(), cx);
         }
         self.remember(cx);
@@ -432,8 +537,22 @@ impl PrintDialog {
         };
         let wide = 290.0;
 
-        let mut targets: Vec<SharedString> = self.printers.iter().map(|name| name.replace('_', " ").into()).collect();
-        targets.push(t("Save as PDF", "Enregistrer au format PDF").into());
+        // The printers of the system, as its own print panel lists them;
+        // the last entry leads to where one is added.
+        let mut targets: Vec<SharedString> = self.printers.iter().map(|printer| printer.title.clone().into()).collect();
+        if targets.is_empty() {
+            targets.push(t("No Printer Selected", "Aucune imprimante").into());
+        }
+        let add_printer = targets.len();
+        targets.push(t("Add Printer…", "Ajouter une imprimante…").into());
+        let mut presets = names(&[t("Default Settings", "Réglages par défaut")]);
+        if self.last_used.is_some() {
+            presets.push(t("Last Used Settings", "Derniers réglages utilisés").into());
+        }
+        let both_sides = self.can_print_both_sides();
+        let row = |text: &'static str, control: AnyElement| {
+            div().flex().items_center().gap(px(8.)).child(label(text).w(px(86.))).child(control)
+        };
 
         let paper = setup.paper_size(locale);
         let mut papers: Vec<PaperSize> = PaperSize::COMMON.to_vec();
@@ -503,24 +622,57 @@ impl PrintDialog {
                     .items_center()
                     .gap(px(12.))
                     .child(
-                        Button::new("print", t("Print", "Imprimer"))
-                            .primary()
-                            .width(96.0)
-                            .disabled(nothing)
-                            .on_click(cx.listener(Self::print)),
+                        div().flex_none().debug_selector(|| "print-button".to_string()).child(
+                            Button::new("print", t("Print", "Imprimer"))
+                                .primary()
+                                .width(96.0)
+                                .disabled(nothing)
+                                .on_click(cx.listener(Self::print)),
+                        ),
                     )
                     .child(label(t("Copies:", "Copies :")))
                     .child(NumberField::new("copies", &self.copies).width(60.0)),
             )
             .child(heading(t("Printer", "Imprimante")))
             .child(
-                Select::new("target", targets, Some(self.target.min(self.printers.len())))
+                Select::new("target", targets, Some(self.target.min(add_printer.saturating_sub(1))))
                     .width(wide)
-                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                        this.target = *ix;
-                        cx.notify();
+                    .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                        if *ix == add_printer {
+                            this.add_printer(cx);
+                        } else {
+                            this.choose_printer(*ix, cx);
+                        }
                     })),
             )
+            .child(row(
+                t("Presets:", "Préréglages :"),
+                Select::new("presets", presets, self.preset)
+                    .width(wide - 94.0)
+                    .on_change(cx.listener(|this, ix: &usize, _, cx| this.apply_preset(*ix, cx)))
+                    .into_any_element(),
+            ))
+            .when(both_sides, |d| {
+                d.child(row(
+                    t("Two-Sided:", "Recto verso :"),
+                    Select::new(
+                        "sides",
+                        names(&[
+                            t("Off", "Désactivé"),
+                            t("On", "Oui"),
+                            t("On (short edge)", "Oui (bord court)"),
+                        ]),
+                        Sides::ALL.iter().position(|sides| *sides == self.sides),
+                    )
+                    .width(wide - 94.0)
+                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                        if let Some(sides) = Sides::ALL.get(*ix) {
+                            this.set_sides(*sides, cx);
+                        }
+                    }))
+                    .into_any_element(),
+                ))
+            })
             .child(heading(t("Settings", "Paramètres")))
             .child(
                 Select::new(
@@ -573,6 +725,7 @@ impl PrintDialog {
                 .width(wide)
                 .on_change(cx.listener(|this, ix: &usize, _, cx| {
                     this.collate = *ix == 0;
+                    this.preset = None;
                     cx.notify();
                 })),
             )
@@ -652,7 +805,7 @@ impl PrintDialog {
                         Button::new("open-preview", t("Open in Preview", "Ouvrir dans Aperçu"))
                             .width(wide)
                             .disabled(nothing)
-                            .on_click(cx.listener(Self::open_in_preview)),
+                            .on_click(cx.listener(|this, unit: &(), _, cx| this.open_in_preview(unit, cx))),
                     )
                     .child(
                         Button::new("save-pdf", t("Save as PDF…", "Enregistrer au format PDF…"))
@@ -846,9 +999,46 @@ impl PrintDialog {
     }
 }
 
+/// What the tests read and set without going through the lists.
+#[cfg(test)]
+impl PrintDialog {
+    pub(super) fn printer_titles(&self) -> Vec<String> {
+        self.printers.iter().map(|printer| printer.title.clone()).collect()
+    }
+
+    pub(super) fn chosen(&self) -> Option<String> {
+        self.printer().map(|printer| printer.name.clone())
+    }
+
+    pub(super) fn offers_two_sided(&self) -> bool {
+        self.can_print_both_sides()
+    }
+
+    pub(super) fn settings_now(&self, cx: &App) -> Used {
+        self.used(cx)
+    }
+
+    pub(super) fn has_last_used(&self) -> bool {
+        self.last_used.is_some()
+    }
+
+    pub(super) fn set_job(&mut self, copies: u32, pages: Option<(u32, u32)>, cx: &mut Context<Self>) {
+        self.copies.update(cx, |input, cx| input.set_text(copies.to_string(), cx));
+        let (from, to) = pages.map(|(from, to)| (from.to_string(), to.to_string())).unwrap_or_default();
+        self.from.update(cx, |input, cx| input.set_text(from, cx));
+        self.to.update(cx, |input, cx| input.set_text(to, cx));
+        cx.notify();
+    }
+
+    pub(super) fn preview_it(&mut self, cx: &mut Context<Self>) {
+        self.open_in_preview(&(), cx);
+    }
+}
+
 impl Render for PrintDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.refresh(cx);
+        self.ask_printer(cx);
         let state = self.modal.read_app(cx, |app| {
             // The settings are those of the sheet whose page is shown.
             let sheet = self
@@ -885,31 +1075,6 @@ impl Render for PrintDialog {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn printers_are_read_from_lpstat() {
-        let output = "printer HP_LaserJet_Pro is idle.  enabled since Mon Oct 12 09:00:00 2026\n\
-                      \tReady to print.\n\
-                      printer Canon_TS5000 disabled since Sun Oct 11 18:00:00 2026 -\n\
-                      \treason unknown\n\
-                      system default destination: HP_LaserJet_Pro\n";
-        let (printers, default) = parse_printers(output);
-        assert_eq!(printers, vec!["HP_LaserJet_Pro", "Canon_TS5000"]);
-        assert_eq!(default.as_deref(), Some("HP_LaserJet_Pro"));
-        assert_eq!(parse_printers("no system default destination\n"), (Vec::new(), None));
-    }
-
-    #[test]
-    fn lp_gets_the_job() {
-        assert_eq!(
-            lp_arguments("HP_LaserJet_Pro", 1, true, "Budget", "/tmp/Budget.pdf"),
-            vec!["-d", "HP_LaserJet_Pro", "-n", "1", "-t", "Budget", "/tmp/Budget.pdf"]
-        );
-        assert_eq!(
-            lp_arguments("P", 3, false, "B", "f.pdf"),
-            vec!["-d", "P", "-n", "3", "-o", "collate=false", "-t", "B", "f.pdf"]
-        );
-    }
 
     #[test]
     fn scaling_presets() {

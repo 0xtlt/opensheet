@@ -17,6 +17,9 @@
 mod background;
 mod paper;
 mod print;
+#[cfg(test)]
+mod print_tests;
+mod printer;
 mod scene;
 mod setup;
 mod views;
