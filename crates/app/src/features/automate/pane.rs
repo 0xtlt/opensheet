@@ -235,7 +235,7 @@ impl CodeEditorPane {
         let (save_pane, discard_pane) = (pane.clone(), pane);
         let alert = Alert::new(
             "OpenSheet",
-            t("Do you want to save the changes you made to “{}”?", "Voulez-vous enregistrer les modifications apportées à « {} » ?").replace("{}", &name),
+            t("Want to save your changes to '{}'?", "Voulez-vous enregistrer les modifications que vous avez apportées à « {} » ?").replace("{}", &name),
         )
         .warning()
         .button(t("Save", "Enregistrer"), move |_, window, cx| {
@@ -575,7 +575,7 @@ impl CodeEditorPane {
         let target = name.to_string();
         let alert = Alert::new(
             t("Delete Script", "Supprimer le script"),
-            t("Are you sure you want to delete “{}”?", "Voulez-vous vraiment supprimer « {} » ?").replace("{}", name),
+            t("Are you sure you want to delete '{}'?", "Êtes-vous sûr de vouloir supprimer « {} » ?").replace("{}", name),
         )
         .warning()
         .button(t("Delete", "Supprimer"), move |_, _, cx| {
