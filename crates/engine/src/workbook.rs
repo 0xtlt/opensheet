@@ -125,6 +125,9 @@ pub struct Sheet {
     /// The picture repeated behind the cells (Page Layout ▸ Background).
     /// It is shown on screen only: a background is not printed.
     pub background: Option<crate::drawing::Picture>,
+    /// The name the VBA project of the workbook knows this sheet by, see
+    /// `vba.rs`.
+    pub code_name: Option<String>,
 }
 
 impl Sheet {
@@ -172,6 +175,7 @@ impl Sheet {
             outline: crate::outline::Outline::default(),
             sparklines: Vec::new(),
             background: None,
+            code_name: None,
         }
     }
 
@@ -460,6 +464,8 @@ pub struct Workbook {
     /// Calculation settings, the dependency graph and what changed since
     /// the last calculation, see `recalc.rs`.
     pub(crate) calc: crate::recalc::CalcState,
+    /// The VBA project of the workbook, kept as it was read, see `vba.rs`.
+    pub vba: crate::vba::Macros,
     undo_stack: Vec<UndoEntry>,
     redo_stack: Vec<UndoEntry>,
     pending: Vec<Change>,
@@ -482,6 +488,7 @@ impl Workbook {
             generation: 0,
             caches: crate::features::Caches::default(),
             calc: crate::recalc::CalcState::default(),
+            vba: crate::vba::Macros::default(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             pending: Vec::new(),

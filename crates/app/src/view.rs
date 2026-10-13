@@ -1298,6 +1298,8 @@ impl Render for ExcelApp {
         let titlebar = self.render_titlebar(window, cx).into_any_element();
         let tabs = self.render_ribbon_tabs(window, cx).into_any_element();
         let ribbon = self.render_ribbon(window, cx).into_any_element();
+        // A workbook that came with macros says so under the ribbon.
+        let message_bar = features::automate::message_bar(self, cx);
         let formula_bar = self
             .show_formula_bar
             .then(|| self.render_formula_bar(cx).into_any_element());
@@ -1337,7 +1339,7 @@ impl Render for ExcelApp {
             )
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.pane_resize_move(ev, cx)))
             .when(!modal, |d| {
-                let d = features::outline::key_actions(d, cx);
+                let d = features::automate::key_actions(features::outline::key_actions(d, cx), cx);
                 let d = features::data_tools::key_actions(features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx), cx);
                 let d = features::proofing::key_actions(d, cx);
                 let d = features::help::key_actions(features::share::key_actions(d, cx), cx);
@@ -1390,6 +1392,7 @@ impl Render for ExcelApp {
             .child(titlebar)
             .child(tabs)
             .child(ribbon)
+            .children(message_bar)
             .children(formula_bar)
             .child(
                 div()

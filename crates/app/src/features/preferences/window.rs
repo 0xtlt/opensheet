@@ -374,7 +374,53 @@ impl PreferencesWindow {
                         NumberField::new("prefs-sheets", &self.sheets).width(70.0),
                     )),
             )
+            .child(
+                // Where the scripts of the Automate tab are kept.
+                GroupBox::new(t("Office Scripts", "Scripts Office"))
+                    .child(row(
+                        t("Scripts folder:", "Dossier des scripts :"),
+                        div()
+                            .w(px(240.))
+                            .truncate()
+                            .text_color(c(theme::TEXT_MUTED))
+                            .child(crate::features::automate::scripts_folder().to_string_lossy().to_string()),
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(px(8.))
+                            .child(
+                                Button::new("prefs-scripts-default", t("Use Default", "Par défaut"))
+                                    .disabled(s.scripts_folder.is_empty())
+                                    .on_click(cx.listener(|this, _, _, cx| this.set_scripts_folder(None, cx))),
+                            )
+                            .child(Button::new("prefs-scripts-choose", t("Choose…", "Choisir…")).on_click(cx.listener(|this, _, _, cx| this.choose_scripts_folder(cx)))),
+                    ),
+            )
             .into_any_element()
+    }
+
+    /// Keep the scripts in another folder (`None`: the application's own).
+    pub(super) fn set_scripts_folder(&mut self, folder: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+        let text = folder.map(|folder| folder.to_string_lossy().to_string()).unwrap_or_default();
+        self.set(cx, |settings| settings.scripts_folder = text.clone());
+    }
+
+    /// Ask for the folder of the scripts.
+    fn choose_scripts_folder(&mut self, cx: &mut Context<Self>) {
+        let paths = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: None,
+        });
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(Some(paths))) = paths.await {
+                this.update(cx, |this, cx| this.set_scripts_folder(paths.into_iter().next(), cx)).ok();
+            }
+        })
+        .detach();
     }
 
     fn render_view(&self, cx: &mut Context<Self>) -> AnyElement {

@@ -901,8 +901,10 @@ impl SheetWriter<'_> {
         // filterMode: rows are hidden by an Advanced Filter.
         let filter_mode = sheet.advanced_filter.is_some();
         let outline = super::outline::needs_sheet_pr(sheet);
-        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode || outline {
-            x.push_str(if filter_mode { "<sheetPr filterMode=\"1\">" } else { "<sheetPr>" });
+        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode || outline || sheet.code_name.is_some() {
+            x.push_str("<sheetPr");
+            super::vba::push_code_name(&mut x, sheet.code_name.as_deref());
+            x.push_str(if filter_mode { " filterMode=\"1\">" } else { ">" });
             if let Some(color) = sheet.tab_color {
                 push_rgb(&mut x, "tabColor", color);
             }
@@ -988,7 +990,9 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
     // workbookProtection, bookViews, sheets, functionGroups,
     // externalReferences, definedNames, calcPr, oleSize,
     // customWorkbookViews, pivotCaches, ..., extLst.
-    x.push_str("<workbookPr/>");
+    x.push_str("<workbookPr");
+    super::vba::push_code_name(&mut x, wb.vba.workbook_code_name.as_deref());
+    x.push_str("/>");
     protection::write_workbook(&mut x, &wb.protection);
     x.push_str("<bookViews><workbookView xWindow=\"0\" yWindow=\"0\" windowWidth=\"28800\" windowHeight=\"17600\"/></bookViews>");
     x.push_str("<sheets>");
@@ -1090,7 +1094,7 @@ const METADATA_XML: &str = concat!(
 pub(crate) fn write_workbook<W: Write + Seek>(
     wb: &Workbook,
     out: W,
-    macro_enabled: bool,
+    kind: super::vba::PackageKind,
 ) -> Result<W> {
     let styles = StyleBook::build(wb);
     let mut strings = SharedStrings::default();
@@ -1112,7 +1116,11 @@ pub(crate) fn write_workbook<W: Write + Seek>(
     let dynamic_arrays = writer.dynamic_arrays;
     let sheet_count = sheets.len();
     let mut drawings = drawings(wb);
-    let extras = Extras::of(wb, &mut drawings, &mut dxfs);
+    let mut extras = Extras::of(wb, &mut drawings, &mut dxfs);
+    // The VBA project goes into the kinds of file that may hold one.
+    if kind.keeps_macros() {
+        super::vba::add_parts(wb, &mut extras);
+    }
 
     let mut content_types = String::from(XML_DECL);
     content_types
@@ -1131,14 +1139,7 @@ pub(crate) fn write_workbook<W: Write + Seek>(
             "<Override PartName=\"{part}\" ContentType=\"{content_type}\"/>"
         );
     };
-    if macro_enabled {
-        override_part(
-            "/xl/workbook.xml",
-            "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
-        );
-    } else {
-        override_part("/xl/workbook.xml", &format!("{CT_SHEET}.sheet.main+xml"));
-    }
+    override_part("/xl/workbook.xml", kind.content_type());
     for i in 1..=sheet_count {
         override_part(
             &format!("/xl/worksheets/sheet{i}.xml"),

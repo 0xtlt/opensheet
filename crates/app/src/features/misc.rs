@@ -1,12 +1,11 @@
 //! Commands that belong to no feature module of their own.
 //!
-//! Two kinds live here. The tools around formulas, which are written (each
-//! in a file of `misc/`): Go To and Go To Special, Insert Function and
-//! Function Arguments, formula auditing (Show Formulas, tracer arrows,
-//! Error Checking, Evaluate Formula, the Watch Window) and the Calculation
-//! group. And the commands of the ribbon nobody wrote yet (sharing,
-//! proofing, links, ...): they say they are not
-//! available; a feature that takes one over moves it to its own module.
+//! The tools around formulas (each in a file of `misc/`): Go To and Go To
+//! Special, Insert Function and Function Arguments, formula auditing (Show
+//! Formulas, tracer arrows, Error Checking, Evaluate Formula, the Watch
+//! Window) and the Calculation group. The placeholders of the commands
+//! nobody had written are gone: each one now lives in the module of its
+//! feature.
 
 mod audit;
 mod calc;
@@ -34,7 +33,7 @@ use opensheet_engine::protect::Action;
 pub struct Misc;
 
 commands! {
-    /// The formula tools, and the ribbon commands without a home.
+    /// The formula tools.
     pub enum Cmd {
         // Home
         GoTo = "", t("Go To…", "Atteindre…");
@@ -60,39 +59,6 @@ commands! {
         CalcManual = "", t("Manual", "Manuel");
         CalcNow = "misc-calc-now", t("Calculate Now", "Calculer maintenant");
         CalcSheet = "misc-calc-sheet", t("Calculate Sheet", "Calculer la feuille");
-        // Automate
-        NewScript = "function", t("New Script", "Nouveau script");
-        AllScripts = "book", t("All Scripts", "Tous les scripts");
-    }
-}
-
-impl Cmd {
-    /// The commands that are written.
-    fn is_formula_tool(self) -> bool {
-        use Cmd::*;
-        matches!(
-            self,
-            GoTo | GoToSpecial
-                | InsertFunction
-                | TracePrecedents
-                | TraceDependents
-                | RemoveArrowsMenu
-                | RemoveArrows
-                | RemovePrecedentArrows
-                | RemoveDependentArrows
-                | ShowFormulas
-                | ErrorCheckingMenu
-                | ErrorChecking
-                | TraceError
-                | EvaluateFormula
-                | WatchWindow
-                | CalcOptions
-                | CalcAutomatic
-                | CalcAutomaticExceptTables
-                | CalcManual
-                | CalcNow
-                | CalcSheet
-        )
     }
 }
 
@@ -106,10 +72,6 @@ impl Command for Cmd {
     }
 
     fn run(self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-        if !self.is_formula_tool() {
-            app.not_implemented(self.label(), cx);
-            return;
-        }
         // Insert Function works on the formula being typed; the others
         // work on the sheet, once the entry in progress is stored. Menus
         // only open: their entries come back here.
@@ -167,7 +129,6 @@ impl Command for Cmd {
                 calc::calculate_sheet(app, app.sheet);
                 app.refresh(cx);
             }
-            _ => {}
         }
     }
 
