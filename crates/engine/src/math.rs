@@ -781,7 +781,7 @@ impl Structure {
     pub fn templates(self) -> &'static [&'static str] {
         match self {
             Structure::Fraction => &["⬚/⬚", "⬚¦⬚", "dy/dx", "Δy/Δx", "∂y/∂x", "δy/δx", "π/2"],
-            Structure::Script => &["⬚^⬚", "⬚_⬚", "⬚_⬚^⬚", "x_(y^2)", "e^(-iωt)", "x^2", "〖_1^n〗Y"],
+            Structure::Script => &["⬚^⬚", "⬚_⬚", "⬚_⬚^⬚", "x_(y^2)", "e^(-iωt)", "x^2"],
             Structure::Radical => &["√⬚", "√(⬚&⬚)", "√(2&⬚)", "√(3&⬚)", "(-b±√(b^2-4ac))/2a", "√(a^2+b^2)"],
             Structure::Integral => &["∫▒⬚", "∫_⬚^⬚▒⬚", "∬▒⬚", "∬_⬚^⬚▒⬚", "∭▒⬚", "∮▒⬚", "∮_⬚^⬚▒⬚", "dx", "dy", "dθ"],
             Structure::LargeOperator => &["∑▒⬚", "∑_⬚^⬚▒⬚", "∑_⬚▒⬚", "∏▒⬚", "∏_⬚^⬚▒⬚", "∐_⬚^⬚▒⬚", "⋃_⬚^⬚▒⬚", "⋂_⬚^⬚▒⬚", "⋁_⬚^⬚▒⬚", "⋀_⬚^⬚▒⬚", "∑_(k=0)^n▒〖(n¦k)〗"],
