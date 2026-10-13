@@ -8,9 +8,10 @@
 //! stay numbers and dates and a formula is parsed again; one that no
 //! longer parses is refused and nothing is changed.
 
+use crate::ast::Expr;
 use crate::parser::ParseError;
 use crate::protect::Action;
-use crate::refs::Rect;
+use crate::refs::{Rect, col_to_letters};
 use crate::workbook::Workbook;
 
 /// What a search reads in each cell (the "Look in" box).
@@ -69,6 +70,22 @@ pub struct BrokenFormula {
     /// The text the cell would have held.
     pub text: String,
     pub error: ParseError,
+}
+
+/// One line of the list Find All shows: where the cell is and what it
+/// holds, as Excel's columns Sheet, Name, Cell, Value and Formula read.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Found {
+    pub place: Place,
+    pub sheet: String,
+    /// The defined name that stands for exactly this cell, if there is one.
+    pub name: String,
+    /// The cell as an absolute reference (`$B$4`).
+    pub cell: String,
+    /// What the cell shows.
+    pub value: String,
+    /// Its formula, when it holds one that may be read.
+    pub formula: String,
 }
 
 // ---- patterns ---------------------------------------------------------------
@@ -333,6 +350,45 @@ impl Workbook {
             }
         }
         out
+    }
+
+    /// The defined name that stands for one cell and nothing else: the
+    /// first in the order of the Name Manager.
+    fn name_of_cell(&self, place: Place) -> Option<&str> {
+        let (sheet, row, col) = place;
+        self.all_names().into_iter().find_map(|(scope, def)| {
+            let mut expr = def.expr_at(row, col);
+            while let Expr::Paren(inner) = expr {
+                expr = *inner;
+            }
+            let Expr::Ref(r) = expr else {
+                return None;
+            };
+            let on = match (&r.sheet, scope) {
+                (Some(name), _) => self.sheet_index(name)?,
+                (None, crate::names::NameScope::Sheet(own)) => own,
+                (None, crate::names::NameScope::Workbook) => sheet,
+            };
+            (on == sheet && r.rect() == Rect::cell(row, col)).then_some(def.name.as_str())
+        })
+    }
+
+    /// A cell as the list of Find All describes it.
+    pub fn found(&self, place: Place) -> Found {
+        let (sheet, row, col) = place;
+        let formula = match self.formula_text(sheet, row, col) {
+            // A formula the protection of its sheet hides stays hidden.
+            Some(_) => self.formula_bar_text(sheet, row, col),
+            None => String::new(),
+        };
+        Found {
+            place,
+            sheet: self.sheets.get(sheet).map(|sh| sh.name.to_string()).unwrap_or_default(),
+            name: self.name_of_cell(place).unwrap_or_default().to_string(),
+            cell: format!("${}${}", col_to_letters(col), row + 1),
+            value: self.display_text(sheet, row, col).text,
+            formula,
+        }
     }
 
     /// Next cell after `from` (reading order, wrapping) whose text matches.
@@ -606,6 +662,21 @@ mod tests {
         assert_eq!(w.find_from(&everywhere, (0, 8, 2), false), Some((1, 3, 3)));
         assert_eq!(w.find_from(&everywhere, (1, 3, 3), false), Some((0, 0, 0)));
         assert_eq!(w.find_from(&everywhere, (0, 0, 0), true), Some((1, 3, 3)));
+    }
+
+    #[test]
+    fn find_all_describes_each_cell() {
+        let mut w = wb(&[("A1", "12.5"), ("B4", "=A1*2"), ("C2", "tea")]);
+        let total = crate::parser::parse_formula("Sheet1!$B$4", w.locale).unwrap();
+        w.add_name(crate::names::NameScope::Workbook, "Total", total, "").unwrap();
+        w.commit("setup");
+        let found = w.found((0, 3, 1));
+        assert_eq!(
+            (found.sheet.as_str(), found.name.as_str(), found.cell.as_str(), found.value.as_str(), found.formula.as_str()),
+            ("Sheet1", "Total", "$B$4", "25", "=A1*2")
+        );
+        let plain = w.found((0, 1, 2));
+        assert_eq!((plain.name.as_str(), plain.cell.as_str(), plain.value.as_str(), plain.formula.as_str()), ("", "$C$2", "tea", ""));
     }
 
     #[test]

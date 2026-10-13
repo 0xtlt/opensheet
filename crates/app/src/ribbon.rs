@@ -913,9 +913,27 @@ impl ExcelApp {
                     self.labeled("rb-cut", "cut", t("Cut", "Couper"), false, false, cx, |this, _, cx| {
                         this.copy(true, cx)
                     }),
-                    self.labeled("rb-copy", "copy", t("Copy", "Copier"), false, false, cx, |this, _, cx| {
-                        this.copy(false, cx)
-                    }),
+                    // A split button like Paste: the button copies, its
+                    // arrow opens Copy and Copy as Picture.
+                    div()
+                        .relative()
+                        .child(self.labeled("rb-copy", "copy", t("Copy", "Copier"), true, false, cx, |this, _, cx| {
+                            this.copy(false, cx)
+                        }))
+                        .child(
+                            div()
+                                .id("rb-copy-menu")
+                                .absolute()
+                                .right_0()
+                                .top_0()
+                                .h_full()
+                                .w(px(14.))
+                                .occlude()
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.run_from("rb-copy", edit_tools::Cmd::CopyMenu, window, cx)
+                                })),
+                        )
+                        .into_any_element(),
                     self.labeled(
                         "rb-painter",
                         "brush",

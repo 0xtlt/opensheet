@@ -36,7 +36,14 @@ pub(crate) struct PageJob<'a> {
     pub hf: HfContext<'a>,
     /// The first page the sheet prints (it may have a header of its own).
     pub first_of_sheet: bool,
+    /// Colour and width (in points at 100 %) of the gridlines.
+    pub gridline: (Color, f64),
 }
+
+/// The gridlines of a printed page: thin and black.
+pub(crate) const PRINTED_GRIDLINE: (Color, f64) = (Color::BLACK, GRIDLINE_WIDTH);
+/// The gridlines of a window: one pixel of pale grey.
+pub(crate) const SCREEN_GRIDLINE: (Color, f64) = (Color(0xE1E1E1), 0.75);
 
 /// Widths of printed lines in points at a scale of 100 %.
 const GRIDLINE_WIDTH: f64 = 0.25;
@@ -775,7 +782,8 @@ impl<'a> Renderer<'a> {
         // Gridlines, where no border takes their place: not inside merged
         // areas, not across text flowing over its neighbours.
         if self.setup.gridlines && !self.setup.draft {
-            let stroke = || Stroke::solid(Color::BLACK, GRIDLINE_WIDTH * self.scale);
+            let (colour, width) = self.job.gridline;
+            let stroke = || Stroke::solid(self.ink(colour), width * self.scale);
             for i in 0..=nr {
                 let y = if i < nr { rows[i].pos } else { bounds.bottom() };
                 let mut start: Option<usize> = None;
@@ -1267,6 +1275,18 @@ fn decorate(
 
 /// Draw a page.
 pub(crate) fn render(job: &PageJob) -> Scene {
+    match job.wb.sheets.get(job.sheet) {
+        Some(sh) => render_as(job, &sh.page),
+        None => Scene {
+            size: job.pagination.paper,
+            ops: Vec::new(),
+        },
+    }
+}
+
+/// Draw a page with a page setup that need not be the sheet's own: a
+/// picture of cells is a page without margins, headings or header.
+pub(crate) fn render_as(job: &PageJob, setup: &PageSetup) -> Scene {
     let size = job.pagination.paper;
     let mut canvas = Canvas::new(job.fonts);
     let Some(sh) = job.wb.sheets.get(job.sheet) else {
@@ -1275,11 +1295,11 @@ pub(crate) fn render(job: &PageJob) -> Scene {
     let renderer = Renderer {
         job,
         sh,
-        setup: &sh.page,
+        setup,
         layout: job.pagination.layout(sh, job.page),
         scale: job.pagination.scale(),
     };
-    canvas.set_black_and_white(sh.page.black_and_white);
+    canvas.set_black_and_white(setup.black_and_white);
     let layout = &renderer.layout;
     let (title_cols, own_cols) = layout.cols.split_at(layout.title_cols);
     let (title_rows, own_rows) = layout.rows.split_at(layout.title_rows);
@@ -1289,7 +1309,7 @@ pub(crate) fn render(job: &PageJob) -> Scene {
         }
     }
     renderer.draw_headings(&mut canvas);
-    if !sh.page.draft {
+    if !setup.draft {
         renderer.draw_objects(&mut canvas);
     }
     renderer.draw_notes(&mut canvas);

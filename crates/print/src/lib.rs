@@ -19,18 +19,23 @@ pub mod pdf;
 mod render;
 mod scene;
 mod std14;
+mod svg;
 mod ttf;
 
 pub use fonts::{Face, FontDb};
 pub use image::{Image, Pixels};
 pub use pdf::DocInfo;
 pub use scene::{Canvas, LineCap, LineJoin, Op, Paint, Path, RectF, Scene, Segment, Stroke, TextStyle};
+pub use svg::{png_file, scene_svg};
 
 use opensheet_engine::chart::Chart;
 use opensheet_engine::condfmt::Adornment;
 use opensheet_engine::datetime;
 use opensheet_engine::drawing::Drawing;
-use opensheet_engine::page::{HfContext, Page, PaginateOptions, Pagination, paginate};
+use opensheet_engine::page::{
+    HeaderFooter, HfContext, PX_TO_PT, Page, PaginateOptions, Pagination, PrintComments, PrintErrors, axis_offset,
+    paginate,
+};
 use opensheet_engine::refs::Rect;
 use opensheet_engine::workbook::Workbook;
 
@@ -306,12 +311,105 @@ pub fn render_page(wb: &Workbook, job: &PrintJob, plan: &PrintPlan, index: usize
             locale: wb.locale,
         },
         first_of_sheet: planned.page == 0 && !planned.notes,
+        gridline: render::PRINTED_GRIDLINE,
     };
     Some(if planned.notes {
         render::render_notes(&page_job, part.notes.get(planned.page)?)
     } else {
         render::render(&page_job)
     })
+}
+
+/// How a picture of cells is drawn (Copy as Picture, Paste ▸ Picture).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RangeLook {
+    /// "As shown on screen": in colour, with the gridlines when the
+    /// window shows them.
+    Screen { gridlines: bool },
+    /// "As shown when printed": what the page setup of the sheet prints
+    /// (its gridlines, black and white, draft quality, how errors print).
+    Printed,
+}
+
+/// Draw a range of cells and what floats over it, alone on a page of its
+/// own size: no margins, no headings, no header or footer. The scene is
+/// in points, 0.75 for each pixel of the sheet at 100 %. `None` when the
+/// range shows nothing (every row or column of it is hidden).
+pub fn render_range(
+    wb: &Workbook,
+    sheet: usize,
+    range: Rect,
+    look: RangeLook,
+    fonts: Option<&FontDb>,
+    painter: Option<&dyn ObjectPainter>,
+) -> Option<Scene> {
+    let sh = wb.sheets.get(sheet)?;
+    let px = (
+        axis_offset(sh, false, range.c1 + 1) - axis_offset(sh, false, range.c0),
+        axis_offset(sh, true, range.r1 + 1) - axis_offset(sh, true, range.r0),
+    );
+    if px.0 <= 0.0 || px.1 <= 0.0 {
+        return None;
+    }
+    let size = (px.0 * PX_TO_PT, px.1 * PX_TO_PT);
+    let mut setup = sh.page.clone();
+    setup.headings = false;
+    setup.header_footer = HeaderFooter::default();
+    match look {
+        RangeLook::Screen { gridlines } => {
+            setup.gridlines = gridlines;
+            setup.black_and_white = false;
+            setup.draft = false;
+            setup.errors = PrintErrors::default();
+            setup.comments = PrintComments::AsDisplayed;
+        }
+        // Notes that print at the end of the sheet are not on its cells.
+        RangeLook::Printed => {}
+    }
+    let page = Page {
+        index: 0,
+        number: 1,
+        range: 0,
+        col_band: 0,
+        row_band: 0,
+        rows: (range.r0, range.r1),
+        cols: (range.c0, range.c1),
+        title_rows: None,
+        title_cols: None,
+        origin: (0.0, 0.0),
+        size,
+    };
+    let pagination = Pagination {
+        paper: size,
+        printable: (0.0, 0.0, size.0, size.1),
+        scale_percent: 100,
+        heading_size: (0.0, 0.0),
+        ranges: Vec::new(),
+        pages: vec![page.clone()],
+    };
+    let job = render::PageJob {
+        wb,
+        sheet,
+        pagination: &pagination,
+        page: &page,
+        fonts: fonts.unwrap_or_else(|| FontDb::system()),
+        painter,
+        hf: HfContext {
+            page: 1,
+            pages: 1,
+            now: datetime::now_serial(),
+            file_name: "",
+            file_path: "",
+            sheet_name: &sh.name,
+            locale: wb.locale,
+        },
+        first_of_sheet: true,
+        gridline: match look {
+            RangeLook::Screen { .. } => render::SCREEN_GRIDLINE,
+            RangeLook::Printed => render::PRINTED_GRIDLINE,
+        },
+    };
+    Some(render::render_as(&job, &setup))
 }
 
 /// Print a job as a PDF file. A job with nothing to print gives a PDF
