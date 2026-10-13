@@ -453,6 +453,7 @@ fn format_shape(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: &
         theme.resolve_shape(shape);
     });
     fit_to_text(app, id, cx);
+    super::equation::fit(app, id, cx);
     app.commit(label, cx);
     true
 }

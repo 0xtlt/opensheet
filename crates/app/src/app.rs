@@ -1752,6 +1752,13 @@ impl ExcelApp {
     }
 
     pub fn set_font_size(&mut self, pt: f32, cx: &mut Context<Self>) {
+        // A selected shape takes the size for its own text.
+        if let Some(id) = self.object_sel {
+            let size = pt.clamp(1.0, 409.0);
+            if features::all()[id.owner].object_style(self, id.id, t("Font Size", "Taille de police"), &move |s: &mut Style| s.font.set_size_pt(size), cx) {
+                return;
+            }
+        }
         if !self.may_all(Intent::FormatCells, cx) {
             return;
         }

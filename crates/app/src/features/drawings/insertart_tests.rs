@@ -529,3 +529,106 @@ fn a_graphic_filled_with_a_theme_colour_follows_the_theme(cx: &mut TestAppContex
     redraw(cx);
     assert!(decoded(&drawing(&app, cx, id).as_picture().unwrap().data).pixels().any(|pixel| pixel.0 == rgb(accent)));
 }
+
+// ---------------------------------------------------------------- equations
+
+use opensheet_engine::math::{BUILT_IN, Equation, Structure};
+
+fn equation_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> (String, Equation) {
+    let shape = drawing(app, cx, id).as_shape().expect("a shape").clone();
+    (shape.text, shape.math.expect("an equation"))
+}
+
+#[gpui::test]
+fn a_built_in_equation_is_inserted_and_shown(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    // Insert ▸ Equation opens the gallery of the built-in equations.
+    run(&app, cx, Cmd::Equation);
+    assert!(app.update(cx, |app, _| app.popup.take().is_some()));
+    let quadratic = BUILT_IN[5].1;
+    let id = app.update_in(cx, |app, window, cx| equation::insert(app, quadratic, window, cx)).expect("an equation");
+    redraw(cx);
+    let (text, math) = equation_of(&app, cx, id);
+    assert_eq!((text.as_str(), &math), (quadratic, &Equation::parse(quadratic)));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Insert Equation"));
+    // A text box without fill, as large as its equation.
+    let inserted = drawing(&app, cx, id);
+    let shape = inserted.as_shape().unwrap();
+    assert!(shape.text_box && shape.fill.is_none() && shape.outline.is_none());
+    assert!(inserted.size.0 >= 180.0 && inserted.size.1 > 40.0, "{:?}", inserted.size);
+    // Selected, with the Equation tab beside Shape Format.
+    let tabs: Vec<&str> = app.update(cx, |app, _| crate::features::context_tabs(app).into_iter().map(|(_, tab)| tab.title).collect());
+    assert_eq!(tabs, vec!["Shape Format", "Equation"]);
+    assert_eq!(app.update(cx, |app, _| app.context_tab), Some(EQUATION_TAB));
+    // Linear and Professional switch how it is shown.
+    assert!(app.update(cx, |app, _| Cmd::EqProfessional.checked(app) && !Cmd::EqLinear.checked(app)));
+    run(&app, cx, Cmd::EqLinear);
+    assert!(equation_of(&app, cx, id).1.linear && app.update(cx, |app, _| Cmd::EqLinear.checked(app)));
+    assert!(drawing(&app, cx, id).size.1 < inserted.size.1);
+    run(&app, cx, Cmd::EqProfessional);
+    assert!(!equation_of(&app, cx, id).1.linear);
+    // Every gallery of the tab opens and draws its structures.
+    let galleries = [Cmd::EqSymbols, Cmd::EqFraction, Cmd::EqScript, Cmd::EqRadical, Cmd::EqIntegral, Cmd::EqLargeOperator, Cmd::EqBracket, Cmd::EqFunction, Cmd::EqAccent, Cmd::EqLimit, Cmd::EqOperator, Cmd::EqMatrix];
+    for cmd in galleries {
+        assert!(app.update(cx, |app, _| cmd.enabled(app)), "{cmd:?}");
+        run(&app, cx, cmd);
+        assert!(app.update(cx, |app, _| app.popup.take().is_some()), "{cmd:?}");
+    }
+    assert_eq!(galleries[1..].iter().filter_map(|cmd| equation::structure_of(*cmd)).collect::<Vec<_>>(), Structure::ALL.to_vec());
+    // A structure chosen while the shape is only selected goes to the
+    // end of the equation, a symbol too.
+    app.update_in(cx, |app, window, cx| {
+        assert!(equation::insert_text(app, "+", window, cx));
+        assert!(equation::insert_text(app, Structure::Fraction.templates()[0], window, cx));
+    });
+    assert_eq!(equation_of(&app, cx, id).0, format!("{quadratic}+⬚/⬚"));
+    undo(&app, cx);
+    undo(&app, cx);
+    // The size of the letters is the shape's: Home ▸ Font Size.
+    app.update(cx, |app, cx| app.set_font_size(24.0, cx));
+    redraw(cx);
+    let larger = drawing(&app, cx, id);
+    assert_eq!(larger.as_shape().unwrap().font.size_pt(), 24.0);
+    assert!(larger.size.1 > inserted.size.1 * 1.5, "{:?}", larger.size);
+    // On another shape the commands of the tab are greyed out.
+    app.update(cx, |app, cx| {
+        let other = app.wb.add_shape(app.sheet, ShapeTool::Rectangle, Frame::new(10.0, 10.0, 80.0, 40.0)).unwrap();
+        app.commit("setup", cx);
+        app.select_object(Some(object_id(&Drawings, other)), cx);
+        assert!(!Cmd::EqFraction.enabled(app) && !Cmd::EqLinear.enabled(app) && Cmd::Equation.enabled(app));
+    });
+}
+
+#[gpui::test]
+fn an_equation_is_typed_in_the_linear_format(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    // A new equation is empty and ready to be typed in.
+    let id = app.update_in(cx, |app, window, cx| equation::insert(app, "", window, cx)).expect("an equation");
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| editing_text(app)), Some(id));
+    cx.simulate_input("x=\\alpha^2/b");
+    redraw(cx);
+    // As it is typed, it is built up under its shape.
+    let preview = app.update(cx, |app, _| app.ext::<equation::Typing>().and_then(|typing| typing.preview()));
+    assert_eq!(preview, Some(Equation::parse("x=α^2/b")));
+    // A structure of the galleries goes where the caret is.
+    app.update_in(cx, |app, window, cx| assert!(equation::insert_text(app, "+√⬚", window, cx)));
+    redraw(cx);
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    let (text, math) = equation_of(&app, cx, id);
+    assert_eq!(text, "x=α^2/b+√⬚");
+    assert_eq!(math, Equation::parse("x=α^2/b+√⬚"));
+    assert!(app.update(cx, |app, _| app.ext::<equation::Typing>().and_then(|typing| typing.preview()).is_none()));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Typing"));
+    // Typed over again.
+    app.update_in(cx, |app, window, cx| begin_text_edit(app, id, TextStart::All, window, cx));
+    cx.simulate_input("a^2+b^2=c^2");
+    cx.simulate_keystrokes("escape");
+    assert_eq!(equation_of(&app, cx, id).1, Equation::parse(BUILT_IN[4].1));
+    undo(&app, cx);
+    assert_eq!(equation_of(&app, cx, id).0, "x=α^2/b+√⬚");
+    undo(&app, cx);
+    undo(&app, cx);
+    assert!(ids(&app, cx).is_empty());
+}

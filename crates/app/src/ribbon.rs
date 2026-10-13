@@ -1487,7 +1487,7 @@ impl ExcelApp {
             group(
                 t("Symbols", "Symboles"),
                 row(vec![
-                    self.cmd_large("in-equation", misc::Cmd::Equation, false, cx),
+                    self.cmd_large("in-equation", drawings::Cmd::Equation, false, cx),
                     self.cmd_large("in-symbol", edit_tools::Cmd::Symbol, false, cx),
                 ]),
             )

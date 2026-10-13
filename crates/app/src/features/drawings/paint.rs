@@ -289,7 +289,10 @@ pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), br
     if let Some(fonts) = text.filter(|_| !shape.text.is_empty() && !shape.preset.is_line()) {
         let look = text_look(shape, brush.zoom, fonts);
         let turn = geometry::normalise_angle(placed.rotation);
-        if shape.has_text_effects() {
+        if let Some(equation) = &shape.math {
+            // An equation, built up.
+            super::equation::draw(shape, equation, placed, natural, brush, fonts, out);
+        } else if shape.has_text_effects() {
             // Letters with an outline or a shadow: WordArt.
             super::wordart::draw_art(shape, placed, natural, brush, fonts, out);
         } else if turn < 0.5 || turn > 359.5 {

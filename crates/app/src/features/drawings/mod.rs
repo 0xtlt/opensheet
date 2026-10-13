@@ -23,6 +23,7 @@
 //! Positions are always asked of the engine (`Sheet::drawing_frame`): a
 //! drawing sized with its cells follows them without being touched.
 
+mod equation;
 pub(crate) mod geometry;
 mod icon_set;
 mod icons;
@@ -46,7 +47,7 @@ use super::{
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{Draw, GridLayout};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use geometry::normalise_angle;
 use gpui::{
     AnyElement, ClipboardEntry, ClipboardItem, CursorStyle, Entity, EntityInputHandler, ExternalPaths, Focusable,
@@ -65,6 +66,7 @@ const PICTURE_TAB: &str = "picture-format";
 const SHAPE_TAB: &str = "shape-format";
 const GRAPHICS_TAB: &str = "graphics-format";
 const SMARTART_TAB: &str = "smartart-design";
+const EQUATION_TAB: &str = "equation";
 
 commands! {
     /// What the user can ask of pictures and shapes.
@@ -119,6 +121,22 @@ commands! {
         TextOutline = "borders", t("Text Outline", "Contour du texte");
         TextEffects = "wordart", t("Text Effects", "Effets du texte");
         WordArtStyles = "wordart", t("Quick Styles", "Styles rapides");
+        // Equation
+        Equation = "function", t("Equation", "Équation");
+        EqProfessional = "", t("Professional", "Professionnel");
+        EqLinear = "", t_ctx("equation", "Linear", "Linéaire");
+        EqSymbols = "function", t("Symbols", "Symboles");
+        EqFraction = "function", t_ctx("equation", "Fraction", "Fraction");
+        EqScript = "function", t_ctx("equation", "Script", "Script");
+        EqRadical = "function", t_ctx("equation", "Radical", "Radical");
+        EqIntegral = "function", t_ctx("equation", "Integral", "Intégrale");
+        EqLargeOperator = "function", t("Large Operator", "Grand opérateur");
+        EqBracket = "function", t_ctx("equation", "Bracket", "Crochet");
+        EqFunction = "function", t_ctx("equation", "Function", "Fonction");
+        EqAccent = "function", t_ctx("equation", "Accent", "Accentuation");
+        EqLimit = "function", t("Limit and Log", "Limite et journal");
+        EqOperator = "function", t_ctx("equation", "Operator", "Opérateur");
+        EqMatrix = "function", t_ctx("equation", "Matrix", "Matrice");
         // SmartArt Design
         SmartAddShape = "shapes", t("Add Shape", "Ajouter une forme");
         SmartAddAfter = "", t("Add Shape After", "Ajouter la forme après");
@@ -173,6 +191,9 @@ impl Command for Cmd {
             }
             // One object is selected at a time: there is nothing to group.
             Cmd::Group | Cmd::EditPoints => false,
+            Cmd::Equation => true,
+            Cmd::EqProfessional | Cmd::EqLinear | Cmd::EqSymbols => drawing.is_some_and(equation::is_equation),
+            other if equation::structure_of(other).is_some() => drawing.is_some_and(equation::is_equation),
             Cmd::SmartAddShape
             | Cmd::SmartAddAfter
             | Cmd::SmartAddBefore
@@ -226,6 +247,8 @@ impl Command for Cmd {
     fn checked(self, app: &ExcelApp) -> bool {
         match self {
             Cmd::SmartRightToLeft => smartart::selected_art(app).is_some_and(|(_, art)| art.rtl),
+            Cmd::EqProfessional => equation::shown_linear(app) == Some(false),
+            Cmd::EqLinear => equation::shown_linear(app) == Some(true),
             Cmd::SmartTextPane => smartart::pane_shown(app),
             _ => false,
         }
@@ -290,6 +313,21 @@ impl Command for Cmd {
             Cmd::Icons => {
                 icons::open_dialog(app, false, window, cx);
             }
+            Cmd::Equation
+            | Cmd::EqProfessional
+            | Cmd::EqLinear
+            | Cmd::EqSymbols
+            | Cmd::EqFraction
+            | Cmd::EqScript
+            | Cmd::EqRadical
+            | Cmd::EqIntegral
+            | Cmd::EqLargeOperator
+            | Cmd::EqBracket
+            | Cmd::EqFunction
+            | Cmd::EqAccent
+            | Cmd::EqLimit
+            | Cmd::EqOperator
+            | Cmd::EqMatrix => equation::run(app, self, window, cx),
             Cmd::SmartArt
             | Cmd::SmartAddShape
             | Cmd::SmartAddAfter
@@ -557,6 +595,8 @@ fn begin_text_edit(app: &mut ExcelApp, id: u32, start: TextStart, window: &mut W
             window.focus(&app.grid_focus);
         }
         AreaEvent::Blurred => end_text_edit(app, cx),
+        // An equation is shown built up as it is typed.
+        AreaEvent::Changed => equation::typed(app, cx),
         _ => {}
     });
     window.focus(&area.read(cx).focus_handle(cx));
@@ -585,13 +625,16 @@ fn end_text_edit(app: &mut ExcelApp, cx: &mut Cx) {
         app.wb.update_drawing(sheet, edit.id, |drawing| {
             if let Some(shape) = drawing.as_shape_mut() {
                 shape.set_text(typed);
+                equation::retyped(shape);
             }
         });
         wordart::fit_to_text(app, edit.id, cx);
+        equation::fit(app, edit.id, cx);
         app.commit(t("Typing", "Saisie"), cx);
     } else {
         cx.notify();
     }
+    equation::typed(app, cx);
 }
 
 /// The id of the shape whose text is being typed.
@@ -685,16 +728,27 @@ impl Feature for Drawings {
                 id: PICTURE_TAB,
                 title: t("Picture Format", "Format de l'image"),
             }],
-            Some(_) => vec![ContextTab {
-                id: SHAPE_TAB,
-                title: t("Shape Format", "Format de forme"),
-            }],
+            Some(drawing) => {
+                let mut tabs = vec![ContextTab {
+                    id: SHAPE_TAB,
+                    title: t("Shape Format", "Format de forme"),
+                }];
+                if equation::is_equation(drawing) {
+                    tabs.push(ContextTab {
+                        id: EQUATION_TAB,
+                        title: t("Equation", "Équation"),
+                    });
+                }
+                tabs
+            }
             None => Vec::new(),
         }
     }
 
     fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        if tab == SMARTART_TAB {
+        if tab == EQUATION_TAB {
+            equation::equation_tab(app, cx)
+        } else if tab == SMARTART_TAB {
             smartart::design_tab(app, cx)
         } else if tab == GRAPHICS_TAB {
             icons::graphics_tab(app, window, cx)
@@ -828,6 +882,9 @@ impl Feature for Drawings {
                     }
                 }
                 _ => paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items),
+            }
+            if typing {
+                equation::draw_preview(app, drawing, &placed, &brush, &mut items);
             }
             if is_selected {
                 paint::draw_selection(drawing, &placed, &brush, &mut items);

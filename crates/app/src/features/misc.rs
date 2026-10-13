@@ -39,7 +39,6 @@ commands! {
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert
-        Equation = "function", t("Equation", "Équation");
         // Draw
         Draw = "brush", t_ctx("button", "Draw", "Dessiner");
         Eraser = "clear", t("Eraser", "Gomme");
