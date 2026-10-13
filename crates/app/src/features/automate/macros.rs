@@ -226,21 +226,21 @@ impl Render for MacroDialog {
             .flex_col()
             .gap(px(6.))
             .child(div().debug_selector(|| "macro-run".to_string()).child(
-                Button::new("macro-run", t("Run", "Exécuter")).width(104.0).primary().disabled(!chosen).on_click(cx.listener(Self::run)),
+                Button::new("macro-run", t("Run", "Exécuter")).width(126.0).primary().disabled(!chosen).on_click(cx.listener(Self::run)),
             ))
             .child(div().debug_selector(|| "macro-step".to_string()).child(
-                Button::new("macro-step", t("Step Into", "Pas à pas détaillé")).width(104.0).disabled(!chosen).on_click(cx.listener(Self::run)),
+                Button::new("macro-step", t("Step Into", "Pas à pas détaillé")).width(126.0).disabled(!chosen).on_click(cx.listener(Self::run)),
             ))
             .child(div().debug_selector(|| "macro-edit".to_string()).child(
-                Button::new("macro-edit", crate::i18n::t_ctx("macro", "Edit", "Modifier")).width(104.0).disabled(!chosen).on_click(cx.listener(Self::edit)),
+                Button::new("macro-edit", crate::i18n::t_ctx("macro", "Edit", "Modifier")).width(126.0).disabled(!chosen).on_click(cx.listener(Self::edit)),
             ))
             // These would change the project: never available.
-            .child(div().debug_selector(|| "macro-create".to_string()).child(Button::new("macro-create", t("Create", "Créer")).width(104.0).disabled(true)))
-            .child(div().debug_selector(|| "macro-delete".to_string()).child(Button::new("macro-delete", t("Delete", "Supprimer")).width(104.0).disabled(true)))
-            .child(div().debug_selector(|| "macro-options".to_string()).child(Button::new("macro-options", t("Options...", "Options...")).width(104.0).disabled(true)))
+            .child(div().debug_selector(|| "macro-create".to_string()).child(Button::new("macro-create", t("Create", "Créer")).width(126.0).disabled(true)))
+            .child(div().debug_selector(|| "macro-delete".to_string()).child(Button::new("macro-delete", t("Delete", "Supprimer")).width(126.0).disabled(true)))
+            .child(div().debug_selector(|| "macro-options".to_string()).child(Button::new("macro-options", t("Options...", "Options...")).width(126.0).disabled(true)))
             .child(div().h(px(6.)))
             .child(div().debug_selector(|| "macro-cancel".to_string()).child(
-                Button::new("macro-cancel", t("Cancel", "Annuler")).width(104.0).on_click(cx.listener(Self::close)),
+                Button::new("macro-cancel", t("Cancel", "Annuler")).width(126.0).on_click(cx.listener(Self::close)),
             ));
         let list = ListBox::new("macro-list", names, selected)
             .width(300.0)
@@ -251,7 +251,7 @@ impl Render for MacroDialog {
                 this.edit(&(), window, cx);
             }));
         widgets::dialog(&self.modal, t("Macro", "Macro"))
-            .width(450.0)
+            .width(464.0)
             .on_ok(cx.listener(Self::run))
             .on_cancel(cx.listener(Self::close))
             .child(
