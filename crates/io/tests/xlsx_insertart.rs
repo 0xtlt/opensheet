@@ -273,3 +273,106 @@ fn a_graphic_of_another_layout_keeps_its_parts_and_shows_its_shapes() {
     assert_eq!(part(&again, "xl/diagrams/drawing1.xml"), part(&ours, "xl/diagrams/drawing1.xml"));
     assert!(load(&again).sheets[0].drawings[0].as_smartart().unwrap().foreign.is_some());
 }
+
+// ---- equations -----------------------------------------------------------------
+
+use opensheet_engine::math::{BUILT_IN, Equation, Structure};
+
+fn equation_box(wb: &mut Workbook, linear: &str, at: (f32, f32)) -> u32 {
+    let mut shape = ShapeTool::TextBox.shape();
+    shape.fill = None;
+    shape.outline = None;
+    shape.text = Equation::parse(linear).to_linear();
+    shape.math = Some(Equation::parse(linear));
+    shape.font.set_size_pt(14.0);
+    let mut drawing = Drawing::shape(shape, (360.0, 60.0));
+    drawing.offset = at;
+    wb.add_drawing(0, drawing).unwrap()
+}
+
+#[test]
+fn equations_are_written_as_office_math_and_read_back() {
+    let mut wb = Workbook::new(Locale::en());
+    let mut all: Vec<&str> = BUILT_IN.iter().map(|(_, linear)| *linear).collect();
+    for structure in Structure::ALL {
+        all.extend(structure.templates());
+    }
+    for (i, linear) in all.iter().enumerate() {
+        equation_box(&mut wb, linear, (20.0 + 380.0 * (i % 3) as f32, 10.0 + 70.0 * (i / 3) as f32));
+    }
+    // One shown in the linear format, in red.
+    let shown_linear = equation_box(&mut wb, "x=(-b±√(b^2-4ac))/2a", (1200.0, 10.0));
+    wb.update_drawing(0, shown_linear, |drawing| {
+        let shape = drawing.as_shape_mut().unwrap();
+        shape.math.as_mut().unwrap().linear = true;
+        shape.font.color = Some(Color(0xC00000));
+    });
+    wb.commit("equations");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("opensheet-equations.xlsx", &bytes);
+
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    // Each shape twice: with its equation, and with the text of it.
+    let count = all.len() + 1;
+    assert_eq!(xml.matches("<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\"><mc:Choice xmlns:a14=\"http://schemas.microsoft.com/office/drawing/2010/main\" Requires=\"a14\">").count(), count);
+    assert_eq!(xml.matches("<mc:Fallback>").count(), count);
+    assert_eq!(xml.matches("<xdr:sp ").count(), 2 * count);
+    assert_eq!(xml.matches("<a14:m><m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\">").count(), count);
+    // The Pythagorean theorem: three superscripts and the signs between.
+    let pythagoras = "<m:sSup><m:e><m:r><a:rPr sz=\"1400\" i=\"1\"><a:latin typeface=\"Cambria Math\" panose=\"02040503050406030204\" pitchFamily=\"18\" charset=\"0\"/></a:rPr><m:t>a</m:t></m:r></m:e><m:sup>";
+    assert!(xml.contains(pythagoras), "{xml}");
+    assert!(xml.contains("<a:t>a^2+b^2=c^2</a:t>"));
+    // The structures, as Office names them.
+    for element in [
+        "<m:f><m:num>", "<m:f><m:fPr><m:type m:val=\"noBar\"/></m:fPr>", "<m:sSub>", "<m:sSubSup>", "<m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/>",
+        "<m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr>", "<m:nary><m:naryPr><m:limLoc m:val=\"subSup\"/><m:subHide m:val=\"1\"/><m:supHide m:val=\"1\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary>",
+        "<m:d><m:e>", "<m:d><m:dPr><m:begChr m:val=\"[\"/><m:endChr m:val=\"]\"/></m:dPr>", "<m:func><m:fName><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr>",
+        "<m:acc><m:accPr><m:chr m:val=\"\u{302}\"/></m:accPr><m:e/></m:acc>", "<m:bar><m:barPr><m:pos m:val=\"top\"/></m:barPr>", "<m:limLow><m:e><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr>",
+        "<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val=\"2\"/><m:mcJc m:val=\"center\"/></m:mcPr></m:mc></m:mcs></m:mPr><m:mr><m:e/><m:e/></m:mr>",
+    ] {
+        assert!(xml.contains(element), "{element}");
+    }
+
+    let back = load(&bytes);
+    let read: Vec<_> = back.sheets[0].drawings.iter().map(|drawing| drawing.as_shape().unwrap()).collect();
+    assert_eq!(read.len(), count);
+    for (linear, shape) in all.iter().zip(&read) {
+        let expected = Equation::parse(linear);
+        assert_eq!(shape.math.as_ref(), Some(&expected), "{linear}");
+        assert_eq!(shape.text, expected.to_linear(), "{linear}");
+        assert_eq!((shape.font.size_pt(), shape.font.italic, shape.runs.len()), (14.0, false, 0), "{linear}");
+    }
+    let last = read[count - 1];
+    assert!(last.math.as_ref().unwrap().linear);
+    assert_eq!(last.math.as_ref().unwrap().body, Equation::parse("x=(-b±√(b^2-4ac))/2a").body);
+    assert_eq!(last.font.color, Some(Color(0xC00000)));
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+}
+
+#[test]
+fn equations_of_other_writers_are_read() {
+    // A shape as Excel writes it, with structures the engine has not (a
+    // box, a grouping character) and delimiters without characters.
+    let mut wb = Workbook::new(Locale::en());
+    equation_box(&mut wb, "a", (10.0, 10.0));
+    wb.commit("equation");
+    let ours = to_bytes(&wb);
+    let xml = part(&ours, "xl/drawings/drawing1.xml");
+    let start = xml.find("<m:oMath xmlns").unwrap();
+    let end = xml.find("</m:oMath>").unwrap();
+    let foreign = "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\"><m:borderBox><m:e><m:r><m:t>E=m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:e></m:borderBox><m:d><m:dPr><m:begChr m:val=\"\"/><m:endChr m:val=\"\"/><m:ctrlPr><a:rPr i=\"1\"/></m:ctrlPr></m:dPr><m:e><m:r><m:t>+1</m:t></m:r></m:e></m:d><m:nary><m:naryPr><m:supHide m:val=\"on\"/></m:naryPr><m:sub><m:r><m:t>0</m:t></m:r></m:sub><m:sup/><m:e><m:func><m:fName><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>cos</m:t></m:r></m:fName><m:e><m:r><m:t>x</m:t></m:r></m:e></m:func></m:e></m:nary>";
+    let changed = format!("{}{foreign}{}", &xml[..start], &xml[end..]);
+    let mut parts: Vec<(String, String)> = common::part_names(&ours).into_iter().map(|name| (name.clone(), part(&ours, &name))).collect();
+    for (name, content) in &mut parts {
+        if name == "xl/drawings/drawing1.xml" {
+            *content = changed.clone();
+        }
+    }
+    let borrowed: Vec<(&str, &str)> = parts.iter().map(|(name, content)| (name.as_str(), content.as_str())).collect();
+    let back = load(&common::package(&borrowed));
+    assert_eq!(back.sheets[0].drawings.len(), 1);
+    let shape = back.sheets[0].drawings[0].as_shape().unwrap();
+    assert_eq!(shape.text, "E=mc^2+1∫_0▒〖cos\u{2061}〖x〗〗");
+    assert_eq!(shape.math, Some(Equation::parse(&shape.text)));
+}

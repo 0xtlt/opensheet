@@ -60,6 +60,7 @@ const MAX_PX: f64 = 600_000_000.0;
 const ROOT_END: &str = "</xdr:wsDr>";
 const RELS_END: &str = "</Relationships>";
 
+mod math;
 mod smartart;
 mod svg;
 mod wordart;
@@ -289,6 +290,21 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
         x.push_str("</xdr:spPr></xdr:cxnSp>");
         return;
     }
+    // A shape that holds an equation is written twice: with it, for
+    // those who know equations, and with its text for the others.
+    if shape.math.is_some() {
+        w!(x, "<mc:AlternateContent xmlns:mc=\"{}\"><mc:Choice xmlns:a14=\"{}\" Requires=\"a14\">", math::NS_MC, math::NS_A14);
+        push_shape_as(x, drawing, shape, id, frame, true);
+        x.push_str("</mc:Choice><mc:Fallback>");
+        push_shape_as(x, drawing, shape, id, frame, false);
+        x.push_str("</mc:Fallback></mc:AlternateContent>");
+    } else {
+        push_shape_as(x, drawing, shape, id, frame, false);
+    }
+}
+
+/// A shape; `equation`: with its equation rather than the text of it.
+fn push_shape_as(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame: Frame, equation: bool) {
     x.push_str("<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr>");
     push_identity(x, drawing, id);
     let text_box = if shape.text_box { " txBox=\"1\"" } else { "" };
@@ -302,7 +318,7 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     }
     push_outline(x, shape.outline.as_ref());
     x.push_str("</xdr:spPr>");
-    wordart::push_text_body(x, shape);
+    wordart::push_text_body(x, shape, equation);
     x.push_str("</xdr:sp>");
 }
 
@@ -984,6 +1000,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
         runs: Vec::new(),
         wrap: true,
         adjust,
+        math: None,
     };
     text.into_shape(&mut shape, style.text);
     object.kind = RawKind::Shape(shape);

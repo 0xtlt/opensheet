@@ -62,7 +62,7 @@ fn push_run_properties(x: &mut String, element: &str, font: &Font, effects: &Tex
 
 /// `<xdr:txBody>`: a paragraph for each line of the text, a run for each
 /// change of look inside it.
-pub(super) fn push_text_body(x: &mut String, shape: &Shape) {
+pub(super) fn push_text_body(x: &mut String, shape: &Shape, equation: bool) {
     if shape.wrap {
         w!(
             x,
@@ -76,6 +76,12 @@ pub(super) fn push_text_body(x: &mut String, shape: &Shape) {
             "<xdr:txBody><a:bodyPr wrap=\"none\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\" anchor=\"{}\"><a:spAutoFit/></a:bodyPr><a:lstStyle/>",
             shape.anchor.ooxml_name()
         );
+    }
+    if let (true, Some(math)) = (equation, &shape.math) {
+        w!(x, "<a:p><a:pPr algn=\"{}\"/>", shape.align.ooxml_name());
+        super::math::push_paragraph(x, math, &shape.font);
+        x.push_str("</a:p></xdr:txBody>");
+        return;
     }
     let runs = shape.text_runs();
     let mut start = 0;
@@ -217,6 +223,9 @@ pub(super) struct RawText {
     pub anchor: Option<TextAnchor>,
     /// `wrap="none"`.
     unwrapped: bool,
+    /// The equation of a paragraph that holds one, with the size and the
+    /// colour of its letters.
+    math: Option<(opensheet_engine::math::Equation, Option<RawRun>)>,
 }
 
 impl RawText {
@@ -261,6 +270,19 @@ impl RawText {
         shape.runs = runs;
         // Neighbours of one look are one run, and a single look is none.
         shape.format_text(0..0, &|_, _| {});
+        // An equation: its text is the equation in the linear format.
+        if let Some((equation, look)) = self.math {
+            if let Some(look) = look {
+                let name = shape.font.name.clone();
+                (shape.font, _) = resolve(look);
+                // The font equations are set in is not the shape's.
+                shape.font.name = name;
+                shape.font.italic = false;
+            }
+            shape.runs.clear();
+            shape.text = equation.to_linear();
+            shape.math = Some(equation);
+        }
     }
 }
 
@@ -296,11 +318,32 @@ fn parse_paragraph<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, out
             out.extend("\n");
             r.skip(t);
         }
+        // `a14:m`: an equation. The look of its first run is that of its
+        // letters.
+        "m" if out.math.is_none() => {
+            let mut look = None;
+            let mut scan = r.fork();
+            find_run_properties(&mut scan, t, palette, &mut look, 0);
+            out.math = Some((super::math::parse_equation(r, t), look));
+        }
         "endParaRPr" => {
             let run = parse_run_properties(r, t, palette);
             out.end.get_or_insert(run);
         }
         _ => r.skip(t),
+    });
+}
+
+/// The first `a:rPr` under an element, however deep.
+fn find_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, found: &mut Option<RawRun>, depth: usize) {
+    each_child(r, tag, |r, t| {
+        if found.is_none() && t.name == "rPr" && t.attr("sz").is_some() {
+            *found = Some(parse_run_properties(r, t, palette));
+        } else if found.is_none() && depth < 24 {
+            find_run_properties(r, t, palette, found, depth + 1);
+        } else {
+            r.skip(t);
+        }
     });
 }
 

@@ -794,6 +794,10 @@ pub struct Shape {
     /// The adjustment of the geometry (`adj` of `<a:avLst>`), for the
     /// presets that have one here; `None` is the preset's own.
     pub adjust: Option<f32>,
+    /// The text is an equation (see `math.rs`); `text` then holds it in
+    /// the linear format, which is what is typed and what applications
+    /// that draw no equations show.
+    pub math: Option<crate::math::Equation>,
 }
 
 impl Shape {
@@ -903,6 +907,7 @@ impl ShapeTool {
             runs: Vec::new(),
             wrap: true,
             adjust: None,
+            math: None,
         };
         if preset.is_line() {
             let arrow = |pointed: bool| if pointed { LineEnd::Triangle } else { LineEnd::None };
