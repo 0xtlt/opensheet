@@ -2194,6 +2194,44 @@ impl Workbook {
         Ok(())
     }
 
+    // ---- cells that make room ---------------------------------------------------
+
+    /// Insert > Cells and Delete > Cells with a shift: blank cells come in
+    /// at `rect` and what was there moves down (or right), or the cells of
+    /// `rect` go and what lies below (or to their right) closes up. Only
+    /// the columns (the rows) of `rect` move; formulas, names, merged
+    /// areas, notes and rules follow. Refused when the move would tear a
+    /// table, a merged area or the filter of the sheet. Takes the undo
+    /// snapshot; the caller commits.
+    pub fn shift_cells(&mut self, sheet: usize, rect: Rect, down: bool, insert: bool) -> Result<(), TableError> {
+        let sh = self.sheets.get(sheet).ok_or(TableError::NotFound)?;
+        let shift = if down {
+            CellShift {
+                down,
+                lo: rect.c0,
+                hi: rect.c1,
+                at: rect.r0,
+                count: rect.rows(),
+                insert,
+            }
+        } else {
+            CellShift {
+                down,
+                lo: rect.r0,
+                hi: rect.r1,
+                at: rect.c0,
+                count: rect.cols(),
+                insert,
+            }
+        };
+        if blocked(&shift, sh, None) {
+            return Err(TableError::Blocked);
+        }
+        self.snapshot();
+        shift_cells(self, sheet, shift);
+        Ok(())
+    }
+
     // ---- following edits ------------------------------------------------------
 
     /// To call after cells were typed, pasted or cleared (`edited` is the
@@ -2730,6 +2768,27 @@ mod tests {
 
     fn names(w: &Workbook, id: u32) -> Vec<String> {
         w.table(0, id).unwrap().columns.iter().map(|c| c.name.clone()).collect()
+    }
+
+    #[test]
+    fn cells_shift_to_make_room_and_close_up() {
+        let mut w = wb(&[("A1", "a"), ("A2", "b"), ("B1", "x"), ("B2", "y"), ("D1", "=A2")]);
+        // Insert > Cells > Shift cells down on A1: only column A moves.
+        w.shift_cells(0, rect("A1"), true, true).unwrap();
+        w.commit("insert");
+        assert_eq!((crate::tests::val(&w, "A1"), crate::tests::val(&w, "A2"), crate::tests::val(&w, "A3"), crate::tests::val(&w, "B2")), (Value::Empty, Value::text("a"), Value::text("b"), Value::text("y")));
+        assert_eq!(w.formula_text(0, 0, 3).as_deref(), Some("=A3"));
+        // Delete > Cells > Shift cells left on A2:A3: row 2 and 3 close up.
+        w.shift_cells(0, rect("A2:A3"), false, false).unwrap();
+        w.commit("delete");
+        assert_eq!((crate::tests::val(&w, "A2"), crate::tests::val(&w, "A3")), (Value::text("y"), Value::Empty));
+        w.undo();
+        w.undo();
+        assert_eq!((crate::tests::val(&w, "A1"), crate::tests::val(&w, "A2")), (Value::text("a"), Value::text("b")));
+        // A table in the way refuses.
+        w.add_table(0, rect("A1:B2"), false).unwrap();
+        w.commit("table");
+        assert_eq!(w.shift_cells(0, rect("A2"), true, true), Err(TableError::Blocked));
     }
 
     #[test]

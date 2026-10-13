@@ -7,4 +7,10 @@ license.workspace = true
 
 [dependencies]
 opensheet_engine = { path = "../engine" }
-serde_json = "1"
+# Numbers cross between the script and the workbook as JSON text: they
+# must come back as the same number.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+# QuickJS, built from its C sources by `cc` (no system library).
+rquickjs = "=0.14.0"
+# TypeScript to JavaScript, with the source map errors are placed by.
+oxc = { version = "=0.154.0", features = ["transformer", "codegen", "semantic"] }
