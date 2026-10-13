@@ -267,7 +267,17 @@ fn main() {
         })
         .detach();
 
-        let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
+        // `OPENSHEET_WINDOW=1000x700`: another size at start, to look at
+        // the ribbon in a narrow window.
+        let (width, height) = std::env::var("OPENSHEET_WINDOW")
+            .ok()
+            .and_then(|v| {
+                let (w, h) = v.split_once('x')?;
+                Some((w.parse::<f32>().ok()?, h.parse::<f32>().ok()?))
+            })
+            .filter(|(w, h)| *w >= 640.0 && *h >= 420.0)
+            .unwrap_or((1440.0, 900.0));
+        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
         let file_arg = file_arg.clone();
         cx.open_window(
             WindowOptions {

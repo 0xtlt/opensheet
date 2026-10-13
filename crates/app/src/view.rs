@@ -1296,7 +1296,7 @@ impl Render for ExcelApp {
         // The pickers of this window offer the theme colours of its workbook.
         theme::set_document_theme(self.wb.theme_arc());
         let titlebar = self.render_titlebar(window, cx).into_any_element();
-        let tabs = self.render_ribbon_tabs(cx).into_any_element();
+        let tabs = self.render_ribbon_tabs(window, cx).into_any_element();
         let ribbon = self.render_ribbon(window, cx).into_any_element();
         let formula_bar = self
             .show_formula_bar

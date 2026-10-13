@@ -207,6 +207,10 @@ pub fn compact() -> bool {
 
 /// A button of the group being built shows this icon.
 pub fn saw_icon(name: &'static str) {
+    // The placeholder of a command without an icon says nothing of a group.
+    if name == "more" {
+        return;
+    }
     with(|state| {
         if let Some(build) = state.build.as_mut() {
             build.icon.get_or_insert(name);

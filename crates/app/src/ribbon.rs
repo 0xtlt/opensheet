@@ -168,6 +168,7 @@ impl ExcelApp {
     pub fn cmd_labeled<C: Command>(&self, id: &'static str, cmd: C, dropdown: bool, cx: &mut Cx) -> AnyElement {
         let enabled = cmd.enabled(self);
         let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
+        fold::saw_icon(icon_name);
         let color = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
         self.small(
             id,
@@ -193,6 +194,7 @@ impl ExcelApp {
     pub fn cmd_icon<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
         let color = if cmd.enabled(self) { theme::TEXT } else { theme::TEXT_DISABLED };
         let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
+        fold::saw_icon(icon_name);
         self.small(id, icon(icon_name, 16.0, color), cmd.label_in(self), cmd.checked(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
@@ -266,6 +268,7 @@ impl ExcelApp {
         cx: &mut Cx,
         f: impl Fn(&mut Self, &mut Window, &mut Cx) + 'static,
     ) -> AnyElement {
+        fold::saw_icon(icon_name);
         self.small(id, icon(icon_name, 16.0, theme::TEXT), tip, active, cx, f)
             .into_any_element()
     }
@@ -315,6 +318,8 @@ impl ExcelApp {
         cx: &mut Cx,
         f: impl Fn(&mut Self, &mut Window, &mut Cx) + 'static,
     ) -> AnyElement {
+        // A group of small buttons folds under the icon of its first one.
+        fold::saw_icon(icon_name);
         self.small(
             id,
             div()
@@ -478,7 +483,7 @@ impl ExcelApp {
         .into_any_element()
     }
 
-    pub fn render_ribbon_tabs(&mut self, cx: &mut Cx) -> impl IntoElement {
+    pub fn render_ribbon_tabs(&mut self, window: &Window, cx: &mut Cx) -> impl IntoElement {
         // The permanent tabs, then those of the object that is active.
         let context = features::context_tabs(self);
         if self.context_tab.is_some_and(|id| !context.iter().any(|(_, tab)| tab.id == id)) {
@@ -486,6 +491,18 @@ impl ExcelApp {
         }
         let mut names: Vec<(&'static str, Option<&'static str>)> = tab_names().iter().map(|name| (*name, None)).collect();
         names.extend(context.iter().map(|(_, tab)| (tab.title, Some(tab.id))));
+        // Short of room for the names of the tabs, Comments and Share
+        // keep their icon only and the tabs stand closer; the two buttons
+        // are never cut off.
+        let comments_label = t("Comments", "Commentaires");
+        let share_label = t("Share", "Partager");
+        let text = |label: &str| label.chars().count() as f32 * 7.6;
+        let wanted = names.iter().map(|(name, _)| text(name) + 22.0).sum::<f32>()
+            + text(comments_label)
+            + text(share_label)
+            + 120.0;
+        let labels = wanted <= f32::from(window.viewport_size().width);
+        let pad = if labels { 11.0 } else { 7.0 };
         let mut tabs: Vec<AnyElement> = Vec::new();
         for (i, (name, context_id)) in names.iter().enumerate() {
             let context_id = *context_id;
@@ -498,7 +515,7 @@ impl ExcelApp {
                     .id(("ribbon-tab", i))
                     .relative()
                     .h_full()
-                    .px(px(11.))
+                    .px(px(pad))
                     .flex()
                     .flex_col()
                     .justify_center()
@@ -514,8 +531,8 @@ impl ExcelApp {
                             div()
                                 .absolute()
                                 .bottom(px(2.))
-                                .left(px(11.))
-                                .right(px(11.))
+                                .left(px(pad))
+                                .right(px(pad))
                                 .h(px(3.))
                                 .rounded(px(2.))
                                 .bg(c(theme::ACCENT)),
@@ -545,7 +562,7 @@ impl ExcelApp {
             .items_center()
             .px_2()
             .bg(c(theme::CHROME_BG))
-            .child(div().h_full().flex().items_center().children(tabs))
+            .child(div().h_full().flex_shrink().min_w(px(0.)).overflow_hidden().flex().items_center().children(tabs))
             .child(div().flex_1())
             .child(
                 div()
@@ -553,6 +570,7 @@ impl ExcelApp {
                     .h(px(26.))
                     .px_3()
                     .mr_2()
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap_2()
@@ -561,7 +579,7 @@ impl ExcelApp {
                     .border_color(c(theme::BORDER_STRONG))
                     .bg(c(0xFFFFFF))
                     .child(icon("comment", 14.0, theme::TEXT))
-                    .child(t("Comments", "Commentaires"))
+                    .when(labels, |d| d.child(comments_label))
                     .on_click(cx.listener(|this, _, window, cx| comments::Cmd::ShowPane.run(this, window, cx))),
             )
             .child(
@@ -569,6 +587,7 @@ impl ExcelApp {
                     .id("btn-share")
                     .h(px(26.))
                     .px_3()
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap_2()
@@ -576,7 +595,7 @@ impl ExcelApp {
                     .bg(c(theme::ACCENT))
                     .text_color(c(0xFFFFFF))
                     .child(icon("share", 14.0, 0xFFFFFF))
-                    .child(t("Share", "Partager"))
+                    .when(labels, |d| d.child(share_label))
                     .on_click(cx.listener(|this, _, window, cx| misc::Cmd::Share.run(this, window, cx))),
             )
     }
