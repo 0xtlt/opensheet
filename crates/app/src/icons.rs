@@ -187,6 +187,15 @@ const ICONS: &[(&str, &str)] = &[
     ("automate-macro", r#"<path d="M2.500 3.500h11v9h-11z"/><path d="M2.500 6h11"/><path d="M6.500 8.200v3l2.800-1.500z"/>"#),
     ("automate-record", r#"<circle cx="8" cy="8" r="5.500"/><circle cx="8" cy="8" r="2.200"/>"#),
     ("automate-stop", r#"<rect x="4" y="4" width="8" height="8" rx="1"/>"#),
+    ("controls-button", r#"<rect x="2" y="5" width="12" height="6" rx="1.5"/><path d="M5.5 8h5"/>"#),
+    ("controls-check", r#"<rect x="3" y="3" width="10" height="10" rx="1"/><path d="M5.5 8.2l1.8 1.9 3.4-4"/>"#),
+    ("controls-option", r#"<circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="2" fill="black"/>"#),
+    ("controls-combo", r#"<rect x="2" y="5" width="12" height="6"/><path d="M10 5v6M11 7.4l1 1.2 1-1.2"/>"#),
+    ("controls-list", r#"<rect x="2.5" y="2.5" width="11" height="11"/><path d="M4.5 5.5h7M4.5 8h7M4.5 10.5h7"/>"#),
+    ("controls-spin", r#"<rect x="5" y="2" width="6" height="12" rx="1"/><path d="M5 8h6M6.8 5.8 8 4.4l1.2 1.4M6.8 10.2 8 11.6l1.2-1.4"/>"#),
+    ("controls-scroll", r#"<rect x="5.5" y="1.5" width="5" height="13"/><rect x="6.8" y="6" width="2.4" height="3.5" fill="black"/><path d="M7 3.8 8 2.8l1 1M7 12.2l1 1 1-1"/>"#),
+    ("controls-group", r#"<path d="M5 4H2.5v9.5h11V4H11"/><path d="M6.5 4h3"/>"#),
+    ("controls-label", r#"<path d="M4 13 8 3l4 10M5.6 9.5h4.8"/>"#),
 ];
 
 pub struct Assets;

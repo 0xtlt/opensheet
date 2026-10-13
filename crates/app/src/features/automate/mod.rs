@@ -31,7 +31,10 @@ mod syntax;
 #[cfg(test)]
 mod ui_tests;
 
-pub(crate) use macros::{default_extension, loses_macros, macro_free_alert, message_bar};
+pub(crate) use macros::{
+    default_extension, loses_macros, macro_free_alert, message_bar, not_run_alert, open_dialog as open_macro_dialog,
+    project as vba_project,
+};
 pub(crate) use scripts::folder as scripts_folder;
 
 use self::pane::{CodeEditorPane, ScriptRef};

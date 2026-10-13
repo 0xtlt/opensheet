@@ -65,6 +65,8 @@ pub struct Settings {
     pub tables_fill_formulas: bool,
     // ---- View
     pub show_sheet_tabs: bool,
+    /// "In Ribbon, Show: Developer tab".
+    pub developer_tab: bool,
     // ---- Calculation
     pub recalc_before_save: bool,
     // ---- Error Checking
@@ -112,6 +114,7 @@ impl Default for Settings {
             tables_expand: true,
             tables_fill_formulas: true,
             show_sheet_tabs: true,
+            developer_tab: false,
             recalc_before_save: true,
             background_error_checking: true,
             check_error_values: true,
@@ -179,6 +182,7 @@ impl Settings {
         line("tables-expand", flag(self.tables_expand));
         line("tables-fill-formulas", flag(self.tables_fill_formulas));
         line("show-sheet-tabs", flag(self.show_sheet_tabs));
+        line("developer-tab", flag(self.developer_tab));
         line("recalculate-before-save", flag(self.recalc_before_save));
         line("background-error-checking", flag(self.background_error_checking));
         line("check-error-values", flag(self.check_error_values));
@@ -264,6 +268,7 @@ impl Settings {
                 "tables-expand" => set(&mut settings.tables_expand),
                 "tables-fill-formulas" => set(&mut settings.tables_fill_formulas),
                 "show-sheet-tabs" => set(&mut settings.show_sheet_tabs),
+                "developer-tab" => set(&mut settings.developer_tab),
                 "recalculate-before-save" => set(&mut settings.recalc_before_save),
                 "background-error-checking" => set(&mut settings.background_error_checking),
                 "check-error-values" => set(&mut settings.check_error_values),
