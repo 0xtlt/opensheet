@@ -297,6 +297,50 @@ fn several_ranges_special_cells_find_all_and_visible_views() {
     areas();
 }
 
+fn protection() {
+    use opensheet_engine::protect::Permission;
+    let mut wb = stock();
+    wb.set_cell_text(0, 5, 0, "typed before").unwrap();
+    wb.commit("typed");
+    // The run is kept, and with it the protection: nothing is left to undo,
+    // as after Protect Sheet.
+    let outcome = run_with(&mut wb, include_str!("model/protection.ts"), &Context::default());
+    assert_eq!(outcome.error, None);
+    assert!(outcome.protection_changed);
+    assert!(wb.commit("Run Script"));
+    assert!(!wb.can_undo() && !wb.can_redo());
+    let held = wb.sheets[0].protection.clone().expect("a protected sheet");
+    assert!(held.password.as_ref().is_some_and(|hash| hash.verify("pw")));
+    assert!(held.allows(Permission::InsertRows) && !held.allows(Permission::SelectLockedCells) && !held.allows(Permission::Sort));
+    assert_eq!(text(&wb, "A1"), "Item");
+    assert!(wb.style_at(0, 0, 0).font.italic);
+
+    // A script that fails after removing the protection leaves the sheet
+    // protected, its cells as they were and the history in place.
+    wb.set_cell_text(0, 6, 0, "typed after").unwrap();
+    wb.commit("typed");
+    let failing = "sheet.getProtection().unprotect(\"pw\"); sheet.getRange(\"A1\").setValue(\"gone\"); throw new Error(\"stop\");";
+    assert_eq!(fails(&mut wb, &script(failing)).message, "stop");
+    assert!(wb.sheets[0].protection.as_ref().is_some_and(|held| held.password.is_some()));
+    assert_eq!((text(&wb, "A1"), wb.undo_label()), ("Item".to_string(), Some("typed")));
+    // One that only looks changes nothing either.
+    let outcome = run_with(&mut wb, &script("console.log(sheet.getProtection().getProtected());"), &Context::default());
+    assert!(!outcome.protection_changed && !wb.commit("nothing") && wb.can_undo());
+    // The same through a working copy, as the application runs scripts.
+    let mut copy = wb.fork();
+    let outcome = run_with(&mut copy, &script("sheet.getProtection().unprotect(\"pw\"); sheet.getRange(\"A1\").setValue(\"open\");"), &Context::default());
+    assert_eq!(outcome.error, None);
+    wb.adopt(copy);
+    assert!(wb.commit("Run Script") && !wb.can_undo());
+    assert!(wb.sheets[0].protection.is_none());
+    assert_eq!(text(&wb, "A1"), "open");
+}
+
+#[test]
+fn a_sheet_is_protected_and_unprotected_inside_a_run() {
+    protection();
+}
+
 #[test]
 fn conditional_formats_of_every_kind() {
     condfmt();
@@ -364,7 +408,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots, shapes, areas] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots, shapes, areas, protection] {
         scenario();
     }
     let called = members_called();

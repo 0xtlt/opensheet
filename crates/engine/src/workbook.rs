@@ -492,6 +492,10 @@ pub struct Workbook {
     pending: Vec<Change>,
     /// The current transaction holds a snapshot of the sheets.
     snapshot_taken: bool,
+    /// The current transaction changed the protection of a sheet (see
+    /// `protect::Workbook::set_sheet_protection`): committing it forgets
+    /// the history, as protecting a sheet by hand does.
+    pub(crate) protection_pending: bool,
 }
 
 impl Workbook {
@@ -514,6 +518,7 @@ impl Workbook {
             redo_stack: Vec::new(),
             pending: Vec::new(),
             snapshot_taken: false,
+            protection_pending: false,
         };
         // An empty workbook is calculated: what is typed into it is what
         // there is to calculate.
@@ -693,6 +698,12 @@ impl Workbook {
             self.undo_stack.remove(0);
         }
         self.redo_stack.clear();
+        // Undo never gives back or takes away the protection of a sheet:
+        // a step that changed it is not kept, nor those before it, whose
+        // snapshots hold the sheets as they were protected then.
+        if std::mem::take(&mut self.protection_pending) {
+            self.undo_stack.clear();
+        }
         self.modified = true;
         self.changed();
         true
@@ -702,6 +713,7 @@ impl Workbook {
     pub fn rollback(&mut self) {
         let changes = std::mem::take(&mut self.pending);
         self.snapshot_taken = false;
+        self.protection_pending = false;
         self.apply_changes(&changes, true);
     }
 
@@ -749,6 +761,7 @@ impl Workbook {
         self.redo_stack.clear();
         self.pending.clear();
         self.snapshot_taken = false;
+        self.protection_pending = false;
     }
 
     fn apply_changes(&mut self, changes: &[Change], reverse: bool) {

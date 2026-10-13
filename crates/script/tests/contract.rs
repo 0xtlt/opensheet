@@ -166,11 +166,12 @@ fn what_opensheet_does_not_have_says_so() {
         assert_eq!((error.kind, error.message.as_str(), error.line), (ErrorKind::Unsupported, message, Some(4)), "{body}");
     };
     unsupported(&mut wb, "sheet.getRange('A1').getPivotTables();", "Range.getPivotTables is not supported in OpenSheet");
+    unsupported(&mut wb, "workbook.getProtection().protect();", "Workbook.getProtection is not supported in OpenSheet");
     unsupported(&mut wb, "workbook.getSlicers();", "Workbook.getSlicers is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getProtection().protect();", "Worksheet.getProtection is not supported in OpenSheet");
+    unsupported(&mut wb, "sheet.getProtection().pauseProtection();", "WorksheetProtection.pauseProtection is not supported in OpenSheet");
     unsupported(&mut wb, "sheet.getRange('A1').getFormat().getFont().setSuperscript(true);", "RangeFont.setSuperscript is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRanges('A1,C3');", "Worksheet.getRanges is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRange('A1').setValue(ExcelScript.ConditionalFormatType.custom);", "ExcelScript.ConditionalFormatType is not supported in OpenSheet");
+    unsupported(&mut wb, "sheet.getRanges('A1,C3').setDirty();", "RangeAreas.setDirty is not supported in OpenSheet");
+    unsupported(&mut wb, "sheet.getRange('A1').setValue(ExcelScript.SlicerSortType.ascending);", "ExcelScript.SlicerSortType is not supported in OpenSheet");
     unsupported(&mut wb, "sheet.addChart(ExcelScript.ChartType.waterfall, sheet.getRange('A1:C4'));", "ExcelScript.ChartType.waterfall is not supported in OpenSheet");
     unsupported(&mut wb, "const x = ExcelScript.ClearApplyTo.resetContents;", "ExcelScript.ClearApplyTo.resetContents is not supported in OpenSheet");
     unsupported(&mut wb, "fetch('https://example.org');", "fetch is not supported in OpenSheet");
@@ -181,7 +182,7 @@ fn what_opensheet_does_not_have_says_so() {
     // A script can step around what is missing.
     ok(
         &mut wb,
-        "function main(workbook: ExcelScript.Workbook) {\n  try {\n    workbook.getPivotTables();\n  } catch (error) {\n    console.log((error as Error).message);\n  }\n}",
+        "function main(workbook: ExcelScript.Workbook) {\n  try {\n    workbook.getSlicers();\n  } catch (error) {\n    console.log((error as Error).message);\n  }\n}",
     );
 
     // Scripts called from Power Automate take more than the workbook.

@@ -166,6 +166,7 @@ fn settle(host: &mut Host, ended: Result<Option<String>, Thrown>, timed_out: boo
                 activated: (host.activated || host.active_sheet() != front).then(|| host.active_sheet()),
                 selected: host.selected(),
                 autofit: host.autofits(),
+                protection_changed: host.protection_changed,
             }
         }
         Err(thrown) => {

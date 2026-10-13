@@ -1235,6 +1235,26 @@ impl Workbook {
         Ok(())
     }
 
+    /// Protect a sheet (`Some`) or remove its protection (`None`) as a
+    /// part of the current transaction: what a script does, whose changes
+    /// are all dropped when it fails. A rollback brings the protection
+    /// back with the rest; a commit keeps it and forgets the history, as
+    /// `protect_sheet` and `unprotect_sheet` forget it at once. The
+    /// password of `protection` is kept as it is given, and no password
+    /// is asked to remove one: the caller has checked it.
+    pub fn set_sheet_protection(&mut self, sheet: usize, protection: Option<SheetProtection>) -> bool {
+        if sheet >= self.sheets.len() {
+            return false;
+        }
+        if self.sheets[sheet].protection == protection {
+            return true;
+        }
+        self.snapshot();
+        self.sheets[sheet].protection = protection;
+        self.protection_pending = true;
+        true
+    }
+
     /// Whether removing the workbook protection takes a password.
     pub fn workbook_needs_password(&self) -> bool {
         self.protection.is_protected() && self.protection.password.is_some()
@@ -1877,5 +1897,40 @@ mod tests {
             PasswordError::Mismatch.message(Locale::de()),
             "Bestätigungseingabe ist nicht identisch."
         );
+    }
+
+    #[test]
+    fn protection_set_in_a_transaction_is_rolled_back_or_forgets_the_history() {
+        let mut w = Workbook::new(Locale::en());
+        w.set_cell_text(0, 0, 0, "1").unwrap();
+        w.commit("typed");
+        // Dropped with the rest of the transaction: nothing is forgotten.
+        w.snapshot();
+        w.set_cell_text(0, 0, 0, "2").unwrap();
+        assert!(w.set_sheet_protection(0, Some(SheetProtection::default())));
+        assert!(w.sheets[0].protection.is_some());
+        w.rollback();
+        assert!(w.sheets[0].protection.is_none() && w.can_undo());
+        assert_eq!(w.value_at(0, 0, 0), crate::Value::Number(1.0));
+        // Kept: the history goes, as when the sheet is protected by hand.
+        w.set_cell_text(0, 0, 0, "3").unwrap();
+        w.set_sheet_protection(0, Some(SheetProtection::default()));
+        assert!(w.commit("script"));
+        assert!(w.sheets[0].protection.is_some() && !w.can_undo() && !w.can_redo());
+        // What comes after is undone as ever, and the sheet stays protected.
+        w.set_cell_text(0, 1, 0, "later").unwrap();
+        w.commit("typed");
+        assert!(w.undo() && w.sheets[0].protection.is_some() && !w.can_undo());
+        // Setting what is already there is no change.
+        assert!(w.set_sheet_protection(0, Some(SheetProtection::default())) && !w.commit("nothing"));
+        assert!(w.can_redo() && !w.set_sheet_protection(9, None));
+        // A copy that was unprotected tells the workbook that takes it over.
+        let mut copy = w.fork();
+        copy.set_sheet_protection(0, None);
+        copy.set_cell_text(0, 0, 0, "4").unwrap();
+        w.adopt(copy);
+        assert!(w.commit("Run Script"));
+        assert!(w.sheets[0].protection.is_none() && !w.can_undo());
+        assert_eq!(w.value_at(0, 0, 0), crate::Value::Number(4.0));
     }
 }

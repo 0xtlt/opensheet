@@ -22,7 +22,11 @@ fn no_member_brings_the_engine_down() {
         time_limit: Duration::from_secs(600),
         ..Context::default()
     };
-    let out = ok_with(&mut wb, &source, &context);
+    // Sheets are protected on the way: the run is kept without a step to
+    // undo, so it is not undone and redone here as other scripts are.
+    let out = run_with(&mut wb, &source, &context);
+    assert_eq!(out.error, None);
+    assert!(wb.commit("Script"));
     let members: usize = api().iter().map(|class| class.members.len()).sum();
     assert_eq!(out.returned, Some((members * 30).to_string()));
 }

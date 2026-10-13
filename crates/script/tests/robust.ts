@@ -28,6 +28,7 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     NamedItem: workbook.addNamedItem(`Name${round}`, range),
     Worksheet: sheet,
     WorksheetFreezePanes: sheet.getFreezePanes(),
+    WorksheetProtection: sheet.getProtection(),
     AutoFilter: sheet.getAutoFilter(),
     Range: range,
     RangeSort: range.getSort(),

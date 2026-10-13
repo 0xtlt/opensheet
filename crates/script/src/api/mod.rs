@@ -15,6 +15,7 @@ mod condfmt;
 mod enums;
 mod format;
 mod pivot;
+mod protection;
 mod range;
 mod shape;
 mod table;
@@ -210,6 +211,7 @@ pub(crate) static API: &[ApiClass] = &[
     workbook::NAMED_ITEM,
     worksheet::WORKSHEET,
     worksheet::FREEZE_PANES,
+    protection::WORKSHEET_PROTECTION,
     worksheet::AUTO_FILTER,
     range::RANGE,
     range::RANGE_SORT,

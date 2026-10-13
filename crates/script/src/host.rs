@@ -51,6 +51,8 @@ pub(crate) struct Host {
     pub calculated: bool,
     /// A member that can change the workbook was called.
     pub edited: bool,
+    /// A sheet was protected or unprotected.
+    pub protection_changed: bool,
     written: u64,
     /// The engine failed under a call: the run is lost whatever the
     /// script does next.
@@ -84,6 +86,7 @@ impl Host {
             restructured: false,
             calculated: false,
             edited: false,
+            protection_changed: false,
             written: 0,
             fatal: None,
             cond_formats: Vec::new(),

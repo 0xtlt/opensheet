@@ -421,6 +421,10 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         h.wb.sheets[sheet].show_headers = show;
         Ok(Ret::Nothing)
     };
+    getProtection "(): WorksheetProtection" "The protection of the worksheet." => |h, c| {
+        this_sheet(h, c)?;
+        Ok(Ret::object("WorksheetProtection", vec![c.this_int(0).into()]))
+    };
     getFreezePanes "(): WorksheetFreezePanes" "The frozen panes of the worksheet." => |h, c| {
         this_sheet(h, c)?;
         Ok(Ret::object("WorksheetFreezePanes", vec![c.this_int(0).into()]))

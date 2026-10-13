@@ -18,6 +18,12 @@
 //! * when it is `Some`, [`run`] has already dropped them and the
 //!   workbook is as it was; the caller's `wb.rollback()` is still right
 //!   (it then finds nothing to drop);
+//! * a script that protects or unprotects a worksheet
+//!   ([`Outcome::protection_changed`]) does it inside the same
+//!   transaction: a failure brings the protection back with the rest,
+//!   and the caller's commit forgets the undo history, as protecting a
+//!   sheet by hand does (the engine sees to it, also through
+//!   `Workbook::adopt`);
 //! * [`run`] never panics and never runs longer than
 //!   [`Context::time_limit`];
 //! * a script gets the language and the `ExcelScript` object model,
@@ -200,6 +206,10 @@ pub struct Outcome {
     /// window fits them again with the fonts it draws with, before it
     /// commits.
     pub autofit: Vec<Autofit>,
+    /// The script protected or unprotected a worksheet. Committing its
+    /// changes then forgets the undo history, as protecting a sheet by
+    /// hand does: the run is not a step to undo.
+    pub protection_changed: bool,
 }
 
 /// Columns (or rows) `first..=last` of a sheet, to fit to their content.

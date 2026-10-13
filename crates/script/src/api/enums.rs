@@ -197,6 +197,10 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(twoCell "TwoCell", oneCell "OneCell", absolute "Absolute"),
     },
     ApiEnum {
+        name: "ProtectionSelectionMode",
+        members: members!(normal "Normal", unlocked "Unlocked", none "None"),
+    },
+    ApiEnum {
         name: "RangeCopyType",
         members: members!(all "All", formulas "Formulas", values "Values", formats "Formats", link "Link"),
     },
