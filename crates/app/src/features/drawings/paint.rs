@@ -428,7 +428,7 @@ pub(super) fn shape_cover(shape: &Shape, natural: (f32, f32), size: (f32, f32), 
 
 /// The shadow and the glow of a shape, under it: its outline blurred
 /// (`render::under`), made once for each look and size.
-fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+pub(super) fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
     let effects = Effects {
         shadow: drawing.effects.shadow,
         glow: drawing.effects.glow,

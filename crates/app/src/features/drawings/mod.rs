@@ -91,6 +91,7 @@ const PICTURE_TAB: &str = "picture-format";
 const SHAPE_TAB: &str = "shape-format";
 const GRAPHICS_TAB: &str = "graphics-format";
 const SMARTART_TAB: &str = "smartart-design";
+const SMARTART_FORMAT_TAB: &str = "smartart-format";
 const EQUATION_TAB: &str = "equation";
 
 commands! {
@@ -196,6 +197,10 @@ commands! {
         SmartStyles = "cell-styles", t("SmartArt Styles", "Styles SmartArt");
         SmartReset = "refresh", t("Reset Graphic", "Rétablir l'image");
         SmartConvert = "shapes", t("Convert to Shapes", "Convertir en formes");
+        // SmartArt Format
+        SmartChangeShape = "shapes", t("Change Shape", "Modifier la forme");
+        SmartLarger = "plus", t("Larger", "Plus grande");
+        SmartSmaller = "minus", t("Smaller", "Plus petite");
         // Graphics Format
         ChangeGraphic = "picture", t("Change Graphic", "Changer d'image");
         ChangeGraphicFromIcons = "shapes", t("From Icons…", "À partir d'icônes…");
@@ -249,7 +254,16 @@ impl Command for Cmd {
             | Cmd::SmartColors
             | Cmd::SmartStyles
             | Cmd::SmartReset
-            | Cmd::SmartConvert => smartart::can(app, self),
+            | Cmd::SmartConvert
+            | Cmd::SmartChangeShape
+            | Cmd::SmartLarger
+            | Cmd::SmartSmaller => smartart::can(app, self),
+            // The shapes of a graphic are formatted from its Format tab.
+            Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::ShapeEffects | Cmd::TextFill | Cmd::TextOutline
+                if drawing.is_some_and(smartart::is_graphic) =>
+            {
+                smartart::can_format(app)
+            }
             // A graphic is not turned.
             Cmd::Rotate | Cmd::RotateRight | Cmd::RotateLeft | Cmd::FlipVertical | Cmd::FlipHorizontal | Cmd::MoreRotation
                 if drawing.is_some_and(smartart::is_graphic) =>
@@ -440,7 +454,10 @@ impl Command for Cmd {
             | Cmd::SmartColors
             | Cmd::SmartStyles
             | Cmd::SmartReset
-            | Cmd::SmartConvert => smartart::run(app, self, window, cx),
+            | Cmd::SmartConvert
+            | Cmd::SmartChangeShape
+            | Cmd::SmartLarger
+            | Cmd::SmartSmaller => smartart::run(app, self, window, cx),
             Cmd::ChangeGraphic => {
                 let entries = vec![
                     MenuEntry::command(Cmd::ChangePictureFromFile, app),
@@ -619,6 +636,15 @@ fn edit_leaves(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mu
 /// Change the selected shapes, and those in the selected groups (nothing
 /// happens to a picture).
 fn edit_shape(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Shape)) -> bool {
+    // In a graphic, the shapes that are chosen in it.
+    let on_shape = |drawing: &mut Drawing| {
+        if let Some(shape) = drawing.as_shape_mut() {
+            change(shape);
+        }
+    };
+    if let Some(done) = smartart::format_nodes(app, label, cx, &on_shape) {
+        return done;
+    }
     let is_shape = |drawing: &Drawing| drawing.as_shape().is_some();
     let any = selected_ids(app)
         .into_iter()
@@ -984,10 +1010,16 @@ impl Feature for Drawings {
 
     fn context_tabs(&self, app: &ExcelApp) -> Vec<ContextTab> {
         match selected(app) {
-            Some(drawing) if smartart::is_graphic(drawing) => vec![ContextTab {
-                id: SMARTART_TAB,
-                title: t("SmartArt Design", "Création de graphique SmartArt"),
-            }],
+            Some(drawing) if smartart::is_graphic(drawing) => vec![
+                ContextTab {
+                    id: SMARTART_TAB,
+                    title: t("SmartArt Design", "Création de graphique SmartArt"),
+                },
+                ContextTab {
+                    id: SMARTART_FORMAT_TAB,
+                    title: t("Format", "Format"),
+                },
+            ],
             Some(drawing) if icons::is_graphic(drawing) => vec![ContextTab {
                 id: GRAPHICS_TAB,
                 title: t("Graphics Format", "Format du graphique"),
@@ -1024,6 +1056,8 @@ impl Feature for Drawings {
             equation::equation_tab(app, cx)
         } else if tab == SMARTART_TAB {
             smartart::design_tab(app, cx)
+        } else if tab == SMARTART_FORMAT_TAB {
+            smartart::format_tab(app, cx)
         } else if tab == GRAPHICS_TAB {
             icons::graphics_tab(app, window, cx)
         } else if tab == PICTURE_TAB {

@@ -194,3 +194,142 @@ fn keys_go_to_the_chosen_entry_of_a_graphic(cx: &mut TestAppContext) {
     assert!(!started);
     assert_eq!(app.update(cx, |app, _| smartart::editing(app)), None);
 }
+
+// ----------------------------------------------------- the SmartArt Format tab
+
+use opensheet_engine::drawing::{Glow, Outline as ShapeOutline, ShapePreset as Preset};
+use opensheet_engine::smartart::NodeFormat;
+use opensheet_engine::style::Color;
+
+fn run(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cmd: Cmd) {
+    app.update_in(cx, |app, window, cx| app.run_command(cmd, window, cx));
+    redraw(cx);
+}
+
+fn format_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, line: usize) -> NodeFormat {
+    art(app, cx, id).format(line).expect("the line")
+}
+
+#[gpui::test]
+fn the_format_tab_formats_the_chosen_shapes_of_a_graphic(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = graphic(&app, cx, Layout::Process, &[(0, "Plan"), (0, "Build"), (0, "Ship")]);
+    // A graphic has two tabs: SmartArt Design and Format.
+    let tabs: Vec<&str> = app.update(cx, |app, _| Drawings.context_tabs(app).iter().map(|tab| tab.id).collect());
+    assert_eq!(tabs, [SMARTART_TAB, SMARTART_FORMAT_TAB]);
+    app.update(cx, |app, cx| {
+        app.context_tab = Some(SMARTART_FORMAT_TAB);
+        cx.notify();
+    });
+    redraw(cx);
+    // With no shape chosen, a shape cannot be made larger; a fill goes
+    // to every shape, as one undo step.
+    app.update(cx, |app, cx| smartart::leave_node(app, cx));
+    assert!(app.update(cx, |app, _| !Cmd::SmartLarger.enabled(app) && Cmd::ShapeFill.enabled(app) && Cmd::TextOutline.enabled(app)));
+    app.update(cx, |app, cx| tabs::set_fill(app, Some(Color(0x7030A0)), cx));
+    assert_eq!((0..3).map(|line| format_of(&app, cx, id, line).fill).collect::<Vec<_>>(), vec![Some(Some(Color(0x7030A0))); 3]);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Shape Fill"));
+    undo(&app, cx);
+    assert!(!art(&app, cx, id).has_formats());
+
+    // One shape chosen, a second with Shift: the commands go to both.
+    click_line(&app, cx, 0);
+    let ship = shape_of_line(&app, cx, 2);
+    cx.simulate_click(ship, Modifiers::shift());
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| smartart::chosen_lines(app)), [0, 2]);
+    assert!(app.update(cx, |app, _| Cmd::SmartLarger.enabled(app)));
+    run(&app, cx, Cmd::SmartLarger);
+    run(&app, cx, Cmd::SmartLarger);
+    run(&app, cx, Cmd::SmartSmaller);
+    assert_eq!(format_of(&app, cx, id, 0).scale, Some((1.1, 1.1)));
+    assert_eq!(format_of(&app, cx, id, 2).scale, Some((1.1, 1.1)));
+    assert!(format_of(&app, cx, id, 1).is_plain());
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Smaller"));
+    // Shape Fill, Shape Outline, Shape Effects, Text Fill, Text Outline:
+    // what their menus call.
+    app.update(cx, |app, cx| {
+        tabs::set_fill(app, Some(Color(0xC00000)), cx);
+        tabs::set_outline_color(app, Some(Color(0x00B050)), cx);
+        tabs::set_outline(app, cx, |outline| outline.width = 3.0);
+        adjust::set_effects(app, "Glow", cx, |effects| {
+            effects.glow = Some(Glow {
+                color: Color(0xFFC000),
+                transparency: 0.5,
+                radius: 8.0,
+            })
+        });
+        tabs::set_text_color(app, Some(Color(0xFFFF00)), cx);
+        wordart::format(app, Cmd::TextOutline.label(), cx, &|_, effects| {
+            effects.outline = Some(opensheet_engine::wordart::TextOutline {
+                color: Color(0x0070C0),
+                width: 1.0,
+            })
+        });
+    });
+    for line in [0, 2] {
+        let format = format_of(&app, cx, id, line);
+        assert_eq!(format.fill, Some(Some(Color(0xC00000))));
+        assert_eq!(format.outline, Some(Some(ShapeOutline::solid(Color(0x00B050), 3.0))));
+        assert_eq!(format.effects.and_then(|effects| effects.glow).map(|glow| glow.radius), Some(8.0));
+        assert_eq!(format.text_color, Some(Color(0xFFFF00)));
+        assert_eq!(format.text_effects.and_then(|effects| effects.outline).map(|outline| outline.color), Some(Color(0x0070C0)));
+    }
+    assert!(format_of(&app, cx, id, 1).is_plain());
+    // Each was one undo step.
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Text Outline"));
+    undo(&app, cx);
+    assert_eq!(format_of(&app, cx, id, 0).text_effects, None);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Text Fill"));
+
+    // Change Shape: its menu, and a real click on its first entry.
+    click_line(&app, cx, 1);
+    run(&app, cx, Cmd::SmartChangeShape);
+    let (entry, first) = app.update(cx, |app, _| {
+        let popup = app.popup.as_ref().expect("the Change Shape menu");
+        let panel = popup.geometry.borrow().panels[0];
+        let first = ShapeTool::ALL.into_iter().find(|tool| !tool.preset().is_line() && *tool != ShapeTool::TextBox).unwrap();
+        (point(panel.origin.x + px(40.), panel.origin.y + px(18.)), first.preset())
+    });
+    click(cx, entry);
+    assert!(app.update(cx, |app, _| app.popup.is_none()), "the menu closes");
+    // The first shape of the gallery: a rectangle, where a process has
+    // rounded ones.
+    assert_eq!(first, Preset::Rect);
+    assert_eq!(format_of(&app, cx, id, 1).preset, Some(Preset::Rect));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Change Shape"));
+    // The shapes the graphic is drawn as follow, and the look stays with
+    // its entry when the outline is reordered.
+    let pieces = app.update(cx, |app, _| art_pieces(app, id));
+    let of = |line: usize| pieces.iter().find(|piece| piece.node == Some(line)).unwrap();
+    assert_eq!((of(0).shape.fill, of(1).shape.preset, of(1).shape.fill == of(0).shape.fill), (Some(Color(0xC00000)), Preset::Rect, false));
+    assert!(of(0).width > of(1).width * 1.05);
+    assert_eq!(of(0).shape.font.color, Some(Color(0xFFFF00)));
+    click_line(&app, cx, 0);
+    run(&app, cx, Cmd::SmartMoveDown);
+    assert_eq!(outline(&app, cx, id), "Build|Plan|Ship");
+    assert_eq!(format_of(&app, cx, id, 1).fill, Some(Some(Color(0xC00000))));
+    assert_eq!(format_of(&app, cx, id, 0).preset, Some(Preset::Rect));
+
+    // Reset Graphic, on the Design tab, clears all of it in one step.
+    run(&app, cx, Cmd::SmartReset);
+    assert!(!art(&app, cx, id).has_formats());
+    undo(&app, cx);
+    assert!(art(&app, cx, id).has_formats());
+    // A protected sheet keeps the shapes as they are.
+    app.update(cx, |app, cx| {
+        let sheet = app.sheet;
+        app.wb.protect_sheet(sheet, opensheet_engine::protect::SheetProtection::default(), "");
+        app.commit("protect", cx);
+    });
+    let before = art(&app, cx, id);
+    app.update(cx, |app, cx| tabs::set_fill(app, None, cx));
+    run(&app, cx, Cmd::SmartLarger);
+    assert_eq!(art(&app, cx, id), before);
+}
+
+fn art_pieces(app: &ExcelApp, id: u32) -> Vec<opensheet_engine::smartart::Piece> {
+    let frame = app.wb.drawing_frame(app.sheet, id).unwrap();
+    let art = app.wb.drawing(app.sheet, id).and_then(Drawing::as_smartart).unwrap();
+    art.pieces(app.wb.theme(), frame.width as f32, frame.height as f32)
+}
