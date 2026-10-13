@@ -18,8 +18,11 @@ unicode-segmentation = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The Objective-C runtime GPUI already links: for the system spelling
-# checker (NSSpellChecker) of Review > Spelling.
+# checker (NSSpellChecker) of Review > Spelling, and for the share sheet of
+# macOS (NSSharingServicePicker), which hangs from the view of the window
+# (`raw-window-handle`, also built for GPUI already).
 objc = "0.2"
+raw-window-handle = "0.6"
 
 [dev-dependencies]
 # The headless window of GPUI, to drive the interface in tests.

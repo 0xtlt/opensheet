@@ -14,9 +14,10 @@
 //!
 //! Kept: the author of a note, its text with the font of each run, whether
 //! it stays shown and where its box is; the posts of a thread with their
-//! authors and times, and whether it is resolved. Not kept: the look of the
-//! box (fill, border, margins, alignment, a picture as background), how it
-//! follows its cells, mentions, people nobody quotes.
+//! authors and times, the people they name (`<mentions>`, whose places
+//! count UTF-16 units as Excel does), and whether it is resolved. Not
+//! kept: the look of the box (fill, border, margins, alignment, a picture
+//! as background), how it follows its cells, people nobody quotes.
 
 use super::chart::Track;
 use super::color::{Palette, RawColor};
@@ -26,7 +27,7 @@ use super::read::{Package, Rel, relationships};
 use super::write::{MAX_COL_WIDTH_PX, MAX_ROW_HEIGHT_PT, NS_DOC_REL, NS_MAIN, push_number, push_t};
 use super::xml::{Event, Reader, Tag, XML_DECL, decode_cell_text, push_attr, push_cell_text};
 use opensheet_engine::comment::{
-    Comment, NOTE_SIZE, Note, NoteBox, NoteRun, Person, Post, Thread, time_from_iso, time_to_iso,
+    Comment, Mention, NOTE_SIZE, Note, NoteBox, NoteRun, Person, Post, Thread, time_from_iso, time_to_iso,
 };
 use opensheet_engine::drawing::Frame;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, cell_name, parse_cell_name};
@@ -299,6 +300,31 @@ fn push_run(x: &mut String, run: &NoteRun) {
     x.push_str("</r>");
 }
 
+/// How many UTF-16 units the first `bytes` bytes of a text take: files
+/// count the places of mentions that way.
+fn utf16_len(text: &str, bytes: usize) -> usize {
+    text.get(..bytes).map_or(0, |head| head.encode_utf16().count())
+}
+
+/// The byte offset of the character that starts `units` UTF-16 units into
+/// a text; `None` past its end or inside a character.
+fn byte_offset(text: &str, units: usize) -> Option<usize> {
+    let mut seen = 0;
+    for (offset, ch) in text.char_indices() {
+        if seen == units {
+            return Some(offset);
+        }
+        seen += ch.len_utf16();
+    }
+    (seen == units).then_some(text.len())
+}
+
+/// The id of a mention: that of its post and its place among the
+/// mentions of the post.
+fn mention_id(post: &str, index: usize) -> String {
+    guid("mention", &[post.as_bytes(), &(index as u64).to_le_bytes()])
+}
+
 /// Append a post of a thread. `parent` is the id of the comment a reply
 /// answers; `done` marks the first comment of a resolved thread.
 fn push_post(x: &mut String, cell: &str, post: &Post, id: &str, parent: Option<&str>, done: bool) {
@@ -315,7 +341,23 @@ fn push_post(x: &mut String, cell: &str, post: &Post, id: &str, parent: Option<&
     }
     x.push_str("><text>");
     push_cell_text(x, &post.text);
-    x.push_str("</text></threadedComment>");
+    x.push_str("</text>");
+    if !post.mentions.is_empty() {
+        x.push_str("<mentions>");
+        for (index, mention) in post.mentions.iter().enumerate() {
+            let start = utf16_len(&post.text, mention.start);
+            let end = utf16_len(&post.text, mention.start + mention.len);
+            w!(
+                x,
+                "<mention mentionpersonId=\"{}\" mentionId=\"{}\" startIndex=\"{start}\" length=\"{}\"/>",
+                person_id(&mention.person),
+                mention_id(id, index),
+                end - start
+            );
+        }
+        x.push_str("</mentions>");
+    }
+    x.push_str("</threadedComment>");
 }
 
 /// The people of a workbook's threads (`xl/persons/person.xml`).
@@ -398,8 +440,12 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
                             let reply = post_id(index, cell, n);
                             push_post(&mut threads, &name, post, &reply, Some(&id), false);
                         }
-                        if !people.contains(&&post.author) {
-                            people.push(&post.author);
+                        // Those who write, then those they name.
+                        let named = post.mentions.iter().map(|mention| &mention.person);
+                        for person in std::iter::once(&post.author).chain(named) {
+                            if !people.contains(&person) {
+                                people.push(person);
+                            }
                         }
                     }
                 }
@@ -559,36 +605,71 @@ fn parse_threads(xml: &str, persons: &HashMap<String, Person>) -> Vec<((u32, u32
                 let id = |name: &str| t.attr(name).map(|v| v.trim().to_uppercase());
                 let author = id("personId").and_then(|id| persons.get(&id)).cloned();
                 let mut text = String::new();
+                // Who is named, from which UTF-16 unit, for how many.
+                let mut named: Vec<(Person, usize, usize)> = Vec::new();
                 if !t.empty {
                     loop {
                         match r.next() {
                             Event::Open(c) if c.name == "text" => {
                                 text = decode_cell_text(&r.text(&c)).into_owned();
                             }
+                            Event::Open(c) if c.name == "mentions" && !c.empty => loop {
+                                match r.next() {
+                                    Event::Open(m) if m.name == "mention" => {
+                                        let who = m.attr("mentionpersonId").map(|v| v.trim().to_uppercase());
+                                        let number = |name: &str| m.attr(name).and_then(|v| v.trim().parse::<usize>().ok());
+                                        if let (Some(person), Some(start), Some(length)) = (
+                                            who.and_then(|id| persons.get(&id)),
+                                            number("startIndex"),
+                                            number("length"),
+                                        ) {
+                                            named.push((person.clone(), start, length));
+                                        }
+                                        r.skip(&m);
+                                    }
+                                    Event::Open(m) => r.skip(&m),
+                                    Event::Close(_) | Event::Eof => break,
+                                    _ => {}
+                                }
+                            },
                             Event::Open(c) => r.skip(&c),
                             Event::Close(_) | Event::Eof => break,
                             _ => {}
                         }
                     }
                 }
+                // A mention of nobody the file knows, or that does not fit
+                // the text, stays as the text it is.
+                let mentions = named
+                    .into_iter()
+                    .filter_map(|(person, start, length)| {
+                        let from = byte_offset(&text, start)?;
+                        let to = byte_offset(&text, start.checked_add(length)?)?;
+                        Some(Mention {
+                            person,
+                            start: from,
+                            len: to - from,
+                        })
+                    })
+                    .collect();
                 posts.push(RawPost {
                     cell: t.attr("ref").and_then(|name| parse_cell_name(&name)),
                     id: id("id").unwrap_or_default(),
                     parent: id("parentId").filter(|parent| !parent.is_empty()),
                     done: t.attr_bool("done").unwrap_or(false),
-                    post: Post {
+                    post: Post::new(
                         // Someone the list of people does not know has no
                         // name, but still said something.
-                        author: author.unwrap_or_else(|| Person {
+                        &author.unwrap_or_else(|| Person {
                             provider_id: "None".to_string(),
                             ..Person::default()
                         }),
-                        time: t
-                            .attr("dT")
+                        t.attr("dT")
                             .and_then(|time| time_from_iso(&time))
                             .unwrap_or(0.0),
-                        text,
-                    },
+                        &text,
+                    )
+                    .with_mentions(mentions),
                 });
             }
             Event::Open(t) if t.name != "ThreadedComments" => r.skip(&t),

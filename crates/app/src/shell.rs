@@ -350,6 +350,15 @@ impl ExcelApp {
         self.modals.last().map(|entry| entry.view.clone())
     }
 
+    /// The title and the text of the message box in front, for the
+    /// tests that expect one.
+    #[cfg(test)]
+    pub(crate) fn front_alert(&self, cx: &App) -> Option<(String, String)> {
+        let view = self.front_modal_view()?.downcast::<MessageBox>().ok()?;
+        let alert = &view.read(cx).alert;
+        Some((alert.title.to_string(), alert.message.to_string()))
+    }
+
     /// Show a message box.
     pub fn alert(&mut self, mut alert: Alert, cx: &mut Context<Self>) {
         if alert.buttons.is_empty() {

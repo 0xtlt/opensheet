@@ -3733,6 +3733,7 @@ dependencies = [
  "opensheet_io",
  "opensheet_print",
  "opensheet_script",
+ "raw-window-handle",
  "unicode-segmentation",
 ]
 

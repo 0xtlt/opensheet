@@ -596,7 +596,9 @@ impl ExcelApp {
                     .text_color(c(0xFFFFFF))
                     .child(icon("share", 14.0, 0xFFFFFF))
                     .when(labels, |d| d.child(share_label))
-                    .on_click(cx.listener(|this, _, window, cx| misc::Cmd::Share.run(this, window, cx))),
+                    .relative()
+                    .child(self.anchor(features::share::BUTTON))
+                    .on_click(cx.listener(|this, _, window, cx| features::share::Cmd::Share.run(this, window, cx))),
             )
     }
 
@@ -615,6 +617,7 @@ impl ExcelApp {
             MenuEntry::new(t("Save As…", "Enregistrer sous…"), |a, w, cx| a.save(true, w, cx)).shortcut("⇧⌘S"),
             MenuEntry::separator(),
             MenuEntry::command(page::Cmd::Print, self).shortcut("⌘P"),
+            features::share::file_menu_entry(self),
             MenuEntry::separator(),
         ];
         let mut entries = entries;
@@ -706,8 +709,8 @@ impl ExcelApp {
             group(
                 t("Help", "Aide"),
                 row(vec![
-                    self.cmd_large("hp-help", misc::Cmd::Help, false, cx),
-                    self.cmd_large("hp-feedback", misc::Cmd::Feedback, false, cx),
+                    self.cmd_large("hp-help", features::help::Cmd::Help, false, cx),
+                    self.cmd_large("hp-feedback", features::help::Cmd::Feedback, false, cx),
                 ]),
             )
             .border_r_0()
@@ -722,7 +725,7 @@ impl ExcelApp {
                 row(vec![
                     self.cmd_large("rv-spell", proofing::Cmd::Spelling, false, cx),
                     self.cmd_large("rv-thesaurus", proofing::Cmd::Thesaurus, false, cx),
-                    self.cmd_large("rv-stats", misc::Cmd::WorkbookStatistics, false, cx),
+                    self.cmd_large("rv-stats", features::stats::Cmd::Open, false, cx),
                 ]),
             )
             .into_any_element(),

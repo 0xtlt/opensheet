@@ -36,7 +36,6 @@ pub struct Misc;
 commands! {
     /// The formula tools, and the ribbon commands without a home.
     pub enum Cmd {
-        Share = "share", t("Share", "Partager");
         // Home
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
@@ -61,13 +60,9 @@ commands! {
         CalcManual = "", t("Manual", "Manuel");
         CalcNow = "misc-calc-now", t("Calculate Now", "Calculer maintenant");
         CalcSheet = "misc-calc-sheet", t("Calculate Sheet", "Calculer la feuille");
-        // Review
-        WorkbookStatistics = "calculator", t("Workbook Statistics", "Statistiques du classeur");
-        // Automate, Help
+        // Automate
         NewScript = "function", t("New Script", "Nouveau script");
         AllScripts = "book", t("All Scripts", "Tous les scripts");
-        Help = "book", t("Help", "Aide");
-        Feedback = "comment", t("Feedback", "Commentaires");
     }
 }
 
