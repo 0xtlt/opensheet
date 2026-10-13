@@ -99,6 +99,7 @@ pub(super) struct Shown {
     gridlines: bool,
     headings: bool,
     formulas: bool,
+    outline_symbols: bool,
     /// The fonts of this machine, for "Default font".
     fonts: Vec<String>,
     /// The font of a new workbook when none is chosen.
@@ -115,6 +116,7 @@ fn shown(app: &ExcelApp) -> Shown {
         gridlines: sheet.show_gridlines,
         headings: sheet.show_headers,
         formulas: misc::shows_formulas(app),
+        outline_symbols: sheet.outline.show_symbols,
         fonts: app.fonts.names.clone(),
         engine_font: opensheet_engine::Style::default().font.name.to_string(),
     }
@@ -267,6 +269,22 @@ impl PreferencesWindow {
         cx.notify();
     }
 
+    /// "Outline symbols" of the sheet in front: the flag of its outline,
+    /// as one undo step.
+    pub(super) fn set_outline_symbols(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.shown.outline_symbols = on;
+        self.modal.update_app(cx, |app, cx| {
+            let sheet = app.sheet;
+            let outline = &app.wb.sheets[sheet].outline;
+            if outline.show_symbols != on {
+                let (below, right) = (outline.summary_below, outline.summary_right);
+                app.wb.set_outline_settings(sheet, below, right, on);
+                app.commit(t("Outline symbols", "Symboles du plan"), cx);
+            }
+        });
+        cx.notify();
+    }
+
     pub(super) fn set_iteration(&mut self, on: bool, cx: &mut Context<Self>) {
         self.commit_fields(cx);
         self.shown.iterative.enabled = on;
@@ -350,7 +368,7 @@ impl PreferencesWindow {
                             this.set(cx, |settings| settings.default_font = name.clone());
                         })),
                     ))
-                    .child(row(t("Font size:", "Taille de police :"), NumberField::new("prefs-font-size", &self.font_size).width(70.0)))
+                    .child(row(t("Font size:", "Taille de la police :"), NumberField::new("prefs-font-size", &self.font_size).width(70.0)))
                     .child(row(
                         t("Sheets in new workbooks:", "Feuilles dans les nouveaux classeurs :"),
                         NumberField::new("prefs-sheets", &self.sheets).width(70.0),
@@ -375,7 +393,7 @@ impl PreferencesWindow {
                         });
                         cx.notify();
                     }))
-                    .child(self.check("prefs-sheet-tabs", t("Sheet tabs", "Onglets de classeur"), shown.settings.show_sheet_tabs, cx, |this, on, _, cx| {
+                    .child(self.check("prefs-sheet-tabs", t("Sheet tabs", "Onglets de feuille"), shown.settings.show_sheet_tabs, cx, |this, on, _, cx| {
                         this.set(cx, |settings| settings.show_sheet_tabs = on);
                     })),
             )
@@ -393,7 +411,7 @@ impl PreferencesWindow {
                     }))
                     .child(self.check(
                         "prefs-headings",
-                        t("Row and column headers", "En-têtes de ligne et de colonne"),
+                        t("Row and column headers", "En-têtes des lignes et des colonnes"),
                         shown.headings,
                         cx,
                         |this, on, _, cx| {
@@ -414,11 +432,18 @@ impl PreferencesWindow {
                             }
                         });
                         cx.notify();
-                    })),
+                    }))
+                    .child(self.check(
+                        "prefs-outline-symbols",
+                        t("Outline symbols", "Symboles du plan"),
+                        shown.outline_symbols,
+                        cx,
+                        |this, on, _, cx| this.set_outline_symbols(on, cx),
+                    )),
             )
             .child(note(t(
-                "Not available in OpenSheet: zero values, comment indicators, outline symbols, page breaks and the display of objects.",
-                "Non disponible dans OpenSheet : valeurs zéro, indicateurs de commentaire, symboles du plan, sauts de page et affichage des objets.",
+                "Not available in OpenSheet: zero values, comment indicators, page breaks and the display of objects.",
+                "Non disponible dans OpenSheet : valeurs zéro, indicateurs de commentaire, sauts de page et affichage des objets.",
             )))
             .into_any_element()
     }
@@ -440,7 +465,7 @@ impl PreferencesWindow {
                             .gap(px(8.))
                             .child(self.check(
                                 "prefs-move",
-                                t("After pressing Return, move selection:", "Après validation, déplacer la sélection :"),
+                                t("After pressing Return, move selection:", "Déplacer la sélection après validation :"),
                                 s.move_after_return,
                                 cx,
                                 |this, on, _, cx| this.set(cx, |settings| settings.move_after_return = on),
@@ -462,7 +487,7 @@ impl PreferencesWindow {
                             .gap(px(8.))
                             .child(self.check(
                                 "prefs-decimal",
-                                t("Automatically insert a decimal point (places):", "Décimale fixe (place) :"),
+                                t("Automatically insert a decimal point (places):", "Insérer automatiquement une décimale fixe (places) :"),
                                 s.fixed_decimal,
                                 cx,
                                 |this, on, _, cx| {
@@ -484,7 +509,7 @@ impl PreferencesWindow {
         let shown = &self.shown;
         let modes: Vec<SharedString> = vec![
             t("Automatic", "Automatique").into(),
-            t("Automatic except for data tables", "Automatique sauf dans les tableaux de données").into(),
+            t("Automatic except for data tables", "Automatique sauf dans les tables de données").into(),
             t("Manual", "Manuel").into(),
         ];
         let mode = MODES.iter().position(|mode| *mode == shown.calc_mode);
@@ -510,13 +535,13 @@ impl PreferencesWindow {
                 GroupBox::new(t("Iteration", "Itération"))
                     .child(self.check(
                         "prefs-iterate",
-                        t("Use iterative calculation", "Utiliser le calcul itératif"),
+                        t("Use iterative calculation", "Activer le calcul itératif"),
                         shown.iterative.enabled,
                         cx,
                         |this, on, _, cx| this.set_iteration(on, cx),
                     ))
                     .child(row(
-                        t("Maximum iterations:", "Nombre maximal d'itérations :"),
+                        t("Maximum iterations:", "Maximum d'itérations :"),
                         NumberField::new("prefs-max-iterations", &self.max_iterations).width(90.0),
                     ))
                     .child(row(t("Maximum change:", "Écart maximal :"), NumberField::new("prefs-max-change", &self.max_change).width(90.0))),
@@ -543,7 +568,7 @@ impl PreferencesWindow {
             )))
             .child(GroupBox::new(t("Rules", "Règles")).child(self.check(
                 "prefs-rule-errors",
-                t("Formulas that result in an error", "Formules dont le résultat est une erreur"),
+                t("Formulas that result in an error", "Formules générant des erreurs"),
                 s.check_error_values,
                 cx,
                 |this, on, _, cx| this.set(cx, |settings| settings.check_error_values = on),

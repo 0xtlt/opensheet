@@ -161,6 +161,17 @@ fn sheet_tabs_and_error_corners_follow_their_boxes(cx: &mut TestAppContext) {
     settings::update(|settings| settings.check_error_values = false);
     assert!(app.update(cx, |app, _| errors(app)).is_empty());
     assert!(!checks_error_values());
+    // The View pane holds the outline symbols of the sheet in front.
+    let view = pane(&app, cx, Pane::View);
+    view.update(cx, |view, cx| view.set_outline_symbols(false, cx));
+    app.update(cx, |app, _| {
+        assert!(!app.wb.sheets[0].outline.show_symbols);
+        assert_eq!(app.wb.undo_label(), Some("Outline symbols"));
+    });
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    cx.simulate_keystrokes("cmd-z");
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].outline.show_symbols));
     // The window still draws without its sheet tabs.
     settings::update(|settings| settings.show_sheet_tabs = false);
     app.update(cx, |_, cx| cx.notify());
