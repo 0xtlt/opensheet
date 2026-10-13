@@ -286,3 +286,29 @@ fn a_pivot_chart_goes_through_a_file() {
     let data = back.chart_data(1, &back.sheets[1].charts[0]);
     assert_eq!(data.categories, ["North", "West"]);
 }
+
+/// Everything of this file on one sheet, kept for a look in Excel and in
+/// the application.
+#[test]
+fn slicers_a_timeline_a_calculated_field_and_a_chart_together() {
+    use opensheet_engine::chart::ChartKind;
+    let (mut wb, pivot) = book();
+    wb.pivot_set_calculated_field(pivot, "Half", "=Sales/2", false).unwrap();
+    let region = wb.add_pivot_slicer(1, pivot, 0, (1, 4)).unwrap();
+    let product = wb.add_pivot_slicer(1, pivot, 1, (1, 7)).unwrap();
+    wb.update_slicer(product, |s| s.style = "SlicerStyleDark2".to_string());
+    let timeline = wb.add_timeline(1, pivot, 2, (16, 4)).unwrap();
+    let chart = wb.add_pivot_chart(1, pivot, ChartKind::Column).unwrap();
+    wb.update_chart(1, chart, |c| c.anchor = (25, 0));
+    let east = wb.slicer_items(region)[0].x;
+    let north = wb.slicer_items(region)[1].x;
+    wb.slicer_select(region, &[east, north], false).unwrap();
+    wb.commit("all");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("pivotx-all.xlsx", &bytes);
+    all_well_formed(&bytes);
+    let back = load(&bytes);
+    assert_eq!((back.sheets[1].slicers.len(), back.sheets[1].timelines.len(), back.sheets[1].charts.len()), (2, 1, 1));
+    assert!(back.timeline(back.sheets[1].timelines[0].id).is_some() && timeline > 0);
+    assert_eq!(to_bytes(&back), bytes);
+}
