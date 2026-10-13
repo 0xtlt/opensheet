@@ -10,6 +10,7 @@
 
 use crate::features::ink::{Pen, default_pens};
 use opensheet_engine::ops::Direction;
+use opensheet_engine::theme::{ThemeColors, ThemeFonts};
 use std::cell::RefCell;
 use std::path::PathBuf;
 
@@ -52,6 +53,11 @@ pub struct Settings {
     // ---- Custom Lists
     /// The lists of the user, after the built-in ones. None is empty.
     pub custom_lists: Vec<Vec<String>>,
+    // ---- Page Layout ▸ Themes
+    /// The colour sets and font pairs made in the Customize dialogs,
+    /// listed under "Custom" in the Colors and Fonts menus.
+    pub theme_colors: Vec<ThemeColors>,
+    pub theme_fonts: Vec<ThemeFonts>,
     // ---- Tables & Filters
     /// "Automatically expand tables".
     pub tables_expand: bool,
@@ -101,6 +107,8 @@ impl Default for Settings {
             capitalize_days: true,
             link_addresses: true,
             custom_lists: Vec::new(),
+            theme_colors: Vec::new(),
+            theme_fonts: Vec::new(),
             tables_expand: true,
             tables_fill_formulas: true,
             show_sheet_tabs: true,
@@ -159,6 +167,14 @@ impl Settings {
         line("link-addresses", flag(self.link_addresses));
         for list in &self.custom_lists {
             line("custom-list", &list.join("\t"));
+        }
+        for set in &self.theme_colors {
+            // Its name, then its twelve colours in the order of a theme part.
+            let colors: Vec<String> = set.part_order().iter().map(|rgb| format!("{rgb:06X}")).collect();
+            line("theme-colors", &format!("{}\t{}", set.name, colors.join(" ")));
+        }
+        for pair in &self.theme_fonts {
+            line("theme-fonts", &format!("{}\t{}\t{}", pair.name, pair.major, pair.minor));
         }
         line("tables-expand", flag(self.tables_expand));
         line("tables-fill-formulas", flag(self.tables_fill_formulas));
@@ -236,6 +252,15 @@ impl Settings {
                         settings.custom_lists.push(list);
                     }
                 }
+                "theme-colors" => settings.theme_colors.extend(theme_colors_of(value)),
+                "theme-fonts" => {
+                    let mut parts = value.split('\t').map(str::trim);
+                    if let (Some(name), Some(major), Some(minor), None) = (parts.next(), parts.next(), parts.next(), parts.next()) {
+                        if ![name, major, minor].iter().any(|part| part.is_empty()) {
+                            settings.theme_fonts.push(ThemeFonts::new(name, major, minor));
+                        }
+                    }
+                }
                 "tables-expand" => set(&mut settings.tables_expand),
                 "tables-fill-formulas" => set(&mut settings.tables_fill_formulas),
                 "show-sheet-tabs" => set(&mut settings.show_sheet_tabs),
@@ -255,6 +280,15 @@ impl Settings {
         }
         settings
     }
+}
+
+/// A colour set as its line of the settings file: its name, a tab, its
+/// twelve colours in hexadecimal.
+fn theme_colors_of(value: &str) -> Option<ThemeColors> {
+    let (name, colors) = value.split_once('\t')?;
+    let colors: Vec<u32> = colors.split_whitespace().filter_map(|rgb| u32::from_str_radix(rgb, 16).ok()).filter(|rgb| *rgb <= 0xFF_FFFF).collect();
+    let colors: [u32; 12] = colors.try_into().ok()?;
+    Some(ThemeColors::from_part_order(name.trim(), colors)).filter(|set| !set.name.is_empty())
 }
 
 /// The entries of a custom list as they are kept: trimmed, none empty,
@@ -361,6 +395,11 @@ mod tests {
         settings.custom_lists = vec![vec!["North".to_string(), "East".to_string()], vec!["a b".to_string(), "c, d".to_string(), "e".to_string()]];
         settings.tables_expand = false;
         settings.tables_fill_formulas = false;
+        let mut colors = opensheet_engine::theme::Theme::office().colors;
+        colors.name = "Company = ours".to_string();
+        colors.set(opensheet_engine::style::ThemeSlot::Accent1, 0x123ABC);
+        settings.theme_colors = vec![colors];
+        settings.theme_fonts = vec![ThemeFonts::new("House", "Helvetica Neue", "Georgia")];
         assert_eq!(Settings::from_text(&settings.to_text()), settings);
         // An empty or damaged file gives the defaults, setting by setting.
         assert_eq!(Settings::from_text(""), Settings::default());
@@ -372,6 +411,9 @@ mod tests {
             ..Settings::default()
         };
         assert_eq!(Settings::from_text(&emptied.to_text()), emptied);
+        // A colour set needs its twelve colours, a font pair its two fonts.
+        let broken = Settings::from_text("theme-colors = A\t000000 FFFFFF\ntheme-fonts = B\tArial\ntheme-colors = \t\n");
+        assert!(broken.theme_colors.is_empty() && broken.theme_fonts.is_empty());
         // Entries of a list are trimmed; empty ones and repeats are dropped.
         assert_eq!(Settings::from_text("custom-list = a\t\t A \tb \n").custom_lists, vec![vec!["a".to_string(), "b".to_string()]]);
     }

@@ -14,6 +14,7 @@ mod names;
 #[cfg(test)]
 mod ui_tests;
 
+use super::preferences::settings;
 use super::{Command, Cx, Feature, names as defined_names};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
@@ -89,11 +90,41 @@ impl Feature for Themes {
 }
 
 /// The colour sets and font pairs made in the Customize dialogs, which
-/// the menus list under "Custom" for as long as the application runs.
+/// the menus list under "Custom". They are the application's, kept in
+/// its settings file from one launch to the next.
 #[derive(Default)]
 pub struct ThemesUi {
     pub colors: Vec<ThemeColors>,
     pub fonts: Vec<ThemeFonts>,
+}
+
+/// The sets of the user's own.
+pub fn custom_sets() -> ThemesUi {
+    let settings = settings::get();
+    ThemesUi {
+        colors: settings.theme_colors,
+        fonts: settings.theme_fonts,
+    }
+}
+
+/// Keep `item` in a list of the user's own, in place of one of the same
+/// name.
+fn keep<T>(list: &mut Vec<T>, item: T, name_of: impl Fn(&T) -> &str) {
+    let name = name_of(&item).to_string();
+    match list.iter().position(|other| name_of(other).eq_ignore_ascii_case(&name)) {
+        Some(at) => list[at] = item,
+        None => list.push(item),
+    }
+}
+
+/// Keep a colour set of the user's own.
+pub fn keep_colors(colors: &ThemeColors) {
+    settings::update(|settings| keep(&mut settings.theme_colors, colors.clone(), |set| &set.name));
+}
+
+/// Keep a font pair of the user's own.
+pub fn keep_fonts(fonts: &ThemeFonts) {
+    settings::update(|settings| keep(&mut settings.theme_fonts, fonts.clone(), |pair| &pair.name));
 }
 
 // ------------------------------------------------------------------ changes

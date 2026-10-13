@@ -163,7 +163,7 @@ fn the_customize_dialogs_make_sets_of_ones_own(cx: &mut TestAppContext) {
     let theme = read(&app, cx, |wb| wb.theme().clone());
     assert_eq!(theme.colors.name, "Custom 1");
     assert!(theme.colors.same_colors(&Theme::office().colors));
-    assert_eq!(app.update(cx, |app, _| app.ext_mut::<ThemesUi>().colors.len()), 1);
+    assert_eq!(custom_sets().colors.len(), 1);
     // It is in the menu from now on, and the next one is "Custom 2".
     run(&app, cx, Cmd::Colors);
     assert!(cx.debug_bounds("colors:Custom 1").is_some());
@@ -171,7 +171,21 @@ fn the_customize_dialogs_make_sets_of_ones_own(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     redraw(cx);
     assert_eq!(app.update(cx, |app, _| app.modals.len()), 0);
-    assert_eq!(app.update(cx, |app, _| app.ext_mut::<ThemesUi>().colors.len()), 1);
+    assert_eq!(custom_sets().colors.len(), 1);
+    // The set is the application's: it is still listed once another
+    // workbook is in the window, and it is kept in the settings file.
+    app.update(cx, |app, cx| {
+        let wb = opensheet_engine::Workbook::new(opensheet_engine::Locale::en());
+        app.set_workbook(wb, None, "Other".to_string(), cx);
+    });
+    redraw(cx);
+    run(&app, cx, Cmd::Colors);
+    assert!(cx.debug_bounds("colors:Custom 1").is_some());
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    let kept = crate::features::preferences::settings::get();
+    assert_eq!(kept.theme_colors.len(), 1);
+    assert_eq!(crate::features::preferences::settings::Settings::from_text(&kept.to_text()).theme_colors, kept.theme_colors);
 
     run(&app, cx, Cmd::Fonts);
     press(cx, "command:CustomizeFonts");
