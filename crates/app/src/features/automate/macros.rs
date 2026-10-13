@@ -117,6 +117,9 @@ pub(crate) fn message_bar(app: &mut ExcelApp, cx: &mut Cx) -> Option<AnyElement>
 
 // -------------------------------------------------------------- Macro dialog
 
+/// The width of what the Macro dialog holds.
+const WIDTH: f32 = 412.0;
+
 /// What "Macros in" offers: every open workbook, or this one. There is
 /// one workbook to a window, so both list the same macros.
 const SCOPES: usize = 2;
@@ -221,70 +224,89 @@ impl Render for MacroDialog {
             (None, false) => Some(t("This workbook has no macros.", "Ce classeur ne contient aucune macro.").to_string()),
             (None, true) => None,
         };
-        let buttons = div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
-            .child(div().debug_selector(|| "macro-run".to_string()).child(
-                Button::new("macro-run", t("Run", "Exécuter")).width(126.0).primary().disabled(!chosen).on_click(cx.listener(Self::run)),
-            ))
-            .child(div().debug_selector(|| "macro-step".to_string()).child(
-                Button::new("macro-step", t("Step Into", "Pas à pas détaillé")).width(126.0).disabled(!chosen).on_click(cx.listener(Self::run)),
-            ))
-            .child(div().debug_selector(|| "macro-edit".to_string()).child(
-                Button::new("macro-edit", crate::i18n::t_ctx("macro", "Edit", "Modifier")).width(126.0).disabled(!chosen).on_click(cx.listener(Self::edit)),
-            ))
-            // These would change the project: never available.
-            .child(div().debug_selector(|| "macro-create".to_string()).child(Button::new("macro-create", t("Create", "Créer")).width(126.0).disabled(true)))
-            .child(div().debug_selector(|| "macro-delete".to_string()).child(Button::new("macro-delete", t("Delete", "Supprimer")).width(126.0).disabled(true)))
-            .child(div().debug_selector(|| "macro-options".to_string()).child(Button::new("macro-options", t("Options...", "Options...")).width(126.0).disabled(true)))
-            .child(div().h(px(6.)))
-            .child(div().debug_selector(|| "macro-cancel".to_string()).child(
-                Button::new("macro-cancel", t("Cancel", "Annuler")).width(126.0).on_click(cx.listener(Self::close)),
-            ));
+        // The dialog of Excel for Mac: the list over "+" and "−", the
+        // description and Options, then Cancel apart from the three actions.
+        let small = |id: &'static str, label: &'static str| {
+            div().debug_selector(move || id.to_string()).child(Button::new(id, label).width(24.0).disabled(true))
+        };
         let list = ListBox::new("macro-list", names, selected)
-            .width(300.0)
-            .height(190.0)
+            .width(WIDTH)
+            .height(96.0)
             .on_change(cx.listener(|this, index: &usize, _, cx| this.select(*index, cx)))
             .on_activate(cx.listener(|this, index: &usize, window, cx| {
                 this.select(*index, cx);
                 this.edit(&(), window, cx);
             }));
         widgets::dialog(&self.modal, t("Macro", "Macro"))
-            .width(464.0)
+            .width(WIDTH + 24.0)
             .on_ok(cx.listener(Self::run))
             .on_cancel(cx.listener(Self::close))
             .child(
                 div()
                     .flex()
-                    .gap(px(12.))
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(widgets::label(t("Macro name:", "Nom de la macro :")))
+                    .child(div().flex().child(widgets::TextField::new(&self.name).width(WIDTH)))
+                    .child(list)
+                    // These would change the project: never available.
+                    .child(div().flex().gap(px(2.)).child(small("macro-create", "+")).child(small("macro-delete", "−")))
                     .child(
                         div()
                             .flex()
-                            .flex_col()
-                            .gap(px(5.))
-                            .child(widgets::label(t("Macro name:", "Nom de la macro :")))
-                            .child(div().flex().child(widgets::TextField::new(&self.name).width(300.0)))
-                            .child(list)
+                            .items_center()
+                            .gap(px(8.))
+                            .pt(px(4.))
+                            .child(widgets::label(t("Macros in:", "Macros dans :")))
+                            .child(div().flex_1().min_w(px(0.)).child(
+                                Select::new("macro-scope", scopes, Some(self.scope)).width(WIDTH - 96.0).on_change(cx.listener(
+                                    |this, index: &usize, _, cx| {
+                                        this.scope = *index;
+                                        cx.notify();
+                                    },
+                                )),
+                            )),
+                    )
+                    .child(div().mt(px(6.)).h(px(1.)).bg(c(theme::BORDER)))
+                    .child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap(px(8.))
+                            .min_h(px(44.))
                             .child(
                                 div()
+                                    .flex_1()
+                                    .min_w(px(0.))
                                     .flex()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .pt(px(4.))
-                                    .child(widgets::label(t("Macros in:", "Macros dans :")))
-                                    .child(
-                                        Select::new("macro-scope", scopes, Some(self.scope))
-                                            .width(200.0)
-                                            .on_change(cx.listener(|this, index: &usize, _, cx| {
-                                                this.scope = *index;
-                                                cx.notify();
-                                            })),
-                                    ),
+                                    .flex_col()
+                                    .gap(px(3.))
+                                    .child(widgets::label(t("Description:", "Description :")))
+                                    .children(note.map(|note| div().text_color(c(theme::TEXT_MUTED)).child(note))),
                             )
-                            .children(note.map(|note| div().w(px(300.)).text_color(c(theme::TEXT_MUTED)).child(note))),
+                            .child(div().debug_selector(|| "macro-options".to_string()).child(
+                                Button::new("macro-options", t("Options...", "Options...")).width(84.0).disabled(true),
+                            )),
                     )
-                    .child(buttons),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(div().debug_selector(|| "macro-cancel".to_string()).child(
+                                Button::new("macro-cancel", t("Cancel", "Annuler")).width(84.0).on_click(cx.listener(Self::close)),
+                            ))
+                            .child(div().flex_1())
+                            .child(div().debug_selector(|| "macro-step".to_string()).child(
+                                Button::new("macro-step", t("Step Into", "Pas à pas")).disabled(!chosen).on_click(cx.listener(Self::run)),
+                            ))
+                            .child(div().debug_selector(|| "macro-edit".to_string()).child(
+                                Button::new("macro-edit", crate::i18n::t_ctx("macro", "Edit", "Modifier")).width(84.0).disabled(!chosen).on_click(cx.listener(Self::edit)),
+                            ))
+                            .child(div().debug_selector(|| "macro-run".to_string()).child(
+                                Button::new("macro-run", t("Run", "Exécuter")).width(84.0).primary().disabled(!chosen).on_click(cx.listener(Self::run)),
+                            )),
+                    ),
             )
     }
 }
