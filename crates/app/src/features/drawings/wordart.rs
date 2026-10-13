@@ -812,6 +812,7 @@ mod tests {
                 width: 1.0,
             }),
             shadow: Some(TextShadow::offset(45.0)),
+            ..TextEffects::default()
         };
         let hollow = TextEffects {
             hollow: true,
@@ -820,6 +821,7 @@ mod tests {
                 width: 0.5,
             }),
             shadow: None,
+            ..TextEffects::default()
         };
         let text = "Total & more \nsales";
         let rows = [0..13, 14..19];

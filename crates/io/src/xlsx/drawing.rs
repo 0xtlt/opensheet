@@ -1631,6 +1631,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
         runs: Vec::new(),
         wrap: true,
         adjust,
+        warp: None,
         math: None,
     };
     text.into_shape(&mut shape, style.text);

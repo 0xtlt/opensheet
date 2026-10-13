@@ -298,6 +298,9 @@ impl Theme {
             if let Some(shadow) = &mut effects.shadow {
                 shadow.color = self.resolve(shadow.color);
             }
+            if let Some(gradient) = &mut effects.gradient {
+                gradient.recolor(&|color| self.resolve(color));
+            }
         };
         effects(&mut shape.effects);
         for run in &mut shape.runs {
