@@ -1229,3 +1229,51 @@ fn a_sheet_protected_and_unprotected(cx: &mut TestAppContext) {
     assert_eq!(left.len(), 1, "{left:#?}");
     assert!(left[0].contains("protection"), "{left:#?}");
 }
+
+#[gpui::test]
+fn conditional_formats_added_and_cleared(cx: &mut TestAppContext) {
+    use opensheet_engine::condfmt::{CellOp, CondFormat, Rule};
+    use opensheet_engine::style::StylePatch;
+    use opensheet_engine::{Color, Expr};
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    // What Highlight Cells Rules and New Rule add, and Clear Rules from
+    // Selected Cells.
+    let add = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str, rule: Rule, format: StylePatch| {
+        let range = rect(range);
+        act(app, cx, move |app, _, cx| {
+            assert!(app.wb.add_cond_format(0, CondFormat::new(vec![range], rule).with_format(format)));
+            app.commit("Conditional Formatting", cx);
+        });
+    };
+    let light_red = StylePatch {
+        fill: Some(Some(Color(0xFFC7CE))),
+        font_color: Some(Some(Color(0x9C0006))),
+        ..StylePatch::default()
+    };
+    let script = replayed(&app, cx, |app, cx| {
+        select(app, cx, "B2:B5");
+        add(app, cx, "B2:B5", Rule::cell_is(CellOp::Greater, Expr::Number(15.0), None), light_red.clone());
+        add(app, cx, "C2:C5", Rule::cell_is(CellOp::Between, Expr::Number(2.0), Some(Expr::Number(4.0))), StylePatch { bold: Some(true), ..StylePatch::default() });
+        let formula = opensheet_engine::condfmt::parse_operand("=$B2>$C2*3", opensheet_engine::Locale::en(), (1, 0), (1, 0)).expect("a formula");
+        add(app, cx, "A2:A5", Rule::Formula(formula), StylePatch { italic: Some(true), fill: Some(Some(Color(0xFFEB9C))), ..StylePatch::default() });
+        select(app, cx, "B2:B5");
+        act(app, cx, |app, _, cx| {
+            assert!(app.wb.clear_cond_formats(0, &[rect("B2:B5")]));
+            app.commit("Clear Rules", cx);
+        });
+    });
+    for line in [
+        "selectedSheet.getRange(\"B2:B5\").addConditionalFormat(ExcelScript.ConditionalFormatType.cellValue);",
+        "selectedSheet.getRange(\"B2:B5\").getConditionalFormats()[0].getCellValue().setRule({ formula1: \"15\", operator: ExcelScript.ConditionalCellValueOperator.greaterThan });",
+        "selectedSheet.getRange(\"B2:B5\").getConditionalFormats()[0].getCellValue().getFormat().getFill().setColor(\"#FFC7CE\");",
+        "selectedSheet.getRange(\"B2:B5\").getConditionalFormats()[0].getCellValue().getFormat().getFont().setColor(\"#9C0006\");",
+        "selectedSheet.getRange(\"C2:C5\").getConditionalFormats()[0].getCellValue().setRule({ formula1: \"2\", formula2: \"4\", operator: ExcelScript.ConditionalCellValueOperator.between });",
+        "selectedSheet.getRange(\"A2:A5\").addConditionalFormat(ExcelScript.ConditionalFormatType.custom);",
+        "selectedSheet.getRange(\"A2:A5\").getConditionalFormats()[0].getCustom().getRule().setFormula(\"=$B2>$C2*3\");",
+        "selectedSheet.getRange(\"A2:A5\").getConditionalFormats()[0].getCustom().getFormat().getFont().setItalic(true);",
+        "selectedSheet.getRange(\"B2:B5\").clearAllConditionalFormats();",
+    ] {
+        assert!(statements(&script).contains(&line), "{line}\n{script}");
+    }
+}

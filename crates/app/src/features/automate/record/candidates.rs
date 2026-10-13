@@ -109,6 +109,11 @@ pub(super) fn of(work: &Workbook, after: &Workbook, before: &Before, now: &Befor
     let selection = before.selection;
     let range = |rect: Rect| scope.range(&ws.name, rect);
 
+    // Fewer conditional formats on the selection: Clear Rules.
+    if ts.cond_formats.len() <= ws.cond_formats.len() && ts.cond_formats != ws.cond_formats {
+        out.push(vec![Step::new(format!("Clear the conditional formats of range {} on {on}", selection.name()), format!("{}.clearAllConditionalFormats();", range(selection)))]);
+    }
+
     if touched.is_empty() {
         // Sizes alone: columns or rows fitted to what they hold.
         let resized = |a: &std::collections::BTreeMap<u32, f32>, b: &std::collections::BTreeMap<u32, f32>| -> Vec<u32> {

@@ -13,6 +13,7 @@
 use super::code::{Scope, Step, color, member, number, play, points, quote, rects_of, runs_of};
 use super::compare::{Formats, Pair, content_at, differences, distance, same_chart, shown, side_by_side, validations};
 use opensheet_engine::comment::Comment;
+use opensheet_engine::condfmt::{CellOp, Rule, operand_text};
 use opensheet_engine::protect::Permission;
 use opensheet_engine::validation::{AlertStyle, Operator, Validation, ValidationKind};
 use opensheet_engine::workbook::SheetVisibility;
@@ -47,7 +48,7 @@ pub(crate) fn run(work: &mut Workbook, scope: &Scope, steps: &[Step], refit: Ref
 type Stage = fn(&Workbook, &Workbook, &Scope) -> Vec<Step>;
 
 /// The stages after the sheets themselves, in the order they are run.
-const STAGES: [Stage; 18] = [
+const STAGES: [Stage; 19] = [
     undone,
     new_tables,
     table_options,
@@ -64,6 +65,7 @@ const STAGES: [Stage; 18] = [
     new_charts,
     chart_options,
     validation,
+    conditional_formats,
     notes,
     protection,
 ];
@@ -1088,6 +1090,73 @@ fn validation(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
                 });
             }
         }
+    }
+    steps
+}
+
+/// A conditional format added on one range, first in priority, as the
+/// Highlight Cells Rules and New Rule add them: a comparison of the
+/// cell's value or a formula, with a fill and a font. (The other kinds,
+/// and rules edited or reordered in the manager, are not written.)
+fn conditional_formats(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
+    let en = Locale::en();
+    let mut steps = Vec::new();
+    for (ws, ts) in pairs(work, target) {
+        let (now, then) = (&ws.cond_formats, &ts.cond_formats);
+        let Some((added, _)) = then.split_first().filter(|(_, rest)| *rest == now.as_slice()) else {
+            continue;
+        };
+        let [range] = added.ranges.as_slice() else {
+            continue;
+        };
+        let anchor = added.anchor();
+        let on = scope.on(&ts.name);
+        let cells = scope.range(&ts.name, *range);
+        let rule = format!("{cells}.getConditionalFormats()[0]");
+        let (kind, part, set) = match &added.rule {
+            Rule::CellIs { op, first, second } => {
+                let operator = match op {
+                    CellOp::Between => "between",
+                    CellOp::NotBetween => "notBetween",
+                    CellOp::Equal => "equalTo",
+                    CellOp::NotEqual => "notEqualTo",
+                    CellOp::Greater => "greaterThan",
+                    CellOp::Less => "lessThan",
+                    CellOp::GreaterOrEqual => "greaterThanOrEqual",
+                    CellOp::LessOrEqual => "lessThanOrEqual",
+                };
+                let operand = |expr: &opensheet_engine::Expr| quote(&operand_text(expr, en, anchor, anchor, false));
+                let second = second.as_ref().map_or(String::new(), |second| format!(", formula2: {}", operand(second)));
+                (
+                    "cellValue",
+                    "getCellValue()",
+                    format!(".setRule({{ formula1: {}{second}, operator: {} }});", operand(first), member("ConditionalCellValueOperator", operator)),
+                )
+            }
+            Rule::Formula(formula) => ("custom", "getCustom()", format!(".getRule().setFormula({});", quote(&format!("={}", formula.to_text(en))))),
+            _ => continue,
+        };
+        let mut lines = vec![format!("{cells}.addConditionalFormat({});", member("ConditionalFormatType", kind)), format!("{rule}.{part}{set}")];
+        let format = format!("{rule}.{part}.getFormat()");
+        if let Some(Some(fill)) = added.format.fill {
+            lines.push(format!("{format}.getFill().setColor({});", color(fill)));
+        }
+        if let Some(Some(tint)) = added.format.font_color {
+            lines.push(format!("{format}.getFont().setColor({});", color(tint)));
+        }
+        if let Some(bold) = added.format.bold {
+            lines.push(format!("{format}.getFont().setBold({bold});"));
+        }
+        if let Some(italic) = added.format.italic {
+            lines.push(format!("{format}.getFont().setItalic({italic});"));
+        }
+        if added.stop_if_true {
+            lines.push(format!("{rule}.setStopIfTrue(true);"));
+        }
+        steps.push(Step {
+            comment: format!("Add a conditional format to range {} on {on}", range.name()),
+            lines,
+        });
     }
     steps
 }
