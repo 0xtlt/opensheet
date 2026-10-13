@@ -146,6 +146,9 @@ pub struct Sheet {
     /// The name the VBA project of the workbook knows this sheet by, see
     /// `vba.rs`.
     pub code_name: Option<String>,
+    /// Form controls floating over the cells, bottom-most first, see
+    /// `control.rs`.
+    pub controls: Vec<crate::control::FormControl>,
 }
 
 impl Sheet {
@@ -196,6 +199,7 @@ impl Sheet {
             sparklines: Vec::new(),
             background: None,
             code_name: None,
+            controls: Vec::new(),
         }
     }
 
