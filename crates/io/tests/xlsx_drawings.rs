@@ -1621,9 +1621,13 @@ fn picture_adjustments_and_effects_round_trip() {
         "<a:srcRect l=\"25000\" r=\"10000\" b=\"-5000\"/>",
         "<a:prstGeom prst=\"ellipse\"><a:avLst/></a:prstGeom>",
         "<a:alphaModFix amt=\"70000\"/><a:lum bright=\"20000\" contrast=\"-40000\"/></a:blip>",
-        "<a:grayscl/><a:hsl hue=\"0\" sat=\"100000\" lum=\"0\"/>",
-        "<a:duotone><a:srgbClr val=\"000000\"/><a:srgbClr val=\"D9C3A5\"/></a:duotone><a:tint hue=\"12600000\" amt=\"36000\"/>",
-        "<a:tint hue=\"1800000\" amt=\"46000\"/><a:lum bright=\"70000\" contrast=\"-70000\"/>",
+        // Saturation and colour temperature are image properties, as in
+        // Excel; the layer names the image itself.
+        "<a:grayscl/><a:extLst><a:ext uri=\"{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}\"><a14:imgProps xmlns:a14=\"http://schemas.microsoft.com/office/drawing/2010/main\"><a14:imgLayer r:embed=\"rId1\"><a14:imgEffect><a14:saturation sat=\"200000\"/></a14:imgEffect></a14:imgLayer></a14:imgProps></a:ext></a:extLst></a:blip>",
+        "<a:duotone><a:srgbClr val=\"000000\"/><a:srgbClr val=\"D9C3A5\"/></a:duotone><a:extLst>",
+        "<a14:imgEffect><a14:colorTemperature colorTemp=\"4700\"/></a14:imgEffect>",
+        "<a:lum bright=\"70000\" contrast=\"-70000\"/><a:extLst>",
+        "<a14:imgEffect><a14:colorTemperature colorTemp=\"8800\"/></a14:imgEffect>",
         "<a:biLevel thresh=\"25000\"/>",
         "<a:effectLst><a:glow rad=\"101600\"><a:srgbClr val=\"E97132\"><a:alpha val=\"40000\"/></a:srgbClr></a:glow><a:outerShdw blurRad=\"76200\" dist=\"50800\" dir=\"8100000\" sx=\"102000\" sy=\"102000\" algn=\"tr\" rotWithShape=\"0\"><a:srgbClr val=\"112233\"><a:alpha val=\"50000\"/></a:srgbClr></a:outerShdw><a:softEdge rad=\"31750\"/></a:effectLst>",
         // Excel's first preset, as Excel writes it.

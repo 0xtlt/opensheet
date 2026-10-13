@@ -21,11 +21,12 @@
 //! (`a:srcRect`) and the shape it is cropped to (its `a:prstGeom`),
 //! transparency (`a:alphaModFix`), brightness and contrast (`a:lum`),
 //! recolouring (`a:grayscl`, `a:biLevel`, `a:duotone`; "Washout" is the
-//! `a:lum` Excel writes for it). Saturation and colour temperature have
-//! no element of their own in a blip (Excel keeps them beside a second,
-//! HD Photo copy of the image, which is not written): they are written
-//! as the nearest effects there are, `a:hsl` (saturation) and `a:tint`
-//! (towards orange or blue), and read back from them. Of pictures and
+//! `a:lum` Excel writes for it). Saturation and colour temperature are
+//! where Excel keeps them, in the image properties of the blip's
+//! extension list (`a14:imgProps`); Excel names there a second, HD Photo
+//! copy of the image, which is not made: the layer names the image
+//! itself, and Excel opens that. Brightness and contrast are read from
+//! there too (Excel 2010 and later write them so). Of pictures and
 //! shapes, the effects that are drawn (`a:effectLst`: `a:outerShdw`,
 //! `a:glow`, `a:softEdge`).
 //!
@@ -410,15 +411,13 @@ fn push_effects(x: &mut String, effects: &Effects) {
     x.push_str("</a:effectLst>");
 }
 
-/// The hue `a:tint` pulls a picture towards for a colour temperature:
-/// orange for a warm one, blue for a cold one (60 000ths of a degree).
-const WARM_HUE: i64 = 30 * 60_000;
-const COLD_HUE: i64 = 210 * 60_000;
-/// The kelvins between the neutral temperature and either end.
-const TEMPERATURE_SPAN: f32 = 5000.0;
+/// The extension of a blip that holds the image properties of Excel 2010.
+const IMG_PROPS_URI: &str = "{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}";
+const NS_DRAWING_2010: &str = "http://schemas.microsoft.com/office/drawing/2010/main";
 
-/// The effects inside `<a:blip>` that say how a picture is adjusted.
-fn push_blip_effects(x: &mut String, adjust: &PictureAdjust) {
+/// The effects inside `<a:blip>` that say how a picture is adjusted;
+/// `image` is the relationship of its image.
+fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize) {
     if adjust.transparency > 0.0 {
         w!(x, "<a:alphaModFix amt=\"{}\"/>", per_100k(1.0 - adjust.transparency.min(1.0)));
     }
@@ -441,18 +440,6 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust) {
             contrast = WASHOUT.1;
         }
     }
-    if adjust.saturation != 1.0 {
-        w!(
-            x,
-            "<a:hsl hue=\"0\" sat=\"{}\" lum=\"0\"/>",
-            per_100k((adjust.saturation - 1.0).clamp(-1.0, 3.0))
-        );
-    }
-    if adjust.temperature != NEUTRAL_TEMPERATURE {
-        let warmth = (adjust.temperature - NEUTRAL_TEMPERATURE) / TEMPERATURE_SPAN;
-        let hue = if warmth > 0.0 { WARM_HUE } else { COLD_HUE };
-        w!(x, "<a:tint hue=\"{hue}\" amt=\"{}\"/>", per_100k(warmth.abs().min(1.0)));
-    }
     if bright != 0.0 || contrast != 0.0 {
         x.push_str("<a:lum");
         if bright != 0.0 {
@@ -462,6 +449,28 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust) {
             w!(x, " contrast=\"{}\"", per_100k(contrast.clamp(-1.0, 1.0)));
         }
         x.push_str("/>");
+    }
+    // The extension list closes the blip.
+    if adjust.saturation != 1.0 || adjust.temperature != NEUTRAL_TEMPERATURE {
+        w!(
+            x,
+            "<a:extLst><a:ext uri=\"{IMG_PROPS_URI}\"><a14:imgProps xmlns:a14=\"{NS_DRAWING_2010}\"><a14:imgLayer r:embed=\"rId{image}\">"
+        );
+        if adjust.temperature != NEUTRAL_TEMPERATURE {
+            w!(
+                x,
+                "<a14:imgEffect><a14:colorTemperature colorTemp=\"{}\"/></a14:imgEffect>",
+                adjust.temperature.clamp(1500.0, 11500.0).round() as i64
+            );
+        }
+        if adjust.saturation != 1.0 {
+            w!(
+                x,
+                "<a14:imgEffect><a14:saturation sat=\"{}\"/></a14:imgEffect>",
+                per_100k(adjust.saturation.clamp(0.0, 4.0))
+            );
+        }
+        x.push_str("</a14:imgLayer></a14:imgProps></a:ext></a:extLst>");
     }
 }
 
@@ -485,7 +494,7 @@ fn push_picture(
         "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\""
     );
     let mut effects = String::new();
-    push_blip_effects(&mut effects, &picture.adjust);
+    push_blip_effects(&mut effects, &picture.adjust, image);
     if effects.is_empty() {
         x.push_str("/>");
     } else {
@@ -1025,15 +1034,39 @@ fn parse_blip_effects<'a>(
             adjust.saturation = (1.0 + fraction(t, "sat").unwrap_or(0.0)).clamp(0.0, 4.0);
             r.skip(t);
         }
-        "tint" => {
-            let amount = fraction(t, "amt").unwrap_or(0.0).clamp(0.0, 1.0);
-            let hue = t.attr_f64("hue").filter(|v| v.is_finite()).unwrap_or(0.0) as i64;
-            // Towards the reds and yellows: warmer.
-            let warm = !(90 * 60_000..270 * 60_000).contains(&hue.rem_euclid(360 * 60_000));
-            let sign = if warm { 1.0 } else { -1.0 };
-            adjust.temperature = NEUTRAL_TEMPERATURE + sign * amount * TEMPERATURE_SPAN;
-            r.skip(t);
-        }
+        // The image properties of Excel 2010: one effect per element of
+        // the layer.
+        "extLst" => each_child(r, t, |r, ext| {
+            each_child(r, ext, |r, props| {
+                if props.name != "imgProps" {
+                    r.skip(props);
+                    return;
+                }
+                each_child(r, props, |r, layer| {
+                    each_child(r, layer, |r, effect| {
+                        each_child(r, effect, |r, e| {
+                            match e.name {
+                                "saturation" => {
+                                    adjust.saturation = fraction(e, "sat").unwrap_or(1.0).clamp(0.0, 4.0);
+                                }
+                                "colorTemperature" => {
+                                    adjust.temperature = e
+                                        .attr_f64("colorTemp")
+                                        .filter(|v| v.is_finite())
+                                        .map_or(NEUTRAL_TEMPERATURE, |v| (v as f32).clamp(1500.0, 11500.0));
+                                }
+                                "brightnessContrast" => {
+                                    adjust.brightness = fraction(e, "bright").unwrap_or(0.0).clamp(-1.0, 1.0);
+                                    adjust.contrast = fraction(e, "contrast").unwrap_or(0.0).clamp(-1.0, 1.0);
+                                }
+                                _ => {}
+                            }
+                            r.skip(e);
+                        })
+                    })
+                })
+            })
+        }),
         "lum" => {
             let bright = fraction(t, "bright").unwrap_or(0.0).clamp(-1.0, 1.0);
             let contrast = fraction(t, "contrast").unwrap_or(0.0).clamp(-1.0, 1.0);
