@@ -50,14 +50,34 @@ impl Lang {
     }
 }
 
+#[cfg(not(test))]
 static LANG: AtomicU8 = AtomicU8::new(0);
 
+// Tests run side by side, each on its own thread: the language one of
+// them chooses must not change the words the others compare.
+#[cfg(test)]
+thread_local! {
+    static LANG: AtomicU8 = const { AtomicU8::new(0) };
+}
+
+#[cfg(not(test))]
+fn current() -> &'static AtomicU8 {
+    &LANG
+}
+
 pub fn set_lang(lang: Lang) {
-    LANG.store(lang as u8, Ordering::Relaxed);
+    #[cfg(not(test))]
+    current().store(lang as u8, Ordering::Relaxed);
+    #[cfg(test)]
+    LANG.with(|current| current.store(lang as u8, Ordering::Relaxed));
 }
 
 pub fn lang() -> Lang {
-    Lang::ALL[LANG.load(Ordering::Relaxed) as usize % Lang::ALL.len()]
+    #[cfg(not(test))]
+    let index = current().load(Ordering::Relaxed);
+    #[cfg(test)]
+    let index = LANG.with(|current| current.load(Ordering::Relaxed));
+    Lang::ALL[index as usize % Lang::ALL.len()]
 }
 
 fn table(lang: Lang) -> &'static HashMap<&'static str, &'static str> {

@@ -569,4 +569,188 @@ mod tests {
         plan.steps.truncate(2);
         assert_eq!((plan.level(), plan.modes()), (2, vec![Mode::Full; 3]));
     }
+
+    use crate::features::{self, Command};
+    use crate::i18n::{Lang, set_lang};
+    use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext};
+    use opensheet_engine::Rect;
+    use opensheet_engine::drawing::{Frame, ShapeTool};
+
+    fn open(cx: &mut TestAppContext) -> (Entity<ExcelApp>, &mut VisualTestContext) {
+        cx.update(crate::bind_keys);
+        let (app, cx) = cx.add_window_view(ExcelApp::new);
+        cx.run_until_parked();
+        (app, cx)
+    }
+
+    /// Lay the window out at a width and say how the ribbon fitted.
+    fn fit_at(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, width: f32) -> Fit {
+        cx.simulate_resize(size(px(width), px(820.)));
+        // Twice: the element is sized from the layout before.
+        for _ in 0..2 {
+            app.update(cx, |_, cx| cx.notify());
+            cx.run_until_parked();
+            cx.simulate_mouse_move(point(px(2.), px(2.)), None, Modifiers::none());
+        }
+        last_fit()
+    }
+
+    const WIDTHS: [f32; 6] = [1700.0, 1390.0, 1200.0, 1000.0, 820.0, 640.0];
+
+    /// The tab shown fits at every width, and is whole when there is room.
+    fn check_tab(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, what: &str) {
+        for width in WIDTHS {
+            let fit = fit_at(app, cx, width);
+            let fits = fit.total <= fit.available + 0.5;
+            // In a very narrow window a tab may not fit even folded: then
+            // every group has given what it can, and the ribbon scrolls.
+            let exhausted = width < 1000.0 && fit.level as usize == LEVELS && fit.modes.iter().all(|mode| *mode != Mode::Full);
+            assert!(
+                fits || exhausted,
+                "{what} at {width}: {} wide for {} ({:?})",
+                fit.total,
+                fit.available,
+                fit.modes
+            );
+            assert!(fit.builds <= 2 * fit.modes.len() + LEVELS + 8, "{what} at {width}: {} builds", fit.builds);
+        }
+        // A second layout at the same width builds the tab once.
+        assert_eq!(fit_at(app, cx, 640.0).builds, 1, "{what}");
+        // Widening undoes every step.
+        let wide = fit_at(app, cx, 3200.0);
+        assert_eq!(wide.level, 0, "{what}");
+        assert!(wide.modes.iter().all(|mode| *mode == Mode::Full), "{what}: {:?}", wide.modes);
+    }
+
+    #[gpui::test]
+    fn every_tab_fits_in_every_language(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx);
+        for lang in Lang::ALL {
+            set_lang(lang);
+            for tab in 1..=10 {
+                app.update(cx, |app, cx| {
+                    app.ribbon_tab = tab;
+                    cx.notify();
+                });
+                check_tab(&app, cx, &format!("tab {tab} in {}", lang.code()));
+            }
+        }
+        set_lang(Lang::En);
+    }
+
+    #[gpui::test]
+    fn contextual_tabs_fit_too(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx);
+        // A table (Table Design) and a shape (Shape Format).
+        let shape = app.update(cx, |app, cx| {
+            app.wb.set_cell_text(0, 0, 0, "Name").unwrap();
+            app.wb.set_cell_text(0, 1, 0, "a").unwrap();
+            app.wb.add_table(0, Rect::new(0, 0, 1, 0), true).unwrap();
+            let shape = app.wb.add_shape(0, ShapeTool::Rectangle, Frame::new(300.0, 100.0, 120.0, 80.0)).unwrap();
+            app.commit("setup", cx);
+            app.select_cell(1, 0, cx);
+            shape
+        });
+        let mut seen = 0;
+        for lang in [Lang::Fr, Lang::De, Lang::En] {
+            set_lang(lang);
+            for object in [None, Some(shape)] {
+                app.update(cx, |app, cx| {
+                    let id = object.map(|id| features::object_id(&features::drawings::Drawings, id));
+                    app.select_object(id, cx);
+                });
+                let tabs = app.update(cx, |app, _| features::context_tabs(app));
+                assert!(!tabs.is_empty());
+                for (_, tab) in tabs {
+                    app.update(cx, |app, cx| {
+                        app.context_tab = Some(tab.id);
+                        cx.notify();
+                    });
+                    check_tab(&app, cx, &format!("{} in {}", tab.id, lang.code()));
+                    seen += 1;
+                }
+            }
+        }
+        assert!(seen >= 6);
+        set_lang(Lang::En);
+    }
+
+    #[gpui::test]
+    fn german_formulas_fold_at_1390_and_unfold(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx);
+        set_lang(Lang::De);
+        app.update(cx, |app, cx| {
+            app.ribbon_tab = 5;
+            cx.notify();
+        });
+        let narrow = fit_at(&app, cx, 1390.0);
+        assert!(narrow.total <= narrow.available + 0.5, "{narrow:?}");
+        // It took steps to get there, and the groups on the left are whole.
+        assert!(narrow.level > 0 || narrow.modes.iter().any(|mode| *mode != Mode::Full), "{narrow:?}");
+        assert_eq!(narrow.modes.first(), Some(&Mode::Full), "{narrow:?}");
+        // Narrower still: more steps, never fewer.
+        let folded = |fit: &Fit| fit.modes.iter().filter(|mode| **mode == Mode::Folded).count();
+        let narrower = fit_at(&app, cx, 900.0);
+        assert!(folded(&narrower) >= folded(&narrow) && folded(&narrower) > 0, "{narrower:?}");
+        // Back at 1390 it looks as it did, and wide it is whole.
+        let again = fit_at(&app, cx, 1390.0);
+        assert_eq!((again.level, &again.modes), (narrow.level, &narrow.modes));
+        let wide = fit_at(&app, cx, 3200.0);
+        assert!(wide.level == 0 && wide.modes.iter().all(|mode| *mode == Mode::Full), "{wide:?}");
+        set_lang(Lang::En);
+    }
+
+    #[gpui::test]
+    fn a_folded_group_opens_and_runs_its_commands(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx);
+        set_lang(Lang::En);
+        app.update(cx, |app, cx| {
+            app.ribbon_tab = 3;
+            cx.notify();
+        });
+        // The Draw tab in a window too narrow for its gallery of pens.
+        let fit = fit_at(&app, cx, 330.0);
+        let pens = 1;
+        assert_eq!(fit.modes.get(pens), Some(&Mode::Folded), "{fit:?}");
+        // A group of one button is not folded: that would not be narrower.
+        assert_eq!(fit.modes.get(2), Some(&Mode::Compact), "{fit:?}");
+        let below_ribbon = crate::theme::TITLEBAR_H + crate::theme::TABS_H + crate::theme::RIBBON_H - 10.0;
+        let pen = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.anchors.borrow().get("ink-pen-1").copied());
+        let drawing = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| !features::ink::Cmd::Select.checked(app));
+        // A click on the button of the group opens the group under it.
+        assert_eq!(open_group(), None);
+        toggle_group(pens);
+        fit_at(&app, cx, 330.0);
+        assert_eq!(open_group(), Some(pens));
+        let button = pen(&app, cx).expect("the pen was painted");
+        assert!(f32::from(button.origin.y) > below_ribbon, "{button:?}");
+        // The pen in the drop-down is the pen of the ribbon: a click takes
+        // it in hand, and the drop-down closes.
+        assert!(!drawing(&app, cx));
+        cx.simulate_click(button.center(), Modifiers::none());
+        cx.run_until_parked();
+        assert!(drawing(&app, cx));
+        assert_eq!(open_group(), None);
+        // Open again; Escape closes it (and only it: the pen stays in hand).
+        toggle_group(pens);
+        fit_at(&app, cx, 330.0);
+        assert_eq!(open_group(), Some(pens));
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert_eq!(open_group(), None);
+        assert!(drawing(&app, cx));
+        // A press elsewhere closes it too.
+        toggle_group(pens);
+        fit_at(&app, cx, 330.0);
+        assert_eq!(open_group(), Some(pens));
+        cx.simulate_mouse_down(point(px(300.), px(700.)), gpui::MouseButton::Left, Modifiers::none());
+        cx.simulate_mouse_up(point(px(300.), px(700.)), gpui::MouseButton::Left, Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(open_group(), None);
+        // Widening restores the group itself on the ribbon.
+        let wide = fit_at(&app, cx, 1400.0);
+        assert_eq!(wide.modes.get(pens), Some(&Mode::Full));
+        let button = pen(&app, cx).unwrap();
+        assert!(f32::from(button.origin.y) < below_ribbon, "{button:?}");
+    }
 }
