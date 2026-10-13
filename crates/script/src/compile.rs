@@ -44,7 +44,7 @@ impl Compiled {
 }
 
 /// 1-based line and column of a byte offset.
-fn place(source: &str, offset: usize) -> (u32, u32) {
+pub(crate) fn place(source: &str, offset: usize) -> (u32, u32) {
     let offset = offset.min(source.len());
     let before = &source.as_bytes()[..offset];
     let line = before.iter().filter(|b| **b == b'\n').count();

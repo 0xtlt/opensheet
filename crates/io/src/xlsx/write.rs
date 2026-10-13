@@ -16,7 +16,7 @@ use opensheet_engine::style::{
     Border, BorderStyle, Borders, Font, HAlign, Style, StyleId, ThemeFont, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
-use opensheet_engine::workbook::{Cell, Content, Sheet};
+use opensheet_engine::workbook::{Cell, Content, Sheet, SheetVisibility};
 use opensheet_engine::{CalcMode, Color, IterativeCalc, Locale, Workbook};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
@@ -873,8 +873,9 @@ impl SheetWriter<'_> {
     }
 
     fn sheet_xml(&mut self, sheet: &Sheet, index: usize) -> String {
-        // The first sheet is the one shown when the file is opened.
-        let selected = index == 0;
+        // The first sheet that has a tab is the one shown when the file
+        // is opened.
+        let selected = index == self.wb.nearest_visible_sheet(0);
         let mut x = String::with_capacity(512 + sheet.cells.len() * 40);
         x.push_str(XML_DECL);
         w!(
@@ -994,12 +995,26 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
     super::vba::push_code_name(&mut x, wb.vba.workbook_code_name.as_deref());
     x.push_str("/>");
     protection::write_workbook(&mut x, &wb.protection);
-    x.push_str("<bookViews><workbookView xWindow=\"0\" yWindow=\"0\" windowWidth=\"28800\" windowHeight=\"17600\"/></bookViews>");
+    x.push_str("<bookViews><workbookView xWindow=\"0\" yWindow=\"0\" windowWidth=\"28800\" windowHeight=\"17600\"");
+    // The sheet in front and the first tab of the strip are sheets that
+    // have a tab: as Excel, both are named when hidden sheets come first.
+    let front = wb.nearest_visible_sheet(0);
+    if front > 0 {
+        w!(x, " firstSheet=\"{front}\" activeTab=\"{front}\"");
+    }
+    x.push_str("/></bookViews>");
     x.push_str("<sheets>");
     for (i, sheet) in wb.sheets.iter().enumerate() {
         x.push_str("<sheet name=\"");
         push_attr(&mut x, &sheet.name);
-        w!(x, "\" sheetId=\"{0}\" r:id=\"rId{0}\"/>", i + 1);
+        w!(x, "\" sheetId=\"{}\"", i + 1);
+        // Between sheetId and r:id, where Excel writes it.
+        match sheet.visibility {
+            SheetVisibility::Visible => {}
+            SheetVisibility::Hidden => x.push_str(" state=\"hidden\""),
+            SheetVisibility::VeryHidden => x.push_str(" state=\"veryHidden\""),
+        }
+        w!(x, " r:id=\"rId{}\"/>", i + 1);
     }
     x.push_str("</sheets>");
     // Names Excel would reject are left out rather than spoiling the file.

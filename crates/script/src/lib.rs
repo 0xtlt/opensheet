@@ -18,6 +18,12 @@
 //! * when it is `Some`, [`run`] has already dropped them and the
 //!   workbook is as it was; the caller's `wb.rollback()` is still right
 //!   (it then finds nothing to drop);
+//! * a script that protects or unprotects a worksheet
+//!   ([`Outcome::protection_changed`]) does it inside the same
+//!   transaction: a failure brings the protection back with the rest,
+//!   and the caller's commit forgets the undo history, as protecting a
+//!   sheet by hand does (the engine sees to it, also through
+//!   `Workbook::adopt`);
 //! * [`run`] never panics and never runs longer than
 //!   [`Context::time_limit`];
 //! * a script gets the language and the `ExcelScript` object model,
@@ -26,16 +32,20 @@
 //! What a script can call is the table [`api`] gives (with [`enums`]);
 //! anything else of the Office Scripts API fails with
 //! [`ErrorKind::Unsupported`] and the name of what is missing. Types are
-//! removed, not checked: a script with a type error runs.
+//! removed, not checked, when a script runs: a script with a type error
+//! runs. [`check`] tells beforehand what it can tell from the table, and
+//! [`complete`] gives an editor the members that can follow a dot.
 
 use std::time::Duration;
 
 mod api;
+mod check;
 mod compile;
 mod host;
 mod runtime;
 
 pub use api::{ApiClass, ApiEnum, ApiMember};
+pub use check::{Completion, CompletionKind, Completions, complete, members_of};
 
 use opensheet_engine::refs::Rect;
 use opensheet_engine::workbook::Workbook;
@@ -121,6 +131,9 @@ pub struct Context {
     pub time_limit: Duration,
     /// The name of the workbook's file, for `Workbook.getName`.
     pub workbook_name: String,
+    /// The name of the user of the application: the author of the
+    /// comments and notes a script writes.
+    pub user_name: String,
 }
 
 impl Default for Context {
@@ -131,6 +144,7 @@ impl Default for Context {
             active_cell: (0, 0),
             time_limit: Duration::from_secs(120),
             workbook_name: "Book1.xlsx".to_string(),
+            user_name: "Author".to_string(),
         }
     }
 }
@@ -162,6 +176,11 @@ pub enum ErrorKind {
     Unsupported,
     /// The script ran past [`Context::time_limit`].
     Timeout,
+    /// Found by [`check`] in a text that is valid TypeScript: a member or
+    /// an enum value OpenSheet does not have, a call with the wrong
+    /// number of arguments. The script can still be run; the call fails
+    /// if it is reached. [`run`] never gives this kind.
+    Check,
 }
 
 /// Why a script did not run to its end. Lines and columns are 1-based
@@ -196,6 +215,10 @@ pub struct Outcome {
     /// window fits them again with the fonts it draws with, before it
     /// commits.
     pub autofit: Vec<Autofit>,
+    /// The script protected or unprotected a worksheet. Committing its
+    /// changes then forgets the undo history, as protecting a sheet by
+    /// hand does: the run is not a step to undo.
+    pub protection_changed: bool,
 }
 
 /// Columns (or rows) `first..=last` of a sheet, to fit to their content.
@@ -208,11 +231,24 @@ pub struct Autofit {
     pub last: u32,
 }
 
-/// What is wrong with the text of a script, without running it: syntax
-/// errors and a missing `main`. Empty when it can be run. Types are not
-/// checked.
+/// What is wrong with the text of a script, without running it.
+///
+/// Errors of kind [`ErrorKind::Syntax`] (the text is not TypeScript, or
+/// has no `main`) mean that the script cannot be run; they are given
+/// alone. Otherwise the uses of the object model are looked at, as far as
+/// types can be followed with certainty from `workbook` and from what
+/// the script declares: a member a class does not have, a call with too
+/// few or too many arguments, an `ExcelScript` enum or enum value that
+/// does not exist come out with kind [`ErrorKind::Check`] and their line
+/// and column, in the order of the text. These do not prevent a run.
+/// This is not a TypeScript type checker: where a type is not certain
+/// nothing is said, and an empty answer does not promise a script that
+/// runs to its end.
 pub fn check(source: &str) -> Vec<ScriptError> {
-    compile::compile(source).err().unwrap_or_default()
+    match compile::compile(source) {
+        Err(errors) => errors,
+        Ok(_) => check::check(source),
+    }
 }
 
 /// Run the `main` of a script on a workbook. See the contract at the top

@@ -1242,6 +1242,14 @@ pub static ES: &[(&str, &str)] = &[
     ("• VB project", "• Proyecto de VB"),
     ("To save a file with these features, click No, and then save the workbook with the .xlsm extension (Excel Macro-Enabled Workbook).", "Para guardar un archivo con estas características, haga clic en No y, a continuación, guarde el libro con la extensión .xlsm (Libro de Excel habilitado para macros)."),
     ("To continue saving as a macro-free workbook, click Yes.", "Para seguir guardando el archivo como libro sin macros, haga clic en Sí."),
+    // ---- Hidden sheets ----
+    ("Hide Sheet", "Ocultar hoja"),
+    ("Unhide Sheet…", "Mostrar hoja…"),
+    ("Unhide Sheet", "Mostrar hoja"),
+    ("Unhide…", "Mostrar…"),
+    ("Hide & Unhide", "Ocultar y mostrar"),
+    ("Unhide one or more sheets:", "Mostrar una o más hojas:"),
+    ("A workbook must contain at least one visible worksheet. \n\nTo hide, delete, or move the selected sheet(s), you must first insert a new sheet or unhide a sheet that is already hidden.", "El libro debe contener al menos una hoja visible. \n\nPara eliminar u ocultar la hoja u hojas seleccionadas primero debe insertar una hoja nueva o mostrar alguna hoja oculta."),
     // ---- Format Cells dialog ----
     ("Format Cells…", "Formato de celdas…"),
     ("Format Cell Alignment", "Aplicar formato de la alineación de celdas"),
@@ -4876,6 +4884,14 @@ pub static DE: &[(&str, &str)] = &[
     ("• VB project", "• VB-Projekt"),
     ("To save a file with these features, click No, and then save the workbook with the .xlsm extension (Excel Macro-Enabled Workbook).", "Zum Speichern einer Datei mit diesen Features klicken Sie auf 'Nein'. Speichern Sie die Arbeitsmappe dann mit der Erweiterung .xlsm (Excel-Arbeitsmappe mit Makros)."),
     ("To continue saving as a macro-free workbook, click Yes.", "Klicken Sie auf 'Ja', um die Datei als Arbeitsmappe ohne Makros zu speichern."),
+    // ---- Hidden sheets ----
+    ("Hide Sheet", "Blatt ausblenden"),
+    ("Unhide Sheet…", "Blatt einblenden…"),
+    ("Unhide Sheet", "Blatt einblenden"),
+    ("Unhide…", "Einblenden…"),
+    ("Hide & Unhide", "Ausblenden & Einblenden"),
+    ("Unhide one or more sheets:", "Ein oder mehrere Blätter einblenden:"),
+    ("A workbook must contain at least one visible worksheet. \n\nTo hide, delete, or move the selected sheet(s), you must first insert a new sheet or unhide a sheet that is already hidden.", "Die Arbeitsmappe muss mindestens ein sichtbares Arbeitsblatt enthalten. \n\nUm das ausgewählte Blatt (oder Blätter) auszublenden, zu löschen oder zu verschieben, müssen Sie zuerst ein neues Blatt einfügen oder ein ausgeblendetes Blatt wieder einblenden."),
     // ---- Format Cells dialog ----
     ("Format Cells…", "Zellen formatieren…"),
     ("Format Cell Alignment", "Zellausrichtung formatieren"),
@@ -8504,6 +8520,14 @@ pub static IT: &[(&str, &str)] = &[
     ("• VB project", "• Progetto VB"),
     ("To save a file with these features, click No, and then save the workbook with the .xlsm extension (Excel Macro-Enabled Workbook).", "Per salvare un file con queste caratteristiche, fare clic su No, quindi salvare la cartella di lavoro con l'estensione .xlsm (Cartella di lavoro con attivazione macro di Excel)."),
     ("To continue saving as a macro-free workbook, click Yes.", "Per continuare a salvare come cartella di lavoro senza macro, fare clic su Sì."),
+    // ---- Hidden sheets ----
+    ("Hide Sheet", "Nascondi foglio"),
+    ("Unhide Sheet…", "Scopri foglio…"),
+    ("Unhide Sheet", "Scopri foglio"),
+    ("Unhide…", "Scopri…"),
+    ("Hide & Unhide", "Nascondi e scopri"),
+    ("Unhide one or more sheets:", "Mostra uno o più fogli di lavoro:"),
+    ("A workbook must contain at least one visible worksheet. \n\nTo hide, delete, or move the selected sheet(s), you must first insert a new sheet or unhide a sheet that is already hidden.", "Una cartella di lavoro deve contenere almeno un foglio visibile. \n\nPer eliminare, nascondere o spostare il foglio o i fogli selezionati, è necessario innanzitutto inserire un nuovo foglio o scoprire un foglio nascosto."),
     // ---- Format Cells dialog ----
     ("Format Cells…", "Formato celle…"),
     ("Format Cell Alignment", "Formato allineamento celle"),

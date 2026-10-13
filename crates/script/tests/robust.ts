@@ -11,12 +11,24 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
   const table = sheet.addTable("E1:G4", true);
   const chart = sheet.addChart(ExcelScript.ChartType.columnClustered, range);
   const column = table.getColumns()[1];
+  const rule = (type: ExcelScript.ConditionalFormatType) => range.addConditionalFormat(type);
+  const cellValue = rule(ExcelScript.ConditionalFormatType.cellValue);
+  const dataBar = rule(ExcelScript.ConditionalFormatType.dataBar).getDataBar()!;
+  const custom = rule(ExcelScript.ConditionalFormatType.custom).getCustom()!;
+  const ruleFormat = cellValue.getCellValue()!.getFormat();
+  const comment = sheet.addComment("B2", "Why?");
+  const shape = sheet.addGeometricShape(ExcelScript.GeometricShapeType.rectangle);
+  const picture = sheet.addImage("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+  const pivot = sheet.addPivotTable(`Pivot${round}`, "A1:C4", "K5");
+  const pivotRow = pivot.addRowHierarchy(pivot.getHierarchy("Name")!);
+  const pivotData = pivot.addDataHierarchy(pivot.getHierarchy("Qty")!);
   return {
     Workbook: workbook,
     Application: workbook.getApplication(),
     NamedItem: workbook.addNamedItem(`Name${round}`, range),
     Worksheet: sheet,
     WorksheetFreezePanes: sheet.getFreezePanes(),
+    WorksheetProtection: sheet.getProtection(),
     AutoFilter: sheet.getAutoFilter(),
     Range: range,
     RangeSort: range.getSort(),
@@ -33,6 +45,43 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     Chart: chart,
     ChartTitle: chart.getTitle(),
     ChartLegend: chart.getLegend(),
+    RangeAreas: cellValue.getRanges(),
+    RangeView: range.getVisibleView(),
+    DataValidation: range.getDataValidation(),
+    Comment: comment,
+    CommentReply: comment.addCommentReply("Because"),
+    Note: sheet.addNote("C3", "A note"),
+    PivotTable: pivot,
+    PivotHierarchy: pivot.getHierarchy("Price"),
+    RowColumnPivotHierarchy: pivotRow,
+    FilterPivotHierarchy: pivot.addFilterHierarchy(pivot.getHierarchy("Price")!),
+    DataPivotHierarchy: pivotData,
+    PivotField: pivotRow.getFields()[0],
+    PivotItem: pivotRow.getFields()[0].getItems()[0],
+    PivotLayout: pivot.getLayout(),
+    Shape: shape,
+    ShapeFill: shape.getFill(),
+    ShapeLineFormat: shape.getLineFormat(),
+    TextFrame: shape.getTextFrame(),
+    TextRange: shape.getTextFrame().getTextRange(),
+    ShapeFont: shape.getTextFrame().getTextRange().getFont(),
+    Image: picture.getImage(),
+    ConditionalFormat: cellValue,
+    CellValueConditionalFormat: cellValue.getCellValue(),
+    ColorScaleConditionalFormat: rule(ExcelScript.ConditionalFormatType.colorScale).getColorScale(),
+    DataBarConditionalFormat: dataBar,
+    ConditionalDataBarPositiveFormat: dataBar.getPositiveFormat(),
+    ConditionalDataBarNegativeFormat: dataBar.getNegativeFormat(),
+    IconSetConditionalFormat: rule(ExcelScript.ConditionalFormatType.iconSet).getIconSet(),
+    PresetCriteriaConditionalFormat: rule(ExcelScript.ConditionalFormatType.presetCriteria).getPreset(),
+    TextConditionalFormat: rule(ExcelScript.ConditionalFormatType.containsText).getTextComparison(),
+    TopBottomConditionalFormat: rule(ExcelScript.ConditionalFormatType.topBottom).getTopBottom(),
+    CustomConditionalFormat: custom,
+    ConditionalFormatRule: custom.getRule(),
+    ConditionalRangeFormat: ruleFormat,
+    ConditionalRangeFill: ruleFormat.getFill(),
+    ConditionalRangeFont: ruleFormat.getFont(),
+    ConditionalRangeBorder: ruleFormat.getConditionalRangeBorderTop(),
   };
 }
 

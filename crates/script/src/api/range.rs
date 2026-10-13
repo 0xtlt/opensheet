@@ -21,7 +21,7 @@ use opensheet_engine::workbook::{ClearMode, Content, Workbook};
 
 use super::util::{address, parse_color, range_arg, table_fail, this_range};
 use super::worksheet::find_options;
-use super::{ApiClass, Call, Res, Ret, class, enum_value, table};
+use super::{ApiClass, Call, Res, Ret, areas, class, condfmt, enum_value, table};
 use crate::host::{Host, to_script};
 
 // ---- reading -----------------------------------------------------------------
@@ -48,17 +48,17 @@ fn read(h: &mut Host, call: &Call, single: bool, english: bool, cell: fn(&Workbo
     }))
 }
 
-fn value_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
+pub(super) fn value_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
     to_script(&wb.sheets[sheet].value_at(row, col))
 }
 
-fn text_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
+pub(super) fn text_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
     wb.display_text(sheet, row, col).text.into()
 }
 
 /// The formula of a cell in the language the workbook is set to at the
 /// time of the call; what it holds for a cell without one.
-fn formula_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
+pub(super) fn formula_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
     match wb.cell(sheet, row, col).map(|cell| &cell.content) {
         Some(Content::Formula(_)) => wb.formula_text(sheet, row, col).unwrap_or_default().into(),
         Some(Content::Value(value)) => to_script(value),
@@ -66,7 +66,7 @@ fn formula_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
     }
 }
 
-fn format_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
+pub(super) fn format_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
     wb.style_at(sheet, row, col).num_fmt.as_ref().into()
 }
 
@@ -74,7 +74,7 @@ fn local_format_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
     code_to_locale(&wb.style_at(sheet, row, col).num_fmt, wb.locale).into()
 }
 
-fn type_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
+pub(super) fn type_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
     match wb.sheets[sheet].value_at(row, col) {
         Value::Empty => "Empty",
         Value::Number(_) => "Double",
@@ -84,6 +84,31 @@ fn type_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
         Value::Array(_) => "Unknown",
     }
     .into()
+}
+
+/// `clear(applyTo?)` on one range.
+pub(super) fn clear_rect(h: &mut Host, c: &Call, sheet: usize, rect: Rect) -> Res<()> {
+    let apply = enum_value(c, 0, "ClearApplyTo")?.unwrap_or("All");
+    if matches!(apply, "Hyperlinks" | "RemoveHyperlinks") {
+        h.permit(c, &Action::EditCells { sheet, ranges: &[rect] })?;
+        h.wb.remove_hyperlinks(sheet, &[rect]);
+        if apply == "RemoveHyperlinks" {
+            h.wb.unformat_links(sheet, rect);
+        }
+        return Ok(());
+    }
+    let mode = match apply {
+        "Contents" => ClearMode::Contents,
+        "Formats" => ClearMode::Formats,
+        _ => ClearMode::All,
+    };
+    h.permit_edit(c, &Edit::Clear { sheet, ranges: &[rect], mode })?;
+    h.wb.clear(sheet, rect, mode);
+    if mode != ClearMode::Formats {
+        entered(h, sheet, h.wb.clamp_to_used(sheet, rect));
+    }
+    h.restructured();
+    Ok(())
 }
 
 // ---- writing -----------------------------------------------------------------
@@ -236,7 +261,7 @@ fn edge(h: &mut Host, call: &Call, sheet: usize, rect: Rect) -> Res<(Direction, 
 }
 
 /// The smallest rectangle around the cells of `rect` that are used.
-fn used_within(h: &mut Host, sheet: usize, rect: Rect, values_only: bool) -> Option<Rect> {
+pub(super) fn used_within(h: &mut Host, sheet: usize, rect: Rect, values_only: bool) -> Option<Rect> {
     h.calculate();
     let sh = &h.wb.sheets[sheet];
     let mut out: Option<Rect> = None;
@@ -344,6 +369,34 @@ pub(super) const RANGE: ApiClass = class!("Range", "A rectangle of cells of a wo
     setNumberFormatLocal "(numberFormatLocal: string): void" "Gives every cell one number format code, written in the language of the workbook." => |h, c| write(h, c, false, Entry::LocalFormat);
     setNumberFormatsLocal "(numberFormatsLocal: string[][]): void" "Gives each cell its number format code, written in the language of the workbook." => |h, c| write(h, c, true, Entry::LocalFormat);
 
+    addConditionalFormat "(type: ExcelScript.ConditionalFormatType): ConditionalFormat" "Adds a conditional format of a kind to the range, with the highest priority; its rule and its format are then set on what getCellValue, getColorScale, getCustom... give." => |h, c| condfmt::add(h, c);
+    getConditionalFormats "(): ConditionalFormat[]" "The conditional formats that apply to cells of the range, in priority order." => |h, c| condfmt::list(h, c);
+    getConditionalFormat "(id: string): ConditionalFormat | undefined" "The conditional format of the worksheet with this identifier; undefined when there is none." => |h, c| condfmt::by_id(h, c);
+    clearAllConditionalFormats "(): void" "Takes the cells of the range out of every conditional format." => |h, c| condfmt::clear(h, c);
+
+    getSpecialCells "(cellType: ExcelScript.SpecialCellType, cellValueType?: ExcelScript.SpecialCellValueType): RangeAreas | undefined" "The cells of the range of a kind, as Go To Special finds them: blanks, constants, formulas (of the kinds of value named), visible cells, cells with a conditional format or data validation; undefined when there is none." => |h, c| {
+        let (sheet, rect) = this_range(h, c)?;
+        areas::special(h, c, sheet, &[rect])
+    };
+    findAll "(text: string, criteria: ExcelScript.WorksheetSearchCriteria): RangeAreas | undefined" "Every cell of the range holding a text, as Find All; undefined when none does." => |h, c| {
+        let (sheet, rect) = this_range(h, c)?;
+        areas::find_all(h, c, sheet, &[rect])
+    };
+    getMergedAreas "(): RangeAreas | undefined" "The merged cells that reach the range; undefined when there is none." => |h, c| {
+        let (sheet, rect) = this_range(h, c)?;
+        let merged: Vec<Rect> = h.wb.sheets[sheet].merges.iter().filter(|merge| merge.intersects(&rect)).copied().collect();
+        Ok(Ret::maybe((!merged.is_empty()).then(|| areas::areas_object(h, sheet, &merged))))
+    };
+    getVisibleView "(): RangeView" "The rows and columns of the range that show: those a filter or Hide left out are skipped." => |h, c| {
+        this_range(h, c)?;
+        let mut state = c.this.to_vec();
+        state.push((-1).into());
+        Ok(Ret::object("RangeView", state))
+    };
+    getDataValidation "(): DataValidation" "The data validation of the range." => |h, c| {
+        this_range(h, c)?;
+        Ok(Ret::object("DataValidation", c.this.to_vec()))
+    };
     getFormat "(): RangeFormat" "The formatting of the range: font, fill, borders, alignment, sizes." => |h, c| {
         this_range(h, c)?;
         Ok(Ret::object("RangeFormat", c.this.to_vec()))
@@ -468,28 +521,7 @@ pub(super) const RANGE: ApiClass = class!("Range", "A rectangle of cells of a wo
 
     clear "(applyTo?: ExcelScript.ClearApplyTo): void" "Clears the cells: everything (the default), contents, formats, or the hyperlinks." => |h, c| {
         let (sheet, rect) = this_range(h, c)?;
-        let apply = enum_value(c, 0, "ClearApplyTo")?.unwrap_or("All");
-        if matches!(apply, "Hyperlinks" | "RemoveHyperlinks") {
-            h.permit(c, &Action::EditCells { sheet, ranges: &[rect] })?;
-            h.wb.remove_hyperlinks(sheet, &[rect]);
-            if apply == "RemoveHyperlinks" {
-                h.wb.unformat_links(sheet, rect);
-            }
-            return Ok(Ret::Nothing);
-        }
-        let mode = match apply {
-            "Contents" => ClearMode::Contents,
-            "Formats" => ClearMode::Formats,
-            _ => ClearMode::All,
-        };
-        h.permit_edit(c, &Edit::Clear { sheet, ranges: &[rect], mode })?;
-        h.wb.clear(sheet, rect, mode);
-        if mode == ClearMode::Formats {
-            h.restructured();
-        } else {
-            entered(h, sheet, h.wb.clamp_to_used(sheet, rect));
-            h.restructured();
-        }
+        clear_rect(h, c, sheet, rect)?;
         Ok(Ret::Nothing)
     };
     delete "(shift: ExcelScript.DeleteShiftDirection): void" "Deletes the cells; those below move up, or those to the right move left. Whole rows and columns are deleted as such." => |h, c| {

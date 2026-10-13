@@ -56,6 +56,32 @@ pub(crate) fn resolve(h: &mut Host, call: &Call, sheet: usize, text: &str) -> Re
     }
 }
 
+/// The ranges addresses separated by commas mean on a sheet (`A1:B2,
+/// D4`), all of one worksheet; a defined name may stand for several.
+pub(crate) fn resolve_areas(h: &mut Host, call: &Call, sheet: usize, text: &str) -> Res<(usize, Vec<Rect>)> {
+    let mut on = None;
+    let mut rects = Vec::new();
+    for piece in text.split(',').map(str::trim) {
+        let found: Vec<(usize, Rect)> = match Rect::parse(piece) {
+            Some(rect) => vec![(sheet, rect)],
+            None => {
+                let areas = h.english(|wb| wb.reference_areas(sheet, 0, 0, piece)).ok_or_else(|| call.invalid())?;
+                areas.iter().map(|area| (area.sheet, area.rect)).collect()
+            }
+        };
+        for (of, rect) in found {
+            if *on.get_or_insert(of) != of {
+                return Err(call.fail("The ranges must be on one worksheet."));
+            }
+            rects.push(rect);
+        }
+    }
+    match on {
+        Some(sheet) if !rects.is_empty() => Ok((sheet, rects)),
+        _ => Err(call.invalid()),
+    }
+}
+
 /// The sheet and the rectangle of a Range object, from its state.
 pub(crate) fn range_from(h: &Host, call: &Call, state: &[J]) -> Res<(usize, Rect)> {
     let number = |index: usize| state.get(index).and_then(J::as_u64).map(|n| n as u32);
@@ -65,6 +91,17 @@ pub(crate) fn range_from(h: &Host, call: &Call, state: &[J]) -> Res<(usize, Rect
         (Some(r0), Some(c0), Some(r1), Some(c1)) => Ok((sheet, Rect::new(r0, c0, r1, c1))),
         _ => Err(call.invalid()),
     }
+}
+
+/// The ranges formatting is set on: the range of the object, and the
+/// further ranges of a RangeAreas, which follow the sixth place of its
+/// state.
+pub(crate) fn format_rects(h: &Host, call: &Call) -> Res<(usize, Vec<Rect>)> {
+    let (sheet, first) = this_range(h, call)?;
+    let rest: Vec<u32> = call.this.iter().skip(6).filter_map(|n| n.as_u64().map(|n| n as u32)).collect();
+    let mut rects = vec![first];
+    rects.extend(rest.chunks_exact(4).map(|n| Rect::new(n[0], n[1], n[2], n[3])));
+    Ok((sheet, rects))
 }
 
 /// The range a call is made on.
@@ -166,4 +203,41 @@ pub(crate) fn color_arg(call: &Call, index: usize) -> Res<Option<Color>> {
 /// `#RRGGBB`.
 pub(crate) fn color_text(color: Color) -> String {
     format!("#{:06X}", color.value())
+}
+
+// ---- base64 --------------------------------------------------------------------
+
+const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Bytes as base64 text, padded.
+pub(crate) fn base64_encode(data: &[u8]) -> String {
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let n = (chunk[0] as u32) << 16 | (chunk.get(1).copied().unwrap_or(0) as u32) << 8 | chunk.get(2).copied().unwrap_or(0) as u32;
+        for k in 0..4 {
+            if k <= chunk.len() {
+                out.push(BASE64[(n >> (18 - 6 * k) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The bytes of base64 text (white space and padding are skipped);
+/// `None` when a character is not of the alphabet.
+pub(crate) fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() / 4 * 3);
+    let (mut bits, mut count) = (0u32, 0);
+    for byte in text.bytes().filter(|b| !b.is_ascii_whitespace() && *b != b'=') {
+        let value = BASE64.iter().position(|c| *c == byte)? as u32;
+        bits = bits << 6 | value;
+        count += 6;
+        if count >= 8 {
+            count -= 8;
+            out.push((bits >> count) as u8);
+        }
+    }
+    Some(out)
 }

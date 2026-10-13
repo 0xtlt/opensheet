@@ -41,6 +41,7 @@ pub(crate) struct Host {
     pub selected: bool,
     pub logs: Vec<Log>,
     pub workbook_name: String,
+    pub user_name: String,
     pub autofits: Vec<(i64, bool, u32, u32)>,
     /// Cells were changed since formulas were calculated.
     stale: bool,
@@ -50,10 +51,18 @@ pub(crate) struct Host {
     pub calculated: bool,
     /// A member that can change the workbook was called.
     pub edited: bool,
+    /// A sheet was protected or unprotected.
+    pub protection_changed: bool,
     written: u64,
     /// The engine failed under a call: the run is lost whatever the
     /// script does next.
     pub fatal: Option<String>,
+    /// The conditional formats the script holds: for each handle, the
+    /// sheet (by identifier) and the place of the rule in its priority
+    /// order; `None` once the rule is deleted. The engine names rules by
+    /// their place, which moves when the script adds, deletes or
+    /// reorders rules: the handles follow.
+    cond_formats: Vec<Option<(i64, usize)>>,
 }
 
 impl Host {
@@ -71,13 +80,16 @@ impl Host {
             selected: false,
             logs: Vec::new(),
             workbook_name: context.workbook_name.clone(),
+            user_name: context.user_name.clone(),
             autofits: Vec::new(),
             stale: false,
             restructured: false,
             calculated: false,
             edited: false,
+            protection_changed: false,
             written: 0,
             fatal: None,
+            cond_formats: Vec::new(),
         }
     }
 
@@ -129,9 +141,10 @@ impl Host {
     pub fn sheet_deleted(&mut self, index: usize) {
         let id = self.sheet_ids.remove(index);
         if id == self.active {
-            // As in Excel, the next sheet comes in front (the one before
-            // for the last).
-            self.active = self.sheet_id(index.min(self.sheet_ids.len() - 1));
+            // As in Excel, the next sheet with a tab comes in front (the
+            // one before for the last).
+            let next = self.wb.nearest_visible_sheet(index.min(self.sheet_ids.len() - 1));
+            self.active = self.sheet_id(next);
             self.selection = Rect::cell(0, 0);
             self.active_cell = (0, 0);
             self.activated = true;
@@ -139,10 +152,56 @@ impl Host {
         self.restructured();
     }
 
+    /// A sheet was hidden: when it was the one in front, the nearest
+    /// sheet with a tab takes its place, as when it is hidden by hand.
+    pub fn sheet_hidden(&mut self, index: usize) {
+        if self.sheet_id(index) == self.active {
+            let next = self.wb.nearest_visible_sheet(index);
+            self.activate(next);
+        }
+    }
+
     pub fn sheet_moved(&mut self, from: usize, to: usize) {
         let id = self.sheet_ids.remove(from);
         self.sheet_ids.insert(to, id);
         self.restructured();
+    }
+
+    // ---- conditional formats ------------------------------------------------
+
+    /// The handle of the rule at a place of a sheet: the one the script
+    /// already holds, or a new one.
+    pub fn cond_handle(&mut self, sheet: usize, index: usize) -> i64 {
+        let key = Some((self.sheet_id(sheet), index));
+        let at = self.cond_formats.iter().position(|held| *held == key).unwrap_or_else(|| {
+            self.cond_formats.push(key);
+            self.cond_formats.len() - 1
+        });
+        at as i64
+    }
+
+    /// The sheet and the place of the rule a handle stands for.
+    pub fn cond_format(&self, call: &Call, handle: i64) -> Res<(usize, usize)> {
+        let held = usize::try_from(handle).ok().and_then(|at| self.cond_formats.get(at).copied().flatten());
+        let (id, index) = held.ok_or_else(|| call.gone())?;
+        let sheet = self.sheet(call, id)?;
+        if index >= self.wb.sheets[sheet].cond_formats.len() {
+            return Err(call.gone());
+        }
+        Ok((sheet, index))
+    }
+
+    /// The rules of a sheet changed places: `moved` says where the rule
+    /// at a place went, `None` when it is gone.
+    pub fn cond_formats_moved(&mut self, sheet: usize, moved: impl Fn(usize) -> Option<usize>) {
+        let id = self.sheet_id(sheet);
+        for held in &mut self.cond_formats {
+            if let Some((of, index)) = *held {
+                if of == id {
+                    *held = moved(index).map(|to| (id, to));
+                }
+            }
+        }
     }
 
     // ---- calculation -----------------------------------------------------

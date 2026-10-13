@@ -10,7 +10,7 @@ function main(workbook: ExcelScript.Workbook) {
   eq(chart.getChartType(), "ColumnClustered");
   chart.setChartType(ExcelScript.ChartType.barStacked);
   eq(chart.getChartType(), ExcelScript.ChartType.barStacked);
-  throws(() => chart.setChartType(ExcelScript.ChartType.treemap), "ExcelScript.ChartType.treemap is not supported");
+  throws(() => chart.setChartType((ExcelScript.ChartType as any).treemap), "ExcelScript.ChartType.treemap is not supported");
 
   const title = chart.getTitle();
   eq([title.getVisible(), title.getOverlay()], [true, false]);

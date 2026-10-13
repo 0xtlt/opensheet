@@ -1411,3 +1411,23 @@ fn a_range_is_drawn_alone_without_the_furniture_of_a_page() {
     assert!(svg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"80\""));
     assert!(svg.contains(">Tea</text>"));
 }
+
+#[test]
+fn the_entire_workbook_leaves_hidden_sheets_out() {
+    use opensheet_engine::workbook::SheetVisibility;
+    let mut wb = Workbook::new(Locale::en());
+    for index in 1..3 {
+        wb.add_sheet(index);
+    }
+    for sheet in 0..3 {
+        wb.set_cell_text(sheet, 0, 0, &format!("page of sheet {}", sheet + 1)).unwrap();
+    }
+    wb.set_sheet_visibility(1, SheetVisibility::Hidden);
+    wb.commit("setup");
+    let job = job(PrintWhat::Workbook);
+    let plan = plan(&wb, &job);
+    assert_eq!(plan.sheets.iter().map(|s| s.sheet).collect::<Vec<_>>(), [0, 2]);
+    assert_eq!(plan.pages.len(), 2);
+    // Asked for by itself, a hidden sheet still prints.
+    assert_eq!(opensheet_print::plan(&wb, &self::job(PrintWhat::Sheet(1))).pages.len(), 1);
+}

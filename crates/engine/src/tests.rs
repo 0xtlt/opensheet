@@ -306,3 +306,37 @@ fn redo_after_cells_were_written_then_moved() {
     w.redo();
     assert_eq!((val(&w, "A1"), val(&w, "A2")), (Value::text("new"), Value::Empty));
 }
+
+#[test]
+fn hidden_sheets_keep_calculating_and_one_sheet_stays_visible() {
+    use crate::workbook::SheetVisibility::{Hidden, VeryHidden, Visible};
+    let mut w = wb(&[("A1", "2")]);
+    let data = w.add_sheet(1);
+    w.set_cell_text(data, 0, 0, "40").unwrap();
+    w.set_cell_text(0, 0, 1, &format!("=A1+{}!A1", w.sheets[data].name)).unwrap();
+    w.commit("setup");
+    assert_eq!(val(&w, "B1"), Value::Number(42.0));
+
+    assert!(w.set_sheet_visibility(data, Hidden));
+    w.commit("hide");
+    assert_eq!((w.visible_sheet_count(), w.nearest_visible_sheet(data)), (1, 0));
+    // The last sheet with a tab can be neither hidden nor deleted.
+    assert!(!w.set_sheet_visibility(0, Hidden) && !w.set_sheet_visibility(0, VeryHidden));
+    assert!(!w.delete_sheet(0));
+    // Formulas go on reading the hidden sheet, and follow its cells.
+    w.set_cell_text(data, 0, 0, "98").unwrap();
+    w.commit("edit");
+    assert_eq!(val(&w, "B1"), Value::Number(100.0));
+
+    assert!(w.set_sheet_visibility(data, VeryHidden));
+    w.commit("very hidden");
+    w.undo();
+    assert_eq!(w.sheets[data].visibility, Hidden);
+    w.undo();
+    w.undo();
+    assert_eq!(w.sheets[data].visibility, Visible);
+    w.redo();
+    assert_eq!(w.sheets[data].visibility, Hidden);
+    assert_eq!((w.next_visible_sheet(0, true), w.next_visible_sheet(1, false)), (None, Some(0)));
+    assert!(w.set_sheet_visibility(data, Visible) && !w.set_sheet_visibility(7, Hidden));
+}

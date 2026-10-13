@@ -40,6 +40,16 @@ fn worksheets() {
     assert_eq!(out.activated, Some(3));
     assert!(!wb.sheets[3].show_gridlines && !wb.sheets[3].show_headers);
     assert_eq!(wb.sheets[3].tab_color.map(|c| c.value()), Some(0x00FF00));
+    use opensheet_engine::workbook::SheetVisibility::{Hidden, Visible};
+    assert_eq!(wb.sheets.iter().map(|s| s.visibility).collect::<Vec<_>>(), [Visible, Visible, Visible, Visible, Visible, Hidden]);
+    // A script that fails after hiding sheets leaves them as they were;
+    // the last visible sheet stays; a protected structure refuses.
+    let all = "for (const s of workbook.getWorksheets()) { s.setVisibility(ExcelScript.SheetVisibility.hidden); }";
+    assert!(fails(&mut wb, &script(all)).message.contains("at least one visible worksheet"));
+    wb.protect_workbook(true, false, "");
+    let show = "workbook.getLastWorksheet().setVisibility(ExcelScript.SheetVisibility.visible);";
+    assert!(fails(&mut wb, &script(show)).message.contains("protected"));
+    ok_body(&mut wb, "workbook.getLastWorksheet().setVisibility(ExcelScript.SheetVisibility.hidden);");
 }
 
 fn names() {
@@ -137,6 +147,205 @@ fn charts() {
     assert_eq!(wb.chart_data(1, other).series[0].values, [Some(10.0), Some(1.5)]);
 }
 
+fn condfmt() {
+    use opensheet_engine::condfmt::{CellOp, Rule};
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/condfmt.ts"));
+    let rules = &wb.sheets[0].cond_formats;
+    assert_eq!(rules.len(), 4);
+    assert!(matches!(rules[0].rule, Rule::CellIs { op: CellOp::Between, .. }) && rules[0].stop_if_true);
+    assert_eq!(rules[0].ranges, [Rect::new(2, 1, 3, 1)]);
+    assert_eq!(rules[0].format.fill, Some(Some(opensheet_engine::Color(0xFFFF00))));
+    // What the rules show is what the same rules show made by hand: B3
+    // (2) is between 2 and 6, B4 (5) too.
+    assert_eq!(wb.display(0, 2, 1).style.fill.map(|c| c.value()), Some(0xFFFF00));
+    // On a protected sheet a rule needs the permission to format cells.
+    wb.protect_sheet(0, Default::default(), "");
+    let add = "sheet.getRange(\"A1\").addConditionalFormat(ExcelScript.ConditionalFormatType.custom);";
+    assert!(fails(&mut wb, &script(add)).message.contains("protected"));
+}
+
+fn validation() {
+    use opensheet_engine::validation::{AlertStyle, ValidationKind};
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/validation.ts"));
+    let rules = &wb.sheets[0].validations;
+    assert_eq!(rules.len(), 3);
+    let qty = wb.validation_at(0, 2, 1).expect("a rule on B3");
+    assert_eq!((qty.kind, qty.error_style, qty.allow_blank), (ValidationKind::Whole, AlertStyle::Warning, false));
+    assert_eq!(qty.ranges, [Rect::new(1, 1, 3, 1)]);
+    // The rule is the one the dialog makes: an entry is checked by it.
+    assert!(matches!(wb.check_entry(0, 1, 1, "50"), opensheet_engine::validation::EntryCheck::Invalid(_)));
+    assert!(wb.validation_at(0, 2, 2).is_none());
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("sheet.getRange(\"B2\").getDataValidation().clear();")).message.contains("protected"));
+}
+
+#[test]
+fn data_validation_rules_alerts_and_invalid_cells() {
+    validation();
+}
+
+fn comments() {
+    use opensheet_engine::comment::Comment;
+    let mut wb = stock();
+    let context = Context {
+        user_name: "Ada Script".into(),
+        ..Context::default()
+    };
+    ok_with(&mut wb, include_str!("model/comments.ts"), &context);
+    let held = &wb.sheets[0].comments;
+    assert_eq!(held.keys().copied().collect::<Vec<_>>(), [(1, 1), (3, 0)]);
+    let Some(Comment::Thread(thread)) = held.get(&(1, 1)) else {
+        panic!("a thread on B2");
+    };
+    assert_eq!((thread.first.author.name.as_str(), thread.replies.len(), thread.resolved), ("Ada Script", 1, false));
+    assert_eq!(thread.replies[0].mentions.len(), 2);
+    assert_eq!(thread.replies[0].mentions[1].person.user_id, "ann@example.org");
+    let Some(Comment::Note(note)) = held.get(&(3, 0)) else {
+        panic!("a note on A4");
+    };
+    assert!(note.visible && note.frame.is_some_and(|frame| frame.size == (200.0, 80.0)));
+    // A protected sheet lets nobody edit comments unless it allows objects.
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("sheet.addNote(\"F1\", \"x\");")).message.contains("protected"));
+}
+
+#[test]
+fn comments_replies_mentions_and_notes() {
+    comments();
+}
+
+/// A list of sales: region, product, quantity, amount.
+fn sales() -> Workbook {
+    let rows = [
+        ["Region", "Product", "Qty", "Amount"],
+        ["North", "Pen", "10", "15"],
+        ["North", "Ink", "2", "24.5"],
+        ["South", "Pen", "5", "7.5"],
+        ["South", "Pad", "5", "15"],
+        ["East", "Ink", "1", "12.25"],
+        ["East", "Pen", "3", "4.5"],
+    ];
+    let cells: Vec<(String, &str)> = rows
+        .iter()
+        .enumerate()
+        .flat_map(|(r, row)| row.iter().enumerate().map(move |(c, text)| (format!("{}{}", (b'A' + c as u8) as char, r + 1), *text)))
+        .collect();
+    book(&cells.iter().map(|(name, text)| (name.as_str(), *text)).collect::<Vec<_>>())
+}
+
+fn pivots() {
+    use opensheet_engine::pivot::{Aggregation, FieldLayout};
+    let mut wb = sales();
+    ok(&mut wb, include_str!("model/pivots.ts"));
+    let (sheet, pivot) = wb.pivots().next().expect("a PivotTable");
+    assert_eq!((sheet, pivot.name.as_str(), pivot.anchor), (0, "Report", (4, 5)));
+    assert_eq!((pivot.row_fields.len(), pivot.col_fields.len(), pivot.data_fields.len()), (2, 0, 1));
+    assert_eq!((pivot.data_fields[0].function, pivot.data_fields[0].name.as_str()), (Aggregation::Sum, "Revenue"));
+    assert!(pivot.fields.iter().all(|f| f.layout == FieldLayout::Outline));
+    assert_eq!(wb.pivots().count(), 1);
+    // A protected sheet refuses unless it allows using PivotTables.
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("workbook.getPivotTable(\"Report\")!.refresh();")).message.contains("protected"));
+}
+
+#[test]
+fn pivot_tables_their_fields_values_filters_and_layout() {
+    pivots();
+}
+
+fn shapes() {
+    use opensheet_engine::drawing::{Dash, ShapePreset};
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/shapes.ts"));
+    let drawings = &wb.sheets[0].drawings;
+    assert_eq!(drawings.len(), 6);
+    let banner = drawings.iter().find(|d| d.name == "Banner").expect("the banner");
+    let shape = banner.as_shape().expect("a shape");
+    assert_eq!((shape.preset, shape.text.as_str(), shape.fill.map(|c| c.value())), (ShapePreset::RoundRect, "Q3", Some(0x336699)));
+    assert_eq!(shape.outline.map(|o| (o.color.value(), o.width, o.dash)), Some((0x000000, 1.0, Dash::Solid)));
+    // 100 by 45 points, 150 by 60: pixels at 100 % in the engine.
+    let frame = wb.drawing_frame(0, banner.id).expect("a frame");
+    assert!((frame.x - 400.0 / 3.0).abs() < 0.01 && (frame.y - 60.0).abs() < 0.01 && (frame.width - 200.0).abs() < 0.01 && (frame.height - 80.0).abs() < 0.01);
+    assert_eq!(drawings.iter().filter(|d| d.as_picture().is_some()).count(), 2);
+    // On a protected sheet objects are edited only when it allows it.
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("sheet.addTextBox(\"x\");")).message.contains("protected"));
+}
+
+#[test]
+fn shapes_lines_text_boxes_and_pictures() {
+    shapes();
+}
+
+fn areas() {
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/areas.ts"));
+    assert_eq!(wb.style_at(0, 2, 1).fill.map(|c| c.value()), Some(0xFFFF00));
+    assert!(wb.style_at(0, 2, 1).font.bold && wb.style_at(0, 0, 3).fill.is_none());
+    assert_eq!(wb.sheets[0].merges.len(), 2);
+    // A script that only looks for cells leaves no step to undo.
+    let mut wb = stock();
+    let looking = "sheet.getRange(\"A1:C4\").getSpecialCells(ExcelScript.SpecialCellType.constants); sheet.findAll(\"Pen\", {}); sheet.getRanges(\"A1,B2\").getAreaCount();";
+    run_with(&mut wb, &script(looking), &Context::default());
+    assert!(!wb.commit("nothing") && !wb.can_undo());
+}
+
+#[test]
+fn several_ranges_special_cells_find_all_and_visible_views() {
+    areas();
+}
+
+fn protection() {
+    use opensheet_engine::protect::Permission;
+    let mut wb = stock();
+    wb.set_cell_text(0, 5, 0, "typed before").unwrap();
+    wb.commit("typed");
+    // The run is kept, and with it the protection: nothing is left to undo,
+    // as after Protect Sheet.
+    let outcome = run_with(&mut wb, include_str!("model/protection.ts"), &Context::default());
+    assert_eq!(outcome.error, None);
+    assert!(outcome.protection_changed);
+    assert!(wb.commit("Run Script"));
+    assert!(!wb.can_undo() && !wb.can_redo());
+    let held = wb.sheets[0].protection.clone().expect("a protected sheet");
+    assert!(held.password.as_ref().is_some_and(|hash| hash.verify("pw")));
+    assert!(held.allows(Permission::InsertRows) && !held.allows(Permission::SelectLockedCells) && !held.allows(Permission::Sort));
+    assert_eq!(text(&wb, "A1"), "Item");
+    assert!(wb.style_at(0, 0, 0).font.italic);
+
+    // A script that fails after removing the protection leaves the sheet
+    // protected, its cells as they were and the history in place.
+    wb.set_cell_text(0, 6, 0, "typed after").unwrap();
+    wb.commit("typed");
+    let failing = "sheet.getProtection().unprotect(\"pw\"); sheet.getRange(\"A1\").setValue(\"gone\"); throw new Error(\"stop\");";
+    assert_eq!(fails(&mut wb, &script(failing)).message, "stop");
+    assert!(wb.sheets[0].protection.as_ref().is_some_and(|held| held.password.is_some()));
+    assert_eq!((text(&wb, "A1"), wb.undo_label()), ("Item".to_string(), Some("typed")));
+    // One that only looks changes nothing either.
+    let outcome = run_with(&mut wb, &script("console.log(sheet.getProtection().getProtected());"), &Context::default());
+    assert!(!outcome.protection_changed && !wb.commit("nothing") && wb.can_undo());
+    // The same through a working copy, as the application runs scripts.
+    let mut copy = wb.fork();
+    let outcome = run_with(&mut copy, &script("sheet.getProtection().unprotect(\"pw\"); sheet.getRange(\"A1\").setValue(\"open\");"), &Context::default());
+    assert_eq!(outcome.error, None);
+    wb.adopt(copy);
+    assert!(wb.commit("Run Script") && !wb.can_undo());
+    assert!(wb.sheets[0].protection.is_none());
+    assert_eq!(text(&wb, "A1"), "open");
+}
+
+#[test]
+fn a_sheet_is_protected_and_unprotected_inside_a_run() {
+    protection();
+}
+
+#[test]
+fn conditional_formats_of_every_kind() {
+    condfmt();
+}
+
 #[test]
 fn charts_their_titles_and_their_places() {
     charts();
@@ -199,7 +408,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots, shapes, areas, protection] {
         scenario();
     }
     let called = members_called();

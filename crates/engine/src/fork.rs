@@ -42,6 +42,10 @@ impl Workbook {
         // The copy's table holds every style this one had, under the same
         // numbers, and those the copy added.
         self.styles = fork.styles;
+        // A copy whose sheets were protected or unprotected says so: the
+        // commit that follows forgets the history, as when a sheet is
+        // protected by hand.
+        self.protection_pending |= fork.protection_pending;
     }
 }
 
