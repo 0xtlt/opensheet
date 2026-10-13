@@ -16,6 +16,7 @@ mod enums;
 mod format;
 mod pivot;
 mod range;
+mod shape;
 mod table;
 mod util;
 mod validation;
@@ -254,6 +255,13 @@ pub(crate) static API: &[ApiClass] = &[
     pivot::PIVOT_FIELD,
     pivot::PIVOT_ITEM,
     pivot::PIVOT_LAYOUT,
+    shape::SHAPE,
+    shape::SHAPE_FILL,
+    shape::SHAPE_LINE,
+    shape::TEXT_FRAME,
+    shape::TEXT_RANGE,
+    shape::SHAPE_FONT,
+    shape::IMAGE,
 ];
 
 pub(crate) use enums::ENUMS;

@@ -1,8 +1,9 @@
 //! The enums of the `ExcelScript` namespace, with Excel's names and
 //! values. They list every member Excel has: a member OpenSheet cannot
 //! honour is refused by the method it is given to, with its name.
-//! `ChartType` alone lists only the charts OpenSheet draws: reading
-//! another of its members fails, with its name.
+//! `ChartType` and `GeometricShapeType` alone list only the charts and
+//! the shapes OpenSheet draws: reading another of their members fails,
+//! with its name.
 
 use super::ApiEnum;
 
@@ -112,6 +113,10 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(invalid "Invalid", topItems "TopItems", topPercent "TopPercent", bottomItems "BottomItems", bottomPercent "BottomPercent"),
     },
     ApiEnum {
+        name: "ConnectorType",
+        members: members!(straight "Straight", elbow "Elbow", curve "Curve"),
+    },
+    ApiEnum {
         name: "ContentType",
         members: members!(plain "Plain", mention "Mention"),
     },
@@ -144,6 +149,10 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(and "And", or "Or"),
     },
     ApiEnum {
+        name: "GeometricShapeType",
+        members: members!(rectangle "Rectangle", roundRectangle "RoundRectangle", ellipse "Ellipse", triangle "Triangle", rightTriangle "RightTriangle", diamond "Diamond", pentagon "Pentagon", hexagon "Hexagon", rightArrow "RightArrow", leftArrow "LeftArrow", upArrow "UpArrow", downArrow "DownArrow", star5 "Star5", wedgeRectCallout "WedgeRectCallout", chevron "Chevron", trapezoid "Trapezoid"),
+    },
+    ApiEnum {
         name: "HorizontalAlignment",
         members: members!(general "General", left "Left", center "Center", right "Right", fill "Fill", justify "Justify", centerAcrossSelection "CenterAcrossSelection", distributed "Distributed"),
     },
@@ -172,12 +181,20 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(string "String", integer "Integer", double "Double", boolean "Boolean", range "Range", error "Error", array "Array"),
     },
     ApiEnum {
+        name: "PictureFormat",
+        members: members!(unknown "UNKNOWN", bmp "BMP", jpeg "JPEG", gif "GIF", png "PNG", svg "SVG"),
+    },
+    ApiEnum {
         name: "PivotFilterType",
         members: members!(unknown "Unknown", value "Value", manual "Manual", label "Label", date "Date"),
     },
     ApiEnum {
         name: "PivotLayoutType",
         members: members!(compact "Compact", tabular "Tabular", outline "Outline"),
+    },
+    ApiEnum {
+        name: "Placement",
+        members: members!(twoCell "TwoCell", oneCell "OneCell", absolute "Absolute"),
     },
     ApiEnum {
         name: "RangeCopyType",
@@ -198,6 +215,34 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
     ApiEnum {
         name: "ShowAsCalculation",
         members: members!(unknown "Unknown", none "None", percentOfGrandTotal "PercentOfGrandTotal", percentOfRowTotal "PercentOfRowTotal", percentOfColumnTotal "PercentOfColumnTotal", percentOfParentRowTotal "PercentOfParentRowTotal", percentOfParentColumnTotal "PercentOfParentColumnTotal", percentOfParentTotal "PercentOfParentTotal", percentOf "PercentOf", runningTotal "RunningTotal", percentRunningTotal "PercentRunningTotal", differenceFrom "DifferenceFrom", percentDifferenceFrom "PercentDifferenceFrom", rankAscending "RankAscending", rankDecending "RankDecending", index "Index"),
+    },
+    ApiEnum {
+        name: "ShapeFillType",
+        members: members!(noFill "NoFill", solid "Solid", gradient "Gradient", pattern "Pattern", pictureAndTexture "PictureAndTexture", mixed "Mixed"),
+    },
+    ApiEnum {
+        name: "ShapeFontUnderlineStyle",
+        members: members!(none "None", single "Single", double "Double", heavy "Heavy", dotted "Dotted", dottedHeavy "DottedHeavy", dash "Dash", dashHeavy "DashHeavy", dashLong "DashLong", dashLongHeavy "DashLongHeavy", dotDash "DotDash", dotDashHeavy "DotDashHeavy", dotDotDash "DotDotDash", dotDotDashHeavy "DotDotDashHeavy", wavy "Wavy", wavyHeavy "WavyHeavy", wavyDouble "WavyDouble"),
+    },
+    ApiEnum {
+        name: "ShapeLineDashStyle",
+        members: members!(dash "Dash", dashDot "DashDot", dashDotDot "DashDotDot", longDash "LongDash", longDashDot "LongDashDot", roundDot "RoundDot", solid "Solid", squareDot "SquareDot", longDashDotDot "LongDashDotDot", systemDash "SystemDash", systemDot "SystemDot", systemDashDot "SystemDashDot"),
+    },
+    ApiEnum {
+        name: "ShapeTextHorizontalAlignment",
+        members: members!(left "Left", center "Center", right "Right", justify "Justify", justifyLow "JustifyLow", distributed "Distributed", thaiDistributed "ThaiDistributed"),
+    },
+    ApiEnum {
+        name: "ShapeTextVerticalAlignment",
+        members: members!(top "Top", middle "Middle", bottom "Bottom", justified "Justified", distributed "Distributed"),
+    },
+    ApiEnum {
+        name: "ShapeType",
+        members: members!(unsupported "Unsupported", image "Image", geometricShape "GeometricShape", group "Group", line "Line"),
+    },
+    ApiEnum {
+        name: "ShapeZOrder",
+        members: members!(bringToFront "BringToFront", bringForward "BringForward", sendToBack "SendToBack", sendBackward "SendBackward"),
     },
     ApiEnum {
         name: "SheetVisibility",

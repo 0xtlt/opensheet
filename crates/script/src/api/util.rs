@@ -193,3 +193,40 @@ pub(crate) fn color_arg(call: &Call, index: usize) -> Res<Option<Color>> {
 pub(crate) fn color_text(color: Color) -> String {
     format!("#{:06X}", color.value())
 }
+
+// ---- base64 --------------------------------------------------------------------
+
+const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Bytes as base64 text, padded.
+pub(crate) fn base64_encode(data: &[u8]) -> String {
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let n = (chunk[0] as u32) << 16 | (chunk.get(1).copied().unwrap_or(0) as u32) << 8 | chunk.get(2).copied().unwrap_or(0) as u32;
+        for k in 0..4 {
+            if k <= chunk.len() {
+                out.push(BASE64[(n >> (18 - 6 * k) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The bytes of base64 text (white space and padding are skipped);
+/// `None` when a character is not of the alphabet.
+pub(crate) fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() / 4 * 3);
+    let (mut bits, mut count) = (0u32, 0);
+    for byte in text.bytes().filter(|b| !b.is_ascii_whitespace() && *b != b'=') {
+        let value = BASE64.iter().position(|c| *c == byte)? as u32;
+        bits = bits << 6 | value;
+        count += 6;
+        if count >= 8 {
+            count -= 8;
+            out.push((bits >> count) as u8);
+        }
+    }
+    Some(out)
+}

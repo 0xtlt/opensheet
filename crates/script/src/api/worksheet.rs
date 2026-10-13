@@ -15,7 +15,7 @@ use opensheet_engine::workbook::{Content, Sheet, SheetVisibility};
 
 use super::util::{color_arg, color_text, parse_color, range_arg, resolve, table_fail};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
-use super::{ApiClass, Call, Res, Ret, chart, class, comment, enum_value, object, pivot, state_of, table};
+use super::{ApiClass, Call, Res, Ret, chart, class, comment, enum_value, object, pivot, shape, state_of, table};
 use crate::host::{Host, MAX_SHEETS, rect_from};
 
 /// The sheet a Worksheet object (or one of its parts) stands for.
@@ -493,6 +493,27 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
     refreshAllPivotTables "(): void" "Refreshes the PivotTables of the worksheet." => |h, c| {
         let sheet = this_sheet(h, c)?;
         pivot::refresh_all(h, c, Some(sheet))
+    };
+    addGeometricShape "(geometricShapeType: ExcelScript.GeometricShapeType): Shape" "Draws a geometric shape at the top left of the worksheet, at the size a click of its tool gives; setLeft, setTop, setWidth and setHeight place it." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_geometric(h, c, sheet)
+    };
+    addTextBox "(text?: string): Shape" "Draws a text box at the top left of the worksheet, with a text." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_text_box(h, c, sheet)
+    };
+    addLine "(startLeft: number, startTop: number, endLeft: number, endTop: number, connectorType?: ExcelScript.ConnectorType): Shape" "Draws a straight line between two points, in points from the top left of the worksheet." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_line(h, c, sheet)
+    };
+    addImage "(base64ImageString: string): Shape" "Inserts a picture (a PNG, JPEG, GIF or BMP file as base64 text) at the top left of the worksheet, at its natural size." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_image(h, c, sheet)
+    };
+    getShapes "(): Shape[]" "The shapes and pictures of the worksheet, the bottom-most first." => |h, c| Ok(shape::all(h, this_sheet(h, c)?));
+    getShape "(key: string): Shape | undefined" "The shape of the worksheet with this name or ID; undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::find(h, c, sheet)
     };
     replaceAll "(text: string, replacement: string, criteria: ExcelScript.ReplaceCriteria): number" "Replaces a text in the constants and formulas of the worksheet; returns how many cells changed." => |h, c| {
         let sheet = this_sheet(h, c)?;

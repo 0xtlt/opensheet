@@ -17,6 +17,8 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
   const custom = rule(ExcelScript.ConditionalFormatType.custom).getCustom()!;
   const ruleFormat = cellValue.getCellValue()!.getFormat();
   const comment = sheet.addComment("B2", "Why?");
+  const shape = sheet.addGeometricShape(ExcelScript.GeometricShapeType.rectangle);
+  const picture = sheet.addImage("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
   const pivot = sheet.addPivotTable(`Pivot${round}`, "A1:C4", "K5");
   const pivotRow = pivot.addRowHierarchy(pivot.getHierarchy("Name")!);
   const pivotData = pivot.addDataHierarchy(pivot.getHierarchy("Qty")!);
@@ -55,6 +57,13 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     PivotField: pivotRow.getFields()[0],
     PivotItem: pivotRow.getFields()[0].getItems()[0],
     PivotLayout: pivot.getLayout(),
+    Shape: shape,
+    ShapeFill: shape.getFill(),
+    ShapeLineFormat: shape.getLineFormat(),
+    TextFrame: shape.getTextFrame(),
+    TextRange: shape.getTextFrame().getTextRange(),
+    ShapeFont: shape.getTextFrame().getTextRange().getFont(),
+    Image: picture.getImage(),
     ConditionalFormat: cellValue,
     CellValueConditionalFormat: cellValue.getCellValue(),
     ColorScaleConditionalFormat: rule(ExcelScript.ConditionalFormatType.colorScale).getColorScale(),

@@ -255,6 +255,30 @@ fn pivot_tables_their_fields_values_filters_and_layout() {
     pivots();
 }
 
+fn shapes() {
+    use opensheet_engine::drawing::{Dash, ShapePreset};
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/shapes.ts"));
+    let drawings = &wb.sheets[0].drawings;
+    assert_eq!(drawings.len(), 6);
+    let banner = drawings.iter().find(|d| d.name == "Banner").expect("the banner");
+    let shape = banner.as_shape().expect("a shape");
+    assert_eq!((shape.preset, shape.text.as_str(), shape.fill.map(|c| c.value())), (ShapePreset::RoundRect, "Q3", Some(0x336699)));
+    assert_eq!(shape.outline.map(|o| (o.color.value(), o.width, o.dash)), Some((0x000000, 1.0, Dash::Solid)));
+    // 100 by 45 points, 150 by 60: pixels at 100 % in the engine.
+    let frame = wb.drawing_frame(0, banner.id).expect("a frame");
+    assert!((frame.x - 400.0 / 3.0).abs() < 0.01 && (frame.y - 60.0).abs() < 0.01 && (frame.width - 200.0).abs() < 0.01 && (frame.height - 80.0).abs() < 0.01);
+    assert_eq!(drawings.iter().filter(|d| d.as_picture().is_some()).count(), 2);
+    // On a protected sheet objects are edited only when it allows it.
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("sheet.addTextBox(\"x\");")).message.contains("protected"));
+}
+
+#[test]
+fn shapes_lines_text_boxes_and_pictures() {
+    shapes();
+}
+
 #[test]
 fn conditional_formats_of_every_kind() {
     condfmt();
@@ -322,7 +346,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots, shapes] {
         scenario();
     }
     let called = members_called();
