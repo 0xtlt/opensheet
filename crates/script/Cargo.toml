@@ -1,0 +1,10 @@
+[package]
+name = "opensheet_script"
+description = "Office Scripts for OpenSheet: runs the TypeScript `main(workbook)` of a script on a workbook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+opensheet_engine = { path = "../engine" }
+serde_json = "1"
