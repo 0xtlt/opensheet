@@ -113,6 +113,10 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Images : rogner (marques, forme, proportions, remplir, ajuster), luminosité, contraste, saturation, nuance, recoloration, transparence, rétablir.
 - Effets : ombre (9 préréglages), lueur, contours adoucis des images.
 - Onglet Dessin : stylos, crayon, surligneur, gomme, sélection au lasso, conversion de l'encre en forme, relecture.
+- WordArt : galerie de 15 styles, remplissage, contour et ombre du texte, mise en forme d'une partie du texte.
+- Icônes (63 pictogrammes, recherche, catégories) et images SVG, avec remplissage et contour du graphique.
+- SmartArt : 8 dispositions (liste, processus, cycle, hiérarchie, relation, matrice, pyramide…), volet Texte, couleurs, styles, conversion en formes.
+- Équations : 9 équations prédéfinies, structures (fractions, indices, racines, intégrales, matrices…), saisie au format linéaire avec aperçu.
 - Les graphiques suivent les données en direct, les insertions de lignes et les renommages de feuilles.
 - Graphiques sparkline dans les cellules : courbe, histogramme, positif / négatif, 36 styles, points marqués, axes.
 
@@ -135,7 +139,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 
 **Structure et fichiers**
 - Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
-- Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles et styles nommés, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes, liens hypertexte, scénarios, tables de données, consolidation, imports de texte, plan, sparklines, thème du document, segments et chronologies, champs calculés, graphiques croisés, groupes d'objets, rognage et effets, disposition des graphiques, arrière-plan, encre, affichages personnalisés. Les fichiers produits s'ouvrent dans Excel sans réparation.
+- Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles et styles nommés, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes, liens hypertexte, scénarios, tables de données, consolidation, imports de texte, plan, sparklines, thème du document, segments et chronologies, champs calculés, graphiques croisés, groupes d'objets, rognage et effets, disposition des graphiques, arrière-plan, encre, affichages personnalisés, WordArt, images SVG, SmartArt, équations. Les fichiers produits s'ouvrent dans Excel sans réparation.
 - Ouvrir et enregistrer en `.csv` et `.tsv`.
 
 ## Ce qui manque
@@ -145,13 +149,17 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Prévu** : les scripts Office en TypeScript (onglet Automatiser).
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
-- Orthographe, traduction, statistiques du classeur, vérification d'accessibilité, équations, symboles, SmartArt, WordArt, icônes.
+- Orthographe, traduction, statistiques du classeur, vérification d'accessibilité, symboles.
 - Partage et co-édition.
 
 **Partiels**
 - Graphiques : une étiquette de données ne se sélectionne pas seule ; la zone de traçage des graphiques 3D ne se déplace pas.
 - Tableaux croisés : pas de jeux (OLAP) ; les boutons de champ d'un graphique croisé n'ont pas de liste déroulante ; avec plusieurs champs de lignes, le graphique croisé n'a pas d'axe à plusieurs niveaux.
 - Formes et images : un graphique n'entre pas dans un groupe ; les membres d'un groupe ne se sélectionnent pas un par un ; pas de styles d'image, d'effets artistiques, de reflet, de biseau ni de 3D ; le flou des ombres est approché ; les réglages de couleur et les effets ne sont pas imprimés.
+- WordArt : pas de transformation (texte déformé), de dégradé, de biseau ni de reflet ; une forme affiche tout son texte à la taille de son premier passage.
+- Icônes : jeu de pictogrammes propre au projet (celui d'Office n'est pas libre) ; pas de conversion en forme.
+- SmartArt : le texte se modifie dans le volet Texte, pas dans les formes ; pas d'onglet Format SmartArt.
+- Équations : pas de curseur dans l'équation construite, la saisie se fait au format linéaire ; à l'impression, le texte linéaire.
 - Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) ; elle n'est pas imprimée et reste au-dessus des autres objets.
 - Préférences : les volets absents d'OpenSheet sont grisés (correction automatique, listes personnalisées, compatibilité…) ; pas de style de référence L1C1.
 - Mise en page : l'impression passe par un PDF.
