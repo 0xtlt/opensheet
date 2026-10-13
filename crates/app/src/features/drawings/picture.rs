@@ -2,11 +2,14 @@
 //! painted from. GPUI stretches a bitmap over an upright box and nothing
 //! else, so a picture that is flipped or turned is painted from a bitmap
 //! made that way, and a large picture shown small from a smaller copy.
+//! What the Picture Format tab does to a picture (crop, crop to a shape,
+//! transparency, corrections, colours, soft edges) is done to its pixels
+//! here too, once for each look it is given.
 
-use super::geometry::Placed;
+use super::geometry::{self, Placed};
 use gpui::{App, RenderImage, Window};
 use image::{Frame, RgbaImage};
-use opensheet_engine::drawing::{Picture, image_info};
+use opensheet_engine::drawing::{Picture, PictureAdjust, ShapePreset, image_info};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -196,6 +199,104 @@ impl Bitmap {
         Bitmap { width, height, data }
     }
 
+    /// What a frame shows of the picture once it is adjusted: the part
+    /// the crop keeps (with transparent room where the frame reaches
+    /// past the image), its colours changed, cut to the outline of a
+    /// shape, and fading out towards its edges over `soft` (a fraction
+    /// of the shorter side of the result). `natural` is the size of the
+    /// frame at 100 %, which the proportions of an outline depend on.
+    pub fn adjusted(&self, adjust: &PictureAdjust, soft: f32, natural: (f32, f32)) -> Bitmap {
+        let (w, h) = (self.width as f32, self.height as f32);
+        let [l, t, r, b] = adjust.crop;
+        let left = (l * w).round() as i64;
+        let top = (t * h).round() as i64;
+        let width = ((w * (1.0 - l - r)).round() as i64).clamp(1, 16_384) as u32;
+        let height = ((h * (1.0 - t - b)).round() as i64).clamp(1, 16_384) as u32;
+        let recolour = adjust.changes_pixels();
+        let mut data = vec![0u8; width as usize * height as usize * 4];
+        for y in 0..height {
+            let sy = top + y as i64;
+            if sy < 0 || sy >= self.height as i64 {
+                continue;
+            }
+            for x in 0..width {
+                let sx = left + x as i64;
+                if sx < 0 || sx >= self.width as i64 {
+                    continue;
+                }
+                let from = self.offset(sx as u32, sy as u32);
+                let to = (y as usize * width as usize + x as usize) * 4;
+                let pixel = &self.data[from..from + 4];
+                if recolour {
+                    // Stored blue first.
+                    let level = |v: u8| v as f32 / 255.0;
+                    let [red, green, blue, alpha] = adjust.apply([level(pixel[2]), level(pixel[1]), level(pixel[0]), level(pixel[3])]);
+                    let byte = |v: f32| (v * 255.0).round() as u8;
+                    data[to..to + 4].copy_from_slice(&[byte(blue), byte(green), byte(red), byte(alpha)]);
+                } else {
+                    data[to..to + 4].copy_from_slice(pixel);
+                }
+            }
+        }
+        let mut out = Bitmap { width, height, data };
+        if adjust.shape != ShapePreset::Rect {
+            out.cut_to(adjust.shape, natural);
+        }
+        if soft > 0.0 {
+            out.soften(soft * width.min(height) as f32);
+        }
+        out
+    }
+
+    /// Make transparent what lies outside the outline of a shape drawn
+    /// over the whole bitmap.
+    fn cut_to(&mut self, shape: ShapePreset, natural: (f32, f32)) {
+        let placed = Placed::plain(0.0, 0.0, self.width as f32, self.height as f32);
+        let outlines = geometry::flatten(&shape.path(natural.0.max(1.0), natural.1.max(1.0)), &placed);
+        let outlines: Vec<_> = outlines.into_iter().filter(|line| line.closed && line.points.len() >= 3).collect();
+        let mut crossings: Vec<f32> = Vec::new();
+        for y in 0..self.height {
+            // Where the outlines cross the middle of this row.
+            let level = y as f32 + 0.5;
+            crossings.clear();
+            for line in &outlines {
+                let n = line.points.len();
+                for i in 0..n {
+                    let (a, b) = (line.points[i], line.points[(i + 1) % n]);
+                    if (a.1 <= level) != (b.1 <= level) {
+                        crossings.push(a.0 + (level - a.1) / (b.1 - a.1) * (b.0 - a.0));
+                    }
+                }
+            }
+            crossings.sort_by(f32::total_cmp);
+            for x in 0..self.width {
+                let centre = x as f32 + 0.5;
+                let inside = crossings.iter().filter(|c| **c <= centre).count() % 2 == 1;
+                if !inside {
+                    let at = self.offset(x, y);
+                    self.data[at + 3] = 0;
+                }
+            }
+        }
+    }
+
+    /// Fade the bitmap out over `radius` pixels from its edges.
+    fn soften(&mut self, radius: f32) {
+        let radius = radius.min(self.width.min(self.height) as f32 / 2.0);
+        if radius < 0.5 {
+            return;
+        }
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let near = (x.min(self.width - 1 - x)).min(y.min(self.height - 1 - y)) as f32 + 0.5;
+                if near < radius {
+                    let at = self.offset(x, y);
+                    self.data[at + 3] = (self.data[at + 3] as f32 * near / radius).round() as u8;
+                }
+            }
+        }
+    }
+
     fn into_image(self) -> Option<Arc<RenderImage>> {
         let pixels = RgbaImage::from_raw(self.width, self.height, self.data)?;
         Some(Arc::new(RenderImage::new(vec![Frame::new(pixels)])))
@@ -236,6 +337,33 @@ enum Look {
     },
 }
 
+/// What was done to the pixels of a picture before it is oriented: the
+/// adjustments as bits (they are plain numbers), the soft edge in
+/// thousandths of the shorter side, and the proportions an outline was
+/// drawn for.
+type Treatment = (Vec<u32>, u32, (u32, u32));
+
+fn treatment(adjust: &PictureAdjust, soft: f32, natural: (f32, f32)) -> Option<Treatment> {
+    if *adjust == PictureAdjust::default() && soft <= 0.0 {
+        return None;
+    }
+    let mut bits: Vec<u32> = adjust.crop.iter().map(|v| v.to_bits()).collect();
+    bits.extend([adjust.transparency, adjust.brightness, adjust.contrast, adjust.saturation, adjust.temperature].map(f32::to_bits));
+    // Told apart by its name: the enum may grow kinds that carry data.
+    bits.push(adjust.shape.ooxml_name().bytes().fold(0u32, |sum, byte| sum.wrapping_mul(31).wrapping_add(byte as u32)));
+    use opensheet_engine::drawing::Recolor;
+    bits.extend(match adjust.recolor {
+        Recolor::None => [0, 0, 0],
+        Recolor::Grayscale => [1, 0, 0],
+        Recolor::BlackAndWhite(threshold) => [2, threshold.to_bits(), 0],
+        Recolor::Washout => [3, 0, 0],
+        Recolor::Duotone(dark, light) => [4, dark.value(), light.value()],
+    });
+    let shaped = adjust.shape != ShapePreset::Rect;
+    let natural = if shaped { (natural.0.round() as u32, natural.1.round() as u32) } else { (0, 0) };
+    Some((bits, (soft * 1000.0).round() as u32, natural))
+}
+
 struct Shown {
     image: Arc<RenderImage>,
     /// The repaint it was last drawn at.
@@ -248,7 +376,7 @@ struct Decoded {
     /// The picture, then each time at half the size. Empty when the bytes
     /// could not be decoded.
     levels: Vec<Bitmap>,
-    shown: HashMap<Look, Shown>,
+    shown: HashMap<(Look, Option<Treatment>), Shown>,
 }
 
 #[derive(Default)]
@@ -280,6 +408,22 @@ fn level_for(width: u32, height: u32, shown: (f32, f32)) -> u8 {
 /// x1, y1) it is stretched over. `scale` is the number of device pixels
 /// per pixel. `None` when the picture cannot be decoded.
 pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
+    image_as(picture, &picture.adjust, 0.0, (placed.width().abs(), placed.height().abs()), placed, scale)
+}
+
+/// `image_for` with the adjustments given apart from the picture (the
+/// whole image is shown while it is being cropped), a soft edge as a
+/// fraction of the shorter side of the frame, and the size of the frame
+/// at 100 %.
+pub fn image_as(
+    picture: &Picture,
+    adjust: &PictureAdjust,
+    soft: f32,
+    natural: (f32, f32),
+    placed: &Placed,
+    scale: f32,
+) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
+    let treatment = treatment(adjust, soft, natural);
     CACHE.with_borrow_mut(|cache| {
         let repaint = cache.repaint;
         let key = Arc::as_ptr(&picture.data) as *const u8 as usize;
@@ -290,7 +434,11 @@ pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<
         });
         let (full_w, full_h) = decoded.levels.first().map(|full| (full.width, full.height))?;
         let shown = (placed.width().abs() * scale, placed.height().abs() * scale);
-        let level = level_for(full_w, full_h, shown);
+        // A cropped picture shows a part of the image only: the whole of
+        // it would be that much larger.
+        let kept = |a: f32, b: f32| (1.0 - a - b).clamp(0.05, 1.0);
+        let whole = (shown.0 / kept(adjust.crop[0], adjust.crop[2]), shown.1 / kept(adjust.crop[1], adjust.crop[3]));
+        let level = level_for(full_w, full_h, whole);
         while decoded.levels.len() <= level as usize {
             let smaller = decoded.levels[decoded.levels.len() - 1].halved();
             decoded.levels.push(smaller);
@@ -313,8 +461,16 @@ pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<
                 height: (shown.1 * fit).round().max(1.0) as u32,
             }
         };
-        if !decoded.shown.contains_key(&look) {
-            let source = &decoded.levels[level as usize];
+        let key = (look, treatment);
+        if !decoded.shown.contains_key(&key) {
+            let treated;
+            let source = match &key.1 {
+                Some(_) => {
+                    treated = decoded.levels[level as usize].adjusted(adjust, soft, natural);
+                    &treated
+                }
+                None => &decoded.levels[level as usize],
+            };
             let bitmap = match look {
                 Look::Upright {
                     flip_h,
@@ -333,7 +489,7 @@ pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<
                     // being turned or resized each repaint makes a new one.
                     let retired = &mut cache.retired;
                     decoded.shown.retain(|other, shown| {
-                        let keep = matches!(other, Look::Upright { .. });
+                        let keep = matches!(other.0, Look::Upright { .. });
                         if !keep {
                             retired.push(shown.image.clone());
                         }
@@ -343,9 +499,9 @@ pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<
                 }
             };
             let image = bitmap.into_image()?;
-            decoded.shown.insert(look, Shown { image, used: repaint });
+            decoded.shown.insert(key.clone(), Shown { image, used: repaint });
         }
-        let entry = decoded.shown.get_mut(&look)?;
+        let entry = decoded.shown.get_mut(&key)?;
         entry.used = repaint;
         Some((entry.image.clone(), placed.extent()))
     })
@@ -523,5 +679,45 @@ mod tests {
         assert!(converted.starts_with(b"\x89PNG"));
         assert_eq!(Bitmap::decode(&converted).unwrap(), bitmap);
         assert_eq!(importable(b"%PDF-1.7".to_vec()), None);
+    }
+
+    #[test]
+    fn adjustments_are_done_to_the_pixels() {
+        use opensheet_engine::Color;
+        use opensheet_engine::drawing::Recolor;
+        let source = numbered(8, 4);
+        let plain = PictureAdjust::default();
+        assert_eq!(source.adjusted(&plain, 0.0, (8.0, 4.0)), source);
+        // A quarter off the left and half off the bottom.
+        let cropped = source.adjusted(&PictureAdjust { crop: [0.25, 0.0, 0.0, 0.5], ..plain }, 0.0, (6.0, 2.0));
+        assert_eq!((cropped.width, cropped.height), (6, 2));
+        assert_eq!((at(&cropped, 0, 0), at(&cropped, 5, 1)), ((2, 0), (7, 1)));
+        // A frame wider than the image: empty room at its left.
+        let padded = source.adjusted(&PictureAdjust { crop: [-0.25, 0.0, 0.0, 0.0], ..plain }, 0.0, (10.0, 4.0));
+        assert_eq!(padded.width, 10);
+        assert_eq!(padded.data[padded.offset(1, 0) + 3], 0);
+        assert_eq!(at(&padded, 2, 0), (0, 0));
+        // Half transparent.
+        let faded = source.adjusted(&PictureAdjust { transparency: 0.5, ..plain }, 0.0, (8.0, 4.0));
+        assert_eq!(faded.data[3], 128);
+        // Two colours: the black of the first pixel becomes the dark one
+        // (pixels are stored blue first).
+        let duo = PictureAdjust { recolor: Recolor::Duotone(Color(0x102030), Color(0xFFFFFF)), ..plain };
+        assert_eq!(&source.adjusted(&duo, 0.0, (8.0, 4.0)).data[..4], &[0x30, 0x20, 0x10, 255]);
+        // Cut to an ellipse: the corners go, the middle stays.
+        let mut white = Bitmap { width: 20, height: 20, data: vec![255; 1600] };
+        white.cut_to(ShapePreset::Ellipse, (20.0, 20.0));
+        assert_eq!(white.data[white.offset(0, 0) + 3], 0);
+        assert_eq!(white.data[white.offset(19, 19) + 3], 0);
+        assert_eq!(white.data[white.offset(10, 10) + 3], 255);
+        assert_eq!(white.data[white.offset(10, 0) + 3], 255);
+        // Soft edges: clear at the rim, whole in the middle.
+        let soft = Bitmap { width: 20, height: 20, data: vec![255; 1600] }.adjusted(&plain, 0.25, (20.0, 20.0));
+        assert!(soft.data[soft.offset(0, 10) + 3] < 40);
+        assert!(soft.data[soft.offset(2, 10) + 3] < 255);
+        assert_eq!(soft.data[soft.offset(10, 10) + 3], 255);
+        // Each look is a bitmap of its own.
+        assert_ne!(treatment(&duo, 0.0, (8.0, 4.0)), treatment(&plain, 0.1, (8.0, 4.0)));
+        assert_eq!(treatment(&plain, 0.0, (8.0, 4.0)), None);
     }
 }

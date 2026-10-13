@@ -3,7 +3,7 @@
 
 use super::links;
 use crate::app::ExcelApp;
-use crate::features::{self, Cx, names};
+use crate::features::{Cx, names};
 use crate::grid::Selection;
 use crate::i18n::{t, t_ctx};
 use crate::shell::{Alert, Modal, RefStyle};
@@ -446,9 +446,9 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
 /// Go To Special: select the cells of a kind, or say there are none.
 pub(crate) fn select_special(app: &mut ExcelApp, what: Special, cx: &mut Cx) {
     if what == Special::Objects {
-        match features::objects(app, app.sheet).first() {
-            Some((id, _)) => app.select_object(Some(*id), cx),
-            None => none_found(app, cx),
+        app.deselect_object(cx);
+        if !app.select_all_objects(cx) {
+            none_found(app, cx);
         }
         return;
     }

@@ -154,12 +154,15 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>) {
                 xml: format!("{XML_DECL}<xdr:wsDr xmlns:xdr=\"{NS_SHEET_DRAWING}\" xmlns:a=\"{NS_DRAWING}\">{ROOT_END}"),
                 rels: format!("{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\"></Relationships>"),
                 charts: Vec::new(),
+                chart_anchors: Vec::new(),
             });
             parts.len() - 1
         });
         // The ids of the part go on after those of the charts (from 2)
         // and of the pictures and shapes.
-        let first = sheet.charts.len() + sheet.drawings.len() + 2;
+        // (a group takes one, and one for each of its members).
+        let objects: usize = sheet.drawings.iter().map(|drawing| drawing.object_count()).sum();
+        let first = sheet.charts.len() + objects + 2;
         let mut anchors = String::new();
         for (k, ink) in sheet.inks.iter().enumerate() {
             push_ink(&mut anchors, sheet, ink, first + k);

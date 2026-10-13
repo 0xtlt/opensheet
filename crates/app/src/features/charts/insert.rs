@@ -17,7 +17,7 @@ use gpui::{AnyElement, Context, FontWeight, Render, SharedString, Window, div, p
 use opensheet_engine::Locale;
 use opensheet_engine::ast::RefExpr;
 use opensheet_engine::chart::{
-    Chart, ChartData, ChartKind, ChartTitle, Family, Fill, LegendPos, Series, SeriesData, TickLabels, palette_color,
+    Chart, ChartData, ChartKind, ChartTitle, Family, Fill, LegendPos, Series, SeriesData, TickLabels,
 };
 use std::rc::Rc;
 
@@ -124,7 +124,8 @@ pub(crate) fn sample(kind: ChartKind) -> (Chart, ChartData) {
         data.series.push(SeriesData {
             name: String::new(),
             values: values.iter().map(|v| Some(*v)).collect(),
-            color: palette_color(i),
+            // The accents of the workbook's theme, as the chart will have.
+            color: crate::theme::document_theme().chart_color(i),
             x_values: (1..=points).map(|k| Some(k as f64)).collect(),
             sizes: if kind.family() == Family::Bubble { vec![Some(3.0), Some(8.0), Some(5.0), Some(2.0)] } else { Vec::new() },
             format: "General".into(),
@@ -571,7 +572,7 @@ impl ChartTypeDialog {
                             .flex()
                             .items_center()
                             .gap(px(5.))
-                            .child(div().size(px(9.)).flex_none().bg(c(palette_color(i).value())))
+                            .child(div().size(px(9.)).flex_none().bg(c(crate::theme::document_theme().chart_color(i).value())))
                             .child(div().truncate().child(self.names.get(i).cloned().unwrap_or_default())),
                     )
                     .child(

@@ -10,6 +10,7 @@ use gpui::{Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, Point, 
 use opensheet_engine::Rect;
 use opensheet_engine::chart::{ChartTitle, LegendPos};
 use opensheet_engine::chart_layout::AxisId;
+use opensheet_engine::style::Color;
 
 /// A window on an empty workbook, with the key bindings of the application.
 fn open(cx: &mut TestAppContext) -> (Entity<ExcelApp>, &mut VisualTestContext) {
@@ -422,6 +423,13 @@ fn a_protected_sheet_keeps_its_charts(cx: &mut TestAppContext) {
     close_dialog(&app, cx);
     run(&app, cx, Cmd::SwitchRowColumn);
     close_dialog(&app, cx);
+    // Nor can its elements be dragged.
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::Legend, cx));
+    redraw(cx);
+    let at = frame(&app, cx, id, ChartElement::Legend).0;
+    drag(&app, cx, id, ((at[0] + at[2]) / 2.0, (at[1] + at[3]) / 2.0), (20.0, -60.0));
+    assert!(app.update(cx, |app, _| app.modal_open()), "the refusal is said");
+    close_dialog(&app, cx);
     assert_eq!(chart(&app, cx, id), before);
 }
 
@@ -476,39 +484,274 @@ fn charts_follow_the_sheet_in_every_view(cx: &mut TestAppContext) {
     }
 }
 
+/// A point of a chart as it is painted, in the window: (x, y) pixels
+/// from its corner.
+fn spot(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, (x, y): (f32, f32)) -> Point<Pixels> {
+    app.update(cx, |app, _| {
+        let zone = app.painted_chart(id).expect("the chart was painted");
+        app.current_layout().expect("the grid was drawn").to_window(zone.origin.0 + x, zone.origin.1 + y)
+    })
+}
+
+/// The frame of an element of a chart as it is painted, in pixels from
+/// the corner of the chart, and the size of the chart.
+fn frame(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, element: ChartElement) -> ([f32; 4], (f32, f32)) {
+    app.update(cx, |app, _| {
+        let zone = app.painted_chart(id).expect("the chart was painted");
+        (zone.layout.bounds(element).unwrap_or_else(|| panic!("the chart shows no {element:?}")), zone.layout.size())
+    })
+}
+
+/// Press at `from`, move by `by` in two steps and release (pixels of the
+/// chart as it is painted).
+fn drag(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, from: (f32, f32), by: (f32, f32)) {
+    let start = spot(app, cx, id, from);
+    let half = spot(app, cx, id, (from.0 + by.0 / 2.0, from.1 + by.1 / 2.0));
+    let end = spot(app, cx, id, (from.0 + by.0, from.1 + by.1));
+    cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(half, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(end, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(end, MouseButton::Left, Modifiers::none());
+    redraw(cx);
+}
+
+fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<String> {
+    app.update(cx, |app, _| app.wb.undo_label().map(str::to_string))
+}
+
+fn near(a: f64, b: f32) -> bool {
+    (a - b as f64).abs() < 0.005
+}
+
 #[gpui::test]
-fn the_legend_docks_where_it_is_dropped(cx: &mut TestAppContext) {
+fn the_title_is_dragged_anywhere_in_one_step(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    let (was, size) = frame(&app, cx, id, ChartElement::Title);
+    let plot = frame(&app, cx, id, ChartElement::PlotArea).0;
+    let middle = ((was[0] + was[2]) / 2.0, (was[1] + was[3]) / 2.0);
+    drag(&app, cx, id, middle, (-60.0, 90.0));
+    let layout = chart(&app, cx, id).title_layout.expect("the title was put somewhere");
+    assert!(near(layout.x, (was[0] - 60.0) / size.0) && near(layout.y, (was[1] + 90.0) / size.1), "{layout:?}");
+    assert_eq!((layout.w, layout.h), (None, None));
+    assert_eq!(element(&app, cx), ChartElement::Title);
+    // It is drawn there, and the plot stayed where it was.
+    let now = frame(&app, cx, id, ChartElement::Title).0;
+    assert!((now[0] - (was[0] - 60.0)).abs() < 0.5 && (now[1] - (was[1] + 90.0)).abs() < 0.5, "{was:?} {now:?}");
+    assert_eq!(frame(&app, cx, id, ChartElement::PlotArea).0, plot);
+    // One drag, one step.
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Move"));
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(chart(&app, cx, id).title_layout, None);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Insert Chart"));
+    app.update(cx, |app, cx| app.redo(cx));
+    assert_eq!(chart(&app, cx, id).title_layout, Some(layout));
+    // It cannot leave the chart.
+    redraw(cx);
+    let at = frame(&app, cx, id, ChartElement::Title).0;
+    drag(&app, cx, id, ((at[0] + at[2]) / 2.0, (at[1] + at[3]) / 2.0), (-400.0, 0.0));
+    assert_eq!(chart(&app, cx, id).title_layout.map(|m| m.x), Some(0.0));
+}
+
+#[gpui::test]
+fn a_click_without_a_drag_still_types_in_a_selected_title(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    click_on(&app, cx, id, ChartElement::Title);
+    assert!(app.update(cx, |app, _| app.ext::<ChartUi>().is_some_and(|ui| ui.edit.is_none())));
+    click_on(&app, cx, id, ChartElement::Title);
+    assert!(app.update(cx, |app, _| app.ext::<ChartUi>().is_some_and(|ui| ui.edit.is_some())));
+    assert_eq!(chart(&app, cx, id).title_layout, None);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Insert Chart"));
+}
+
+#[gpui::test]
+fn the_legend_goes_where_it_is_dropped_and_docks_from_the_pane(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     let id = with_chart(&app, cx, ChartKind::Column);
     assert_eq!(chart(&app, cx, id).legend, LegendPos::Bottom);
-    let drag_to = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, to: (f32, f32)| {
-        let from = middle(app, cx, id, ChartElement::Legend);
-        // A place on the chart, as fractions of its width and height.
-        let to = app.update(cx, |app, _| {
-            let zone = app.painted_chart(id).unwrap();
-            let size = app.wb.chart(app.sheet, id).unwrap().size;
-            app.current_layout().unwrap().to_window(zone.origin.0 + size.0 * to.0, zone.origin.1 + size.1 * to.1)
-        });
-        let half = point((from.x + to.x) / 2.0, (from.y + to.y) / 2.0);
-        cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
-        cx.simulate_mouse_move(half, MouseButton::Left, Modifiers::none());
-        cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
-        cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
-        redraw(cx);
-    };
-    drag_to(&app, cx, (0.05, 0.5));
-    assert_eq!(chart(&app, cx, id).legend, LegendPos::Left);
+    let (was, size) = frame(&app, cx, id, ChartElement::Legend);
+    let plot = frame(&app, cx, id, ChartElement::PlotArea).0;
+    drag(&app, cx, id, ((was[0] + was[2]) / 2.0, (was[1] + was[3]) / 2.0), (40.0, -120.0));
+    let c = chart(&app, cx, id);
+    let layout = c.legend_layout.expect("the legend was put somewhere");
+    assert!(near(layout.x, (was[0] + 40.0) / size.0) && near(layout.y, (was[1] - 120.0) / size.1), "{layout:?}");
+    // Moved, not resized: it keeps the size it takes by itself, its side,
+    // and the plot the room it left for it there.
+    assert_eq!((layout.w, layout.h, c.legend), (None, None, LegendPos::Bottom));
     assert_eq!(element(&app, cx), ChartElement::Legend);
-    drag_to(&app, cx, (0.95, 0.08));
-    assert_eq!(chart(&app, cx, id).legend, LegendPos::TopRight);
-    drag_to(&app, cx, (0.5, 0.04));
-    assert_eq!(chart(&app, cx, id).legend, LegendPos::Top);
-    // The chart itself stayed where it was, and a plain click changes nothing.
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Legend"));
+    assert_eq!(frame(&app, cx, id, ChartElement::PlotArea).0, plot);
+    let now = frame(&app, cx, id, ChartElement::Legend).0;
+    assert!((now[2] - now[0] - (was[2] - was[0])).abs() < 0.5 && (now[1] - (was[1] - 120.0)).abs() < 0.5, "{was:?} {now:?}");
+    // A plain click changes nothing.
     click_on(&app, cx, id, ChartElement::Legend);
-    assert_eq!(chart(&app, cx, id).legend, LegendPos::Top);
-    assert_eq!(legend_dock((0.0, 0.0, 400.0, 200.0), 390.0, 100.0), LegendPos::Right);
-    assert_eq!(legend_dock((0.0, 0.0, 400.0, 200.0), 200.0, 190.0), LegendPos::Bottom);
+    assert_eq!(chart(&app, cx, id).legend_layout, Some(layout));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Move"));
+
+    // Its handles resize it: the one in the bottom right corner.
+    drag(&app, cx, id, (now[2], now[3]), (30.0, 20.0));
+    let sized = chart(&app, cx, id).legend_layout.unwrap();
+    assert!(near(sized.x, now[0] / size.0) && near(sized.y, now[1] / size.1), "{sized:?}");
+    assert!(near(sized.w.unwrap(), (now[2] - now[0] + 30.0) / size.0) && near(sized.h.unwrap(), (now[3] - now[1] + 20.0) / size.1), "{sized:?}");
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Size"));
+
+    // A side picked in the Add Chart Element menu docks it again.
+    app.update(cx, |app, cx| {
+        app.edit_chart("Legend", cx, |c| {
+            c.legend = LegendPos::Right;
+            c.legend_layout = None;
+        })
+    });
+    redraw(cx);
+    let docked = frame(&app, cx, id, ChartElement::Legend).0;
+    assert!(docked[0] > size.0 * 0.7, "{docked:?}");
+}
+
+#[gpui::test]
+fn the_plot_area_is_moved_and_resized_at_any_zoom(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    for zoom in [1.0, 1.5] {
+        app.update(cx, |app, cx| {
+            app.set_zoom(zoom, cx);
+            app.edit_chart("reset", cx, |c| c.clear_manual_layout());
+            app.select_chart_element(ChartElement::PlotArea, cx);
+        });
+        redraw(cx);
+        let (was, size) = frame(&app, cx, id, ChartElement::PlotArea);
+        assert!((size.0 - 480.0 * zoom).abs() < 0.5, "{zoom}: {size:?}");
+        // By its bottom right handle: smaller.
+        drag(&app, cx, id, (was[2], was[3]), (-50.0, -30.0));
+        let c = chart(&app, cx, id);
+        let layout = c.plot_layout.expect("the plot area was resized");
+        assert!(!c.plot_layout_outer);
+        assert!(near(layout.x, was[0] / size.0) && near(layout.y, was[1] / size.1), "{zoom}: {layout:?}");
+        assert!(near(layout.w.unwrap(), (was[2] - was[0] - 50.0) / size.0), "{zoom}: {layout:?}");
+        assert!(near(layout.h.unwrap(), (was[3] - was[1] - 30.0) / size.1), "{zoom}: {layout:?}");
+        assert_eq!(undo_label(&app, cx).as_deref(), Some("Size"));
+        // What is painted is what the model says.
+        let now = frame(&app, cx, id, ChartElement::PlotArea).0;
+        assert!((now[2] - (was[2] - 50.0)).abs() < 0.5 && (now[3] - (was[3] - 30.0)).abs() < 0.5, "{zoom}: {was:?} {now:?}");
+        // By its left edge: narrower from the left, as tall as before.
+        drag(&app, cx, id, (now[0], (now[1] + now[3]) / 2.0), (20.0, 15.0));
+        let narrower = chart(&app, cx, id).plot_layout.unwrap();
+        assert!(near(narrower.x, (now[0] + 20.0) / size.0) && near(narrower.y, layout.y as f32), "{zoom}: {narrower:?}");
+        assert!(near(narrower.h.unwrap(), layout.h.unwrap() as f32), "{zoom}: {narrower:?}");
+        // Dragged by an empty spot of its inside, it moves as it is.
+        let at = frame(&app, cx, id, ChartElement::PlotArea).0;
+        let empty = app.update(cx, |app, _| {
+            let layout = &app.painted_chart(id).unwrap().layout;
+            (1..40)
+                .map(|k| (at[0] + (at[2] - at[0]) * k as f32 / 40.0, at[1] + 6.0))
+                .find(|(x, y)| layout.hit(*x, *y) == ChartElement::PlotArea)
+                .expect("an empty spot in the plot area")
+        });
+        drag(&app, cx, id, empty, (-10.0, 12.0));
+        let moved = chart(&app, cx, id).plot_layout.unwrap();
+        assert!(near(moved.x, (at[0] - 10.0) / size.0) && near(moved.y, (at[1] + 12.0) / size.1), "{zoom}: {moved:?}");
+        assert_eq!((moved.w, moved.h), (narrower.w, narrower.h));
+        assert_eq!(undo_label(&app, cx).as_deref(), Some("Move"));
+    }
+}
+
+#[gpui::test]
+fn a_data_label_is_dragged_once_its_series_labels_are_selected(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    app.update(cx, |app, cx| app.edit_chart("labels", cx, |c| c.data_labels = true));
+    redraw(cx);
+    let label = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| app.painted_chart(id).unwrap().layout.data_label_box(1, 2).expect("the label of a point"))
+    };
+    let was = label(&app, cx);
+    let middle = ((was[0] + was[2]) / 2.0, (was[1] + was[3]) / 2.0);
+    // The first press selects the labels of the series: nothing moves.
+    drag(&app, cx, id, middle, (30.0, -20.0));
+    assert_eq!(element(&app, cx), ChartElement::DataLabels(1));
+    assert!(chart(&app, cx, id).series[1].label_offsets.is_empty());
+    drag(&app, cx, id, middle, (30.0, -20.0));
+    let c = chart(&app, cx, id);
+    let size = c.size;
+    assert_eq!(c.series[1].label_offsets.len(), 1);
+    let offset = c.series[1].label_offsets[0];
+    assert_eq!(offset.index, 2);
+    assert!(near(offset.dx, 30.0 / size.0) && near(offset.dy, -20.0 / size.1), "{offset:?}");
+    assert!(c.series[0].label_offsets.is_empty());
+    let now = label(&app, cx);
+    assert!((now[0] - was[0] - 30.0).abs() < 0.5 && (now[1] - was[1] + 20.0).abs() < 0.5, "{was:?} {now:?}");
+    // Dragged again, it goes on from where it is.
+    drag(&app, cx, id, ((now[0] + now[2]) / 2.0, (now[1] + now[3]) / 2.0), (-30.0, 0.0));
+    let offset = chart(&app, cx, id).series[1].label_offsets[0];
+    assert!(near(offset.dx, 0.0) && near(offset.dy, -20.0 / size.1), "{offset:?}");
+    // "Reset to Match Style" on the chart area puts everything back.
+    app.update_in(cx, |app, window, cx| {
+        app.select_chart_element(ChartElement::ChartArea, cx);
+        app.run_command(chart_format::Cmd::ResetStyle, window, cx);
+    });
+    assert!(chart(&app, cx, id).series[1].label_offsets.is_empty());
+}
+
+#[gpui::test]
+fn the_home_tab_formats_the_text_of_the_selected_element(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = with_chart(&app, cx, ChartKind::Column);
+    let cell_style = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.active_style().clone());
+    let cells = cell_style(&app, cx);
+    click_on(&app, cx, id, ChartElement::Legend);
+    let legend_w = {
+        let b = frame(&app, cx, id, ChartElement::Legend).0;
+        b[2] - b[0]
+    };
+    app.update(cx, |app, cx| app.toggle_bold(cx));
+    assert_eq!(chart(&app, cx, id).legend_text.bold, Some(true));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Bold"));
+    // Bold is a switch on what the legend has, whatever the cells have.
+    app.update(cx, |app, cx| app.toggle_bold(cx));
+    assert_eq!(chart(&app, cx, id).legend_text.bold, None);
+    app.update(cx, |app, cx| {
+        app.toggle_italic(cx);
+        app.toggle_underline(cx);
+        app.set_font_name("Georgia", cx);
+        app.set_font_size(14.0, cx);
+        app.set_font_color(Some(Color(0xC00000)), cx);
+    });
+    let text = chart(&app, cx, id).legend_text;
+    assert_eq!((text.italic, text.underline, text.bold), (Some(true), Some(true), None));
+    assert_eq!((text.font.as_deref(), text.size, text.color), (Some("Georgia"), Some(14.0), Some(Color(0xC00000))));
+    // Grow and shrink start from the size of the legend.
+    app.update(cx, |app, cx| app.step_font_size(true, cx));
+    assert_eq!(chart(&app, cx, id).legend_text.size, Some(16.0));
+    app.update(cx, |app, cx| {
+        app.step_font_size(false, cx);
+        app.step_font_size(false, cx);
+    });
+    assert_eq!(chart(&app, cx, id).legend_text.size, Some(12.0));
+    // The legend is drawn wider for it, and the cells were left alone.
+    redraw(cx);
+    let b = frame(&app, cx, id, ChartElement::Legend).0;
+    assert!(b[2] - b[0] > legend_w);
+    assert_eq!(cell_style(&app, cx), cells);
+    let others = chart(&app, cx, id);
+    assert!(others.title_text.is_auto() && others.axes.value.text.is_auto());
+
+    // With the chart area selected, every text of the chart takes it.
+    app.update(cx, |app, cx| {
+        app.select_chart_element(ChartElement::ChartArea, cx);
+        app.toggle_bold(cx);
+        app.set_font_size(10.0, cx);
+    });
+    let c = chart(&app, cx, id);
+    for text in [&c.title_text, &c.legend_text, &c.axes.category.text, &c.axes.value.text, &c.label_options.text] {
+        assert_eq!((text.bold, text.size), (Some(true), Some(10.0)));
+    }
+    assert_eq!(c.legend_text.font.as_deref(), Some("Georgia"));
+    // An element without text takes nothing, and neither do the cells.
+    app.update(cx, |app, cx| {
+        app.select_chart_element(ChartElement::Series(0), cx);
+        app.toggle_italic(cx);
+    });
+    assert_eq!(chart(&app, cx, id), c);
+    assert_eq!(cell_style(&app, cx), cells);
 }
 
 #[gpui::test]

@@ -1518,6 +1518,21 @@ fn read_charts<R: Read + Seek>(
             chart.anchor = place.anchor;
             chart.offset = place.offset;
             chart.size = place.size;
+            // Its place among the pictures and shapes of the part, and
+            // what the Selection pane shows of it.
+            chart.z = frame.index;
+            chart.hidden = frame.hidden;
+            let name = frame.name.trim();
+            let taken = |name: &str| charts.iter().any(|other: &Chart| other.name.eq_ignore_ascii_case(name));
+            chart.name = if name.is_empty() || taken(name) {
+                let mut number = charts.len() + 1;
+                while taken(&format!("Chart {number}")) {
+                    number += 1;
+                }
+                format!("Chart {number}")
+            } else {
+                name.to_string()
+            };
             charts.push(chart);
             *next_id += 1;
         }
@@ -1662,6 +1677,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         let name = unique_sheet_name(name, &sheets, i);
         let mut loaded = SheetReader::read(&xml, name, &ctx);
         super::hyperlink::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
+        super::background::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
         drop(xml);
         loaded.sheet.charts = read_charts(
             &mut pkg,
@@ -1685,6 +1701,9 @@ pub(crate) fn read_workbook<R: Read + Seek>(
             &mut loaded.sheet,
             &styles.palette,
         );
+        // The anchors that held nothing the engine shows leave no gaps
+        // in the stacking order of the others.
+        loaded.sheet.set_object_stack(&[]);
         inks.read_sheet(&mut pkg, &part, loaded.drawing.as_deref(), &mut loaded.sheet);
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);

@@ -19,7 +19,9 @@ pub mod builtin;
 
 use crate::chart::{Chart, Fill};
 use crate::condfmt::Rule;
-use crate::drawing::{DrawingKind, Shape};
+#[cfg(test)]
+use crate::drawing::DrawingKind;
+use crate::drawing::Shape;
 use crate::filter::Criteria;
 use crate::metrics::FontMetrics;
 use crate::style::{Border, Borders, Color, Font, Style, StylePatch, ThemeColor, ThemeFont, ThemeSlot};
@@ -567,9 +569,7 @@ fn retheme_sheet(theme: &Theme, sheet: &mut Sheet) {
         retheme_chart(theme, chart);
     }
     for drawing in &mut sheet.drawings {
-        if let DrawingKind::Shape(shape) = &mut drawing.kind {
-            theme.resolve_shape(shape);
-        }
+        drawing.retheme(theme);
     }
 }
 
@@ -591,6 +591,16 @@ fn retheme_chart(theme: &Theme, chart: &mut Chart) {
         }
         for trendline in &mut series.trendlines {
             theme.resolve_opt(&mut trendline.line.color);
+        }
+    }
+    // The colours of the texts, of the axis lines and of the gridlines.
+    for text in chart.text_formats_mut() {
+        theme.resolve_opt(&mut text.color);
+    }
+    let axes = &mut chart.axes;
+    for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
+        for line in [&mut axis.line, &mut axis.major_gridline, &mut axis.minor_gridline] {
+            theme.resolve_opt(&mut line.color);
         }
     }
 }

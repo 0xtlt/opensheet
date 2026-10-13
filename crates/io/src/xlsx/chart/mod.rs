@@ -13,12 +13,17 @@
 //!   share an element; which one a chart is, is read from the look of its
 //!   first series;
 //! * per series: names and ranges, colour, line or outline, marker,
-//!   smoothing, single points (`c:dPt`), explosion, data labels,
-//!   trendlines, error bars, bubble sizes;
+//!   smoothing, single points (`c:dPt`), explosion, data labels (with
+//!   those dragged away from their points, `c:dLbl`), trendlines, error
+//!   bars, bubble sizes;
 //! * per chart: title, legend (with deleted entries), data labels, the two
-//!   pairs of axes with all their options, gaps and overlap of bars, first
-//!   slice and hole of pies and doughnuts, bubble scale, the 3-D camera,
-//!   chart and plot area, data table, the treatment of blanks.
+//!   pairs of axes with all their options, their lines and gridlines, gaps
+//!   and overlap of bars, first slice and hole of pies and doughnuts,
+//!   bubble scale, the 3-D camera, chart and plot area, data table, the
+//!   treatment of blanks;
+//! * where the title, the legend, the plot area and the titles of the axes
+//!   were put by hand (`c:layout`), and the font of every text (`c:txPr`,
+//!   and the run properties of titles).
 //!
 //! An option left automatic in the model is written the way Excel spells
 //! it in its own new charts, and that spelling is read back as automatic.
@@ -53,9 +58,10 @@
 //! Then, and whenever the chart was changed, the part is generated from
 //! the model, and what the model does not hold is lost:
 //!
-//! * fonts, sizes and colours of text; the formatting of titles, legend,
-//!   axis lines, gridlines, data labels, error bars, walls and floor;
-//!   manual layouts (positions of the plot area, of titles, of labels);
+//! * fonts that differ within a text or between the entries of a legend,
+//!   fills and frames of titles, legend and data labels, the formatting
+//!   of error bars, walls and floor; elements shifted from their place
+//!   rather than put somewhere (`xMode` other than `edge`);
 //! * gradients, patterns and pictures (a gradient or a pattern becomes its
 //!   first colour), transparency, shadows and other effects, the absence
 //!   of a fill on a series, hollow markers, the colours a theme gives

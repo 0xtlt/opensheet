@@ -4,12 +4,12 @@
 //! converts the primitives to the grid's display list and adds what belongs
 //! to the application: the frames and handles of what is selected.
 
-use crate::grid::{Draw, GridLayout, Layer};
+use crate::grid::{Draw, FontResolver, GridLayout, Layer};
 use crate::i18n::t;
 use crate::theme::{c, ca};
 use gpui::{
     BorderStyle, Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels, Point, ShapedLine,
-    SharedString, Styled, TextRun, WindowTextSystem, canvas, fill, point, px, quad, size,
+    SharedString, Styled, TextRun, UnderlineStyle, WindowTextSystem, canvas, fill, point, px, quad, size,
 };
 use opensheet_engine::chart::{Chart, ChartData};
 use opensheet_engine::chart_layout::{
@@ -18,12 +18,16 @@ use opensheet_engine::chart_layout::{
 };
 use opensheet_engine::{Color, Locale};
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// What drawing a chart on screen needs besides the chart.
 pub struct ChartStyle {
-    /// Font family for every label.
+    /// Font family for every label that names none.
     pub font: SharedString,
     pub locale: &'static Locale,
+    /// Finds the fonts texts name for themselves (and what stands in for
+    /// those this machine lacks); without it, names are taken as they are.
+    pub fonts: Option<Rc<FontResolver>>,
 }
 
 /// Pixel box (x0, y0, x1, y1) of a chart in grid-element coordinates.
@@ -54,13 +58,30 @@ fn unhex(text: &str) -> Option<String> {
 /// of the box (see `text_asset`). The screen and the print preview both
 /// draw turned text through it.
 pub fn text_asset_path(width: f32, height: f32, baseline: f32, size: f32, bold: bool, family: &str, text: &str) -> SharedString {
-    format!(
-        "{TEXT_ASSET}{width:.0}/{height:.0}/{baseline:.2}/{size:.2}/{}/{}/{}.svg",
-        if bold { "b" } else { "r" },
-        hex(family),
-        hex(text)
-    )
-    .into()
+    styled_text_asset_path((width, height), baseline, size, (bold, false, false), family, text)
+}
+
+/// The same for text that may be bold, in italics and underlined (in that
+/// order in `style`).
+fn styled_text_asset_path(
+    (width, height): (f32, f32),
+    baseline: f32,
+    size: f32,
+    (bold, italic, underline): (bool, bool, bool),
+    family: &str,
+    text: &str,
+) -> SharedString {
+    // One letter per style; "r" for regular text.
+    let mut style = String::new();
+    for (on, letter) in [(bold, 'b'), (italic, 'i'), (underline, 'u')] {
+        if on {
+            style.push(letter);
+        }
+    }
+    if style.is_empty() {
+        style.push('r');
+    }
+    format!("{TEXT_ASSET}{width:.0}/{height:.0}/{baseline:.2}/{size:.2}/{style}/{}/{}.svg", hex(family), hex(text)).into()
 }
 
 /// The SVG image behind an asset path made by `text_asset_path`: one line
@@ -69,12 +90,15 @@ pub fn text_asset(path: &str) -> Option<Vec<u8>> {
     let mut parts = path.strip_prefix(TEXT_ASSET)?.strip_suffix(".svg")?.split('/');
     let mut number = || parts.next()?.parse::<f32>().ok().filter(|v| v.is_finite());
     let (w, h, baseline, font_size) = (number()?, number()?, number()?, number()?);
-    let weight = if parts.next()? == "b" { "bold" } else { "normal" };
+    let style = parts.next()?;
+    let weight = if style.contains('b') { "bold" } else { "normal" };
+    let slant = if style.contains('i') { "italic" } else { "normal" };
+    let line = if style.contains('u') { "underline" } else { "none" };
     let family = unhex(parts.next()?)?;
     let text = unhex(parts.next()?)?;
     let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;");
     let svg = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><text x="{}" y="{baseline}" text-anchor="middle" font-family="{}" font-size="{font_size}" font-weight="{weight}" xml:space="preserve">{}</text></svg>"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><text x="{}" y="{baseline}" text-anchor="middle" font-family="{}" font-size="{font_size}" font-weight="{weight}" font-style="{slant}" text-decoration="{line}" xml:space="preserve">{}</text></svg>"#,
         w / 2.0,
         escape(&family),
         escape(&text),
@@ -86,12 +110,33 @@ pub fn text_asset(path: &str) -> Option<Vec<u8>> {
 struct Shaper<'a> {
     ts: &'a WindowTextSystem,
     family: SharedString,
+    fonts: Option<Rc<FontResolver>>,
+}
+
+/// How a line of text is written: bold, in italics, underlined, and in a
+/// font of its own (`None` = the font of the chart).
+#[derive(Clone, Copy, Default)]
+struct Look<'a> {
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    family: Option<&'a str>,
 }
 
 impl Shaper<'_> {
-    fn font(&self, bold: bool, italic: bool) -> Font {
+    /// The family a text is written in.
+    fn family(&self, name: Option<&str>) -> SharedString {
+        match (name, &self.fonts) {
+            (None, _) => self.family.clone(),
+            (Some(name), Some(fonts)) => fonts.resolve(&Arc::from(name)),
+            (Some(name), None) => SharedString::from(name.to_string()),
+        }
+    }
+
+    fn font(&self, look: Look) -> Font {
+        let (bold, italic) = (look.bold, look.italic);
         Font {
-            family: self.family.clone(),
+            family: self.family(look.family),
             features: Default::default(),
             fallbacks: None,
             weight: if bold { FontWeight::BOLD } else { FontWeight::NORMAL },
@@ -99,14 +144,18 @@ impl Shaper<'_> {
         }
     }
 
-    fn shape(&self, text: &str, size: f32, color: Hsla, bold: bool, italic: bool) -> ShapedLine {
+    fn shape(&self, text: &str, size: f32, color: Hsla, look: Look) -> ShapedLine {
         let text: SharedString = text.replace(['\n', '\r'], " ").into();
         let run = TextRun {
             len: text.len(),
-            font: self.font(bold, italic),
+            font: self.font(look),
             color,
             background_color: None,
-            underline: None,
+            underline: look.underline.then(|| UnderlineStyle {
+                thickness: px((size / 14.0).max(1.0)),
+                color: Some(color),
+                wavy: false,
+            }),
             strikethrough: None,
         };
         self.ts.shape_line(text, px(size), &[run], None)
@@ -114,20 +163,31 @@ impl Shaper<'_> {
 
     /// The asset path of a line of text, and the box it fills (width,
     /// height), for text that is drawn turned.
-    fn turned(&self, text: &str, size: f32, bold: bool) -> (SharedString, f32, f32) {
-        let w = f32::from(self.shape(text, size, gpui::black(), bold, false).width).ceil() + 2.0;
+    fn turned(&self, text: &str, size: f32, look: Look) -> (SharedString, f32, f32) {
+        let w = f32::from(self.shape(text, size, gpui::black(), look).width).ceil() + 2.0;
         let h = line_height(size);
-        let font_id = self.ts.resolve_font(&self.font(bold, false));
+        let font_id = self.ts.resolve_font(&self.font(look));
         let (ascent, descent) = (f32::from(self.ts.ascent(font_id, px(size))), f32::from(self.ts.descent(font_id, px(size))));
         // Where GPUI itself puts the baseline in a line of this height.
         let baseline = (h - ascent - descent) / 2.0 + ascent;
-        (text_asset_path(w, h, baseline, size, bold, &self.family, text), w, h)
+        let style = (look.bold, look.italic, look.underline);
+        (styled_text_asset_path((w, h), baseline, size, style, &self.family(look.family), text), w, h)
     }
 }
 
 impl TextMeasure for Shaper<'_> {
     fn width(&self, text: &str, size: f32, bold: bool) -> f32 {
-        f32::from(self.shape(text, size, gpui::black(), bold, false).width)
+        self.width_styled(text, size, bold, false, None)
+    }
+
+    fn width_styled(&self, text: &str, size: f32, bold: bool, italic: bool, family: Option<&str>) -> f32 {
+        let look = Look {
+            bold,
+            italic,
+            underline: false,
+            family,
+        };
+        f32::from(self.shape(text, size, gpui::black(), look).width)
     }
 }
 
@@ -241,8 +301,14 @@ impl Converter<'_> {
             Prim::Text(run) => {
                 let color = c(run.color.value());
                 let line_h = line_height(run.size);
+                let look = Look {
+                    bold: run.bold,
+                    italic: run.italic,
+                    underline: run.underline,
+                    family: run.font.as_deref(),
+                };
                 if run.rotation != 0.0 {
-                    let (path, w, h) = self.shaper.turned(&run.text, run.size, run.bold);
+                    let (path, w, h) = self.shaper.turned(&run.text, run.size, look);
                     // The box of the text before it is turned around its anchor.
                     let left = match run.anchor {
                         TextAnchor::Start => run.x,
@@ -259,7 +325,7 @@ impl Converter<'_> {
                     });
                     return;
                 }
-                let line = self.shaper.shape(&run.text, run.size, color, run.bold, run.italic);
+                let line = self.shaper.shape(&run.text, run.size, color, look);
                 let w = f32::from(line.width);
                 let left = match run.anchor {
                     TextAnchor::Start => run.x,
@@ -323,6 +389,7 @@ pub fn layout(chart: &Chart, data: &ChartData, size: (f32, f32), zoom: f32, ts: 
     let shaper = Shaper {
         ts,
         family: style.font.clone(),
+        fonts: style.fonts.clone(),
     };
     let options = LayoutOptions {
         scale: zoom,
@@ -339,6 +406,7 @@ pub fn draws(layout: &ChartLayout, origin: Point<Pixels>, clip: Bounds<Pixels>, 
         shaper: Shaper {
             ts,
             family: style.font.clone(),
+            fonts: style.fonts.clone(),
         },
         items: Vec::with_capacity(layout.prims.len()),
         origin: (f32::from(origin.x), f32::from(origin.y)),
@@ -357,6 +425,7 @@ pub fn outline_draws(outline: &Outline, origin: Point<Pixels>, ts: &WindowTextSy
         shaper: Shaper {
             ts,
             family: SharedString::default(),
+            fonts: None,
         },
         items: Vec::new(),
         origin: (f32::from(origin.x).round(), f32::from(origin.y).round()),
@@ -414,6 +483,7 @@ pub fn chart_canvas(
             let style = ChartStyle {
                 font: font.clone(),
                 locale,
+                fonts: None,
             };
             let ts = window.text_system().clone();
             let size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
@@ -451,5 +521,9 @@ pub fn paint_turned(
 /// the width and the height of its box: for turned text outside charts
 /// (the text of a turned shape).
 pub fn turned_text(ts: &WindowTextSystem, family: SharedString, text: &str, size: f32, bold: bool) -> (SharedString, f32, f32) {
-    Shaper { ts, family }.turned(text, size, bold)
+    let look = Look {
+        bold,
+        ..Look::default()
+    };
+    Shaper { ts, family, fonts: None }.turned(text, size, look)
 }

@@ -1326,3 +1326,21 @@ fn sparklines_print_in_their_cells() {
     assert!(e1.is_some(), "{clips:?}");
     assert!(!print_pdf(&wb, &job).is_empty());
 }
+
+#[test]
+fn the_background_of_a_sheet_is_not_printed() {
+    let mut wb = Workbook::new(Locale::en());
+    enter(&mut wb, "A1", "Over the background");
+    let job = job(PrintWhat::Sheet(0));
+    let plain = render_page(&wb, &job, &plan(&wb, &job), 0).unwrap();
+    let picture = opensheet_engine::drawing::Picture::new(png(24, 24, [200, 220, 255])).expect("a PNG image");
+    assert!(wb.set_sheet_background(0, Some(picture)));
+    wb.commit("background");
+    // The page is the same with and without it, down to the last operation.
+    let plan = plan(&wb, &job);
+    assert_eq!(plan.pages.len(), 1);
+    let scene = render_page(&wb, &job, &plan, 0).unwrap();
+    assert!(!scene.ops.iter().any(|op| matches!(op, Op::Image { .. })));
+    assert_eq!(scene.ops.len(), plain.ops.len());
+    assert!(!String::from_utf8_lossy(&print_pdf(&wb, &job)).contains("/Subtype /Image"));
+}

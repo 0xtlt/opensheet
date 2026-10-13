@@ -60,6 +60,8 @@ pub(crate) struct SheetLinks {
     pub slicers: Option<usize>,
     pub table_slicers: Option<usize>,
     pub timelines: Option<usize>,
+    /// The image behind the cells (`<picture>`).
+    pub background: Option<usize>,
 }
 
 impl SheetLinks {
@@ -92,17 +94,21 @@ impl SheetLinks {
             slicers: id(sheet.slicers.iter().any(|s| matches!(s.source, SlicerSource::Pivot { .. }))),
             table_slicers: id(sheet.slicers.iter().any(|s| matches!(s.source, SlicerSource::Table { .. }))),
             timelines: id(!sheet.timelines.is_empty()),
+            background: id(sheet.background.is_some()),
         }
     }
 
     /// Append the elements of a worksheet that name other parts. They come
-    /// after the page setup, in this order.
+    /// after the page setup, in this order (that of the schema).
     pub fn push_elements(&self, x: &mut String) {
         if let Some(id) = self.drawing {
             w!(x, "<drawing r:id=\"rId{id}\"/>");
         }
         if let Some(id) = self.vml {
             w!(x, "<legacyDrawing r:id=\"rId{id}\"/>");
+        }
+        if let Some(id) = self.background {
+            w!(x, "<picture r:id=\"rId{id}\"/>");
         }
         if !self.tables.is_empty() {
             w!(x, "<tableParts count=\"{}\">", self.tables.len());
@@ -183,6 +189,7 @@ impl Extras {
         super::timeline::add_parts(wb, &mut extras);
         super::hyperlink::add_parts(wb, &mut extras);
         super::datatools::add_parts(wb, &mut extras);
+        super::background::add_parts(wb, &mut extras);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),

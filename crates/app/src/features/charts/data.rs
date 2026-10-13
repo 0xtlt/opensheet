@@ -641,6 +641,8 @@ pub(crate) fn move_chart(app: &mut ExcelApp, id: u32, to: usize, window: &mut Wi
         range.sheet.get_or_insert_with(|| own.clone());
         Some(range)
     });
+    // On its new sheet it lies on top of what is there.
+    chart.z = 0;
     app.wb.sheets[to].charts.push(chart);
     app.deselect_object(cx);
     app.commit(t("Move Chart", "Déplacer le graphique"), cx);
