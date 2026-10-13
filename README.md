@@ -4,7 +4,7 @@ Un tableur open source qui reprend l'interface et le comportement d'Excel, écri
 
 ![OpenSheet](docs/screenshot.jpg)
 
-> État : **v0.1, en développement actif**. La plupart des grandes fonctions d'Excel, hors macros, sont en place ; plusieurs restent partielles ou absentes — voir [Ce qui manque](#ce-qui-manque).
+> État : **v0.1, en développement actif**. La plupart des grandes fonctions d'Excel sont en place, scripts Office compris (les macros VBA sont conservées et lisibles, pas exécutées) ; plusieurs restent partielles ou absentes — voir [Ce qui manque](#ce-qui-manque).
 
 ## Lancer
 
@@ -48,7 +48,7 @@ Cinq langues : français, anglais, espagnol, allemand, italien. L'interface **et
 
 Les formules sont enregistrées sous forme canonique : un classeur saisi en français s'affiche en allemand sans rien perdre.
 
-Toute l'interface est traduite dans les cinq langues (2 082 textes par langue), avec les termes d'Excel dans chacune. `python3 scripts/check_i18n.py` vérifie qu'aucun texte n'est oublié.
+Toute l'interface est traduite dans les cinq langues (3 093 textes par langue), avec les termes d'Excel dans chacune. `python3 scripts/check_i18n.py` vérifie qu'aucun texte n'est oublié.
 
 ### Polices
 
@@ -141,6 +141,14 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Partager ▸ Envoyer une copie : le classeur ou un PDF, par la feuille de partage de macOS (Mail, Messages, AirDrop…).
 - Volet Aide avec recherche (ce document et la liste des raccourcis clavier), envoi de commentaires.
 
+**Automatisation**
+- Scripts Office en TypeScript (onglet Automatiser) : un script `function main(workbook: ExcelScript.Workbook)` s'exécute sur le classeur ouvert, en une seule étape d'annulation ; un script qui échoue ne change rien.
+- Modèle objet `ExcelScript` : classeur, feuilles, plages (valeurs, formules, formats de nombre, tri, recherche, remplissage, copie, insertion et suppression), mise en forme (police, remplissage, bordures, alignement, largeurs), tableaux et leurs filtres, noms, volets figés, graphiques. Environ 300 membres ; un membre absent s'arrête avec son nom et sa ligne.
+- Éditeur de code : couleurs, indentation, problèmes soulignés pendant la frappe, sortie de `console.log` avec la ligne, erreur placée sur sa ligne. Six exemples prêts à exécuter.
+- Les scripts sont des fichiers `.osts`, le format d'Excel, dans un dossier au choix (Préférences ▸ Général) ; importer, exporter, renommer, dupliquer.
+- Un script tourne dans un bac à sable : pas d'accès aux fichiers ni au réseau, arrêt au bout de 120 s.
+- Classeurs avec macros (`.xlsm`, `.xltm`) : le projet VBA est conservé à l'octet près à l'enregistrement ; boîte Macro et lecture du code, en lecture seule.
+
 **Mise en page et impression**
 - Marges, orientation, papier, zone d'impression, sauts de page, titres à répéter, mise à l'échelle, en-têtes et pieds de page, arrière-plan de feuille.
 - Vue Mise en page et Aperçu des sauts de page ; aperçu avant impression.
@@ -149,16 +157,16 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Structure et fichiers**
 - Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
 - Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles et styles nommés, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes, liens hypertexte, scénarios, tables de données, consolidation, imports de texte, plan, sparklines, thème du document, segments et chronologies, champs calculés, graphiques croisés, groupes d'objets, rognage et effets, disposition des graphiques, arrière-plan, encre, affichages personnalisés, WordArt, images SVG, SmartArt, équations. Les fichiers produits s'ouvrent dans Excel sans réparation.
+- Ouvrir et enregistrer en `.xlsm`, `.xltx` et `.xltm` : le projet VBA et ses signatures sont gardés tels quels.
 - Ouvrir et enregistrer en `.csv` et `.tsv`.
 
 ## Ce qui manque
 
-**Hors périmètre** : l'exécution des macros VBA.
-
-**Prévu** : les scripts Office en TypeScript (onglet Automatiser).
+**Hors périmètre** : l'exécution des macros VBA (leur code est conservé et lisible ; l'automatisation passe par les scripts Office).
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
 - Symboles.
+- Enregistrer les actions (l'enregistreur de scripts) et l'enregistrement d'une macro.
 - Co-édition en direct, invitation de personnes et lien de partage : ils demandent un service en ligne qu'OpenSheet n'a pas.
 
 **Partiels**
@@ -170,6 +178,8 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - SmartArt : le texte se modifie dans le volet Texte, pas dans les formes ; pas d'onglet Format SmartArt. Un SmartArt créé ou modifié dans OpenSheet s'ouvre dans Excel comme un groupe de formes d'aspect identique (OpenSheet, lui, le relit comme un SmartArt) ; un SmartArt venu d'Excel et non modifié est réécrit tel quel.
 - Équations : pas de curseur dans l'équation construite, la saisie se fait au format linéaire ; à l'impression, le texte linéaire.
 - Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) ; elle n'est pas imprimée et reste au-dessus des autres objets.
+- Scripts Office : les types ne sont pas vérifiés (une faute de frappe sur un membre n'apparaît qu'à l'exécution) ; pas encore de membres pour la mise en forme conditionnelle, la validation, les tableaux croisés, les commentaires, les formes, les images et les segments ; pas de plages à plusieurs zones ni de protection de feuille ; pas de `fetch`. L'éditeur n'a ni complétion ni recherche.
+- Classeurs avec macros : les contrôles de formulaire, les contrôles ActiveX et les feuilles de dialogue ne sont pas lus, donc pas réécrits ; un bouton affecté à une macro est perdu à l'enregistrement.
 - Préférences : les volets absents d'OpenSheet sont grisés (correction automatique, listes personnalisées, compatibilité…) ; pas de style de référence L1C1.
 - Mise en page : l'impression passe par un PDF.
 - @mentions : sans annuaire d'organisation, la liste propose les personnes déjà présentes dans le classeur, l'utilisateur, ou une adresse saisie en entier ; aucun message n'est envoyé à la personne mentionnée.
@@ -213,6 +223,8 @@ crates/
             validation, commentaires, protection, mise en page, tableaux croisés, graphiques, formes)
   io/       lecture / écriture .xlsx et .csv
   print/    pagination et écriture PDF
+  script/   scripts Office : TypeScript compilé par oxc, exécuté par QuickJS dans un bac à sable,
+            modèle objet ExcelScript branché sur les opérations du moteur
   app/      l'application GPUI : ruban, grille peinte directement, éditeur de cellule,
             une interface par fonctionnalité dans src/features/
 ```
@@ -222,7 +234,7 @@ Les formules sont stockées sous forme canonique (noms anglais) et traduites à 
 Tous les tests :
 
 ```bash
-cargo test -p opensheet_engine -p opensheet_io -p opensheet_print -p opensheet
+cargo test -p opensheet_engine -p opensheet_io -p opensheet_print -p opensheet_script -p opensheet
 ```
 
 ## Licence
