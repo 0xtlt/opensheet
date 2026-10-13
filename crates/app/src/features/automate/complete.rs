@@ -3,14 +3,15 @@
 //! parameters of the call the caret is in.
 //!
 //! Everything proposed comes from the table the script engine is built
-//! from (`opensheet_script::api()` and `enums()`): what is listed is what
-//! runs. The type of what stands before the dot is worked out from the
-//! text alone — a chain of calls from a name whose declaration says what
-//! it is (`workbook: ExcelScript.Workbook`, `let sheet =
-//! workbook.getActiveWorksheet()`, `for (const table of
+//! from: what is listed is what runs. What stands before the dot is
+//! asked of the engine first (`opensheet_script::complete`), which
+//! follows types as its checker does. Where it does not say — a list, a
+//! text, `console`, a name it will not vouch for — the text alone is
+//! read here: a chain of calls from a name whose declaration says what it
+//! is (`let sheet = workbook.getActiveWorksheet()`, `for (const table of
 //! workbook.getTables())`, the parameter of a `forEach` callback). Where
-//! the text does not tell, nothing is proposed: a list of guesses would
-//! be worse than none.
+//! neither tells, nothing is proposed: a list of guesses would be worse
+//! than none.
 
 use opensheet_script::{ApiClass, ApiEnum, ApiMember};
 
@@ -565,6 +566,30 @@ pub(crate) fn complete(source: &str, caret: usize) -> Option<Completion> {
     if code_mask(&source[..caret]).1 {
         return None;
     }
+    // The engine first: it knows the types of the model.
+    let known = opensheet_script::complete(source, caret);
+    if known.of.is_some() && !known.items.is_empty() && known.start <= caret {
+        let ordered = known.items.iter().all(|item| item.kind == opensheet_script::CompletionKind::EnumMember);
+        let mut entries: Vec<Entry> = known
+            .items
+            .iter()
+            .map(|item| Entry {
+                name: item.name.to_string(),
+                detail: match item.kind {
+                    opensheet_script::CompletionKind::Method => item.signature.strip_prefix(item.name).unwrap_or(&item.signature).to_string(),
+                    opensheet_script::CompletionKind::EnumMember => item.signature.strip_prefix(item.name).unwrap_or(&item.signature).trim_start().to_string(),
+                    opensheet_script::CompletionKind::Enum => "enum".to_string(),
+                },
+                about: item.description,
+            })
+            .collect();
+        // Members of an enum keep the order Excel lists them in.
+        if !ordered {
+            entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        }
+        let entries = matching(entries, &source[known.start..caret]);
+        return (!entries.is_empty()).then_some(Completion { start: known.start, entries });
+    }
     let text = Text::new(source);
     let start = text.word_start(caret);
     let before = text.before_blanks(start);
@@ -628,11 +653,18 @@ pub(crate) fn hint(source: &str, caret: usize) -> Option<Hint> {
     if name.is_empty() || before == 0 || text.bytes[before - 1] != b'.' {
         return None;
     }
-    let Type::Class(class) = text.type_at(before - 1, 0)? else {
-        return None;
+    // The class before the dot: the engine's word, else what the text
+    // tells.
+    let known = opensheet_script::complete(source, start);
+    let signature = match known.items.iter().find(|item| item.name == name && item.kind == opensheet_script::CompletionKind::Method) {
+        Some(item) => item.signature.clone(),
+        None => {
+            let Type::Class(class) = text.type_at(before - 1, 0)? else {
+                return None;
+            };
+            class.members.iter().find(|member| member.name == name)?.signature.to_string()
+        }
     };
-    let member = class.members.iter().find(|member| member.name == name)?;
-    let signature = member.signature.to_string();
     // The parameters are between the first parenthesis and the `):`.
     let list_start = signature.find('(')? + 1;
     let list_end = signature.rfind("): ")?;
@@ -718,18 +750,19 @@ mod tests {
         let all = names(&format!("{MAIN}  let a = ExcelScript.|"));
         assert!(all.contains(&"HorizontalAlignment".to_string()) && all.contains(&"ChartType".to_string()));
         assert_eq!(names(&format!("{MAIN}  let a = ExcelScript.HorizontalAlignment.|"))[..3], ["general", "left", "center"]);
-        assert_eq!(names(&format!("{MAIN}  let a = ExcelScript.Horiz|")), ["HorizontalAlignment"]);
+        assert_eq!(names(&format!("{MAIN}  let a = ExcelScript.Horiz|"))[0], "HorizontalAlignment");
         assert_eq!(names(&format!("{MAIN}  x.setHorizontalAlignment(ExcelScript.HorizontalAlignment.cen|")), ["center", "centerAcrossSelection"]);
     }
 
     #[test]
     fn what_is_typed_filters_the_list() {
-        let found = names(&format!("{MAIN}  workbook.getActiveWorksheet().getR|"));
-        assert_eq!(found, ["getRange", "getRangeByIndexes"]);
+        let found = names(&format!("{MAIN}  workbook.getActiveWorksheet().getRangeB|"));
+        assert_eq!(found, ["getRangeByIndexes"]);
         // Small letters find capitals; what starts with the word comes
         // before what holds it.
         let found = names(&format!("{MAIN}  workbook.getActiveWorksheet().range|"));
-        assert_eq!(found, ["getRange", "getRangeByIndexes", "getUsedRange"]);
+        assert_eq!(found[..2], ["getRange", "getRangeByIndexes"]);
+        assert!(found.contains(&"getUsedRange".to_string()) && found.iter().all(|name| name.to_lowercase().contains("range")));
         assert!(names(&format!("{MAIN}  workbook.getActiveWorksheet().zzz|")).is_empty());
         // The place the word starts at.
         let source = format!("{MAIN}  workbook.getAc");

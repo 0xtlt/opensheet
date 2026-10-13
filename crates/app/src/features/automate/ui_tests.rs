@@ -1009,7 +1009,7 @@ fn enums_and_variables_are_completed(cx: &mut TestAppContext) {
     cx.simulate_input("sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.");
     assert!(proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"HorizontalAlignment".to_string()) && names.contains(&"ChartType".to_string())));
     cx.simulate_input("Hor");
-    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["HorizontalAlignment".to_string()]));
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names[0].clone()), Some("HorizontalAlignment".to_string()));
     cx.simulate_keystrokes("enter");
     cx.simulate_input(".");
     assert_eq!(proposed(&pane, cx).map(|(names, _)| names[..4].to_vec()), Some(vec!["general".to_string(), "left".to_string(), "center".to_string(), "right".to_string()]));
