@@ -559,12 +559,16 @@ impl ExcelApp {
                         .px(px(10.))
                         .flex()
                         .items_center()
+                        // Short of room, the tabs share it: every title
+                        // is cut the same way, none runs out of the pane.
+                        .flex_shrink()
+                        .min_w(px(0.))
                         .max_w(px(150.))
                         .border_b_2()
                         .border_color(if on { c(theme::ACCENT) } else { gpui::transparent_black() })
                         .when(on, |d| d.font_weight(FontWeight::SEMIBOLD).text_color(c(theme::ACCENT_DARK)))
                         .when(!on, |d| d.text_color(c(theme::TEXT_MUTED)).hover(|s| s.bg(c(theme::HOVER))))
-                        .child(div().truncate().child(pane.title.clone()))
+                        .child(div().min_w(px(0.)).truncate().child(pane.title.clone()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.active_pane = i;
                             cx.notify();

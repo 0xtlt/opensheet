@@ -254,7 +254,9 @@ impl TranslatePane {
     /// A box of the pane: white, framed.
     fn frame() -> gpui::Div {
         div()
-            .w_full()
+            // No width of its own: the column of the pane stretches it,
+            // whatever it holds.
+            .flex_none()
             .min_h(px(84.))
             .p(px(6.))
             .bg(c(0xFFFFFF))
