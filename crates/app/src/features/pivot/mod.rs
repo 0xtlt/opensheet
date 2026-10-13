@@ -20,6 +20,7 @@
 
 mod actions;
 mod calculated;
+mod chart;
 mod create;
 mod dialogs;
 mod filter;
@@ -53,6 +54,8 @@ use std::sync::Arc;
 
 pub struct Pivots;
 
+pub(crate) use chart::{paint_buttons as paint_chart_buttons, refuses_chart_type, target_pivot};
+
 const ANALYZE_TAB: &str = "pivot-analyze";
 const DESIGN_TAB: &str = "pivot-design";
 /// Id of the PivotTable Fields pane.
@@ -78,6 +81,10 @@ commands! {
         Move = "pivot", t("Move PivotTable", "Déplacer le tableau croisé dynamique");
         CalculatedFields = "function", t("Fields, Items, & Sets", "Champs, éléments et jeux");
         PivotChart = "chart-bar", t("PivotChart", "Graphique croisé dynamique");
+        // PivotChart Analyze
+        ChartRefresh = "refresh", t("Refresh", "Actualiser");
+        ChartClear = "clear", t("Clear All", "Effacer tout");
+        ChartFieldButtons = "", t("Field Buttons", "Boutons de champ");
         FieldList = "columns", t("Field List", "Liste des champs");
         Buttons = "plus", t("+/- Buttons", "Boutons +/-");
         FieldHeaders = "table", t("Field Headers", "En-têtes de champ");
@@ -105,7 +112,8 @@ impl Command for Cmd {
 
     fn enabled(self, app: &ExcelApp) -> bool {
         match self {
-            Cmd::Insert | Cmd::Recommended => true,
+            Cmd::Insert | Cmd::Recommended | Cmd::PivotChart => true,
+            Cmd::ChartRefresh | Cmd::ChartClear | Cmd::ChartFieldButtons => chart::chart_pivot(app).is_some(),
             Cmd::FieldSettings => active_target(app).is_some(),
             Cmd::ExpandField | Cmd::CollapseField => actions::drill_field(app).is_some(),
             Cmd::GroupSelection => actions::can_group(app),
@@ -116,6 +124,9 @@ impl Command for Cmd {
     }
 
     fn checked(self, app: &ExcelApp) -> bool {
+        if self == Cmd::ChartFieldButtons {
+            return chart::buttons_shown(app);
+        }
         let Some(pivot) = active_pivot(app) else {
             return false;
         };
@@ -142,7 +153,13 @@ impl Command for Cmd {
             Cmd::Insert if app.command_anchor == Some("in-pivot") => menus::insert_menu(app, window, cx),
             Cmd::Insert | Cmd::Recommended => create::open_create(app, window, cx),
             Cmd::CalculatedFields => calculated::menu(app, window, cx),
-            Cmd::PivotChart => app.not_implemented(self.label(), cx),
+            // Outside a PivotTable there is nothing to chart yet: the
+            // PivotTable is made first.
+            Cmd::PivotChart if active_pivot(app).is_none() => create::open_create(app, window, cx),
+            Cmd::PivotChart => chart::insert(app, cx),
+            Cmd::ChartRefresh => chart::refresh(app, window, cx),
+            Cmd::ChartClear => chart::clear(app, window, cx),
+            Cmd::ChartFieldButtons => chart::toggle_buttons(app, cx),
             Cmd::Options => menus::options_menu(app, window, cx),
             Cmd::FieldSettings => dialogs::open_settings(app, window, cx),
             Cmd::ExpandField => actions::collapse_active_field(app, false, window, cx),
@@ -763,6 +780,12 @@ impl Feature for Pivots {
     }
 
     fn context_tabs(&self, app: &ExcelApp) -> Vec<ContextTab> {
+        if chart::chart_pivot(app).is_some() {
+            return vec![ContextTab {
+                id: chart::TAB,
+                title: t("PivotChart Analyze", "Analyse du graphique croisé dynamique"),
+            }];
+        }
         match active_pivot(app) {
             Some(_) => vec![
                 ContextTab {
@@ -779,7 +802,9 @@ impl Feature for Pivots {
     }
 
     fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        if tab == DESIGN_TAB {
+        if tab == chart::TAB {
+            chart::tab(app, cx)
+        } else if tab == DESIGN_TAB {
             design_tab(app, cx)
         } else {
             analyze_tab(app, window, cx)

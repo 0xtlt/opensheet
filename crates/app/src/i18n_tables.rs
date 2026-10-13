@@ -2331,6 +2331,10 @@ pub static ES: &[(&str, &str)] = &[
     ("Multiple data fields of the same field are not supported when a PivotTable report has calculated items.", "No está permitido usar los campos de datos múltiples de un mismo campo si el informe de tabla dinámica contiene elementos calculados."),
     ("Group item names are not supported in calculated item formulas.", "No se pueden usar nombres de elementos de grupo en fórmulas de elementos calculados."),
     ("This field cannot be placed in the report filter because it contains calculated items. To place this field in the report filter, first delete the calculated items.", "El campo no puede colocarse en el filtro de informe porque contiene elementos calculados. Para colocar el campo en el filtro de informe, primero elimine los elementos calculados."),
+    ("The selected chart type is not supported for a PivotChart report. PivotChart reports cannot use XY (Scatter), Bubble, or Stock chart types.", "No se admite el tipo de gráfico seleccionado para un informe de tabla dinámica. Los informes de tabla dinámica no pueden utilizar tipos de gráfico XY (Dispersión), burbuja o de cotización."),
+    ("Insert PivotChart", "Insertar gráfico dinámico"),
+    ("Field Buttons", "Botones de campo"),
+    ("PivotChart Analyze", "Analizar gráfico dinámico"),
     // ---- Data validation ----
     ("Minimum:", "Mínimo:"),
     ("Maximum:", "Máximo:"),
@@ -5402,6 +5406,10 @@ pub static DE: &[(&str, &str)] = &[
     ("Multiple data fields of the same field are not supported when a PivotTable report has calculated items.", "Mehrfache Datenfelder desselben Felds werden nicht unterstützt, wenn in einem PivotTable-Bericht berechnete Elemente verwendet werden."),
     ("Group item names are not supported in calculated item formulas.", "In berechneten Elementen werden Namen von Gruppierungen nicht unterstützt."),
     ("This field cannot be placed in the report filter because it contains calculated items. To place this field in the report filter, first delete the calculated items.", "Dieses Feld kann nicht im Berichtsfilter platziert werden, weil es berechnete Elemente enthält. Löschen Sie zuerst die berechneten Elemente, um dieses Feld im Berichtsfilter zu platzieren."),
+    ("The selected chart type is not supported for a PivotChart report. PivotChart reports cannot use XY (Scatter), Bubble, or Stock chart types.", "Der ausgewählte Diagrammtyp wird für einen PivotChart-Bericht nicht unterstützt. PivotChart-Berichte können keine Punkt (XY)-, Blasen- oder Kursdiagrammtypen verwenden."),
+    ("Insert PivotChart", "PivotChart einfügen"),
+    ("Field Buttons", "Feldschaltflächen"),
+    ("PivotChart Analyze", "PivotChart-Analyse"),
     // ---- Data validation ----
     ("Minimum:", "Minimum:"),
     ("Maximum:", "Maximum:"),
@@ -8476,6 +8484,10 @@ pub static IT: &[(&str, &str)] = &[
     ("Multiple data fields of the same field are not supported when a PivotTable report has calculated items.", "La suddivisione di un campo in più sottocampi non è supportata se un rapporto di tabella pivot include elementi calcolati."),
     ("Group item names are not supported in calculated item formulas.", "I nomi degli elementi di gruppo non sono supportati nelle formule degli elementi calcolati."),
     ("This field cannot be placed in the report filter because it contains calculated items. To place this field in the report filter, first delete the calculated items.", "Non è possibile inserire il campo nel filtro rapporto perché contiene elementi calcolati. Per inserire il campo nel filtro rapporto, eliminare prima gli elementi calcolati."),
+    ("The selected chart type is not supported for a PivotChart report. PivotChart reports cannot use XY (Scatter), Bubble, or Stock chart types.", "Il tipo di grafico selezionato non è supportato per un rapporto di grafico pivot. Nei rapporti di grafico pivot non è possibile utilizzare tipi di grafico a dispersione (XY), a bolle o azionari."),
+    ("Insert PivotChart", "Inserisci grafico pivot"),
+    ("Field Buttons", "Pulsanti campo"),
+    ("PivotChart Analyze", "Analizza grafico pivot"),
     // ---- Data validation ----
     ("Minimum:", "Minimo:"),
     ("Maximum:", "Massimo:"),

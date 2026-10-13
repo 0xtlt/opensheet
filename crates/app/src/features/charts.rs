@@ -633,6 +633,8 @@ impl Feature for Charts {
         let data = p.app.wb.chart_data(p.app.sheet, chart);
         let (layout, items) = chart_view::build_chart(chart, &data, p.layout, rect, p.ts, &style);
         p.extend(items);
+        // A PivotChart shows the fields of its PivotTable as buttons.
+        super::pivot::paint_chart_buttons(p, chart, rect);
         if p.app.object_sel == Some(object_id(self, object.id)) {
             let element = p.app.chart_element();
             if element != ChartElement::ChartArea {

@@ -76,7 +76,8 @@ impl Command for Cmd {
 
     fn enabled(self, app: &ExcelApp) -> bool {
         let (row, col) = app.active();
-        let in_pivot = app.wb.pivot_at(app.sheet, row, col).is_some();
+        // In a PivotTable, or with one of its PivotCharts selected.
+        let in_pivot = pivot::target_pivot(app).is_some();
         match self {
             Cmd::InsertSlicer => in_pivot || app.wb.table_at(app.sheet, row, col).is_some(),
             Cmd::InsertTimeline | Cmd::FilterConnections => in_pivot,

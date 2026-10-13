@@ -196,3 +196,74 @@ fn calculated_items_solve_order_and_list_formulas(cx: &mut TestAppContext) {
         assert!(app.modal_open() && app.front_modal_view().unwrap().downcast::<CalcDialog>().is_err(), "the refusal, not the dialog");
     });
 }
+
+#[gpui::test]
+fn a_pivot_chart_is_inserted_follows_its_table_and_keeps_to_its_types(cx: &mut TestAppContext) {
+    use crate::features::{charts, slicers};
+    use opensheet_engine::chart::ChartKind;
+    let (app, cx, pivot) = open(cx);
+    app.update_in(cx, |app, window, cx| Cmd::PivotChart.run(app, window, cx));
+    redraw(cx);
+    let chart = app.update(cx, |app, _| {
+        let chart = app.selected_chart().expect("the PivotChart is selected");
+        assert_eq!(chart.kind, ChartKind::Column);
+        assert_eq!(chart.series.len(), 2, "one series per product");
+        assert_eq!(app.wb.pivot_of_chart(chart.id).map(|(_, p, _)| p.id), Some(pivot));
+        assert_eq!(app.wb.undo_label(), Some("Insert PivotChart"));
+        assert_eq!(app.context_tab, Some(chart::TAB));
+        // Its tabs: PivotChart Analyze, not those of the PivotTable.
+        let tabs: Vec<&str> = Pivots.context_tabs(app).iter().map(|tab| tab.title).collect();
+        assert_eq!(tabs, ["PivotChart Analyze"]);
+        assert!(Cmd::ChartFieldButtons.checked(app) && Cmd::ChartRefresh.enabled(app));
+        // The slicer commands work from the chart.
+        assert!(slicers::Cmd::InsertSlicer.enabled(app) && slicers::Cmd::FilterConnections.enabled(app));
+        chart.id
+    });
+    // The buttons Excel shows: axis at the bottom left, legend at the top right, values at the top left.
+    app.update(cx, |app, _| {
+        let fields = app.wb.pivot(pivot).unwrap().1.chart_fields();
+        let buttons = chart::field_buttons(&fields, (480.0, 288.0), &|caption| caption.len() as f32 * 6.0);
+        let captions: Vec<&str> = buttons.iter().map(|b| b.caption.as_str()).collect();
+        assert_eq!(captions, ["Sum of Sales", "Product", "Region"]);
+        assert_eq!((buttons[0].rect.0, buttons[0].rect.1), (4.0, 4.0));
+        assert_eq!(buttons[1].rect.2, 476.0);
+        assert_eq!(buttons[2].rect.3, 284.0);
+    });
+    // A change to the PivotTable is a change to the chart.
+    app.update_in(cx, |app, window, cx| {
+        update(app, pivot, "filter", window, cx, |p| p.set_item_hidden(0, 0, true));
+        let chart = app.wb.chart(1, chart).unwrap();
+        assert_eq!(app.wb.chart_data(1, chart).categories, ["West"]);
+    });
+    // Field Buttons, Clear All and Refresh of the tab.
+    app.update_in(cx, |app, window, cx| {
+        app.select_object(Some(crate::features::object_id(&charts::Charts, chart)), cx);
+        Cmd::ChartFieldButtons.run(app, window, cx);
+        assert!(!Cmd::ChartFieldButtons.checked(app));
+        assert_eq!(app.wb.undo_label(), Some("Field Buttons"));
+        Cmd::ChartRefresh.run(app, window, cx);
+        Cmd::ChartClear.run(app, window, cx);
+        assert!(app.wb.pivot(pivot).unwrap().1.data_fields.is_empty());
+        assert!(app.wb.chart(1, chart).unwrap().series.is_empty());
+        app.wb.undo();
+    });
+    redraw(cx);
+    // Scatter is refused with Excel's message; a line chart is not.
+    app.update_in(cx, |app, window, cx| {
+        let mut wanted = app.selected_chart().unwrap().clone();
+        wanted.set_kind(ChartKind::Scatter);
+        assert!(refuses_chart_type(app, &wanted, cx));
+        assert!(app.modal_open());
+        app.close_modal(window, cx);
+        wanted.set_kind(ChartKind::Line);
+        assert!(!refuses_chart_type(app, &wanted, cx));
+    });
+    // Outside a PivotTable the command first makes one.
+    app.update_in(cx, |app, window, cx| {
+        app.deselect_object(cx);
+        app.switch_sheet(0, window, cx);
+        app.select_cell(1, 1, cx);
+        Cmd::PivotChart.run(app, window, cx);
+        assert!(app.modal_open(), "Create PivotTable");
+    });
+}

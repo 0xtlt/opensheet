@@ -54,6 +54,10 @@ pub fn error_text(err: &PivotError) -> &'static str {
         ),
         PivotError::InvalidName => t("PivotTable name is not valid.", "Nom du tableau croisé dynamique non valide."),
         PivotError::NoSuchPivot | PivotError::NoSuchField | PivotError::NotAValue => cannot_change_part(),
+        PivotError::ChartKind => t(
+            "The selected chart type is not supported for a PivotChart report. PivotChart reports cannot use XY (Scatter), Bubble, or Stock chart types.",
+            "Le type de graphique sélectionné n'est pas pris en charge pour un rapport de graphique croisé dynamique. Les graphiques XY (nuage de points), en bulles et boursiers ne peuvent pas être appliqués à des rapports de graphique croisé dynamique.",
+        ),
         PivotError::BadFormula => t(
             "The formula you typed contains an error.",
             "La formule que vous avez tapée contient une erreur.",

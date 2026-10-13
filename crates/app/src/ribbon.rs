@@ -1453,6 +1453,11 @@ impl ExcelApp {
             .into_any_element(),
             group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
+                t("PivotChart", "Graphique croisé dynamique"),
+                row(vec![self.cmd_large("in-pivot-chart", pivot::Cmd::PivotChart, false, cx)]),
+            )
+            .into_any_element(),
+            group(
                 t("Sparklines", "Graphiques sparkline"),
                 row(vec![self.cmd_large("in-sparklines", features::sparklines::Cmd::Menu, true, cx)]),
             )

@@ -55,7 +55,7 @@ fn check_rows(
 /// The fields a slicer can be made for: (index, caption).
 pub(crate) fn slicer_fields(app: &ExcelApp) -> Option<(Source, Vec<(usize, String)>)> {
     let (row, col) = app.active();
-    if let Some(p) = app.wb.pivot_at(app.sheet, row, col) {
+    if let Some(p) = pivot::target_pivot(app) {
         let fields = (0..p.fields.len()).map(|f| (f, p.field_caption(f).to_string())).collect();
         return Some((Source::Pivot(p.id), fields));
     }
@@ -66,8 +66,7 @@ pub(crate) fn slicer_fields(app: &ExcelApp) -> Option<(Source, Vec<(usize, Strin
 
 /// The date fields of the PivotTable of the active cell, for a timeline.
 pub(crate) fn timeline_fields(app: &ExcelApp) -> Option<(u32, Vec<(usize, String)>)> {
-    let (row, col) = app.active();
-    let p = app.wb.pivot_at(app.sheet, row, col)?;
+    let p = pivot::target_pivot(app)?;
     let fields = (0..p.fields.len())
         .filter(|f| p.cache.fields[*f].is_database() && p.cache.is_date(*f))
         .map(|f| (f, p.field_caption(f).to_string()))
@@ -437,8 +436,7 @@ pub(super) fn open_report_connections(app: &mut ExcelApp, window: &mut Window, c
 }
 
 pub(super) fn open_filter_connections(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let (row, col) = app.active();
-    let Some(p) = app.wb.pivot_at(app.sheet, row, col) else {
+    let Some(p) = pivot::target_pivot(app) else {
         return;
     };
     let (id, caption) = (p.id, p.name.clone());

@@ -512,6 +512,10 @@ impl ChartTypeDialog {
             let Some(chart) = build(app, change, &choice) else {
                 return;
             };
+            // A PivotChart cannot become a scatter or a bubble chart.
+            if change && crate::features::pivot::refuses_chart_type(app, &chart, cx) {
+                return;
+            }
             if change {
                 let (kind, series) = (chart.kind, chart.series);
                 app.edit_chart(Cmd::ChangeType.label(), cx, move |c| {
