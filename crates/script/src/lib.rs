@@ -11,7 +11,8 @@
 //! * the caller takes `wb.snapshot()` before [`run`];
 //! * when [`Outcome::error`] is `None` the changes of the script are in
 //!   the workbook and the caller closes them as one undo step with
-//!   `wb.commit(label)`;
+//!   `wb.commit(label)` (which returns false, and leaves no step, for a
+//!   script that only read);
 //! * when it is `Some`, the caller drops them with `wb.rollback()`: a
 //!   script that fails changes nothing;
 //! * when it is `Some`, [`run`] has already dropped them and the

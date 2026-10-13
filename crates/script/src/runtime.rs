@@ -28,6 +28,9 @@ const SCRIPT_STACK: usize = 4 << 20;
 /// The stack of that thread: the script's, and room for the engine under
 /// the deepest call.
 const THREAD_STACK: usize = 32 << 20;
+/// The members that change nothing in the workbook though their name does
+/// not start with `get`.
+const READ_ONLY: [&str; 4] = ["find", "activate", "select", "calculate"];
 /// The longest text of one log line, in bytes.
 const MAX_LOG_TEXT: usize = 20_000;
 
@@ -129,14 +132,21 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
     };
     let logs = std::mem::take(&mut host.logs);
     let outcome = match ended {
-        Ok(returned) => Outcome {
+        Ok(returned) => {
+            if !host.edited {
+                // A script that only read leaves no step to undo: the
+                // snapshot goes, and the caller has nothing to commit.
+                host.wb.rollback();
+            }
+            Outcome {
             logs,
             error: None,
             returned,
             activated: host.activated.then(|| host.active_sheet()),
             selected: host.selected(),
             autofit: host.autofits(),
-        },
+            }
+        }
         Err(thrown) => {
             // A script that fails changes nothing: its changes go here,
             // and the results of formulas calculated on the way with them.
@@ -368,6 +378,7 @@ fn dispatch(host: &RefCell<Host>, class: usize, member: usize, payload: &str) ->
     if host.fatal.is_some() {
         return error(ErrorKind::Runtime, "The script was stopped.");
     }
+    host.edited |= !(member.name.starts_with("get") || READ_ONLY.contains(&member.name));
     // The engine must not take the application down with it: what it
     // could not do ends the run, and the run is undone.
     match catch_unwind(AssertUnwindSafe(|| (member.run)(&mut host, &call))) {

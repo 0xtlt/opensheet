@@ -48,6 +48,8 @@ pub(crate) struct Host {
     restructured: bool,
     /// Formulas were calculated during the run.
     pub calculated: bool,
+    /// A member that can change the workbook was called.
+    pub edited: bool,
     written: u64,
     /// The engine failed under a call: the run is lost whatever the
     /// script does next.
@@ -73,6 +75,7 @@ impl Host {
             stale: false,
             restructured: false,
             calculated: false,
+            edited: false,
             written: 0,
             fatal: None,
         }
