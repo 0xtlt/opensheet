@@ -1687,40 +1687,116 @@ impl Drawing {
     /// Where a member of this group is when the group is in `frame`,
     /// with the rotation and the flips the group adds to its own.
     fn member_leaf<'a>(&self, group: &Group, frame: Frame, turn: (f32, bool, bool), member: &'a Drawing) -> Leaf<'a> {
-        let inside = group.member_frame(frame, member);
-        let (width, height) = (inside.width, inside.height);
-        // The middle of the member, from the middle of the group.
-        let mut dx = inside.x - frame.x + width / 2.0 - frame.width / 2.0;
-        let mut dy = inside.y - frame.y + height / 2.0 - frame.height / 2.0;
-        let (mut rotation, mut flip_h, mut flip_v) = (member.rotation, member.flip_h, member.flip_v);
-        // A flipped group mirrors where its members are and what they
-        // show; a mirrored turn runs the other way.
-        if turn.1 {
-            dx = -dx;
-            flip_h = !flip_h;
-            rotation = -rotation;
-        }
-        if turn.2 {
-            dy = -dy;
-            flip_v = !flip_v;
-            rotation = -rotation;
-        }
-        let (sin, cos) = (turn.0 as f64).to_radians().sin_cos();
-        let (rx, ry) = (dx * cos - dy * sin, dx * sin + dy * cos);
-        Leaf {
-            drawing: member,
-            frame: Frame {
-                x: frame.x + frame.width / 2.0 + rx - width / 2.0,
-                y: frame.y + frame.height / 2.0 + ry - height / 2.0,
-                width,
-                height,
-            },
-            rotation: (rotation + turn.0).rem_euclid(360.0),
-            flip_h,
-            flip_v,
-        }
+        leaf_of(group, frame, turn, member)
     }
+}
 
+/// Where a member of a group is when the group is in `frame`, turned
+/// and flipped as `turn` says, with the rotation and the flips the group
+/// adds to the member's own.
+fn leaf_of<'a>(group: &Group, frame: Frame, turn: (f32, bool, bool), member: &'a Drawing) -> Leaf<'a> {
+    let inside = group.member_frame(frame, member);
+    let (width, height) = (inside.width, inside.height);
+    // The middle of the member, from the middle of the group.
+    let mut dx = inside.x - frame.x + width / 2.0 - frame.width / 2.0;
+    let mut dy = inside.y - frame.y + height / 2.0 - frame.height / 2.0;
+    let (mut rotation, mut flip_h, mut flip_v) = (member.rotation, member.flip_h, member.flip_v);
+    // A flipped group mirrors where its members are and what they
+    // show; a mirrored turn runs the other way.
+    if turn.1 {
+        dx = -dx;
+        flip_h = !flip_h;
+        rotation = -rotation;
+    }
+    if turn.2 {
+        dy = -dy;
+        flip_v = !flip_v;
+        rotation = -rotation;
+    }
+    let (sin, cos) = (turn.0 as f64).to_radians().sin_cos();
+    let (rx, ry) = (dx * cos - dy * sin, dx * sin + dy * cos);
+    Leaf {
+        drawing: member,
+        frame: Frame {
+            x: frame.x + frame.width / 2.0 + rx - width / 2.0,
+            y: frame.y + frame.height / 2.0 + ry - height / 2.0,
+            width,
+            height,
+        },
+        rotation: (rotation + turn.0).rem_euclid(360.0),
+        flip_h,
+        flip_v,
+    }
+}
+
+/// A member as `leaf_of` shows it, put back in the terms of its group:
+/// the inverse of `leaf_of` for a group whose members are measured in
+/// pixels of `frame` (its extent is the size of `frame`).
+fn member_from_shown(shown: &mut Drawing, frame: Frame, turn: (f32, bool, bool)) {
+    let (width, height) = (shown.size.0 as f64, shown.size.1 as f64);
+    // The middle of the member, from the middle of the group, as it is
+    // seen; then as it was before the group was turned and flipped.
+    let seen = (shown.offset.0 as f64 + width / 2.0 - frame.x - frame.width / 2.0, shown.offset.1 as f64 + height / 2.0 - frame.y - frame.height / 2.0);
+    let (sin, cos) = (-turn.0 as f64).to_radians().sin_cos();
+    let (mut dx, mut dy) = (seen.0 * cos - seen.1 * sin, seen.0 * sin + seen.1 * cos);
+    let mut rotation = shown.rotation - turn.0;
+    if turn.2 {
+        dy = -dy;
+        shown.flip_v = !shown.flip_v;
+        rotation = -rotation;
+    }
+    if turn.1 {
+        dx = -dx;
+        shown.flip_h = !shown.flip_h;
+        rotation = -rotation;
+    }
+    shown.rotation = rotation.rem_euclid(360.0);
+    shown.anchor = (0, 0);
+    shown.offset = ((frame.width / 2.0 + dx - width / 2.0) as f32, (frame.height / 2.0 + dy - height / 2.0) as f32);
+    shown.to = (0, 0);
+    shown.to_offset = (0.0, 0.0);
+    shown.z = 0;
+}
+
+/// Bring the box of a group around its members after one of them moved,
+/// changed size or left: the members stay where they show. `frame` is
+/// where the group was, its members being measured in pixels of it.
+fn refit_group(holder: &mut Drawing, frame: Frame) {
+    let turn = (holder.rotation, holder.flip_h, holder.flip_v);
+    let DrawingKind::Group(group) = &mut holder.kind else {
+        return;
+    };
+    let edge = |pick: fn(f32, f32) -> f32, start: f32, of: fn(&Drawing) -> f32| group.members.iter().map(of).fold(start, pick);
+    let left = edge(f32::min, f32::INFINITY, |member| member.offset.0);
+    let top = edge(f32::min, f32::INFINITY, |member| member.offset.1);
+    let right = edge(f32::max, f32::NEG_INFINITY, |member| member.offset.0 + member.size.0);
+    let bottom = edge(f32::max, f32::NEG_INFINITY, |member| member.offset.1 + member.size.1);
+    if !(left.is_finite() && top.is_finite() && right.is_finite() && bottom.is_finite()) {
+        return;
+    }
+    for member in &mut group.members {
+        member.offset = (member.offset.0 - left, member.offset.1 - top);
+    }
+    let (width, height) = ((right - left) as f64, (bottom - top) as f64);
+    group.extent = (width as f32, height as f32);
+    // The middle of the new box, from the middle of the old one, as the
+    // turned and flipped group shows it.
+    let mut dx = left as f64 + width / 2.0 - frame.width / 2.0;
+    let mut dy = top as f64 + height / 2.0 - frame.height / 2.0;
+    if turn.1 {
+        dx = -dx;
+    }
+    if turn.2 {
+        dy = -dy;
+    }
+    let (sin, cos) = (turn.0 as f64).to_radians().sin_cos();
+    let centre = (frame.x + frame.width / 2.0 + dx * cos - dy * sin, frame.y + frame.height / 2.0 + dx * sin + dy * cos);
+    holder.anchor = (0, 0);
+    holder.offset = ((centre.0 - width / 2.0).max(0.0) as f32, (centre.1 - height / 2.0).max(0.0) as f32);
+    holder.size = (width as f32, height as f32);
+}
+
+impl Drawing {
     fn collect_leaves<'a>(&'a self, frame: Frame, turn: (f32, bool, bool), out: &mut Vec<Leaf<'a>>) {
         match &self.kind {
             DrawingKind::Group(group) => {
@@ -2007,6 +2083,27 @@ pub(crate) fn rows(sheet: &Sheet) -> Track<'_> {
 }
 
 impl Sheet {
+    /// The group of the sheet that holds the drawing `id` as one of its
+    /// members.
+    pub fn holder_of(&self, id: u32) -> Option<&Drawing> {
+        self.drawings.iter().find(|holder| holder.as_group().is_some_and(|group| group.members.iter().any(|member| member.id == id)))
+    }
+
+    /// Where a drawing shows on the sheet now, and how it is turned and
+    /// flipped there: for a drawing of the sheet its frame and its own
+    /// turn, for a member of a group what the group makes of them.
+    pub fn shown(&self, drawing: &Drawing) -> (Frame, f32, bool, bool) {
+        let member = self.holder_of(drawing.id).and_then(|holder| {
+            let group = holder.as_group()?;
+            let member = group.members.iter().find(|member| member.id == drawing.id)?;
+            Some(leaf_of(group, self.drawing_frame(holder), (holder.rotation, holder.flip_h, holder.flip_v), member))
+        });
+        match member {
+            Some(leaf) => (leaf.frame, leaf.rotation, leaf.flip_h, leaf.flip_v),
+            None => (self.drawing_frame(drawing), drawing.rotation, drawing.flip_h, drawing.flip_v),
+        }
+    }
+
     /// The pictures and shapes a drawing shows, each where it is on the
     /// sheet now (see `Drawing::leaves`).
     pub fn drawing_leaves<'a>(&self, drawing: &'a Drawing) -> Vec<Leaf<'a>> {
@@ -2246,29 +2343,102 @@ impl Workbook {
         self.add_drawing(sheet, drawing)
     }
 
+    /// Remove a drawing of a sheet, or a member of one of its groups. A
+    /// group left with one member lets it go: the member is a drawing of
+    /// the sheet again.
     pub fn remove_drawing(&mut self, sheet: usize, id: u32) -> bool {
         if self.drawing(sheet, id).is_none() {
             return false;
         }
         self.snapshot();
-        self.sheets[sheet].drawings.retain(|d| d.id != id);
+        let Some(holder) = self.group_of(sheet, id) else {
+            self.sheets[sheet].drawings.retain(|d| d.id != id);
+            return true;
+        };
+        let mut alone = false;
+        self.update_group(sheet, holder, |group| {
+            group.members.retain(|member| member.id != id);
+            alone = group.members.len() < 2;
+        });
+        if alone {
+            self.ungroup_drawing(sheet, holder);
+        }
         true
     }
 
+    /// A drawing of a sheet, or a member of one of its groups.
     pub fn drawing(&self, sheet: usize, id: u32) -> Option<&Drawing> {
-        self.sheets.get(sheet)?.drawings.iter().find(|d| d.id == id)
+        let sh = self.sheets.get(sheet)?;
+        sh.drawings.iter().find(|d| d.id == id).or_else(|| {
+            let group = sh.holder_of(id)?.as_group()?;
+            group.members.iter().find(|member| member.id == id)
+        })
     }
 
-    /// Where a drawing is on its sheet.
+    /// The group that holds a drawing as one of its members.
+    pub fn group_of(&self, sheet: usize, id: u32) -> Option<u32> {
+        self.sheets.get(sheet)?.holder_of(id).map(|holder| holder.id)
+    }
+
+    /// Where a drawing is on its sheet (a member of a group: where the
+    /// group shows it).
     pub fn drawing_frame(&self, sheet: usize, id: u32) -> Option<Frame> {
         let sh = self.sheets.get(sheet)?;
-        sh.drawings.iter().find(|d| d.id == id).map(|d| sh.drawing_frame(d))
+        self.drawing(sheet, id).map(|drawing| sh.shown(drawing).0)
+    }
+
+    /// Change the members of a group: they are given measured in pixels
+    /// of the frame of the group, and the box of the group is brought
+    /// around them afterwards.
+    fn update_group(&mut self, sheet: usize, id: u32, change: impl FnOnce(&mut Group)) -> bool {
+        let Some(index) = self.sheets.get(sheet).and_then(|sh| sh.drawings.iter().position(|d| d.id == id && d.as_group().is_some())) else {
+            return false;
+        };
+        self.snapshot();
+        let sh = &mut self.sheets[sheet];
+        let mut holder = sh.drawings.remove(index);
+        let frame = sh.drawing_frame(&holder);
+        holder.size = (frame.width as f32, frame.height as f32);
+        holder.measure_members_in(holder.size);
+        if let DrawingKind::Group(group) = &mut holder.kind {
+            change(group);
+        }
+        refit_group(&mut holder, frame);
+        sh.settle_drawing(&mut holder);
+        sh.drawings.insert(index, holder);
+        true
     }
 
     /// Change a drawing: its look, text, name, rotation, placement, or
     /// its `anchor`, `offset` and `size`. `size` holds the current size
     /// when `f` is called and the placement is settled afterwards.
+    ///
+    /// A member of a group is changed the same way: `f` sees it as it
+    /// shows on the sheet (its `offset` from the corner of the sheet,
+    /// its size, rotation and flips as the group makes them), and the
+    /// box of its group follows what becomes of it.
     pub fn update_drawing(&mut self, sheet: usize, id: u32, f: impl FnOnce(&mut Drawing)) -> bool {
+        if let Some(holder) = self.sheets.get(sheet).and_then(|sh| sh.holder_of(id)) {
+            let (holder_id, turn) = (holder.id, (holder.rotation, holder.flip_h, holder.flip_v));
+            let frame = self.sheets[sheet].drawing_frame(holder);
+            return self.update_group(sheet, holder_id, |group| {
+                let Some(at) = group.members.iter().position(|member| member.id == id) else {
+                    return;
+                };
+                let leaf = leaf_of(group, frame, turn, &group.members[at]);
+                let (place, rotation, flips) = (leaf.frame, leaf.rotation, (leaf.flip_h, leaf.flip_v));
+                let mut shown = group.members[at].clone();
+                shown.anchor = (0, 0);
+                shown.offset = (place.x as f32, place.y as f32);
+                shown.size = (place.width as f32, place.height as f32);
+                shown.rotation = rotation;
+                (shown.flip_h, shown.flip_v) = flips;
+                f(&mut shown);
+                shown.id = id;
+                member_from_shown(&mut shown, frame, turn);
+                group.members[at] = shown;
+            });
+        }
         let Some(index) = self
             .sheets
             .get(sheet)
@@ -3403,6 +3573,73 @@ mod tests {
     }
 
     #[test]
+    fn a_member_of_a_group_is_changed_where_it_shows() {
+        let close = |a: Frame, b: Frame| (a.x - b.x).abs() < 0.01 && (a.y - b.y).abs() < 0.01 && (a.width - b.width).abs() < 0.01 && (a.height - b.height).abs() < 0.01;
+        let mut w = wb(&[]);
+        let a = w.add_shape(0, ShapeTool::Rectangle, Frame::new(1100.0, 1100.0, 100.0, 50.0)).unwrap();
+        let b = w.add_shape(0, ShapeTool::Ellipse, Frame::new(1250.0, 1120.0, 50.0, 80.0)).unwrap();
+        let c = w.add_shape(0, ShapeTool::Diamond, Frame::new(1150.0, 1160.0, 20.0, 20.0)).unwrap();
+        let group = w.group_drawings(0, &[a, b, c]).expect("a group");
+        w.commit("group");
+        assert_eq!(w.drawing_frame(0, b), Some(Frame::new(1250.0, 1120.0, 50.0, 80.0)));
+        // Its look is changed through its id, as that of any drawing.
+        assert!(w.update_drawing(0, b, |d| d.as_shape_mut().unwrap().fill = Some(Color(0xFF0000))));
+        assert_eq!(w.drawing(0, b).unwrap().as_shape().unwrap().fill, Some(Color(0xFF0000)));
+        assert_eq!(w.drawing_frame(0, group), Some(Frame::new(1100.0, 1100.0, 200.0, 100.0)));
+        // Moved out to the right: the box of the group follows, and the
+        // others stay where they were.
+        assert!(w.set_drawing_frame(0, b, Frame::new(1350.0, 1090.0, 50.0, 80.0)));
+        w.commit("move");
+        assert_eq!(w.drawing_frame(0, group), Some(Frame::new(1100.0, 1090.0, 300.0, 90.0)));
+        assert_eq!(w.drawing_frame(0, b), Some(Frame::new(1350.0, 1090.0, 50.0, 80.0)));
+        assert_eq!(w.drawing_frame(0, a), Some(Frame::new(1100.0, 1100.0, 100.0, 50.0)));
+        // In a group that was stretched, turned and flipped, a member
+        // still goes where it is told, and comes out turned as told.
+        w.set_drawing_frame(0, group, Frame::new(1100.0, 1090.0, 600.0, 90.0));
+        w.update_drawing(0, group, |d| {
+            d.rotation = 90.0;
+            d.flip_h = true;
+        });
+        w.commit("turn");
+        let before = w.drawing_frame(0, a).unwrap();
+        let (_, turned, flip_h, _) = w.sheets[0].shown(w.drawing(0, b).unwrap());
+        assert_eq!((turned, flip_h), (90.0, true));
+        assert!(w.update_drawing(0, b, |d| {
+            d.offset = (d.offset.0 + 40.0, d.offset.1 - 300.0);
+            d.rotation = 120.0;
+        }));
+        w.commit("member");
+        let (frame, turned, flip_h, _) = w.sheets[0].shown(w.drawing(0, b).unwrap());
+        assert!((turned - 120.0).abs() < 0.01 && flip_h);
+        assert!(close(w.drawing_frame(0, a).unwrap(), before), "the other members stay");
+        // Its own rotation, in the group: what the turn of the group
+        // does not account for (mirrored: it runs the other way).
+        assert!((w.drawing(0, b).unwrap().rotation - 330.0).abs() < 0.01, "{}", w.drawing(0, b).unwrap().rotation);
+        let again = w.drawing_frame(0, b).unwrap();
+        assert!(close(frame, again));
+        w.undo();
+        w.undo();
+        w.undo();
+        assert_eq!(w.drawing_frame(0, b), Some(Frame::new(1250.0, 1120.0, 50.0, 80.0)));
+        w.redo();
+        w.redo();
+        w.redo();
+        // A member that is removed leaves the others in their group; the
+        // last but one dissolves it.
+        assert!(w.remove_drawing(0, c));
+        w.commit("delete");
+        assert_eq!(w.drawing(0, group).unwrap().as_group().unwrap().members.len(), 2);
+        let kept = w.drawing_frame(0, a).unwrap();
+        assert!(w.remove_drawing(0, b));
+        w.commit("delete");
+        assert!(w.drawing(0, group).is_none() && w.group_of(0, a).is_none());
+        assert_eq!(w.sheets[0].drawings.iter().map(|d| d.id).collect::<Vec<_>>(), vec![a]);
+        assert!(close(w.drawing_frame(0, a).unwrap(), kept));
+        w.undo();
+        assert_eq!(w.group_of(0, a), Some(group));
+    }
+
+    #[test]
     fn groups_hold_their_members_and_let_them_go() {
         let mut w = wb(&[]);
         let under = w.add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 10.0, 10.0)).unwrap();
@@ -3419,7 +3656,10 @@ mod tests {
         let d = |id| ObjectRef::Drawing(id);
         assert_eq!(w.object_stack(0), vec![d(under), d(between), d(group)]);
         assert_eq!(w.drawing(0, group).unwrap().name, "Group 5");
-        assert!(w.drawing(0, a).is_none());
+        // Its members are no longer drawings of the sheet, and are still
+        // found by their ids.
+        assert!(w.sheets[0].drawings.iter().all(|d| d.id != a));
+        assert_eq!((w.group_of(0, a), w.group_of(0, group), w.drawing(0, a).map(|d| d.id)), (Some(group), None, Some(a)));
         let frames = |w: &Workbook| -> Vec<(u32, Frame, f32)> {
             let sh = &w.sheets[0];
             let holder = w.drawing(0, group).unwrap();
@@ -3470,7 +3710,7 @@ mod tests {
         assert!(w.ungroup_drawing(0, a).is_empty());
         w.commit("ungroup");
         w.undo();
-        assert!(w.drawing(0, group).is_some() && w.drawing(0, a).is_none());
+        assert!(w.drawing(0, group).is_some() && w.group_of(0, a) == Some(group));
 
         // A group in a group.
         let outer = w.group_drawings(0, &[group, between]).unwrap();

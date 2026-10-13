@@ -55,6 +55,19 @@ pub enum AreaEvent {
     Blurred,
     /// A key the box left to its owner (`owner_keys`).
     Key(AreaKey),
+    /// A key that works on the outline the text is a line of
+    /// (`outline_keys`).
+    Outline(OutlineKey),
+}
+
+/// The keys a box hands to its owner while `outline_keys` is set: the
+/// text is one entry of an outline (a shape of a SmartArt graphic), which
+/// these keys add to and reorder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutlineKey {
+    Enter,
+    Tab,
+    ShiftTab,
 }
 
 /// The keys a box hands to its owner while `owner_keys` is set: the owner
@@ -353,6 +366,9 @@ pub struct TextArea {
     /// Up, Down, Return, Tab and Escape are reported as `AreaEvent::Key`
     /// instead of acting on the text.
     pub owner_keys: bool,
+    /// Return, Tab and Shift+Tab are reported as `AreaEvent::Outline`
+    /// instead of acting on the text; the arrows still walk it.
+    pub outline_keys: bool,
     /// Tab is left to what holds the box (a pane walks its controls with
     /// it); else it is swallowed, so that it never reaches the grid.
     tab_moves_on: bool,
@@ -383,6 +399,7 @@ impl TextArea {
             tokens: Vec::new(),
             token_color: None,
             owner_keys: false,
+            outline_keys: false,
             tab_moves_on: false,
             marked: None,
             shaped: None,
@@ -772,6 +789,10 @@ impl TextArea {
         if self.to_owner(AreaKey::Enter, cx) {
             return;
         }
+        if self.outline_keys {
+            cx.emit(AreaEvent::Outline(OutlineKey::Enter));
+            return;
+        }
         self.insert("\n", cx);
     }
 
@@ -798,12 +819,20 @@ impl TextArea {
         if self.to_owner(AreaKey::Tab, cx) {
             return;
         }
+        if self.outline_keys {
+            cx.emit(AreaEvent::Outline(OutlineKey::Tab));
+            return;
+        }
         if self.tab_moves_on {
             cx.propagate();
         }
     }
 
     fn shift_tab(&mut self, _: &line::ShiftTab, _: &mut Window, cx: &mut Context<Self>) {
+        if self.outline_keys {
+            cx.emit(AreaEvent::Outline(OutlineKey::ShiftTab));
+            return;
+        }
         if self.tab_moves_on {
             cx.propagate();
         }

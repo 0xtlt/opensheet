@@ -23,8 +23,29 @@ pub(super) struct Handle {
     pub grip: Grip,
 }
 
+/// A member of the selected group, as a zone of the grid.
+pub(super) struct MemberZone {
+    pub group: u32,
+    pub member: u32,
+}
+
 /// What the mouse is dragging.
 pub(super) enum Drag {
+    /// A press on a member of the selected group. Let go where it was
+    /// made, it selects the member; dragged, it moves the member when it
+    /// was selected already (`own`), else the whole group.
+    Member {
+        group: u32,
+        member: u32,
+        own: bool,
+        pane: Pane,
+        pressed: (f64, f64),
+        /// Where the press was on the grid element.
+        at: Pt,
+        /// Where what moves was when the button went down.
+        frame: Frame,
+        moved: bool,
+    },
     /// A new shape, from where the button went down to where the pointer
     /// is (points of the sheet).
     Draw {
@@ -273,6 +294,9 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
         });
         return ZoneResponse::Capture;
     }
+    if let Some(held) = zone.payload::<MemberZone>() {
+        return member_down(app, held, ev, _window, cx);
+    }
     let Some(handle) = zone.payload::<Handle>() else {
         return ZoneResponse::Ignored;
     };
@@ -299,15 +323,17 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
     };
     let sheet = &app.wb.sheets[app.sheet];
     let pane = paint::pane_at(&layout, ev.x, ev.y).unwrap_or_else(|| paint::panes(&layout)[0]);
+    // A member of a group: where and how its group shows it.
+    let (frame, rotation, flip_h, flip_v) = sheet.shown(drawing);
     if let (Grip::Crop(_) | Grip::Pan, Some(picture)) = (handle.grip, drawing.as_picture()) {
         let drag = Drag::Crop {
             id: handle.id,
             grip: handle.grip,
             pane,
             pressed: paint::sheet_point(&layout, sheet, &pane, ev.x, ev.y),
-            frame: sheet.drawing_frame(drawing),
-            rotation: drawing.rotation,
-            flips: (drawing.flip_h, drawing.flip_v),
+            frame,
+            rotation,
+            flips: (flip_h, flip_v),
             adjust: picture.adjust,
             changed: false,
         };
@@ -319,9 +345,9 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
         grip: handle.grip,
         pane,
         pressed: paint::sheet_point(&layout, sheet, &pane, ev.x, ev.y),
-        frame: sheet.drawing_frame(drawing),
-        rotation: drawing.rotation,
-        flips: (drawing.flip_h, drawing.flip_v),
+        frame,
+        rotation,
+        flips: (flip_h, flip_v),
         lock_aspect: drawing.lock_aspect,
         changed: false,
         others,
@@ -330,7 +356,42 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
     ZoneResponse::Capture
 }
 
-pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, _cx: &mut Cx) {
+/// A press on a member of the selected group (see `Drag::Member`); twice,
+/// it types in the member.
+fn member_down(app: &mut ExcelApp, held: &MemberZone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    if ev.button != MouseButton::Left {
+        return ZoneResponse::Ignored;
+    }
+    let Some(layout) = app.current_layout() else {
+        return ZoneResponse::Handled;
+    };
+    // The zone is a box; the member is what is drawn under the pointer.
+    let member = super::member_at(app, held.group, &layout, ev.x, ev.y).unwrap_or(held.member);
+    if ev.click_count >= 2 {
+        super::select_member(app, held.group, Some(member), cx);
+        begin_text_edit(app, member, TextStart::At(ev.position), window, cx);
+        return ZoneResponse::Handled;
+    }
+    end_text_edit(app, cx);
+    let own = super::member_selected(app) == Some((held.group, member));
+    let pane = paint::pane_at(&layout, ev.x, ev.y).unwrap_or_else(|| paint::panes(&layout)[0]);
+    let Some(frame) = app.wb.drawing_frame(app.sheet, if own { member } else { held.group }) else {
+        return ZoneResponse::Handled;
+    };
+    app.ext_mut::<DrawingUi>().drag = Some(Drag::Member {
+        group: held.group,
+        member,
+        own,
+        pane,
+        pressed: paint::sheet_point(&layout, &app.wb.sheets[app.sheet], &pane, ev.x, ev.y),
+        at: (ev.x, ev.y),
+        frame,
+        moved: false,
+    });
+    ZoneResponse::Capture
+}
+
+pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, cx: &mut Cx) {
     let Some(layout) = app.current_layout() else {
         return;
     };
@@ -339,6 +400,39 @@ pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, _cx: 
         return;
     };
     let drag = match drag {
+        Drag::Member {
+            group,
+            member,
+            own,
+            pane,
+            pressed,
+            at,
+            frame,
+            moved,
+        } => {
+            let target = if own { member } else { group };
+            let starts = !moved && (ev.x - at.0).hypot(ev.y - at.1) > 3.0;
+            // A protected sheet says so once, and nothing moves.
+            if starts && !app.may(Intent::EditObject(Some(object_id(&Drawings, target))), cx) {
+                return;
+            }
+            let moved = moved || starts;
+            if moved {
+                let now = paint::sheet_point(&layout, &app.wb.sheets[sheet_index], &pane, ev.x, ev.y);
+                let to = Frame::new(frame.x + now.0 - pressed.0, frame.y + now.1 - pressed.1, frame.width, frame.height);
+                app.wb.set_drawing_frame(sheet_index, target, to);
+            }
+            Drag::Member {
+                group,
+                member,
+                own,
+                pane,
+                pressed,
+                at,
+                frame,
+                moved,
+            }
+        }
         Drag::Draw {
             tool,
             pane,
@@ -448,7 +542,8 @@ fn drag_grip(
             // Shift asks the same of any drawing.
             let resized = geometry::resize(frame, rotation, handle, delta, lock_aspect || shift, alt || control);
             app.wb.set_drawing_frame(sheet, id, resized);
-            if frame.width > 0.0 && frame.height > 0.0 {
+            // A member of a group is resized alone.
+            if frame.width > 0.0 && frame.height > 0.0 && app.wb.group_of(sheet, id).is_none() {
                 let (sx, sy) = (resized.width / frame.width, resized.height / frame.height);
                 app.scale_other_objects(layout, object_id(&Drawings, id), handle, sx, sy);
             }
@@ -503,6 +598,13 @@ pub(super) fn mouse_up(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, window:
         return;
     };
     match drag {
+        Drag::Member { group, member, moved, .. } => {
+            if moved {
+                app.commit(t("Move Object", "Déplacer l'objet"), cx);
+            } else {
+                super::select_member(app, group, Some(member), cx);
+            }
+        }
         Drag::Draw {
             tool,
             start,

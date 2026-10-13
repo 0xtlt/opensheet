@@ -507,6 +507,15 @@ fn typed_selection(app: &ExcelApp, id: u32, cx: &App) -> Option<(String, Range<u
 /// of the characters selected in it while it is being typed in, else of
 /// all of it.
 pub(super) fn format(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: &dyn Fn(&mut EngineFont, &mut TextEffects)) -> bool {
+    // In a graphic, the text of the shapes that are chosen in it.
+    let on_letters = |drawing: &mut Drawing| {
+        if let Some(shape) = drawing.as_shape_mut() {
+            change(&mut shape.font, &mut shape.effects);
+        }
+    };
+    if let Some(done) = super::smartart::format_nodes(app, label, cx, &on_letters) {
+        return done;
+    }
     let Some(id) = selected(app).filter(|drawing| drawing.as_shape().is_some()).map(|drawing| drawing.id) else {
         return false;
     };
