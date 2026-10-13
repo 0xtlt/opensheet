@@ -52,6 +52,62 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(all "All", formats "Formats", contents "Contents", hyperlinks "Hyperlinks", removeHyperlinks "RemoveHyperlinks"),
     },
     ApiEnum {
+        name: "ConditionalCellValueOperator",
+        members: members!(invalid "Invalid", between "Between", notBetween "NotBetween", equalTo "EqualTo", notEqualTo "NotEqualTo", greaterThan "GreaterThan", lessThan "LessThan", greaterThanOrEqual "GreaterThanOrEqual", lessThanOrEqual "LessThanOrEqual"),
+    },
+    ApiEnum {
+        name: "ConditionalDataBarAxisFormat",
+        members: members!(automatic "Automatic", none "None", cellMidPoint "CellMidPoint"),
+    },
+    ApiEnum {
+        name: "ConditionalDataBarDirection",
+        members: members!(context "Context", leftToRight "LeftToRight", rightToLeft "RightToLeft"),
+    },
+    ApiEnum {
+        name: "ConditionalFormatColorCriterionType",
+        members: members!(invalid "Invalid", lowestValue "LowestValue", highestValue "HighestValue", number "Number", percent "Percent", formula "Formula", percentile "Percentile"),
+    },
+    ApiEnum {
+        name: "ConditionalFormatIconRuleType",
+        members: members!(invalid "Invalid", number "Number", percent "Percent", formula "Formula", percentile "Percentile"),
+    },
+    ApiEnum {
+        name: "ConditionalFormatPresetCriterion",
+        members: members!(invalid "Invalid", blanks "Blanks", nonBlanks "NonBlanks", errors "Errors", nonErrors "NonErrors", yesterday "Yesterday", today "Today", tomorrow "Tomorrow", lastSevenDays "LastSevenDays", lastWeek "LastWeek", thisWeek "ThisWeek", nextWeek "NextWeek", lastMonth "LastMonth", thisMonth "ThisMonth", nextMonth "NextMonth", aboveAverage "AboveAverage", belowAverage "BelowAverage", equalOrAboveAverage "EqualOrAboveAverage", equalOrBelowAverage "EqualOrBelowAverage", oneStdDevAboveAverage "OneStdDevAboveAverage", oneStdDevBelowAverage "OneStdDevBelowAverage", twoStdDevAboveAverage "TwoStdDevAboveAverage", twoStdDevBelowAverage "TwoStdDevBelowAverage", threeStdDevAboveAverage "ThreeStdDevAboveAverage", threeStdDevBelowAverage "ThreeStdDevBelowAverage", uniqueValues "UniqueValues", duplicateValues "DuplicateValues"),
+    },
+    ApiEnum {
+        name: "ConditionalFormatRuleType",
+        members: members!(invalid "Invalid", automatic "Automatic", lowestValue "LowestValue", highestValue "HighestValue", number "Number", percent "Percent", formula "Formula", percentile "Percentile"),
+    },
+    ApiEnum {
+        name: "ConditionalFormatType",
+        members: members!(custom "Custom", dataBar "DataBar", colorScale "ColorScale", iconSet "IconSet", topBottom "TopBottom", presetCriteria "PresetCriteria", containsText "ContainsText", cellValue "CellValue"),
+    },
+    ApiEnum {
+        name: "ConditionalIconCriterionOperator",
+        members: members!(invalid "Invalid", greaterThan "GreaterThan", greaterThanOrEqual "GreaterThanOrEqual"),
+    },
+    ApiEnum {
+        name: "ConditionalRangeBorderIndex",
+        members: members!(edgeTop "EdgeTop", edgeBottom "EdgeBottom", edgeLeft "EdgeLeft", edgeRight "EdgeRight"),
+    },
+    ApiEnum {
+        name: "ConditionalRangeBorderLineStyle",
+        members: members!(none "None", continuous "Continuous", dash "Dash", dashDot "DashDot", dashDotDot "DashDotDot", dot "Dot"),
+    },
+    ApiEnum {
+        name: "ConditionalRangeFontUnderlineStyle",
+        members: members!(none "None", single "Single", double "Double"),
+    },
+    ApiEnum {
+        name: "ConditionalTextOperator",
+        members: members!(invalid "Invalid", contains "Contains", notContains "NotContains", beginsWith "BeginsWith", endsWith "EndsWith"),
+    },
+    ApiEnum {
+        name: "ConditionalTopBottomCriterionType",
+        members: members!(invalid "Invalid", topItems "TopItems", topPercent "TopPercent", bottomItems "BottomItems", bottomPercent "BottomPercent"),
+    },
+    ApiEnum {
         name: "DeleteShiftDirection",
         members: members!(up "Up", left "Left"),
     },
@@ -70,6 +126,10 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
     ApiEnum {
         name: "HorizontalAlignment",
         members: members!(general "General", left "Left", center "Center", right "Right", fill "Fill", justify "Justify", centerAcrossSelection "CenterAcrossSelection", distributed "Distributed"),
+    },
+    ApiEnum {
+        name: "IconSet",
+        members: members!(invalid "Invalid", threeArrows "ThreeArrows", threeArrowsGray "ThreeArrowsGray", threeFlags "ThreeFlags", threeTrafficLights1 "ThreeTrafficLights1", threeTrafficLights2 "ThreeTrafficLights2", threeSigns "ThreeSigns", threeSymbols "ThreeSymbols", threeSymbols2 "ThreeSymbols2", fourArrows "FourArrows", fourArrowsGray "FourArrowsGray", fourRedToBlack "FourRedToBlack", fourRating "FourRating", fourTrafficLights "FourTrafficLights", fiveArrows "FiveArrows", fiveArrowsGray "FiveArrowsGray", fiveRating "FiveRating", fiveQuarters "FiveQuarters", threeStars "ThreeStars", threeTriangles "ThreeTriangles", fiveBoxes "FiveBoxes"),
     },
     ApiEnum {
         name: "InsertShiftDirection",

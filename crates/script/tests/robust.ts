@@ -11,6 +11,11 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
   const table = sheet.addTable("E1:G4", true);
   const chart = sheet.addChart(ExcelScript.ChartType.columnClustered, range);
   const column = table.getColumns()[1];
+  const rule = (type: ExcelScript.ConditionalFormatType) => range.addConditionalFormat(type);
+  const cellValue = rule(ExcelScript.ConditionalFormatType.cellValue);
+  const dataBar = rule(ExcelScript.ConditionalFormatType.dataBar).getDataBar()!;
+  const custom = rule(ExcelScript.ConditionalFormatType.custom).getCustom()!;
+  const ruleFormat = cellValue.getCellValue()!.getFormat();
   return {
     Workbook: workbook,
     Application: workbook.getApplication(),
@@ -33,6 +38,23 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     Chart: chart,
     ChartTitle: chart.getTitle(),
     ChartLegend: chart.getLegend(),
+    RangeAreas: cellValue.getRanges(),
+    ConditionalFormat: cellValue,
+    CellValueConditionalFormat: cellValue.getCellValue(),
+    ColorScaleConditionalFormat: rule(ExcelScript.ConditionalFormatType.colorScale).getColorScale(),
+    DataBarConditionalFormat: dataBar,
+    ConditionalDataBarPositiveFormat: dataBar.getPositiveFormat(),
+    ConditionalDataBarNegativeFormat: dataBar.getNegativeFormat(),
+    IconSetConditionalFormat: rule(ExcelScript.ConditionalFormatType.iconSet).getIconSet(),
+    PresetCriteriaConditionalFormat: rule(ExcelScript.ConditionalFormatType.presetCriteria).getPreset(),
+    TextConditionalFormat: rule(ExcelScript.ConditionalFormatType.containsText).getTextComparison(),
+    TopBottomConditionalFormat: rule(ExcelScript.ConditionalFormatType.topBottom).getTopBottom(),
+    CustomConditionalFormat: custom,
+    ConditionalFormatRule: custom.getRule(),
+    ConditionalRangeFormat: ruleFormat,
+    ConditionalRangeFill: ruleFormat.getFill(),
+    ConditionalRangeFont: ruleFormat.getFont(),
+    ConditionalRangeBorder: ruleFormat.getConditionalRangeBorderTop(),
   };
 }
 

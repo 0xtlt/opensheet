@@ -8,7 +8,9 @@ use serde_json::Value as J;
 use crate::ErrorKind;
 use crate::host::Host;
 
+mod areas;
 mod chart;
+mod condfmt;
 mod enums;
 mod format;
 mod range;
@@ -218,6 +220,23 @@ pub(crate) static API: &[ApiClass] = &[
     chart::CHART,
     chart::CHART_TITLE,
     chart::CHART_LEGEND,
+    areas::RANGE_AREAS,
+    condfmt::CONDITIONAL_FORMAT,
+    condfmt::CELL_VALUE,
+    condfmt::COLOR_SCALE,
+    condfmt::DATA_BAR,
+    condfmt::BAR_POSITIVE,
+    condfmt::BAR_NEGATIVE,
+    condfmt::ICON_SET,
+    condfmt::PRESET,
+    condfmt::TEXT,
+    condfmt::TOP_BOTTOM,
+    condfmt::CUSTOM,
+    condfmt::FORMULA_RULE,
+    condfmt::RANGE_FORMAT,
+    condfmt::RANGE_FILL,
+    condfmt::RANGE_FONT,
+    condfmt::RANGE_BORDER,
 ];
 
 pub(crate) use enums::ENUMS;

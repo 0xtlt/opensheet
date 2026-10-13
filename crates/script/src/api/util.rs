@@ -56,6 +56,32 @@ pub(crate) fn resolve(h: &mut Host, call: &Call, sheet: usize, text: &str) -> Re
     }
 }
 
+/// The ranges addresses separated by commas mean on a sheet (`A1:B2,
+/// D4`), all of one worksheet; a defined name may stand for several.
+pub(crate) fn resolve_areas(h: &mut Host, call: &Call, sheet: usize, text: &str) -> Res<(usize, Vec<Rect>)> {
+    let mut on = None;
+    let mut rects = Vec::new();
+    for piece in text.split(',').map(str::trim) {
+        let found: Vec<(usize, Rect)> = match Rect::parse(piece) {
+            Some(rect) => vec![(sheet, rect)],
+            None => {
+                let areas = h.english(|wb| wb.reference_areas(sheet, 0, 0, piece)).ok_or_else(|| call.invalid())?;
+                areas.iter().map(|area| (area.sheet, area.rect)).collect()
+            }
+        };
+        for (of, rect) in found {
+            if *on.get_or_insert(of) != of {
+                return Err(call.fail("The ranges must be on one worksheet."));
+            }
+            rects.push(rect);
+        }
+    }
+    match on {
+        Some(sheet) if !rects.is_empty() => Ok((sheet, rects)),
+        _ => Err(call.invalid()),
+    }
+}
+
 /// The sheet and the rectangle of a Range object, from its state.
 pub(crate) fn range_from(h: &Host, call: &Call, state: &[J]) -> Res<(usize, Rect)> {
     let number = |index: usize| state.get(index).and_then(J::as_u64).map(|n| n as u32);

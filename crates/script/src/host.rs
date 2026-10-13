@@ -54,6 +54,12 @@ pub(crate) struct Host {
     /// The engine failed under a call: the run is lost whatever the
     /// script does next.
     pub fatal: Option<String>,
+    /// The conditional formats the script holds: for each handle, the
+    /// sheet (by identifier) and the place of the rule in its priority
+    /// order; `None` once the rule is deleted. The engine names rules by
+    /// their place, which moves when the script adds, deletes or
+    /// reorders rules: the handles follow.
+    cond_formats: Vec<Option<(i64, usize)>>,
 }
 
 impl Host {
@@ -78,6 +84,7 @@ impl Host {
             edited: false,
             written: 0,
             fatal: None,
+            cond_formats: Vec::new(),
         }
     }
 
@@ -153,6 +160,43 @@ impl Host {
         let id = self.sheet_ids.remove(from);
         self.sheet_ids.insert(to, id);
         self.restructured();
+    }
+
+    // ---- conditional formats ------------------------------------------------
+
+    /// The handle of the rule at a place of a sheet: the one the script
+    /// already holds, or a new one.
+    pub fn cond_handle(&mut self, sheet: usize, index: usize) -> i64 {
+        let key = Some((self.sheet_id(sheet), index));
+        let at = self.cond_formats.iter().position(|held| *held == key).unwrap_or_else(|| {
+            self.cond_formats.push(key);
+            self.cond_formats.len() - 1
+        });
+        at as i64
+    }
+
+    /// The sheet and the place of the rule a handle stands for.
+    pub fn cond_format(&self, call: &Call, handle: i64) -> Res<(usize, usize)> {
+        let held = usize::try_from(handle).ok().and_then(|at| self.cond_formats.get(at).copied().flatten());
+        let (id, index) = held.ok_or_else(|| call.gone())?;
+        let sheet = self.sheet(call, id)?;
+        if index >= self.wb.sheets[sheet].cond_formats.len() {
+            return Err(call.gone());
+        }
+        Ok((sheet, index))
+    }
+
+    /// The rules of a sheet changed places: `moved` says where the rule
+    /// at a place went, `None` when it is gone.
+    pub fn cond_formats_moved(&mut self, sheet: usize, moved: impl Fn(usize) -> Option<usize>) {
+        let id = self.sheet_id(sheet);
+        for held in &mut self.cond_formats {
+            if let Some((of, index)) = *held {
+                if of == id {
+                    *held = moved(index).map(|to| (id, to));
+                }
+            }
+        }
     }
 
     // ---- calculation -----------------------------------------------------

@@ -21,7 +21,7 @@ use opensheet_engine::workbook::{ClearMode, Content, Workbook};
 
 use super::util::{address, parse_color, range_arg, table_fail, this_range};
 use super::worksheet::find_options;
-use super::{ApiClass, Call, Res, Ret, class, enum_value, table};
+use super::{ApiClass, Call, Res, Ret, class, condfmt, enum_value, table};
 use crate::host::{Host, to_script};
 
 // ---- reading -----------------------------------------------------------------
@@ -343,6 +343,11 @@ pub(super) const RANGE: ApiClass = class!("Range", "A rectangle of cells of a wo
     getNumberFormatsLocal "(): string[][]" "The number format codes of the cells in the language of the workbook." => |h, c| read(h, c, false, false, local_format_of);
     setNumberFormatLocal "(numberFormatLocal: string): void" "Gives every cell one number format code, written in the language of the workbook." => |h, c| write(h, c, false, Entry::LocalFormat);
     setNumberFormatsLocal "(numberFormatsLocal: string[][]): void" "Gives each cell its number format code, written in the language of the workbook." => |h, c| write(h, c, true, Entry::LocalFormat);
+
+    addConditionalFormat "(type: ExcelScript.ConditionalFormatType): ConditionalFormat" "Adds a conditional format of a kind to the range, with the highest priority; its rule and its format are then set on what getCellValue, getColorScale, getCustom... give." => |h, c| condfmt::add(h, c);
+    getConditionalFormats "(): ConditionalFormat[]" "The conditional formats that apply to cells of the range, in priority order." => |h, c| condfmt::list(h, c);
+    getConditionalFormat "(id: string): ConditionalFormat | undefined" "The conditional format of the worksheet with this identifier; undefined when there is none." => |h, c| condfmt::by_id(h, c);
+    clearAllConditionalFormats "(): void" "Takes the cells of the range out of every conditional format." => |h, c| condfmt::clear(h, c);
 
     getFormat "(): RangeFormat" "The formatting of the range: font, fill, borders, alignment, sizes." => |h, c| {
         this_range(h, c)?;

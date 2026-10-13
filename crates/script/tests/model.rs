@@ -147,6 +147,29 @@ fn charts() {
     assert_eq!(wb.chart_data(1, other).series[0].values, [Some(10.0), Some(1.5)]);
 }
 
+fn condfmt() {
+    use opensheet_engine::condfmt::{CellOp, Rule};
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/condfmt.ts"));
+    let rules = &wb.sheets[0].cond_formats;
+    assert_eq!(rules.len(), 4);
+    assert!(matches!(rules[0].rule, Rule::CellIs { op: CellOp::Between, .. }) && rules[0].stop_if_true);
+    assert_eq!(rules[0].ranges, [Rect::new(2, 1, 3, 1)]);
+    assert_eq!(rules[0].format.fill, Some(Some(opensheet_engine::Color(0xFFFF00))));
+    // What the rules show is what the same rules show made by hand: B3
+    // (2) is between 2 and 6, B4 (5) too.
+    assert_eq!(wb.display(0, 2, 1).style.fill.map(|c| c.value()), Some(0xFFFF00));
+    // On a protected sheet a rule needs the permission to format cells.
+    wb.protect_sheet(0, Default::default(), "");
+    let add = "sheet.getRange(\"A1\").addConditionalFormat(ExcelScript.ConditionalFormatType.custom);";
+    assert!(fails(&mut wb, &script(add)).message.contains("protected"));
+}
+
+#[test]
+fn conditional_formats_of_every_kind() {
+    condfmt();
+}
+
 #[test]
 fn charts_their_titles_and_their_places() {
     charts();
@@ -209,7 +232,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt] {
         scenario();
     }
     let called = members_called();
