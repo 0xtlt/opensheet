@@ -332,3 +332,60 @@ fn warped_text_prints_as_the_outlines_the_screen_shows() {
         opensheet_io::save(&wb, 0, &std::path::Path::new(&dir).join("opensheet-warp-print.xlsx")).expect("the workbook is written");
     }
 }
+
+#[gpui::test]
+fn snap_to_shape_brings_edges_together(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let add = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, frame: (f64, f64, f64, f64)| {
+        let id = app.update(cx, |app, cx| {
+            let id = app.wb.add_shape(app.sheet, ShapeTool::Rectangle, Frame::new(frame.0, frame.1, frame.2, frame.3)).expect("a shape");
+            app.commit("setup", cx);
+            id
+        });
+        redraw(cx);
+        id
+    };
+    let frame = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32| {
+        app.update(cx, |app, _| {
+            let sheet = &app.wb.sheets[app.sheet];
+            let frame = sheet.drawing_frame(app.wb.drawing(app.sheet, id).expect("the drawing"));
+            (frame.x.round() as i64, frame.y.round() as i64)
+        })
+    };
+    // A still shape whose edges are on no cell edge, and one to move.
+    let still = add(&app, cx, (303.0, 111.0, 90.0, 47.0));
+    let moved = add(&app, cx, (100.0, 300.0, 50.0, 30.0));
+    let _ = still;
+    app.update(cx, |app, cx| app.select_object(Some(object_id(&Drawings, moved)), cx));
+    redraw(cx);
+    // Turning Snap to Shape on turns Snap to Grid on; the menu ticks both.
+    run(&app, cx, Cmd::SnapToShape);
+    assert!(app.update(cx, |app, _| app.snap_to_shape() && app.snap_to_grid()));
+    run(&app, cx, Cmd::Align);
+    let ticked = app.update(cx, |app, _| match app.popup.take().map(|popup| popup.kind) {
+        Some(PopupKind::Menu(entries)) => entries.iter().filter(|entry| entry.checked).map(|entry| entry.label.to_string()).collect::<Vec<_>>(),
+        _ => Vec::new(),
+    });
+    assert!(ticked.contains(&"Snap to Shape".to_string()) && ticked.contains(&"Snap to Grid".to_string()), "{ticked:?}");
+    // Dragged so that its corner comes near the right and bottom edges
+    // of the still shape (393, 158), it lands on them: no cell edge is
+    // there.
+    let at = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, x: f64, y: f64| {
+        app.update(cx, |app, _| {
+            let layout = app.current_layout().expect("the grid was drawn");
+            let pane = *paint::panes(&layout).last().expect("a pane");
+            let (zx, zy) = paint::zoomed(&layout, &app.wb.sheets[app.sheet], x, y);
+            layout.to_window((zx + pane.dx) as f32, (zy + pane.dy) as f32)
+        })
+    };
+    let (from, to) = (at(&app, cx, 125.0, 315.0), at(&app, cx, 125.0 + 291.0, 315.0 - 143.0));
+    cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(point((from.x + to.x) / 2.0, (from.y + to.y) / 2.0), MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
+    cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+    redraw(cx);
+    assert_eq!(frame(&app, cx, moved), (393, 158));
+    // Without Snap to Grid there is no Snap to Shape.
+    run(&app, cx, Cmd::SnapToGrid);
+    assert!(app.update(cx, |app, _| !app.snap_to_shape() && !app.snap_to_grid()));
+}

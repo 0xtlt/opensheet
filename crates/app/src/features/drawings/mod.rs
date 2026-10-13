@@ -112,6 +112,7 @@ commands! {
         DistributeHorizontally = "", t("Distribute Horizontally", "Répartir horizontalement");
         DistributeVertically = "", t("Distribute Vertically", "Répartir verticalement");
         SnapToGrid = "", t("Snap to Grid", "Aligner sur la grille");
+        SnapToShape = "", t("Snap to Shape", "Aligner sur la forme");
         Group = "group-objects", t("Group", "Grouper");
         GroupObjects = "group-objects", t("Group", "Grouper");
         Regroup = "", t("Regroup", "Regrouper");
@@ -356,6 +357,7 @@ impl Command for Cmd {
             Cmd::DistributeHorizontally => app.align_objects(Align::DistributeHorizontally, cx),
             Cmd::DistributeVertically => app.align_objects(Align::DistributeVertically, cx),
             Cmd::SnapToGrid => app.toggle_snap_to_grid(cx),
+            Cmd::SnapToShape => app.toggle_snap_to_shape(cx),
             Cmd::Group => {
                 let entries = vec![
                     MenuEntry::command(Cmd::GroupObjects, app),
