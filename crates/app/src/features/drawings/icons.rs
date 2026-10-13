@@ -93,6 +93,42 @@ pub(super) fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Optio
     Some((image, placed.extent()))
 }
 
+/// The theme the images of vector pictures were last made for.
+#[derive(Default)]
+struct Fallbacks {
+    theme: Option<Arc<opensheet_engine::theme::Theme>>,
+}
+
+/// Called at every repaint. When the theme of the workbook changed, the
+/// engine repainted the documents of the graphics whose fill or outline
+/// is a colour of the theme; the images kept beside them (what a file
+/// holds for other applications, and what is printed) are made again
+/// here. They are part of the step that changed the theme: nothing is
+/// recorded for undo, which brings back the images of the theme it
+/// brings back.
+pub(super) fn follow_theme(app: &mut ExcelApp) {
+    let theme = app.wb.theme_arc();
+    let known = app.ext_mut::<Fallbacks>();
+    let changed = known.theme.as_ref().is_some_and(|before| !Arc::ptr_eq(before, &theme));
+    known.theme = Some(theme);
+    if !changed {
+        return;
+    }
+    for sheet in &mut app.wb.sheets {
+        for drawing in &mut sheet.drawings {
+            let DrawingKind::Picture(picture) = &mut drawing.kind else {
+                continue;
+            };
+            let Some(document) = picture.svg.clone().filter(|document| opensheet_engine::svg::follows_theme(document)) else {
+                continue;
+            };
+            if let Some(remade) = vector(document.to_vec()) {
+                *picture = remade;
+            }
+        }
+    }
+}
+
 // ---- inserting -----------------------------------------------------------
 
 /// Add icons to the current sheet as one undo step, from the active cell,

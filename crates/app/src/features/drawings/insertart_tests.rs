@@ -495,3 +495,37 @@ fn frame_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> (i64
         (frame.x.round() as i64, frame.y.round() as i64, frame.width.round() as i64, frame.height.round() as i64)
     })
 }
+
+#[gpui::test]
+fn a_graphic_filled_with_a_theme_colour_follows_the_theme(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let icon = &icon_set::icons()[2];
+    app.update(cx, |app, cx| icons::insert_icons(app, &[icon], cx));
+    redraw(cx);
+    let id = ids(&app, cx)[0];
+    let accent = app.update(cx, |app, cx| {
+        let accent = app.wb.theme().accent(2, 0.0);
+        assert!(icons::repaint_selected(app, "Graphics Fill", opensheet_engine::svg::Repaint::Fill(Some(accent)), cx));
+        accent
+    });
+    redraw(cx);
+    let rgb = |color: Color| [color.r(), color.g(), color.b(), 255];
+    assert!(decoded(&drawing(&app, cx, id).as_picture().unwrap().data).pixels().any(|pixel| pixel.0 == rgb(accent)));
+    // Another theme: the document and, at the next repaint, the image
+    // kept beside it take the colour the theme gives accent 2.
+    let other = opensheet_engine::theme::Theme::office_2013();
+    let moved = other.accent(2, 0.0);
+    assert_ne!(moved.value(), accent.value());
+    app.update(cx, |app, cx| {
+        app.wb.set_theme(other);
+        app.commit("Theme", cx);
+    });
+    redraw(cx);
+    let picture = drawing(&app, cx, id).as_picture().unwrap().clone();
+    assert!(std::str::from_utf8(picture.svg.as_deref().unwrap()).unwrap().contains(&format!("fill=\"#{}\"", moved.to_hex())));
+    assert!(decoded(&picture.data).pixels().any(|pixel| pixel.0 == rgb(moved)));
+    // Undo brings back the theme, the document and its image.
+    undo(&app, cx);
+    redraw(cx);
+    assert!(decoded(&drawing(&app, cx, id).as_picture().unwrap().data).pixels().any(|pixel| pixel.0 == rgb(accent)));
+}

@@ -581,8 +581,17 @@ fn retheme_sheet(theme: &Theme, sheet: &mut Sheet) {
         retheme_chart(theme, chart);
     }
     for drawing in &mut sheet.drawings {
-        if let DrawingKind::Shape(shape) = &mut drawing.kind {
-            theme.resolve_shape(shape);
+        match &mut drawing.kind {
+            DrawingKind::Shape(shape) => theme.resolve_shape(shape),
+            // A vector picture painted in a colour of the theme: its
+            // document is repainted. (The image kept beside it is made
+            // again by whoever can draw it.)
+            DrawingKind::Picture(picture) => {
+                if let Some(document) = picture.svg.as_deref().and_then(|document| crate::svg::rethemed(document, theme)) {
+                    picture.svg = Some(document.into());
+                }
+            }
+            DrawingKind::SmartArt(_) => {}
         }
     }
 }

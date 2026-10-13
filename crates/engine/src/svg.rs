@@ -6,7 +6,8 @@
 //! The document is handled as text: its tags are found and their `fill`,
 //! `stroke` and `style` attributes rewritten; nothing else is touched.
 
-use crate::style::Color;
+use crate::style::{Color, ThemeColor, ThemeSlot};
+use crate::theme::Theme;
 
 /// True when the bytes are an SVG document: text whose first element is
 /// `<svg>`.
@@ -261,15 +262,72 @@ fn repaint_tag(tag: &str, repaint: Repaint, root: bool) -> String {
         out.replace_range(start..end, &new);
     }
     if root {
+        // The colour of the theme this paint is, if it is one: kept on
+        // the document, where other applications pass it over.
+        let (note, reference) = repaint.note();
+        if let Some((_, _, value_end, name_start)) = attributes(&out).into_iter().find(|(name, ..)| *name == note) {
+            // With the blank before it.
+            out.replace_range(name_start - 1..value_end + 1, "");
+        }
         // What the parts that say nothing inherit.
         let close = if out.ends_with("/>") { out.len() - 2 } else { out.len() - 1 };
         let mut added = String::new();
         for (property, value) in properties.iter().filter(|(property, _)| !seen.contains(property)) {
             added.push_str(&format!(" {property}=\"{value}\""));
         }
+        if let Some(reference) = reference {
+            added.push_str(&format!(" {note}=\"{} {}\"", reference.slot.index(), reference.tint));
+        }
         out.insert_str(close, &added);
     }
     out
+}
+
+/// The attributes of the root that remember a fill and an outline taken
+/// from the theme: the slot and its tint.
+const THEME_FILL: &str = "data-theme-fill";
+const THEME_STROKE: &str = "data-theme-stroke";
+
+impl Repaint {
+    /// The attribute that remembers the theme colour of this paint, and
+    /// the colour when it is one.
+    fn note(self) -> (&'static str, Option<ThemeColor>) {
+        match self {
+            Repaint::Fill(color) => (THEME_FILL, color.and_then(Color::theme)),
+            Repaint::Outline(line) => (THEME_STROKE, line.and_then(|(color, _)| color.theme())),
+        }
+    }
+}
+
+/// The document as it is in a theme: a fill or an outline that was taken
+/// from the theme (Graphics Fill, Graphics Outline) takes the colour the
+/// theme gives it now. `None` when nothing in it follows the theme, or
+/// nothing changes.
+pub fn rethemed(data: &[u8], theme: &Theme) -> Option<Vec<u8>> {
+    let text = std::str::from_utf8(data).ok()?;
+    let (start, end) = root_tag(text)?;
+    let tag = &text[start..end];
+    let reference = |name: &str| {
+        let mut parts = attribute(tag, name)?.split(' ');
+        let slot = ThemeSlot::from_index(parts.next()?.parse().ok()?)?;
+        Some(theme.color(slot, parts.next()?.parse().ok()?))
+    };
+    let mut out = None;
+    if let Some(fill) = reference(THEME_FILL) {
+        out = repaint(data, Repaint::Fill(Some(fill)));
+    }
+    if let Some(stroke) = reference(THEME_STROKE) {
+        let width = attribute(tag, "stroke-width").and_then(|width| width.parse().ok()).unwrap_or(1.0);
+        out = repaint(out.as_deref().unwrap_or(data), Repaint::Outline(Some((stroke, width))));
+    }
+    out.filter(|new| new != data)
+}
+
+/// True when a fill or an outline of the document follows the theme.
+pub fn follows_theme(data: &[u8]) -> bool {
+    std::str::from_utf8(data).ok().is_some_and(|text| {
+        root_tag(text).is_some_and(|(start, end)| attribute(&text[start..end], THEME_FILL).or(attribute(&text[start..end], THEME_STROKE)).is_some())
+    })
 }
 
 /// An SVG document repainted. `None` when the bytes are not one.
@@ -354,6 +412,20 @@ mod tests {
         let twice = String::from_utf8(repaint(red.as_bytes(), Repaint::Fill(Some(Color(0xC00000)))).unwrap()).unwrap();
         assert_eq!(twice, red);
         assert_eq!(repaint(b"not a picture", Repaint::Fill(None)), None);
+        // A colour of the theme is remembered, and follows it.
+        let theme = Theme::default();
+        let accent = theme.accent(2, 0.0);
+        let themed = text(Repaint::Fill(Some(accent)));
+        assert!(themed.contains(&format!(r##"fill="#{}" data-theme-fill="5 0">"##, accent.to_hex())), "{themed}");
+        assert!(follows_theme(themed.as_bytes()) && !follows_theme(red.as_bytes()));
+        assert_eq!(rethemed(themed.as_bytes(), &theme), None);
+        let other = Theme::office_2013();
+        assert_ne!(other.accent(2, 0.0).value(), accent.value(), "two themes that differ");
+        let moved = String::from_utf8(rethemed(themed.as_bytes(), &other).unwrap()).unwrap();
+        assert!(moved.contains(&format!(r##"fill="#{}" data-theme-fill="5 0">"##, other.accent(2, 0.0).to_hex())), "{moved}");
+        // A plain colour forgets the theme.
+        let plain = String::from_utf8(repaint(moved.as_bytes(), Repaint::Fill(Some(Color(0x112233)))).unwrap()).unwrap();
+        assert!(!plain.contains("data-theme") && rethemed(plain.as_bytes(), &other).is_none());
         // A document closed in its own tag.
         let single = String::from_utf8(repaint(b"<svg width='1'/>", Repaint::Fill(None)).unwrap()).unwrap();
         assert_eq!(single, "<svg width='1' fill=\"none\"/>");

@@ -717,6 +717,7 @@ impl Feature for Drawings {
         picture::sweep(window, cx);
         svg::install(cx);
         svg::sweep(window, cx);
+        icons::follow_theme(app);
         // Image files dropped on the cells become pictures. The element
         // takes nothing else from the mouse.
         let mut out = vec![
