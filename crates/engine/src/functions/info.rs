@@ -295,7 +295,12 @@ fn f_info(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     let kind = ctx.text(&args[0])?.to_lowercase();
     Ok(match kind.as_str() {
         "numfile" => Value::Number(ctx.workbook().sheets.len() as f64),
-        "recalc" => Value::from("Automatic"),
+        // Excel knows two answers; "automatic except for data tables"
+        // counts as automatic.
+        "recalc" => Value::from(match ctx.workbook().calc_mode() {
+            crate::recalc::CalcMode::Manual => "Manual",
+            _ => "Automatic",
+        }),
         "release" => Value::from(env!("CARGO_PKG_VERSION")),
         "system" => Value::from(if cfg!(target_os = "macos") {
             "mac"
@@ -687,5 +692,17 @@ mod tests {
         assert_eq!(val(&w, "A7"), Value::text("$A:$A$1"));
         assert!(matches!(val(&w, "A8"), Value::Text(_)));
         assert_eq!(val(&w, "A9"), err(ErrorKind::Div0));
+    }
+
+    #[test]
+    fn info_recalc_follows_the_calculation_mode() {
+        use crate::recalc::CalcMode;
+        let mut w = wb(&[("A1", "=INFO(\"recalc\")")]);
+        w.set_calc_mode(CalcMode::Manual);
+        w.calculate_now();
+        assert_eq!(val(&w, "A1"), Value::text("Manual"));
+        w.set_calc_mode(CalcMode::AutomaticExceptTables);
+        w.calculate_now();
+        assert_eq!(val(&w, "A1"), Value::text("Automatic"));
     }
 }

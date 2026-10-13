@@ -935,6 +935,8 @@ impl SheetWriter<'_> {
         super::filter::write_sheet(&mut x, self.wb, index, self.dxfs);
         // dataConsolidate
         super::datatools::write_consolidate(&mut x, sheet);
+        // customSheetViews
+        super::custom_view::write_sheet(&mut x, self.wb, index, self.dxfs);
         // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {
@@ -1008,6 +1010,7 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         || super::filter::has_names(wb)
         || super::datatools::has_names(wb)
         || super::slicer::has_names(wb)
+        || super::custom_view::has_names(wb)
     {
         x.push_str("<definedNames>");
         // The caches of the slicers and of the timelines, which Excel
@@ -1021,6 +1024,9 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         // The print areas and print titles of the sheets, which are names
         // only in files.
         page::push_names(&mut x, wb);
+        // What the custom views keep of hidden rows and columns, filters
+        // and print areas.
+        super::custom_view::push_names(&mut x, wb);
         for (scope, def) in names {
             x.push_str("<definedName name=\"");
             push_attr(&mut x, &def.name);
@@ -1062,6 +1068,7 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         x.push('"');
     }
     x.push_str(" fullCalcOnLoad=\"1\"/>");
+    super::custom_view::write_workbook(&mut x, wb);
     x.push_str(extra);
     x.push_str("</workbook>");
     x

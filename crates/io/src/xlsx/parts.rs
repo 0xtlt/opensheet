@@ -79,6 +79,7 @@ impl SheetLinks {
             // Slicers and timelines are frames of the drawing too.
             drawing: id(!sheet.charts.is_empty()
                 || !sheet.drawings.is_empty()
+                || !sheet.inks.is_empty()
                 || !sheet.slicers.is_empty()
                 || !sheet.timelines.is_empty()),
             vml: id(annotated),
@@ -167,6 +168,7 @@ impl Extras {
             sheet_rels: vec![String::new(); wb.sheets.len()],
         };
         super::drawing::add_parts(wb, drawings, &mut extras);
+        super::ink::add_parts(wb, drawings);
         for drawing in drawings.iter() {
             let links = wb.sheets.get(drawing.sheet).map(SheetLinks::of);
             if let Some(id) = links.and_then(|links| links.drawing) {

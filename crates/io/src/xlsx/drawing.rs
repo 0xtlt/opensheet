@@ -455,7 +455,9 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
     }
     // Slicers and timelines are frames of the same parts, after the rest.
     for (index, sheet) in wb.sheets.iter().enumerate() {
-        let anchors = super::slicer::anchors(sheet, sheet.charts.len() + sheet.drawings.len() + 2);
+        // Their ids come after those of the charts, the pictures, the
+        // shapes and the strokes drawn by hand.
+        let anchors = super::slicer::anchors(sheet, sheet.charts.len() + sheet.drawings.len() + sheet.inks.len() + 2);
         if anchors.is_empty() {
             continue;
         }
