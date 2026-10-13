@@ -104,8 +104,12 @@ fn syntax_errors_are_placed_without_running() {
     assert!(errors[0].message.contains("function named main"), "{}", errors[0].message);
     assert!(check("function main(workbook: ExcelScript.Workbook) {}").is_empty());
     assert!(check(&Script::new("New").body).is_empty());
-    // Types are removed, not checked.
-    assert!(check("function main(workbook: ExcelScript.Workbook) { const n: number = 'text'; workbook.nope(); }").is_empty());
+    // Types are not checked as TypeScript checks them; a member the
+    // workbook does not have is told, as something that does not prevent
+    // a run (see `tests/check.rs`).
+    assert!(check("function main(workbook: ExcelScript.Workbook) { const n: number = 'text'; }").is_empty());
+    let found = check("function main(workbook: ExcelScript.Workbook) { const n: number = 'text'; workbook.nope(); }");
+    assert_eq!(found.iter().map(|e| (e.kind, e.line, e.column)).collect::<Vec<_>>(), [(ErrorKind::Check, Some(1), Some(84))]);
 
     // Running such a text gives the same error and touches nothing.
     let mut wb = stock();

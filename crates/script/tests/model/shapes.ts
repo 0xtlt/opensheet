@@ -124,5 +124,6 @@ function main(workbook: ExcelScript.Workbook) {
   rule.delete();
   throws(() => rule.getName(), "doesn't exist");
   eq(sheet.getShapes().length, 6);
-  throws(() => sheet.addGeometricShape(ExcelScript.GeometricShapeType.heart), "not supported");
+  // A shape OpenSheet does not draw (the cast keeps `check` quiet about it).
+  throws(() => sheet.addGeometricShape((ExcelScript.GeometricShapeType as any).heart), "not supported");
 }
