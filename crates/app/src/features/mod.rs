@@ -224,6 +224,7 @@ macro_rules! commands {
     };
 }
 
+pub mod automate;
 pub mod chart_format;
 pub mod charts;
 pub mod comments;
@@ -256,7 +257,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// charts, pictures and shapes, which share one stacking order
 /// (`objects::stack`).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 24] = [
+    static ALL: [&dyn Feature; 25] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -279,6 +280,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &themes::Themes,
         &outline::Outline,
         &sparklines::Sparklines,
+        &automate::Automate,
         &misc::Misc,
         &crate::widgets::gallery::GalleryMarks,
     ];

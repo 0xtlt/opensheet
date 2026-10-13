@@ -181,6 +181,10 @@ const ICONS: &[(&str, &str)] = &[
     ("ink-highlighter", r#"<path d="M9.5 2.5 13.5 6.5 8 12H5.2L4 10.8V8z"/><path d="M5.2 12 4 13.5H7.5L8 12M2 14.5h12"/>"#),
     ("ink-add-pen", r#"<path d="M8.8 2.2 11.8 5.2 5 12l-3.1.6L2.5 9.5z"/><path d="M12.5 9.5v5M10 12h5"/>"#),
     ("ink-replay", r#"<path d="M2.5 8a5.5 5.5 0 1 0 1.8-4.1"/><path d="M2.2 2.2v2.6h2.6"/><path d="M6.8 5.6v4.8L10.8 8z"/>"#),
+    ("automate-script", r#"<path d="M4 2.500h5.500L12.500 5.500v8h-8.500z"/><path d="M9.500 2.500v3h3"/><path d="M7.200 8.200 5.800 9.800l1.400 1.600M9.300 8.200l1.400 1.600-1.400 1.600"/>"#),
+    ("automate-new", r#"<path d="M3.500 2.500H9L12 5.500v3"/><path d="M9 2.500v3h3"/><path d="M3.500 2.500v11h4.500"/><path d="M11.500 10v4.500M9.200 12.200h4.600"/><path d="M6.200 7.800 5 9l1.200 1.200"/>"#),
+    ("automate-play", r#"<path d="M4.500 2.800v10.400l8.500-5.200z"/>"#),
+    ("automate-macro", r#"<path d="M2.500 3.500h11v9h-11z"/><path d="M2.500 6h11"/><path d="M6.500 8.200v3l2.800-1.500z"/>"#),
 ];
 
 pub struct Assets;

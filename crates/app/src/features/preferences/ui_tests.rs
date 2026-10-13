@@ -178,3 +178,21 @@ fn sheet_tabs_and_error_corners_follow_their_boxes(cx: &mut TestAppContext) {
     redraw(cx);
     assert!(!shows_sheet_tabs());
 }
+
+#[gpui::test]
+fn the_general_pane_names_the_folder_of_the_scripts(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let usual = crate::features::automate::scripts_folder();
+    let view = pane(&app, cx, Pane::General);
+    // Another folder is chosen: the scripts are looked for there.
+    let other = usual.join("elsewhere");
+    view.update(cx, |view, cx| view.set_scripts_folder(Some(other.clone()), cx));
+    redraw(cx);
+    assert_eq!(crate::features::automate::scripts_folder(), other);
+    assert_eq!(settings::get().scripts_folder, other.to_string_lossy());
+    // "Use Default" comes back to the folder of the application.
+    view.update(cx, |view, cx| view.set_scripts_folder(None, cx));
+    redraw(cx);
+    assert_eq!(crate::features::automate::scripts_folder(), usual);
+    assert!(settings::get().scripts_folder.is_empty());
+}

@@ -46,6 +46,10 @@ pub struct Settings {
     // ---- Draw
     /// The gallery of pens of the Draw tab, in order. Never empty.
     pub pens: Vec<Pen>,
+    // ---- Automate
+    /// The folder the Office Scripts are kept in; empty: the folder of
+    /// the application (see `features/automate/scripts.rs`).
+    pub scripts_folder: String,
 }
 
 impl Default for Settings {
@@ -64,6 +68,7 @@ impl Default for Settings {
             background_error_checking: true,
             check_error_values: true,
             pens: default_pens(),
+            scripts_folder: String::new(),
         }
     }
 }
@@ -104,6 +109,7 @@ impl Settings {
         for pen in &self.pens {
             line("pen", &pen.to_setting());
         }
+        line("scripts-folder", &self.scripts_folder);
         out
     }
 
@@ -153,6 +159,7 @@ impl Settings {
                 "background-error-checking" => set(&mut settings.background_error_checking),
                 "check-error-values" => set(&mut settings.check_error_values),
                 "pen" => pens.extend(Pen::from_setting(value)),
+                "scripts-folder" => settings.scripts_folder = value.to_string(),
                 _ => {}
             }
         }
@@ -242,6 +249,7 @@ mod tests {
         settings.recalc_before_save = false;
         settings.background_error_checking = false;
         settings.check_error_values = false;
+        settings.scripts_folder = "/Users/ada/My Scripts = here".to_string();
         assert_eq!(Settings::from_text(&settings.to_text()), settings);
         // An empty or damaged file gives the defaults, setting by setting.
         assert_eq!(Settings::from_text(""), Settings::default());
