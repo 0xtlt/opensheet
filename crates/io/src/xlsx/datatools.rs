@@ -13,6 +13,7 @@ use super::parts::{Extras, SheetLinks};
 use super::read::{Package, parse_cell_ref, relationships};
 use super::write::{NS_DOC_REL, NS_MAIN, push_number, push_range};
 use super::xml::{Event, Reader, Tag, XML_DECL, push_attr, push_cell_text};
+use opensheet_engine::external::{QueryItem, QueryProps, WebQuery};
 use opensheet_engine::consolidate::{ConsolidateFunction, ConsolidateSource, Consolidation};
 use opensheet_engine::input::parse_numeric_text;
 use opensheet_engine::refs::cell_name;
@@ -274,13 +275,57 @@ fn field_format(name: &str) -> ColumnFormat {
     }
 }
 
-/// `<connection>` of a text import, numbered `id`.
+/// `<connection>` of a query, numbered `id`: a text import (type 6) or a
+/// web query (type 4), with the properties of the connection in the
+/// order Excel writes its attributes.
 fn push_connection(x: &mut String, id: usize, import: &TextImport) {
     w!(x, "<connection id=\"{id}\" name=\"");
     push_attr(x, &import.name);
+    x.push('"');
+    if !import.props.description.is_empty() {
+        x.push_str(" description=\"");
+        push_attr(x, &import.props.description);
+        x.push('"');
+    }
+    w!(x, " type=\"{}\" refreshedVersion=\"8\"", if import.web.is_some() { 4 } else { 6 });
+    if import.props.background {
+        x.push_str(" background=\"1\"");
+    }
+    if import.props.refresh_on_open {
+        x.push_str(" refreshOnLoad=\"1\"");
+    }
+    if import.props.refresh_minutes > 0 {
+        w!(x, " interval=\"{}\"", import.props.refresh_minutes);
+    }
+    x.push_str(" saveData=\"1\">");
+    if let Some(web) = &import.web {
+        // What Excel writes for a web query made in its dialog: the
+        // data of the page, its preformatted blocks cut into columns.
+        x.push_str("<webPr sourceData=\"1\" parsePre=\"1\" consecutive=\"1\" xl2000=\"1\" url=\"");
+        push_attr(x, &import.path);
+        match &web.item {
+            None => x.push_str("\"/>"),
+            Some(item) => {
+                x.push_str("\" htmlTables=\"1\"><tables count=\"1\">");
+                match item {
+                    QueryItem::Index(n) => {
+                        w!(x, "<x v=\"{n}\"/>");
+                    }
+                    QueryItem::Name(name) => {
+                        x.push_str("<s v=\"");
+                        push_attr(x, name);
+                        x.push_str("\"/>");
+                    }
+                }
+                x.push_str("</tables></webPr>");
+            }
+        }
+        x.push_str("</connection>");
+        return;
+    }
     // Excel repairs a workbook whose text connection names no code page
     // or no fields; files are read as UTF-8 (65001).
-    x.push_str("\" type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr codePage=\"65001\" sourceFile=\"");
+    x.push_str("<textPr codePage=\"65001\" sourceFile=\"");
     push_attr(x, &import.path);
     x.push('"');
     if import.first_row > 1 {
@@ -347,7 +392,17 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
             push_connection(&mut connections, number, import);
             let mut table = format!("{XML_DECL}<queryTable xmlns=\"{NS_MAIN}\" name=\"");
             push_attr(&mut table, &import.name);
-            w!(table, "\" connectionId=\"{number}\" autoFormatId=\"16\" applyNumberFormats=\"0\" applyBorderFormats=\"0\" applyFontFormats=\"0\" applyPatternFormats=\"0\" applyAlignmentFormats=\"0\" applyWidthHeightFormats=\"0\"/>");
+            table.push('"');
+            if import.props.refresh_on_open {
+                table.push_str(" refreshOnLoad=\"1\"");
+            }
+            if !import.props.preserve_formatting {
+                table.push_str(" preserveFormatting=\"0\"");
+            }
+            if !import.props.adjust_width {
+                table.push_str(" adjustColumnWidth=\"0\"");
+            }
+            w!(table, " connectionId=\"{number}\" autoFormatId=\"16\" applyNumberFormats=\"0\" applyBorderFormats=\"0\" applyFontFormats=\"0\" applyPatternFormats=\"0\" applyAlignmentFormats=\"0\" applyWidthHeightFormats=\"0\"/>");
             extras.add_part(format!("xl/queryTables/queryTable{number}.xml"), Some(CT_QUERY_TABLE), table);
             extras.relate_sheet(index, *id, &format!("{NS_DOC_REL}/queryTable"), &format!("../queryTables/queryTable{number}.xml"));
         }
@@ -400,14 +455,22 @@ fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
     let mut r = Reader::new(xml);
     // The connection being read, until its `<textPr>` is seen.
     let mut id = None;
+    let mut props = QueryProps::default();
     let mut current: Option<TextImport> = None;
     let mut breaks: Vec<usize> = Vec::new();
     loop {
         match r.next() {
             Event::Open(t) => match t.name {
-                "connections" | "textFields" => {}
+                "connections" | "textFields" | "tables" => {}
                 "connection" => {
                     id = t.attr_u32("id");
+                    props = QueryProps {
+                        description: t.attr("description").map(|text| text.into_owned()).unwrap_or_default(),
+                        background: t.attr_bool("background").unwrap_or(false),
+                        refresh_on_open: t.attr_bool("refreshOnLoad").unwrap_or(false),
+                        refresh_minutes: t.attr_u32("interval").unwrap_or(0),
+                        ..QueryProps::default()
+                    };
                     if t.empty {
                         id = None;
                     }
@@ -438,12 +501,41 @@ fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
                         range: Rect::cell(0, 0),
                         first_row: t.attr_u32("firstRow").unwrap_or(1).max(1),
                         spec: Spec::new(layout),
+                        web: None,
+                        props: props.clone(),
                     });
                     if t.empty {
                         if let (Some(id), Some(import)) = (id, current.take()) {
                             found.push((id, import));
                         }
                     }
+                }
+                "webPr" => {
+                    current = t.attr("url").map(|url| TextImport {
+                        name: String::new(),
+                        path: url.into_owned(),
+                        range: Rect::cell(0, 0),
+                        first_row: 1,
+                        spec: Spec::new(Layout::Delimited(Delimiters::default())),
+                        web: Some(WebQuery::default()),
+                        props: props.clone(),
+                    });
+                    if t.empty {
+                        if let (Some(id), Some(import)) = (id, current.take()) {
+                            found.push((id, import));
+                        }
+                    }
+                }
+                // The table of the page a web query takes: its number
+                // (`x`) or its name (`s`). Only the first is kept.
+                "x" | "s" => {
+                    if let Some(web) = current.as_mut().and_then(|import| import.web.as_mut()).filter(|web| web.item.is_none()) {
+                        web.item = match t.name {
+                            "x" => t.attr_u32("v").map(QueryItem::Index),
+                            _ => t.attr("v").map(|name| QueryItem::Name(name.into_owned())),
+                        };
+                    }
+                    r.skip(&t);
                 }
                 "textField" => {
                     if let Some(import) = current.as_mut() {
@@ -468,6 +560,11 @@ fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
                         breaks.dedup();
                         *positions = std::mem::take(&mut breaks);
                     }
+                    found.push((id, import));
+                }
+            }
+            Event::Close(name) if name == "webPr" => {
+                if let (Some(id), Some(import)) = (id, current.take()) {
                     found.push((id, import));
                 }
             }
@@ -519,6 +616,8 @@ impl PendingImports {
                 if let (Some((_, import)), Some(name)) = (connection, root.attr("name")) {
                     let mut import = import.clone();
                     import.name = name.into_owned();
+                    import.props.preserve_formatting = root.attr_bool("preserveFormatting").unwrap_or(true);
+                    import.props.adjust_width = root.attr_bool("adjustColumnWidth").unwrap_or(true);
                     pending.imports.push((index, import, false));
                 }
             }

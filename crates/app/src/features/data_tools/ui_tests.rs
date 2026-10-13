@@ -904,6 +904,8 @@ fn get_data_on_a_new_sheet_and_refusals(cx: &mut TestAppContext) {
             spec: opensheet_engine::text_columns::Spec::new(opensheet_engine::text_columns::Layout::Delimited(
                 opensheet_engine::text_columns::Delimiters::only(','),
             )),
+            web: None,
+            props: Default::default(),
         };
         import::open_destination(app, import, "a,b\n1,2".to_string(), window, cx)
     });
