@@ -554,3 +554,102 @@ fn a_shape_draws_its_shadow_from_a_bitmap(cx: &mut TestAppContext) {
     let turned = items(&app, cx, 30.0);
     assert!(!std::sync::Arc::ptr_eq(&first[0].0, &turned[0].0));
 }
+
+// ---------------------------------------------------------------- compress
+
+#[test]
+fn compressing_resamples_and_deletes_what_is_cropped() {
+    use compress::{Options, compressed};
+    use opensheet_engine::drawing::Picture;
+    let mut picture = Picture::new(styles::sample_photo_png(800, 600)).unwrap();
+    let all = Options { ppi: Some(96.0), delete_cropped: true, selected_only: false };
+    // Shown 200 by 150 pixels: at 96 to the inch that is all it needs.
+    let (file, crop) = compressed(&picture, (200.0, 150.0), &all).expect("fewer pixels");
+    let made = Bitmap::decode(&file).unwrap();
+    assert_eq!((made.width, made.height), (200, 150));
+    assert_eq!(crop, [0.0; 4]);
+    assert!(file.len() < picture.data.len() / 4);
+    // At 220 to the inch: 459 by 344.
+    let fine = Options { ppi: Some(220.0), ..all };
+    let made = Bitmap::decode(&compressed(&picture, (200.0, 150.0), &fine).unwrap().0).unwrap();
+    assert_eq!((made.width, made.height), (459, 344));
+    // Shown larger than its pixels allow, or kept as it is: nothing to do.
+    assert!(compressed(&picture, (2000.0, 1500.0), &fine).is_none());
+    assert!(compressed(&picture, (200.0, 150.0), &Options { ppi: None, ..all }).is_none());
+    // Cropped: a quarter off the left, half off the bottom, and room
+    // left empty on the right. The kept part is 600 by 300 pixels and
+    // becomes the image; the empty room is the same on the sheet.
+    picture.adjust.crop = [0.25, 0.0, -0.125, 0.5];
+    let keep = Options { ppi: None, ..all };
+    let (file, crop) = compressed(&picture, (350.0, 150.0), &keep).expect("the cropped parts go");
+    let cut = Bitmap::decode(&file).unwrap();
+    assert_eq!((cut.width, cut.height), (600, 300));
+    assert_eq!(crop, [0.0, 0.0, -0.125 * 800.0 / 600.0, 0.0]);
+    // The pixel that was at (200, 0) is now the first one.
+    let whole = Bitmap::decode(&picture.data).unwrap();
+    assert_eq!(&cut.data[..4], &whole.data[whole.offset(200, 0)..whole.offset(200, 0) + 4]);
+    // The frame still shows the same thing: 350 pixels for 7/8 of the
+    // old width is 300 for the image and 50 of room.
+    let before = picture.adjust.uncropped(opensheet_engine::drawing::Frame::new(0.0, 0.0, 350.0, 150.0));
+    picture.adjust.crop = crop;
+    let after = picture.adjust.uncropped(opensheet_engine::drawing::Frame::new(0.0, 0.0, 350.0, 150.0));
+    assert!((after.width - 300.0).abs() < 1e-3 && (before.width - 400.0).abs() < 1e-3, "{before:?} {after:?}");
+    // Without "Delete cropped areas" the crop stays, and the image is
+    // resampled whole.
+    picture.adjust.crop = [0.25, 0.0, 0.0, 0.5];
+    let (file, crop) = compressed(&picture, (150.0, 75.0), &Options { delete_cropped: false, ..all }).unwrap();
+    let small = Bitmap::decode(&file).unwrap();
+    assert_eq!((small.width, small.height, crop), (200, 150, [0.25, 0.0, 0.0, 0.5]));
+}
+
+#[gpui::test]
+fn the_compress_dialog_is_one_undo_step(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = app.update(cx, |app, cx| {
+        let id = app.wb.add_picture(app.sheet, styles::sample_photo_png(600, 400), (2, 1)).expect("a picture");
+        app.wb.update_drawing(app.sheet, id, |d| {
+            d.size = (150.0, 100.0);
+            d.as_picture_mut().unwrap().adjust.crop = [0.0, 0.0, 0.5, 0.0];
+        });
+        // A second one, on another sheet.
+        let other = app.wb.add_sheet(1);
+        let far = app.wb.add_picture(other, styles::sample_photo_png(600, 400), (1, 1)).unwrap();
+        app.wb.update_drawing(other, far, |d| d.size = (150.0, 100.0));
+        app.commit("setup", cx);
+        app.select_object(Some(object_id(&Drawings, id)), cx);
+        id
+    });
+    redraw(cx);
+    let weight = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, sheet: usize| {
+        app.update(cx, |app, _| app.wb.sheets[sheet].drawings[0].as_picture().unwrap().data.len())
+    };
+    let (first, second) = (weight(&app, cx, 0), weight(&app, cx, 1));
+    // The dialog: best for printing, delete cropped areas, the selected
+    // picture only. Return accepts.
+    app.update_in(cx, |app, window, cx| app.run_command(Cmd::Compress, window, cx));
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| app.modals.len()), 1);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| app.modals.len()), 0);
+    let picture = drawing(&app, cx, id).as_picture().unwrap().clone();
+    // Half the image is left. (220 pixels to the inch of its 150 would
+    // be 344: more than the 300 it has, so they are all kept.)
+    assert_eq!(picture.pixels, (300, 400));
+    assert_eq!(picture.adjust.crop, [0.0; 4]);
+    assert!(weight(&app, cx, 0) < first);
+    assert_eq!(weight(&app, cx, 1), second, "the other sheet's picture was not selected");
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Compress Pictures"));
+    redraw(cx);
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(drawing(&app, cx, id).as_picture().unwrap().pixels, (600, 400));
+    // All pictures of the file, for the screen.
+    app.update(cx, |app, cx| {
+        compress::compress(app, compress::Options { ppi: Some(96.0), delete_cropped: false, selected_only: false }, cx);
+    });
+    assert!(weight(&app, cx, 0) < first && weight(&app, cx, 1) < second);
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets[1].drawings[0].as_picture().unwrap().pixels), (150, 100));
+    // One step for both.
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!((weight(&app, cx, 0), weight(&app, cx, 1)), (first, second));
+}

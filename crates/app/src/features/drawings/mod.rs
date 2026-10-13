@@ -29,6 +29,7 @@
 
 mod adjust;
 mod artistic;
+mod compress;
 mod equation;
 mod filters;
 pub(crate) mod geometry;
@@ -474,6 +475,7 @@ impl Command for Cmd {
                 ];
                 app.open_command_menu(entries, 250.0, window, cx);
             }
+            Cmd::Compress => compress::open(app, window, cx),
             Cmd::ArtisticEffects => artistic::open_gallery(app, window, cx),
             Cmd::PictureStyles => styles::open_styles(app, window, cx),
             Cmd::PictureBorder => styles::open_border(app, window, cx),
@@ -483,9 +485,8 @@ impl Command for Cmd {
                 let entries = vec![MenuEntry::command(Cmd::ChangePictureFromFile, app)];
                 app.open_command_menu(entries, 220.0, window, cx);
             }
-            // Styles, artistic effects, removing the background,
-            // compressing and the online sources are not available: the
-            // status bar says so.
+            // Removing the background and the online sources are not
+            // available: the status bar says so.
             _ => app.not_implemented(self.label(), cx),
         }
     }
