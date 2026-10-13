@@ -147,8 +147,9 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 
 **Automatisation**
 - Scripts Office en TypeScript (onglet Automatiser) : un script `function main(workbook: ExcelScript.Workbook)` s'exécute sur le classeur ouvert, en une seule étape d'annulation ; un script qui échoue ne change rien.
-- Modèle objet `ExcelScript` : classeur, feuilles, plages (valeurs, formules, formats de nombre, tri, recherche, remplissage, copie, insertion et suppression), mise en forme (police, remplissage, bordures, alignement, largeurs), tableaux et leurs filtres, noms, volets figés, graphiques. Environ 300 membres ; un membre absent s'arrête avec son nom et sa ligne.
-- Éditeur de code : couleurs, indentation, problèmes soulignés pendant la frappe, sortie de `console.log` avec la ligne, erreur placée sur sa ligne. Six exemples prêts à exécuter.
+- Modèle objet `ExcelScript` : classeur, feuilles (dont masquer et afficher), plages (valeurs, formules, formats de nombre, tri, recherche, remplissage, copie, insertion et suppression, plusieurs zones), mise en forme, tableaux et filtres, noms, volets figés, graphiques, mise en forme conditionnelle, validation, commentaires et notes, tableaux croisés dynamiques, formes et images, protection de feuille. Un membre absent s'arrête avec son nom et sa ligne.
+- Éditeur de code : couleurs, indentation, complétion (membres et énumérations d'`ExcelScript`, avec leur signature), aide sur les paramètres, rechercher et remplacer (⌘F), aller à la ligne (⌘L), problèmes soulignés pendant la frappe — y compris un nom de membre inconnu ou un mauvais nombre d'arguments, signalés avant l'exécution —, sortie de `console.log` avec la ligne, erreur placée sur sa ligne. Six exemples prêts à exécuter.
+- Enregistrer les actions : ce que vous faites dans le classeur devient un script (saisie, formats, lignes et colonnes, recopie, tri, filtres, tableaux, noms, feuilles, volets, graphiques, collage, validation, notes, mise en forme conditionnelle simple) ; une action qui ne peut pas être écrite est listée comme non enregistrée.
 - Les scripts sont des fichiers `.osts`, le format d'Excel, dans un dossier au choix (Préférences ▸ Général) ; importer, exporter, renommer, dupliquer.
 - Un script tourne dans un bac à sable : pas d'accès aux fichiers ni au réseau, arrêt au bout de 120 s.
 - Classeurs avec macros (`.xlsm`, `.xltm`) : le projet VBA est conservé à l'octet près à l'enregistrement ; boîte Macro et lecture du code, en lecture seule.
@@ -159,7 +160,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Impression vers une imprimante (choix de l'imprimante, copies, pages, recto verso), vers un fichier PDF (polices incorporées) ou vers Aperçu.
 
 **Structure et fichiers**
-- Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet).
+- Insérer / supprimer lignes et colonnes (formules réécrites), feuilles multiples (ajouter, renommer, dupliquer, déplacer, couleur d'onglet, masquer et afficher).
 - Ouvrir et enregistrer en `.xlsx` : valeurs, formules, styles et styles nommés, largeurs, fusions, volets figés, noms, graphiques, tableaux, filtres, mise en forme conditionnelle, validation, protection, notes et commentaires, mise en page, tableaux croisés dynamiques, images et formes, liens hypertexte, scénarios, tables de données, consolidation, imports de texte, plan, sparklines, thème du document, segments et chronologies, champs calculés, graphiques croisés, groupes d'objets, rognage et effets, disposition des graphiques, arrière-plan, encre, affichages personnalisés, WordArt, images SVG, SmartArt, équations. Les fichiers produits s'ouvrent dans Excel sans réparation.
 - Ouvrir et enregistrer en `.xlsm`, `.xltx` et `.xltm` : le projet VBA et ses signatures sont gardés tels quels.
 - Ouvrir et enregistrer en `.csv` et `.tsv`.
@@ -170,7 +171,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
 - Symboles.
-- Enregistrer les actions (l'enregistreur de scripts) et l'enregistrement d'une macro.
+- L'enregistrement d'une macro VBA (l'enregistreur de scripts, lui, existe : Automatiser ▸ Enregistrer les actions).
 - Co-édition en direct, invitation de personnes et lien de partage : ils demandent un service en ligne qu'OpenSheet n'a pas.
 
 **Partiels**
@@ -182,7 +183,8 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - SmartArt : le texte se modifie dans le volet Texte, pas dans les formes ; pas d'onglet Format SmartArt. Un SmartArt créé ou modifié dans OpenSheet s'ouvre dans Excel comme un groupe de formes d'aspect identique (OpenSheet, lui, le relit comme un SmartArt) ; un SmartArt venu d'Excel et non modifié est réécrit tel quel.
 - Équations : pas de curseur dans l'équation construite, la saisie se fait au format linéaire ; à l'impression, le texte linéaire.
 - Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) ; elle n'est pas imprimée et reste au-dessus des autres objets.
-- Scripts Office : les types ne sont pas vérifiés (une faute de frappe sur un membre n'apparaît qu'à l'exécution) ; pas encore de membres pour la mise en forme conditionnelle, la validation, les tableaux croisés, les commentaires, les formes, les images et les segments ; pas de plages à plusieurs zones ni de protection de feuille ; pas de `fetch`. L'éditeur n'a ni complétion ni recherche.
+- Scripts Office : la vérification avant exécution suit les types d'`ExcelScript` mais se tait dès qu'un type n'est pas certain (`any`, paramètre sans annotation, résultat de `filter`/`map`) ; pas de membres pour les segments, la protection du classeur ni les connecteurs coudés ; pas de `fetch`. Un script qui change la protection d'une feuille ne peut pas être annulé, comme à la main.
+- Enregistreur d'actions : ne sait pas écrire les fils de commentaires, les tableaux croisés, les formes et images, les segments, les sparklines, le plan, la mise en page, les liens, ni les mises en forme conditionnelles autres que « valeur de cellule » et « formule ».
 - Classeurs avec macros : les contrôles de formulaire, les contrôles ActiveX et les feuilles de dialogue ne sont pas lus, donc pas réécrits ; un bouton affecté à une macro est perdu à l'enregistrement.
 - Préférences : les volets absents d'OpenSheet sont grisés (graphique, saisie semi-automatique, enregistrement, compatibilité, sécurité, ruban) ; pas de style de référence L1C1.
 - Correction automatique : la liste de départ est courte (signes et quelques fautes courantes par langue), sans boîte d'exceptions.

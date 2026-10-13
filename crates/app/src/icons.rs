@@ -185,6 +185,8 @@ const ICONS: &[(&str, &str)] = &[
     ("automate-new", r#"<path d="M3.500 2.500H9L12 5.500v3"/><path d="M9 2.500v3h3"/><path d="M3.500 2.500v11h4.500"/><path d="M11.500 10v4.500M9.200 12.200h4.600"/><path d="M6.200 7.800 5 9l1.200 1.200"/>"#),
     ("automate-play", r#"<path d="M4.500 2.800v10.400l8.500-5.200z"/>"#),
     ("automate-macro", r#"<path d="M2.500 3.500h11v9h-11z"/><path d="M2.500 6h11"/><path d="M6.500 8.200v3l2.800-1.500z"/>"#),
+    ("automate-record", r#"<circle cx="8" cy="8" r="5.500"/><circle cx="8" cy="8" r="2.200"/>"#),
+    ("automate-stop", r#"<rect x="4" y="4" width="8" height="8" rx="1"/>"#),
 ];
 
 pub struct Assets;

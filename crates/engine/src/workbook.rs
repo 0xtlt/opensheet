@@ -735,6 +735,12 @@ impl Workbook {
         !self.redo_stack.is_empty()
     }
 
+    /// How many steps can be undone and how many redone: what tells a
+    /// new step from one taken back or done again.
+    pub fn history_depth(&self) -> (usize, usize) {
+        (self.undo_stack.len(), self.redo_stack.len())
+    }
+
     pub fn undo_label(&self) -> Option<&str> {
         self.undo_stack.last().map(|e| e.label.as_str())
     }

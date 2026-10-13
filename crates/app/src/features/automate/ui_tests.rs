@@ -888,3 +888,336 @@ fn saving_without_the_macros_asks_excel_s_question(cx: &mut TestAppContext) {
     assert_eq!(app.update(cx, |app, _| default_extension(app)), "xlsx");
     assert!(!app.update(cx, |app, cx| asks_before_saving(app, &xlsx, cx)));
 }
+
+// ------------------------------------------------------------- completion
+
+/// A new script in the editor, the caret on an empty line inside `main`.
+fn new_script(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<CodeEditorPane> {
+    click_ribbon_new(app, cx);
+    let pane = the_pane(app, cx);
+    pane.update(cx, |pane, cx| pane.editor.update(cx, |editor, cx| editor.set_text("", cx)));
+    cx.simulate_input("function main(workbook: ExcelScript.Workbook) {");
+    cx.simulate_keystrokes("enter");
+    pane
+}
+
+/// The names the list of completions shows, and the selected one.
+fn proposed(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> Option<(Vec<String>, usize)> {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).proposed())
+}
+
+fn hinted(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> Option<String> {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).hinted())
+}
+
+/// The line of the caret, with `|` at the caret.
+fn caret_line(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> String {
+    editor_shown(pane, cx).lines().find(|line| line.contains('|')).unwrap_or_default().trim().to_string()
+}
+
+#[gpui::test]
+fn a_dot_opens_the_list_typing_filters_it_and_return_takes_an_entry(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    assert_eq!(proposed(&pane, cx), None);
+    cx.simulate_input("workbook.");
+    let (names, selected) = proposed(&pane, cx).expect("the list is open");
+    assert!(names.contains(&"getActiveWorksheet".to_string()) && names.contains(&"getTables".to_string()));
+    assert_eq!(selected, 0);
+    // The list is drawn, with the first entries.
+    redraw(cx);
+    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(0)).is_some());
+    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(40)).is_none());
+
+    // Each letter narrows the list; the signature stands beside the entry.
+    cx.simulate_input("getA");
+    assert_eq!(proposed(&pane, cx), Some((vec!["getActiveCell".to_string(), "getActiveWorksheet".to_string(), "getApplication".to_string()], 0)));
+    cx.simulate_input("ctiveW");
+    assert_eq!(proposed(&pane, cx), Some((vec!["getActiveWorksheet".to_string()], 0)));
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail()).as_deref(), Some("(): Worksheet"));
+    // Backspace widens it again.
+    cx.simulate_keystrokes("backspace backspace backspace backspace backspace backspace");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names.len()), Some(3));
+
+    // ↓ and ↑ move in the list, not in the text; Return takes the entry.
+    cx.simulate_keystrokes("down");
+    assert_eq!(proposed(&pane, cx).map(|(_, selected)| selected), Some(1));
+    cx.simulate_keystrokes("down down");
+    assert_eq!(proposed(&pane, cx).map(|(_, selected)| selected), Some(0));
+    cx.simulate_keystrokes("up up");
+    assert_eq!(proposed(&pane, cx).map(|(_, selected)| selected), Some(1));
+    cx.simulate_keystrokes("enter");
+    assert_eq!(proposed(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet|");
+
+    // The chain goes on: the members of what the call returns; Tab takes
+    // an entry too.
+    cx.simulate_input("().");
+    assert!(proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"getRange".to_string()) && !names.contains(&"getActiveWorksheet".to_string())));
+    cx.simulate_input("getRangeB");
+    cx.simulate_keystrokes("tab");
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getRangeByIndexes|");
+    // One undo step takes the entry back, leaving what was typed.
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getRangeB|");
+}
+
+#[gpui::test]
+fn the_list_never_holds_typing_back(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    // Escape closes the list and leaves the text and the pane as they are.
+    cx.simulate_input("workbook.get");
+    assert!(proposed(&pane, cx).is_some());
+    cx.simulate_keystrokes("escape");
+    assert_eq!(proposed(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.get|");
+    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Editor);
+    // The next letter opens it again.
+    cx.simulate_input("T");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["getTable".to_string(), "getTables".to_string()]));
+    // What matches nothing closes the list; the letters are typed all the same.
+    cx.simulate_input("zz");
+    assert_eq!(proposed(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.getTzz|");
+    // Return then breaks the line, as without a list.
+    cx.simulate_keystrokes("enter");
+    assert_eq!(editor_text(&pane, cx).lines().count(), 4);
+    // Nothing is proposed for a name the script does not explain, in a
+    // string or in a comment.
+    cx.simulate_input("thing.");
+    assert_eq!(proposed(&pane, cx), None);
+    cx.simulate_input(" let s = \"workbook.");
+    assert_eq!(proposed(&pane, cx), None);
+    cx.simulate_keystrokes("end");
+    cx.simulate_input("; // workbook.");
+    assert_eq!(proposed(&pane, cx), None);
+    // Moving the caret closes the list.
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("workbook.");
+    assert!(proposed(&pane, cx).is_some());
+    cx.simulate_keystrokes("left");
+    assert_eq!(proposed(&pane, cx), None);
+}
+
+#[gpui::test]
+fn enums_and_variables_are_completed(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    cx.simulate_input("let sheet = workbook.getActiveWorksheet();");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.");
+    assert!(proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"HorizontalAlignment".to_string()) && names.contains(&"ChartType".to_string())));
+    cx.simulate_input("Hor");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names[0].clone()), Some("HorizontalAlignment".to_string()));
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input(".");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names[..4].to_vec()), Some(vec!["general".to_string(), "left".to_string(), "center".to_string(), "right".to_string()]));
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail()).as_deref(), Some("= \"General\""));
+    cx.simulate_input("c");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(caret_line(&pane, cx), "sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center|)");
+    // A click on an entry takes it.
+    cx.simulate_keystrokes("end enter");
+    cx.simulate_input("sheet.getAutoFilter().");
+    redraw(cx);
+    let (names, _) = proposed(&pane, cx).expect("the list is open");
+    let index = names.iter().position(|name| name == "clearCriteria").expect("clearCriteria");
+    let row = pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(index)).expect("the entry is drawn");
+    cx.simulate_click(row, Modifiers::none());
+    assert_eq!(caret_line(&pane, cx), "sheet.getAutoFilter().clearCriteria|");
+    assert_eq!(proposed(&pane, cx), None);
+}
+
+#[gpui::test]
+fn the_parameters_show_inside_the_parentheses_of_a_call(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    cx.simulate_input("workbook.getActiveWorksheet().getCell");
+    assert_eq!(hinted(&pane, cx), None);
+    cx.simulate_keystrokes("escape");
+    cx.simulate_input("(");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell([row: number], column: number): Range"));
+    cx.simulate_input("3, ");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell(row: number, [column: number]): Range"));
+    // Back over the comma with the arrow keys: the first parameter again.
+    cx.simulate_keystrokes("left left");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell([row: number], column: number): Range"));
+    // Escape hides the hint; past the closing parenthesis there is none.
+    cx.simulate_keystrokes("escape");
+    assert_eq!(hinted(&pane, cx), None);
+    cx.simulate_keystrokes("end");
+    assert_eq!(hinted(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getCell(3, )|");
+    // The hint and the list together, in an argument.
+    cx.simulate_keystrokes("left");
+    cx.simulate_input("workbook.getT");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell(row: number, [column: number]): Range"));
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["getTable".to_string(), "getTables".to_string()]));
+    redraw(cx);
+    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(1)).is_some());
+}
+
+#[gpui::test]
+fn a_viewer_of_vba_proposes_nothing(cx: &mut TestAppContext) {
+    let (_, cx) = open(cx);
+    let editor = cx.new(|cx| super::editor::CodeEditor::viewer("Sub A()\n  workbook.\nEnd Sub", super::syntax::Language::Vba, cx));
+    assert_eq!(editor.update(cx, |editor, _| editor.proposed()), None);
+}
+
+// ------------------------------------------------------- find and replace
+
+use super::editor::Bar;
+
+const FIND_TEXT: &str = "function main(workbook: ExcelScript.Workbook) {\n  let range = workbook.getActiveWorksheet().getRange(\"A1\");\n  range.setValue(1);\n  let Range2 = range;\n}\n";
+
+/// The bar shown, how many matches, and the one the selection is on.
+fn found(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> (Option<Bar>, usize, Option<usize>) {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).found())
+}
+
+fn selected(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> String {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).buffer().selected_text().to_string())
+}
+
+#[gpui::test]
+fn find_next_and_previous_with_case_and_whole_words(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Find", FIND_TEXT);
+    let pane = edit(&app, cx, "Find");
+    assert_eq!(found(&pane, cx), (None, 0, None));
+
+    // ⌘F opens the bar; what is typed is looked for as it is typed.
+    cx.simulate_keystrokes("cmd-f");
+    cx.simulate_input("range");
+    redraw(cx);
+    assert_eq!(found(&pane, cx), (Some(Bar::Find), 5, Some(0)));
+    assert_eq!(selected(&pane, cx), "range");
+    assert!(cx.debug_bounds("ce-find-count").is_some());
+    assert_eq!(editor_text(&pane, cx), FIND_TEXT, "the query went to the bar, not to the script");
+
+    // Return goes to the next match, ⇧Return to the one before, round
+    // the ends of the text.
+    cx.simulate_keystrokes("enter");
+    assert_eq!((found(&pane, cx).2, selected(&pane, cx)), (Some(1), "Range".to_string()));
+    cx.simulate_keystrokes("enter enter enter enter");
+    assert_eq!(found(&pane, cx).2, Some(0));
+    cx.simulate_keystrokes("shift-enter");
+    assert_eq!(found(&pane, cx).2, Some(4));
+
+    // Match case, then whole words.
+    click(cx, "ce-find-case");
+    assert_eq!(found(&pane, cx).1, 3);
+    click(cx, "ce-find-case");
+    click(cx, "ce-find-word");
+    assert_eq!(found(&pane, cx).1, 3);
+    click(cx, "ce-find-word");
+    assert_eq!(found(&pane, cx).1, 5);
+    // The arrows of the bar.
+    click(cx, "ce-find-next");
+    click(cx, "ce-find-next");
+    click(cx, "ce-find-prev");
+    assert!(found(&pane, cx).2.is_some());
+
+    // Escape closes the bar and gives the keys back to the text; ⌘G and
+    // ⇧⌘G go on with the same search.
+    cx.simulate_keystrokes("escape");
+    assert_eq!(found(&pane, cx).0, None);
+    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Editor);
+    cx.simulate_keystrokes("cmd-up cmd-g");
+    assert_eq!((found(&pane, cx).2, selected(&pane, cx)), (Some(0), "range".to_string()));
+    cx.simulate_keystrokes("cmd-g cmd-g");
+    assert_eq!(found(&pane, cx).2, Some(2));
+    cx.simulate_keystrokes("cmd-shift-g");
+    assert_eq!(found(&pane, cx).2, Some(1));
+    // ⌘F again offers what is selected.
+    cx.simulate_keystrokes("right shift-alt-right cmd-f");
+    redraw(cx);
+    assert_eq!(found(&pane, cx).0, Some(Bar::Find));
+    // A query that is nowhere.
+    cx.simulate_input("nowhere");
+    assert_eq!(found(&pane, cx), (Some(Bar::Find), 0, None));
+}
+
+#[gpui::test]
+fn replace_one_and_replace_all_as_one_undo_step(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Replace", FIND_TEXT);
+    let pane = edit(&app, cx, "Replace");
+    cx.simulate_keystrokes("cmd-alt-f");
+    cx.simulate_input("range");
+    click(cx, "ce-find-case");
+    assert_eq!(found(&pane, cx), (Some(Bar::Replace), 3, Some(0)));
+    // Tab to the second field, the replacement, Return: the match under
+    // the selection is replaced and the next one selected.
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("cells");
+    cx.simulate_keystrokes("enter");
+    assert!(editor_text(&pane, cx).contains("let cells = workbook"));
+    assert_eq!((found(&pane, cx).1, selected(&pane, cx)), (2, "range".to_string()));
+    // The Replace button does the same.
+    click(cx, "ce-find-replace");
+    assert!(editor_text(&pane, cx).contains("cells.setValue(1);"));
+    cx.simulate_keystrokes("cmd-z cmd-z");
+    assert_eq!(editor_text(&pane, cx), FIND_TEXT);
+
+    // Replace All, without case: every match at once, and one ⌘Z brings
+    // them all back.
+    click(cx, "ce-find-case");
+    assert_eq!(found(&pane, cx).1, 5);
+    click(cx, "ce-find-all");
+    assert_eq!(
+        editor_text(&pane, cx),
+        "function main(workbook: ExcelScript.Workbook) {\n  let cells = workbook.getActiveWorksheet().getcells(\"A1\");\n  cells.setValue(1);\n  let cells2 = cells;\n}\n"
+    );
+    assert_eq!(found(&pane, cx).1, 0);
+    assert!(pane.update(cx, |pane, cx| pane.unsaved(cx)));
+    cx.simulate_keystrokes("escape cmd-z");
+    assert_eq!(editor_text(&pane, cx), FIND_TEXT);
+}
+
+#[gpui::test]
+fn go_to_line(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Lines", FIND_TEXT);
+    let pane = edit(&app, cx, "Lines");
+    for keys in ["cmd-l", "ctrl-g"] {
+        cx.simulate_keystrokes(keys);
+        assert_eq!(found(&pane, cx).0, Some(Bar::GoToLine));
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(found(&pane, cx).0, None);
+        assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 3);
+        cx.simulate_keystrokes("cmd-up");
+    }
+    // A line beyond the last is the last; what is no number goes nowhere.
+    cx.simulate_keystrokes("cmd-l");
+    cx.simulate_input("99");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 6);
+    cx.simulate_keystrokes("cmd-l");
+    cx.simulate_input("x");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 6);
+    // The keys are back in the text.
+    cx.simulate_input("// end");
+    assert!(editor_text(&pane, cx).ends_with("// end"));
+}
+
+#[gpui::test]
+fn what_the_checker_warns_about_does_not_keep_a_script_from_running(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Warned", "set A1 5\nlog unknown member here\nlog done");
+    let pane = edit(&app, cx, "Warned");
+    redraw(cx);
+    // In the list, as a warning, and a click leads to its line.
+    let problems = pane.update(cx, |pane, _| pane.problems.iter().map(|p| (p.kind, p.line)).collect::<Vec<_>>());
+    assert_eq!(problems, [(opensheet_script::ErrorKind::Check, Some(2))]);
+    assert_eq!(pane.update(cx, |pane, _| pane.bottom), Bottom::Problems);
+    click(cx, "ce-problem-0");
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0), 2);
+    // Run is there and runs.
+    click(cx, "ce-run");
+    assert_eq!(value(&app, cx, 0, (0, 0)), Value::Number(5.0));
+    assert!(output(&app, cx).iter().any(|line| line.1 == "done"));
+}
