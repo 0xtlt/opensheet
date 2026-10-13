@@ -1588,6 +1588,9 @@ struct RawObject {
     picture: RawPicture,
     /// The range a linked picture shows (`a14:cameraTool`), as written.
     link: Option<String>,
+    /// The twin of a form control (`a14:compatExt`): the control itself
+    /// is a shape of the VML drawing, read by `control.rs`.
+    control_twin: bool,
     kind: RawKind,
 }
 
@@ -1607,6 +1610,7 @@ impl RawObject {
             adjust: PictureAdjust::default(),
             picture: RawPicture::default(),
             link: None,
+            control_twin: false,
             kind,
         }
     }
@@ -1626,6 +1630,9 @@ impl RawObject {
                         each_child(r, ext, |r, mark| {
                             if mark.name == "decorative" {
                                 self.decorative = mark.attr_bool("val").unwrap_or(false);
+                            }
+                            if mark.name == "compatExt" {
+                                self.control_twin = true;
                             }
                             r.skip(mark);
                         });
@@ -1987,7 +1994,7 @@ fn parse_part(xml: &str, theme: &Theme) -> Vec<RawAnchor> {
                     own = false;
                     index += 1;
                     anchor.index = index;
-                    if anchor.object.is_some() {
+                    if anchor.object.as_ref().is_some_and(|object| !object.control_twin) {
                         out.push(anchor);
                     }
                 }

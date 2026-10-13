@@ -34,6 +34,7 @@ mod chart;
 mod color;
 mod comments;
 mod condfmt;
+mod control;
 mod custom_view;
 mod datatools;
 mod defaults;

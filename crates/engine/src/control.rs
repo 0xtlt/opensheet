@@ -189,12 +189,11 @@ pub struct ControlSource {
     pub shape: String,
     /// The numeric id the shape has there (`_x0000_s1025` is 1025).
     pub shape_id: u32,
-    /// Its `ctrlProp` part.
+    /// Its `ctrlProp` part; empty when the file has none.
     pub properties: String,
-    /// Its `<control>` element in the worksheet.
+    /// What its `<control>` element in the worksheet holds; empty when
+    /// the file has none (a file of Excel 2007).
     pub control: String,
-    /// Its anchor in the drawing part of the sheet, when it has one.
-    pub drawing: String,
     /// The control as read, with its place measured on the sheet as it
     /// was then (`id` 0, no source).
     pub as_read: Box<FormControl>,
@@ -795,7 +794,6 @@ mod tests {
             shape_id: 1025,
             properties: String::new(),
             control: String::new(),
-            drawing: String::new(),
             as_read: Box::new(control.content()),
         };
         control.id = 7;

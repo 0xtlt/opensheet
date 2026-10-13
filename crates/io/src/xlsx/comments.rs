@@ -200,12 +200,20 @@ fn shape(sheet: &Sheet, (row, col): (u32, u32), visible: bool) -> Shape {
 /// The VML drawing of the notes of one sheet, shape for shape as Excel
 /// writes it for new notes: boxes in the colours of the system's tooltips,
 /// text flush left. `first_block` is the first `idmap` number of the sheet.
+#[cfg(test)]
 fn vml_xml(shapes: &[Shape], first_block: usize) -> String {
+    vml_xml_with(shapes, first_block, "", 0)
+}
+
+/// [`vml_xml`] followed by the shapes of the form controls of the sheet
+/// (`controls`, `control_count` of them, see `control.rs`), which share
+/// the drawing and its blocks of ids.
+fn vml_xml_with(shapes: &[Shape], first_block: usize, controls: &str, control_count: usize) -> String {
     let mut x = String::from(
         "<xml xmlns:v=\"urn:schemas-microsoft-com:vml\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:x=\"urn:schemas-microsoft-com:office:excel\">",
     );
     x.push_str("<o:shapelayout v:ext=\"edit\"><o:idmap v:ext=\"edit\" data=\"");
-    for block in 0..blocks(shapes.len()) {
+    for block in 0..blocks(shapes.len() + control_count) {
         if block > 0 {
             x.push(',');
         }
@@ -257,6 +265,7 @@ fn vml_xml(shapes: &[Shape], first_block: usize) -> String {
         }
         x.push_str("</x:ClientData></v:shape>");
     }
+    x.push_str(controls);
     x.push_str("</xml>");
     x
 }
@@ -393,10 +402,12 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
     let mut people: Vec<&Person> = Vec::new();
     // Parts are numbered in the order of the sheets that need them.
     let (mut notes_parts, mut thread_parts) = (0, 0);
+    // A sheet with form controls has a VML drawing without having notes.
+    let mut vml_parts = 0;
     let mut next_block = 1;
     for (index, sheet) in wb.sheets.iter().enumerate() {
         let links = SheetLinks::of(sheet);
-        let (Some(vml_id), Some(comments_id)) = (links.vml, links.comments) else {
+        let Some(vml_id) = links.vml else {
             continue;
         };
         // Authors are listed once and named by their place in the list.
@@ -455,19 +466,26 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
             shapes.push(shape(sheet, cell, visible));
         }
 
-        notes_parts += 1;
+        vml_parts += 1;
+        let controls = sheet.controls.len();
         extras.add_default("vml", CT_VML);
         extras.add_part(
-            format!("xl/drawings/vmlDrawing{notes_parts}.vml"),
+            format!("xl/drawings/vmlDrawing{vml_parts}.vml"),
             None,
-            vml_xml(&shapes, next_block),
+            vml_xml_with(&shapes, next_block, &super::control::vml_shapes(wb, index), controls),
         );
         extras.relate_sheet(
             index,
             vml_id,
             &format!("{NS_DOC_REL}/vmlDrawing"),
-            &format!("../drawings/vmlDrawing{notes_parts}.vml"),
+            &format!("../drawings/vmlDrawing{vml_parts}.vml"),
         );
+        next_block += blocks(shapes.len() + controls);
+        // The rest is the part of the notes.
+        let Some(comments_id) = links.comments else {
+            continue;
+        };
+        notes_parts += 1;
 
         let mut x = String::from(XML_DECL);
         w!(x, "<comments xmlns=\"{NS_MAIN}\"");
@@ -497,7 +515,6 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
             &format!("{NS_DOC_REL}/comments"),
             &format!("../comments{notes_parts}.xml"),
         );
-        next_block += blocks(shapes.len());
 
         if let Some(threads_id) = links.threads {
             thread_parts += 1;

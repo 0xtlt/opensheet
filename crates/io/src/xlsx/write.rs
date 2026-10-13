@@ -963,7 +963,9 @@ impl SheetWriter<'_> {
         page::write(&mut x, &sheet.page);
         // drawing, legacyDrawing, tableParts: what lives in parts of its
         // own (charts, pictures and shapes; the boxes of notes; tables).
-        SheetLinks::of(sheet).push_elements(&mut x);
+        // The form controls have their block among them.
+        let links = SheetLinks::of(sheet);
+        links.push_elements_with(&mut x, &super::control::sheet_xml(self.wb, index, &links));
         // extLst: one `<ext>` per feature, put in the order Excel writes
         // them by `SheetExtensions`.
         let mut extensions = super::ext::SheetExtensions::default();
