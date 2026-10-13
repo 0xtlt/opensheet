@@ -4,6 +4,7 @@
 mod common;
 use common::*;
 use opensheet_engine::Rect;
+use opensheet_engine::chart::{ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::locale::Locale;
 use opensheet_engine::style::BorderStyle;
 use opensheet_engine::workbook::Workbook;
@@ -123,6 +124,24 @@ fn tables() {
     assert_eq!(wb.sheets[0].tables[0].columns.len(), 2);
 }
 
+fn charts() {
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/charts.ts"));
+    let chart = &wb.sheets[0].charts[0];
+    assert_eq!((chart.name.as_str(), chart.kind, chart.series.len()), ("Stock", ChartKind::StackedBar, 2));
+    assert_eq!((chart.title.clone(), chart.legend), (ChartTitle::Text("Stock".into()), LegendPos::TopRight));
+    assert_eq!((chart.anchor, chart.size), ((1, 2), (400.0, 800.0 / 3.0)));
+    // Charted from another sheet, by rows: three series that name their sheet.
+    let other = &wb.sheets[1].charts[0];
+    assert_eq!((other.kind, other.series.len()), (ChartKind::LineMarkers, 3));
+    assert_eq!(wb.chart_data(1, other).series[0].values, [Some(10.0), Some(1.5)]);
+}
+
+#[test]
+fn charts_their_titles_and_their_places() {
+    charts();
+}
+
 #[test]
 fn worksheets_of_a_workbook() {
     worksheets();
@@ -180,7 +199,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts] {
         scenario();
     }
     let called = members_called();

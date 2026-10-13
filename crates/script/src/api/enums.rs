@@ -1,6 +1,8 @@
 //! The enums of the `ExcelScript` namespace, with Excel's names and
 //! values. They list every member Excel has: a member OpenSheet cannot
 //! honour is refused by the method it is given to, with its name.
+//! `ChartType` alone lists only the charts OpenSheet draws: reading
+//! another of its members fails, with its name.
 
 use super::ApiEnum;
 
@@ -32,6 +34,18 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
     ApiEnum {
         name: "CalculationType",
         members: members!(recalculate "Recalculate", full "Full", fullRebuild "FullRebuild"),
+    },
+    ApiEnum {
+        name: "ChartLegendPosition",
+        members: members!(invalid "Invalid", top "Top", bottom "Bottom", left "Left", right "Right", corner "Corner", custom "Custom"),
+    },
+    ApiEnum {
+        name: "ChartSeriesBy",
+        members: members!(auto "Auto", columns "Columns", rows "Rows"),
+    },
+    ApiEnum {
+        name: "ChartType",
+        members: members!(columnClustered "ColumnClustered", columnStacked "ColumnStacked", columnStacked100 "ColumnStacked100", _3DColumnClustered "3DColumnClustered", _3DColumnStacked "3DColumnStacked", _3DColumnStacked100 "3DColumnStacked100", line "Line", lineStacked "LineStacked", lineStacked100 "LineStacked100", lineMarkers "LineMarkers", lineMarkersStacked "LineMarkersStacked", lineMarkersStacked100 "LineMarkersStacked100", _3DLine "3DLine", pie "Pie", _3DPie "3DPie", doughnut "Doughnut", barClustered "BarClustered", barStacked "BarStacked", barStacked100 "BarStacked100", _3DBarClustered "3DBarClustered", _3DBarStacked "3DBarStacked", _3DBarStacked100 "3DBarStacked100", area "Area", areaStacked "AreaStacked", areaStacked100 "AreaStacked100", _3DArea "3DArea", _3DAreaStacked "3DAreaStacked", _3DAreaStacked100 "3DAreaStacked100", xyscatter "XYScatter", xyscatterSmooth "XYScatterSmooth", xyscatterSmoothNoMarkers "XYScatterSmoothNoMarkers", xyscatterLines "XYScatterLines", xyscatterLinesNoMarkers "XYScatterLinesNoMarkers", bubble "Bubble", radar "Radar", radarMarkers "RadarMarkers", radarFilled "RadarFilled"),
     },
     ApiEnum {
         name: "ClearApplyTo",

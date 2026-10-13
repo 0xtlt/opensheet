@@ -15,7 +15,7 @@ use opensheet_engine::workbook::{Content, Sheet};
 
 use super::util::{color_arg, color_text, parse_color, range_arg, resolve, table_fail};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
-use super::{ApiClass, Call, Res, Ret, class, enum_value, object, state_of, table};
+use super::{ApiClass, Call, Res, Ret, chart, class, enum_value, object, state_of, table};
 use crate::host::{Host, MAX_SHEETS, rect_from};
 
 /// The sheet a Worksheet object (or one of its parts) stands for.
@@ -402,6 +402,18 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         let sheet = this_sheet(h, c)?;
         let (on, rect) = range_arg(h, c, 0, sheet)?;
         table::add(h, c, on, rect)
+    };
+    getCharts "(): Chart[]" "The charts of the worksheet." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        Ok(Ret::Object(chart::charts_of(h, sheet)))
+    };
+    getChart "(name: string): Chart | undefined" "The chart of the worksheet with this name; undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        chart::find(h, c, sheet)
+    };
+    addChart "(type: ExcelScript.ChartType, sourceData: Range, seriesBy?: ExcelScript.ChartSeriesBy): Chart" "Adds a chart of a range: labels in its first row and column are found as when a chart is inserted by hand." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        chart::add(h, c, sheet)
     };
     getNames "(): NamedItem[]" "The defined names whose scope is the worksheet." => |h, c| {
         let sheet = this_sheet(h, c)?;

@@ -8,6 +8,7 @@ use serde_json::Value as J;
 use crate::ErrorKind;
 use crate::host::Host;
 
+mod chart;
 mod enums;
 mod format;
 mod range;
@@ -214,6 +215,9 @@ pub(crate) static API: &[ApiClass] = &[
     table::TABLE_COLUMN,
     table::FILTER,
     table::TABLE_SORT,
+    chart::CHART,
+    chart::CHART_TITLE,
+    chart::CHART_LEGEND,
 ];
 
 pub(crate) use enums::ENUMS;
