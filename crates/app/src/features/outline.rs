@@ -629,7 +629,7 @@ impl Feature for Outline {
 /// The Outline group of the Data tab (the last one: the caller takes its
 /// right border off).
 pub fn ribbon_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
-    let compact = app.ribbon_level >= 3;
+    let compact = crate::ribbon_fold::level() >= 3;
     let small = |id: &'static str, cmd: Cmd, cx: &mut Cx| -> AnyElement {
         if compact { app.cmd_icon(id, cmd, cx) } else { app.cmd_labeled(id, cmd, false, cx) }
     };

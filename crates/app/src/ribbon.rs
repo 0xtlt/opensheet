@@ -20,6 +20,8 @@ use opensheet_engine::functions::{self, Category};
 use opensheet_engine::ops::{BorderPreset, Direction, PasteMode};
 use opensheet_engine::style::{HAlign, Underline, VAlign};
 use opensheet_engine::workbook::ClearMode;
+use std::cell::Cell;
+use std::rc::Rc;
 
 type Cx<'a> = Context<'a, ExcelApp>;
 
@@ -52,7 +54,7 @@ pub fn group(label: &'static str, content: impl IntoElement) -> gpui::Div {
 pub fn launcher_group(label: &'static str, content: impl IntoElement, launcher: Option<AnyElement>) -> gpui::Div {
     // When the window is too narrow the group is folded into one button;
     // its drop-down is the group as it is built here (`ribbon_fold.rs`).
-    let slot = fold::next_group();
+    let slot = fold::next_group(label);
     let whole = whole_group(label, content, launcher);
     if slot.mode != fold::Mode::Folded {
         return whole;
@@ -113,24 +115,137 @@ pub fn rows(children: Vec<AnyElement>) -> gpui::Div {
     div().flex().flex_col().justify_center().gap(px(2.)).children(children)
 }
 
-/// Controls side by side.
-pub fn row(children: Vec<AnyElement>) -> AnyElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(1.))
-        .children(children)
-        .into_any_element()
+/// Controls side by side. A row that holds several large buttons stacks
+/// its controls in three rows when its group gives way, as Excel does
+/// (`ribbon_fold.rs`).
+pub fn row(mut children: Vec<AnyElement>) -> AnyElement {
+    let larges: Vec<usize> = children.iter_mut().filter_map(|child| child.downcast_mut::<LargeButton>().map(|large| large.number)).collect();
+    if larges.len() < 2 {
+        return side_by_side(children).into_any_element();
+    }
+    Row {
+        children,
+        stacked: fold::row_of_larges(&larges),
+    }
+    .into_any_element()
+}
+
+fn side_by_side(children: Vec<AnyElement>) -> gpui::Div {
+    div().flex().items_center().gap(px(1.)).children(children)
+}
+
+/// A row of large buttons: how it lays its controls out is only known
+/// once its group is, after the row itself was built.
+#[derive(IntoElement)]
+struct Row {
+    children: Vec<AnyElement>,
+    stacked: Rc<Cell<bool>>,
+}
+
+impl RenderOnce for Row {
+    fn render(self, _: &mut Window, _: &mut gpui::App) -> impl IntoElement {
+        if self.stacked.get() {
+            // Three rows high, filled column after column.
+            div()
+                .h(px(3.0 * ROW_H + 4.0))
+                .flex()
+                .flex_col()
+                .flex_wrap()
+                .content_start()
+                .items_start()
+                .gap_x(px(2.))
+                .gap_y(px(2.))
+                .children(self.children)
+        } else {
+            side_by_side(self.children)
+        }
+    }
+}
+
+/// A large button as the helpers hand it out: `row` tells it from its
+/// other controls, to know which rows restack. It is its button and
+/// nothing more.
+pub struct LargeButton {
+    button: AnyElement,
+    /// Its number among the large buttons of its group.
+    number: usize,
+}
+
+impl IntoElement for LargeButton {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl gpui::Element for LargeButton {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<gpui::ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        window: &mut Window,
+        cx: &mut gpui::App,
+    ) -> (gpui::LayoutId, ()) {
+        (self.button.request_layout(window, cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        _: gpui::Bounds<gpui::Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut gpui::App,
+    ) {
+        self.button.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&gpui::GlobalElementId>,
+        _: Option<&gpui::InspectorElementId>,
+        _: gpui::Bounds<gpui::Pixels>,
+        _: &mut (),
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut gpui::App,
+    ) {
+        self.button.paint(window, cx);
+    }
 }
 
 /// A thin vertical line between controls of a row.
 pub fn sep() -> AnyElement {
-    div()
-        .w(px(1.))
-        .h(px(16.))
-        .mx(px(3.))
-        .bg(c(theme::BORDER))
-        .into_any_element()
+    Sep { hidden: fold::sep_built() }.into_any_element()
+}
+
+/// What `sep` builds: the line goes when its group is restacked.
+#[derive(IntoElement)]
+struct Sep {
+    hidden: Rc<Cell<bool>>,
+}
+
+impl RenderOnce for Sep {
+    fn render(self, _: &mut Window, _: &mut gpui::App) -> impl IntoElement {
+        if self.hidden.get() {
+            div().hidden()
+        } else {
+            div().w(px(1.)).h(px(16.)).mx(px(3.)).bg(c(theme::BORDER))
+        }
+    }
 }
 
 impl ExcelApp {
@@ -152,16 +267,6 @@ impl ExcelApp {
         self.large_state(id, icon_name, cmd.label_in(self), dropdown, cmd.checked(self), cmd.enabled(self), cx, move |this, window, cx| {
             this.run_from(id, cmd, window, cx)
         })
-    }
-
-    /// A drop-down button that is large while the window is wide and takes
-    /// one row when the ribbon is short of room.
-    fn cmd_adaptive<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
-        if self.ribbon_level >= 2 {
-            self.cmd_labeled(id, cmd, true, cx)
-        } else {
-            self.cmd_large(id, cmd, true, cx)
-        }
     }
 
     /// A one-row button with icon and label running a command.
@@ -296,13 +401,13 @@ impl ExcelApp {
             .into_any_element()
     }
 
-    /// Whether a labelled button still shows its text at the current
-    /// ribbon width (groups lose their labels progressively, as in Office).
+    /// Whether a labelled button of the Home tab still shows its text:
+    /// Excel drops these labels when their group gives way (Clipboard and
+    /// Alignment at once, Cells and Editing once they are compact).
     fn label_visible(&self, id: &str) -> bool {
-        let level = self.ribbon_level;
+        let level = fold::level();
         match id {
-            "rb-cut" | "rb-copy" | "rb-painter" => level < 1,
-            "rb-wrap" | "rb-merge" => level < 3,
+            "rb-cut" | "rb-copy" | "rb-painter" | "rb-wrap" | "rb-merge" => level < 2,
             "rb-insert" | "rb-delete" | "rb-format" | "rb-fill-series" | "rb-clear" | "rb-sum" => level < 4,
             _ => true,
         }
@@ -364,19 +469,25 @@ impl ExcelApp {
     ) -> AnyElement {
         fold::saw_icon(icon_name);
         let color = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
-        // In a group short of room, a large button is a small one that
-        // has lost its label (the tip still names it).
-        if fold::compact() {
+        // In a group short of room, a large button is a small one: with
+        // its label on one line first, then without (the tip still names
+        // it).
+        let (form, number) = fold::large_form();
+        let numbered = |button: AnyElement| LargeButton { button, number }.into_any_element();
+        if form != fold::LargeForm::Large {
             let content = div()
                 .flex()
                 .items_center()
-                .gap(px(2.))
+                .gap(px(if form == fold::LargeForm::Labeled { 5. } else { 2. }))
+                .px(px(2.))
+                .text_color(c(color))
                 .child(icon(icon_name, 16.0, color))
+                .when(form == fold::LargeForm::Labeled, |d| d.child(div().whitespace_nowrap().child(label)))
                 .when(dropdown, |d| d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED)));
-            return self.small(id, content, label, active, cx, f).into_any_element();
+            return numbered(self.small(id, content, label, active, cx, f).into_any_element());
         }
         let (line1, line2) = split_label(label);
-        div()
+        let button = div()
             .id(id)
             .relative()
             .h(px(68.))
@@ -413,7 +524,8 @@ impl ExcelApp {
             .child(self.anchor(id))
             .tooltip(tooltip(label))
             .on_click(cx.listener(move |this, _, window, cx| f(this, window, cx)))
-            .into_any_element()
+            .into_any_element();
+        numbered(button)
     }
 
     pub fn combo(
@@ -667,10 +779,8 @@ impl ExcelApp {
         format!("{tab}/{}", crate::i18n::lang().code())
     }
 
-    /// The groups of the tab shown, at a compaction level of the tabs
-    /// that have their own (`ribbon_level`).
-    pub(crate) fn ribbon_groups(&mut self, level: u8, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        self.ribbon_level = level;
+    /// The groups of the tab shown.
+    pub(crate) fn ribbon_groups(&mut self, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
         let context = features::context_tabs(self);
         let owner = self
             .context_tab
@@ -1144,18 +1254,11 @@ impl ExcelApp {
 
         // Styles
         let style_buttons = vec![
-            self.cmd_adaptive("rb-cond", condfmt::Cmd::Menu, cx),
-            self.cmd_adaptive("rb-table", tables::Cmd::FormatAs, cx),
-            self.cmd_adaptive("rb-cellstyles", edit_tools::Cmd::CellStyles, cx),
+            self.cmd_large("rb-cond", condfmt::Cmd::Menu, true, cx),
+            self.cmd_large("rb-table", tables::Cmd::FormatAs, true, cx),
+            self.cmd_large("rb-cellstyles", edit_tools::Cmd::CellStyles, true, cx),
         ];
-        let styles = group(
-            t("Styles", "Styles"),
-            if self.ribbon_level >= 2 {
-                rows(style_buttons).into_any_element()
-            } else {
-                row(style_buttons)
-            },
-        );
+        let styles = group(t("Styles", "Styles"), row(style_buttons));
 
         // Cells
         let cells = group(

@@ -237,7 +237,7 @@ fn tool(app: &ExcelApp, id: &'static str, cmd: Cmd, dropdown: bool, compact: boo
 /// The Formula Auditing group of the Formulas tab. As the window narrows
 /// the tracing commands lose their labels first, then the others.
 pub fn auditing_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
-    let (tracing, others) = (app.ribbon_level >= 2, app.ribbon_level >= 4);
+    let (tracing, others) = (crate::ribbon_fold::level() >= 2, crate::ribbon_fold::level() >= 4);
     group(
         t("Formula Auditing", "Vérification des formules"),
         div()
@@ -262,7 +262,7 @@ pub fn auditing_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
 /// The Calculation group of the Formulas tab (the last one: the caller
 /// takes its right border off).
 pub fn calculation_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
-    let compact = app.ribbon_level >= 2;
+    let compact = crate::ribbon_fold::level() >= 2;
     group(
         t("Calculation", "Calcul"),
         div()

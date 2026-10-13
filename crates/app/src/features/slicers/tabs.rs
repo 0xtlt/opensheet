@@ -387,7 +387,7 @@ pub(super) fn set_style(app: &mut ExcelApp, name: &str, cx: &mut Cx) {
 /// The gallery as the tab shows it: the first styles and the button that
 /// opens them all. A narrow window only keeps the button.
 fn ribbon_gallery(app: &mut ExcelApp, cx: &mut Cx) -> AnyElement {
-    let Some((names, current)) = styles_of(app).filter(|_| app.ribbon_level < 3) else {
+    let Some((names, current)) = styles_of(app).filter(|_| crate::ribbon_fold::level() < 3) else {
         return app.cmd_large(ANCHOR, Cmd::Styles, true, cx);
     };
     // The row holding the current style.

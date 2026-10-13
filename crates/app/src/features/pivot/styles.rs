@@ -112,7 +112,7 @@ fn set_style(app: &mut ExcelApp, id: u32, name: String, window: &mut Window, cx:
 /// current one, and the button that opens the whole gallery. A narrow
 /// window only keeps the button.
 pub(super) fn ribbon_gallery(app: &mut ExcelApp, cx: &mut Cx) -> AnyElement {
-    let Some(pivot) = active_pivot(app).filter(|_| app.ribbon_level < 3) else {
+    let Some(pivot) = active_pivot(app).filter(|_| crate::ribbon_fold::level() < 3) else {
         return app.cmd_large(ANCHOR, Cmd::Styles, true, cx);
     };
     let (id, options) = (pivot.id, pivot.style.clone());

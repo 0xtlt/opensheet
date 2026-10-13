@@ -2,7 +2,7 @@
 //! colour sets and the menu of font pairs. Each entry is drawn from what
 //! it would give the workbook: its colours, its fonts.
 
-use super::{Cmd, ThemesUi, color_choices, current_theme, font_choices, gallery_themes, set_colors, set_fonts, set_theme, shown_name};
+use super::{Cmd, ThemesUi, color_choices, custom_sets, current_theme, font_choices, gallery_themes, set_colors, set_fonts, set_theme, shown_name};
 use crate::app::ExcelApp;
 use crate::features::{Command, Cx};
 use crate::grid::FontResolver;
@@ -44,11 +44,7 @@ pub(super) fn open(app: &mut ExcelApp, kind: Kind, window: &mut Window, cx: &mut
         Some(bounds) => point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)),
         None => window.mouse_position(),
     };
-    let ui = app.ext_mut::<ThemesUi>();
-    let custom = Rc::new(ThemesUi {
-        colors: ui.colors.clone(),
-        fonts: ui.fonts.clone(),
-    });
+    let custom = Rc::new(custom_sets());
     let gallery = Gallery {
         app: cx.weak_entity(),
         kind,

@@ -466,6 +466,14 @@ pub struct Workbook {
     pub(crate) calc: crate::recalc::CalcState,
     /// The VBA project of the workbook, kept as it was read, see `vba.rs`.
     pub vba: crate::vba::Macros,
+    /// The custom lists of the user (Preferences ▸ Custom Lists), after
+    /// the built-in ones of `custom_lists`: the fill handle continues
+    /// them and the Sort dialog offers them. They belong to the
+    /// application, not to the file, and are not part of undo.
+    pub user_lists: Vec<Vec<String>>,
+    /// What tables do by themselves after an edit, see
+    /// `tables_after_edit`. The application's choice, like `user_lists`.
+    pub table_auto: crate::table::TableAuto,
     undo_stack: Vec<UndoEntry>,
     redo_stack: Vec<UndoEntry>,
     pending: Vec<Change>,
@@ -489,6 +497,8 @@ impl Workbook {
             caches: crate::features::Caches::default(),
             calc: crate::recalc::CalcState::default(),
             vba: crate::vba::Macros::default(),
+            user_lists: Vec::new(),
+            table_auto: crate::table::TableAuto::default(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             pending: Vec::new(),
