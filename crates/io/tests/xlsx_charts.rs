@@ -680,15 +680,19 @@ fn references_are_made_fit_for_files() {
     assert!(xml.contains("<c:cat><c:strRef><c:f>#REF!</c:f></c:strRef></c:cat><c:val><c:numRef><c:f>#REF!</c:f></c:numRef></c:val>"));
     assert!(!xml.contains("Gone"));
     // Of a block: the first cell for a name, the first column (or row) for
-    // values, the column next to them for categories.
+    // values; the columns of the categories are levels of labels, the
+    // one next to the values first.
     assert!(xml.contains("<c:tx><c:strRef><c:f>Sheet1!$A$1</c:f><c:strCache><c:ptCount val=\"1\"/><c:pt idx=\"0\"><c:v>g0</c:v></c:pt></c:strCache></c:strRef></c:tx>"));
-    assert!(xml.contains("<c:cat><c:strRef><c:f>Sheet1!$B$1:$B$3</c:f><c:strCache><c:ptCount val=\"3\"/><c:pt idx=\"0\"><c:v>c0</c:v></c:pt><c:pt idx=\"1\"><c:v>c1</c:v></c:pt><c:pt idx=\"2\"><c:v>c2</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>Sheet1!$C$1:$C$3</c:f>"));
+    assert!(
+        xml.contains("<c:cat><c:multiLvlStrRef><c:f>Sheet1!$A$1:$B$3</c:f><c:multiLvlStrCache><c:ptCount val=\"3\"/><c:lvl><c:pt idx=\"0\"><c:v>c0</c:v></c:pt><c:pt idx=\"1\"><c:v>c1</c:v></c:pt><c:pt idx=\"2\"><c:v>c2</c:v></c:pt></c:lvl><c:lvl><c:pt idx=\"0\"><c:v>g0</c:v></c:pt><c:pt idx=\"1\"><c:v>g1</c:v></c:pt><c:pt idx=\"2\"><c:v>g2</c:v></c:pt></c:lvl></c:multiLvlStrCache></c:multiLvlStrRef></c:cat><c:val><c:numRef><c:f>Sheet1!$C$1:$C$3</c:f>"),
+        "{xml}"
+    );
     // A name in several cells of a column is a name; text among the values
     // has no point.
     assert!(xml.contains("<c:tx><c:strRef><c:f>Sheet1!$A$1:$A$3</c:f><c:strCache><c:ptCount val=\"3\"/><c:pt idx=\"0\"><c:v>g0</c:v></c:pt><c:pt idx=\"1\"><c:v>g1</c:v></c:pt><c:pt idx=\"2\"><c:v>g2</c:v></c:pt></c:strCache></c:strRef></c:tx>"));
     assert!(xml.contains("<c:val><c:numRef><c:f>Sheet1!$A$1:$D$1</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val=\"4\"/><c:pt idx=\"2\"><c:v>30</c:v></c:pt><c:pt idx=\"3\"><c:v>300</c:v></c:pt></c:numCache></c:numRef></c:val>"));
     assert!(xml.contains("<c:val><c:numRef><c:f>Data!$A$1:$A$1048576</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val=\"1048576\"/><c:pt idx=\"0\"><c:v>3</c:v></c:pt>"));
-    for block in ["$A$1:$B$3", "$C$1:$D$3", "$A$1:$D$2", "XFD"] {
+    for block in ["$C$1:$D$3", "$A$1:$D$2", "XFD"] {
         assert!(!xml.contains(block), "{block} is no row or column");
     }
     // An empty title is still a title.
@@ -716,7 +720,7 @@ fn references_are_made_fit_for_files() {
         ("Sheet1!$B$1", "Sheet1!$C$1:$C$3", Some("Sheet1!$B$1:$B$3")),
         ("None", "data!$A:$A", None),
         ("None", "Data!$1:$1", None),
-        ("Sheet1!$A$1", "Sheet1!$C$1:$C$3", Some("Sheet1!$B$1:$B$3")),
+        ("Sheet1!$A$1", "Sheet1!$C$1:$C$3", Some("Sheet1!$A$1:$B$3")),
         ("Sheet1!$A$1:$A$3", "Sheet1!$A$1:$D$1", None),
         ("None", "Data!$A$1:$A$1048576", None),
     ];
@@ -1198,6 +1202,9 @@ const CONTENT: &[(&str, &[&str])] = &[
         &["c:formatCode", "c:ptCount", "c:pt", "c:extLst"],
     ),
     ("c:strRef", &["c:f", "c:strCache", "c:extLst"]),
+    ("c:multiLvlStrRef", &["c:f", "c:multiLvlStrCache", "c:extLst"]),
+    ("c:multiLvlStrCache", &["c:ptCount", "c:lvl", "c:extLst"]),
+    ("c:lvl", &["c:pt"]),
     ("c:numRef", &["c:f", "c:numCache", "c:extLst"]),
     ("c:strCache", &["c:ptCount", "c:pt", "c:extLst"]),
     (
@@ -1490,6 +1497,7 @@ const CONTENT: &[(&str, &[&str])] = &[
 /// Elements that may occur once only where they occur several times in a
 /// row would be accepted by [`CONTENT`].
 const REPEATABLE: &[&str] = &[
+    "c:lvl",
     "c:areaChart",
     "c:barChart",
     "c:lineChart",
@@ -2244,8 +2252,8 @@ fn charts_from_other_applications() {
     assert_eq!(pie.series[0].labels, None);
     assert_eq!(
         refs(&pie.series[0]),
-        ("Data!$C$2:$C$4".into(), Some("Data!$B$2:$B$4".into())),
-        "of two levels of categories, the inner one"
+        ("Data!$C$2:$C$4".into(), Some("Data!$A$2:$B$4".into())),
+        "the two levels of categories"
     );
     assert_eq!(pie.series[0].color, None);
     assert_eq!(
@@ -5951,4 +5959,52 @@ fn layouts_and_fonts_of_an_excel_chart_survive_a_change() {
     let mut expected = read.content();
     expected.legend_overlay = true;
     assert_same_content("regenerated", &expected, &again.sheets[0].charts[0]);
+}
+
+/// Category labels in two columns are two levels of labels: written as
+/// Excel caches them, read back as the block, and plotted on two levels.
+#[test]
+fn categories_on_several_levels_go_through_a_file() {
+    let mut wb = Workbook::new(Locale::en());
+    let rows = [
+        ("Year", "Quarter", "Sales", "Costs"),
+        ("2024", "Q1", "10", "7"),
+        ("", "Q2", "12", "8"),
+        ("", "Q3", "9", "6"),
+        ("2025", "Q1", "14", "9"),
+        ("", "Q2", "11", "8"),
+    ];
+    for (r, row) in rows.iter().enumerate() {
+        for (c, text) in [row.0, row.1, row.2, row.3].iter().enumerate() {
+            if !text.is_empty() {
+                wb.set_cell_text(0, r as u32, c as u32, text).unwrap();
+            }
+        }
+    }
+    let mut chart = wb.chart_from_range(0, Rect::new(0, 1, 5, 3), ChartKind::Column);
+    let name = wb.sheets[0].name.clone();
+    let block = match parse_formula(&format!("{name}!$A$2:$B$6"), Locale::en()) {
+        Ok(Expr::Ref(r)) => r,
+        other => panic!("{other:?}"),
+    };
+    for series in &mut chart.series {
+        series.categories = Some(block.clone());
+    }
+    chart.anchor = (7, 0);
+    wb.add_chart(0, chart);
+    wb.commit("chart");
+    let bytes = to_bytes(&wb);
+    keep_sample("chart-multilevel.xlsx", &bytes);
+    let xml = part(&bytes, "xl/charts/chart1.xml");
+    assert_schema_order("chart1.xml", &xml);
+    let cat = "<c:cat><c:multiLvlStrRef><c:f>Sheet1!$A$2:$B$6</c:f><c:multiLvlStrCache><c:ptCount val=\"5\"/><c:lvl><c:pt idx=\"0\"><c:v>Q1</c:v></c:pt><c:pt idx=\"1\"><c:v>Q2</c:v></c:pt><c:pt idx=\"2\"><c:v>Q3</c:v></c:pt><c:pt idx=\"3\"><c:v>Q1</c:v></c:pt><c:pt idx=\"4\"><c:v>Q2</c:v></c:pt></c:lvl><c:lvl><c:pt idx=\"0\"><c:v>2024</c:v></c:pt><c:pt idx=\"3\"><c:v>2025</c:v></c:pt></c:lvl></c:multiLvlStrCache></c:multiLvlStrRef></c:cat>";
+    assert_eq!(xml.matches(cat).count(), 2, "{xml}");
+    assert!(xml.contains("<c:noMultiLvlLbl val=\"0\"/>"));
+    let back = load(&bytes);
+    let read = &back.sheets[0].charts[0];
+    assert_eq!(refs(&read.series[0]), ("Sheet1!$C$2:$C$6".into(), Some("Sheet1!$A$2:$B$6".into())));
+    let data = back.chart_data(0, read);
+    assert_eq!(data.categories, ["Q1", "Q2", "Q3", "Q1", "Q2"]);
+    assert_eq!(data.outer_levels, [["2024", "", "", "2025", ""]]);
+    assert_eq!(to_bytes(&back), bytes);
 }

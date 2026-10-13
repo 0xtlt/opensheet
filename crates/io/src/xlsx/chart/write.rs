@@ -30,7 +30,7 @@ use opensheet_engine::chart::{
     Axis, AxisCrossing, BlanksAs, Chart, ChartKind, ChartTitle, DEFAULT_CHART_SIZE, Dash,
     DataLabels, DisplayUnit, ErrorAmount, ErrorDirection, Family, Fill, Grouping, LabelOffset,
     LegendPos, Line, ManualLayout, Marker, MarkerShape, Series, SeriesName, ShapeFormat,
-    TextFormat, TrendKind,
+    TextFormat, TrendKind, category_levels,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::workbook::Content;
@@ -1032,6 +1032,51 @@ impl ChartWriter<'_> {
         x.push_str("</c:strRef>");
     }
 
+    /// Labels on several levels (`c:multiLvlStrRef`) as Excel caches
+    /// them: the level next to the plot first, and in each level the
+    /// points that have a text.
+    fn push_multi_level(&self, x: &mut String, r: &RefExpr, points: usize, levels: &[&[String]]) {
+        x.push_str("<c:multiLvlStrRef><c:f>");
+        push_text(x, &self.formula(r));
+        w!(x, "</c:f><c:multiLvlStrCache><c:ptCount val=\"{points}\"/>");
+        for level in levels {
+            x.push_str("<c:lvl>");
+            for (index, text) in level.iter().enumerate().filter(|(_, text)| !text.is_empty()) {
+                w!(x, "<c:pt idx=\"{index}\"><c:v>");
+                push_cell_text(x, text);
+                x.push_str("</c:v></c:pt>");
+            }
+            x.push_str("</c:lvl>");
+        }
+        x.push_str("</c:multiLvlStrCache></c:multiLvlStrRef>");
+    }
+
+    /// The labels of a block of cells holding one level per column
+    /// (`in_columns`) or per row, the one next to the data last.
+    fn push_label_block(&self, x: &mut String, r: &RefExpr, in_columns: bool) {
+        let sheet = match &r.sheet {
+            Some(name) => self.wb.sheet_index(name),
+            None => Some(self.sheet),
+        };
+        let Some(sheet) = sheet.filter(|sheet| *sheet < self.wb.sheets.len()) else {
+            // Nothing to cache of a sheet that is gone.
+            x.push_str("<c:multiLvlStrRef><c:f>");
+            push_text(x, &self.formula(r));
+            x.push_str("</c:f></c:multiLvlStrRef>");
+            return;
+        };
+        let rect = self.wb.clamp_to_used(sheet, r.rect());
+        let text = |row: u32, col: u32| self.wb.display_text(sheet, row, col).text;
+        let levels: Vec<Vec<String>> = if in_columns {
+            (rect.c0..=rect.c1).rev().map(|col| (rect.r0..=rect.r1).map(|row| text(row, col)).collect()).collect()
+        } else {
+            (rect.r0..=rect.r1).rev().map(|row| (rect.c0..=rect.c1).map(|col| text(row, col)).collect()).collect()
+        };
+        let points = if in_columns { rect.rows() } else { rect.cols() } as usize;
+        let levels: Vec<&[String]> = levels.iter().map(Vec::as_slice).collect();
+        self.push_multi_level(x, r, points, &levels);
+    }
+
     /// Categories or X values: numbers when the cells hold nothing else,
     /// labels otherwise.
     fn push_axis_data(&self, x: &mut String, r: &RefExpr) {
@@ -1292,7 +1337,22 @@ impl ChartWriter<'_> {
         let varied = chart.varies_colors() && (chart.kind.is_round() || chart.series.len() == 1);
         // Excel reads a series along one row or one column.
         let plotted = series_line(&s.values);
-        let values = self.source(&plotted);
+        // A PivotChart whose rows have several fields plots the items
+        // among the rows of its ranges, and the caches hold those only.
+        let pivot_points = self.wb.pivot_chart_points(chart.id);
+        let values = self.source(&plotted).map(|mut source| {
+            if let Some(points) = &pivot_points {
+                source.cells = std::mem::take(&mut source.cells)
+                    .into_iter()
+                    .filter_map(|(index, row, col, value)| {
+                        let at = points.keep.iter().position(|k| *k as u64 == index)?;
+                        Some((at as u64, row, col, value))
+                    })
+                    .collect();
+                source.count = points.keep.len() as u64;
+            }
+            source
+        });
         let points = match &values {
             Some(values) if varied => values.count.min(VARIED_POINTS),
             _ => 0,
@@ -1361,7 +1421,16 @@ impl ChartWriter<'_> {
         };
         if let Some(r) = &s.categories {
             w!(x, "<{along}>");
-            self.push_axis_data(x, &innermost_level(r, &plotted));
+            if plot.is_xy() {
+                self.push_axis_data(x, &innermost_level(r, &plotted));
+            } else if let Some(points) = &pivot_points {
+                let levels: Vec<&[String]> = std::iter::once(points.labels.as_slice()).chain(points.outer_levels.iter().map(Vec::as_slice)).collect();
+                self.push_multi_level(x, r, points.keep.len(), &levels);
+            } else if let Some(in_columns) = category_levels(r.rect(), plotted.rect()) {
+                self.push_label_block(x, r, in_columns);
+            } else {
+                self.push_axis_data(x, r);
+            }
             w!(x, "</{along}>");
         }
         w!(x, "<{across}>");

@@ -3624,3 +3624,47 @@ fn a_pivot_chart_follows_its_report() {
     wb.commit("refresh");
     assert!(wb.pivot(id).unwrap().1.charts.is_empty());
 }
+
+#[test]
+fn a_pivot_chart_with_two_row_fields_plots_the_items_on_two_levels() {
+    use crate::chart::ChartKind;
+    let (mut wb, id) = sales(Locale::en());
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en());
+        p.add_field(PRODUCT, Area::Rows, None, Locale::en());
+        p.add_field(SALES_F, Area::Values, None, Locale::en());
+    });
+    let chart = wb.add_pivot_chart(1, id, ChartKind::Column).unwrap();
+    wb.commit("chart");
+    let data = wb.chart_data(1, wb.chart(1, chart).unwrap());
+    let points = wb.pivot_chart_points(chart).expect("two levels of labels");
+    // The lines of the regions, which stand above their products in
+    // compact form, are not points.
+    assert_eq!(data.categories.len(), points.keep.len());
+    assert!(data.categories.len() >= 3, "{:?}", data.categories);
+    assert_eq!(data.outer_levels.len(), 1);
+    assert_eq!(data.outer_levels[0].len(), data.categories.len());
+    assert_eq!(data.outer_levels[0][0], "East");
+    let regions: Vec<&String> = data.outer_levels[0].iter().filter(|text| !text.is_empty()).collect();
+    assert_eq!(regions, ["East", "West"]);
+    assert!(!data.categories.iter().any(|label| label == "East" || label == "West"), "{:?}", data.categories);
+    // Every point is the value of its product in its region.
+    let total: f64 = data.series[0].values.iter().flatten().sum();
+    let all: f64 = SALES[1..].iter().map(|row| row[SALES_F].parse::<f64>().unwrap()).sum();
+    assert_eq!(total, all);
+    assert_eq!(data.series[0].values.len(), data.categories.len());
+    let groups = data.level_groups(0, data.categories.len());
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].0, 0);
+    assert_eq!(groups[1].1, data.categories.len() - 1);
+    assert_eq!(data.category_name(0), format!("East {}", data.categories[0]));
+    // Tabular form: the same points.
+    update(&mut wb, id, |p| p.set_report_layout(FieldLayout::Tabular));
+    let tabular = wb.chart_data(1, wb.chart(1, chart).unwrap());
+    assert_eq!((tabular.categories, tabular.outer_levels), (data.categories.clone(), data.outer_levels.clone()));
+    assert_eq!(tabular.series[0].values, data.series[0].values);
+    // One row field: the cells say everything.
+    update(&mut wb, id, |p| p.remove_field(PRODUCT));
+    assert!(wb.pivot_chart_points(chart).is_none());
+    assert!(wb.chart_data(1, wb.chart(1, chart).unwrap()).outer_levels.is_empty());
+}

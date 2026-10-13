@@ -85,6 +85,21 @@ impl PivotChartFields {
     }
 }
 
+/// The points a PivotChart plots among the rows its series cover (they
+/// run from the first item of the report to the last, and the lines of
+/// outer items and subtotals between them are not points), and their
+/// labels, one level per row field.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PivotChartPoints {
+    /// Positions, in the ranges of the series, of the rows plotted.
+    pub keep: Vec<usize>,
+    /// The labels next to the plot: the innermost item of each row.
+    pub labels: Vec<String>,
+    /// The labels of the outer row fields, the one next to `labels`
+    /// first; empty where the row continues the group of the row before.
+    pub outer_levels: Vec<Vec<String>>,
+}
+
 /// False for the chart types a PivotChart cannot have: XY (scatter),
 /// bubble and stock.
 pub fn chart_kind_allowed(kind: ChartKind) -> bool {
@@ -121,6 +136,46 @@ impl PivotTable {
             axis: captions(&self.row_fields),
             values: self.data_fields.iter().enumerate().map(|(k, d)| (k, d.name.clone())).collect(),
         }
+    }
+
+    /// The rows a chart of the report plots and their labels on several
+    /// levels; `None` when the rows have a single field (the cells of the
+    /// labels then say everything).
+    pub fn chart_points(&self, locale: &Locale) -> Option<PivotChartPoints> {
+        let depth = self.row_fields.iter().filter(|a| a.field().is_some()).count();
+        if depth < 2 || self.data_fields.is_empty() {
+            return None;
+        }
+        let lines = self.report.lines(true, self);
+        let first = lines.iter().position(|line| line.kind == ReportLineKind::Item)?;
+        let mut points = PivotChartPoints {
+            outer_levels: vec![Vec::new(); depth - 1],
+            ..Default::default()
+        };
+        let mut before: Option<&[(usize, u32)]> = None;
+        for (k, line) in lines.iter().enumerate().skip(first) {
+            if line.kind != ReportLineKind::Item || line.items.is_empty() {
+                continue;
+            }
+            points.keep.push(k - first);
+            let text = |at: usize| self.item_text(line.items[at].0, line.items[at].1, locale);
+            let last = line.items.len() - 1;
+            points.labels.push(text(last));
+            // The outer items, where they differ from those of the row
+            // before; an item with its detail hidden has no outer label
+            // of its own level.
+            for (level, texts) in points.outer_levels.iter_mut().enumerate() {
+                // Level 0 is next to the innermost one.
+                let at = (depth - 2).checked_sub(level).filter(|at| *at < last);
+                let same = |at: usize| before.is_some_and(|b| b.len() > at && b[..=at] == line.items[..=at]);
+                texts.push(match at {
+                    Some(at) if !same(at) => text(at),
+                    _ => String::new(),
+                });
+            }
+            before = Some(&line.items);
+        }
+        Some(points)
     }
 
     /// The series a chart of the report plots, as ranges of `sheet`.
@@ -168,6 +223,13 @@ impl PivotTable {
 }
 
 impl Workbook {
+    /// The points the chart plots when it is a PivotChart whose rows have
+    /// several fields.
+    pub fn pivot_chart_points(&self, chart: u32) -> Option<PivotChartPoints> {
+        let (_, p, _) = self.pivot_of_chart(chart)?;
+        p.chart_points(self.locale)
+    }
+
     /// The PivotTable a chart is bound to, with its link.
     pub fn pivot_of_chart(&self, chart: u32) -> Option<(usize, &PivotTable, PivotChartLink)> {
         self.pivots().find_map(|(si, p)| {

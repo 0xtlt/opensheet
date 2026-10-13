@@ -69,9 +69,8 @@
 //! * data labels and markers of single points, labels read from cells,
 //!   custom error amounts read from ranges, the label of a trendline;
 //! * series whose values are not a range of this workbook (numbers typed
-//!   into the chart, names, other workbooks), multi-level categories but
-//!   for the innermost level, titles linked to a cell (their last text is
-//!   kept), axis titles without a text;
+//!   into the chart, names, other workbooks), titles linked to a cell
+//!   (their last text is kept), axis titles without a text;
 //! * stock, surface and pie-of-pie charts (read as lines and as a pie),
 //!   the shapes of 3-D bars, drop lines, high-low lines and up-down bars,
 //!   series lines, the depth axis of 3-D charts, line, marker and
@@ -494,8 +493,9 @@ pub(crate) fn name_cell(name: &RefExpr) -> RefExpr {
     }
 }
 
-/// Category labels in several columns (year, then quarter) are a list of
-/// plain labels to the engine: this is the level next to the plot.
+/// The X values of a scatter chart are one line of numbers: of a block,
+/// the line next to the values. (The categories of the other charts keep
+/// their block: its other lines are the outer levels of labels.)
 /// `values` tells which way the series runs.
 pub(crate) fn innermost_level(categories: &RefExpr, values: &RefExpr) -> RefExpr {
     if !is_block(categories) {
