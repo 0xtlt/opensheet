@@ -100,6 +100,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 **Données**
 - Filtres automatiques (valeurs, texte, nombres, dates, couleurs, 10 premiers), tri à plusieurs niveaux avec listes personnalisées, suppression des doublons.
 - Tableaux structurés : 60 styles, ligne de total, colonnes calculées, agrandissement automatique à la saisie.
+- Obtenir des données : depuis un fichier texte ou CSV, le web (adresse saisie, choix du tableau dans le navigateur avec aperçu), un classeur Excel, un fichier JSON ou XML ; Requêtes et connexions, actualisation à la demande, à l'ouverture ou toutes les N minutes. Rien n'est téléchargé sans votre demande.
 - Tableaux croisés dynamiques : volet des champs avec glisser-déposer, filtres, regroupements, « afficher les valeurs comme », styles, détail par double-clic, champs et éléments calculés, ordre de résolution.
 - Segments (tableaux croisés et tableaux) et chronologies : sélection au clic ou par glisser, sélection multiple, connexions de rapport, styles ; les éléments sans données sont grisés.
 - Graphiques croisés dynamiques : ils suivent la disposition, les filtres et l'actualisation du tableau croisé, avec leurs boutons de champ.
@@ -140,7 +141,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Dictionnaire des synonymes (⇧F7) et traduction, avec ce que macOS fournit sur la machine, sans service en ligne.
 - Vérification d'accessibilité : volet des erreurs, avertissements et conseils avec les actions recommandées, indicateur dans la barre d'état.
 - Statistiques du classeur.
-- Protection de la feuille (15 autorisations, mot de passe, cellules verrouillées ou masquées) et de la structure du classeur.
+- Protection de la feuille (15 autorisations, mot de passe, cellules verrouillées ou masquées), plages modifiables sur une feuille protégée (avec ou sans mot de passe), protection de la structure du classeur.
 
 **Partage et aide**
 - Partager ▸ Envoyer une copie : le classeur ou un PDF, par la feuille de partage de macOS (Mail, Messages, AirDrop…).
@@ -188,7 +189,6 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Classeurs avec macros : les contrôles de formulaire, les contrôles ActiveX et les feuilles de dialogue ne sont pas lus, donc pas réécrits ; un bouton affecté à une macro est perdu à l'enregistrement.
 - Préférences : les volets absents d'OpenSheet sont grisés (graphique, saisie semi-automatique, enregistrement, compatibilité, sécurité, ruban) ; pas de style de référence L1C1.
 - Correction automatique : la liste de départ est courte (signes et quelques fautes courantes par langue), sans boîte d'exceptions.
-- Révision ▸ Autoriser la modification des plages : pas encore.
 - Impression : seuls les préréglages « par défaut » et « derniers utilisés » existent ; ceux de macOS ne sont pas lus.
 - @mentions : sans annuaire d'organisation, la liste propose les personnes déjà présentes dans le classeur, l'utilisateur, ou une adresse saisie en entier ; aucun message n'est envoyé à la personne mentionnée.
 - Synonymes : macOS n'en fournit qu'en anglais. Traduction : macOS 26 ou plus récent, langues téléchargées dans Réglages Système. Orthographe : pas de correction automatique ; les formes dans un groupe ou un SmartArt ne sont pas vérifiées.
@@ -196,7 +196,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
 - Rechercher et remplacer : la boîte bloque la fenêtre tant qu'elle est ouverte (celle d'Excel reste à côté).
 - Collage spécial : un collage transposé ne reporte ni les commentaires ni les liens hypertexte. Image liée : sa formule ne se modifie pas dans la barre de formule.
-- Obtenir des données : fichiers texte et CSV seulement (pas de bases de données, de web ni de Power Query).
+- Obtenir des données : pas de bases de données (il faudrait un pilote ODBC) ni d'éditeur Power Query ; les requêtes sont enregistrées dans le format classique d'Excel, qui sait actualiser celles qui lisent une page web mais pas celles en JSON, XML ou classeur.
 - Sparklines : pas d'axe de dates. Plan : pas de styles automatiques ; la marge du plan n'apparaît pas en vue Mise en page.
 - Thèmes : les effets sont enregistrés mais ne changent pas le dessin.
 - Calcul : un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
