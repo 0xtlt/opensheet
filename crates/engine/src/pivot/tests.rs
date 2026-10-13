@@ -3585,10 +3585,10 @@ fn a_pivot_chart_follows_its_report() {
         let data = wb.chart_data(1, c);
         (data.categories.clone(), data.series.iter().map(|s| (s.name.clone(), s.values.clone())).collect::<Vec<_>>())
     };
-    // One series, the totals left out.
+    // One series, named "Total" as Excel names it, the totals left out.
     assert_eq!(
         shown(&wb),
-        (vec!["East".to_string(), "West".to_string()], vec![("Sum of Sales".to_string(), vec![Some(370.0), Some(320.0)])])
+        (vec!["East".to_string(), "West".to_string()], vec![("Total".to_string(), vec![Some(370.0), Some(320.0)])])
     );
     assert_eq!(wb.chart(1, chart).unwrap().series[0].values.to_text(), format!("{sheet}!$B$4:$B$5"));
     assert_eq!(wb.pivot_of_chart(chart).map(|(si, p, link)| (si, p.id, link.buttons())), Some((1, id, true)));

@@ -179,7 +179,7 @@ impl PivotTable {
     }
 
     /// The series a chart of the report plots, as ranges of `sheet`.
-    pub fn chart_series(&self, sheet: &str) -> Vec<Series> {
+    pub fn chart_series(&self, sheet: &str, locale: &Locale) -> Vec<Series> {
         let (Some(body), report) = (self.location, &self.report) else {
             return Vec::new();
         };
@@ -208,8 +208,9 @@ impl PivotTable {
                 let mut series = Series::new(range(sheet, Rect::new(top, col, bottom, col))?);
                 series.categories = labels.and_then(|rect| range(sheet, rect));
                 series.name = if single {
-                    // "Total", as Excel names the only series.
-                    SeriesName::Text(self.data_fields[0].name.clone())
+                    // "Total", as Excel names the only series (seen by
+                    // opening the same PivotChart in Excel).
+                    SeriesName::Text(super::text::caption(super::text::Caption::Total, locale).to_string())
                 } else {
                     match (first_row > 0).then(|| range(sheet, Rect::cell(body.r0 + first_row - 1, col))).flatten() {
                         Some(cell) => SeriesName::Cell(cell),
@@ -246,7 +247,7 @@ impl Workbook {
         }
         let (si, p) = self.pivot(pivot).ok_or(PivotError::NoSuchPivot)?;
         let mut chart = Chart::new(kind);
-        chart.series = p.chart_series(&self.sheets[si].name);
+        chart.series = p.chart_series(&self.sheets[si].name, self.locale);
         // Several series need telling apart.
         if chart.series.len() > 1 {
             chart.legend = LegendPos::Right;
@@ -293,7 +294,7 @@ impl Workbook {
             if p.charts.is_empty() {
                 continue;
             }
-            let series = p.chart_series(&self.sheets[si].name);
+            let series = p.chart_series(&self.sheets[si].name, self.locale);
             let links: Vec<u32> = p.charts.iter().map(|link| link.chart).collect();
             let mut alive = Vec::new();
             for sheet in &mut self.sheets {

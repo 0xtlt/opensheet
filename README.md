@@ -103,7 +103,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Obtenir des données : depuis un fichier texte ou CSV, le web (adresse saisie, choix du tableau dans le navigateur avec aperçu), un classeur Excel, un fichier JSON ou XML ; Requêtes et connexions, actualisation à la demande, à l'ouverture ou toutes les N minutes. Rien n'est téléchargé sans votre demande.
 - Tableaux croisés dynamiques : volet des champs avec glisser-déposer, filtres, regroupements, « afficher les valeurs comme », styles, détail par double-clic, champs et éléments calculés, ordre de résolution.
 - Segments (tableaux croisés et tableaux) et chronologies : sélection au clic ou par glisser, sélection multiple, connexions de rapport, styles ; les éléments sans données sont grisés.
-- Graphiques croisés dynamiques : ils suivent la disposition, les filtres et l'actualisation du tableau croisé, avec leurs boutons de champ.
+- Graphiques croisés dynamiques : ils suivent la disposition, les filtres et l'actualisation du tableau croisé ; leurs boutons de champ ouvrent la liste de tri et de filtre du champ ; avec plusieurs champs de lignes, l'axe a plusieurs niveaux (comme tout graphique dont les étiquettes tiennent sur plusieurs colonnes).
 - Validation des données : tous les critères, liste déroulante dans la cellule, message de saisie, alertes, cercles autour des données non valides.
 - Outils de données : Convertir (assistant en 3 étapes), remplissage instantané, filtre avancé, consolider (avec liaison aux données source).
 - Plan : grouper / dissocier lignes et colonnes, niveaux et boutons + / − dans la marge, plan automatique, sous-total avec ses 11 fonctions.
@@ -125,7 +125,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - SmartArt : 8 dispositions (liste, processus, cycle, hiérarchie, relation, matrice, pyramide…), volet Texte, saisie directe dans les formes (Entrée, Tab, Maj+Tab), couleurs, styles, onglet Format (changer la forme, plus grande, plus petite, remplissage, contour, effets, texte), conversion en formes.
 - Équations : 9 équations prédéfinies, structures (fractions, indices, racines, intégrales, matrices…), saisie au format linéaire avec aperçu.
 - Les graphiques suivent les données en direct, les insertions de lignes et les renommages de feuilles.
-- Graphiques sparkline dans les cellules : courbe, histogramme, positif / négatif, 36 styles, points marqués, axes.
+- Graphiques sparkline dans les cellules : courbe, histogramme, positif / négatif, 36 styles, points marqués, axes, axe de dates (les points se placent selon leur date).
 
 ![Neuf des types de graphiques](docs/captures/types-de-graphiques.jpg)
 
@@ -155,6 +155,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Les scripts sont des fichiers `.osts`, le format d'Excel, dans un dossier au choix (Préférences ▸ Général) ; importer, exporter, renommer, dupliquer.
 - Un script tourne dans un bac à sable : pas d'accès aux fichiers ni au réseau, arrêt au bout de 120 s.
 - Classeurs avec macros (`.xlsm`, `.xltm`) : le projet VBA est conservé à l'octet près à l'enregistrement ; boîte Macro et lecture du code, en lecture seule.
+- Contrôles de formulaire (onglet Développeur, à activer dans Préférences ▸ Affichage) : bouton, case à cocher, case d'option, zone de liste déroulante, zone de liste, toupie, barre de défilement, zone de groupe, étiquette ; ils écrivent dans leur cellule liée, se règlent par Format de contrôle, et un bouton garde la macro qui lui est affectée.
 
 **Mise en page et impression**
 - Marges, orientation, papier, zone d'impression, sauts de page, titres à répéter, mise à l'échelle, en-têtes et pieds de page, arrière-plan de feuille.
@@ -177,7 +178,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 
 **Partiels**
 - Graphiques : une étiquette de données ne se sélectionne pas seule ; la zone de traçage des graphiques 3D ne se déplace pas ; ombre et lueur pour la zone de graphique et la zone de traçage seulement ; pas de contour ni d'effets pour le texte des graphiques.
-- Tableaux croisés : pas de jeux (OLAP) ; les boutons de champ d'un graphique croisé n'ont pas de liste déroulante ; avec plusieurs champs de lignes, le graphique croisé n'a pas d'axe à plusieurs niveaux.
+- Tableaux croisés : pas de jeux (OLAP). Graphiques croisés : l'axe à plusieurs niveaux n'est pas dessiné sur les graphiques 3D et en radar ; les boutons de champ ne sont pas imprimés.
 - Formes et images : un graphique n'entre pas dans un groupe ; un groupe dans un groupe se sélectionne d'un bloc ; les effets artistiques sont nos propres filtres (ils ressemblent à ceux d'Excel sans être identiques) et sept d'entre eux manquent (ceux qui reposent sur les textures d'Office) ; deux styles d'image à double cadre manquent ; biseau du dessus seulement ; pas de suppression de l'arrière-plan ; reflet, biseau et rotation 3D pour les images seulement.
 - WordArt : pas de biseau ni de lueur du texte ; pendant la saisie, le texte d'une forme déformée s'affiche à plat.
 - Icônes : jeu de pictogrammes propre au projet (celui d'Office n'est pas libre) ; pas de conversion en forme.
@@ -186,7 +187,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) et reste au-dessus des autres objets.
 - Scripts Office : la vérification avant exécution suit les types d'`ExcelScript` mais se tait dès qu'un type n'est pas certain (`any`, paramètre sans annotation, résultat de `filter`/`map`) ; pas de membres pour les segments, la protection du classeur ni les connecteurs coudés ; pas de `fetch`. Un script qui change la protection d'une feuille ne peut pas être annulé, comme à la main.
 - Enregistreur d'actions : ne sait pas écrire les fils de commentaires, les tableaux croisés, les formes et images, les segments, les sparklines, le plan, la mise en page, les liens, ni les mises en forme conditionnelles autres que « valeur de cellule » et « formule ».
-- Classeurs avec macros : les contrôles de formulaire, les contrôles ActiveX et les feuilles de dialogue ne sont pas lus, donc pas réécrits ; un bouton affecté à une macro est perdu à l'enregistrement.
+- Classeurs avec macros : les contrôles ActiveX et les feuilles de dialogue ne sont pas lus, donc pas réécrits. Contrôles de formulaire : ils ne sont pas imprimés, restent au-dessus des autres objets, et une zone de liste n'accepte qu'une sélection simple ; Excel propose d'enregistrer à la fermeture d'un classeur qui en contient (il complète leur description).
 - Préférences : les volets absents d'OpenSheet sont grisés (graphique, saisie semi-automatique, enregistrement, compatibilité, sécurité, ruban) ; pas de style de référence L1C1.
 - Correction automatique : la liste de départ est courte (signes et quelques fautes courantes par langue), sans boîte d'exceptions.
 - Impression : seuls les préréglages « par défaut » et « derniers utilisés » existent ; ceux de macOS ne sont pas lus.
@@ -197,7 +198,8 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Rechercher et remplacer : la boîte bloque la fenêtre tant qu'elle est ouverte (celle d'Excel reste à côté).
 - Collage spécial : un collage transposé ne reporte ni les commentaires ni les liens hypertexte. Image liée : sa formule ne se modifie pas dans la barre de formule.
 - Obtenir des données : pas de bases de données (il faudrait un pilote ODBC) ni d'éditeur Power Query ; les requêtes sont enregistrées dans le format classique d'Excel, qui sait actualiser celles qui lisent une page web mais pas celles en JSON, XML ou classeur.
-- Sparklines : pas d'axe de dates. Plan : pas de styles automatiques ; la marge du plan n'apparaît pas en vue Mise en page.
+- Plan : pas de styles automatiques ; la marge du plan n'apparaît pas en vue Mise en page.
+- Tableaux : pas de « Nouveau style de tableau ».
 - Thèmes : les effets sont enregistrés mais ne changent pas le dessin.
 - Calcul : un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
 - Ruban : quelques grands boutons hors rangée (Trier et filtrer, Rechercher et sélectionner, Audit de formules) passent directement en icône ; les onglets contextuels se replient encore de droite à gauche.
