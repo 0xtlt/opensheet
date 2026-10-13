@@ -175,3 +175,38 @@ fn sparklines_written_by_excel_are_read() {
     assert_eq!((plain.sparklines[0].data.sheet.as_str(), plain.sparklines[0].data.range), ("My notes", rect("A1:A4")));
     assert_eq!(plain.colors, SparklineColors::default());
 }
+
+/// A date axis: `dateAxis="1"` and the cells of the dates in an `xm:f`
+/// of the group, as Excel writes them.
+#[test]
+fn a_date_axis_goes_through_a_file() {
+    let mut wb = Workbook::new(Locale::en());
+    let days = ["2024-01-01", "2024-01-02", "2024-01-05", "2024-02-01", "2024-02-02"];
+    for (c, day) in days.iter().enumerate() {
+        wb.set_cell_text(0, 0, c as u32, day).unwrap();
+        wb.set_cell_text(0, 1, c as u32, &format!("{}", (c * 7) % 5 + 1)).unwrap();
+        wb.set_cell_text(0, 2, c as u32, &format!("{}", (c * 3) % 4 + 2)).unwrap();
+    }
+    // Dated lines and columns, and the same data evenly spaced beside them.
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:E3")), rect("G2:G3")).unwrap();
+    wb.add_sparklines(0, SparklineType::Column, (0, rect("A2:E3")), rect("H2:H3")).unwrap();
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:E3")), rect("I2:I3")).unwrap();
+    assert_eq!(wb.set_sparkline_date_axis(0, &[rect("G2:H3")], Some((0, rect("A1:E1")))), Ok(true));
+    wb.update_sparkline_groups(0, &[rect("G2:I3")], |group| group.markers = true);
+    wb.set_col_width(0, 6, Some(160.0));
+    wb.set_col_width(0, 7, Some(160.0));
+    wb.set_col_width(0, 8, Some(160.0));
+    wb.commit("sparklines");
+    let bytes = to_bytes(&wb);
+    keep_sample("sparkline-date-axis.xlsx", &bytes);
+    let xml = part(&bytes, "xl/worksheets/sheet1.xml");
+    assert!(xml.contains("<x14:sparklineGroup dateAxis=\"1\" displayEmptyCellsAs=\"gap\" markers=\"1\">"), "{xml}");
+    assert!(xml.contains("<x14:sparklineGroup type=\"column\" dateAxis=\"1\" displayEmptyCellsAs=\"gap\" markers=\"1\">"), "{xml}");
+    assert_eq!(xml.matches("<xm:f>Sheet1!A1:E1</xm:f><x14:sparklines>").count(), 2, "{xml}");
+    assert_eq!(xml.matches("dateAxis").count(), 2);
+    let back = load(&bytes);
+    assert_eq!(back.sheets[0].sparklines, wb.sheets[0].sparklines);
+    let dated = &back.sheets[0].sparklines[0];
+    assert!(back.sparkline_dates(dated).unwrap().iter().all(|date| date.is_some_and(|day| day > 45000.0)));
+    assert_eq!(to_bytes(&back), bytes);
+}

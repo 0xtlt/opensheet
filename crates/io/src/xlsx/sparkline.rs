@@ -14,8 +14,8 @@
 //! ```
 //!
 //! with the attributes and the eight colours in the order Excel writes
-//! them. A date axis (`dateAxis`, `<xm:f>` of the group) is not kept: such
-//! a group is read with its general axis.
+//! them. A group with a date axis says `dateAxis="1"` and names the cells
+//! of its dates in an `<xm:f>` of its own, after the colours.
 
 use super::color::{Palette, RawColor};
 use super::write::push_range;
@@ -60,6 +60,9 @@ pub(crate) fn ext(sheet: &Sheet) -> String {
             SparklineType::Line => {}
             SparklineType::Column => x.push_str(" type=\"column\""),
             SparklineType::WinLoss => x.push_str(" type=\"stacked\""),
+        }
+        if group.date_axis.is_some() {
+            x.push_str(" dateAxis=\"1\"");
         }
         // The schema's default is "zero" and Excel's is gaps: it always
         // says which.
@@ -114,12 +117,21 @@ pub(crate) fn ext(sheet: &Sheet) -> String {
             // writes it; any other by its value.
             super::dxf::push_color(&mut x, &format!("x14:{name}"), color);
         }
+        let formula_of = |data: &DataRef| {
+            let mut formula = String::new();
+            write_sheet_name(&data.sheet, &mut formula);
+            formula.push('!');
+            push_range(&mut formula, data.range);
+            formula
+        };
+        if let Some(dates) = &group.date_axis {
+            x.push_str("<xm:f>");
+            push_text(&mut x, &formula_of(dates));
+            x.push_str("</xm:f>");
+        }
         x.push_str("<x14:sparklines>");
         for s in &group.sparklines {
-            let mut formula = String::new();
-            write_sheet_name(&s.data.sheet, &mut formula);
-            formula.push('!');
-            push_range(&mut formula, s.data.range);
+            let formula = formula_of(&s.data);
             x.push_str("<x14:sparkline><xm:f>");
             push_text(&mut x, &formula);
             x.push_str("</xm:f><xm:sqref>");
@@ -196,6 +208,7 @@ fn read_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Spark
     if tag.empty {
         return group;
     }
+    let mut dates = None;
     loop {
         match r.next() {
             Event::Open(t) => {
@@ -218,12 +231,17 @@ fn read_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Spark
                         r.skip(&t);
                     }
                     None if t.name == "sparklines" && !t.empty => read_sparklines(r, &mut group),
+                    // The cells of the dates of a date axis.
+                    None if t.name == "f" => dates = parse_data(&r.text(&t)),
                     None => r.skip(&t),
                 }
             }
             Event::Close(_) | Event::Eof => break,
             _ => {}
         }
+    }
+    if flag("dateAxis") {
+        group.date_axis = dates;
     }
     group
 }
