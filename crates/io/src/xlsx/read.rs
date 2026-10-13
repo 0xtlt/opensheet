@@ -1001,6 +1001,7 @@ impl<'c> SheetReader<'c> {
                         this.sheet.protection = protection::read_sheet(&t);
                         r.skip(&t);
                     }
+                    "protectedRanges" => this.sheet.protected_ranges = protection::read_ranges(&mut r, &t),
                     "scenarios" => super::datatools::read_scenarios(&mut r, &t, &mut this.sheet, ctx.locale),
                     "autoFilter" => {
                         this.sheet.auto_filter =

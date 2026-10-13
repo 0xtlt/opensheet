@@ -17,6 +17,7 @@ pub mod deps;
 pub mod drawing;
 pub mod picture_style;
 pub mod eval;
+pub mod external;
 pub mod features;
 pub mod filter;
 pub mod find;

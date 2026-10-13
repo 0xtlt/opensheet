@@ -13,7 +13,7 @@ use crate::datetime::{date_to_serial, days_in_month};
 use crate::filter::AutoFilter;
 use crate::refs::{MAX_COLS, MAX_ROWS, Rect};
 use crate::value::Value;
-use crate::workbook::{ClearMode, Content, Sheet, Workbook};
+use crate::workbook::{Content, Sheet, Workbook};
 use std::sync::Arc;
 
 /// The characters that end a field of delimited text.
@@ -467,6 +467,11 @@ pub struct TextImport {
     /// The first line imported (1 is the first of the file).
     pub first_row: u32,
     pub spec: Spec,
+    /// Set when the source is a document rather than cut text (a web
+    /// page, JSON, XML, a workbook): `path` is then its address, and
+    /// `first_row` and `spec` are not used. See `external.rs`.
+    pub web: Option<crate::external::WebQuery>,
+    pub props: crate::external::QueryProps,
 }
 
 /// The lines of a text file. A line break inside a quoted field does not
@@ -512,6 +517,11 @@ impl Workbook {
     /// no defined name has: the name of the file made a valid name, with
     /// a number when it is taken.
     pub fn text_import_name(&self, path: &str) -> String {
+        // Of an address, the last piece of its path, or else its host.
+        let path = match path.split_once("://") {
+            Some((_, rest)) => rest.split(['?', '#']).next().unwrap_or(rest).trim_end_matches('/'),
+            None => path,
+        };
         let stem = std::path::Path::new(path).file_stem().and_then(|stem| stem.to_str()).unwrap_or("data");
         let mut base: String = stem.chars().map(|ch| if ch.is_alphanumeric() || ch == '_' { ch } else { '_' }).collect();
         // A name starts with a letter and must not read as a cell.
@@ -567,7 +577,7 @@ impl Workbook {
         let lines = import.lines(text);
         let dest = (import.range.r0, import.range.c0);
         let extent = self.text_columns_extent(dest, &lines, &import.spec)?;
-        self.clear(sheet, import.range, ClearMode::Contents);
+        self.clear_import(sheet, &import);
         self.write_text_columns(sheet, dest, &lines, &import.spec)?;
         self.snapshot();
         self.sheets[sheet].text_imports[index].range = extent;
@@ -777,6 +787,8 @@ mod tests {
             range: Rect::cell(0, 0),
             first_row: 1,
             spec: Spec::new(Layout::Delimited(Delimiters::only(','))),
+            web: None,
+            props: Default::default(),
         }
     }
 
