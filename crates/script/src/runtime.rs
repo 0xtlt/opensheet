@@ -13,6 +13,7 @@ use rquickjs::context::EvalOptions;
 use rquickjs::{Context as JsContext, Ctx, Error as JsError, Function, Object, Runtime, Value as JsValue};
 use serde_json::Value as J;
 
+use opensheet_engine::recalc::CalcMode;
 use opensheet_engine::workbook::Workbook;
 
 use crate::api::{API, Call, ENUMS, Ret};
@@ -117,8 +118,25 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
             at: None,
         })
     });
-    let mut host = host.borrow_mut();
-    let ended = match (host.fatal.take(), timed_out.load(Ordering::Relaxed), ended) {
+    // Whatever happens while the run is closed, the workbook goes back
+    // to its owner.
+    let settled = catch_unwind(AssertUnwindSafe(|| settle(&mut host.borrow_mut(), ended, timed_out.load(Ordering::Relaxed), &compiled, context, mode, front)));
+    std::mem::swap(wb, &mut host.borrow_mut().wb);
+    settled.unwrap_or_else(|_| Outcome {
+        error: Some(ScriptError {
+            kind: ErrorKind::Runtime,
+            message: "The script could not be run: its changes could not be undone.".to_string(),
+            line: None,
+            column: None,
+        }),
+        ..Outcome::default()
+    })
+}
+
+/// Close a run: what it reports when it reached its end, the workbook as
+/// it was when it did not.
+fn settle(host: &mut Host, ended: Result<Option<String>, Thrown>, timed_out: bool, compiled: &Compiled, context: &Context, mode: CalcMode, front: usize) -> Outcome {
+    let ended = match (host.fatal.take(), timed_out, ended) {
         (Some(message), _, _) => Err(Thrown {
             kind: ErrorKind::Runtime,
             message,
@@ -132,7 +150,7 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
         (None, _, ended) => ended,
     };
     let logs = std::mem::take(&mut host.logs);
-    let outcome = match ended {
+    match ended {
         Ok(returned) => {
             if !host.edited {
                 // A script that only read leaves no step to undo: the
@@ -173,9 +191,7 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
                 ..Outcome::default()
             }
         }
-    };
-    std::mem::swap(wb, &mut host.wb);
-    outcome
+    }
 }
 
 fn seconds(context: &Context) -> String {
