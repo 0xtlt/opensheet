@@ -9,14 +9,17 @@
 //! * `macros.rs`: the Macro dialog, the viewer of VBA modules, the
 //!   message bar of a workbook that came with macros.
 //!
-//! "Record Actions" of Excel's tab is not here: it needs a recorder of
-//! what the user does, which OpenSheet does not have. Nor is "Record
-//! Macro" of View ▸ Macros, for the same reason.
+//! * `record/`: Record Actions, which writes a script from what the user
+//!   does in the window.
+//!
+//! "Record Macro" of View ▸ Macros is not here: it would write VBA, which
+//! OpenSheet does not run.
 
 mod buffer;
 mod editor;
 mod macros;
 mod pane;
+mod record;
 mod run;
 mod samples;
 #[cfg(test)]
@@ -45,6 +48,7 @@ pub struct Automate;
 commands! {
     /// What the user can ask of scripts and macros.
     pub enum Cmd {
+        RecordActions = "automate-record", t("Record Actions", "Enregistrer les actions");
         NewScript = "automate-new", t("New Script", "Nouveau script");
         AllScripts = "automate-script", t("All Scripts", "Tous les scripts");
         ViewMacros = "automate-macro", t("Macros", "Macros");
@@ -65,6 +69,11 @@ impl Command for Cmd {
             return;
         }
         match self {
+            Cmd::RecordActions => {
+                let recorder = record::Recorder::start(app);
+                let pane = open_pane(app, cx);
+                pane.update(cx, |pane, cx| pane.start_recording(recorder, window, cx));
+            }
             Cmd::NewScript => {
                 let pane = open_pane(app, cx);
                 pane.update(cx, |pane, cx| pane.new_script(window, cx));
@@ -204,7 +213,7 @@ pub fn automate_tab(app: &ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
     let mut scripts = gallery(app, cx);
     scripts.push(app.cmd_large("au-all", Cmd::AllScripts, false, cx));
     vec![
-        group(t("Scripting Tools", "Outils de script"), row(vec![app.cmd_large("au-new", Cmd::NewScript, false, cx)])).into_any_element(),
+        group(t("Scripting Tools", "Outils de script"), row(vec![app.cmd_large("au-record", Cmd::RecordActions, false, cx), app.cmd_large("au-new", Cmd::NewScript, false, cx)])).into_any_element(),
         group(t("Office Scripts", "Scripts Office"), row(scripts)).border_r_0().into_any_element(),
     ]
 }

@@ -268,17 +268,16 @@ pub(crate) fn stop(app: &mut ExcelApp, cx: &mut Cx) {
 
 /// The columns the script asked to fit were sized by the engine without
 /// fonts: fit them again with the ones the window draws with.
-fn refit(app: &mut ExcelApp, outcome: &Outcome, window: &Window) {
-    let ts = window.text_system().clone();
+pub(crate) fn refit(wb: &mut Workbook, outcome: &Outcome, fonts: &crate::grid::FontResolver, ts: &gpui::WindowTextSystem) {
     for fit in outcome.autofit.iter().filter(|fit| fit.columns) {
-        let Some(sheet) = app.wb.sheets.get(fit.sheet) else {
+        let Some(sheet) = wb.sheets.get(fit.sheet) else {
             continue;
         };
         let columns: std::collections::BTreeSet<u32> =
             sheet.cells.keys().map(|(_, column)| *column).filter(|column| (fit.first..=fit.last).contains(column)).collect();
         for column in columns {
-            if let Some(width) = crate::grid::autofit_col_width(&app.wb, fit.sheet, column, &app.fonts, &ts) {
-                app.wb.set_col_width(fit.sheet, column, Some(width));
+            if let Some(width) = crate::grid::autofit_col_width(wb, fit.sheet, column, fonts, ts) {
+                wb.set_col_width(fit.sheet, column, Some(width));
             }
         }
     }
@@ -322,7 +321,8 @@ fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window:
         Some(line) => output.push(line),
         None => {
             app.wb.adopt(fork);
-            refit(app, &outcome, window);
+            let fonts = app.fonts.clone();
+            refit(&mut app.wb, &outcome, &fonts, window.text_system());
             app.commit(t("Run Script", "Exécuter le script"), cx);
             // The window follows what the script put in front.
             if let Some(sheet) = outcome.activated.filter(|sheet| *sheet < app.wb.sheets.len() && *sheet != app.sheet) {
