@@ -15,11 +15,16 @@
 //! A graphic read from a file whose layout is not one of these keeps the
 //! shapes its file had laid out ([`Foreign`]) and is shown through them.
 //!
+//! The shape of an entry can be given a look of its own, as the Format
+//! tab does ([`NodeFormat`]): it is kept with the entry, follows it when
+//! the outline is reordered, and is put on the shape each time the
+//! graphic is laid out.
+//!
 //! Sizes of text are estimated from the number of characters (the engine
 //! has no fonts): the text of a graphic is as large as lets every node of
 //! a level fit its shape, as in Excel.
 
-use crate::drawing::{Outline, Shape, ShapePreset, ShapeTool, TextAlign, TextAnchor};
+use crate::drawing::{Effects, Outline, Shape, ShapePreset, ShapeTool, TextAlign, TextAnchor};
 use crate::locale::Locale;
 use crate::style::{Color, ThemeSlot};
 use crate::theme::Theme;
@@ -31,6 +36,8 @@ use std::sync::Arc;
 pub struct Node {
     pub text: String,
     pub children: Vec<Node>,
+    /// What was changed by hand of the shape that shows the entry.
+    pub format: NodeFormat,
 }
 
 impl Node {
@@ -38,6 +45,85 @@ impl Node {
         Node {
             text: text.to_string(),
             children: Vec::new(),
+            format: NodeFormat::default(),
+        }
+    }
+}
+
+/// What the Format tab changed of the shape of one entry. Everything is
+/// `None` until it is set: the shape is then as the layout, the colours
+/// and the style of its graphic make it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NodeFormat {
+    /// "Change Shape".
+    pub preset: Option<ShapePreset>,
+    /// "Larger" and "Smaller": how many times as wide and as high as the
+    /// layout made it, about its middle.
+    pub scale: Option<(f32, f32)>,
+    /// "Shape Fill"; `Some(None)` is "No Fill".
+    pub fill: Option<Option<Color>>,
+    /// "Shape Outline"; `Some(None)` is "No Outline".
+    pub outline: Option<Option<Outline>>,
+    /// "Shape Effects".
+    pub effects: Option<Effects>,
+    /// "Text Fill".
+    pub text_color: Option<Color>,
+    /// "Text Outline" and the WordArt styles.
+    pub text_effects: Option<crate::wordart::TextEffects>,
+}
+
+impl NodeFormat {
+    /// Each press of "Larger" makes a shape this many times as large,
+    /// each press of "Smaller" as many times smaller.
+    pub const STEP: f32 = 1.1;
+
+    /// The shape is as its graphic makes it.
+    pub fn is_plain(&self) -> bool {
+        *self == NodeFormat::default()
+    }
+
+    /// One press of "Larger" (or of "Smaller").
+    pub fn resize(&mut self, larger: bool) {
+        let (x, y) = self.scale.unwrap_or((1.0, 1.0));
+        let by = if larger { NodeFormat::STEP } else { 1.0 / NodeFormat::STEP };
+        // Kept to the thousandth of a percent, as a file holds it.
+        let stepped = |factor: f32| ((factor * by).clamp(0.1, 10.0) * 100_000.0).round() / 100_000.0;
+        let scale = (stepped(x), stepped(y));
+        // Back where it started, the shape is the layout's again.
+        let home = (scale.0 - 1.0).abs() < 0.005 && (scale.1 - 1.0).abs() < 0.005;
+        self.scale = (!home).then_some(scale);
+    }
+
+    /// The outline and the size of the shape, before its text is fitted.
+    fn shape(&self, piece: &mut Piece) {
+        if let Some(preset) = self.preset.filter(|preset| *preset != piece.shape.preset) {
+            piece.shape.preset = preset;
+            piece.shape.adjust = None;
+        }
+        if let Some((x, y)) = self.scale {
+            let (width, height) = (piece.width * x, piece.height * y);
+            piece.x -= (width - piece.width) / 2.0;
+            piece.y -= (height - piece.height) / 2.0;
+            (piece.width, piece.height) = (width, height);
+        }
+    }
+
+    /// The paint of the shape and of its text.
+    fn paint(&self, piece: &mut Piece) {
+        if let Some(fill) = self.fill {
+            piece.shape.fill = fill;
+        }
+        if let Some(outline) = self.outline {
+            piece.shape.outline = outline;
+        }
+        if let Some(effects) = self.effects {
+            piece.effects = effects;
+        }
+        if let Some(color) = self.text_color {
+            piece.shape.font.color = Some(color);
+        }
+        if let Some(effects) = &self.text_effects {
+            piece.shape.effects = effects.clone();
         }
     }
 }
@@ -152,14 +238,14 @@ impl Layout {
             Layout::Process | Layout::Chevron | Layout::Venn | Layout::Pyramid => empty(3),
             Layout::BulletList => vec![
                 Node {
-                    text: String::new(),
                     children: empty(1),
+                    ..Node::default()
                 };
                 2
             ],
             Layout::OrgChart => vec![Node {
-                text: String::new(),
                 children: empty(3),
+                ..Node::default()
             }],
         }
     }
@@ -380,6 +466,8 @@ pub struct Piece {
     /// The line of the outline the shape shows; `None` for arrows and
     /// connectors.
     pub node: Option<usize>,
+    /// The shadow and the glow the Format tab gave the shape.
+    pub effects: Effects,
 }
 
 /// What a file held of a graphic whose layout is not drawn here: the
@@ -439,21 +527,45 @@ pub const DEFAULT_SIZE: (f32, f32) = (576.0, 384.0);
 /// A line of the outline: how deep it is and what it says.
 pub type Line = (usize, String);
 
-fn flatten(nodes: &[Node], level: usize, out: &mut Vec<Line>) {
+/// A line of the outline with the look of its shape: what the edits of
+/// the outline move about.
+type Row = (usize, String, NodeFormat);
+
+fn flatten(nodes: &[Node], level: usize, out: &mut Vec<Row>) {
     for node in nodes {
-        out.push((level, node.text.clone()));
+        out.push((level, node.text.clone(), node.format.clone()));
         flatten(&node.children, level + 1, out);
     }
+}
+
+/// A new line: empty, its shape as the graphic makes it.
+fn blank(level: usize) -> Row {
+    (level, String::new(), NodeFormat::default())
+}
+
+/// The entry on a line of the outline.
+fn entry_mut<'a>(nodes: &'a mut [Node], line: &mut usize) -> Option<&'a mut Node> {
+    for node in nodes {
+        if *line == 0 {
+            return Some(node);
+        }
+        *line -= 1;
+        if let Some(found) = entry_mut(&mut node.children, line) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// The tree of a list of lines. Levels are brought in order first: the
 /// first line is at the top, and no line is more than one level deeper
 /// than the one before it.
-fn tree(lines: &[Line]) -> Vec<Node> {
-    fn build(lines: &[(usize, &str)], at: &mut usize, level: usize) -> Vec<Node> {
+fn tree(lines: &[Row]) -> Vec<Node> {
+    fn build(lines: &[(usize, &Row)], at: &mut usize, level: usize) -> Vec<Node> {
         let mut out = Vec::new();
         while *at < lines.len() && lines[*at].0 >= level {
-            let mut node = Node::new(lines[*at].1);
+            let mut node = Node::new(&lines[*at].1.1);
+            node.format = lines[*at].1.2.clone();
             *at += 1;
             node.children = build(lines, at, level + 1);
             out.push(node);
@@ -462,13 +574,13 @@ fn tree(lines: &[Line]) -> Vec<Node> {
     }
     let mut previous = None;
     let mut settled = Vec::with_capacity(lines.len());
-    for (level, text) in lines {
+    for row in lines {
         let level = match previous {
             None => 0,
-            Some(before) => (*level).min(before + 1),
+            Some(before) => row.0.min(before + 1),
         };
         previous = Some(level);
-        settled.push((level, text.as_str()));
+        settled.push((level, row));
     }
     build(&settled, &mut 0, 0)
 }
@@ -521,19 +633,47 @@ impl SmartArt {
 
     /// The outline as the Text Pane shows it.
     pub fn outline(&self) -> Vec<Line> {
+        self.rows().into_iter().map(|(level, text, _)| (level, text)).collect()
+    }
+
+    fn rows(&self) -> Vec<Row> {
         let mut out = Vec::new();
         flatten(&self.nodes, 0, &mut out);
         out
     }
 
-    /// Replace the outline (levels are brought in order).
+    /// Replace the outline (levels are brought in order). The shapes of
+    /// the new entries are as the graphic makes them.
     pub fn set_outline(&mut self, lines: &[Line]) {
-        self.nodes = tree(lines);
+        let rows: Vec<Row> = lines.iter().map(|(level, text)| (*level, text.clone(), NodeFormat::default())).collect();
+        self.nodes = tree(&rows);
+    }
+
+    /// What was changed by hand of the shape of the entry on a line.
+    pub fn format(&self, line: usize) -> Option<NodeFormat> {
+        self.rows().into_iter().nth(line).map(|(_, _, format)| format)
+    }
+
+    /// Change the look of the shape of the entry on a line; `false` when
+    /// there is no such line or nothing changed.
+    pub fn set_format(&mut self, line: usize, change: impl FnOnce(&mut NodeFormat)) -> bool {
+        let mut at = line;
+        let Some(node) = entry_mut(&mut self.nodes, &mut at) else {
+            return false;
+        };
+        let before = node.format.clone();
+        change(&mut node.format);
+        node.format != before
+    }
+
+    /// True when a shape of the graphic was given a look of its own.
+    pub fn has_formats(&self) -> bool {
+        self.rows().iter().any(|(_, _, format)| !format.is_plain())
     }
 
     /// One past the last line of the entry at `index` and of everything
     /// under it.
-    fn end_of(lines: &[Line], index: usize) -> usize {
+    fn end_of(lines: &[Row], index: usize) -> usize {
         let level = lines[index].0;
         lines[index + 1..]
             .iter()
@@ -543,12 +683,12 @@ impl SmartArt {
 
     /// Edit the outline as a list of lines; `false` (and nothing changes)
     /// when `edit` says the change cannot be made.
-    fn edit(&mut self, edit: impl FnOnce(&mut Vec<Line>) -> bool) -> bool {
-        let mut lines = self.outline();
+    fn edit(&mut self, edit: impl FnOnce(&mut Vec<Row>) -> bool) -> bool {
+        let mut lines = self.rows();
         if !edit(&mut lines) {
             return false;
         }
-        self.set_outline(&lines);
+        self.nodes = tree(&lines);
         true
     }
 
@@ -566,9 +706,9 @@ impl SmartArt {
     /// its level. Returns the index of the new line.
     pub fn add_line_after(&mut self, index: usize) -> Option<usize> {
         self.edit(|lines| match lines.get(index) {
-            Some((level, _)) => {
+            Some((level, ..)) => {
                 let level = *level;
-                lines.insert(index + 1, (level, String::new()));
+                lines.insert(index + 1, blank(level));
                 true
             }
             None => false,
@@ -583,11 +723,11 @@ impl SmartArt {
         let mut added = None;
         self.edit(|lines| {
             if lines.is_empty() {
-                lines.push((0, String::new()));
+                lines.push(blank(0));
                 added = Some(0);
             } else if index < lines.len() {
                 let end = SmartArt::end_of(lines, index);
-                lines.insert(end, (lines[index].0, String::new()));
+                lines.insert(end, blank(lines[index].0));
                 added = Some(end);
             }
             added.is_some()
@@ -599,9 +739,9 @@ impl SmartArt {
     /// before it.
     pub fn add_before(&mut self, index: usize) -> Option<usize> {
         self.edit(|lines| match lines.get(index) {
-            Some((level, _)) => {
+            Some((level, ..)) => {
                 let level = *level;
-                lines.insert(index, (level, String::new()));
+                lines.insert(index, blank(level));
                 true
             }
             None => false,
@@ -621,7 +761,7 @@ impl SmartArt {
             for line in &mut lines[index..end] {
                 line.0 += 1;
             }
-            lines.insert(index, (level, String::new()));
+            lines.insert(index, blank(level));
             true
         })
         .then_some(index)
@@ -636,7 +776,7 @@ impl SmartArt {
                 return false;
             }
             let end = SmartArt::end_of(lines, index);
-            lines.insert(end, (lines[index].0 + 1, String::new()));
+            lines.insert(end, blank(lines[index].0 + 1));
             added = Some(end);
             true
         });
@@ -685,7 +825,7 @@ impl SmartArt {
     }
 
     /// The entry before entry `index` under the same parent.
-    fn previous_sibling(lines: &[Line], index: usize) -> Option<usize> {
+    fn previous_sibling(lines: &[Row], index: usize) -> Option<usize> {
         let level = lines.get(index)?.0;
         lines[..index]
             .iter()
@@ -723,10 +863,16 @@ impl SmartArt {
         moved
     }
 
-    /// "Reset Graphic": the colours and the style of a new graphic.
+    /// "Reset Graphic": the colours and the style of a new graphic, and
+    /// every shape as the graphic makes it.
     pub fn reset(&mut self) {
         self.colors = ColorScheme::default();
         self.style = QuickStyle::default();
+        let mut lines = self.rows();
+        for line in &mut lines {
+            line.2 = NodeFormat::default();
+        }
+        self.nodes = tree(&lines);
     }
 
     /// Give the graphic another layout; its text stays. A graphic shown
@@ -771,7 +917,22 @@ impl SmartArt {
             Layout::Pyramid => drawn.pyramid(width, height),
         }
         let mut pieces = drawn.pieces;
+        // What the Format tab gave a shape: its outline and its size
+        // before the text is fitted to it, its paint after (the size of
+        // a text does not depend on its colour).
+        let formats: Vec<NodeFormat> = self.rows().into_iter().map(|(_, _, format)| format).collect();
+        let formatted = |piece: &Piece| piece.node.and_then(|line| formats.get(line)).filter(|format| !format.is_plain()).cloned();
+        for piece in &mut pieces {
+            if let Some(format) = formatted(piece) {
+                format.shape(piece);
+            }
+        }
         fit_text(&mut pieces);
+        for piece in &mut pieces {
+            if let Some(format) = formatted(piece) {
+                format.paint(piece);
+            }
+        }
         if self.rtl {
             for piece in &mut pieces {
                 piece.x = width - piece.x - piece.width;
@@ -906,6 +1067,7 @@ impl Composer<'_> {
             flip_h: false,
             opacity: paint.opacity,
             node: Some(line),
+            effects: Effects::default(),
         });
         self.pieces.last_mut().expect("just pushed")
     }
@@ -929,6 +1091,7 @@ impl Composer<'_> {
             flip_h: false,
             opacity: 1.0,
             node: Some(line),
+            effects: Effects::default(),
         });
     }
 
@@ -948,6 +1111,7 @@ impl Composer<'_> {
             flip_h: false,
             opacity: 1.0,
             node: None,
+            effects: Effects::default(),
         });
     }
 
@@ -966,6 +1130,7 @@ impl Composer<'_> {
             flip_h: false,
             opacity: 1.0,
             node: None,
+            effects: Effects::default(),
         });
     }
 
@@ -1084,8 +1249,8 @@ impl Composer<'_> {
             .into_iter()
             .map(|(line, node)| {
                 let details = text_with_bullets(&Node {
-                    text: String::new(),
                     children: node.children.clone(),
+                    ..Node::default()
                 });
                 (line, node.text.clone(), details.trim_start_matches('\n').to_string())
             })
@@ -1477,6 +1642,49 @@ mod tests {
         assert_eq!((pieces[0].shape.align, pieces[2].shape.align), (TextAlign::Left, TextAlign::Center));
         assert_eq!((pieces[0].node, pieces[2].node), (Some(0), Some(3)));
         assert!(fits("ab cd", 100.0, 40.0, 16.0) && !fits("abcdefghijklmnop", 60.0, 400.0, 16.0) && !fits("a\nb\nc", 100.0, 40.0, 16.0));
+    }
+
+    #[test]
+    fn a_shape_keeps_the_look_it_was_given() {
+        let mut art = lettered(Layout::Process, &[(0, "a"), (0, "b"), (0, "c")]);
+        let plain = art.pieces(&theme(), 600.0, 300.0);
+        assert!(art.set_format(1, |format| {
+            format.preset = Some(ShapePreset::Ellipse);
+            format.fill = Some(Some(Color(0xC00000)));
+            format.outline = Some(None);
+            format.text_color = Some(Color(0x00FF00));
+            format.resize(true);
+        }));
+        assert!(!art.set_format(1, |_| {}) && !art.set_format(7, |format| format.resize(true)));
+        assert!(art.has_formats());
+        let of = |pieces: &[Piece], line: usize| pieces.iter().find(|piece| piece.node == Some(line)).unwrap().clone();
+        let pieces = art.pieces(&theme(), 600.0, 300.0);
+        let (was, is) = (of(&plain, 1), of(&pieces, 1));
+        assert_eq!((is.shape.preset, is.shape.fill, is.shape.outline, is.shape.font.color), (ShapePreset::Ellipse, Some(Color(0xC00000)), None, Some(Color(0x00FF00))));
+        // Larger: a tenth more each way, about the same middle; the
+        // other shapes stay where they were.
+        assert!((is.width / was.width - 1.1).abs() < 1e-3 && (is.height / was.height - 1.1).abs() < 1e-3);
+        assert!((is.x + is.width / 2.0 - was.x - was.width / 2.0).abs() < 1e-3);
+        let frame = |piece: Piece| (piece.x, piece.y, piece.width, piece.height);
+        assert_eq!(frame(of(&pieces, 0)), frame(of(&plain, 0)));
+        // Smaller brings it back to what the layout made.
+        art.set_format(1, |format| format.resize(false));
+        assert_eq!(art.format(1).unwrap().scale, None);
+        art.set_format(1, |format| format.resize(true));
+        // The look follows its entry through the outline.
+        assert_eq!(art.move_entry(1, true), Some(0));
+        assert_eq!(outline(&art), "b a c");
+        assert_eq!(art.format(0).unwrap().preset, Some(ShapePreset::Ellipse));
+        assert!(art.format(1).unwrap().is_plain());
+        art.add_before(0);
+        art.set_text(1, "bee");
+        assert!(art.demote(1));
+        assert_eq!(outline(&art), " >bee a c");
+        assert_eq!(art.format(1).unwrap().fill, Some(Some(Color(0xC00000))));
+        // "Reset Graphic" gives every shape back to the graphic.
+        art.reset();
+        assert!(!art.has_formats());
+        assert_eq!(outline(&art), " >bee a c");
     }
 
     #[test]
