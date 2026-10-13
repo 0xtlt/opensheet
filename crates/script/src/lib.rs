@@ -148,7 +148,10 @@ pub enum ErrorKind {
 }
 
 /// Why a script did not run to its end. Lines and columns are 1-based
-/// positions in the TypeScript text.
+/// positions in the TypeScript text. For an error met while running, the
+/// line is that of the statement at fault (the innermost one of the
+/// script, when helpers call one another) and the column a place in it:
+/// the member called, the name that was undefined.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScriptError {
     pub kind: ErrorKind,
