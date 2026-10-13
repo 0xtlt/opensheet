@@ -241,6 +241,7 @@ pub mod outline;
 pub mod page;
 pub mod pivot;
 pub mod preferences;
+pub mod proofing;
 pub mod protection;
 pub mod slicers;
 pub mod sparklines;
@@ -256,7 +257,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// charts, pictures and shapes, which share one stacking order
 /// (`objects::stack`).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 24] = [
+    static ALL: [&dyn Feature; 25] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -279,6 +280,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &themes::Themes,
         &outline::Outline,
         &sparklines::Sparklines,
+        &proofing::Proofing,
         &misc::Misc,
         &crate::widgets::gallery::GalleryMarks,
     ];
