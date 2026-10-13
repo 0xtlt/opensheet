@@ -279,6 +279,24 @@ fn shapes_lines_text_boxes_and_pictures() {
     shapes();
 }
 
+fn areas() {
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/areas.ts"));
+    assert_eq!(wb.style_at(0, 2, 1).fill.map(|c| c.value()), Some(0xFFFF00));
+    assert!(wb.style_at(0, 2, 1).font.bold && wb.style_at(0, 0, 3).fill.is_none());
+    assert_eq!(wb.sheets[0].merges.len(), 2);
+    // A script that only looks for cells leaves no step to undo.
+    let mut wb = stock();
+    let looking = "sheet.getRange(\"A1:C4\").getSpecialCells(ExcelScript.SpecialCellType.constants); sheet.findAll(\"Pen\", {}); sheet.getRanges(\"A1,B2\").getAreaCount();";
+    run_with(&mut wb, &script(looking), &Context::default());
+    assert!(!wb.commit("nothing") && !wb.can_undo());
+}
+
+#[test]
+fn several_ranges_special_cells_find_all_and_visible_views() {
+    areas();
+}
+
 #[test]
 fn conditional_formats_of_every_kind() {
     condfmt();
@@ -346,7 +364,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots, shapes] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots, shapes, areas] {
         scenario();
     }
     let called = members_called();

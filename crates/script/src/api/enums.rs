@@ -269,6 +269,14 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(rows "Rows", columns "Columns"),
     },
     ApiEnum {
+        name: "SpecialCellType",
+        members: members!(conditionalFormats "ConditionalFormats", dataValidations "DataValidations", blanks "Blanks", constants "Constants", formulas "Formulas", sameConditionalFormat "SameConditionalFormat", sameDataValidation "SameDataValidation", visible "Visible"),
+    },
+    ApiEnum {
+        name: "SpecialCellValueType",
+        members: members!(all "All", errors "Errors", errorsLogical "ErrorsLogical", errorsNumbers "ErrorsNumbers", errorsText "ErrorsText", errorsLogicalNumber "ErrorsLogicalNumber", errorsLogicalText "ErrorsLogicalText", errorsNumberText "ErrorsNumberText", logical "Logical", logicalNumbers "LogicalNumbers", logicalText "LogicalText", logicalNumbersText "LogicalNumbersText", numbers "Numbers", numbersText "NumbersText", text "Text"),
+    },
+    ApiEnum {
         name: "SubtotalLocationType",
         members: members!(atTop "AtTop", atBottom "AtBottom", off "Off"),
     },

@@ -45,6 +45,7 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     ChartTitle: chart.getTitle(),
     ChartLegend: chart.getLegend(),
     RangeAreas: cellValue.getRanges(),
+    RangeView: range.getVisibleView(),
     DataValidation: range.getDataValidation(),
     Comment: comment,
     CommentReply: comment.addCommentReply("Because"),

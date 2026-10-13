@@ -13,9 +13,9 @@ use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::table::TableOption;
 use opensheet_engine::workbook::{Content, Sheet, SheetVisibility};
 
-use super::util::{color_arg, color_text, parse_color, range_arg, resolve, table_fail};
+use super::util::{color_arg, color_text, parse_color, range_arg, resolve, resolve_areas, table_fail};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
-use super::{ApiClass, Call, Res, Ret, chart, class, comment, enum_value, object, pivot, shape, state_of, table};
+use super::{ApiClass, Call, Res, Ret, areas, chart, class, comment, enum_value, object, pivot, shape, state_of, table};
 use crate::host::{Host, MAX_SHEETS, rect_from};
 
 /// The sheet a Worksheet object (or one of its parts) stands for.
@@ -273,6 +273,21 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         let sheet = this_sheet(h, c)?;
         let rect = rect_from(c.int(0)?, c.int(1)?, 1, 1).ok_or_else(|| c.invalid())?;
         Ok(Ret::Object(h.range(sheet, rect)))
+    };
+    getRanges "(address?: string): RangeAreas" "Several ranges of the worksheet held together, from addresses separated by commas (A1:B2, D4) or a name; the whole worksheet without an address." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        let Some(text) = c.opt_str(0)? else {
+            return Ok(Ret::Object(areas::areas_object(h, sheet, &[Rect::new(0, 0, MAX_ROWS - 1, MAX_COLS - 1)])));
+        };
+        let (on, rects) = resolve_areas(h, c, sheet, text)?;
+        if on != sheet {
+            return Err(c.invalid());
+        }
+        Ok(Ret::Object(areas::areas_object(h, sheet, &rects)))
+    };
+    findAll "(text: string, criteria: ExcelScript.WorksheetSearchCriteria): RangeAreas | undefined" "Every cell of the worksheet holding a text, as Find All; undefined when none does." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        areas::find_all(h, c, sheet, &[])
     };
     getUsedRange "(valuesOnly?: boolean): Range | undefined" "The smallest range holding every cell with a value or a format (values only on request); undefined for an empty sheet." => |h, c| {
         let sheet = this_sheet(h, c)?;

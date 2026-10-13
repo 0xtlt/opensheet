@@ -93,6 +93,17 @@ pub(crate) fn range_from(h: &Host, call: &Call, state: &[J]) -> Res<(usize, Rect
     }
 }
 
+/// The ranges formatting is set on: the range of the object, and the
+/// further ranges of a RangeAreas, which follow the sixth place of its
+/// state.
+pub(crate) fn format_rects(h: &Host, call: &Call) -> Res<(usize, Vec<Rect>)> {
+    let (sheet, first) = this_range(h, call)?;
+    let rest: Vec<u32> = call.this.iter().skip(6).filter_map(|n| n.as_u64().map(|n| n as u32)).collect();
+    let mut rects = vec![first];
+    rects.extend(rest.chunks_exact(4).map(|n| Rect::new(n[0], n[1], n[2], n[3])));
+    Ok((sheet, rects))
+}
+
 /// The range a call is made on.
 pub(crate) fn this_range(h: &Host, call: &Call) -> Res<(usize, Rect)> {
     range_from(h, call, call.this)

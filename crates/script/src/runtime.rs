@@ -31,7 +31,7 @@ const SCRIPT_STACK: usize = 4 << 20;
 const THREAD_STACK: usize = 32 << 20;
 /// The members that change nothing in the workbook though their name does
 /// not start with `get`.
-const READ_ONLY: [&str; 4] = ["find", "activate", "select", "calculate"];
+const READ_ONLY: [&str; 6] = ["find", "findAll", "isFiltered", "activate", "select", "calculate"];
 /// The longest text of one log line, in bytes.
 const MAX_LOG_TEXT: usize = 20_000;
 

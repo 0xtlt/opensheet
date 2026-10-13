@@ -227,6 +227,7 @@ pub(crate) static API: &[ApiClass] = &[
     chart::CHART_TITLE,
     chart::CHART_LEGEND,
     areas::RANGE_AREAS,
+    areas::RANGE_VIEW,
     condfmt::CONDITIONAL_FORMAT,
     condfmt::CELL_VALUE,
     condfmt::COLOR_SCALE,
