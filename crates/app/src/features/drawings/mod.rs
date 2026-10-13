@@ -53,6 +53,8 @@ mod insertart_tests;
 #[cfg(test)]
 mod picture_tests;
 #[cfg(test)]
+mod smartgroup_tests;
+#[cfg(test)]
 mod ui_tests;
 #[cfg(test)]
 mod warp_tests;
@@ -917,20 +919,27 @@ fn text_overlay(app: &ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyE
         pane.contains(cx, cy).then_some(placed)
     };
     let (pane, placed) = panes.iter().find_map(|pane| in_pane(pane).map(|placed| (*pane, placed)))?;
-    let (x0, y0, x1, y1) = paint::text_box(shape, &placed, (frame.width as f32, frame.height as f32), layout.zoom);
+    Some(area_overlay(app, &edit.area, shape, &placed, (frame.width as f32, frame.height as f32), &pane, layout.zoom, cx))
+}
+
+/// A field in which a text is typed, over the shape that shows the text:
+/// `shape` drawn in `placed` (its size at 100 % being `natural`), in a
+/// pane of the grid.
+#[allow(clippy::too_many_arguments)]
+fn area_overlay(app: &ExcelApp, field: &Entity<TextArea>, shape: &Shape, placed: &geometry::Placed, natural: (f32, f32), pane: &paint::Pane, zoom: f32, cx: &mut Cx) -> AnyElement {
+    let (x0, y0, x1, y1) = paint::text_box(shape, placed, natural, zoom);
     // The font follows the shape (bold from the Home tab) and the zoom.
-    let look = paint::text_look(shape, layout.zoom, &app.fonts);
-    edit.area.update(cx, |area, cx| {
+    let look = paint::text_look(shape, zoom, &app.fonts);
+    field.update(cx, |area, cx| {
         if area.align != look.align() || area.caret_color != Some(look.color) {
             area.align = look.align();
             area.caret_color = Some(look.color);
             cx.notify();
         }
     });
-    let area = edit.area.clone();
+    let area = field.clone();
     let (cx0, cy0, cx1, cy1) = pane.clip;
-    Some(
-        div()
+    div()
             .absolute()
             .left(px(cx0))
             .top(px(cy0))
@@ -963,10 +972,9 @@ fn text_overlay(app: &ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyE
                         window.focus(&area.read(cx).focus_handle(cx));
                         area.update(cx, |area, cx| area.caret_to_point(event.position, cx));
                     })
-                    .child(div().flex_none().w_full().child(edit.area.clone())),
+                    .child(div().flex_none().w_full().child(field.clone())),
             )
-            .into_any_element(),
-    )
+            .into_any_element()
 }
 
 impl Feature for Drawings {
@@ -1055,6 +1063,7 @@ impl Feature for Drawings {
                 .into_any_element(),
         ];
         out.extend(text_overlay(app, layout, cx));
+        out.extend(smartart::overlay(app, layout, cx));
         out
     }
 
@@ -1171,7 +1180,8 @@ impl Feature for Drawings {
             match &drawing.kind {
                 DrawingKind::SmartArt(art) => {
                     let level = geometry::Placed::plain(placed.x0, placed.y0, placed.x1, placed.y1);
-                    smartart::draw(art, app.wb.theme(), &level, natural, &brush, Some(&*app.fonts), app.wb.locale, &mut items);
+                    let typed = smartart::typed_line(app, drawing.id);
+                    smartart::draw(art, app.wb.theme(), &level, natural, &brush, Some(&*app.fonts), app.wb.locale, typed, &mut items);
                     if is_selected {
                         smartart::paint_selection(p, drawing, art, &level, natural, &brush, &mut items);
                     }
@@ -1348,6 +1358,9 @@ impl Feature for Drawings {
 
     /// Typing with a shape selected starts its text, after what it holds.
     fn object_typed(&self, app: &mut ExcelApp, id: u32, text: &str, window: &mut Window, cx: &mut Cx) -> bool {
+        if smartart::typed(app, id, text, window, cx) {
+            return true;
+        }
         begin_text_edit(app, id, TextStart::Typed(text.to_string()), window, cx);
         editing_text(app) == Some(id)
     }
@@ -1418,7 +1431,7 @@ impl Feature for Drawings {
     /// Escape puts down the shape that was waiting to be drawn, or ends
     /// "Select Objects".
     fn cancel(&self, app: &mut ExcelApp, cx: &mut Cx) -> bool {
-        tool::disarm(app, cx) || end_crop(app, cx) || app.end_object_pointer(cx)
+        tool::disarm(app, cx) || end_crop(app, cx) || smartart::leave_node(app, cx) || app.end_object_pointer(cx)
     }
 }
 

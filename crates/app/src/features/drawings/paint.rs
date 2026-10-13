@@ -217,7 +217,7 @@ impl Brush<'_> {
         }
     }
 
-    fn disc(&self, centre: Pt, radius: f32, color: Hsla, out: &mut Vec<Draw>) {
+    pub(super) fn disc(&self, centre: Pt, radius: f32, color: Hsla, out: &mut Vec<Draw>) {
         let points: Vec<Pt> = (0..20)
             .map(|i| {
                 let angle = i as f32 / 20.0 * std::f32::consts::TAU;
