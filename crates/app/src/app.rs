@@ -673,6 +673,9 @@ impl ExcelApp {
         if self.sheet >= n {
             self.sheet = n - 1;
         }
+        // A hidden sheet cannot be in front (it was hidden, or an undo
+        // took its tab away): the nearest tab takes its place.
+        self.sheet = self.wb.nearest_visible_sheet(self.sheet);
     }
 
     /// Bring derived UI state (formula bar, name box) back in line after the
@@ -1002,7 +1005,7 @@ impl ExcelApp {
     }
 
     pub fn switch_sheet(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if index >= self.wb.sheets.len() || index == self.sheet {
+        if index >= self.wb.sheets.len() || index == self.sheet || !self.wb.sheets[index].is_visible() {
             return;
         }
         if self.editing.is_some() && !self.commit_edit(None, window, cx) {
@@ -2062,6 +2065,9 @@ impl ExcelApp {
                 self.sheet = self.wb.sheets.len() - 1;
             }
             self.refresh(cx);
+        } else if self.wb.sheets.len() > 1 {
+            // Hidden sheets remain: this one is the last with a tab.
+            self.alert(Alert::new("OpenSheet", features::sheets::last_visible_message()).warning(), cx);
         }
     }
 
@@ -3554,11 +3560,11 @@ impl ExcelApp {
         self.set_zoom(1.0, cx);
     }
     pub fn on_next_sheet(&mut self, _: &NextSheet, window: &mut Window, cx: &mut Context<Self>) {
-        let next = (self.sheet + 1).min(self.wb.sheets.len() - 1);
+        let next = features::sheets::neighbour(self, true);
         self.switch_sheet(next, window, cx);
     }
     pub fn on_prev_sheet(&mut self, _: &PrevSheet, window: &mut Window, cx: &mut Context<Self>) {
-        let prev = self.sheet.saturating_sub(1);
+        let prev = features::sheets::neighbour(self, false);
         self.switch_sheet(prev, window, cx);
     }
     pub fn on_cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
