@@ -36,7 +36,14 @@ pub(crate) struct PageJob<'a> {
     pub hf: HfContext<'a>,
     /// The first page the sheet prints (it may have a header of its own).
     pub first_of_sheet: bool,
+    /// Colour and width (in points at 100 %) of the gridlines.
+    pub gridline: (Color, f64),
 }
+
+/// The gridlines of a printed page: thin and black.
+pub(crate) const PRINTED_GRIDLINE: (Color, f64) = (Color::BLACK, GRIDLINE_WIDTH);
+/// The gridlines of a window: one pixel of pale grey.
+pub(crate) const SCREEN_GRIDLINE: (Color, f64) = (Color(0xE1E1E1), 0.75);
 
 /// Widths of printed lines in points at a scale of 100 %.
 const GRIDLINE_WIDTH: f64 = 0.25;
@@ -775,7 +782,8 @@ impl<'a> Renderer<'a> {
         // Gridlines, where no border takes their place: not inside merged
         // areas, not across text flowing over its neighbours.
         if self.setup.gridlines && !self.setup.draft {
-            let stroke = || Stroke::solid(Color::BLACK, GRIDLINE_WIDTH * self.scale);
+            let (colour, width) = self.job.gridline;
+            let stroke = || Stroke::solid(self.ink(colour), width * self.scale);
             for i in 0..=nr {
                 let y = if i < nr { rows[i].pos } else { bounds.bottom() };
                 let mut start: Option<usize> = None;

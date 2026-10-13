@@ -311,6 +311,7 @@ pub fn render_page(wb: &Workbook, job: &PrintJob, plan: &PrintPlan, index: usize
             locale: wb.locale,
         },
         first_of_sheet: planned.page == 0 && !planned.notes,
+        gridline: render::PRINTED_GRIDLINE,
     };
     Some(if planned.notes {
         render::render_notes(&page_job, part.notes.get(planned.page)?)
@@ -403,6 +404,10 @@ pub fn render_range(
             locale: wb.locale,
         },
         first_of_sheet: true,
+        gridline: match look {
+            RangeLook::Screen { .. } => render::SCREEN_GRIDLINE,
+            RangeLook::Printed => render::PRINTED_GRIDLINE,
+        },
     };
     Some(render::render_as(&job, &setup))
 }
