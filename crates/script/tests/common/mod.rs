@@ -12,9 +12,24 @@ use opensheet_script::{Context, Outcome, ScriptError, run};
 /// Checks a script makes on what it reads: they are declared after the
 /// script, so its lines keep their numbers.
 const CHECKS: &str = r#"
+// Objects are compared whatever the order of their keys: the one plain
+// data comes back in depends on how the JSON library was built.
+function sorted(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sorted);
+  }
+  if (value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    const out: { [key: string]: unknown } = {};
+    for (const key of Object.keys(value).sort()) {
+      out[key] = sorted((value as { [key: string]: unknown })[key]);
+    }
+    return out;
+  }
+  return value;
+}
 function eq(actual: unknown, expected: unknown, what?: string): void {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
+  const a = JSON.stringify(sorted(actual));
+  const e = JSON.stringify(sorted(expected));
   if (a !== e) {
     throw new Error(`${what ?? "value"}: expected ${e}, got ${a}`);
   }
