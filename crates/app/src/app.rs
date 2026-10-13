@@ -608,7 +608,10 @@ impl ExcelApp {
         match features::guard(self, &intent) {
             None => true,
             Some(message) => {
-                self.alert(Alert::new("OpenSheet", message).warning(), cx);
+                // A range with a password is opened rather than refused.
+                if !features::protection::password_wanted(self, &intent, cx) {
+                    self.alert(Alert::new("OpenSheet", message).warning(), cx);
+                }
                 false
             }
         }

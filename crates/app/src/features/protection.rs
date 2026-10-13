@@ -7,6 +7,12 @@
 //! held to what the sheet lets its users select, and Tab walks the
 //! unlocked cells.
 
+mod edit_ranges;
+#[cfg(test)]
+mod ui_tests;
+
+pub(crate) use edit_ranges::password_wanted;
+
 use super::{Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PendingEdit, Verdict};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::Selection;
@@ -112,7 +118,12 @@ impl Command for Cmd {
                     app.apply_style(self.label(), cx, move |s| s.locked = locked);
                 }
             }
-            Cmd::AllowEditRanges | Cmd::UnshareWorkbook => app.not_implemented(self.label(), cx),
+            Cmd::AllowEditRanges => {
+                edit_ranges::open(app, window, cx);
+            }
+            // Greyed out, as in Excel while the workbook is not a legacy
+            // shared workbook — which no workbook is here.
+            Cmd::UnshareWorkbook => {}
         }
     }
 }
@@ -126,6 +137,9 @@ struct Memory {
     /// The last selection the protected sheet allowed (sheet, selection),
     /// put back when one it does not allow is made.
     selection: Option<(usize, Selection)>,
+    /// The range (sheet, place in its list) whose password is to be
+    /// asked when the window is next drawn.
+    unlock: Option<(usize, usize)>,
 }
 
 // --------------------------------------------------------------- the guard
@@ -300,6 +314,13 @@ impl Feature for Protection {
         verdict(&app.wb, app.sheet, intent, object_locked)
             .err()
             .map(|denied| denied.message(app.wb.locale).into())
+    }
+
+    // Where the password of a range is asked: a refusal has no window
+    // at hand, drawing has.
+    fn overlay_elements(&self, app: &mut ExcelApp, _: &crate::grid::GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<gpui::AnyElement> {
+        edit_ranges::ask_pending(app, window, cx);
+        Vec::new()
     }
 
     fn can_select(&self, app: &ExcelApp, row: u32, col: u32) -> bool {

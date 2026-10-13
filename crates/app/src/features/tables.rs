@@ -55,7 +55,6 @@ commands! {
         Resize = "table", t("Resize Table", "Redimensionner le tableau");
         SummarizeWithPivot = "pivot", t("Summarize with PivotTable", "Synthétiser avec un tableau croisé dynamique");
         ConvertToRange = "grid", t("Convert to Range", "Convertir en plage");
-        Export = "share", t("Export", "Exporter");
         Refresh = "refresh", t("Refresh", "Actualiser");
         HeaderRow = "", t("Header Row", "Ligne d'en-tête");
         TotalRow = "", t("Total Row", "Ligne des totaux");
@@ -364,8 +363,8 @@ impl Command for Cmd {
             // Excel greys Insert > Table out inside a table.
             Cmd::Insert => table.is_none(),
             Cmd::FormatAs | Cmd::RemoveDuplicates | Cmd::NewStyle => true,
-            // No table is connected to a source of data outside the workbook.
-            Cmd::Refresh => false,
+            // Only what Get Data brought can be refreshed.
+            Cmd::Refresh => super::data_tools::Cmd::Refresh.enabled(app),
             // The buttons sit on the header row.
             Cmd::FilterButton => table.is_some_and(|table| table.header_row),
             Cmd::InsertColumnsLeft
@@ -415,6 +414,7 @@ impl Command for Cmd {
             | Cmd::SelectColumnData
             | Cmd::SelectEntireColumn
             | Cmd::SelectRow => menu::run(self, app, cx),
+            Cmd::Refresh => super::data_tools::Cmd::Refresh.run(app, window, cx),
             _ => app.not_implemented(self.label(), cx),
         }
     }
