@@ -960,3 +960,340 @@ fn refresh_all_recomputes_pivot_tables(cx: &mut TestAppContext) {
     assert!(total(&app, cx).contains(&Value::Number(11.0)), "{:?}", total(&app, cx));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh All"));
 }
+
+// ------------------------------------------- Get Data: web and documents
+
+use super::sources::test_server::{Server, page};
+
+/// The dialog in front, as the view it is.
+fn front<V: 'static>(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<V> {
+    let view = app.update(cx, |app, _| app.front_modal_view()).expect("a dialog is open");
+    view.downcast::<V>().ok().expect("the dialog expected")
+}
+
+fn alert_text(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> String {
+    app.update(cx, |app, cx| app.front_alert(cx)).map(|(_, message)| message).unwrap_or_default()
+}
+
+fn sales_page(rows: &[(&str, &str)]) -> String {
+    let body: String = rows.iter().map(|(name, qty)| format!("<tr><td>{name}</td><td>{qty}</td></tr>")).collect();
+    format!("<html><body><table><tr><td>Menu</td></tr></table><table id=\"sales\"><tr><th>Name</th><th>Qty</th></tr>{body}</table></body></html>")
+}
+
+/// Type an address into From Web and confirm.
+fn from_web(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, address: &str) {
+    run(app, cx, Cmd::FromWeb);
+    let dialog = front::<navigator::WebDialog>(app, cx);
+    dialog.update(cx, |dialog, cx| dialog.set_address(address, cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+}
+
+#[gpui::test]
+fn get_data_from_web_then_refresh(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let server = Server::start();
+    server.set("/sales", page("text/html", &sales_page(&[("Ann", "3"), ("Bob", "4")])));
+    // The address is typed without its scheme.
+    from_web(&app, cx, &format!("127.0.0.1:{}/sales", server.port));
+    // The Navigator lists the tables of the page; the second is chosen.
+    let navigator = front::<navigator::Navigator>(&app, cx);
+    assert_eq!(navigator.read_with(cx, |navigator, _| navigator.names()), ["Table 0", "sales"]);
+    navigator.update(cx, |navigator, cx| navigator.select(1, cx));
+    redraw(cx);
+    // Load: on a new sheet, as Excel does.
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())), (1, 2));
+    assert_eq!(value(&app, cx, "A1"), text("Name"));
+    assert_eq!(value(&app, cx, "B3"), Value::Number(4.0));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Import Data"));
+    let kept = app.update(cx, |app, _| app.wb.sheets[1].text_imports[0].clone());
+    assert_eq!(kept.name, "sales");
+    assert_eq!(kept.path, server.url("/sales"));
+    assert_eq!(kept.web, Some(opensheet_engine::external::WebQuery { item: Some(opensheet_engine::external::QueryItem::Index(2)) }));
+    assert_eq!(kept.range, Rect::parse("A1:B3").unwrap());
+
+    // The page changes: Refresh All fetches it again, off the window
+    // thread, and the data arrives as one step.
+    server.set("/sales", page("text/html", &sales_page(&[("Cid", "9")])));
+    run(&app, cx, Cmd::RefreshAll);
+    assert_eq!(value(&app, cx, "A2"), text("Cid"));
+    assert_eq!(value(&app, cx, "A3"), Value::Empty);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh All"));
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "A3"), text("Bob"));
+    // Refresh, where the data is.
+    select(&app, cx, "B2");
+    run(&app, cx, Cmd::Refresh);
+    assert_eq!(value(&app, cx, "B2"), Value::Number(9.0));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh"));
+
+    // The table is gone from the page: Excel's message, the data stays.
+    server.set("/sales", page("text/html", "<html><table><tr><td>Menu</td></tr></table></html>"));
+    run(&app, cx, Cmd::Refresh);
+    assert!(alert_text(&app, cx).contains("sales"), "{}", alert_text(&app, cx));
+    assert_eq!(modal_count(&app, cx), 1);
+    assert_eq!(value(&app, cx, "A2"), text("Cid"));
+    // The page is gone.
+    server.set("/sales", super::sources::test_server::Answer { status: 404, content_type: "text/html", body: Vec::new(), location: None });
+    run(&app, cx, Cmd::RefreshAll);
+    assert!(alert_text(&app, cx).contains("404"), "{}", alert_text(&app, cx));
+    assert_eq!(modal_count(&app, cx), 1);
+    // A protected sheet keeps its data as it is, silently.
+    server.set("/sales", page("text/html", &sales_page(&[("Dan", "1")])));
+    edit(&app, cx, |wb| {
+        wb.protect_sheet(1, Default::default(), "");
+    });
+    run(&app, cx, Cmd::RefreshAll);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "A2"), text("Cid"));
+}
+
+#[gpui::test]
+fn get_data_from_web_refusals_and_text(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let server = Server::start();
+    server.set("/empty", page("text/html", "<html><p>No table</p></html>"));
+    server.set("/data.csv", page("text/csv", "Name;Qty\nAnn;3\n"));
+    // A page without a table, a page that is not there, no server at all.
+    from_web(&app, cx, &server.url("/empty"));
+    assert!(alert_text(&app, cx).contains("no data"), "{}", alert_text(&app, cx));
+    assert_eq!(modal_count(&app, cx), 1);
+    from_web(&app, cx, &server.url("/missing"));
+    assert!(alert_text(&app, cx).contains("(HTTP/1.0 404)"));
+    assert_eq!(modal_count(&app, cx), 1);
+    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    from_web(&app, cx, &format!("http://127.0.0.1:{free}/x"));
+    assert!(alert_text(&app, cx).contains("Cannot locate the Internet server"));
+    assert_eq!(modal_count(&app, cx), 1);
+    // An empty address keeps the dialog.
+    from_web(&app, cx, "  ");
+    assert_eq!(modal_count(&app, cx), 1);
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].text_imports.is_empty()));
+
+    // An address that gives CSV goes through the Text Import Wizard, and
+    // refreshes from the address.
+    from_web(&app, cx, &server.url("/data.csv"));
+    let _ = front::<text_wizard::Wizard>(&app, cx);
+    cx.simulate_keystrokes("enter enter enter");
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "B2"), Value::Number(3.0));
+    let kept = app.update(cx, |app, _| app.wb.sheets[0].text_imports[0].clone());
+    assert_eq!((kept.name.as_str(), kept.web.is_none(), kept.path == server.url("/data.csv")), ("data", true, true));
+    server.set("/data.csv", page("text/csv", "Name;Qty\nAnn;30\n"));
+    run(&app, cx, Cmd::RefreshAll);
+    assert_eq!(value(&app, cx, "B2"), Value::Number(30.0));
+    // The ODBC entries say what Excel says without a driver manager.
+    run(&app, cx, Cmd::FromSqlServer);
+    assert!(alert_text(&app, cx).contains("ODBC Driver Manager is not installed"));
+    assert_eq!(modal_count(&app, cx), 1);
+}
+
+#[gpui::test]
+fn get_data_from_documents(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let dir = text_file("documents", "unused").parent().unwrap().to_path_buf();
+    // JSON: records to rows, nested records to columns; Load To asks where.
+    let json = dir.join("people data.json");
+    std::fs::write(&json, r#"{"people":[{"name":"Ann","address":{"city":"Paris"},"born":"1990-05-17"},{"name":"Bob","address":{"city":"Lyon"}}]}"#).unwrap();
+    let address = super::sources::file_url(&json);
+    app.update_in(cx, |app, window, cx| import::open_address(app, address.clone(), None, window, cx));
+    redraw(cx);
+    let navigator = front::<navigator::Navigator>(&app, cx);
+    assert_eq!(navigator.read_with(cx, |navigator, _| navigator.names()), ["people data", "people"]);
+    navigator.update_in(cx, |navigator, window, cx| {
+        navigator.select(1, cx);
+        navigator.load(true, window, cx);
+    });
+    redraw(cx);
+    let place = front::<import::ImportDialog>(&app, cx);
+    place.update(cx, |dialog, cx| dialog.set(false, "=$C$2", cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert_eq!(value(&app, cx, "C2"), text("name"));
+    assert_eq!(value(&app, cx, "D2"), text("address.city"));
+    assert_eq!(value(&app, cx, "D4"), text("Lyon"));
+    assert!(matches!(value(&app, cx, "E3"), Value::Number(n) if n > 32000.0));
+    // A second query cannot start inside the first.
+    app.update_in(cx, |app, window, cx| import::open_address(app, address.clone(), None, window, cx));
+    redraw(cx);
+    front::<navigator::Navigator>(&app, cx).update_in(cx, |navigator, window, cx| navigator.load(true, window, cx));
+    redraw(cx);
+    front::<import::ImportDialog>(&app, cx).update(cx, |dialog, cx| dialog.set(false, "=$D$3", cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(alert_text(&app, cx).contains("existing External Data Range"));
+    assert_eq!(modal_count(&app, cx), 2);
+    // The file changes; Refresh reads it again.
+    std::fs::write(&json, r#"{"people":[{"name":"Zoe","address":{"city":"Nice"}}]}"#).unwrap();
+    select(&app, cx, "C3");
+    run(&app, cx, Cmd::Refresh);
+    assert_eq!(value(&app, cx, "C3"), text("Zoe"));
+    assert_eq!(value(&app, cx, "C4"), Value::Empty);
+
+    // A workbook: its sheets in the Navigator, refreshed when it changes.
+    let book = dir.join("stock.xlsx");
+    let write = |qty: &str| {
+        let mut wb = Workbook::new(opensheet_engine::Locale::en());
+        wb.sheets[0].name = "Stock".into();
+        for (cell, entry) in [((0, 0), "Item"), ((0, 1), "Qty"), ((1, 0), "Nut"), ((1, 1), qty)] {
+            wb.set_cell_text(0, cell.0, cell.1, entry).unwrap();
+        }
+        wb.commit("setup");
+        opensheet_io::save_xlsx(&wb, &book).unwrap();
+    };
+    write("12");
+    let address = super::sources::file_url(&book);
+    app.update_in(cx, |app, window, cx| import::open_address(app, address, None, window, cx));
+    redraw(cx);
+    let navigator = front::<navigator::Navigator>(&app, cx);
+    assert_eq!(navigator.read_with(cx, |navigator, _| navigator.names()), ["Stock"]);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| app.sheet), 1);
+    assert_eq!(value(&app, cx, "B2"), Value::Number(12.0));
+    write("15");
+    run(&app, cx, Cmd::RefreshAll);
+    assert_eq!(value(&app, cx, "B2"), Value::Number(15.0));
+
+    // XML: a row per element under the root.
+    let xml = dir.join("books.xml");
+    std::fs::write(&xml, "<catalog><book id=\"b1\"><title>Dune</title></book><book id=\"b2\"><title>Emma</title></book></catalog>").unwrap();
+    app.update_in(cx, |app, window, cx| import::open_address(app, super::sources::file_url(&xml), None, window, cx));
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "B3"), text("Emma"));
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[gpui::test]
+fn queries_and_connections_dialogs(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let server = Server::start();
+    server.set("/a", page("text/html", &sales_page(&[("Ann", "3")])));
+    server.set("/b", page("text/html", &sales_page(&[("Bea", "7"), ("Cy", "8")])));
+    from_web(&app, cx, &server.url("/a"));
+    front::<navigator::Navigator>(&app, cx).update_in(cx, |navigator, window, cx| {
+        navigator.select(1, cx);
+        navigator.load(false, window, cx);
+    });
+    redraw(cx);
+    // Properties of the range under the active cell.
+    assert!(app.update(cx, |app, _| crate::features::Command::enabled(Cmd::RangeProperties, app)));
+    run(&app, cx, Cmd::RangeProperties);
+    front::<connections::RangeDialog>(&app, cx).update(cx, |dialog, cx| dialog.set(false, false, cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    let props = app.update(cx, |app, _| app.wb.sheets[1].text_imports[0].props.clone());
+    assert_eq!((props.preserve_formatting, props.adjust_width), (false, false));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Connection Properties"));
+
+    // Queries & Connections: the list, then the properties of the one selected.
+    run(&app, cx, Cmd::Connections);
+    let list = front::<connections::ConnectionsDialog>(&app, cx);
+    list.update_in(cx, |list, window, cx| list.properties(window, cx));
+    redraw(cx);
+    let properties = front::<connections::PropertiesDialog>(&app, cx);
+    // A name that is no name keeps the dialog.
+    properties.update(cx, |dialog, cx| dialog.set("1 bad", "", None, false, &server.url("/a"), cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(alert_text(&app, cx).contains("not valid"));
+    app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+    let address = server.url("/b");
+    properties.update(cx, |dialog, cx| dialog.set("weekly", "Sales of the week", Some(5), true, &address, cx));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    let kept = app.update(cx, |app, _| app.wb.sheets[1].text_imports[0].clone());
+    assert_eq!((kept.name.as_str(), kept.props.description.as_str(), kept.props.refresh_minutes, kept.props.refresh_on_open), ("weekly", "Sales of the week", 5, true));
+    assert_eq!(kept.path, address);
+    // The list is still open, on the new name; Refresh reads the new address.
+    let list = front::<connections::ConnectionsDialog>(&app, cx);
+    list.update_in(cx, |list, window, cx| list.refresh(window, cx));
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A3"), text("Cy"));
+
+    // "Refresh every 5 minutes": nothing before the fifth minute.
+    server.set("/b", page("text/html", &sales_page(&[("Dee", "1")])));
+    app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+    for _ in 0..4 {
+        app.update_in(cx, |app, window, cx| import::minute_passed(app, window, cx));
+    }
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A2"), text("Bea"));
+    app.update_in(cx, |app, window, cx| import::minute_passed(app, window, cx));
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A2"), text("Dee"));
+
+    // Remove asks first; the data stays, the query is gone, and comes
+    // back with Undo.
+    run(&app, cx, Cmd::Connections);
+    front::<connections::ConnectionsDialog>(&app, cx).update_in(cx, |list, window, cx| list.remove(window, cx));
+    redraw(cx);
+    assert!(alert_text(&app, cx).contains("Removing connection(s)"));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(app.update(cx, |app, _| app.wb.sheets[1].text_imports.is_empty()));
+    assert_eq!(value(&app, cx, "A2"), text("Dee"));
+    assert_eq!(modal_count(&app, cx), 1);
+    assert!(!app.update(cx, |app, _| crate::features::Command::enabled(Cmd::RangeProperties, app)));
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets[1].text_imports.len()), 1);
+}
+
+#[gpui::test]
+fn edit_query_and_refresh_on_open(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let server = Server::start();
+    server.set("/a", page("text/html", &sales_page(&[("Ann", "3")])));
+    from_web(&app, cx, &server.url("/a"));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    // Edit Query: the same address, another table of the page.
+    let query = app.update(cx, |app, _| import::QueryRef::of(app, 1, 0)).unwrap();
+    let address = server.url("/a");
+    app.update_in(cx, |app, window, cx| {
+        navigator::open_web(app, &address, Some(query), window, cx);
+    });
+    redraw(cx);
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    let navigator = front::<navigator::Navigator>(&app, cx);
+    navigator.update_in(cx, |navigator, window, cx| {
+        navigator.select(1, cx);
+        navigator.load(false, window, cx);
+    });
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A2"), text("Ann"));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Edit Query"));
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets[1].text_imports.len()), 1);
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    assert_eq!(value(&app, cx, "A2"), Value::Empty);
+
+    // A file that refreshes on opening: nothing is fetched before the
+    // user agrees.
+    edit(&app, cx, |wb| wb.update_import(1, 0, |import| import.props.refresh_on_open = true));
+    let bytes = app.update(cx, |app, _| opensheet_io::write_xlsx(&app.wb, std::io::Cursor::new(Vec::new())).unwrap().into_inner());
+    let wb = opensheet_io::read_xlsx(std::io::Cursor::new(bytes), opensheet_engine::Locale::en()).unwrap();
+    server.set("/a", page("text/html", &sales_page(&[("Zed", "0")]).replace("Menu", "Carte")));
+    app.update(cx, |app, cx| app.set_workbook(wb, None, "Opened".into(), cx));
+    redraw(cx);
+    redraw(cx);
+    assert!(alert_text(&app, cx).contains("connects to an external data source"), "{}", alert_text(&app, cx));
+    app.update(cx, |app, cx| {
+        app.sheet = 1;
+        cx.notify();
+    });
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A1"), text("Carte"));
+}

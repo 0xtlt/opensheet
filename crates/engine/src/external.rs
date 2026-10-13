@@ -26,6 +26,9 @@ pub enum Datum {
     /// A value the source already types (a JSON number, a cell of a
     /// workbook).
     Exact(Value),
+    /// A number with the format its source shows it in (a date of
+    /// another workbook).
+    Formatted(f64, String),
 }
 
 impl Datum {
@@ -35,7 +38,7 @@ impl Datum {
             Datum::Empty => String::new(),
             Datum::Auto(text) => text.clone(),
             Datum::Exact(Value::Text(text)) => text.to_string(),
-            Datum::Exact(Value::Number(n)) => format!("{n}"),
+            Datum::Exact(Value::Number(n)) | Datum::Formatted(n, _) => format!("{n}"),
             Datum::Exact(Value::Bool(b)) => if *b { "TRUE" } else { "FALSE" }.to_string(),
             Datum::Exact(_) => String::new(),
         }
@@ -977,6 +980,13 @@ impl Workbook {
                 match datum {
                     Datum::Empty => self.set_content(sheet, row, col, Content::Empty),
                     Datum::Exact(value) => self.set_content(sheet, row, col, Content::Value(value.clone())),
+                    Datum::Formatted(number, format) => {
+                        if self.style_at(sheet, row, col).is_general() {
+                            let format: std::sync::Arc<str> = std::sync::Arc::from(format.as_str());
+                            self.update_style(sheet, Rect::cell(row, col), &move |s| s.num_fmt = format.clone());
+                        }
+                        self.set_content(sheet, row, col, Content::Value(Value::Number(*number)));
+                    }
                     Datum::Auto(text) => {
                         // Typed as at the keyboard, but what comes from
                         // outside never computes.
@@ -1032,6 +1042,30 @@ impl Workbook {
         self.clear(sheet, import.range, ClearMode::Contents);
         if !import.props.preserve_formatting {
             self.clear(sheet, import.range, ClearMode::Formats);
+        }
+    }
+
+    /// Whether a query of `sheet` could be called `name`: a valid name
+    /// that no other query (the one at `except` aside) and no defined
+    /// name has.
+    pub fn import_name_free(&self, name: &str, except: (usize, usize)) -> bool {
+        let valid = name.chars().next().is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+            && name.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '.')
+            && crate::refs::parse_cell_name(name).is_none();
+        let key = name.to_uppercase();
+        let taken = self.names.contains_key(&key)
+            || self.sheets.iter().enumerate().any(|(sheet, on)| {
+                on.names.contains_key(&key) || on.text_imports.iter().enumerate().any(|(index, import)| (sheet, index) != except && import.name.to_uppercase() == key)
+            });
+        valid && !taken
+    }
+
+    /// Change a query (its name, address, item or properties). The
+    /// caller commits.
+    pub fn update_import(&mut self, sheet: usize, index: usize, change: impl FnOnce(&mut TextImport)) {
+        if self.sheets.get(sheet).is_some_and(|sh| index < sh.text_imports.len()) {
+            self.snapshot();
+            change(&mut self.sheets[sheet].text_imports[index]);
         }
     }
 
