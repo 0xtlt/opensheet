@@ -11,7 +11,11 @@
 //! is no script: the action is one the recorder cannot write.
 
 use super::code::{Scope, Step, color, member, number, play, points, quote, rects_of, runs_of};
-use super::compare::{Formats, Pair, content_at, differences, distance, same_chart, shown, side_by_side};
+use super::compare::{Formats, Pair, content_at, differences, distance, same_chart, shown, side_by_side, validations};
+use opensheet_engine::comment::Comment;
+use opensheet_engine::protect::Permission;
+use opensheet_engine::validation::{AlertStyle, Operator, Validation, ValidationKind};
+use opensheet_engine::workbook::SheetVisibility;
 use opensheet_engine::chart::{Chart, ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::filter::{AutoFilter, Criteria, CustomOp, DynamicFilter, SortState};
 use opensheet_engine::input::parse_input;
@@ -35,7 +39,7 @@ const MAX_CELLS: usize = 200_000;
 /// Run some steps on the workbook being brought to its target.
 pub(crate) fn run(work: &mut Workbook, scope: &Scope, steps: &[Step], refit: Refit) -> Result<(), String> {
     let front = scope.start.as_deref().and_then(|name| work.sheets.iter().position(|sheet| sheet.name == name)).unwrap_or(0);
-    let outcome = play(work, front, steps)?;
+    let outcome = play(work, front, &scope.user, steps)?;
     refit(work, &outcome);
     Ok(())
 }
@@ -43,7 +47,7 @@ pub(crate) fn run(work: &mut Workbook, scope: &Scope, steps: &[Step], refit: Ref
 type Stage = fn(&Workbook, &Workbook, &Scope) -> Vec<Step>;
 
 /// The stages after the sheets themselves, in the order they are run.
-const STAGES: [Stage; 15] = [
+const STAGES: [Stage; 18] = [
     undone,
     new_tables,
     table_options,
@@ -59,6 +63,9 @@ const STAGES: [Stage; 15] = [
     panes,
     new_charts,
     chart_options,
+    validation,
+    notes,
+    protection,
 ];
 
 /// Write the steps that turn `work` into `target`, running them on
@@ -158,6 +165,14 @@ fn sheets(work: &Workbook, target: &Workbook, scope: &Scope) -> (Vec<Step>, Opti
         if before.show_gridlines != sheet.show_gridlines {
             steps.push(Step::new(format!("Show gridlines on {on}: {}", sheet.show_gridlines), format!("{expr}.setShowGridlines({});", sheet.show_gridlines)));
         }
+        if before.visibility != sheet.visibility {
+            let (words, name) = match sheet.visibility {
+                SheetVisibility::Visible => ("Unhide", "visible"),
+                SheetVisibility::Hidden => ("Hide", "hidden"),
+                SheetVisibility::VeryHidden => ("Hide", "veryHidden"),
+            };
+            steps.push(Step::new(format!("{words} worksheet {}", sheet.name), format!("{expr}.setVisibility({});", member("SheetVisibility", name))));
+        }
         if before.show_headers != sheet.show_headers {
             steps.push(Step::new(format!("Show headings on {on}: {}", sheet.show_headers), format!("{expr}.setShowHeadings({});", sheet.show_headers)));
         }
@@ -183,6 +198,11 @@ fn undone(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
     let mut steps = Vec::new();
     for (ws, ts) in pairs(work, target) {
         let on = scope.on(&ts.name);
+        // A protection in the way of everything else, when no password
+        // holds it (a script cannot know one).
+        if ws.protection.as_ref().is_some_and(|held| held.password.is_none() && ts.protection.as_ref() != Some(held)) {
+            steps.push(Step::new(format!("Unprotect worksheet {on}"), format!("{}.getProtection().unprotect();", scope.sheet(&ts.name))));
+        }
         for table in &ws.tables {
             if twin(&ts.tables, table).is_none() {
                 steps.push(Step::new(format!("Convert table {} to a range", table.name), format!("{}.convertToRange();", table_expr(&table.name))));
@@ -981,6 +1001,179 @@ fn panes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
                 Step::new(format!("Freeze the panes of {on} at range {range}"), format!("{panes}.freezeAt({});", quote(&range)))
             }
         });
+    }
+    steps
+}
+
+// ------------------------------------------- validation, notes, protection
+
+/// The rule of a validation as a `DataValidationRule`; `None` for a rule
+/// that restricts nothing (it only carries its messages).
+fn validation_rule(rule: &Validation, at: (u32, u32)) -> Option<String> {
+    let en = Locale::en();
+    let first = quote(&rule.operand1_text(at.0, at.1, en));
+    let key = match rule.kind {
+        ValidationKind::Any => return None,
+        ValidationKind::Custom => return Some(format!("{{ custom: {{ formula: {first} }} }}")),
+        ValidationKind::List => return Some(format!("{{ list: {{ inCellDropDown: {}, source: {first} }} }}", rule.in_cell_dropdown)),
+        ValidationKind::Whole => "wholeNumber",
+        ValidationKind::Decimal => "decimal",
+        ValidationKind::Date => "date",
+        ValidationKind::Time => "time",
+        ValidationKind::TextLength => "textLength",
+    };
+    let operator = match rule.operator {
+        Operator::Between => "between",
+        Operator::NotBetween => "notBetween",
+        Operator::Equal => "equalTo",
+        Operator::NotEqual => "notEqualTo",
+        Operator::GreaterThan => "greaterThan",
+        Operator::LessThan => "lessThan",
+        Operator::GreaterOrEqual => "greaterThanOrEqualTo",
+        Operator::LessOrEqual => "lessThanOrEqualTo",
+    };
+    let second = if rule.operator.has_two_operands() { format!(", formula2: {}", quote(&rule.operand2_text(at.0, at.1, en))) } else { String::new() };
+    Some(format!("{{ {key}: {{ formula1: {first}{second}, operator: {} }} }}", member("DataValidationOperator", operator)))
+}
+
+/// Data validation: the ranges whose rule is no longer theirs lose it,
+/// then each range takes its rule, its input message and its alert.
+fn validation(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
+    let mut steps = Vec::new();
+    let fresh = Validation::default();
+    for (ws, ts) in pairs(work, target) {
+        let (now, then) = (validations(ws), validations(ts));
+        if now == then {
+            continue;
+        }
+        let on = scope.on(&ts.name);
+        for (range, rule) in &now {
+            if !then.contains(&(*range, rule.clone())) {
+                steps.push(Step::new(format!("Clear data validation of range {} on {on}", range.name()), format!("{}.getDataValidation().clear();", scope.range(&ts.name, *range))));
+            }
+        }
+        for (range, rule) in &then {
+            if now.contains(&(*range, rule.clone())) {
+                continue;
+            }
+            let validation = format!("{}.getDataValidation()", scope.range(&ts.name, *range));
+            let mut lines = Vec::new();
+            if let Some(text) = validation_rule(rule, (range.r0, range.c0)) {
+                lines.push(format!("{validation}.setRule({text});"));
+            }
+            if rule.allow_blank != fresh.allow_blank {
+                lines.push(format!("{validation}.setIgnoreBlanks({});", rule.allow_blank));
+            }
+            if (rule.show_input, &rule.input_title, &rule.input_message) != (fresh.show_input, &fresh.input_title, &fresh.input_message) {
+                lines.push(format!("{validation}.setPrompt({{ showPrompt: {}, title: {}, message: {} }});", rule.show_input, quote(&rule.input_title), quote(&rule.input_message)));
+            }
+            if (rule.show_error, rule.error_style, &rule.error_title, &rule.error_message) != (fresh.show_error, fresh.error_style, &fresh.error_title, &fresh.error_message) {
+                let style = match rule.error_style {
+                    AlertStyle::Stop => "stop",
+                    AlertStyle::Warning => "warning",
+                    AlertStyle::Information => "information",
+                };
+                lines.push(format!(
+                    "{validation}.setErrorAlert({{ showAlert: {}, style: {}, title: {}, message: {} }});",
+                    rule.show_error,
+                    member("DataValidationAlertStyle", style),
+                    quote(&rule.error_title),
+                    quote(&rule.error_message)
+                ));
+            }
+            if !lines.is_empty() {
+                steps.push(Step {
+                    comment: format!("Set data validation for range {} on {on}", range.name()),
+                    lines,
+                });
+            }
+        }
+    }
+    steps
+}
+
+/// Notes added, rewritten, shown and deleted. (Comments carry the time
+/// they were written at, which no script can give them.)
+fn notes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
+    let mut steps = Vec::new();
+    for (ws, ts) in pairs(work, target) {
+        let on = scope.on(&ts.name);
+        let sheet = scope.sheet(&ts.name);
+        let cells: BTreeSet<(u32, u32)> = ws.comments.keys().chain(ts.comments.keys()).copied().collect();
+        for cell in cells {
+            let (now, then) = (ws.comments.get(&cell), ts.comments.get(&cell));
+            if now == then {
+                continue;
+            }
+            let address = quote(&cell_name(cell.0, cell.1));
+            let (old, new) = (now.and_then(Comment::as_note), then.and_then(Comment::as_note));
+            // Only notes: a thread on either side is not for this stage.
+            if now.is_some() != old.is_some() || then.is_some() != new.is_some() {
+                continue;
+            }
+            let note = format!("{sheet}.getNote({address})");
+            match (old, new) {
+                (Some(_), None) => steps.push(Step::new(format!("Delete the note of cell {} on {on}", cell_name(cell.0, cell.1)), format!("{note}.delete();"))),
+                (old, Some(new)) => {
+                    let mut lines = Vec::new();
+                    match old {
+                        None => lines.push(format!("{sheet}.addNote({address}, {});", quote(&new.text()))),
+                        Some(old) if old.text() != new.text() => lines.push(format!("{note}.setContent({});", quote(&new.text()))),
+                        Some(_) => {}
+                    }
+                    if old.is_some_and(|old| old.visible) != new.visible {
+                        lines.push(format!("{note}.setVisible({});", new.visible));
+                    }
+                    if !lines.is_empty() {
+                        steps.push(Step {
+                            comment: format!("{} the note of cell {} on {on}", if old.is_none() { "Add" } else { "Change" }, cell_name(cell.0, cell.1)),
+                            lines,
+                        });
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+    }
+    steps
+}
+
+/// A sheet protected, without a password, with what stays allowed. This
+/// is the last stage: nothing is changed on a sheet after it.
+fn protection(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
+    const OPTIONS: [(&str, Permission); 13] = [
+        ("allowAutoFilter", Permission::AutoFilter),
+        ("allowDeleteColumns", Permission::DeleteColumns),
+        ("allowDeleteRows", Permission::DeleteRows),
+        ("allowEditObjects", Permission::EditObjects),
+        ("allowEditScenarios", Permission::EditScenarios),
+        ("allowFormatCells", Permission::FormatCells),
+        ("allowFormatColumns", Permission::FormatColumns),
+        ("allowFormatRows", Permission::FormatRows),
+        ("allowInsertColumns", Permission::InsertColumns),
+        ("allowInsertHyperlinks", Permission::InsertHyperlinks),
+        ("allowInsertRows", Permission::InsertRows),
+        ("allowPivotTables", Permission::PivotTables),
+        ("allowSort", Permission::Sort),
+    ];
+    let mut steps = Vec::new();
+    for (ws, ts) in pairs(work, target) {
+        let Some(wanted) = ts.protection.as_ref().filter(|wanted| wanted.password.is_none() && ws.protection.is_none()) else {
+            continue;
+        };
+        let mut options: Vec<String> = OPTIONS.iter().filter(|(_, permission)| wanted.allows(*permission)).map(|(key, _)| format!("{key}: true")).collect();
+        let mode = match (wanted.allows(Permission::SelectLockedCells), wanted.allows(Permission::SelectUnlockedCells)) {
+            (true, true) => None,
+            (false, true) => Some("unlocked"),
+            (false, false) => Some("none"),
+            // Locked cells but not the others: no selection mode says so.
+            (true, false) => continue,
+        };
+        if let Some(mode) = mode {
+            options.push(format!("selectionMode: {}", member("ProtectionSelectionMode", mode)));
+        }
+        let options = if options.is_empty() { String::new() } else { format!("{{ {} }}", options.join(", ")) };
+        steps.push(Step::new(format!("Protect worksheet {}", scope.on(&ts.name)), format!("{}.getProtection().protect({options});", scope.sheet(&ts.name))));
     }
     steps
 }

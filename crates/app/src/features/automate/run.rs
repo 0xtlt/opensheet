@@ -218,6 +218,8 @@ pub(crate) fn start(app: &mut ExcelApp, name: &str, source: &str, window: &mut W
             .as_ref()
             .and_then(|path| path.file_name())
             .map_or_else(|| app.title.clone(), |name| name.to_string_lossy().into_owned()),
+        // The author of the comments and notes the script writes.
+        user_name: crate::features::preferences::user_name().unwrap_or_else(|| Context::default().user_name),
         ..Context::default()
     };
     let mut fork = app.wb.fork();
@@ -315,6 +317,10 @@ fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window:
             None,
             None,
         )),
+        // A script that changed the protection itself was allowed each
+        // of its steps by the engine: the workbook as it was protected
+        // before says nothing of what it may have done since.
+        None if outcome.protection_changed => None,
         None => protection_refusal(&app.wb, &fork).map(|message| OutputLine::error(message, None, None)),
     };
     match refusal {
@@ -338,6 +344,13 @@ fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window:
                 output.push(OutputLine::note(crate::i18n::labelled(t("Returned value", "Valeur renvoyée"), value)));
             }
             output.push(OutputLine::note(t("The script ran successfully.", "Le script a été exécuté.")));
+            // Protecting a sheet forgets the history, by hand or by script.
+            if outcome.protection_changed {
+                output.push(OutputLine::note(t(
+                    "The script changed the protection of a sheet: its changes cannot be undone.",
+                    "Le script a modifié la protection d'une feuille : ses modifications ne peuvent pas être annulées.",
+                )));
+            }
         }
     }
     let runs = app.ext_mut::<Runs>();
@@ -361,7 +374,8 @@ pub(crate) mod testing {
     /// makes one bold, `log text` logs, `add-sheet` adds a sheet and puts
     /// it in front, `select B2:C3` selects, `return 42` returns, `throw
     /// text` fails at its line, `hide-column 0` hides a column. A line
-    /// holding `syntax error` is one for `check`.
+    /// holding `syntax error` is one for `check`, a line holding `unknown
+    /// member` one it only warns about.
     pub(crate) struct FakeEngine;
 
     fn rect(text: &str) -> Rect {
@@ -383,9 +397,9 @@ pub(crate) mod testing {
             source
                 .lines()
                 .enumerate()
-                .filter(|(_, line)| line.contains("syntax error"))
+                .filter(|(_, line)| line.contains("syntax error") || line.contains("unknown member"))
                 .map(|(index, line)| ScriptError {
-                    kind: ErrorKind::Syntax,
+                    kind: if line.contains("syntax error") { ErrorKind::Syntax } else { ErrorKind::Check },
                     message: format!("Unexpected token in {:?}", line.trim()),
                     line: Some(index as u32 + 1),
                     column: Some(1),

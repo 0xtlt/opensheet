@@ -84,13 +84,15 @@ impl Before {
     }
 }
 
-/// What tells that the workbook changed: its generation and the depths
-/// of its undo and redo stacks.
-type Mark = (u64, usize, usize);
+/// What tells that the workbook changed: its generation, the depths of
+/// its undo and redo stacks, and which sheets are protected (protecting
+/// a sheet by hand is no step of the history and calculates nothing).
+type Mark = (u64, usize, usize, u64);
 
 fn mark(wb: &Workbook) -> Mark {
     let (undo, redo) = wb.history_depth();
-    (wb.generation, undo, redo)
+    let protected = wb.sheets.iter().take(64).enumerate().fold(0u64, |bits, (index, sheet)| bits | (sheet.protection.is_some() as u64) << index);
+    (wb.generation, undo, redo, protected)
 }
 
 pub(crate) struct Recorder {
@@ -115,6 +117,7 @@ impl Recorder {
             floor: app.wb.history_depth().0,
             scope: Scope {
                 start: app.wb.sheets.get(app.sheet).map(|sheet| sheet.name.clone()),
+                user: crate::features::preferences::user_name().unwrap_or_default(),
             },
             actions: Vec::new(),
             seen: mark(&app.wb),
@@ -163,7 +166,18 @@ impl Recorder {
                     action.depth = action.depth.saturating_sub(1);
                 }
             }
-            let label = app.wb.undo_label().unwrap_or_default().to_string();
+            // Protecting a sheet forgets the history: nothing recorded so
+            // far can be taken back any more.
+            if now.1 < was.1 {
+                self.floor = now.1;
+                for action in &mut self.actions {
+                    action.depth = 0;
+                }
+            }
+            let label = match app.wb.undo_label() {
+                Some(label) if now.1 > 0 && !label.is_empty() => label.to_string(),
+                _ => crate::i18n::t("Change", "Modification").to_string(),
+            };
             self.record(label, after, Some(Before::of(app)), now.1, refit)
         };
         self.before = Before::of(app);

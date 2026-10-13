@@ -30,6 +30,8 @@ impl Step {
 pub(crate) struct Scope {
     /// The name `selectedSheet` has now; `None` once it was deleted.
     pub start: Option<String>,
+    /// The name of the user: the author of the notes a script writes.
+    pub user: String,
 }
 
 impl Scope {
@@ -176,11 +178,14 @@ pub(crate) fn text_of(step: &Step, indent: &str) -> String {
 
 /// Run some steps on a workbook, `selectedSheet` being the sheet at
 /// `front`. On an error the workbook is left as it was.
-pub(crate) fn play(wb: &mut Workbook, front: usize, steps: &[Step]) -> Result<Outcome, String> {
-    let context = Context {
+pub(crate) fn play(wb: &mut Workbook, front: usize, user: &str, steps: &[Step]) -> Result<Outcome, String> {
+    let mut context = Context {
         active_sheet: front,
         ..Context::default()
     };
+    if !user.is_empty() {
+        context.user_name = user.to_string();
+    }
     // No snapshot of the whole workbook here: each member of the engine
     // notes what it changes, which is all `rollback` needs, and a copy
     // of a large workbook per statement tried is what recording costs.
@@ -227,7 +232,10 @@ mod tests {
         assert_eq!(points(64.0), "48");
         assert_eq!(points(21.0), "15.75");
         assert_eq!(color(Color(0xFF00)), "\"#00FF00\"");
-        let scope = Scope { start: Some("Data".to_string()) };
+        let scope = Scope {
+            start: Some("Data".to_string()),
+            ..Scope::default()
+        };
         assert_eq!(scope.range("Data", Rect::new(0, 0, 1, 1)), "selectedSheet.getRange(\"A1:B2\")");
         assert_eq!(scope.sheet("It's"), "workbook.getWorksheet(\"It's\")");
         let step = Step::new("Set range A1 on selectedSheet", "selectedSheet.getRange(\"A1\").setValue(1);");

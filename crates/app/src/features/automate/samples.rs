@@ -35,8 +35,8 @@ impl Sample {
                 "Ajoute une ligne de sommes sous la liste qui entoure la cellule sélectionnée.",
             ),
             "table" => t(
-                "Makes a table of the range around the selected cell, sorts it and shows its total row.",
-                "Crée un tableau à partir de la plage qui entoure la cellule sélectionnée, le trie et affiche sa ligne de total.",
+                "Makes a table of the range around the selected cell, sorts it, shows its total row and keeps the rows whose last column is above average.",
+                "Crée un tableau à partir de la plage qui entoure la cellule sélectionnée, le trie, affiche sa ligne de total et conserve les lignes dont la dernière colonne est au-dessus de la moyenne.",
             ),
             "unhide" => t(
                 "Shows the hidden rows and columns of every sheet.",
@@ -139,6 +139,11 @@ const TABLE: &str = r##"function main(workbook: ExcelScript.Workbook) {
   table.getSort().apply([{ key: 0, ascending: true }]);
   table.setShowTotals(true);
   table.getTotalRowRange().getFormat().getFont().setBold(true);
+
+  // Keep the rows whose last column is above its average: the total row
+  // then adds up what shows.
+  const columns = table.getColumns();
+  columns[columns.length - 1].getFilter().applyDynamicFilter(ExcelScript.DynamicFilterCriteria.aboveAverage);
   console.log(table.getName() + " covers " + table.getRange().getAddress() + ".");
 }
 "##;

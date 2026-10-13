@@ -1203,3 +1203,21 @@ fn go_to_line(cx: &mut TestAppContext) {
     cx.simulate_input("// end");
     assert!(editor_text(&pane, cx).ends_with("// end"));
 }
+
+#[gpui::test]
+fn what_the_checker_warns_about_does_not_keep_a_script_from_running(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Warned", "set A1 5\nlog unknown member here\nlog done");
+    let pane = edit(&app, cx, "Warned");
+    redraw(cx);
+    // In the list, as a warning, and a click leads to its line.
+    let problems = pane.update(cx, |pane, _| pane.problems.iter().map(|p| (p.kind, p.line)).collect::<Vec<_>>());
+    assert_eq!(problems, [(opensheet_script::ErrorKind::Check, Some(2))]);
+    assert_eq!(pane.update(cx, |pane, _| pane.bottom), Bottom::Problems);
+    click(cx, "ce-problem-0");
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0), 2);
+    // Run is there and runs.
+    click(cx, "ce-run");
+    assert_eq!(value(&app, cx, 0, (0, 0)), Value::Number(5.0));
+    assert!(output(&app, cx).iter().any(|line| line.1 == "done"));
+}

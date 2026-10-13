@@ -46,6 +46,8 @@ const COLOR_COMMENT: u32 = 0x008000;
 const COLOR_NUMBER: u32 = 0x098658;
 const COLOR_TYPE: u32 = 0x267F99;
 const COLOR_PROBLEM: u32 = 0xE51400;
+/// A problem that does not keep the script from running.
+const COLOR_WARNING: u32 = 0xBF8803;
 const COLOR_CURRENT_LINE: u32 = 0xF3F8F5;
 const COLOR_GUTTER_TEXT: u32 = 0x8A8A8A;
 const COLOR_FOUND: u32 = 0xF2DC9C;
@@ -150,8 +152,9 @@ pub(crate) struct CodeEditor {
     buffer: CodeBuffer,
     language: Language,
     read_only: bool,
-    /// Lines with a problem (1-based) and what the problem is.
-    marks: Vec<(u32, SharedString)>,
+    /// Lines with a problem (1-based), what the problem is, and whether
+    /// it is only a warning.
+    marks: Vec<(u32, SharedString, bool)>,
     /// What an input method is composing.
     marked: Option<Range<usize>>,
     /// The state each line starts in, for the colours.
@@ -251,7 +254,7 @@ impl CodeEditor {
     }
 
     /// Mark the lines that have a problem.
-    pub fn set_marks(&mut self, marks: Vec<(u32, SharedString)>, cx: &mut Context<Self>) {
+    pub fn set_marks(&mut self, marks: Vec<(u32, SharedString, bool)>, cx: &mut Context<Self>) {
         if self.marks != marks {
             self.marks = marks;
             cx.notify();
@@ -1193,8 +1196,9 @@ struct Prepared {
     current_line: Option<Bounds<Pixels>>,
     selection: Vec<Bounds<Pixels>>,
     caret: Option<Bounds<Pixels>>,
-    /// A dot in the gutter for each line in view that has a problem.
-    problems: Vec<Bounds<Pixels>>,
+    /// A dot in the gutter for each line in view that has a problem, in
+    /// the colour of the problem.
+    problems: Vec<(Bounds<Pixels>, u32)>,
     /// The thumb of the vertical scroll bar, when the text is taller than
     /// the box.
     thumb: Option<Bounds<Pixels>>,
@@ -1228,7 +1232,7 @@ impl IntoElement for EditorElement {
 
 /// The runs of one line: the colours of its tokens, a wavy line under a
 /// line with a problem, a plain one under what is being composed.
-fn runs_of(line: &str, spans: &[(Range<usize>, Token)], problem: bool, composed: Option<Range<usize>>) -> Vec<TextRun> {
+fn runs_of(line: &str, spans: &[(Range<usize>, Token)], problem: Option<u32>, composed: Option<Range<usize>>) -> Vec<TextRun> {
     let mut runs = Vec::new();
     let composed = composed.unwrap_or(0..0);
     for (range, token) in spans {
@@ -1249,9 +1253,9 @@ fn runs_of(line: &str, spans: &[(Range<usize>, Token)], problem: bool, composed:
                     thickness: px(1.),
                     wavy: false,
                 })
-            } else if problem && !line[start..end].trim().is_empty() {
+            } else if let Some(tint) = problem.filter(|_| !line[start..end].trim().is_empty()) {
                 Some(UnderlineStyle {
-                    color: Some(c(COLOR_PROBLEM)),
+                    color: Some(c(tint)),
                     thickness: px(1.),
                     wavy: true,
                 })
@@ -1364,7 +1368,13 @@ impl Element for EditorElement {
             let text = &buffer.text()[range.clone()];
             let state = editor.states.get(line).copied().unwrap_or_default();
             let (spans, _) = highlight_line(editor.language, text, state);
-            let problem = editor.marks.iter().any(|(marked, _)| *marked as usize == line + 1);
+            // An error on the line shows over a warning.
+            let problem = editor
+                .marks
+                .iter()
+                .filter(|(marked, _, _)| *marked as usize == line + 1)
+                .map(|(_, _, warning)| if *warning { COLOR_WARNING } else { COLOR_PROBLEM })
+                .min_by_key(|tint| *tint == COLOR_WARNING);
             let composed = editor
                 .marked
                 .as_ref()
@@ -1417,12 +1427,9 @@ impl Element for EditorElement {
             let shaped_number = plain(number.into(), color, window);
             let x = bounds.left() + gutter_width - char_width - shaped_number.width;
             numbers.push((shaped_number, point(x, line_top(line))));
-            if problem {
+            if let Some(tint) = problem {
                 let side = px(6.);
-                problems.push(Bounds::new(
-                    point(bounds.left() + px(3.), line_top(line) + (px(LINE_HEIGHT) - side) / 2.0),
-                    size(side, side),
-                ));
+                problems.push((Bounds::new(point(bounds.left() + px(3.), line_top(line) + (px(LINE_HEIGHT) - side) / 2.0), size(side, side)), tint));
             }
             lines.push((line, shaped));
         }
@@ -1578,11 +1585,11 @@ impl Element for EditorElement {
             for (number, origin) in &prepared.numbers {
                 let _ = number.paint(*origin, line_height, window, cx);
             }
-            for dot in &prepared.problems {
+            for (dot, tint) in &prepared.problems {
                 window.paint_quad(gpui::quad(
                     *dot,
                     px(3.),
-                    c(COLOR_PROBLEM),
+                    c(*tint),
                     px(0.),
                     gpui::transparent_black(),
                     gpui::BorderStyle::Solid,
@@ -1723,15 +1730,15 @@ mod tests {
     fn a_line_is_cut_into_runs_that_cover_it() {
         let line = "let n = 12; // é";
         let (spans, _) = highlight_line(Language::TypeScript, line, LineState::Code);
-        for (problem, composed) in [(false, None), (true, None), (false, Some(2..6)), (true, Some(0..line.len()))] {
+        for (problem, composed) in [(None, None), (Some(COLOR_PROBLEM), None), (None, Some(2..6)), (Some(COLOR_WARNING), Some(0..line.len()))] {
             let runs = runs_of(line, &spans, problem, composed.clone());
-            assert_eq!(runs.iter().map(|run| run.len).sum::<usize>(), line.len(), "{problem} {composed:?}");
+            assert_eq!(runs.iter().map(|run| run.len).sum::<usize>(), line.len(), "{problem:?} {composed:?}");
         }
         // A problem underlines the words, not the blanks between them.
-        let runs = runs_of(line, &spans, true, None);
+        let runs = runs_of(line, &spans, Some(COLOR_PROBLEM), None);
         assert!(runs.iter().any(|run| run.underline.is_some_and(|u| u.wavy)));
         // The keyword keeps its colour under the composed text.
-        let runs = runs_of(line, &spans, false, Some(0..3));
+        let runs = runs_of(line, &spans, None, Some(0..3));
         assert_eq!(runs[0].len, 3);
         assert_eq!(runs[0].color, c(COLOR_KEYWORD));
         assert!(runs[0].underline.is_some_and(|u| !u.wavy));

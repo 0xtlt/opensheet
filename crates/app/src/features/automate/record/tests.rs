@@ -849,7 +849,8 @@ fn what_cannot_be_written_is_listed_as_not_recorded(cx: &mut TestAppContext) {
     seed(&app, cx, SALES);
     start(&app, cx);
     enter(&app, cx, "E1", "before");
-    // A note: nothing of the script API writes one.
+    // A note signed by someone else: a script writes notes in the name
+    // of the user only.
     act(&app, cx, |app, _, cx| {
         app.wb.snapshot();
         app.wb.sheets[0].comments.insert((1, 1), Comment::Note(Note::new("Thomas", "check this")));
@@ -1046,4 +1047,185 @@ fn timing_on_a_large_sheet(cx: &mut TestAppContext) {
         println!("{what}: {:?}", clock.elapsed());
     }
     println!("{:?}", listed(&app, cx));
+}
+
+// ------------------------------ what the second part of the engine brought
+
+#[gpui::test]
+fn sheets_hidden_and_shown_again(cx: &mut TestAppContext) {
+    use crate::features::sheets;
+    let (app, cx) = open(cx);
+    act(&app, cx, |app, window, cx| {
+        app.add_sheet(cx);
+        app.add_sheet(cx);
+        app.switch_sheet(0, window, cx);
+    });
+    let script = replayed(&app, cx, |app, cx| {
+        act(app, cx, |app, _, cx| assert!(sheets::hide(app, 1, cx)));
+        act(app, cx, |app, _, cx| assert!(sheets::hide(app, 2, cx)));
+        act(app, cx, |app, _, cx| assert!(sheets::unhide(app, &[1], cx)));
+    });
+    assert_eq!(
+        statements(&script),
+        [
+            "workbook.getWorksheet(\"Sheet2\").setVisibility(ExcelScript.SheetVisibility.hidden);",
+            "workbook.getWorksheet(\"Sheet3\").setVisibility(ExcelScript.SheetVisibility.hidden);",
+            "workbook.getWorksheet(\"Sheet2\").setVisibility(ExcelScript.SheetVisibility.visible);",
+        ]
+    );
+}
+
+#[gpui::test]
+fn data_validation(cx: &mut TestAppContext) {
+    use opensheet_engine::Locale;
+    use opensheet_engine::validation::{AlertStyle, Operator, Validation, ValidationKind};
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    // What OK of the Data Validation dialog does with its three pages.
+    let rule = |kind: ValidationKind, operator: Operator, first: &str, second: &str| {
+        let mut rule = Validation {
+            kind,
+            operator,
+            ..Validation::default()
+        };
+        rule.set_operands(first, second, Locale::en()).expect("a rule");
+        rule
+    };
+    let set = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str, rule: Validation| {
+        let range = rect(range);
+        act(app, cx, move |app, _, cx| {
+            assert!(app.wb.set_validation(0, &[range], (range.r0, range.c0), rule));
+            app.commit("Data Validation", cx);
+        });
+    };
+    let script = replayed(&app, cx, |app, cx| {
+        set(app, cx, "B2:B5", rule(ValidationKind::Whole, Operator::Between, "1", "100"));
+        set(app, cx, "A2:A5", rule(ValidationKind::List, Operator::Between, "North,South,East,West", ""));
+        let mut warned = rule(ValidationKind::Decimal, Operator::GreaterThan, "=B2/10", "");
+        warned.allow_blank = false;
+        warned.input_title = "Price".to_string();
+        warned.input_message = "More than a tenth of the units".to_string();
+        warned.error_style = AlertStyle::Warning;
+        warned.error_title = "Too low".to_string();
+        warned.error_message = "Check the price.".to_string();
+        set(app, cx, "C2:C5", warned);
+        set(app, cx, "E1:E3", rule(ValidationKind::Custom, Operator::Between, "=LEN(E1)<5", ""));
+        // The rule of B2:B5 replaced, that of A2:A5 removed.
+        set(app, cx, "B2:B5", rule(ValidationKind::TextLength, Operator::LessOrEqual, "3", ""));
+        act(app, cx, |app, _, cx| {
+            assert!(app.wb.clear_validation(0, &[rect("A2:A5")]));
+            app.commit("Data Validation", cx);
+        });
+    });
+    for line in [
+        "selectedSheet.getRange(\"B2:B5\").getDataValidation().setRule({ wholeNumber: { formula1: \"1\", formula2: \"100\", operator: ExcelScript.DataValidationOperator.between } });",
+        "selectedSheet.getRange(\"A2:A5\").getDataValidation().setRule({ list: { inCellDropDown: true, source: \"North,South,East,West\" } });",
+        "selectedSheet.getRange(\"C2:C5\").getDataValidation().setRule({ decimal: { formula1: \"=B2/10\", operator: ExcelScript.DataValidationOperator.greaterThan } });",
+        "selectedSheet.getRange(\"C2:C5\").getDataValidation().setIgnoreBlanks(false);",
+        "selectedSheet.getRange(\"C2:C5\").getDataValidation().setPrompt({ showPrompt: true, title: \"Price\", message: \"More than a tenth of the units\" });",
+        "selectedSheet.getRange(\"C2:C5\").getDataValidation().setErrorAlert({ showAlert: true, style: ExcelScript.DataValidationAlertStyle.warning, title: \"Too low\", message: \"Check the price.\" });",
+        "selectedSheet.getRange(\"E1:E3\").getDataValidation().setRule({ custom: { formula: \"=LEN(E1)<5\" } });",
+        "selectedSheet.getRange(\"B2:B5\").getDataValidation().clear();",
+        "selectedSheet.getRange(\"B2:B5\").getDataValidation().setRule({ textLength: { formula1: \"3\", operator: ExcelScript.DataValidationOperator.lessThanOrEqualTo } });",
+        "selectedSheet.getRange(\"A2:A5\").getDataValidation().clear();",
+    ] {
+        assert!(statements(&script).contains(&line), "{line}\n{script}");
+    }
+}
+
+#[gpui::test]
+fn notes_added_changed_shown_and_deleted(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    let author = crate::features::preferences::user_name().unwrap_or_else(|| opensheet_script::Context::default().user_name);
+    let script = replayed(&app, cx, |app, cx| {
+        let name = author.clone();
+        act(app, cx, move |app, _, cx| {
+            assert!(app.wb.set_note(0, 1, 1, &name, "Counted twice"));
+            app.commit("New Note", cx);
+        });
+        let name = author.clone();
+        act(app, cx, move |app, _, cx| {
+            assert!(app.wb.set_note(0, 2, 2, &name, "Ask Paul"));
+            app.commit("New Note", cx);
+        });
+        act(app, cx, |app, _, cx| {
+            assert!(app.wb.set_note_visible(0, 1, 1, true));
+            app.commit("Show Note", cx);
+        });
+        let name = author.clone();
+        act(app, cx, move |app, _, cx| {
+            assert!(app.wb.set_note(0, 2, 2, &name, "Paul agreed"));
+            app.commit("Edit Note", cx);
+        });
+        act(app, cx, |app, _, cx| {
+            assert!(app.wb.delete_comment(0, 1, 1));
+            app.commit("Delete Note", cx);
+        });
+    });
+    assert_eq!(
+        statements(&script),
+        [
+            "selectedSheet.addNote(\"B2\", \"Counted twice\");",
+            "selectedSheet.addNote(\"C3\", \"Ask Paul\");",
+            "selectedSheet.getNote(\"B2\").setVisible(true);",
+            "selectedSheet.getNote(\"C3\").setContent(\"Paul agreed\");",
+            "selectedSheet.getNote(\"B2\").delete();",
+        ]
+    );
+}
+
+#[gpui::test]
+fn a_sheet_protected_and_unprotected(cx: &mut TestAppContext) {
+    use opensheet_engine::protect::{Permission, SheetProtection};
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    // Protecting forgets the history, so nothing can be undone to replay
+    // on: the script runs on a copy of the workbook as it was.
+    let mut copy = app.update(cx, |app, _| app.wb.fork());
+    start(&app, cx);
+    enter(&app, cx, "E1", "before");
+    act(&app, cx, |app, _, cx| {
+        assert!(app.wb.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectUnlockedCells, Permission::FormatCells, Permission::Sort]), ""));
+        app.refresh(cx);
+    });
+    act(&app, cx, |app, _, cx| {
+        app.wb.unprotect_sheet(0, "").expect("no password");
+        app.refresh(cx);
+    });
+    enter(&app, cx, "E2", "after");
+    act(&app, cx, |app, _, cx| {
+        assert!(app.wb.protect_sheet(0, SheetProtection::default(), ""));
+        app.refresh(cx);
+    });
+    // With a password: a script cannot know it.
+    act(&app, cx, |app, window, cx| {
+        app.add_sheet(cx);
+        app.switch_sheet(1, window, cx);
+    });
+    act(&app, cx, |app, _, cx| {
+        assert!(app.wb.protect_sheet(1, SheetProtection::default(), "secret"));
+        app.refresh(cx);
+    });
+    let actions = listed(&app, cx);
+    assert_eq!(actions.iter().map(|(_, recorded)| *recorded).collect::<Vec<_>>(), [true, true, true, true, true, true, false], "{actions:?}");
+    let script = stop(&app, cx);
+    assert_eq!(
+        statements(&script),
+        [
+            "selectedSheet.getRange(\"E1\").setValue(\"before\");",
+            "selectedSheet.getProtection().protect({ allowFormatCells: true, allowSort: true, selectionMode: ExcelScript.ProtectionSelectionMode.unlocked });",
+            "selectedSheet.getProtection().unprotect();",
+            "selectedSheet.getRange(\"E2\").setValue(\"after\");",
+            "selectedSheet.getProtection().protect();",
+            "workbook.addWorksheet(\"Sheet2\");",
+        ]
+    );
+    let outcome = opensheet_script::run(&script, &mut copy, &opensheet_script::Context::default());
+    assert_eq!(outcome.error, None);
+    copy.commit("replay");
+    // All but the password of the second sheet.
+    let left = app.update(cx, |app, _| differences(&copy, &app.wb));
+    assert_eq!(left.len(), 1, "{left:#?}");
+    assert!(left[0].contains("protection"), "{left:#?}");
 }

@@ -12,7 +12,8 @@ use opensheet_engine::chart::Chart;
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::style::{Border, Color, Style, StyleId};
 use opensheet_engine::table::Table;
-use opensheet_engine::{Cell, Content, Sheet, Value, Workbook};
+use opensheet_engine::validation::Validation;
+use opensheet_engine::{Cell, Content, Rect, Sheet, Value, Workbook};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Sizes are kept in pixels and scripts give them in points.
@@ -173,6 +174,29 @@ pub(crate) fn same_table(a: &Table, b: &Table) -> bool {
     a == *b
 }
 
+/// The validation rules of a sheet, one per range: a rule over two
+/// ranges and the same rule given to each are the same rules. Each is
+/// given with its formulas as they read in the first cell of its range.
+pub(crate) fn validations(sheet: &Sheet) -> Vec<(Rect, Validation)> {
+    let mut rules: Vec<(Rect, Validation)> = sheet
+        .validations
+        .iter()
+        .flat_map(|rule| {
+            rule.ranges.iter().map(move |range| {
+                let alone = Validation {
+                    ranges: Vec::new(),
+                    formula1: rule.formula1_at(range.r0, range.c0).map(Into::into),
+                    formula2: rule.formula2_at(range.r0, range.c0).map(Into::into),
+                    ..rule.clone()
+                };
+                (*range, alone)
+            })
+        })
+        .collect();
+    rules.sort_by_key(|(range, _)| (range.r0, range.c0, range.r1, range.c1));
+    rules
+}
+
 fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Found) {
     let name = &b.name;
     // Cells: what they hold and how they are formatted.
@@ -261,6 +285,8 @@ fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Fo
             )*
         };
     }
+    plain("data validation", validations(a) == validations(b), &a.validations, &b.validations);
+    plain("visibility", a.visibility == b.visibility, &a.visibility, &b.visibility);
     untouched!(
         advanced_filter,
         consolidation,
@@ -268,7 +294,6 @@ fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Fo
         data_tables,
         text_imports,
         cond_formats,
-        validations,
         comments,
         protection,
         page,

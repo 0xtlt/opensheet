@@ -20,7 +20,7 @@ use gpui::{
     AnyElement, App, Context, Entity, Focusable, FontWeight, PathPromptOptions, SharedString, Subscription, Task, WeakEntity, Window, div,
     prelude::*, px,
 };
-use opensheet_script::{LogLevel, Script, ScriptError};
+use opensheet_script::{ErrorKind, LogLevel, Script, ScriptError};
 use std::cell::RefCell;
 use std::time::Duration;
 
@@ -186,7 +186,8 @@ impl CodeEditorPane {
     }
 
     fn set_problems(&mut self, problems: Vec<ScriptError>, cx: &mut Context<Self>) {
-        let marks = problems.iter().filter_map(|problem| Some((problem.line?, SharedString::from(problem.message.clone())))).collect();
+        // What the checker finds in a script that can run is a warning.
+        let marks = problems.iter().filter_map(|problem| Some((problem.line?, SharedString::from(problem.message.clone()), problem.kind == ErrorKind::Check))).collect();
         self.editor.update(cx, |editor, cx| editor.set_marks(marks, cx));
         // A first problem brings its list forward; the last one solved
         // gives the place back to the output.
@@ -1075,6 +1076,7 @@ impl CodeEditorPane {
                     (Some(line), None) => format!("[{line}]"),
                     _ => String::new(),
                 };
+                let warning = problem.kind == ErrorKind::Check;
                 div()
                     .id(("ce-problem", index))
                     .debug_selector(move || format!("ce-problem-{index}"))
@@ -1084,7 +1086,7 @@ impl CodeEditorPane {
                     .items_start()
                     .gap(px(6.))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(div().flex_none().text_color(c(0xA4262C)).child("✕"))
+                    .child(div().flex_none().text_color(c(if warning { 0x8A6100 } else { 0xA4262C })).child(if warning { "⚠" } else { "✕" }))
                     .child(div().flex_1().min_w(px(0.)).child(problem.message.clone()))
                     .child(div().flex_none().text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).child(place))
                     .on_click(cx.listener(move |pane, _, window, cx| {

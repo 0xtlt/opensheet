@@ -93,6 +93,12 @@ fn a_table_is_made_and_sorted() {
     assert_eq!(regions, [Value::Text("North".into()), Value::Text("South".into()), Value::Text("West".into())]);
     assert_eq!(wb.value_at(0, 1, 1), Value::Number(120.0));
 
+    // Filtered on its last column: some rows show, some do not.
+    let filter = table.auto_filter.as_ref().expect("the filter of the table");
+    assert_eq!(filter.columns.keys().copied().collect::<Vec<_>>(), [2]);
+    let hidden = wb.sheets[0].filtered_rows.len();
+    assert!(hidden > 0 && hidden < 3, "{hidden} rows filtered");
+
     // A sheet that has a table already gets no second one.
     let outcome = run("table", &mut wb, Rect::cell(1, 1));
     assert_eq!(wb.sheets[0].tables.len(), 1);

@@ -1374,6 +1374,9 @@ pub static ES: &[(&str, &str)] = &[
     ("Find Previous", "Buscar anterior"),
     ("Go to line", "Ir a la línea"),
     ("No results", "Sin resultados"),
+    ("Change", "Cambio"),
+    ("The script changed the protection of a sheet: its changes cannot be undone.", "El script cambió la protección de una hoja: sus cambios no se pueden deshacer."),
+    ("Makes a table of the range around the selected cell, sorts it, shows its total row and keeps the rows whose last column is above average.", "Crea una tabla con el rango que rodea la celda seleccionada, la ordena, muestra su fila de totales y conserva las filas cuya última columna está por encima del promedio."),
     // ---- Conditional formatting ----
     ("Greater Than…", "Es mayor que…"),
     ("Less Than…", "Es menor que…"),
@@ -5028,6 +5031,9 @@ pub static DE: &[(&str, &str)] = &[
     ("Find Previous", "Vorheriges suchen"),
     ("Go to line", "Gehe zu Zeile"),
     ("No results", "Keine Ergebnisse"),
+    ("Change", "Änderung"),
+    ("The script changed the protection of a sheet: its changes cannot be undone.", "Das Skript hat den Schutz eines Blatts geändert: Seine Änderungen können nicht rückgängig gemacht werden."),
+    ("Makes a table of the range around the selected cell, sorts it, shows its total row and keeps the rows whose last column is above average.", "Erstellt eine Tabelle aus dem Bereich um die markierte Zelle, sortiert sie, blendet ihre Ergebniszeile ein und behält die Zeilen, deren letzte Spalte über dem Durchschnitt liegt."),
     // ---- Conditional formatting ----
     ("Greater Than…", "Größer als…"),
     ("Less Than…", "Kleiner als…"),
@@ -8676,6 +8682,9 @@ pub static IT: &[(&str, &str)] = &[
     ("Find Previous", "Trova precedente"),
     ("Go to line", "Vai alla riga"),
     ("No results", "Nessun risultato"),
+    ("Change", "Modifica"),
+    ("The script changed the protection of a sheet: its changes cannot be undone.", "Lo script ha modificato la protezione di un foglio: le sue modifiche non possono essere annullate."),
+    ("Makes a table of the range around the selected cell, sorts it, shows its total row and keeps the rows whose last column is above average.", "Crea una tabella dall'intervallo che circonda la cella selezionata, la ordina, ne mostra la riga dei totali e mantiene le righe la cui ultima colonna è sopra la media."),
     // ---- Conditional formatting ----
     ("Greater Than…", "Maggiore di…"),
     ("Less Than…", "Minore di…"),
