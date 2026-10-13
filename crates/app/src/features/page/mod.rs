@@ -14,6 +14,7 @@
 //! * `paper.rs`: what the application paints on paper itself (charts,
 //!   pictures and shapes, data bars and icons).
 
+mod background;
 mod paper;
 mod print;
 mod scene;
@@ -512,13 +513,19 @@ impl Command for Cmd {
         self.face().0
     }
 
+    /// As in Excel, the button takes the background away once the sheet
+    /// has one.
+    fn label_in(self, app: &ExcelApp) -> &'static str {
+        match self {
+            Cmd::Background if background::has_background(app) => t("Delete Background", "Supprimer l'arrière-plan"),
+            _ => self.label(),
+        }
+    }
+
     fn enabled(self, app: &ExcelApp) -> bool {
         let s = setup(app);
         let sel = app.sel().current();
         match self {
-            // Sheet backgrounds are not modelled: the picture would have
-            // nowhere to go.
-            Cmd::Background => false,
             // As in Excel, the ruler belongs to the Page Layout view.
             Cmd::Ruler => app.view_mode() == ViewMode::PageLayout,
             Cmd::ClearPrintArea | Cmd::ResetPrintArea => !s.print_area.is_empty(),
@@ -711,9 +718,10 @@ impl Command for Cmd {
             }
             Cmd::HfScaleWithDoc => views::toggle_option(app, cx, |hf| hf.scale_with_doc = !hf.scale_with_doc),
             Cmd::HfAlignMargins => views::toggle_option(app, cx, |hf| hf.align_with_margins = !hf.align_with_margins),
+            Cmd::Background => background::run(app, window, cx),
             // Greyed out (see `enabled`); custom views are not part of
             // page setup and have no model.
-            Cmd::Background | Cmd::CustomViews => app.not_implemented(self.label(), cx),
+            Cmd::CustomViews => app.not_implemented(self.label(), cx),
         }
     }
 }
@@ -760,6 +768,7 @@ impl Feature for Page {
     }
 
     fn paint(&self, p: &mut Painter) {
+        background::paint(p);
         views::paint(p);
     }
 

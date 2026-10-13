@@ -15,7 +15,7 @@ use crate::widgets::{self, Checkbox, ListBox};
 use gpui::{AnyElement, Context, Entity, FontWeight, Render, SharedString, WeakEntity, Window, div, prelude::*, px};
 use opensheet_engine::chart::{
     Axes, Chart, ChartTitle, DataLabels, DataTable, ErrorAmount, ErrorBars, ErrorDirection, Family, Fill, LabelPosition,
-    LegendPos, Line, PALETTE, ShapeFormat, TrendKind, Trendline,
+    LegendPos, Line, ShapeFormat, TrendKind, Trendline,
 };
 use opensheet_engine::chart_layout::{AxisId, ChartElement};
 use opensheet_engine::style::Color;
@@ -374,7 +374,15 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
         (LegendPos::Bottom, t("Bottom", "Bas")),
     ]
     .into_iter()
-    .map(|(pos, label)| edit(label, t("Legend", "Légende"), move |c| c.legend = pos).checked(chart.legend == pos))
+    .map(|(pos, label)| {
+        // A side chosen here is where the legend goes, wherever it had
+        // been dragged.
+        let place = move |c: &mut Chart| {
+            c.legend = pos;
+            c.legend_layout = None;
+        };
+        edit(label, t("Legend", "Légende"), place).checked(chart.legend == pos && chart.legend_layout.is_none())
+    })
     .collect();
     legend.push(MenuEntry::separator());
     legend.push(more(t("More Legend Options…", "Autres options de légende…"), ChartElement::Legend));
@@ -523,6 +531,8 @@ pub const QUICK_LAYOUTS: [QuickLayout; 11] = {
 
 /// Give a chart the elements of a quick layout.
 pub fn apply_quick_layout(chart: &mut Chart, layout: &QuickLayout) {
+    // A layout says where everything goes.
+    chart.clear_manual_layout();
     let axis_title = || t("Axis Title", "Titre de l'axe").to_string();
     chart.title = match (&chart.title, layout.title) {
         (_, false) => ChartTitle::None,
@@ -615,13 +625,21 @@ fn shade(color: u32, amount: f32) -> Color {
     Color(theme::tint(color, amount))
 }
 
+/// The six accents of the theme of the workbook being shown.
+fn accents() -> [u32; 6] {
+    let theme = theme::document_theme();
+    opensheet_engine::style::ThemeSlot::ACCENTS.map(|slot| theme.rgb(slot))
+}
+
 /// The colours palette `index` gives `count` series: the colourful ones
 /// first (0 is the automatic palette), then the monochromatic ones.
 pub fn palette(index: usize, count: usize) -> Vec<Color> {
+    // The accents of the workbook's theme.
+    let accents = accents();
     // Later rounds of a colourful palette are lighter and darker variants.
     const ROUNDS: [f32; 6] = [0.0, 0.4, -0.25, 0.6, -0.5, 0.2];
     let colorful = |picks: &[usize]| -> Vec<Color> {
-        (0..count).map(|i| shade(PALETTE[picks[i % picks.len()]], ROUNDS[(i / picks.len()) % ROUNDS.len()])).collect()
+        (0..count).map(|i| shade(accents[picks[i % picks.len()]], ROUNDS[(i / picks.len()) % ROUNDS.len()])).collect()
     };
     match index {
         0 => colorful(&[0, 1, 2, 3, 4, 5]),
@@ -632,9 +650,9 @@ pub fn palette(index: usize, count: usize) -> Vec<Color> {
             let k = mono - COLORFUL;
             // Six run from dark to light, the greys follow, six run back.
             let (base, reversed) = match k {
-                0..=5 => (PALETTE[k], false),
+                0..=5 => (accents[k], false),
                 6 => (0x7F7F7F, false),
-                _ => (PALETTE[(k - 7) % PALETTE.len()], true),
+                _ => (accents[(k - 7) % accents.len()], true),
             };
             (0..count)
                 .map(|i| {
@@ -784,7 +802,7 @@ pub fn apply_style(chart: &mut Chart, index: usize) {
             }
         }
         6 => {
-            chart.chart_area.fill = Fill::Solid(shade(PALETTE[0], 0.88));
+            chart.chart_area.fill = Fill::Solid(shade(accents()[0], 0.88));
             chart.chart_area.border.shown = Some(false);
             chart.plot_area.fill = Fill::Solid(Color::WHITE);
         }
@@ -1008,6 +1026,7 @@ impl Render for ElementsFlyout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use opensheet_engine::chart::PALETTE;
     use opensheet_engine::ast::RefExpr;
     use opensheet_engine::chart::{ChartKind, Series};
 

@@ -356,14 +356,11 @@ fn per_100k(fraction: f32) -> i64 {
     }
 }
 
-/// A colour with how opaque it is (`<a:srgbClr><a:alpha/></a:srgbClr>`).
+/// A colour with how opaque it is: one of the theme by its name, any
+/// other by its value, with `<a:alpha>` in it when it lets light through.
 fn push_color_alpha(x: &mut String, color: Color, transparency: f32) {
-    w!(x, "<a:srgbClr val=\"{:06X}\">", color.value() & 0xFF_FFFF);
-    let alpha = per_100k(1.0 - transparency.clamp(0.0, 1.0));
-    if alpha != 100_000 {
-        w!(x, "<a:alpha val=\"{alpha}\"/>");
-    }
-    x.push_str("</a:srgbClr>");
+    let alpha = per_100k(1.0 - transparency.clamp(0.0, 1.0)) as u32;
+    super::color::push_drawing_color(x, color, (alpha != 100_000).then_some(alpha));
 }
 
 /// The side of the shape a shadow is measured from (`algn`): the one it
@@ -433,12 +430,10 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust) {
             w!(x, "<a:biLevel thresh=\"{}\"/>", per_100k(threshold.clamp(0.0, 1.0)));
         }
         Recolor::Duotone(dark, light) => {
-            w!(
-                x,
-                "<a:duotone><a:srgbClr val=\"{:06X}\"/><a:srgbClr val=\"{:06X}\"/></a:duotone>",
-                dark.value() & 0xFF_FFFF,
-                light.value() & 0xFF_FFFF
-            );
+            x.push_str("<a:duotone>");
+            push_color_alpha(x, dark, 0.0);
+            push_color_alpha(x, light, 0.0);
+            x.push_str("</a:duotone>");
         }
         // Excel's own spelling of it: brighter, with less contrast.
         Recolor::Washout => {

@@ -28,6 +28,7 @@ macro_rules! w {
     };
 }
 
+mod background;
 mod cell_style;
 mod chart;
 mod color;

@@ -367,6 +367,20 @@ impl ExcelApp {
         cx.notify();
     }
 
+    /// Take out of the selection the objects that are no longer on the
+    /// sheet (after an undo or a redo took them away).
+    pub(crate) fn prune_object_selection(&mut self, cx: &mut Context<Self>) {
+        let selected = self.selected_objects();
+        if selected.is_empty() {
+            return;
+        }
+        let there: Vec<ObjectId> = features::objects(self, self.sheet).into_iter().map(|(id, _)| id).collect();
+        let kept: Vec<ObjectId> = selected.iter().copied().filter(|id| there.contains(id)).collect();
+        if kept.len() != selected.len() {
+            self.select_objects(&kept, cx);
+        }
+    }
+
     pub fn deselect_object(&mut self, cx: &mut Context<Self>) {
         self.select_object(None, cx);
     }

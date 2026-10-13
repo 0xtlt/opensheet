@@ -593,6 +593,16 @@ fn retheme_chart(theme: &Theme, chart: &mut Chart) {
             theme.resolve_opt(&mut trendline.line.color);
         }
     }
+    // The colours of the texts, of the axis lines and of the gridlines.
+    for text in chart.text_formats_mut() {
+        theme.resolve_opt(&mut text.color);
+    }
+    let axes = &mut chart.axes;
+    for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
+        for line in [&mut axis.line, &mut axis.major_gridline, &mut axis.minor_gridline] {
+            theme.resolve_opt(&mut line.color);
+        }
+    }
 }
 
 /// Columns are as wide as a number of digits of the default font and

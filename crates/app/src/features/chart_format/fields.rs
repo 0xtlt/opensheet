@@ -6,7 +6,8 @@
 use crate::i18n::{Lang, lang};
 use crate::widgets::number_text;
 use opensheet_engine::chart::{
-    AxisCrossing, Chart, ChartTitle, DataLabels, ErrorAmount, Family, Fill, Line, Marker, MarkerShape, TrendKind, View3D,
+    AxisCrossing, Chart, ChartTitle, DataLabels, ErrorAmount, Family, Fill, Line, Marker, MarkerShape, TextFormat, TrendKind,
+    View3D,
 };
 use opensheet_engine::chart_layout::{ChartElement, Scale};
 use opensheet_engine::style::Color;
@@ -52,6 +53,9 @@ pub enum Field {
     Width,
     /// The text of a title.
     Text,
+    /// Font and size, in points, of the text of the selected element.
+    FontName,
+    FontSize,
 }
 
 impl Field {
@@ -77,6 +81,7 @@ impl Field {
             Field::Perspective => (0.1, 120.0, 5.0),
             Field::Depth => (20.0, 2000.0, 10.0),
             Field::Height | Field::Width => (0.5, 200.0, 0.1),
+            Field::FontSize => (1.0, 409.0, 1.0),
             Field::AxisMin
             | Field::AxisMax
             | Field::AxisMajor
@@ -85,6 +90,7 @@ impl Field {
             | Field::Intercept
             | Field::NumberFormat
             | Field::TrendName
+            | Field::FontName
             | Field::Text => return None,
         })
     }
@@ -92,7 +98,7 @@ impl Field {
     /// What follows the number in the field.
     fn unit(self) -> &'static str {
         match self {
-            Field::LineWidth => " pt",
+            Field::LineWidth | Field::FontSize => " pt",
             Field::Overlap | Field::GapWidth | Field::Explosion | Field::HoleSize | Field::ErrorPercent | Field::Depth => " %",
             Field::FirstSlice | Field::RotationX | Field::RotationY | Field::Perspective => "°",
             Field::Height | Field::Width => length_unit().1,
@@ -124,11 +130,41 @@ pub fn parse_number(text: &str, decimal_sep: char) -> Option<f64> {
 
 // --------------------------------------------------------------- fill and line
 
+/// The format of the text of an element. The chart area stands for
+/// every text of the chart: it shows what they all agree on.
+pub fn text_of(chart: &Chart, element: ChartElement) -> Option<TextFormat> {
+    if element != ChartElement::ChartArea {
+        return element.text(chart).cloned();
+    }
+    let mut all = chart.clone();
+    let all = all.text_formats_mut();
+    let first = all.first()?;
+    let shared = |same: &dyn Fn(&TextFormat) -> bool| all.iter().all(|text| same(text));
+    Some(TextFormat {
+        font: first.font.clone().filter(|_| shared(&|text| text.font == first.font)),
+        size: first.size.filter(|_| shared(&|text| text.size == first.size)),
+        bold: first.bold.filter(|_| shared(&|text| text.bold == first.bold)),
+        italic: first.italic.filter(|_| shared(&|text| text.italic == first.italic)),
+        underline: first.underline.filter(|_| shared(&|text| text.underline == first.underline)),
+        color: first.color.filter(|_| shared(&|text| text.color == first.color)),
+    })
+}
+
+/// The size, in points, of the text of an element; of a chart area whose
+/// texts differ, the size Excel gives its labels.
+pub fn text_size(chart: &Chart, element: ChartElement) -> Option<f32> {
+    let text = text_of(chart, element)?;
+    Some(text.size.unwrap_or(element.text_points()))
+}
+
 /// The line an element is drawn with, when the model has one for it: the
 /// border of the chart and plot areas, the line or the outline of a
-/// series, a trendline.
+/// series, a trendline, an axis, its gridlines.
 pub fn line_of(chart: &Chart, element: ChartElement) -> Option<&Line> {
     match element {
+        ChartElement::Axis(id) => Some(&id.of(&chart.axes).line),
+        ChartElement::MajorGridlines(id) => Some(&id.of(&chart.axes).major_gridline),
+        ChartElement::MinorGridlines(id) => Some(&id.of(&chart.axes).minor_gridline),
         ChartElement::ChartArea => Some(&chart.chart_area.border),
         ChartElement::PlotArea => Some(&chart.plot_area.border),
         ChartElement::Series(s) => chart.series.get(s as usize).map(|x| &x.line),
@@ -139,6 +175,9 @@ pub fn line_of(chart: &Chart, element: ChartElement) -> Option<&Line> {
 
 pub fn line_of_mut(chart: &mut Chart, element: ChartElement) -> Option<&mut Line> {
     match element {
+        ChartElement::Axis(id) => Some(&mut id.of_mut(&mut chart.axes).line),
+        ChartElement::MajorGridlines(id) => Some(&mut id.of_mut(&mut chart.axes).major_gridline),
+        ChartElement::MinorGridlines(id) => Some(&mut id.of_mut(&mut chart.axes).minor_gridline),
         ChartElement::ChartArea => Some(&mut chart.chart_area.border),
         ChartElement::PlotArea => Some(&mut chart.plot_area.border),
         ChartElement::Series(s) => chart.series.get_mut(s as usize).map(|x| &mut x.line),
@@ -335,6 +374,9 @@ pub fn value(chart: &Chart, element: ChartElement, field: Field, scale: Option<&
             ChartElement::AxisTitle(id) => id.of(&chart.axes).title.clone().unwrap_or_default(),
             _ => String::new(),
         },
+        // Empty: the font of the chart.
+        Field::FontName => text_of(chart, element).and_then(|text| text.font).map(|font| font.to_string()).unwrap_or_default(),
+        Field::FontSize => text_size(chart, element).map(|size| number(size as f64)).unwrap_or_default(),
     }
 }
 
@@ -480,6 +522,18 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
                 ChartElement::AxisTitle(id) if !text.is_empty() => id.of_mut(&mut chart.axes).title = Some(text.to_string()),
                 _ => return false,
             }
+        }
+        Field::FontName => {
+            // An emptied field goes back to the font of the chart.
+            let name = text.trim();
+            let font = (!name.is_empty()).then(|| std::sync::Arc::<str>::from(name));
+            return element.format_text(chart, |text| text.font = font.clone());
+        }
+        Field::FontSize => {
+            let Some(size) = ranged else { return false };
+            // Half points, as everywhere in Excel.
+            let size = ((size * 2.0).round() / 2.0) as f32;
+            return element.format_text(chart, |text| text.size = Some(size));
         }
     }
     true

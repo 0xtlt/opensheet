@@ -407,7 +407,6 @@ fn level_for(width: u32, height: u32, shown: (f32, f32)) -> u8 {
 /// What to paint for a picture in a frame: a bitmap and the box (x0, y0,
 /// x1, y1) it is stretched over. `scale` is the number of device pixels
 /// per pixel. `None` when the picture cannot be decoded.
-#[cfg(test)]
 pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
     image_as(picture, &picture.adjust, 0.0, (placed.width().abs(), placed.height().abs()), placed, scale)
 }

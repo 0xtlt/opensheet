@@ -6,7 +6,7 @@
 use super::cartesian::{Shape, shapes};
 use super::scale::{Fit, Scale};
 use super::{
-    AXIS, AxisId, ChartElement, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, groups, label_text, line_height,
+    AXIS, AXIS_TITLE_POINTS, AxisId, ChartElement, LABEL_POINTS, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, groups, label_text, line_height,
     shade,
 };
 use crate::chart::{Family, TickLabels, View3D};
@@ -267,6 +267,8 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let code = value_axis.number_format.clone().unwrap_or_else(|| {
         if kind.is_percent() { "0%".to_string() } else { data.value_format.clone() }
     });
+    let value_face = p.face(&value_axis.text, LABEL_POINTS);
+    let cat_face = p.face(&chart.axes.category.text, LABEL_POINTS);
     let labels_of = |p: &Painter, scale: &Scale| -> Vec<(f64, String, f32)> {
         // "None" for the tick labels hides them and leaves the axis.
         if !value_axis.visible || value_axis.labels == TickLabels::None {
@@ -277,7 +279,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             .iter()
             .map(|v| {
                 let text = fmt_value(*v / value_axis.display_unit.divisor(), &code, locale);
-                let w = p.width(&text, label_size);
+                let w = p.width_of(&text, &value_face);
                 (scale.fraction(*v), text, w)
             })
             .collect()
@@ -287,7 +289,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         (0..n)
             .map(|k| {
                 let text = data.categories.get(k).cloned().unwrap_or_default();
-                let w = p.width(&text, label_size);
+                let w = p.width_of(&text, &cat_face);
                 (text, w)
             })
             .collect()
@@ -398,7 +400,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
 
     // ---- the series --------------------------------------------------------
     let fb = scale.clamped(base) as f32;
-    let mut texts: Vec<(usize, String, f32, f32, TextAnchor)> = Vec::new();
+    let mut texts: Vec<(usize, usize, String, f32, f32, TextAnchor)> = Vec::new();
     let labelled = |si: usize| chart.labels_for(&chart.series[si]);
     match family {
         Family::Column | Family::Bar => {
@@ -455,10 +457,10 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     }
                     if horizontal {
                         let (x, y) = cam.at(solid.x.1, (solid.y.0 + solid.y.1) / 2.0, z0);
-                        texts.push((*si, text, x + 4.0 * z, y - label_h / 2.0, TextAnchor::Start));
+                        texts.push((*si, *k, text, x + 4.0 * z, y - p.label_face(*si).h / 2.0, TextAnchor::Start));
                     } else {
                         let (x, y) = cam.at((solid.x.0 + solid.x.1) / 2.0, solid.y.1, z0);
-                        texts.push((*si, text, x, y - label_h - 2.0 * z, TextAnchor::Middle));
+                        texts.push((*si, *k, text, x, y - p.label_face(*si).h - 2.0 * z, TextAnchor::Middle));
                     }
                 }
             }
@@ -547,7 +549,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         }
                         let (x, y, depth) = pos(centre(k), scale.clamped(v) as f32, z0);
                         let (x, y) = cam.at(x, y, depth);
-                        texts.push((si, text, x, y - label_h - 2.0 * z, TextAnchor::Middle));
+                        texts.push((si, k, text, x, y - p.label_face(si).h - 2.0 * z, TextAnchor::Middle));
                     }
                 }
             }
@@ -570,7 +572,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         p.tag(value_id);
         for (f, label, _) in &value_labels {
             let (x, y) = cam.at(*f as f32 * w, 0.0, 0.0);
-            p.text(label, x.round(), y + 5.0 * z, label_size, text, TextAnchor::Middle);
+            p.write(label, x.round(), y + 5.0 * z, &value_face, TextAnchor::Middle);
         }
         p.tag(category_id);
         let step = ((label_h / (cam.scale * h / slots.max(1.0)).max(1.0)).ceil() as usize).max(1);
@@ -579,13 +581,13 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 continue;
             }
             let (x, y) = cam.at(0.0, centre(k) / slots.max(1.0) * h, 0.0);
-            p.text(label, x - 6.0 * z - lw.min(side_w), y - label_h / 2.0, label_size, text, TextAnchor::Start);
+            p.write(label, x - 6.0 * z - lw.min(side_w), y - cat_face.h / 2.0, &cat_face, TextAnchor::Start);
         }
     } else {
         p.tag(value_id);
         for (f, label, _) in &value_labels {
             let (x, y) = cam.at(0.0, *f as f32 * h, 0.0);
-            p.text(label, x - 6.0 * z, y.round() - label_h / 2.0, label_size, text, TextAnchor::End);
+            p.write(label, x - 6.0 * z, y.round() - value_face.h / 2.0, &value_face, TextAnchor::End);
         }
         p.tag(category_id);
         let slot_px = cam.scale * w / slots.max(1.0);
@@ -595,7 +597,7 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 continue;
             }
             let (x, y) = cam.at(centre(k) / slots.max(1.0) * w, 0.0, 0.0);
-            p.text(label, x - lw / 2.0, y + 5.0 * z, label_size, text, TextAnchor::Start);
+            p.write(label, x - lw / 2.0, y + 5.0 * z, &cat_face, TextAnchor::Start);
         }
     }
     // Rows are named along the edge of the floor that runs into the depth.
@@ -607,14 +609,15 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let (side_id, foot_id) = if horizontal { (AxisId::Category, AxisId::Value) } else { (AxisId::Value, AxisId::Category) };
     if let Some(title) = side_title.filter(|t| !t.is_empty()) {
         p.tag(ChartElement::AxisTitle(side_id));
-        p.text_rotated(title, left + title_h / 2.0, (py0 + py1) / 2.0, title_size, text, -90.0);
+        let face = p.face(&side_id.of(&chart.axes).title_text, AXIS_TITLE_POINTS);
+        p.write_rotated(title, left + title_h / 2.0, (py0 + py1) / 2.0, &face, -90.0);
     }
     if let Some(title) = foot_title.filter(|t| !t.is_empty()) {
         p.tag(ChartElement::AxisTitle(foot_id));
-        p.text(title, (px0 + px1) / 2.0, py1 + foot_h + 2.0 * z, title_size, text, TextAnchor::Middle);
+        let face = p.face(&foot_id.of(&chart.axes).title_text, AXIS_TITLE_POINTS);
+        p.write(title, (px0 + px1) / 2.0, py1 + foot_h + 2.0 * z, &face, TextAnchor::Middle);
     }
-    for (si, label, x, y, anchor) in texts {
-        p.tag(ChartElement::DataLabels(si as u32));
-        p.text(&label, x, y, label_size, text, anchor);
+    for (si, point, label, x, y, anchor) in texts {
+        p.data_label(si, point, &label, x, y, anchor);
     }
 }

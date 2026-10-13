@@ -2,7 +2,7 @@
 //! centre, each series a closed line (filled or not) around it.
 
 use super::scale::{Fit, Scale};
-use super::{AxisId, ChartElement, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, label_text};
+use super::{AxisId, ChartElement, GRIDLINE, Ink, LABEL_POINTS, Painter, Stroke, TextAnchor, fmt_value, label_text};
 use crate::chart::ChartKind;
 use std::f32::consts::{FRAC_PI_2, TAU};
 
@@ -11,7 +11,6 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let data = p.data;
     let z = p.z;
     let (left, top, right, bottom) = area;
-    let label_size = p.label_size;
     let label_h = p.label_h;
     let count = data.series.len().min(chart.series.len());
     let n = data.series.iter().take(count).map(|s| s.values.len()).max().unwrap_or(0);
@@ -27,19 +26,23 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
         return;
     }
     let show_categories = chart.axes.category.visible;
+    let cat_face = p.face(&chart.axes.category.text, LABEL_POINTS);
+    let value_face = p.face(&chart.axes.value.text, LABEL_POINTS);
     let names: Vec<(String, f32)> = (0..n)
         .map(|k| {
             let text = if show_categories { data.categories.get(k).cloned().unwrap_or_default() } else { String::new() };
-            let w = p.width(&text, label_size);
+            let w = p.width_of(&text, &cat_face);
             (text, w)
         })
         .collect();
     let widest = names.iter().map(|(_, w)| *w).fold(0.0, f32::max);
     let cx = (left + right) / 2.0;
     let cy = (top + bottom) / 2.0;
-    let r = ((bottom - top) / 2.0 - label_h - 6.0 * z)
-        .min((right - left) / 2.0 - widest - 8.0 * z)
-        .max(8.0);
+    let r = if p.snug {
+        ((bottom - top) / 2.0).min((right - left) / 2.0).max(8.0)
+    } else {
+        ((bottom - top) / 2.0 - label_h - 6.0 * z).min((right - left) / 2.0 - widest - 8.0 * z).max(8.0)
+    };
     // The first category points up; the others follow clockwise.
     let angle = |k: usize| -FRAC_PI_2 + TAU * k as f32 / n as f32;
     let at = |k: usize, f: f64| {
@@ -77,7 +80,7 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     }
 
     // Series.
-    let mut texts: Vec<(usize, String, f32, f32, TextAnchor)> = Vec::new();
+    let mut texts: Vec<(usize, usize, String, f32, f32, TextAnchor)> = Vec::new();
     for si in 0..count {
         let look = p.look(si);
         p.tag(ChartElement::Series(si as u32));
@@ -125,7 +128,7 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 let Some((x, y)) = pt else { continue };
                 let text = label_text(p, si, k, None, labels);
                 if !text.is_empty() {
-                    texts.push((si, text, *x + 4.0 * z, *y - label_h, TextAnchor::Start));
+                    texts.push((si, k, text, *x + 4.0 * z, *y - p.label_face(si).h, TextAnchor::Start));
                 }
             }
         }
@@ -139,7 +142,7 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
         for v in &ticks {
             let label = fmt_value(*v / divisor, code, p.options.locale);
             let y = (cy - r * scale.clamped(*v) as f32).round();
-            p.text(&label, cx - 4.0 * z, y - label_h / 2.0, label_size, TEXT, TextAnchor::End);
+            p.write(&label, cx - 4.0 * z, y - value_face.h / 2.0, &value_face, TextAnchor::End);
         }
     }
     p.tag(ChartElement::Axis(AxisId::Category));
@@ -159,11 +162,10 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
             TextAnchor::Middle
         };
         // Above the top spoke, under the bottom one, level with the others.
-        let top = y - label_h / 2.0 + sin * label_h / 2.0;
-        p.text(name, x, top, label_size, TEXT, anchor);
+        let top = y - cat_face.h / 2.0 + sin * cat_face.h / 2.0;
+        p.write(name, x, top, &cat_face, anchor);
     }
-    for (si, text, x, y, anchor) in texts {
-        p.tag(ChartElement::DataLabels(si as u32));
-        p.text(&text, x, y, label_size, TEXT, anchor);
+    for (si, point, text, x, y, anchor) in texts {
+        p.data_label(si, point, &text, x, y, anchor);
     }
 }

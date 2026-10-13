@@ -31,7 +31,7 @@ mod adjust;
 pub(crate) mod geometry;
 mod paint;
 mod pane;
-mod picture;
+pub(crate) mod picture;
 mod tabs;
 mod text;
 mod tool;

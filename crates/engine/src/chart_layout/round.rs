@@ -1,7 +1,7 @@
 //! Pies, doughnuts and 3-D pies: one series (one ring per series for a
 //! doughnut) shown as shares of a whole.
 
-use super::{ChartElement, Ink, Painter, Seg, TEXT, TextAnchor, arc_points, arc_segs, explosion_of, label_text, shade};
+use super::{ChartElement, Ink, Painter, Seg, TextAnchor, arc_points, arc_segs, explosion_of, label_text, shade};
 use crate::chart::{DataLabels, Family, LabelPosition};
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
@@ -47,6 +47,7 @@ fn slices(values: &[Option<f64>], first_angle: f32) -> Vec<Slice> {
 fn place_label(
     p: &Painter,
     labels: &DataLabels,
+    series: usize,
     text: &str,
     slice: &Slice,
     centre: (f32, f32),
@@ -56,8 +57,9 @@ fn place_label(
 ) -> Option<(f32, f32, TextAnchor)> {
     let (cx, cy) = centre;
     let (rx, ry) = radii;
-    let w = p.width(text, p.label_size);
-    let h = p.label_h;
+    let face = p.label_face(series);
+    let w = p.width_of(text, &face);
+    let h = face.h;
     let mid = slice.start + slice.sweep / 2.0;
     let (sin, cos) = mid.sin_cos();
     // Inside: at this fraction of the radius.
@@ -110,7 +112,11 @@ pub(super) fn draw_round(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let cy = (top + bottom) / 2.0;
     let room = if outside { p.label_h + 8.0 * z } else { 4.0 * z };
     let widest = if outside { 30.0 * z } else { 0.0 };
-    let available = (((right - left) / 2.0 - widest).min((bottom - top) / 2.0) - room).max(4.0);
+    let available = if p.snug {
+        ((right - left) / 2.0).min((bottom - top) / 2.0).max(4.0)
+    } else {
+        (((right - left) / 2.0 - widest).min((bottom - top) / 2.0) - room).max(4.0)
+    };
     // Slices pulled out of the pie take their room from its radius.
     let burst = if doughnut {
         0.0
@@ -122,7 +128,7 @@ pub(super) fn draw_round(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let ring_w = r * (1.0 - hole) / rings as f32;
     p.area(ChartElement::PlotArea, (cx - available, cy - available, cx + available, cy + available));
 
-    let mut texts: Vec<(usize, String, f32, f32, TextAnchor)> = Vec::new();
+    let mut texts: Vec<(usize, usize, String, f32, f32, TextAnchor)> = Vec::new();
     for (si, ring) in all.iter().enumerate() {
         let look = p.look(si);
         let (r_in, r_out) = if doughnut {
@@ -173,17 +179,15 @@ pub(super) fn draw_round(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 }
                 let inner = if doughnut { r_in / r_out } else { 0.0 };
                 if let Some((x, y, anchor)) =
-                    place_label(p, labels, &text, slice, (ox, oy), (r_out, r_out), inner, doughnut)
+                    place_label(p, labels, si, &text, slice, (ox, oy), (r_out, r_out), inner, doughnut)
                 {
-                    texts.push((si, text, x, y, anchor));
+                    texts.push((si, slice.point, text, x, y, anchor));
                 }
             }
         }
     }
-    let size = p.label_size;
-    for (si, text, x, y, anchor) in texts {
-        p.tag(ChartElement::DataLabels(si as u32));
-        p.text(&text, x, y, size, TEXT, anchor);
+    for (si, point, text, x, y, anchor) in texts {
+        p.data_label(si, point, &text, x, y, anchor);
     }
 }
 
@@ -230,7 +234,7 @@ pub(super) fn draw_pie_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         let key = |s: &Slice| (s.start + s.sweep / 2.0).sin();
         key(a).partial_cmp(&key(b)).unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut texts: Vec<(String, f32, f32, TextAnchor)> = Vec::new();
+    let mut texts: Vec<(usize, String, f32, f32, TextAnchor)> = Vec::new();
     for slice in order {
         let color = p.point_color(0, slice.point);
         let mid = slice.start + slice.sweep / 2.0;
@@ -282,17 +286,15 @@ pub(super) fn draw_pie_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         if let Some(labels) = labelled {
             let text = label_text(p, 0, slice.point, Some(slice.share), labels);
             if !text.is_empty()
-                && let Some((x, y, anchor)) = place_label(p, labels, &text, slice, (ox, oy), (rx, ry), 0.0, false)
+                && let Some((x, y, anchor)) = place_label(p, labels, 0, &text, slice, (ox, oy), (rx, ry), 0.0, false)
             {
                 // Labels under the pie clear its rim.
                 let below = if (slice.start + slice.sweep / 2.0).sin() > 0.0 && y > oy + ry * 0.9 { band } else { 0.0 };
-                texts.push((text, x, y + below, anchor));
+                texts.push((slice.point, text, x, y + below, anchor));
             }
         }
     }
-    let size = p.label_size;
-    p.tag(ChartElement::DataLabels(0));
-    for (text, x, y, anchor) in texts {
-        p.text(&text, x, y, size, TEXT, anchor);
+    for (point, text, x, y, anchor) in texts {
+        p.data_label(0, point, &text, x, y, anchor);
     }
 }

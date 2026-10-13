@@ -7,7 +7,7 @@
 use super::{Cmd, DrawingUi, cropping, edit_leaves, edit_picture, end_crop, end_text_edit, pane, selected, selected_ids};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::features::{Command, Cx};
-use crate::i18n::{labelled, lang, t};
+use crate::i18n::{labelled, lang, t, t_ctx};
 use gpui::Window;
 use opensheet_engine::Color;
 use opensheet_engine::drawing::{
@@ -452,7 +452,7 @@ pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
     let off = |label: &'static str| MenuEntry::new(label, |_, _, _| {}).disabled(true);
     let entries = vec![
         MenuEntry::submenu(shadow_label, shadow),
-        off(t("Reflection", "Réflexion")),
+        off(t_ctx("effect", "Reflection", "Réflexion")),
         MenuEntry::submenu(glow_label, glow),
         MenuEntry::submenu(soft_label, soft).disabled(!pictures),
         off(t("Bevel", "Biseau")),

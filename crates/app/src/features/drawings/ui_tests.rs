@@ -822,6 +822,10 @@ fn several_objects_are_selected_moved_and_deleted_together(cx: &mut TestAppConte
     assert_eq!(ids(&app, cx).len(), 6);
     app.update(cx, |app, cx| app.undo(cx));
     assert_eq!(ids(&app, cx).len(), 3);
+    // The copies the undo took away are no longer selected.
+    assert!(app.update(cx, |app, _| app.selected_objects().is_empty()));
+    cx.simulate_keystrokes("cmd-a");
+    assert!(selected_all(&app, cx).is_empty());
     // Delete removes them all, in one step.
     click_at(&app, cx, 150.0, 90.0);
     cx.simulate_keystrokes("cmd-a delete");
