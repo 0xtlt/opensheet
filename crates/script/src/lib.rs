@@ -14,10 +14,27 @@
 //!   `wb.commit(label)`;
 //! * when it is `Some`, the caller drops them with `wb.rollback()`: a
 //!   script that fails changes nothing;
+//! * when it is `Some`, [`run`] has already dropped them and the
+//!   workbook is as it was; the caller's `wb.rollback()` is still right
+//!   (it then finds nothing to drop);
 //! * [`run`] never panics and never runs longer than
-//!   [`Context::time_limit`].
+//!   [`Context::time_limit`];
+//! * a script gets the language and the `ExcelScript` object model,
+//!   nothing else: no file, no network, no process, no environment.
+//!
+//! What a script can call is the table [`api`] gives (with [`enums`]);
+//! anything else of the Office Scripts API fails with
+//! [`ErrorKind::Unsupported`] and the name of what is missing. Types are
+//! removed, not checked: a script with a type error runs.
 
 use std::time::Duration;
+
+mod api;
+mod compile;
+mod host;
+mod runtime;
+
+pub use api::{ApiClass, ApiEnum, ApiMember};
 
 use opensheet_engine::refs::Rect;
 use opensheet_engine::workbook::Workbook;
@@ -149,26 +166,51 @@ pub struct Outcome {
     /// range), for the window to follow.
     pub activated: Option<usize>,
     pub selected: Option<(usize, Rect)>,
+    /// The columns and rows the script asked to fit to their content.
+    /// They were given the sizes the engine estimates without fonts; a
+    /// window fits them again with the fonts it draws with, before it
+    /// commits.
+    pub autofit: Vec<Autofit>,
+}
+
+/// Columns (or rows) `first..=last` of a sheet, to fit to their content.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Autofit {
+    pub sheet: usize,
+    /// Columns rather than rows.
+    pub columns: bool,
+    pub first: u32,
+    pub last: u32,
 }
 
 /// What is wrong with the text of a script, without running it: syntax
-/// errors and a missing `main`. Empty when it can be run.
-pub fn check(_source: &str) -> Vec<ScriptError> {
-    Vec::new()
+/// errors and a missing `main`. Empty when it can be run. Types are not
+/// checked.
+pub fn check(source: &str) -> Vec<ScriptError> {
+    compile::compile(source).err().unwrap_or_default()
 }
 
 /// Run the `main` of a script on a workbook. See the contract at the top
 /// of this file.
-pub fn run(_source: &str, _wb: &mut Workbook, _context: &Context) -> Outcome {
-    Outcome {
-        error: Some(ScriptError {
-            kind: ErrorKind::Unsupported,
-            message: "The script engine is not built yet.".to_string(),
-            line: None,
-            column: None,
-        }),
-        ..Outcome::default()
+pub fn run(source: &str, wb: &mut Workbook, context: &Context) -> Outcome {
+    match compile::compile(source) {
+        Ok(compiled) => runtime::run(compiled, wb, context),
+        Err(mut errors) => Outcome {
+            error: Some(errors.swap_remove(0)),
+            ..Outcome::default()
+        },
     }
+}
+
+/// The classes of the Office Scripts API a script can use, with every
+/// member that works: the table the bindings themselves are made of.
+pub fn api() -> &'static [ApiClass] {
+    api::API
+}
+
+/// The enums of the `ExcelScript` namespace a script can use.
+pub fn enums() -> &'static [ApiEnum] {
+    api::ENUMS
 }
 
 #[cfg(test)]
