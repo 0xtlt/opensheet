@@ -50,6 +50,14 @@ pub struct Settings {
     /// The folder the Office Scripts are kept in; empty: the folder of
     /// the application (see `features/automate/scripts.rs`).
     pub scripts_folder: String,
+    // ---- Review
+    /// "Dictionary language" of the Spelling dialog, as the system
+    /// checker names it; empty: the language of the interface.
+    pub spelling_language: String,
+    /// The languages last chosen in the Translator pane ("" for the
+    /// source: detect it).
+    pub translate_from: String,
+    pub translate_to: String,
 }
 
 impl Default for Settings {
@@ -69,6 +77,9 @@ impl Default for Settings {
             check_error_values: true,
             pens: default_pens(),
             scripts_folder: String::new(),
+            spelling_language: String::new(),
+            translate_from: String::new(),
+            translate_to: String::new(),
         }
     }
 }
@@ -110,6 +121,9 @@ impl Settings {
             line("pen", &pen.to_setting());
         }
         line("scripts-folder", &self.scripts_folder);
+        line("spelling-language", &self.spelling_language);
+        line("translate-from", &self.translate_from);
+        line("translate-to", &self.translate_to);
         out
     }
 
@@ -160,6 +174,9 @@ impl Settings {
                 "check-error-values" => set(&mut settings.check_error_values),
                 "pen" => pens.extend(Pen::from_setting(value)),
                 "scripts-folder" => settings.scripts_folder = value.to_string(),
+                "spelling-language" => settings.spelling_language = value.to_string(),
+                "translate-from" => settings.translate_from = value.to_string(),
+                "translate-to" => settings.translate_to = value.to_string(),
                 _ => {}
             }
         }
@@ -250,6 +267,9 @@ mod tests {
         settings.background_error_checking = false;
         settings.check_error_values = false;
         settings.scripts_folder = "/Users/ada/My Scripts = here".to_string();
+        settings.spelling_language = "en_GB".to_string();
+        settings.translate_from = "fr".to_string();
+        settings.translate_to = "pt-BR".to_string();
         assert_eq!(Settings::from_text(&settings.to_text()), settings);
         // An empty or damaged file gives the defaults, setting by setting.
         assert_eq!(Settings::from_text(""), Settings::default());

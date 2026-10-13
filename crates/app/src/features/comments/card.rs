@@ -2,7 +2,8 @@
 //! box to answer in. The same card floats beside its cell on the grid and
 //! lines up with the others in the Comments pane.
 
-use crate::widgets::text_area::{AreaEvent, TextArea};
+use crate::widgets::text_area::{AreaEvent, AreaKey, TextArea};
+use super::mentions::{self, Named, Suggestions};
 use super::user_name;
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
@@ -10,11 +11,11 @@ use crate::theme::{self, c};
 use crate::widgets::{Button, icon, tooltip};
 use gpui::{
     AnyElement, App, Bounds, Context, CursorStyle, Element, ElementId, Entity, FocusHandle, Focusable, FontWeight,
-    GlobalElementId,
+    GlobalElementId, HighlightStyle,
     IntoElement, LayoutId, MouseButton, MouseDownEvent, Pixels, Point, Position, Render, SharedString, Style,
-    Subscription, WeakEntity, Window, div, point, prelude::*, px,
+    StyledText, Subscription, WeakEntity, Window, div, point, prelude::*, px,
 };
-use opensheet_engine::comment::{Comment, Post, Thread, utc_to_local};
+use opensheet_engine::comment::{Comment, Mention, Person, Post, Thread, utc_to_local};
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::{Locale, format};
 
@@ -29,6 +30,9 @@ struct PostEdit {
     reply: Option<usize>,
     area: Entity<TextArea>,
     original: String,
+    original_mentions: Vec<Mention>,
+    /// The people its text names.
+    named: Named,
     _subscription: Subscription,
 }
 
@@ -41,6 +45,10 @@ pub(super) struct CommentCard {
     pub composing: bool,
     /// The new comment, or the reply.
     input: Entity<TextArea>,
+    /// The people the text of `input` names.
+    named: Named,
+    /// The list of people open under the box in which an `@` is typed.
+    suggestions: Option<Suggestions>,
     editing: Option<PostEdit>,
     /// Height the card may take beside its cell.
     room: f32,
@@ -71,6 +79,25 @@ pub(super) fn badge_color(name: &str) -> u32 {
 pub(super) fn time_text(local: f64, locale: &Locale) -> String {
     let code = format!("{} {}", locale.short_date_format, locale.time_format.replace(":ss", ""));
     format::format_number(local, &code, locale).text
+}
+
+/// The text of a post line by line, each with the stretches that name
+/// someone (bytes of the line): they are shown in the colour of mentions.
+pub(super) fn lines(post: &Post) -> Vec<(String, Vec<std::ops::Range<usize>>)> {
+    let mut out = vec![(String::new(), Vec::new())];
+    for (piece, person) in post.pieces() {
+        for (index, part) in piece.split('\n').enumerate() {
+            if index > 0 {
+                out.push((String::new(), Vec::new()));
+            }
+            let (line, named) = out.last_mut().expect("there is a line");
+            if person.is_some() && !part.is_empty() {
+                named.push(line.len()..line.len() + part.len());
+            }
+            line.push_str(part);
+        }
+    }
+    out
 }
 
 fn badge(name: &str) -> impl IntoElement {
@@ -116,11 +143,15 @@ impl CommentCard {
         let input = cx.new(|cx| {
             let mut area = if in_pane { TextArea::field(cx) } else { TextArea::new(cx) };
             area.max_height = Some(120.0);
+            area.token_color = Some(c(mentions::COLOR));
             area
         });
         let subscription = cx.subscribe_in(&input, window, |card, _, event: &AreaEvent, window, cx| match event {
             AreaEvent::Submit => card.post(window, cx),
             AreaEvent::Escape => card.cancel(window, cx),
+            AreaEvent::Changed => card.typed(false, cx),
+            AreaEvent::Key(key) => card.list_key(*key, cx),
+            AreaEvent::Blurred => card.close_list(cx),
             _ => cx.notify(),
         });
         CommentCard {
@@ -130,6 +161,8 @@ impl CommentCard {
             in_pane,
             composing: false,
             input,
+            named: Named::default(),
+            suggestions: None,
             editing: None,
             room: 480.0,
             _subscription: subscription,
@@ -163,27 +196,206 @@ impl CommentCard {
     }
 
     /// Rewrite a post in place (`reply` `None`: the first comment).
-    pub fn start_edit(&mut self, reply: Option<usize>, text: String, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn start_edit(&mut self, reply: Option<usize>, post: &Post, window: &mut Window, cx: &mut Context<Self>) {
         let in_pane = self.in_pane;
+        let text = post.text.clone();
+        let tokens = post.mentions.iter().map(Mention::range).collect();
         let area = cx.new(|cx| {
             let mut area = if in_pane { TextArea::field(cx) } else { TextArea::new(cx) };
             area.max_height = Some(160.0);
+            area.token_color = Some(c(mentions::COLOR));
             area.set_text(text.clone(), cx);
+            area.set_tokens(tokens, cx);
             area
         });
         let subscription = cx.subscribe_in(&area, window, |card, _, event: &AreaEvent, window, cx| match event {
             AreaEvent::Submit => card.save_edit(window, cx),
             AreaEvent::Escape => card.cancel(window, cx),
+            AreaEvent::Changed => card.typed(true, cx),
+            AreaEvent::Key(key) => card.list_key(*key, cx),
+            AreaEvent::Blurred => card.close_list(cx),
             _ => cx.notify(),
         });
         window.focus(&area.focus_handle(cx));
+        self.close_list(cx);
         self.editing = Some(PostEdit {
             reply,
             area,
             original: text,
+            original_mentions: post.mentions.clone(),
+            named: Named::of(post),
             _subscription: subscription,
         });
         cx.notify();
+    }
+
+    // ---- mentions ---------------------------------------------------------
+
+    /// The box of the post being rewritten (`in_edit`), or that of the card.
+    fn area(&self, in_edit: bool) -> Option<Entity<TextArea>> {
+        if in_edit { self.editing.as_ref().map(|edit| edit.area.clone()) } else { Some(self.input.clone()) }
+    }
+
+    /// The people a mention can name: those the comments of the workbook
+    /// know, and the user.
+    fn people(&self, query: &str, cx: &App) -> Vec<Person> {
+        let known = self.app.upgrade().map(|app| app.read(cx).wb.people()).unwrap_or_default();
+        mentions::candidates(&known, user_name(), query)
+    }
+
+    /// Something was typed in a box: open the list of people when an `@`
+    /// is being typed at the caret, narrow it, or put it away.
+    fn typed(&mut self, in_edit: bool, cx: &mut Context<Self>) {
+        let Some(area) = self.area(in_edit) else {
+            return;
+        };
+        let found = {
+            let area = area.read(cx);
+            mentions::query_at(area.text(), area.caret(), area.tokens()).map(|(at, query)| (at, query.to_string()))
+        };
+        let list = found.and_then(|(at, query)| {
+            let people = self.people(&query, cx);
+            // The line that was selected stays so while it is still offered.
+            let before = self.suggestions.as_ref().and_then(|list| list.people.get(list.selected));
+            let selected = before.and_then(|person| people.iter().position(|other| other == person)).unwrap_or(0);
+            (!people.is_empty()).then_some(Suggestions {
+                in_edit,
+                at,
+                people,
+                selected,
+            })
+        });
+        self.show_list(list, cx);
+        cx.notify();
+    }
+
+    /// Open, change or close the list; while it is open the box hands it
+    /// the arrows, Return, Tab and Escape.
+    fn show_list(&mut self, list: Option<Suggestions>, cx: &mut Context<Self>) {
+        let owner = list.as_ref().map(|list| list.in_edit);
+        self.suggestions = list;
+        for in_edit in [false, true] {
+            if let Some(area) = self.area(in_edit) {
+                area.update(cx, |area, _| area.owner_keys = owner == Some(in_edit));
+            }
+        }
+    }
+
+    fn close_list(&mut self, cx: &mut Context<Self>) {
+        if self.suggestions.is_some() {
+            self.show_list(None, cx);
+            cx.notify();
+        }
+    }
+
+    /// A key the box left to the list.
+    fn list_key(&mut self, key: AreaKey, cx: &mut Context<Self>) {
+        let Some(list) = &mut self.suggestions else {
+            return;
+        };
+        match key {
+            AreaKey::Up => list.step(false),
+            AreaKey::Down => list.step(true),
+            AreaKey::Enter | AreaKey::Tab => {
+                let selected = list.selected;
+                self.choose(selected, cx);
+            }
+            AreaKey::Escape => self.close_list(cx),
+        }
+        cx.notify();
+    }
+
+    /// Name a person of the list: what was typed from the `@` on becomes
+    /// the mention.
+    fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(list) = self.suggestions.take() else {
+            return;
+        };
+        self.show_list(None, cx);
+        let (Some(person), Some(area)) = (list.people.get(index), self.area(list.in_edit)) else {
+            return;
+        };
+        match &mut self.editing {
+            Some(edit) if list.in_edit => edit.named.add(person),
+            _ => self.named.add(person),
+        }
+        area.update(cx, |area, cx| {
+            let typed = list.at..area.caret().max(list.at);
+            area.insert_token(typed, &mentions::token(person), cx);
+        });
+        cx.notify();
+    }
+
+    /// The list of people, under the box it belongs to.
+    fn list_view(&self, in_edit: bool, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let list = self.suggestions.as_ref().filter(|list| list.in_edit == in_edit)?;
+        let cell = cell_name(self.cell.0, self.cell.1);
+        let rows = list.people.iter().enumerate().map(|(index, person)| {
+            let name = format!("mention-{index}@{cell}");
+            div()
+                .id(("mention", index))
+                .debug_selector(|| name)
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(4.))
+                .when(index == list.selected, |d| d.bg(c(theme::ACCENT_LIGHT)))
+                .hover(|s| s.bg(c(theme::HOVER)))
+                .child(badge(&person.name))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .flex()
+                        .flex_col()
+                        .child(div().truncate().child(SharedString::from(person.name.clone())))
+                        .children(mentions::address(person).map(|address| {
+                            div()
+                                .truncate()
+                                .text_size(px(11.))
+                                .text_color(c(theme::TEXT_MUTED))
+                                .child(SharedString::from(address.to_string()))
+                        })),
+                )
+                // The press must not take the keyboard from the box.
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |card, _, window, cx| {
+                        window.prevent_default();
+                        cx.stop_propagation();
+                        card.choose(index, cx);
+                    }),
+                )
+        });
+        Some(
+            div()
+                .id("mentions")
+                .debug_selector(|| format!("mentions@{cell}"))
+                .flex()
+                .flex_col()
+                .py(px(2.))
+                .rounded(px(4.))
+                .bg(c(0xFFFFFF))
+                .border_1()
+                .border_color(c(theme::BORDER_STRONG))
+                .shadow_md()
+                .children(rows)
+                .into_any_element(),
+        )
+    }
+
+    /// What the box of the card holds, for the tests.
+    #[cfg(test)]
+    pub fn draft_text(&self, cx: &App) -> String {
+        self.input.read(cx).text().to_string()
+    }
+
+    /// The people of the open list, for the tests.
+    #[cfg(test)]
+    pub fn suggested(&self) -> Option<(Vec<String>, usize)> {
+        let list = self.suggestions.as_ref()?;
+        Some((list.people.iter().map(|person| person.name.clone()).collect(), list.selected))
     }
 
     /// Run something on the application once this card is done with the
@@ -203,16 +415,18 @@ impl CommentCard {
     /// Post what the box holds: the comment that starts the thread, or a
     /// reply to it.
     fn post(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let text = self.input.read(cx).text().trim().to_string();
+        let (text, named) = self.named.draft(self.input.read(cx));
         if text.is_empty() {
             return;
         }
+        self.close_list(cx);
         let (sheet, cell) = (self.sheet, self.cell);
         let card = cx.weak_entity();
         self.tell_app(window, cx, move |app, window, cx| {
-            if super::post(app, sheet, cell, &text, cx) {
+            if super::post(app, sheet, cell, &text, named, cx) {
                 card.update(cx, |card, cx| {
                     card.composing = false;
+                    card.named.clear();
                     card.input.update(cx, |input, cx| input.set_text("", cx));
                     cx.notify();
                 })
@@ -226,15 +440,16 @@ impl CommentCard {
         let Some(edit) = &self.editing else {
             return;
         };
-        let text = edit.area.read(cx).text().trim().to_string();
+        let (text, named) = edit.named.draft(edit.area.read(cx));
         if text.is_empty() {
             return;
         }
         let (sheet, cell, reply) = (self.sheet, self.cell, edit.reply);
-        let changed = text != edit.original;
+        let changed = text != edit.original || named != edit.original_mentions;
+        self.close_list(cx);
         let card = cx.weak_entity();
         self.tell_app(window, cx, move |app, window, cx| {
-            if !changed || super::edit_post(app, sheet, cell, reply, &text, cx) {
+            if !changed || super::edit_post(app, sheet, cell, reply, &text, named, cx) {
                 card.update(cx, |card, cx| {
                     card.editing = None;
                     cx.notify();
@@ -251,7 +466,9 @@ impl CommentCard {
         let (sheet, cell, in_pane) = (self.sheet, self.cell, self.in_pane);
         let had_text = !self.input.read(cx).text().is_empty();
         let mut close = false;
+        self.close_list(cx);
         if self.editing.take().is_none() {
+            self.named.clear();
             self.input.update(cx, |input, cx| input.set_text("", cx));
             close = self.composing || !had_text;
             self.composing = false;
@@ -277,11 +494,10 @@ impl CommentCard {
     ) {
         let (sheet, cell) = (self.sheet, self.cell);
         let card = cx.weak_entity();
-        let text = post.text.clone();
+        let post = post.clone();
         let mut entries = vec![MenuEntry::new(t("Edit comment", "Modifier le commentaire"), move |app, window, cx| {
             if super::may_edit(app, cx) {
-                let text = text.clone();
-                card.update(cx, |card, cx| card.start_edit(reply, text, window, cx)).ok();
+                card.update(cx, |card, cx| card.start_edit(reply, &post, window, cx)).ok();
             }
         })];
         match reply {
@@ -317,6 +533,7 @@ impl CommentCard {
         let clicked = area.clone();
         let cell = cell_name(self.cell.0, self.cell.1);
         let (accept_name, cancel_name) = (format!("{id}-accept@{cell}"), format!("{id}-cancel@{cell}"));
+        let list = self.list_view(id == "edit-field", cx);
         div()
             .flex()
             .flex_col()
@@ -340,6 +557,7 @@ impl CommentCard {
                     })
                     .child(area.clone()),
             )
+            .children(list)
             .when(active || focused || !empty, |d| {
                 d.child(
                     div()
@@ -444,8 +662,13 @@ impl CommentCard {
                         None => div()
                             .pt(px(2.))
                             .line_height(px(17.))
-                            .children(post.text.split('\n').map(|line| {
-                                div().min_h(px(17.)).child(SharedString::from(line.to_string()))
+                            .children(lines(post).into_iter().map(|(line, named)| {
+                                let color = HighlightStyle {
+                                    color: Some(c(mentions::COLOR)),
+                                    ..HighlightStyle::default()
+                                };
+                                let highlights: Vec<_> = named.into_iter().map(|range| (range, color)).collect();
+                                div().min_h(px(17.)).child(StyledText::new(line).with_highlights(highlights))
                             }))
                             .into_any_element(),
                     }),
@@ -710,6 +933,27 @@ mod tests {
         // A name always gets the same colour, whatever its neighbours.
         assert_eq!(badge_color("Ada"), badge_color("Ada"));
         assert_ne!(badge_color("Ada"), badge_color("Bob"));
+    }
+
+    #[test]
+    fn mentions_are_marked_line_by_line() {
+        let ann = Person::new("Ann Lee");
+        let text = "Hi @Ann Lee\nand again @Ann Lee!\n";
+        let at = |start: usize| Mention {
+            person: ann.clone(),
+            start,
+            len: 8,
+        };
+        let post = Post::new(&ann, 0.0, text).with_mentions(vec![at(3), at(22)]);
+        assert_eq!(
+            lines(&post),
+            [
+                ("Hi @Ann Lee".to_string(), vec![3..11]),
+                ("and again @Ann Lee!".to_string(), vec![10..18]),
+                (String::new(), vec![]),
+            ]
+        );
+        assert_eq!(lines(&Post::new(&ann, 0.0, "")), [(String::new(), vec![])]);
     }
 
     #[test]

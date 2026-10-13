@@ -9,7 +9,7 @@ use opensheet_engine::ast::Expr;
 use opensheet_engine::chart::{
     Chart, ChartKind, ChartTitle, DEFAULT_CHART_SIZE, LegendPos, Series, SeriesName,
 };
-use opensheet_engine::comment::{Comment, Note, NoteBox, NoteRun, Person, Thread};
+use opensheet_engine::comment::{Comment, Mention, Note, NoteBox, NoteRun, Person, Post, Thread};
 use opensheet_engine::drawing::Frame;
 use opensheet_engine::parser::parse_formula;
 use opensheet_engine::style::{Font, Underline};
@@ -1344,9 +1344,15 @@ fn notes_and_threads_from_excel() {
     assert_eq!(thread.replies[0].text, "Yes.");
     assert_eq!(thread.replies[0].time, 45352.0 + 10.0 / 24.0);
     assert_eq!(thread.replies[1].author, thomas);
+    assert_eq!(thread.replies[1].text, "@Ann Lee thanks");
     assert_eq!(
-        thread.replies[1].text, "@Ann Lee thanks",
-        "a mention stays as text"
+        thread.replies[1].mentions,
+        [Mention {
+            person: ann.clone(),
+            start: 0,
+            len: 8
+        }],
+        "the mention Excel wrote is kept"
     );
     assert!(!thread.resolved);
     // D7: resolved.
@@ -1708,5 +1714,219 @@ fn damaged_comment_parts_never_panic() {
             let wb = load(&excel_package(&[(victim, Some(junk))]));
             assert_eq!(wb.sheets.len(), 2, "{victim}: {junk}");
         }
+    }
+}
+
+// ---- mentions --------------------------------------------------------------
+
+fn mention(person: &Person, text: &str, name: &str) -> Mention {
+    let start = text.find(name).unwrap_or_else(|| panic!("{name} is not in {text}"));
+    Mention {
+        person: person.clone(),
+        start,
+        len: name.len(),
+    }
+}
+
+/// A workbook whose comments name people: someone the workbook knows by
+/// name, someone signed in, and someone given by an e-mail address, as
+/// Excel records the people it takes from a directory.
+fn mentions_sample() -> Workbook {
+    let mut wb = Workbook::new(Locale::en());
+    assert!(wb.rename_sheet(0, "Mentions"));
+    enter(&mut wb, 0, "B2", "1250");
+    enter(&mut wb, 0, "B5", "=B2*2");
+    let thomas = account(
+        "Thomas Tastet",
+        "S::thomas@example.com::9d0e7c1a-1b2c-4d3e-8f90-a1b2c3d4e5f6",
+        "AD",
+    );
+    let ann = Person::new("Ann Lee");
+    let zoe = Person::mentioned("Zoë Müller", "zoe.muller@example.com");
+    let new = Person::mentioned("sam@example.com", "sam@example.com");
+
+    let first = "@Ann Lee is this number right?";
+    assert!(wb.add_comment_post(
+        0,
+        1,
+        1,
+        Post::new(&thomas, 45352.375, first).with_mentions(vec![mention(&ann, first, "@Ann Lee")]),
+    ));
+    // Two people in one post, after an emoji (two UTF-16 units, four
+    // bytes) and accented letters.
+    let reply = "Yes 👍 — @Zoë Müller and @sam@example.com checked it.\nThanks @Thomas Tastet";
+    assert!(wb.add_reply_post(
+        0,
+        1,
+        1,
+        Post::new(&ann, 45352.5, reply).with_mentions(vec![
+            mention(&zoe, reply, "@Zoë Müller"),
+            mention(&new, reply, "@sam@example.com"),
+            mention(&thomas, reply, "@Thomas Tastet"),
+        ]),
+    ));
+    // A thread that names nobody, and a resolved one that does.
+    assert!(wb.add_comment(0, 4, 1, &ann, 45353.0, "No mention here."));
+    let done = "Done, @Ann Lee.";
+    assert!(wb.add_comment_post(
+        0,
+        7,
+        3,
+        Post::new(&thomas, 45360.75, done).with_mentions(vec![mention(&ann, done, "@Ann Lee")]),
+    ));
+    assert!(wb.set_comment_resolved(0, 7, 3, true));
+    wb.commit("mentions");
+    wb
+}
+
+#[test]
+fn mentions_round_trip() {
+    let wb = mentions_sample();
+    let bytes = to_bytes(&wb);
+    keep("opensheet-mentions.xlsx", &bytes);
+    common::keep_sample("comments-mentions.xlsx", &bytes);
+    let back = load(&bytes);
+    assert_eq!(back.sheets[0].comments, wb.sheets[0].comments);
+    assert_eq!(back.people(), wb.people());
+    // Saved again, the same file.
+    assert_eq!(to_bytes(&back), bytes);
+
+    let threads = part(&bytes, "xl/threadedComments/threadedComment1.xml");
+    let persons = part(&bytes, "xl/persons/person.xml");
+    assert_well_formed("threadedComment1.xml", &threads);
+    assert_schema_order("threadedComment1.xml", &threads);
+    let id = |name: &str| attr_of(&persons, "person", name, "id");
+    // Everyone is in the list of people once, the people named too, the
+    // one given by an address as Excel records such a person.
+    assert_eq!(persons.matches("<person ").count(), 4, "{persons}");
+    assert!(persons.contains(&format!(
+        "<person displayName=\"Zoë Müller\" id=\"{}\" userId=\"zoe.muller@example.com\" providerId=\"PeoplePicker\"/>",
+        id("Zoë Müller")
+    )));
+    assert!(persons.contains(&format!(
+        "<person displayName=\"sam@example.com\" id=\"{}\" userId=\"sam@example.com\" providerId=\"PeoplePicker\"/>",
+        id("sam@example.com")
+    )));
+
+    // The first comment: one mention at the start, eight units long.
+    let first = format!(
+        "<text>@Ann Lee is this number right?</text><mentions><mention mentionpersonId=\"{}\" mentionId=\"",
+        id("Ann Lee")
+    );
+    assert!(threads.contains(&first), "{threads}");
+    assert!(threads.contains("\" startIndex=\"0\" length=\"8\"/></mentions></threadedComment>"));
+    // The reply: places count UTF-16 units, so the emoji counts for two
+    // and each accented letter for one.
+    let places: Vec<(String, String, String)> = threads
+        .split("<mention ")
+        .skip(1)
+        .map(|m| {
+            let value = |name: &str| {
+                let from = m.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+                m[from..from + m[from..].find('"').unwrap()].to_string()
+            };
+            (value("mentionpersonId"), value("startIndex"), value("length"))
+        })
+        .collect();
+    let place = |who: &str, start: &str, length: &str| (id(who), start.to_string(), length.to_string());
+    assert_eq!(
+        places,
+        [
+            place("Ann Lee", "0", "8"),
+            place("Zoë Müller", "9", "11"),
+            place("sam@example.com", "25", "16"),
+            place("Thomas Tastet", "61", "14"),
+            place("Ann Lee", "6", "8"),
+        ]
+    );
+    // Every mention has an id of its own, a GUID like the others.
+    let ids: Vec<String> = threads
+        .split("mentionId=\"")
+        .skip(1)
+        .map(|rest| rest[..rest.find('"').unwrap()].to_string())
+        .collect();
+    assert_eq!(ids.len(), 5);
+    assert!(ids.iter().all(|id| is_guid(id)), "{ids:?}");
+    assert_eq!(ids.iter().collect::<HashSet<_>>().len(), 5);
+    // A post that names nobody has no `<mentions>`.
+    assert!(threads.contains("<text>No mention here.</text></threadedComment>"));
+    // The note that stands in for the thread says the names as text.
+    assert!(part(&bytes, "xl/comments1.xml").contains("@Zoë Müller and @sam@example.com checked it."));
+}
+
+/// Threads with mentions as Excel 365 writes them: the people named come
+/// from the directory (`providerId="PeoplePicker"`, the address as
+/// `userId`), the places count UTF-16 units.
+fn excel_mentions() -> (String, String) {
+    const JANE: &str = "{0F3A9C1E-7B22-4D5C-9E11-2A6B8C4D7E90}";
+    const RAVI: &str = "{5C2D1B7A-3E44-4F6A-8B21-9D0C7E5F1A23}";
+    let threads = format!(
+        r#"{DECL}<ThreadedComments xmlns="{THREADS}" xmlns:x="{MAIN}"><threadedComment ref="B4" dT="2024-03-01T09:30:15.25" personId="{THOMAS_ID}" id="{THREAD_B4}"><text>@Jane Doe can you check 📊 with @Ravi Patel?</text><mentions><mention mentionpersonId="{JANE}" mentionId="{{11111111-0000-4000-8000-000000000001}}" startIndex="0" length="9"/><mention mentionpersonId="{RAVI}" mentionId="{{11111111-0000-4000-8000-000000000002}}" startIndex="32" length="11"/></mentions></threadedComment><threadedComment ref="B4" dT="2024-03-01T10:00:00.00" personId="{ANN_ID}" id="{{AAAAAAAA-0000-4000-8000-000000000001}}" parentId="{THREAD_B4}"><text>Odd ones: @Ghost @Jane Doe @Ravi</text><mentions><mention mentionpersonId="{{EEEEEEEE-0000-4000-8000-00000000000E}}" mentionId="{{11111111-0000-4000-8000-000000000003}}" startIndex="10" length="6"/><mention mentionpersonId="{JANE}" mentionId="{{11111111-0000-4000-8000-000000000004}}" startIndex="17" length="9"/><mention mentionpersonId="{RAVI}" mentionId="{{11111111-0000-4000-8000-000000000005}}" startIndex="27" length="40"/><mention mentionpersonId="{RAVI}" startIndex="x" length="5"/><mention/></mentions></threadedComment><threadedComment ref="D7" dT="2024-03-05T08:00:00.00" personId="{ANN_ID}" id="{THREAD_D7}" done="1"><text>Resolved one</text><mentions/></threadedComment></ThreadedComments>"#
+    );
+    let persons = format!(
+        r#"{DECL}<personList xmlns="{THREADS}" xmlns:x="{MAIN}"><person displayName="Thomas Tastet" id="{THOMAS_ID}" userId="S::thomas@example.com::9d0e7c1a-1b2c-4d3e-8f90-a1b2c3d4e5f6" providerId="AD"/><person displayName="Ann Lee" id="{ANN_ID}" userId="1234567890abcdef" providerId="Windows Live"/><person displayName="Jane Doe" id="{JANE}" userId="jane.doe@example.com" providerId="PeoplePicker"/><person displayName="Ravi Patel" id="{RAVI}" userId="ravi.patel@example.com" providerId="PeoplePicker"/></personList>"#
+    );
+    (threads, persons)
+}
+
+#[test]
+fn mentions_from_excel() {
+    let (threads, persons) = excel_mentions();
+    let bytes = excel_package(&[
+        ("xl/threadedComments/threadedComment1.xml", Some(&threads)),
+        ("xl/persons/person.xml", Some(&persons)),
+    ]);
+    keep("excel-style-mentions.xlsx", &bytes);
+    let wb = load(&bytes);
+    let jane = account("Jane Doe", "jane.doe@example.com", "PeoplePicker");
+    let ravi = account("Ravi Patel", "ravi.patel@example.com", "PeoplePicker");
+    let thread = thread_at(&wb, 0, "B4");
+    let text = "@Jane Doe can you check 📊 with @Ravi Patel?";
+    assert_eq!(thread.first.text, text);
+    // Places in bytes here: the chart emoji is four of them.
+    assert_eq!(
+        thread.first.mentions,
+        [mention(&jane, text, "@Jane Doe"), mention(&ravi, text, "@Ravi Patel")]
+    );
+    assert_eq!(
+        thread.first.pieces(),
+        [
+            ("@Jane Doe", Some(&jane)),
+            (" can you check 📊 with ", None),
+            ("@Ravi Patel", Some(&ravi)),
+            ("?", None)
+        ]
+    );
+    // Someone the file does not list, a mention that runs past the text
+    // and ones without their numbers stay text; the good one is kept.
+    let odd = &thread.replies[0];
+    assert_eq!(odd.text, "Odd ones: @Ghost @Jane Doe @Ravi");
+    assert_eq!(odd.mentions, [mention(&jane, &odd.text, "@Jane Doe")]);
+    assert!(thread_at(&wb, 0, "D7").first.mentions.is_empty());
+    // The people named are among those the workbook knows.
+    let people = wb.people();
+    assert!(people.contains(&jane) && people.contains(&ravi), "{people:?}");
+
+    // Written back: the same people, the same places.
+    let saved = to_bytes(&wb);
+    let back = load(&saved);
+    assert_eq!(back.sheets[0].comments, wb.sheets[0].comments);
+    let out = part(&saved, "xl/threadedComments/threadedComment1.xml");
+    assert!(out.contains("startIndex=\"0\" length=\"9\"/>"), "{out}");
+    assert!(out.contains("startIndex=\"32\" length=\"11\"/>"), "{out}");
+    assert!(out.contains("startIndex=\"17\" length=\"9\"/>"), "{out}");
+    assert_eq!(out.matches("<mention ").count(), 3);
+    let list = part(&saved, "xl/persons/person.xml");
+    assert!(list.contains("displayName=\"Jane Doe\""));
+    assert!(list.contains("userId=\"ravi.patel@example.com\" providerId=\"PeoplePicker\"/>"));
+
+    // Damaged in any place, the part still loads.
+    let step = (threads.len() / 150).max(1);
+    for cut in (0..threads.len()).step_by(step).filter(|cut| threads.is_char_boundary(*cut)) {
+        let wb = load(&excel_package(&[
+            ("xl/threadedComments/threadedComment1.xml", Some(&threads[..cut])),
+            ("xl/persons/person.xml", Some(&persons)),
+        ]));
+        assert_eq!(wb.sheets.len(), 2, "cut at {cut}");
     }
 }

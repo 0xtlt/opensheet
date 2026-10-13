@@ -1673,3 +1673,37 @@ fn picture_adjustments_and_effects_round_trip() {
     // Written again, the part says the same.
     assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
 }
+
+/// "Mark as decorative" is kept the way Excel keeps it: an extension of
+/// the object's `cNvPr`.
+#[test]
+fn decorative_objects_round_trip() {
+    let mut wb = Workbook::new(Locale::en());
+    let star = shape(&mut wb, 0, ShapeTool::Star5, (20.0, 20.0, 60.0, 60.0));
+    let logo_id = wb.add_picture(0, logo(), (6, 1)).expect("a PNG image");
+    let plain = shape(&mut wb, 0, ShapeTool::Rectangle, (120.0, 20.0, 60.0, 40.0));
+    change(&mut wb, 0, star, |d| d.decorative = true);
+    change(&mut wb, 0, logo_id, |d| d.decorative = true);
+    change(&mut wb, 0, plain, |d| d.alt_text = "A box".to_string());
+    let bytes = to_bytes(&wb);
+    keep("decorative.xlsx", &bytes);
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("xl/drawings/drawing1.xml", &xml);
+    let mark = "<a:extLst><a:ext uri=\"{C183D7F6-B498-43B3-948B-1728B52AA6E4}\"><adec:decorative xmlns:adec=\"http://schemas.microsoft.com/office/drawing/2017/decorative\" val=\"1\"/></a:ext></a:extLst></xdr:cNvPr>";
+    assert_eq!(xml.matches(mark).count(), 2, "{xml}");
+    let back = load(&bytes);
+    let flags: Vec<(bool, &str)> = back.sheets[0].drawings.iter().map(|d| (d.decorative, d.alt_text.as_str())).collect();
+    assert_eq!(flags, vec![(true, ""), (true, ""), (false, "A box")]);
+    // Excel writes `val="0"` when the mark is taken off again.
+    let off = xml.replacen("val=\"1\"", "val=\"0\"", 1);
+    let mut parts: Vec<(String, Vec<u8>)> = part_names(&bytes).into_iter().map(|name| (name.clone(), raw_part(&bytes, &name))).collect();
+    for (name, data) in &mut parts {
+        if name == "xl/drawings/drawing1.xml" {
+            *data = off.clone().into_bytes();
+        }
+    }
+    let listed: Vec<(&str, &[u8])> = parts.iter().map(|(name, data)| (name.as_str(), data.as_slice())).collect();
+    let back = load(&raw_package(&listed));
+    let flags: Vec<bool> = back.sheets[0].drawings.iter().map(|d| d.decorative).collect();
+    assert_eq!(flags, vec![false, true, false]);
+}

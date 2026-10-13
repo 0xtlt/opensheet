@@ -13,6 +13,11 @@ APP="$ROOT/target/$PROFILE/OpenSheet.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/opensheet"
+# The helper of Review > Translate goes next to the binary, when the Swift
+# compiler is there to build it (the pane says so when it is missing).
+"$ROOT/scripts/build_translate_helper.sh" "$PROFILE" >/dev/null
+HELPER="$ROOT/target/$PROFILE/opensheet-translate"
+if [ -x "$HELPER" ]; then cp "$HELPER" "$APP/Contents/MacOS/opensheet-translate"; fi
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

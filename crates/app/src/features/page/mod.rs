@@ -21,6 +21,8 @@ mod scene;
 mod setup;
 mod views;
 
+pub(crate) use self::print::workbook_pdf;
+
 use super::{
     Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, Painter, StatusItem, ViewMode,
     Zone, ZoneEvent, ZoneResponse,

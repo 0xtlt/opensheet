@@ -130,8 +130,16 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 ```
 
 **Révision**
-- Notes (bulles jaunes) et commentaires en fil avec réponses et résolution, volet Commentaires.
+- Notes (bulles jaunes) et commentaires en fil avec réponses et résolution, volet Commentaires, @mentions (enregistrées comme dans Excel).
+- Orthographe (F7) avec le correcteur de macOS : suggestions, ignorer, ajouter au dictionnaire, langue ; cellules, notes, commentaires, formes, titres de graphiques, en-têtes et pieds de page.
+- Dictionnaire des synonymes (⇧F7) et traduction, avec ce que macOS fournit sur la machine, sans service en ligne.
+- Vérification d'accessibilité : volet des erreurs, avertissements et conseils avec les actions recommandées, indicateur dans la barre d'état.
+- Statistiques du classeur.
 - Protection de la feuille (15 autorisations, mot de passe, cellules verrouillées ou masquées) et de la structure du classeur.
+
+**Partage et aide**
+- Partager ▸ Envoyer une copie : le classeur ou un PDF, par la feuille de partage de macOS (Mail, Messages, AirDrop…).
+- Volet Aide avec recherche (ce document et la liste des raccourcis clavier), envoi de commentaires.
 
 **Mise en page et impression**
 - Marges, orientation, papier, zone d'impression, sauts de page, titres à répéter, mise à l'échelle, en-têtes et pieds de page, arrière-plan de feuille.
@@ -150,8 +158,8 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Prévu** : les scripts Office en TypeScript (onglet Automatiser).
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
-- Orthographe, traduction, statistiques du classeur, vérification d'accessibilité, symboles.
-- Partage et co-édition.
+- Symboles.
+- Co-édition en direct, invitation de personnes et lien de partage : ils demandent un service en ligne qu'OpenSheet n'a pas.
 
 **Partiels**
 - Graphiques : une étiquette de données ne se sélectionne pas seule ; la zone de traçage des graphiques 3D ne se déplace pas.
@@ -164,7 +172,9 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) ; elle n'est pas imprimée et reste au-dessus des autres objets.
 - Préférences : les volets absents d'OpenSheet sont grisés (correction automatique, listes personnalisées, compatibilité…) ; pas de style de référence L1C1.
 - Mise en page : l'impression passe par un PDF.
-- Commentaires : pas de @mentions.
+- @mentions : sans annuaire d'organisation, la liste propose les personnes déjà présentes dans le classeur, l'utilisateur, ou une adresse saisie en entier ; aucun message n'est envoyé à la personne mentionnée.
+- Synonymes : macOS n'en fournit qu'en anglais. Traduction : macOS 26 ou plus récent, langues téléchargées dans Réglages Système. Orthographe : pas de correction automatique ; les formes dans un groupe ou un SmartArt ne sont pas vérifiées.
+- Accessibilité : les graphiques ne sont pas contrôlés (ils n'ont pas de texte de remplacement).
 - Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
 - Rechercher et remplacer : pas de « Rechercher tout » avec sa liste de résultats.
 - Collage spécial : pas de collage en image ; un collage transposé ne reporte ni la mise en forme conditionnelle ni la validation.

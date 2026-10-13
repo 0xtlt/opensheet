@@ -33,6 +33,7 @@ fn bind_keys(cx: &mut App) {
     features::edit_tools::bind_keys(cx);
     features::data_tools::bind_keys(cx);
     features::preferences::bind_keys(cx);
+    features::proofing::bind_keys(cx);
     features::outline::bind_keys(cx);
     features::automate::bind_keys(cx);
     let g = Some("Grid");
@@ -149,6 +150,7 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Save As…", "Enregistrer sous…"), SaveAs),
                 MenuItem::separator(),
                 MenuItem::action(t("Print…", "Imprimer…"), Print),
+                MenuItem::submenu(features::share::menu_bar()),
             ],
         },
         Menu {
@@ -183,6 +185,7 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Macros…", "Macros…"), features::automate::ViewMacros),
             ],
         },
+        features::help::menu_bar(),
     ]);
 }
 
