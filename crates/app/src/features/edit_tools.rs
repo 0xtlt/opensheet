@@ -166,17 +166,32 @@ impl Command for Cmd {
 }
 
 /// Insert ▸ Symbol: the Emoji & Symbols viewer of the system, as in Excel
-/// for Mac. What is picked there is typed into the cell being edited; a
-/// cell that was only selected is opened for it.
+/// for Mac (which has no Symbol dialog of its own). The viewer sends what
+/// is picked to whatever holds the keyboard, so the command only has to
+/// make sure something does: a text already being typed (a text box, a
+/// comment, a field) keeps it; a selected shape is opened for typing; and
+/// otherwise the active cell is.
 fn insert_symbol(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    if !app.is_editing() {
-        app.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
+    let in_a_text = window.focused(cx).is_some_and(|focused| focused != app.grid_focus);
+    if !in_a_text || app.is_editing() {
+        if let (Some(id), false) = (app.object_sel, app.is_editing()) {
+            // An empty text: the shape is only opened, after what it holds.
+            crate::features::all()[id.owner].object_typed(app, id.id, "", window, cx);
+            if window.focused(cx).is_none_or(|focused| focused == app.grid_focus) {
+                // A chart or a picture has no text to put a symbol in.
+                return;
+            }
+        } else {
+            if !app.is_editing() {
+                app.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
+            }
+            if !app.is_editing() {
+                // The cell may not be changed (a protected sheet said so).
+                return;
+            }
+            app.focus_editor(window, cx);
+        }
     }
-    if !app.is_editing() {
-        // The cell may not be changed (a protected sheet said so).
-        return;
-    }
-    app.focus_editor(window, cx);
     // The headless window of the tests has no such viewer.
     #[cfg(not(test))]
     window.show_character_palette();
