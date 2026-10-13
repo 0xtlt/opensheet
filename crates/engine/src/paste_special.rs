@@ -230,9 +230,22 @@ fn transposed_corner(corner: &CellRef, from: (u32, u32), to: (u32, u32)) -> Opti
     })
 }
 
+/// Where a block of cells lands when the block `src` is pasted with its
+/// rows and columns exchanged, its top-left cell on that of `out`; `None`
+/// when it falls off the sheet or outside `out`.
+pub(crate) fn turned(piece: &Rect, src: &Rect, out: &Rect) -> Option<Rect> {
+    let rect = Rect::new(
+        out.r0 + (piece.c0 - src.c0),
+        out.c0 + (piece.r0 - src.r0),
+        out.r0 + (piece.c1 - src.c0),
+        out.c0 + (piece.r1 - src.r0),
+    );
+    rect.intersection(out)
+}
+
 /// A formula copied from `from` to `to` by a transposed paste: Excel
 /// transposes its relative references with the cells.
-fn transposed(e: &Expr, from: (u32, u32), to: (u32, u32)) -> Expr {
+pub(crate) fn transposed(e: &Expr, from: (u32, u32), to: (u32, u32)) -> Expr {
     let (d_row, d_col) = (to.0 as i64 - from.0 as i64, to.1 as i64 - from.1 as i64);
     e.map(&mut |x| match x {
         Expr::Ref(r) if r.kind == RefKind::Cells => {
@@ -306,8 +319,9 @@ impl Workbook {
     /// cells holding text staying as they are. With `skip_blanks` the
     /// blank cells of the clip leave the cells they land on untouched.
     /// With `transpose` rows become columns, and the relative references
-    /// of the formulas are transposed with them; conditional formats,
-    /// validation rules and comments are then left behind.
+    /// of the formulas are transposed with them, in the cells and in the
+    /// conditional formats and validation rules that travel with them;
+    /// comments are then left behind.
     pub fn paste_special(&mut self, sheet: usize, dest: Rect, clip: &Clip, spec: &PasteSpecial) -> Rect {
         if sheet >= self.sheets.len() || clip.rows.is_empty() {
             return dest;
@@ -333,6 +347,28 @@ impl Workbook {
         if !spec.transpose && formats == Formats::All && contents == Contents::Formulas {
             self.paste(sheet, out, clip, PasteMode::Comments);
             self.paste(sheet, out, clip, PasteMode::Validation);
+        }
+        // Turned, they are turned too: each copy of the clip gets the
+        // rules of the copied cells, rows for columns. (Cells taken from
+        // a filtered list are not the block the rules are read from.)
+        let whole = clip.rows.len() as u32 == clip.rect.rows();
+        if spec.transpose && whole && op.is_none() && !spec.skip_blanks {
+            for top in (0..out.rows()).step_by(layout.height as usize) {
+                for left in (0..out.cols()).step_by(layout.width as usize) {
+                    let copy = Rect::new(
+                        out.r0 + top,
+                        out.c0 + left,
+                        (out.r0 + top + layout.height - 1).min(out.r1),
+                        (out.c0 + left + layout.width - 1).min(out.c1),
+                    );
+                    if matches!(formats, Formats::All | Formats::AllButBorders) {
+                        self.transpose_cond_formats(clip.sheet, clip.rect, sheet, copy);
+                    }
+                    if formats == Formats::All && contents == Contents::Formulas {
+                        self.transpose_validation(clip.sheet, clip.rect, sheet, copy);
+                    }
+                }
+            }
         }
         if matches!(formats, Formats::All | Formats::AllButBorders) && !spec.skip_blanks {
             let merged = !clip.merges.is_empty();
@@ -554,6 +590,61 @@ mod tests {
         w.paste_special(0, rect("C1"), &clip, &turn);
         w.commit("transpose");
         assert_eq!(text(&w, "C1"), "=#REF!");
+    }
+
+    #[test]
+    fn a_transposed_paste_turns_conditional_formats_and_validation() {
+        use crate::condfmt::{CellOp, CondFormat, Rule};
+        use crate::locale::Locale;
+        use crate::parser::parse_formula;
+        use crate::validation::{Validation, ValidationKind};
+        let formula = |text: &str| parse_formula(text, Locale::en()).unwrap();
+        // A1:C2: numbers; a rule on the row A1:C1 comparing each cell
+        // with the one under it; a list on A2:B2 reading three cells of
+        // the same row, four columns further.
+        let mut w = wb(&[("A1", "5"), ("B1", "1"), ("C1", "9"), ("A2", "3"), ("B2", "3"), ("C2", "3")]);
+        let rule = Rule::CellIs {
+            op: CellOp::Greater,
+            first: formula("A2"),
+            second: None,
+        };
+        w.add_cond_format(0, CondFormat::new(vec![rect("A1:C1")], rule));
+        let list = Validation {
+            kind: ValidationKind::List,
+            formula1: Some(Arc::new(formula("E2:G2"))),
+            ..Validation::default()
+        };
+        w.set_validation(0, &[rect("A2:B2")], (1, 0), list);
+        w.commit("setup");
+        let clip = w.copy(0, rect("A1:C2"));
+        let spec = PasteSpecial {
+            transpose: true,
+            ..PasteSpecial::default()
+        };
+        let out = w.paste_special(0, rect("A5"), &clip, &spec);
+        w.commit("transpose");
+        assert_eq!(out, rect("A5:B7"));
+        // The rule now runs down A5:A7 and compares with the cell on the
+        // right; the copied cells keep theirs.
+        let rules = w.cond_formats(0);
+        let turned_rule = rules.iter().find(|cf| cf.ranges == vec![rect("A5:A7")]).expect("the rule of the turned cells");
+        match &turned_rule.rule {
+            Rule::CellIs { first, .. } => assert_eq!(first.to_text(Locale::en()), "B5"),
+            other => panic!("{other:?}"),
+        }
+        assert!(rules.iter().any(|cf| cf.ranges == vec![rect("A1:C1")]));
+        // The list is on B5:B6 and reads three cells of the same column,
+        // four rows further.
+        let listed = w.validation_at(0, 5, 1).expect("a rule on B6");
+        assert_eq!(listed.ranges, vec![rect("B5:B6")]);
+        assert_eq!(listed.kind, ValidationKind::List);
+        assert_eq!(listed.formula1.as_ref().map(|source| source.to_text(Locale::en())).as_deref(), Some("B9:B11"));
+        assert_eq!(w.validation_at(0, 1, 0).map(|rule| rule.ranges.clone()), Some(vec![rect("A2:B2")]));
+        assert!(w.validation_at(0, 6, 1).is_none() && w.validation_at(0, 4, 0).is_none());
+        // One step of undo takes cells and rules away together.
+        w.undo();
+        assert_eq!(w.cond_formats(0).len(), 1);
+        assert!(w.validation_at(0, 5, 1).is_none());
     }
 
     #[test]

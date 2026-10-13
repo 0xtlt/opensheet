@@ -1582,6 +1582,53 @@ fn a_group_whose_children_have_a_scale_of_their_own() {
 // ---- picture adjustments and effects ---------------------------------------------
 
 #[test]
+fn a_linked_picture_keeps_the_formula_of_its_cells() {
+    use opensheet_engine::parser::parse_formula;
+    use std::sync::Arc;
+    let mut wb = Workbook::new(Locale::en());
+    let other = wb.add_sheet(1);
+    wb.rename_sheet(other, "Stock & co");
+    wb.set_cell_text(0, 0, 0, "Tea").unwrap();
+    let linked = |wb: &mut Workbook, row: u32, name: &str, range: &str| {
+        let id = wb.add_picture(0, logo(), (row, 3)).expect("a picture");
+        let link = parse_formula(range, Locale::en()).unwrap();
+        change(wb, 0, id, |d| {
+            d.name = name.to_string();
+            d.as_picture_mut().unwrap().link = Some(Arc::new(link.clone()));
+        });
+    };
+    linked(&mut wb, 1, "Here", "$A$1:$B$2");
+    linked(&mut wb, 8, "There", "'Stock & co'!$A$1:$C$4");
+    wb.add_picture(0, logo(), (15, 3)).expect("an ordinary picture");
+    wb.commit("pictures");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("opensheet-linked-picture.xlsx", &bytes);
+
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    // As Excel writes its camera: the anchor in a choice for those who
+    // know the 2010 extensions, the range in an extension of the
+    // picture's properties.
+    assert_eq!(xml.matches("<mc:Choice xmlns:a14=\"http://schemas.microsoft.com/office/drawing/2010/main\" Requires=\"a14\"><xdr:twoCellAnchor").count(), 2);
+    assert_eq!(xml.matches("</xdr:twoCellAnchor></mc:Choice><mc:Fallback/></mc:AlternateContent>").count(), 2);
+    assert!(xml.contains("<a:ext uri=\"{84589F7E-364E-4C9E-8A38-B11213B215E9}\"><a14:cameraTool"));
+    assert!(xml.contains("cellRange=\"$A$1:$B$2\"/>"), "{xml}");
+    assert!(xml.contains("cellRange=\"&apos;Stock &amp; co&apos;!$A$1:$C$4\"/>") || xml.contains("cellRange=\"'Stock &amp; co'!$A$1:$C$4\"/>"), "{xml}");
+
+    let back = load(&bytes);
+    let links: Vec<Option<String>> = back.sheets[0]
+        .drawings
+        .iter()
+        .map(|d| d.as_picture().and_then(|p| p.link_text(Locale::en())))
+        .collect();
+    assert_eq!(links, vec![Some("=$A$1:$B$2".to_string()), Some("='Stock & co'!$A$1:$C$4".to_string()), None]);
+    let sources: Vec<_> = back.linked_pictures().into_iter().map(|(_, _, source)| (source.sheet, source.rect.name())).collect();
+    assert_eq!(sources, vec![(0, "A1:B2".to_string()), (1, "A1:C4".to_string())]);
+    // Written again, the same file.
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+}
+
+#[test]
 fn picture_adjustments_and_effects_round_trip() {
     use opensheet_engine::drawing::{Effects, Glow, PictureAdjust, Recolor, Shadow, ShadowPreset};
     let mut wb = Workbook::new(Locale::en());

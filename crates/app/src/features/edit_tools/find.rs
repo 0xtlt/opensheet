@@ -8,10 +8,12 @@ use crate::features::{ChangeCause, Cx, Intent};
 use crate::i18n::t;
 use crate::shell::{Alert, Modal};
 use crate::text_input::TextInput;
-use crate::widgets::{self, Button, Checkbox, Select, TabStrip, TextField, dialog, label};
+use crate::theme::{self, c};
+use crate::widgets::{self, Button, Checkbox, ListBox, Select, TabStrip, TextField, dialog, label};
 use gpui::{Context, Entity, Focusable, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::Rect;
-use opensheet_engine::find::{BrokenFormula, FindOptions, LookIn, Place, Search};
+use opensheet_engine::find::{BrokenFormula, FindOptions, Found, LookIn, Place, Search};
+use std::rc::Rc;
 use opensheet_engine::protect::Action;
 
 /// The choices of the dialog, kept from one search to the next as Excel
@@ -127,6 +129,34 @@ pub(super) fn find_next(app: &mut ExcelApp, choices: &Choices, backward: bool, w
             false
         }
     }
+}
+
+/// What Find All lists: the search as it was asked, and the cells that
+/// hold the text now. The list is made again whenever the workbook
+/// changes, so a replacement never leaves a line that is no longer true.
+pub(super) struct Results {
+    choices: Choices,
+    within: Vec<Rect>,
+    /// The sheet the search started from.
+    sheet: usize,
+    generation: u64,
+    /// The workbook, as the Book column names it.
+    book: SharedString,
+    rows: Rc<Vec<Found>>,
+    /// The line last clicked.
+    picked: Option<usize>,
+}
+
+/// Every cell holding the text, in the order of the search.
+pub(super) fn find_all(app: &ExcelApp, choices: &Choices, within: &[Rect], sheet: usize) -> Vec<Found> {
+    let search = Search {
+        needle: &choices.find,
+        options: &choices.options,
+        workbook: choices.workbook,
+        within,
+    };
+    let sheet = sheet.min(app.wb.sheets.len().saturating_sub(1));
+    app.wb.find_everywhere(&search, sheet).into_iter().map(|place| app.wb.found(place)).collect()
 }
 
 /// The search of the find bar: the next cell holding `needle`, with the
@@ -258,10 +288,11 @@ pub(super) fn open(app: &mut ExcelApp, replace: bool, window: &mut Window, cx: &
         options: choices.options,
         workbook: choices.workbook,
         placed: false,
+        results: None,
     });
 }
 
-struct FindReplace {
+pub(super) struct FindReplace {
     modal: Modal,
     /// The Replace tab is shown.
     replacing: bool,
@@ -272,6 +303,8 @@ struct FindReplace {
     /// The keyboard was given to "Find what" (the dialog opens there, not
     /// on its tabs).
     placed: bool,
+    /// The list of Find All, once it was asked for.
+    results: Option<Results>,
 }
 
 /// The entries of "Look in" on each tab: a replacement always works on
@@ -289,6 +322,13 @@ fn look_in_label(look_in: LookIn) -> &'static str {
 }
 
 impl FindReplace {
+    /// The cells of the Find All list, for the tests: `None` while the
+    /// dialog shows no list.
+    #[cfg(test)]
+    pub(super) fn listed(&self) -> Option<Vec<Place>> {
+        self.results.as_ref().map(|results| results.rows.iter().map(|found| found.place).collect())
+    }
+
     fn choices(&self, cx: &Context<Self>) -> Choices {
         let mut options = self.options.clone();
         if self.replacing {
@@ -303,11 +343,133 @@ impl FindReplace {
     }
 
     fn find_next(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
+        self.step(false, window, cx);
+    }
+
+    fn step(&mut self, backward: bool, window: &mut Window, cx: &mut Context<Self>) {
         let choices = self.choices(cx);
         if choices.find.is_empty() {
             return;
         }
-        self.modal.update_app(cx, |app, cx| find_next(app, &choices, false, window, cx));
+        self.modal.update_app(cx, |app, cx| find_next(app, &choices, backward, window, cx));
+    }
+
+    /// Find All: list every cell holding the text under the dialog.
+    fn find_all(&mut self, cx: &mut Context<Self>) {
+        let choices = self.choices(cx);
+        if choices.find.is_empty() {
+            return;
+        }
+        self.results = self
+            .modal
+            .update_app(cx, |app, cx| {
+                *app.ext_mut::<Choices>() = choices.clone();
+                let within = within(app);
+                let rows = find_all(app, &choices, &within, app.sheet);
+                if rows.is_empty() {
+                    app.alert(Alert::new("OpenSheet", not_found()).warning(), cx);
+                    return None;
+                }
+                Some(Results {
+                    choices,
+                    within,
+                    sheet: app.sheet,
+                    generation: app.wb.generation,
+                    book: app.title.clone().into(),
+                    rows: Rc::new(rows),
+                    picked: None,
+                })
+            })
+            .flatten();
+        cx.notify();
+    }
+
+    /// Search again when the workbook changed under the list (a
+    /// replacement, an undo): the line that was picked stays picked when
+    /// its cell still holds the text.
+    fn refresh_results(&mut self, cx: &mut Context<Self>) {
+        let Some(results) = &mut self.results else {
+            return;
+        };
+        let fresh = self.modal.read_app(cx, |app| {
+            (app.wb.generation != results.generation).then(|| {
+                let rows = find_all(app, &results.choices, &results.within, results.sheet);
+                (rows, app.wb.generation, SharedString::from(app.title.clone()))
+            })
+        });
+        if let Some(Some((rows, generation, book))) = fresh {
+            let picked = results.picked.and_then(|i| results.rows.get(i)).map(|found| found.place);
+            results.picked = picked.and_then(|place| rows.iter().position(|found| found.place == place));
+            results.rows = Rc::new(rows);
+            results.generation = generation;
+            results.book = book;
+        }
+    }
+
+    /// A click on a line of the list goes to its cell, on its sheet.
+    fn pick(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(results) = &mut self.results else {
+            return;
+        };
+        let Some(place) = results.rows.get(index).map(|found| found.place) else {
+            return;
+        };
+        results.picked = Some(index);
+        self.modal.update_app(cx, |app, cx| {
+            if place.0 < app.wb.sheets.len() {
+                show(app, place, window, cx);
+            }
+        });
+        cx.notify();
+    }
+
+    /// The list of Find All: Excel's six columns over the count of cells.
+    fn results_view(&self, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let results = self.results.as_ref()?;
+        let columns: [(&'static str, f32); 6] = [
+            (t("Book", "Livre"), 96.0),
+            (t("Sheet", "Feuille"), 84.0),
+            (t("Name", "Nom"), 78.0),
+            (t("Cell", "Cellule"), 64.0),
+            (t("Value", "Valeur"), 124.0),
+            (t("Formula", "Formule"), 124.0),
+        ];
+        let mut header = div()
+            .flex()
+            .px(px(7.))
+            .h(px(22.))
+            .items_center()
+            .bg(c(theme::HOVER))
+            .border_1()
+            .border_color(c(theme::BORDER))
+            .text_size(px(12.));
+        for (title, width) in columns {
+            header = header.child(div().w(px(width)).flex_none().truncate().child(title));
+        }
+        let rows = results.rows.clone();
+        let book = results.book.clone();
+        let cells: Vec<SharedString> = rows.iter().map(|found| found.cell.clone().into()).collect();
+        let list = ListBox::new("find-results", cells, results.picked)
+            .height(132.0)
+            .row(move |i, _| {
+                let found = &rows[i];
+                let texts: [SharedString; 6] = [
+                    book.clone(),
+                    found.sheet.clone().into(),
+                    found.name.clone().into(),
+                    found.cell.clone().into(),
+                    found.value.clone().into(),
+                    found.formula.clone().into(),
+                ];
+                let mut line = div().flex().debug_selector(move || format!("find-result-{i}"));
+                for (text, (_, width)) in texts.into_iter().zip(columns) {
+                    line = line.child(div().w(px(width)).flex_none().pr(px(6.)).truncate().child(text));
+                }
+                line.into_any_element()
+            })
+            .on_change(cx.listener(|this, index: &usize, window, cx| this.pick(*index, window, cx)));
+        let count = format!("{} {}", t("cell(s) found:", "cellule(s) trouvée(s):"), results.rows.len());
+        Some(div().flex().flex_col().child(header).child(list).child(div().pt(px(6.)).child(label(count))))
     }
 
     fn replace_one(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -342,6 +504,8 @@ impl Render for FindReplace {
             window.focus(&handle);
             self.find.update(cx, |input, cx| input.select_all_text(cx));
         }
+        self.refresh_results(cx);
+        let results = self.results_view(cx);
         let replacing = self.replacing;
         let empty = self.find.read(cx).text().is_empty();
         let looks = look_in_choices(replacing);
@@ -417,8 +581,20 @@ impl Render for FindReplace {
         footer = footer
             .child(div().flex_1())
             .child(named(
+                "find-all",
+                Button::new("find-all", t("Find All", "Rechercher tout"))
+                    .disabled(empty)
+                    .on_click(cx.listener(|this, _, _, cx| this.find_all(cx))),
+            ))
+            .child(named(
                 "find-close",
                 Button::new("close", t("Close", "Fermer")).on_click(cx.listener(|this, _, window, cx| this.close(window, cx))),
+            ))
+            .child(named(
+                "find-previous",
+                Button::new("find-previous", t("Previous", "Précédent"))
+                    .disabled(empty)
+                    .on_click(cx.listener(|this, _, window, cx| this.step(true, window, cx))),
             ))
             .child(named(
                 "find-next",
@@ -428,7 +604,7 @@ impl Render for FindReplace {
                     .on_click(cx.listener(Self::find_next)),
             ));
         dialog(&self.modal, t("Find & Replace", "Rechercher et remplacer"))
-            .width(560.0)
+            .width(640.0)
             .on_ok(cx.listener(Self::find_next))
             .on_cancel(cx.listener(|this, _, window, cx| this.close(window, cx)))
             .child(
@@ -438,11 +614,11 @@ impl Render for FindReplace {
                         cx.notify();
                     })),
             )
-            .child(field(t("Find what:", "Rechercher :"), TextField::new(&self.find).width(400.0).into_any_element()))
+            .child(field(t("Find what:", "Rechercher :"), TextField::new(&self.find).width(480.0).into_any_element()))
             .when(replacing, |d| {
                 d.child(field(
                     t("Replace with:", "Remplacer par :"),
-                    TextField::new(&self.replace).width(400.0).into_any_element(),
+                    TextField::new(&self.replace).width(480.0).into_any_element(),
                 ))
             })
             .child(
@@ -460,6 +636,7 @@ impl Render for FindReplace {
                     )
                     .child(checks),
             )
+            .children(results)
             .footer(footer)
     }
 }

@@ -12,10 +12,10 @@
 //! outline of each preset as a few path commands that a screen and a PDF
 //! writer can both follow.
 
-use crate::ast::StructuralEdit;
+use crate::ast::{Expr, StructuralEdit};
 use crate::features::CellShift;
 use crate::locale::Locale;
-use crate::refs::{MAX_COLS, MAX_ROWS};
+use crate::refs::{MAX_COLS, MAX_ROWS, Reference};
 use crate::style::{Color, Font, ThemeSlot};
 use crate::validation::localized;
 use crate::workbook::{Sheet, Workbook};
@@ -217,6 +217,11 @@ pub struct Picture {
     /// applications that cannot draw vectors, and what is printed.
     pub svg: Option<Arc<[u8]>>,
     pub adjust: PictureAdjust,
+    /// A linked picture (Paste ▸ Linked Picture, Excel's camera): the
+    /// range it is a picture of, as a formula — a reference or a name.
+    /// `data` is the image of those cells as they last looked; whoever
+    /// can draw cells makes it again when they change.
+    pub link: Option<Arc<Expr>>,
 }
 
 impl Picture {
@@ -230,7 +235,14 @@ impl Picture {
             pixels: info.pixels,
             svg: None,
             adjust: PictureAdjust::default(),
+            link: None,
         })
+    }
+
+    /// The formula of a linked picture as the formula bar shows it
+    /// (`=$A$1:$C$4`).
+    pub fn link_text(&self, locale: &Locale) -> Option<String> {
+        self.link.as_ref().map(|link| format!("={}", link.to_text(locale)))
     }
 
     /// A vector picture: an SVG document and the image that stands for
@@ -2544,6 +2556,10 @@ pub(crate) fn moved_corner(
 /// charts do, and those sized with their cells grow or shrink with the
 /// rows and columns inserted or deleted under them.
 pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited_sheet: &str) {
+    // A linked picture goes on showing the same cells, on whichever
+    // sheet they are.
+    let own = sheet.name.clone();
+    relink(sheet, |link| link.adjusted(edit, edited_sheet, &own));
     if sheet.drawings.is_empty() || !sheet.name.eq_ignore_ascii_case(edited_sheet) {
         return;
     }
@@ -2577,7 +2593,83 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
 }
 
 /// See `features::on_sheet_renamed`: drawings name no sheet.
-pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
+pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
+    relink(sheet, |link| link.with_sheet_renamed(old, new));
+}
+
+/// Give the linked pictures of a sheet the formula `f` makes of theirs.
+fn relink(sheet: &mut Sheet, f: impl Fn(&Expr) -> Expr) {
+    for drawing in sheet.drawings.iter_mut() {
+        if let DrawingKind::Picture(picture) = &mut drawing.kind
+            && let Some(link) = &picture.link
+        {
+            let new = f(link);
+            if new != **link {
+                picture.link = Some(Arc::new(new));
+            }
+        }
+    }
+}
+
+impl Workbook {
+    /// The cells a linked picture on `sheet` shows: the range its formula
+    /// names, directly or through a defined name. `None` for an ordinary
+    /// picture, and when the range is gone.
+    pub fn picture_source(&self, sheet: usize, picture: &Picture) -> Option<Reference> {
+        let mut link: &Expr = picture.link.as_deref()?;
+        while let Expr::Paren(inner) = link {
+            link = inner;
+        }
+        match link {
+            Expr::Ref(r) if !r.sheet_deleted() => {
+                let on = match &r.sheet {
+                    Some(name) => self.sheet_index(name)?,
+                    None => sheet,
+                };
+                Some(Reference::new(on, r.rect()))
+            }
+            Expr::Name(name) => self.name_reference(sheet, 0, 0, name),
+            _ => None,
+        }
+    }
+
+    /// The linked pictures of the workbook: sheet, id of the drawing and
+    /// the cells it shows.
+    pub fn linked_pictures(&self) -> Vec<(usize, u32, Reference)> {
+        let mut out = Vec::new();
+        for (index, sheet) in self.sheets.iter().enumerate() {
+            for drawing in &sheet.drawings {
+                if let Some(source) = drawing.as_picture().and_then(|picture| self.picture_source(index, picture)) {
+                    out.push((index, drawing.id, source));
+                }
+            }
+        }
+        out
+    }
+
+    /// Give a linked picture the image of its cells as they look now.
+    /// This is not an edit of its own (the picture follows what an edit
+    /// changed): nothing is recorded for undo. False when the drawing is
+    /// not a linked picture or the bytes are not an image.
+    pub fn refresh_linked_picture(&mut self, sheet: usize, id: u32, image: impl Into<Arc<[u8]>>) -> bool {
+        let image = image.into();
+        let Some(info) = image_info(&image) else {
+            return false;
+        };
+        let Some(drawing) = self.sheets.get_mut(sheet).and_then(|sh| sh.drawings.iter_mut().find(|d| d.id == id)) else {
+            return false;
+        };
+        match &mut drawing.kind {
+            DrawingKind::Picture(picture) if picture.link.is_some() => {
+                picture.format = info.format;
+                picture.pixels = info.pixels;
+                picture.data = image;
+                true
+            }
+            _ => false,
+        }
+    }
+}
 
 /// See `features::on_sheet_duplicated`: the drawings of the copy get ids
 /// of their own (they share the bytes of their pictures).

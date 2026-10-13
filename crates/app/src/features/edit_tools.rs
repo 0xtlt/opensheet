@@ -7,6 +7,7 @@
 mod find;
 mod links;
 mod paste;
+mod picture;
 mod styles;
 #[cfg(test)]
 mod ui_tests;
@@ -15,11 +16,12 @@ use super::misc::{self, Kinds, Special};
 use super::{
     CellEdit, Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, Painter, Zone, ZoneEvent, ZoneResponse,
 };
+use crate::grid::GridLayout;
 use crate::app::{EditMode, EditSource, ExcelApp, MenuEntry};
 use crate::i18n::t;
 use opensheet_engine::ops::PasteMode;
 use opensheet_engine::paste_special::{PasteSpecial, PasteWhat};
-use gpui::{App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*};
+use gpui::{AnyElement, App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*};
 
 pub use find::find_bar_next;
 
@@ -51,6 +53,11 @@ commands! {
         PasteValuesSource = "", t("Values & Source Formatting", "Valeurs et format source");
         PasteFormatting = "", t("Formatting", "Mise en forme");
         PasteLink = "", t("Paste Link", "Coller avec liaison");
+        PastePicture = "", t("Picture", "Image");
+        PasteLinkedPicture = "", t("Linked Picture", "Image liée");
+        // Home ▸ Copy
+        CopyMenu = "copy", t("Copy", "Copier");
+        CopyAsPicture = "", t("Copy as Picture…", "Copier comme image…");
         // Insert ▸ Link, the context menu of a cell, Home ▸ Clear
         Link = "link", t("Link", "Lien");
         EditLink = "link", t("Edit Link…", "Modifier le lien…");
@@ -112,6 +119,16 @@ impl Command for Cmd {
             Cmd::NewCellStyle => styles::open_dialog(app, styles::Purpose::New, None, window, cx),
             Cmd::PasteSpecial => paste::open(app, window, cx),
             Cmd::PasteLink => paste::paste_link(app, cx),
+            Cmd::PastePicture => picture::paste(app, false, cx),
+            Cmd::PasteLinkedPicture => picture::paste(app, true, cx),
+            Cmd::CopyMenu => {
+                let entries = vec![
+                    MenuEntry::new(t("Copy", "Copier"), |a, _, cx| a.copy(false, cx)).icon("copy").shortcut("⌘C"),
+                    MenuEntry::command(Cmd::CopyAsPicture, app),
+                ];
+                app.open_command_menu(entries, 240.0, window, cx);
+            }
+            Cmd::CopyAsPicture => picture::open_copy(app, window, cx),
             Cmd::PasteFormulas
             | Cmd::PasteFormulasNumbers
             | Cmd::PasteKeepSource
@@ -133,7 +150,11 @@ impl Command for Cmd {
         match self {
             // The choices of the drop-down are for cells that were copied
             // (cut cells can only be moved).
-            Cmd::PasteLink => app.clip.as_ref().is_some_and(|state| !state.cut),
+            Cmd::PasteLink | Cmd::PastePicture | Cmd::PasteLinkedPicture => {
+                app.clip.as_ref().is_some_and(|state| !state.cut)
+            }
+            // A picture is made of cells.
+            Cmd::CopyAsPicture => app.object_sel.is_none(),
             _ if self.paste_spec().is_some() => app.clip.as_ref().is_some_and(|state| !state.cut),
             Cmd::ClearHyperlinks | Cmd::RemoveHyperlinks => {
                 let links = &app.wb.sheets[app.sheet].hyperlinks;
@@ -162,7 +183,7 @@ fn insert_symbol(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 }
 
 /// The entries of the Paste drop-down after "Paste", in Excel's order.
-const PASTE_MENU: [Cmd; 11] = [
+const PASTE_MENU: [Cmd; 13] = [
     Cmd::PasteFormulas,
     Cmd::PasteFormulasNumbers,
     Cmd::PasteKeepSource,
@@ -174,6 +195,8 @@ const PASTE_MENU: [Cmd; 11] = [
     Cmd::PasteValuesSource,
     Cmd::PasteFormatting,
     Cmd::PasteLink,
+    Cmd::PastePicture,
+    Cmd::PasteLinkedPicture,
 ];
 
 impl Cmd {
@@ -226,6 +249,13 @@ impl Feature for EditTools {
 
     fn paint(&self, p: &mut Painter) {
         links::paint(p);
+    }
+
+    /// Nothing is laid over the grid: this is where a feature is told of
+    /// each repaint, and linked pictures follow their cells then.
+    fn overlay_elements(&self, app: &mut ExcelApp, _: &GridLayout, _: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+        picture::follow_links(app, cx);
+        Vec::new()
     }
 
     fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _: &mut Window, cx: &mut Cx) -> ZoneResponse {

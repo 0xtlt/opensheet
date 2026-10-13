@@ -1392,6 +1392,38 @@ impl Feature for Drawings {
     }
 }
 
+/// Put a picture made by another feature on the current sheet, its
+/// top-left corner at a point of the sheet, as one undo step named
+/// `label`; it is selected, with the Picture Format tab. `None` when the
+/// sheet is protected against it.
+pub(crate) fn insert_picture(app: &mut ExcelApp, mut drawing: Drawing, at: (f64, f64), label: &'static str, cx: &mut Cx) -> Option<u32> {
+    if !app.may(Intent::EditObject(None), cx) {
+        return None;
+    }
+    // From the corner of the sheet: the engine finds the cell.
+    drawing.offset = (at.0 as f32, at.1 as f32);
+    let id = app.wb.add_drawing(app.sheet, drawing)?;
+    app.commit(label, cx);
+    app.select_object(Some(object_id(&Drawings, id)), cx);
+    app.context_tab = Some(PICTURE_TAB);
+    Some(id)
+}
+
+/// The pixels of an SVG document at its own size, as red, green, blue and
+/// alpha: width, height and the bytes. For the features that draw with
+/// vectors and keep a bitmap (the picture of a range of cells). `None`
+/// when the document cannot be drawn.
+pub(crate) fn svg_pixels(document: &[u8], cx: &gpui::App) -> Option<(u32, u32, Vec<u8>)> {
+    svg::install(cx);
+    let bitmap = svg::rasterize(document)?;
+    let mut pixels = bitmap.data;
+    // The screen wants blue first, a file red.
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    Some((bitmap.width, bitmap.height, pixels))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

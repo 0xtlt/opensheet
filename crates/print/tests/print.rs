@@ -1344,3 +1344,70 @@ fn the_background_of_a_sheet_is_not_printed() {
     assert_eq!(scene.ops.len(), plain.ops.len());
     assert!(!String::from_utf8_lossy(&print_pdf(&wb, &job)).contains("/Subtype /Image"));
 }
+
+#[test]
+fn a_range_is_drawn_alone_without_the_furniture_of_a_page() {
+    use opensheet_print::{RangeLook, render_range, scene_svg};
+    let mut wb = Workbook::new(Locale::en());
+    enter(&mut wb, "B2", "Tea");
+    enter(&mut wb, "C2", "12.5");
+    enter(&mut wb, "A1", "outside");
+    style(&mut wb, "B2", |s| s.fill = Some(Color(0xFF0000)));
+    wb.update_page_setup(0, |setup| {
+        setup.header_footer.odd_header = "&CConfidential".to_string();
+        setup.headings = true;
+    });
+    wb.commit("setup");
+    let fonts = FontDb::standard_only();
+    let range = Rect::parse("B2:C3").unwrap();
+    let scene = render_range(&wb, 0, range, RangeLook::Screen { gridlines: true }, Some(&fonts), None).unwrap();
+    // The page is the range: three quarters of a point for each pixel.
+    let sheet = &wb.sheets[0];
+    let width = sheet.col_width(1) as f64 + sheet.col_width(2) as f64;
+    assert!((scene.size.0 - width * 0.75).abs() < 0.01, "{:?}", scene.size);
+    let texts: Vec<&str> = scene
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    // The cells of the range, and neither the header of the sheet, its
+    // headings, nor its other cells.
+    assert_eq!(texts, ["Tea", "12.5"]);
+    let fills = |scene: &opensheet_print::Scene| {
+        scene.ops.iter().filter(|op| matches!(op, Op::Fill { paint, .. } if paint.color == Color(0xFF0000))).count()
+    };
+    assert_eq!(fills(&scene), 1);
+    // On screen the gridlines are the pale ones of the window; without
+    // them, no line at all.
+    let lines = |scene: &opensheet_print::Scene| -> Vec<Color> {
+        scene
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Stroke { stroke, .. } => Some(stroke.paint.color),
+                _ => None,
+            })
+            .collect()
+    };
+    assert!(!lines(&scene).is_empty() && lines(&scene).iter().all(|color| *color == Color(0xE1E1E1)));
+    let bare = render_range(&wb, 0, range, RangeLook::Screen { gridlines: false }, Some(&fonts), None).unwrap();
+    assert!(lines(&bare).is_empty());
+    // As printed: what the page setup prints, here no gridlines and no
+    // colour once the sheet prints in black and white.
+    wb.update_page_setup(0, |setup| setup.black_and_white = true);
+    wb.commit("setup");
+    let printed = render_range(&wb, 0, range, RangeLook::Printed, Some(&fonts), None).unwrap();
+    assert_eq!(fills(&printed), 0);
+    assert!(lines(&printed).is_empty());
+    // A hidden range shows nothing.
+    wb.set_rows_hidden(0, 1, 2, true);
+    wb.commit("hide");
+    assert!(render_range(&wb, 0, range, RangeLook::Printed, Some(&fonts), None).is_none());
+    // The document is as wide and high as asked.
+    let svg = scene_svg(&scene, (300.0, 80.0));
+    assert!(svg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"80\""));
+    assert!(svg.contains(">Tea</text>"));
+}
