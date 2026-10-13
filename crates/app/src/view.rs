@@ -1339,6 +1339,8 @@ impl Render for ExcelApp {
             .when(!modal, |d| {
                 let d = features::outline::key_actions(d, cx);
                 let d = features::data_tools::key_actions(features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx), cx);
+                let d = features::proofing::key_actions(d, cx);
+                let d = features::help::key_actions(features::share::key_actions(d, cx), cx);
                 features::preferences::key_actions(features::custom_views::key_actions(d, cx), cx)
                     .on_action(cx.listener(Self::on_undo))
                     .on_action(cx.listener(Self::on_redo))

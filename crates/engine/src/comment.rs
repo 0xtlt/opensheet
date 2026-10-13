@@ -127,11 +127,7 @@ impl Note {
     /// dated `time`.
     fn as_thread(&self, time: f64) -> Thread {
         Thread {
-            first: Post {
-                author: Person::new(&self.author),
-                time,
-                text: self.body(),
-            },
+            first: Post::new(&Person::new(&self.author), time, &self.body()),
             replies: Vec::new(),
             resolved: false,
         }
@@ -161,6 +157,36 @@ impl Person {
             provider_id: "None".to_string(),
         }
     }
+
+    /// Someone named in a comment by an e-mail address, as Excel records
+    /// the people it takes from the directory of an organisation: the
+    /// address is the account and the provider is the people picker.
+    pub fn mentioned(name: &str, email: &str) -> Person {
+        Person {
+            name: name.to_string(),
+            user_id: email.to_string(),
+            provider_id: "PeoplePicker".to_string(),
+        }
+    }
+}
+
+/// Someone named in a post (`@Ann Lee`): who, and where the name stands
+/// in the text (`<mention>` of the file).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mention {
+    pub person: Person,
+    /// Where the mention starts in the text of its post, at the `@`: a
+    /// byte offset.
+    pub start: usize,
+    /// Its length in bytes, the `@` included.
+    pub len: usize,
+}
+
+impl Mention {
+    /// The bytes of the text the mention covers.
+    pub fn range(&self) -> std::ops::Range<usize> {
+        self.start..self.start + self.len
+    }
 }
 
 /// One contribution to a thread: the comment that starts it, or a reply.
@@ -171,6 +197,65 @@ pub struct Post {
     /// see `time_to_iso`). Show it with `utc_to_local`.
     pub time: f64,
     pub text: String,
+    /// The people the text names, in the order of the text; they never
+    /// overlap.
+    pub mentions: Vec<Mention>,
+}
+
+impl Post {
+    /// A post that names nobody.
+    pub fn new(author: &Person, time: f64, text: &str) -> Post {
+        Post {
+            author: author.clone(),
+            time,
+            text: text.to_string(),
+            mentions: Vec::new(),
+        }
+    }
+
+    /// The same post naming these people. Mentions that do not fit the
+    /// text (past its end, inside a character, over one another, empty)
+    /// are left out, and the others are put in the order of the text.
+    pub fn with_mentions(mut self, mut mentions: Vec<Mention>) -> Post {
+        mentions.sort_by_key(|mention| mention.start);
+        let mut end = 0;
+        mentions.retain(|mention| {
+            let range = mention.range();
+            let fits = mention.len > 0
+                && range.start >= end
+                && range.end <= self.text.len()
+                && self.text.is_char_boundary(range.start)
+                && self.text.is_char_boundary(range.end);
+            if fits {
+                end = range.end;
+            }
+            fits
+        });
+        self.mentions = mentions;
+        self
+    }
+
+    /// The text cut where mentions start and end: each piece with the
+    /// person it names, if it is a mention.
+    pub fn pieces(&self) -> Vec<(&str, Option<&Person>)> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        for mention in &self.mentions {
+            let range = mention.range();
+            if range.start < at || self.text.get(range.clone()).is_none() {
+                continue;
+            }
+            if range.start > at {
+                out.push((&self.text[at..range.start], None));
+            }
+            out.push((&self.text[range.clone()], Some(&mention.person)));
+            at = range.end;
+        }
+        if at < self.text.len() {
+            out.push((&self.text[at..], None));
+        }
+        out
+    }
 }
 
 /// A comment and the replies to it.
@@ -609,6 +694,11 @@ impl Workbook {
     /// Start a comment thread on a cell (New Comment). `time` is
     /// `now_utc()`. Refused when the cell already has a note or a thread.
     pub fn add_comment(&mut self, sheet: usize, row: u32, col: u32, author: &Person, time: f64, text: &str) -> bool {
+        self.add_comment_post(sheet, row, col, Post::new(author, time, text))
+    }
+
+    /// `add_comment` for a post that may name people.
+    pub fn add_comment_post(&mut self, sheet: usize, row: u32, col: u32, post: Post) -> bool {
         if sheet >= self.sheets.len()
             || row >= MAX_ROWS
             || col >= MAX_COLS
@@ -618,11 +708,7 @@ impl Workbook {
         }
         self.snapshot();
         let thread = Thread {
-            first: Post {
-                author: author.clone(),
-                time,
-                text: text.to_string(),
-            },
+            first: post,
             replies: Vec::new(),
             resolved: false,
         };
@@ -632,17 +718,31 @@ impl Workbook {
 
     /// Reply to the thread of a cell. Refused while it is resolved.
     pub fn add_reply(&mut self, sheet: usize, row: u32, col: u32, author: &Person, time: f64, text: &str) -> bool {
-        let reply = Post {
-            author: author.clone(),
-            time,
-            text: text.to_string(),
-        };
+        self.add_reply_post(sheet, row, col, Post::new(author, time, text))
+    }
+
+    /// `add_reply` for a post that may name people.
+    pub fn add_reply_post(&mut self, sheet: usize, row: u32, col: u32, reply: Post) -> bool {
         self.change_thread(sheet, row, col, false, |thread| thread.replies.push(reply))
     }
 
     /// Change the text of the first comment of a thread (`reply` `None`)
-    /// or of one of its replies. Refused while the thread is resolved.
+    /// or of one of its replies; it then names nobody. Refused while the
+    /// thread is resolved.
     pub fn edit_comment(&mut self, sheet: usize, row: u32, col: u32, reply: Option<usize>, text: &str) -> bool {
+        self.edit_comment_mentions(sheet, row, col, reply, text, Vec::new())
+    }
+
+    /// `edit_comment` for a text that names people.
+    pub fn edit_comment_mentions(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        reply: Option<usize>,
+        text: &str,
+        mentions: Vec<Mention>,
+    ) -> bool {
         let exists = |thread: &Thread| reply.is_none_or(|index| index < thread.replies.len());
         if !self
             .comment_at(sheet, row, col)
@@ -656,8 +756,28 @@ impl Workbook {
                 Some(index) => &mut thread.replies[index],
                 None => &mut thread.first,
             };
-            post.text = text.to_string();
+            *post = Post::new(&post.author, post.time, text).with_mentions(mentions);
         })
+    }
+
+    /// Everyone the comments of the workbook know: those who wrote one
+    /// and those one names, each once, in the order they first appear.
+    pub fn people(&self) -> Vec<Person> {
+        let mut out: Vec<Person> = Vec::new();
+        let threads = self
+            .sheets
+            .iter()
+            .flat_map(|sheet| sheet.comments.values())
+            .filter_map(Comment::as_thread);
+        for post in threads.flat_map(Thread::posts) {
+            let named = post.mentions.iter().map(|mention| &mention.person);
+            for person in std::iter::once(&post.author).chain(named) {
+                if !out.contains(person) {
+                    out.push(person.clone());
+                }
+            }
+        }
+        out
     }
 
     /// Delete one reply of a thread (the thread itself: `delete_comment`).
@@ -1165,11 +1285,7 @@ mod tests {
         let t = thread(&w, "B3");
         assert_eq!(
             t.first,
-            Post {
-                author: ada.clone(),
-                time: NOON,
-                text: "Is this right? (B3)".into()
-            }
+            Post::new(&ada, NOON, "Is this right? (B3)")
         );
         assert_eq!(
             t.posts().map(|p| p.author.name.as_str()).collect::<Vec<_>>(),
@@ -1230,11 +1346,7 @@ mod tests {
         let first = thread(&w, "A1");
         assert_eq!(
             first.first,
-            Post {
-                author: Person::new("Ada"),
-                time: NOON + 1.0,
-                text: "First".into()
-            }
+            Post::new(&Person::new("Ada"), NOON + 1.0, "First")
         );
         assert!(first.replies.is_empty() && !first.resolved);
         assert_eq!(thread(&w, "A2").first.text, "No header");
@@ -1402,13 +1514,61 @@ mod tests {
     }
 
     #[test]
+    fn mentions() {
+        let mut w = wb(&[]);
+        let (ada, bob) = (Person::new("Ada"), Person::new("Bob"));
+        let cy = Person::mentioned("cy@example.com", "cy@example.com");
+        assert_eq!(cy.provider_id, "PeoplePicker");
+        let at = |person: &Person, start: usize, len: usize| Mention {
+            person: person.clone(),
+            start,
+            len,
+        };
+        // "é" takes two bytes: offsets are bytes, and must fall between
+        // characters.
+        let text = "@Bob vérifie, puis @cy@example.com";
+        let post = Post::new(&ada, NOON, text).with_mentions(vec![
+            at(&cy, 20, 15),
+            at(&bob, 0, 4),
+            at(&bob, 2, 4),
+            at(&bob, 7, 1),
+            at(&bob, 30, 40),
+            at(&bob, 12, 0),
+        ]);
+        assert_eq!(post.mentions, [at(&bob, 0, 4), at(&cy, 20, 15)]);
+        assert_eq!(
+            post.pieces(),
+            [
+                ("@Bob", Some(&bob)),
+                (" vérifie, puis ", None),
+                ("@cy@example.com", Some(&cy))
+            ]
+        );
+        assert!(w.add_comment_post(0, 0, 0, post.clone()));
+        assert!(w.add_reply_post(0, 0, 0, Post::new(&bob, NOON, "@Ada ok").with_mentions(vec![at(&ada, 0, 4)])));
+        w.commit("mentions");
+        assert_eq!(thread(&w, "A1").first, post);
+        // Authors and people named, each once, as they come.
+        assert_eq!(w.people(), [ada.clone(), bob.clone(), cy.clone()]);
+        // A plain edit names nobody any more; an edit can name people.
+        assert!(w.edit_comment(0, 0, 0, Some(0), "ok"));
+        assert!(thread(&w, "A1").replies[0].mentions.is_empty());
+        assert!(w.edit_comment_mentions(0, 0, 0, None, "voir @Bob", vec![at(&bob, 5, 4)]));
+        w.commit("edit");
+        let first = &thread(&w, "A1").first;
+        assert_eq!((first.author.clone(), first.time), (ada.clone(), NOON));
+        assert_eq!(first.pieces(), [("voir ", None), ("@Bob", Some(&bob))]);
+        assert_eq!(w.people(), [ada, bob]);
+        w.undo();
+        assert_eq!(thread(&w, "A1").first, post);
+        // The note standing in for the thread says the names as text.
+        assert!(thread(&w, "A1").legacy_text(Locale::en()).contains("@Bob vérifie"));
+    }
+
+    #[test]
     fn legacy_text_of_a_thread() {
         let mut t = Thread {
-            first: Post {
-                author: Person::new("Ada"),
-                time: NOON,
-                text: "Why?".into(),
-            },
+            first: Post::new(&Person::new("Ada"), NOON, "Why?"),
             replies: Vec::new(),
             resolved: false,
         };
@@ -1417,11 +1577,7 @@ mod tests {
             text.starts_with("[Threaded comment]\n\nYour version of Excel allows you to read this threaded comment;")
         );
         assert!(text.ends_with("linkid=870924\n\nComment:\n    Why?"));
-        t.replies.push(Post {
-            author: Person::new("Bob"),
-            time: NOON,
-            text: "Because.".into(),
-        });
+        t.replies.push(Post::new(&Person::new("Bob"), NOON, "Because."));
         assert!(
             t.legacy_text(Locale::en())
                 .ends_with("Comment:\n    Why?\nReply:\n    Because.")

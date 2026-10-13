@@ -13,6 +13,7 @@
 //! all of it in GPUI's headless window.
 
 mod card;
+mod mentions;
 mod notes;
 mod pane;
 #[cfg(test)]
@@ -38,7 +39,7 @@ use gpui::{
     AnyElement, CursorStyle, Entity, FocusHandle, Focusable, MouseButton, MouseDownEvent, Pixels, Point, Subscription,
     Task, Window, div, prelude::*, px,
 };
-use opensheet_engine::comment::{self, Comment, CommentKind, Note, Person};
+use opensheet_engine::comment::{self, Comment, CommentKind, Mention, Note, Person, Post};
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::workbook::ClearMode;
 use opensheet_engine::{Rect, Workbook};
@@ -569,26 +570,30 @@ fn nudge_box(app: &mut ExcelApp, dx: f64, dy: f64, cx: &mut Cx) {
 /// Write a post on a cell: the comment that starts its thread when it has
 /// none, else a reply. Returns the name of the undo step when it was
 /// written (not on a note, nor on a resolved thread).
-fn write_post(wb: &mut Workbook, sheet: usize, cell: (u32, u32), author: &str, now: f64, text: &str) -> Option<&'static str> {
-    let author = Person::new(author);
+fn write_post(wb: &mut Workbook, sheet: usize, cell: (u32, u32), post: Post) -> Option<&'static str> {
     let (row, col) = cell;
     match wb.comment_at(sheet, row, col).map(Comment::kind) {
-        Some(CommentKind::Thread) => wb
-            .add_reply(sheet, row, col, &author, now, text)
-            .then_some(t("Reply", "Répondre")),
+        Some(CommentKind::Thread) => wb.add_reply_post(sheet, row, col, post).then_some(t("Reply", "Répondre")),
         Some(CommentKind::Note) => None,
-        None => wb
-            .add_comment(sheet, row, col, &author, now, text)
-            .then_some(Cmd::NewComment.label()),
+        None => wb.add_comment_post(sheet, row, col, post).then_some(Cmd::NewComment.label()),
     }
 }
 
 /// Post a comment on a cell that has none, or a reply to its thread.
-pub(self) fn post(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), text: &str, cx: &mut Cx) -> bool {
+/// `mentions` are the people the text names.
+pub(self) fn post(
+    app: &mut ExcelApp,
+    sheet: usize,
+    cell: (u32, u32),
+    text: &str,
+    mentions: Vec<Mention>,
+    cx: &mut Cx,
+) -> bool {
     if !may_edit(app, cx) {
         return false;
     }
-    let label = write_post(&mut app.wb, sheet, cell, user_name(), comment::now_utc(), text);
+    let post = Post::new(&Person::new(user_name()), comment::now_utc(), text).with_mentions(mentions);
+    let label = write_post(&mut app.wb, sheet, cell, post);
     if let Some(label) = label {
         app.commit(label, cx);
     }
@@ -602,9 +607,10 @@ pub(self) fn edit_post(
     cell: (u32, u32),
     reply: Option<usize>,
     text: &str,
+    mentions: Vec<Mention>,
     cx: &mut Cx,
 ) -> bool {
-    let done = may_edit(app, cx) && app.wb.edit_comment(sheet, cell.0, cell.1, reply, text);
+    let done = may_edit(app, cx) && app.wb.edit_comment_mentions(sheet, cell.0, cell.1, reply, text, mentions);
     if done {
         app.commit(t("Edit Comment", "Modifier le commentaire"), cx);
     }
@@ -1497,9 +1503,9 @@ mod tests {
     #[test]
     fn posting_starts_a_thread_then_replies_to_it() {
         let mut wb = book();
-        assert_eq!(write_post(&mut wb, 0, (2, 0), "Ada", 45_000.25, "Is this right?"), Some("New Comment"));
+        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Ada"), 45_000.25, "Is this right?")), Some("New Comment"));
         wb.commit("New Comment");
-        assert_eq!(write_post(&mut wb, 0, (2, 0), "Bob", 45_000.5, "Yes."), Some("Reply"));
+        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Bob"), 45_000.5, "Yes.")), Some("Reply"));
         wb.commit("Reply");
         let thread = wb.comment_at(0, 2, 0).unwrap().as_thread().unwrap();
         assert_eq!((thread.first.author.name.as_str(), thread.first.text.as_str()), ("Ada", "Is this right?"));
@@ -1512,13 +1518,13 @@ mod tests {
         // A resolved thread takes no reply until it is reopened; a note none at all.
         wb.set_comment_resolved(0, 2, 0, true);
         wb.commit("resolve");
-        assert_eq!(write_post(&mut wb, 0, (2, 0), "Cy", 45_001.0, "Late"), None);
+        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Cy"), 45_001.0, "Late")), None);
         wb.set_comment_resolved(0, 2, 0, false);
         wb.commit("reopen");
-        assert_eq!(write_post(&mut wb, 0, (2, 0), "Cy", 45_001.0, "Late"), Some("Reply"));
+        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Cy"), 45_001.0, "Late")), Some("Reply"));
         wb.set_note(0, 5, 0, "Ada", "a note");
         wb.commit("note");
-        assert_eq!(write_post(&mut wb, 0, (5, 0), "Cy", 45_001.0, "On a note"), None);
+        assert_eq!(write_post(&mut wb, 0, (5, 0), Post::new(&Person::new("Cy"), 45_001.0, "On a note")), None);
     }
 
     #[test]
@@ -1556,11 +1562,7 @@ mod tests {
 
     #[test]
     fn status_bar_names_the_author() {
-        let post = |name: &str| Post {
-            author: Person::new(name),
-            time: 45_000.5,
-            text: "x".into(),
-        };
+        let post = |name: &str| Post::new(&Person::new(name), 45_000.5, "x");
         let note = Comment::Note(Note::new("Ada", "Ada:\nCheck"));
         assert_eq!(status_text("B2", &note), "Cell B2 note by Ada");
         let mut thread = Thread {

@@ -350,6 +350,15 @@ impl ExcelApp {
         self.modals.last().map(|entry| entry.view.clone())
     }
 
+    /// The title and the text of the message box in front, for the
+    /// tests that expect one.
+    #[cfg(test)]
+    pub(crate) fn front_alert(&self, cx: &App) -> Option<(String, String)> {
+        let view = self.front_modal_view()?.downcast::<MessageBox>().ok()?;
+        let alert = &view.read(cx).alert;
+        Some((alert.title.to_string(), alert.message.to_string()))
+    }
+
     /// Show a message box.
     pub fn alert(&mut self, mut alert: Alert, cx: &mut Context<Self>) {
         if alert.buttons.is_empty() {
@@ -559,12 +568,16 @@ impl ExcelApp {
                         .px(px(10.))
                         .flex()
                         .items_center()
+                        // Short of room, the tabs share it: every title
+                        // is cut the same way, none runs out of the pane.
+                        .flex_shrink()
+                        .min_w(px(0.))
                         .max_w(px(150.))
                         .border_b_2()
                         .border_color(if on { c(theme::ACCENT) } else { gpui::transparent_black() })
                         .when(on, |d| d.font_weight(FontWeight::SEMIBOLD).text_color(c(theme::ACCENT_DARK)))
                         .when(!on, |d| d.text_color(c(theme::TEXT_MUTED)).hover(|s| s.bg(c(theme::HOVER))))
-                        .child(div().truncate().child(pane.title.clone()))
+                        .child(div().min_w(px(0.)).truncate().child(pane.title.clone()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.active_pane = i;
                             cx.notify();

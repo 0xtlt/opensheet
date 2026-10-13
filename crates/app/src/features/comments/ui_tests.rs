@@ -568,14 +568,14 @@ fn threads_are_edited_resolved_and_deleted(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::Reply);
     let view = ui(&app, cx, |ui| ui.card.as_ref().unwrap().view.clone());
     // Rewriting a reply in its card: ⌘Return saves, Escape gives up.
-    view.update_in(cx, |card, window, cx| card.start_edit(Some(0), "Not yet".into(), window, cx));
+    view.update_in(cx, |card, window, cx| card.start_edit(Some(0), &Post::new(&bob(), 45_000.0, "Not yet"), window, cx));
     redraw(cx);
     cx.simulate_keystrokes("cmd-a");
     cx.simulate_input("Done now");
     cx.simulate_keystrokes("cmd-enter");
     assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies[0].text, "Done now");
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Edit Comment"));
-    view.update_in(cx, |card, window, cx| card.start_edit(None, "Checked?".into(), window, cx));
+    view.update_in(cx, |card, window, cx| card.start_edit(None, &Post::new(&bob(), 45_000.0, "Checked?"), window, cx));
     redraw(cx);
     cx.simulate_input(" really");
     cx.simulate_keystrokes("escape");
@@ -591,9 +591,9 @@ fn threads_are_edited_resolved_and_deleted(cx: &mut TestAppContext) {
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Resolve thread"));
     redraw(cx);
     // A resolved thread takes no reply until it is reopened.
-    app.update(cx, |app, cx| assert!(!post(app, 0, (2, 2), "Too late", cx)));
+    app.update(cx, |app, cx| assert!(!post(app, 0, (2, 2), "Too late", Vec::new(), cx)));
     app.update(cx, |app, cx| resolve(app, 0, (2, 2), false, cx));
-    app.update(cx, |app, cx| assert!(post(app, 0, (2, 2), "In time", cx)));
+    app.update(cx, |app, cx| assert!(post(app, 0, (2, 2), "In time", Vec::new(), cx)));
     assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies.len(), 2);
     // Deleting the thread takes its card with it.
     app.update(cx, |app, cx| delete_thread(app, 0, (2, 2), cx));
@@ -1112,7 +1112,7 @@ fn a_protected_sheet_refuses_changes_to_notes_and_comments(cx: &mut TestAppConte
     let on_comment = centre(&app, cx, (5, 1));
     click(cx, on_comment);
     assert_eq!(card(&app, cx), Some(((5, 1), true)));
-    app.update(cx, |app, cx| assert!(!post(app, 0, (5, 1), "No", cx)));
+    app.update(cx, |app, cx| assert!(!post(app, 0, (5, 1), "No", Vec::new(), cx)));
     refused(&app, cx, "a reply");
     app.update(cx, |app, cx| resolve(app, 0, (5, 1), true, cx));
     refused(&app, cx, "Resolve thread");
@@ -1123,7 +1123,7 @@ fn a_protected_sheet_refuses_changes_to_notes_and_comments(cx: &mut TestAppConte
         app.wb.protect_sheet(0, SheetProtection::allowing(&[Permission::EditObjects]), "");
         cx.notify();
     });
-    app.update(cx, |app, cx| assert!(post(app, 0, (5, 1), "Yes", cx)));
+    app.update(cx, |app, cx| assert!(post(app, 0, (5, 1), "Yes", Vec::new(), cx)));
     assert_eq!(thread(&app, cx, (5, 1)).unwrap().replies.len(), 1);
 }
 
@@ -1290,4 +1290,253 @@ fn a_press_on_the_ribbon_finishes_the_note_too(cx: &mut TestAppContext) {
     cx.simulate_input("9");
     cx.simulate_keystrokes("enter");
     app.update(cx, |app, _| assert_eq!(app.wb.sheets[0].value_at(3, 1), opensheet_engine::Value::Number(9.0)));
+}
+
+// ----------------------------------------------------------------- mentions
+
+/// The floating card.
+fn card_view(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<CommentCard> {
+    ui(app, cx, |ui| ui.card.as_ref().expect("a card is open").view.clone())
+}
+
+/// The names in the list of people open under the box, and the selected line.
+fn suggested(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<(Vec<String>, usize)> {
+    card_view(app, cx).update(cx, |card, _| card.suggested())
+}
+
+fn draft(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> String {
+    card_view(app, cx).update(cx, |card, cx| card.draft_text(cx))
+}
+
+/// Who a post names, with the words that name them.
+fn named(post: &Post) -> Vec<(String, Person)> {
+    post.pieces().into_iter().filter_map(|(text, person)| Some((text.to_string(), person?.clone()))).collect()
+}
+
+#[gpui::test]
+fn an_at_sign_opens_the_list_of_people(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let zed = Person::new("Zed Quux");
+    edit(&app, cx, |wb| {
+        wb.add_comment(0, 2, 2, &bob(), 45_000.0, "Checked?");
+        wb.add_reply(0, 2, 2, &zed, 45_000.1, "Not yet");
+    });
+    select(&app, cx, (4, 3));
+    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_input("Ask ");
+    assert_eq!(suggested(&app, cx), None);
+    // The people the workbook knows, then the user.
+    cx.simulate_input("@");
+    let (people, selected) = suggested(&app, cx).expect("the list is open");
+    assert_eq!(&people[..2], ["Bob Martin", "Zed Quux"]);
+    assert_eq!((people.last().map(String::as_str), selected), (Some(user_name()), 0));
+    redraw(cx);
+    assert!(cx.debug_bounds("mentions@D5").is_some(), "the list is drawn under the box");
+    // Typing narrows it; the arrows walk it, round its ends.
+    cx.simulate_input("q");
+    assert_eq!(suggested(&app, cx).unwrap().0.first().map(String::as_str), Some("Zed Quux"));
+    // The line that was selected stays selected when the list grows back.
+    cx.simulate_keystrokes("backspace");
+    assert_eq!(suggested(&app, cx).unwrap(), (people.clone(), 1));
+    cx.simulate_keystrokes("up up");
+    assert_eq!(suggested(&app, cx).unwrap().1, people.len() - 1);
+    cx.simulate_keystrokes("down down");
+    assert_eq!(suggested(&app, cx).unwrap().1, 1);
+    // Return names the person: nothing is posted, no line is started.
+    cx.simulate_keystrokes("enter");
+    assert_eq!(suggested(&app, cx), None);
+    assert_eq!(draft(&app, cx), "Ask @Zed Quux");
+    assert_eq!(thread(&app, cx, (4, 3)), None);
+    // More text follows the mention, and Return is a line break again.
+    cx.simulate_input(" to look");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("today");
+    cx.simulate_keystrokes("cmd-enter");
+    let posted = thread(&app, cx, (4, 3)).expect("a thread");
+    assert_eq!(posted.first.text, "Ask @Zed Quux to look\ntoday");
+    assert_eq!(named(&posted.first), [("@Zed Quux".to_string(), zed.clone())]);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("New Comment"));
+    // One step back and the comment is gone, mention and all.
+    cx.simulate_keystrokes("escape");
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(thread(&app, cx, (4, 3)), None);
+}
+
+#[gpui::test]
+fn a_mention_is_one_piece(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.add_comment(0, 2, 2, &bob(), 45_000.0, "Checked?");
+    });
+    select(&app, cx, (2, 2));
+    cx.simulate_keystrokes("cmd-shift-m");
+    // Tab names the person too.
+    cx.simulate_input("@bo");
+    assert_eq!(suggested(&app, cx).unwrap().0, ["Bob Martin"]);
+    cx.simulate_keystrokes("tab");
+    assert_eq!(draft(&app, cx), "@Bob Martin");
+    // Backspace right after the mention removes it whole.
+    cx.simulate_keystrokes("backspace");
+    assert_eq!(draft(&app, cx), "");
+    // Text typed against a mention does not join it; Backspace then
+    // removes a letter, and the mention only once the caret is back
+    // against it.
+    cx.simulate_input("Hi @mart");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("!?");
+    cx.simulate_keystrokes("backspace");
+    assert_eq!(draft(&app, cx), "Hi @Bob Martin!");
+    cx.simulate_keystrokes("backspace backspace");
+    assert_eq!(draft(&app, cx), "Hi ");
+    // A mention the caret cut into is plain text: posted, it names nobody.
+    cx.simulate_input("@bob");
+    cx.simulate_keystrokes("enter left left backspace");
+    assert_eq!(draft(&app, cx), "Hi @Bob Marin");
+    cx.simulate_keystrokes("cmd-enter");
+    let reply = &thread(&app, cx, (2, 2)).unwrap().replies[0];
+    assert_eq!((reply.text.as_str(), reply.mentions.len()), ("Hi @Bob Marin", 0));
+    // Escape closes the list and nothing else; the next one empties the box.
+    redraw(cx);
+    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_input("See @");
+    assert!(suggested(&app, cx).is_some());
+    cx.simulate_keystrokes("escape");
+    assert_eq!((suggested(&app, cx), draft(&app, cx).as_str()), (None, "See @"));
+    // The list comes back with the next letter of the name.
+    cx.simulate_input("b");
+    assert_eq!(suggested(&app, cx).unwrap().0, ["Bob Martin"]);
+    cx.simulate_keystrokes("escape escape");
+    redraw(cx);
+    assert_eq!(draft(&app, cx), "");
+    assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies.len(), 1);
+}
+
+#[gpui::test]
+fn an_address_names_someone_new(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    select(&app, cx, (1, 1));
+    cx.simulate_keystrokes("cmd-shift-m");
+    // No directory: a name nobody has offers nobody, a whole address does.
+    cx.simulate_input("@sam@example");
+    assert_eq!(suggested(&app, cx), None);
+    cx.simulate_input(".com");
+    assert_eq!(suggested(&app, cx), Some((vec!["sam@example.com".to_string()], 0)));
+    redraw(cx);
+    // A click on the line names the person, and the box keeps the keyboard.
+    let line = middle(cx, "mention-0@B2");
+    click(cx, line);
+    assert_eq!(draft(&app, cx), "@sam@example.com");
+    cx.simulate_input(" hello");
+    cx.simulate_keystrokes("cmd-enter");
+    let posted = thread(&app, cx, (1, 1)).expect("a thread");
+    let sam = Person::mentioned("sam@example.com", "sam@example.com");
+    assert_eq!(posted.first.text, "@sam@example.com hello");
+    assert_eq!(named(&posted.first), [("@sam@example.com".to_string(), sam.clone())]);
+    assert_eq!(sam.provider_id, "PeoplePicker");
+    // Once named, the person is known to the workbook and offered by name.
+    redraw(cx);
+    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_input("thanks @sa");
+    assert_eq!(suggested(&app, cx).unwrap().0, ["sam@example.com"]);
+    cx.simulate_keystrokes("enter cmd-enter");
+    let reply = &thread(&app, cx, (1, 1)).unwrap().replies[0];
+    assert_eq!(named(reply), [("@sam@example.com".to_string(), sam)]);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Reply"));
+    // An address inside a sentence is not a mention being typed.
+    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_input("write to joe@example.org");
+    assert_eq!(suggested(&app, cx), None);
+}
+
+#[gpui::test]
+fn mentions_survive_an_edit_and_show_in_the_pane(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let ann = Person::mentioned("Ann Lee", "ann.lee@example.com");
+    let text = "@Ann Lee is this right?";
+    edit(&app, cx, |wb| {
+        let mention = Mention {
+            person: ann.clone(),
+            start: 0,
+            len: 8,
+        };
+        wb.add_comment_post(0, 2, 2, Post::new(&bob(), 45_000.0, text).with_mentions(vec![mention]));
+    });
+    // The card shows the name in the colour of mentions.
+    assert_eq!(
+        card::lines(&thread(&app, cx, (2, 2)).unwrap().first),
+        [(text.to_string(), vec![0..8])]
+    );
+    let on_cell = centre(&app, cx, (2, 2));
+    click(cx, on_cell);
+    // Rewriting the comment keeps who it names...
+    let more = middle(cx, "post-menu-0@C3");
+    click(cx, more);
+    choose(&app, cx, "Edit comment");
+    cx.simulate_input(" Thanks");
+    cx.simulate_keystrokes("cmd-enter");
+    let first = thread(&app, cx, (2, 2)).unwrap().first;
+    assert_eq!(first.text, "@Ann Lee is this right? Thanks");
+    assert_eq!(named(&first), [("@Ann Lee".to_string(), ann.clone())]);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Edit Comment"));
+    // ... and can name someone else: the list opens under the box of the
+    // post, with the address of those who have one.
+    redraw(cx);
+    let more = middle(cx, "post-menu-0@C3");
+    click(cx, more);
+    choose(&app, cx, "Edit comment");
+    cx.simulate_input(" @bob");
+    assert_eq!(suggested(&app, cx).unwrap().0, ["Bob Martin"]);
+    cx.simulate_keystrokes("enter cmd-enter");
+    let first = thread(&app, cx, (2, 2)).unwrap().first;
+    assert_eq!(
+        named(&first),
+        [("@Ann Lee".to_string(), ann.clone()), ("@Bob Martin".to_string(), bob())]
+    );
+    // Backspace at the end of the rewritten text takes the last mention.
+    redraw(cx);
+    let more = middle(cx, "post-menu-0@C3");
+    click(cx, more);
+    choose(&app, cx, "Edit comment");
+    cx.simulate_keystrokes("backspace backspace cmd-enter");
+    let first = thread(&app, cx, (2, 2)).unwrap().first;
+    assert_eq!(first.text, "@Ann Lee is this right? Thanks");
+    assert_eq!(named(&first).len(), 1);
+
+    // In the Comments pane the same box names people.
+    cx.simulate_keystrokes("escape");
+    run(&app, cx, Cmd::ShowPane);
+    select(&app, cx, (2, 2));
+    run(&app, cx, Cmd::Reply);
+    cx.simulate_input("@ann");
+    redraw(cx);
+    assert!(cx.debug_bounds("mentions@C3").is_some(), "the pane shows the list");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input(" yes");
+    cx.simulate_keystrokes("cmd-enter");
+    let reply = &thread(&app, cx, (2, 2)).unwrap().replies[0];
+    assert_eq!(reply.text, "@Ann Lee yes");
+    assert_eq!(named(reply), [("@Ann Lee".to_string(), ann)]);
+}
+
+#[gpui::test]
+fn a_protected_sheet_takes_no_mention(cx: &mut TestAppContext) {
+    use opensheet_engine::protect::SheetProtection;
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        wb.add_comment(0, 2, 2, &bob(), 45_000.0, "Checked?");
+    });
+    let on_cell = centre(&app, cx, (2, 2));
+    click(cx, on_cell);
+    let field = middle(cx, "reply-field@C3");
+    click(cx, field);
+    cx.simulate_input("@bob");
+    cx.simulate_keystrokes("enter");
+    app.update(cx, |app, cx| {
+        app.wb.protect_sheet(0, SheetProtection::default(), "");
+        cx.notify();
+    });
+    cx.simulate_keystrokes("cmd-enter");
+    app.update(cx, |app, _| assert!(app.modal_open(), "the reply was not refused"));
+    cx.simulate_keystrokes("enter");
+    assert!(thread(&app, cx, (2, 2)).unwrap().replies.is_empty());
 }

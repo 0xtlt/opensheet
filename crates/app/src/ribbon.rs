@@ -7,7 +7,7 @@
 use crate::app::*;
 use crate::features::{
     self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, protection, slicers, tables, themes, validation,
+    pivot, proofing, protection, slicers, tables, themes, validation,
 };
 use crate::i18n::t;
 use crate::ribbon_fold as fold;
@@ -596,7 +596,9 @@ impl ExcelApp {
                     .text_color(c(0xFFFFFF))
                     .child(icon("share", 14.0, 0xFFFFFF))
                     .when(labels, |d| d.child(share_label))
-                    .on_click(cx.listener(|this, _, window, cx| misc::Cmd::Share.run(this, window, cx))),
+                    .relative()
+                    .child(self.anchor(features::share::BUTTON))
+                    .on_click(cx.listener(|this, _, window, cx| features::share::Cmd::Share.run(this, window, cx))),
             )
     }
 
@@ -615,6 +617,7 @@ impl ExcelApp {
             MenuEntry::new(t("Save As…", "Enregistrer sous…"), |a, w, cx| a.save(true, w, cx)).shortcut("⇧⌘S"),
             MenuEntry::separator(),
             MenuEntry::command(page::Cmd::Print, self).shortcut("⌘P"),
+            features::share::file_menu_entry(self),
             MenuEntry::separator(),
         ];
         let mut entries = entries;
@@ -706,8 +709,8 @@ impl ExcelApp {
             group(
                 t("Help", "Aide"),
                 row(vec![
-                    self.cmd_large("hp-help", misc::Cmd::Help, false, cx),
-                    self.cmd_large("hp-feedback", misc::Cmd::Feedback, false, cx),
+                    self.cmd_large("hp-help", features::help::Cmd::Help, false, cx),
+                    self.cmd_large("hp-feedback", features::help::Cmd::Feedback, false, cx),
                 ]),
             )
             .border_r_0()
@@ -720,20 +723,20 @@ impl ExcelApp {
             group(
                 t("Proofing", "Vérification"),
                 row(vec![
-                    self.cmd_large("rv-spell", misc::Cmd::Spelling, false, cx),
-                    self.cmd_large("rv-thesaurus", misc::Cmd::Thesaurus, false, cx),
-                    self.cmd_large("rv-stats", misc::Cmd::WorkbookStatistics, false, cx),
+                    self.cmd_large("rv-spell", proofing::Cmd::Spelling, false, cx),
+                    self.cmd_large("rv-thesaurus", proofing::Cmd::Thesaurus, false, cx),
+                    self.cmd_large("rv-stats", features::stats::Cmd::Open, false, cx),
                 ]),
             )
             .into_any_element(),
             group(
                 t("Accessibility", "Accessibilité"),
-                row(vec![self.cmd_large("rv-access", misc::Cmd::CheckAccessibility, true, cx)]),
+                row(vec![self.cmd_large("rv-access", proofing::Cmd::AccessibilityMenu, true, cx)]),
             )
             .into_any_element(),
             group(
                 t("Language", "Langue"),
-                row(vec![self.cmd_large("rv-translate", misc::Cmd::Translate, false, cx)]),
+                row(vec![self.cmd_large("rv-translate", proofing::Cmd::Translate, false, cx)]),
             )
             .into_any_element(),
             group(
