@@ -203,10 +203,9 @@ pub(super) fn groups(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Ve
         .into_any_element(),
         group(
             t("External Table Data", "Données de tableau externe"),
-            row(vec![
-                app.cmd_large("td-export", Cmd::Export, true, cx),
-                app.cmd_large("td-refresh", Cmd::Refresh, true, cx),
-            ]),
+            // Excel for Mac has no Export here (SharePoint lists and Visio
+            // are Windows').
+            row(vec![app.cmd_large("td-refresh", Cmd::Refresh, false, cx)]),
         )
         .into_any_element(),
         group(

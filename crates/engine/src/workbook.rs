@@ -114,6 +114,9 @@ pub struct Sheet {
     pub comments: BTreeMap<(u32, u32), crate::comment::Comment>,
     /// Sheet protection, see `protect.rs`.
     pub protection: Option<crate::protect::SheetProtection>,
+    /// The ranges that can be edited while the sheet is protected
+    /// (Review > Allow Edit Ranges).
+    pub protected_ranges: Vec<crate::protect::ProtectedRange>,
     /// Page setup for printing, see `page.rs`.
     pub page: crate::page::PageSetup,
     /// Pivot tables, see `pivot.rs`.
@@ -179,6 +182,7 @@ impl Sheet {
             validations: Vec::new(),
             comments: BTreeMap::new(),
             protection: None,
+            protected_ranges: Vec::new(),
             page: crate::page::PageSetup::default(),
             pivots: Vec::new(),
             drawings: Vec::new(),
@@ -476,6 +480,10 @@ pub struct Workbook {
     pub modified: bool,
     /// Protection of the workbook structure, see `protect.rs`.
     pub protection: crate::protect::WorkbookProtection,
+    /// The ranges whose password was given since the workbook was opened
+    /// (`ProtectedRange::id`). Not part of the undo history: a password is
+    /// asked once.
+    pub unlocked_ranges: Vec<u64>,
     /// Incremented whenever a value may have changed (by every committed
     /// edit, undo, redo and recalculation): anything derived from cell
     /// values can be cached against it.
@@ -518,6 +526,7 @@ impl Workbook {
             circular: false,
             modified: false,
             protection: crate::protect::WorkbookProtection::default(),
+            unlocked_ranges: Vec::new(),
             generation: 0,
             caches: crate::features::Caches::default(),
             calc: crate::recalc::CalcState::default(),

@@ -100,6 +100,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 **Données**
 - Filtres automatiques (valeurs, texte, nombres, dates, couleurs, 10 premiers), tri à plusieurs niveaux avec listes personnalisées, suppression des doublons.
 - Tableaux structurés : 60 styles, ligne de total, colonnes calculées, agrandissement automatique à la saisie.
+- Obtenir des données : depuis un fichier texte ou CSV, le web (adresse saisie, choix du tableau dans le navigateur avec aperçu), un classeur Excel, un fichier JSON ou XML ; Requêtes et connexions, actualisation à la demande, à l'ouverture ou toutes les N minutes. Rien n'est téléchargé sans votre demande.
 - Tableaux croisés dynamiques : volet des champs avec glisser-déposer, filtres, regroupements, « afficher les valeurs comme », styles, détail par double-clic, champs et éléments calculés, ordre de résolution.
 - Segments (tableaux croisés et tableaux) et chronologies : sélection au clic ou par glisser, sélection multiple, connexions de rapport, styles ; les éléments sans données sont grisés.
 - Graphiques croisés dynamiques : ils suivent la disposition, les filtres et l'actualisation du tableau croisé, avec leurs boutons de champ.
@@ -115,10 +116,11 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Disposition libre : titre, légende, zone de traçage, titres d'axes et étiquettes se déplacent à la souris ; mise en forme du texte de chaque élément ; couleur, épaisseur et tirets des quadrillages.
 - Images (fichier, glisser-déposer, collage) et 15 formes avec texte : déplacement, redimensionnement, rotation, remplissage, contour, flèches.
 - Objets : sélection multiple (Maj ou ⌘ + clic, Sélectionner les objets), aligner, répartir, grouper / dissocier, volet Sélection (renommer, masquer, réordonner) ; graphiques, images et formes partagent un seul ordre d'empilement.
-- Images : rogner (marques, forme, proportions, remplir, ajuster), luminosité, contraste, saturation, nuance, recoloration, transparence, rétablir.
+- Images : rogner (marques, forme, proportions, remplir, ajuster), luminosité, contraste, saturation, nuance, recoloration, transparence, rétablir ; 26 styles d'image, bordure, reflet, biseau, rotation 3D, ombres à flou réel ; 15 effets artistiques (crayon, craie, flou, mosaïque, photocopie…) ; compresser les images.
 - Effets : ombre (9 préréglages), lueur, contours adoucis des images.
 - Onglet Dessin : stylos, crayon, surligneur, gomme, sélection au lasso, conversion de l'encre en forme, relecture.
-- WordArt : galerie de 15 styles, remplissage, contour et ombre du texte, mise en forme d'une partie du texte.
+- WordArt : galerie de 15 styles, remplissage (uni ou dégradé), contour, ombre et reflet du texte, les 40 transformations d'Excel (arche, cercle, vague, gonflé…) avec leur poignée de réglage, plusieurs tailles dans une même forme.
+- Symboles : comme Excel pour Mac, Insertion ▸ Symbole ouvre le visualiseur de caractères de macOS ; le caractère choisi va dans la cellule, la zone de texte ou la note en cours.
 - Icônes (63 pictogrammes, recherche, catégories) et images SVG, avec remplissage et contour du graphique.
 - SmartArt : 8 dispositions (liste, processus, cycle, hiérarchie, relation, matrice, pyramide…), volet Texte, couleurs, styles, conversion en formes.
 - Équations : 9 équations prédéfinies, structures (fractions, indices, racines, intégrales, matrices…), saisie au format linéaire avec aperçu.
@@ -139,7 +141,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Dictionnaire des synonymes (⇧F7) et traduction, avec ce que macOS fournit sur la machine, sans service en ligne.
 - Vérification d'accessibilité : volet des erreurs, avertissements et conseils avec les actions recommandées, indicateur dans la barre d'état.
 - Statistiques du classeur.
-- Protection de la feuille (15 autorisations, mot de passe, cellules verrouillées ou masquées) et de la structure du classeur.
+- Protection de la feuille (15 autorisations, mot de passe, cellules verrouillées ou masquées), plages modifiables sur une feuille protégée (avec ou sans mot de passe), protection de la structure du classeur.
 
 **Partage et aide**
 - Partager ▸ Envoyer une copie : le classeur ou un PDF, par la feuille de partage de macOS (Mail, Messages, AirDrop…).
@@ -170,25 +172,23 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 **Hors périmètre** : l'exécution des macros VBA (leur code est conservé et lisible ; l'automatisation passe par les scripts Office).
 
 **Pas encore faits** (les boutons sont dans le ruban et affichent « pas encore disponible ») :
-- Symboles.
 - L'enregistrement d'une macro VBA (l'enregistreur de scripts, lui, existe : Automatiser ▸ Enregistrer les actions).
 - Co-édition en direct, invitation de personnes et lien de partage : ils demandent un service en ligne qu'OpenSheet n'a pas.
 
 **Partiels**
-- Graphiques : une étiquette de données ne se sélectionne pas seule ; la zone de traçage des graphiques 3D ne se déplace pas.
+- Graphiques : une étiquette de données ne se sélectionne pas seule ; la zone de traçage des graphiques 3D ne se déplace pas ; ombre et lueur pour la zone de graphique et la zone de traçage seulement ; pas de contour ni d'effets pour le texte des graphiques.
 - Tableaux croisés : pas de jeux (OLAP) ; les boutons de champ d'un graphique croisé n'ont pas de liste déroulante ; avec plusieurs champs de lignes, le graphique croisé n'a pas d'axe à plusieurs niveaux.
-- Formes et images : un graphique n'entre pas dans un groupe ; les membres d'un groupe ne se sélectionnent pas un par un ; pas de styles d'image, d'effets artistiques, de reflet, de biseau ni de 3D ; le flou des ombres est approché ; les réglages de couleur et les effets ne sont pas imprimés.
-- WordArt : pas de transformation (texte déformé), de dégradé, de biseau ni de reflet ; une forme affiche tout son texte à la taille de son premier passage.
+- Formes et images : un graphique n'entre pas dans un groupe ; les membres d'un groupe ne se sélectionnent pas un par un ; les effets artistiques sont nos propres filtres (ils ressemblent à ceux d'Excel sans être identiques) et sept d'entre eux manquent (ceux qui reposent sur les textures d'Office) ; deux styles d'image à double cadre manquent ; biseau du dessus seulement ; pas de suppression de l'arrière-plan ; reflet, biseau et rotation 3D pour les images seulement.
+- WordArt : pas de biseau ni de lueur du texte ; pendant la saisie, le texte d'une forme déformée s'affiche à plat.
 - Icônes : jeu de pictogrammes propre au projet (celui d'Office n'est pas libre) ; pas de conversion en forme.
 - SmartArt : le texte se modifie dans le volet Texte, pas dans les formes ; pas d'onglet Format SmartArt. Un SmartArt créé ou modifié dans OpenSheet s'ouvre dans Excel comme un groupe de formes d'aspect identique (OpenSheet, lui, le relit comme un SmartArt) ; un SmartArt venu d'Excel et non modifié est réécrit tel quel.
 - Équations : pas de curseur dans l'équation construite, la saisie se fait au format linéaire ; à l'impression, le texte linéaire.
-- Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) ; elle n'est pas imprimée et reste au-dessus des autres objets.
+- Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) et reste au-dessus des autres objets.
 - Scripts Office : la vérification avant exécution suit les types d'`ExcelScript` mais se tait dès qu'un type n'est pas certain (`any`, paramètre sans annotation, résultat de `filter`/`map`) ; pas de membres pour les segments, la protection du classeur ni les connecteurs coudés ; pas de `fetch`. Un script qui change la protection d'une feuille ne peut pas être annulé, comme à la main.
 - Enregistreur d'actions : ne sait pas écrire les fils de commentaires, les tableaux croisés, les formes et images, les segments, les sparklines, le plan, la mise en page, les liens, ni les mises en forme conditionnelles autres que « valeur de cellule » et « formule ».
 - Classeurs avec macros : les contrôles de formulaire, les contrôles ActiveX et les feuilles de dialogue ne sont pas lus, donc pas réécrits ; un bouton affecté à une macro est perdu à l'enregistrement.
 - Préférences : les volets absents d'OpenSheet sont grisés (graphique, saisie semi-automatique, enregistrement, compatibilité, sécurité, ruban) ; pas de style de référence L1C1.
 - Correction automatique : la liste de départ est courte (signes et quelques fautes courantes par langue), sans boîte d'exceptions.
-- Révision ▸ Autoriser la modification des plages : pas encore.
 - Impression : seuls les préréglages « par défaut » et « derniers utilisés » existent ; ceux de macOS ne sont pas lus.
 - @mentions : sans annuaire d'organisation, la liste propose les personnes déjà présentes dans le classeur, l'utilisateur, ou une adresse saisie en entier ; aucun message n'est envoyé à la personne mentionnée.
 - Synonymes : macOS n'en fournit qu'en anglais. Traduction : macOS 26 ou plus récent, langues téléchargées dans Réglages Système. Orthographe : pas de correction automatique ; les formes dans un groupe ou un SmartArt ne sont pas vérifiées.
@@ -196,7 +196,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Insérer une fonction : les descriptions des fonctions sont lues dans une installation d'Excel présente sur la machine ; sans elle, seule la syntaxe est affichée.
 - Rechercher et remplacer : la boîte bloque la fenêtre tant qu'elle est ouverte (celle d'Excel reste à côté).
 - Collage spécial : un collage transposé ne reporte ni les commentaires ni les liens hypertexte. Image liée : sa formule ne se modifie pas dans la barre de formule.
-- Obtenir des données : fichiers texte et CSV seulement (pas de bases de données, de web ni de Power Query).
+- Obtenir des données : pas de bases de données (il faudrait un pilote ODBC) ni d'éditeur Power Query ; les requêtes sont enregistrées dans le format classique d'Excel, qui sait actualiser celles qui lisent une page web mais pas celles en JSON, XML ou classeur.
 - Sparklines : pas d'axe de dates. Plan : pas de styles automatiques ; la marge du plan n'apparaît pas en vue Mise en page.
 - Thèmes : les effets sont enregistrés mais ne changent pas le dessin.
 - Calcul : un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.

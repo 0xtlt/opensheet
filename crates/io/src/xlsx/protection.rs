@@ -8,8 +8,9 @@
 //! exactly as read, so that the password still opens the sheet wherever
 //! the file goes next.
 
-use super::xml::{Tag, push_attr};
-use opensheet_engine::protect::{PasswordHash, Permission, SheetProtection, WorkbookProtection};
+use super::xml::{Event, Reader, Tag, push_attr};
+use opensheet_engine::Rect;
+use opensheet_engine::protect::{PasswordHash, Permission, ProtectedRange, SheetProtection, WorkbookProtection};
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
@@ -129,6 +130,65 @@ pub(crate) fn write_sheet(x: &mut String, protection: &SheetProtection) {
         }
     }
     x.push_str("/>");
+}
+
+/// Read `<protectedRanges>`: the ranges of a protected sheet that may be
+/// edited (Review > Allow Edit Ranges).
+pub(crate) fn read_ranges<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Vec<ProtectedRange> {
+    let mut ranges = Vec::new();
+    if tag.empty {
+        return ranges;
+    }
+    loop {
+        match r.next() {
+            Event::Open(t) => {
+                if t.name == "protectedRange" {
+                    let cells: Vec<Rect> = t.attr("sqref").map(|sqref| sqref.split_whitespace().filter_map(|part| Rect::parse(&part.replace('$', ""))).collect()).unwrap_or_default();
+                    if let (Some(name), false) = (t.attr("name"), cells.is_empty()) {
+                        let mut range = ProtectedRange::new(&name, cells, read_password(&t, false));
+                        range.security_descriptor = t.attr("securityDescriptor").map(|text| text.into_owned());
+                        ranges.push(range);
+                    }
+                }
+                r.skip(&t);
+            }
+            Event::Close(_) | Event::Eof => break,
+            _ => {}
+        }
+    }
+    ranges
+}
+
+/// Append `<protectedRanges>`, with the attributes in the order Excel
+/// writes them: the password, the cells, the title.
+pub(crate) fn write_ranges(x: &mut String, ranges: &[ProtectedRange]) {
+    if ranges.is_empty() {
+        return;
+    }
+    x.push_str("<protectedRanges>");
+    for range in ranges {
+        x.push_str("<protectedRange");
+        if let Some(password) = &range.password {
+            push_password(x, password, false);
+        }
+        x.push_str(" sqref=\"");
+        for (n, rect) in range.ranges.iter().enumerate() {
+            if n > 0 {
+                x.push(' ');
+            }
+            super::write::push_range(x, *rect);
+        }
+        x.push_str("\" name=\"");
+        push_attr(x, &range.name);
+        x.push('"');
+        if let Some(descriptor) = &range.security_descriptor {
+            x.push_str(" securityDescriptor=\"");
+            push_attr(x, descriptor);
+            x.push('"');
+        }
+        x.push_str("/>");
+    }
+    x.push_str("</protectedRanges>");
 }
 
 /// The protection a `<workbookProtection>` element stands for. Tracking

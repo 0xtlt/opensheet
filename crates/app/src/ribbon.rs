@@ -1947,6 +1947,11 @@ impl ExcelApp {
                 row(vec![
                     self.cmd_large("dt-get", data_tools::Cmd::GetData, true, cx),
                     self.cmd_large("dt-refresh", data_tools::Cmd::RefreshMenu, true, cx),
+                    rows(vec![
+                        self.cmd_labeled("dt-connections", data_tools::Cmd::Connections, false, cx),
+                        self.cmd_labeled("dt-properties", data_tools::Cmd::RangeProperties, false, cx),
+                    ])
+                    .into_any_element(),
                 ]),
             )
             .into_any_element(),

@@ -441,6 +441,8 @@ impl Wizard {
                     range: Rect::cell(0, 0),
                     first_row: self.first_row(cx),
                     spec,
+                    web: None,
+                    props: Default::default(),
                 };
                 let text = self.lines.join("\n");
                 // "Import Data" asks where the data goes.

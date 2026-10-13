@@ -319,6 +319,8 @@ fn text_imports_round_trip() {
             layout: Layout::Delimited(semicolons),
             formats: vec![ColumnFormat::Text, ColumnFormat::General, ColumnFormat::Date(DateOrder::DMY), ColumnFormat::Skip],
         },
+        web: None,
+        props: Default::default(),
     };
     let fixed = TextImport {
         name: String::new(),
@@ -326,6 +328,8 @@ fn text_imports_round_trip() {
         range: Rect::cell(0, 0),
         first_row: 1,
         spec: Spec::new(Layout::FixedWidth(vec![5, 9])),
+        web: None,
+        props: Default::default(),
     };
     let plain = TextImport {
         name: String::new(),
@@ -333,6 +337,8 @@ fn text_imports_round_trip() {
         range: Rect::cell(0, 0),
         first_row: 1,
         spec: Spec::new(Layout::Delimited(Delimiters::default())),
+        web: None,
+        props: Default::default(),
     };
     wb.import_text(0, (9, 0), "skipped\n007;x|31/01/2024;gone\n008;y|01/02/2024;gone", delimited.clone()).unwrap();
     wb.import_text(1, (0, 0), "Jean Dup 12\nAnne Mar  7", fixed.clone()).unwrap();
@@ -421,6 +427,8 @@ fn every_data_tool_in_one_sample() {
         range: Rect::cell(0, 0),
         first_row: 1,
         spec: Spec::new(Layout::Delimited(Delimiters::only(';'))),
+        web: None,
+        props: Default::default(),
     };
     wb.import_text(0, (11, 0), "007;x\n008;y", import).unwrap();
 
@@ -516,4 +524,103 @@ fn consolidation_links_round_trip_with_their_outline() {
     assert_eq!(back.sheets[0].outline, wb.sheets[0].outline);
     assert_eq!(value(&back, 0, "A3"), Value::Number(4.0));
     assert_eq!(value(&back, 0, "A5"), Value::Number(6.0));
+}
+
+
+/// The page the kept sample queries.
+const SALES_PAGE: &str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Sales</title></head><body>\n<table><tr><th>Menu</th></tr><tr><td>Home</td></tr></table>\n<table id=\"sales\"><tr><th>Name</th><th>Qty</th><th>Day</th></tr>\n<tr><td>Ann</td><td>3</td><td>2024-03-05</td></tr>\n<tr><td>Bob</td><td>4</td><td>2024-03-06</td></tr></table>\n</body></html>\n";
+
+/// Web queries (Get Data > From Web, and the documents read the same
+/// way): a connection of type 4 with `<webPr>`, and the properties of the
+/// connection and of the external data range.
+#[test]
+fn web_queries_round_trip() {
+    use opensheet_engine::external::{QueryItem, QueryProps, WebQuery, html_tables, json_tables};
+    // The sample refreshes from files kept beside it; without a samples
+    // directory the addresses only have to look right.
+    let dir = std::env::var("OPENSHEET_SAMPLES").unwrap_or_else(|_| "/Users/ann/data".to_string());
+    let json = "[{\"name\":\"Ann\",\"address\":{\"city\":\"Paris\"},\"qty\":3},{\"name\":\"Bob\",\"address\":{\"city\":\"Lyon\"},\"qty\":4}]";
+    common::keep_sample("getdata-sales.html", SALES_PAGE.as_bytes());
+    common::keep_sample("getdata-people.json", json.as_bytes());
+    let query = |path: String, item: Option<QueryItem>, props: QueryProps| TextImport {
+        name: String::new(),
+        path,
+        range: Rect::cell(0, 0),
+        first_row: 1,
+        spec: Spec::new(Layout::Delimited(Delimiters::default())),
+        web: Some(WebQuery { item }),
+        props,
+    };
+    let page = query(
+        format!("file://{dir}/getdata-sales.html"),
+        Some(QueryItem::Index(2)),
+        QueryProps {
+            description: "Sales of the week & more".into(),
+            background: false,
+            refresh_on_open: true,
+            refresh_minutes: 15,
+            preserve_formatting: false,
+            adjust_width: false,
+        },
+    );
+    let people = query(format!("file://{dir}/getdata-people.json"), None, QueryProps::default());
+    let named = query("http://127.0.0.1:8123/report?year=2024&all=1".into(), Some(QueryItem::Name("data.items".into())), QueryProps::default());
+
+    let mut wb = Workbook::new(Locale::en());
+    let tables = html_tables(SALES_PAGE);
+    wb.import_source_table(0, (0, 0), &tables[1], page.clone()).unwrap();
+    let records = json_tables(json, "people").unwrap();
+    wb.import_source_table(0, (0, 5), &records[0], people.clone()).unwrap();
+    wb.import_source_table(0, (9, 0), &tables[0], named.clone()).unwrap();
+    wb.commit("Import Data");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("getdata-web-queries.xlsx", &bytes);
+
+    let connections = part(&bytes, "xl/connections.xml");
+    assert_well_formed("connections", &connections);
+    for expected in [
+        format!(
+            "<connection id=\"1\" name=\"getdata_sales\" description=\"Sales of the week &amp; more\" type=\"4\" refreshedVersion=\"8\" refreshOnLoad=\"1\" interval=\"15\" saveData=\"1\">\
+             <webPr sourceData=\"1\" parsePre=\"1\" consecutive=\"1\" xl2000=\"1\" url=\"file://{dir}/getdata-sales.html\" htmlTables=\"1\"><tables count=\"1\"><x v=\"2\"/></tables></webPr></connection>"
+        ),
+        format!(
+            "<connection id=\"2\" name=\"getdata_people\" type=\"4\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\">\
+             <webPr sourceData=\"1\" parsePre=\"1\" consecutive=\"1\" xl2000=\"1\" url=\"file://{dir}/getdata-people.json\"/></connection>"
+        ),
+        "url=\"http://127.0.0.1:8123/report?year=2024&amp;all=1\" htmlTables=\"1\"><tables count=\"1\"><s v=\"data.items\"/></tables></webPr>".to_string(),
+    ] {
+        assert!(connections.contains(&expected), "{expected}\n{connections}");
+    }
+    let table = part(&bytes, "xl/queryTables/queryTable1.xml");
+    assert_well_formed("queryTable1", &table);
+    assert!(
+        table.contains("name=\"getdata_sales\" refreshOnLoad=\"1\" preserveFormatting=\"0\" adjustColumnWidth=\"0\" connectionId=\"1\" autoFormatId=\"16\""),
+        "{table}"
+    );
+    assert!(part(&bytes, "xl/queryTables/queryTable2.xml").contains("name=\"getdata_people\" connectionId=\"2\""));
+    let workbook = part(&bytes, "xl/workbook.xml");
+    assert!(workbook.contains("<definedName name=\"getdata_sales\" localSheetId=\"0\">Sheet1!$A$1:$C$3</definedName>"), "{workbook}");
+
+    let back = load(&bytes);
+    let expect = |mut import: TextImport, name: &str, range: &str| {
+        import.name = name.into();
+        import.range = rect(range);
+        import
+    };
+    assert_eq!(back.sheets[0].text_imports, [expect(page, "getdata_sales", "A1:C3"), expect(people, "getdata_people", "F1:H3"), expect(named, "report", "A10:A11")]);
+    assert_eq!(value(&back, 0, "B2"), Value::Number(3.0));
+    assert_eq!(value(&back, 0, "G2"), Value::text("Paris"));
+    // Written again, nothing is lost.
+    assert_eq!(part(&to_bytes(&back), "xl/connections.xml"), connections);
+
+    // A web query as Excel writes one for a whole page, with attributes
+    // this program does not use.
+    let foreign = connections.replace(
+        "<webPr sourceData=\"1\" parsePre=\"1\" consecutive=\"1\" xl2000=\"1\" url=\"http://127.0.0.1:8123/report?year=2024&amp;all=1\" htmlTables=\"1\"><tables count=\"1\"><s v=\"data.items\"/></tables></webPr>",
+        "<webPr sourceData=\"1\" parsePre=\"1\" consecutive=\"1\" xl2000=\"1\" url=\"http://127.0.0.1:8123/all\" htmlFormat=\"all\"/>",
+    );
+    assert_ne!(foreign, connections);
+    let back = load(&with_part(&bytes, "xl/connections.xml", &foreign));
+    let whole = &back.sheets[0].text_imports[2];
+    assert_eq!((whole.path.as_str(), whole.web.clone()), ("http://127.0.0.1:8123/all", Some(WebQuery { item: None })));
 }

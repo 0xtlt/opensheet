@@ -1,6 +1,7 @@
 //! The data tools of the Data tab: Text to Columns, Flash Fill, the
 //! Advanced Filter, Consolidate, What-If Analysis (Goal Seek, the Scenario
-//! Manager, Data Table), Get Data from a text file and Refresh All.
+//! Manager, Data Table), Get Data (text files, the web, workbooks, JSON
+//! and XML documents), the queries it leaves and Refresh All.
 //!
 //! Each tool has its file in `data_tools/`; the logic is in the engine
 //! (`text_columns.rs`, `flashfill.rs`, `filter.rs`, `consolidate.rs`,
@@ -8,9 +9,12 @@
 //! them in GPUI's headless window.
 
 mod advanced;
+mod connections;
 mod consolidate;
 mod flash;
 mod import;
+mod navigator;
+mod sources;
 mod text_wizard;
 mod whatif;
 #[cfg(test)]
@@ -38,6 +42,14 @@ commands! {
         DataTable = "", t("Data Table…", "Table de données…");
         GetData = "data", t("Get Data", "Obtenir des données");
         FromText = "", t("From Text/CSV…", "À partir d’un fichier texte/CSV…");
+        FromWeb = "", t("From Web…", "À partir du web…");
+        FromWorkbook = "", t("From Excel Workbook…", "À partir d’un classeur Excel…");
+        FromJson = "", t("From JSON…", "À partir de JSON…");
+        FromXml = "", t("From XML File…", "À partir d'un fichier XML…");
+        FromSqlServer = "", t("From SQL Server ODBC", "Depuis SQL Server ODBC");
+        FromDatabase = "", t("From Database (Microsoft Query)", "À partir de la base de données (Microsoft Query)");
+        Connections = "link", t("Queries & Connections", "Requêtes et connexions");
+        RangeProperties = "format-cells", t("Properties", "Propriétés");
         RefreshMenu = "refresh", t("Refresh All", "Actualiser tout");
         RefreshAll = "refresh", t("Refresh All", "Actualiser tout");
         Refresh = "", t("Refresh", "Actualiser");
@@ -56,6 +68,10 @@ impl Command for Cmd {
     fn enabled(self, app: &ExcelApp) -> bool {
         match self {
             Cmd::Refresh => import::can_refresh_here(app),
+            Cmd::RangeProperties => {
+                let (row, col) = app.active();
+                app.wb.text_import_at(app.sheet, row, col).is_some()
+            }
             _ => true,
         }
     }
@@ -90,8 +106,42 @@ impl Command for Cmd {
                 whatif::open_data_table(app, window, cx);
             }
             Cmd::GetData => {
-                let entries = vec![MenuEntry::command(Cmd::FromText, app)];
-                app.open_command_menu(entries, 260.0, window, cx);
+                // Excel for Mac: the sources of Get Data (Power Query),
+                // then the two that go through ODBC.
+                let entries = vec![
+                    MenuEntry::command(Cmd::FromText, app),
+                    MenuEntry::command(Cmd::FromWeb, app),
+                    MenuEntry::command(Cmd::FromWorkbook, app),
+                    MenuEntry::command(Cmd::FromJson, app),
+                    MenuEntry::command(Cmd::FromXml, app),
+                    MenuEntry::separator(),
+                    MenuEntry::command(Cmd::FromSqlServer, app),
+                    MenuEntry::command(Cmd::FromDatabase, app),
+                ];
+                app.open_command_menu(entries, 330.0, window, cx);
+            }
+            Cmd::FromWeb => {
+                if app.is_editing() && !app.commit_edit(None, window, cx) {
+                    return;
+                }
+                navigator::open_web(app, "", None, window, cx);
+            }
+            Cmd::FromWorkbook | Cmd::FromJson | Cmd::FromXml => import::choose_document(app, window, cx),
+            // Databases are reached through an ODBC driver manager, which
+            // this program does not have: Excel's own words for that.
+            Cmd::FromSqlServer | Cmd::FromDatabase => warn(
+                app,
+                t(
+                    "Microsoft Excel cannot complete this operation because the ODBC Driver Manager is not installed.  To install the ODBC Driver Manager, run Setup and install the database driver for the type of database(s) you want to access.",
+                    "Microsoft Excel ne peut pas terminer cette opération. L’administrateur de Microsoft ODBC n’est pas installé. Pour l’installer, exécutez le programme d’installation et installez le pilote correspondant au type de base(s) de données auquel vous voulez accéder.",
+                ),
+                cx,
+            ),
+            Cmd::Connections => {
+                connections::open(app, window, cx);
+            }
+            Cmd::RangeProperties => {
+                connections::open_range_properties(app, window, cx);
             }
             Cmd::FromText => import::choose_file(app, window, cx),
             Cmd::RefreshMenu => {
@@ -115,6 +165,13 @@ impl Feature for DataTools {
             Intent::EditCells(rect) => whatif::table_guard(app, *rect),
             _ => None,
         }
+    }
+
+    // The queries that refresh by themselves are watched from here: the
+    // one hook that sees the window each time it is drawn.
+    fn overlay_elements(&self, app: &mut ExcelApp, _: &crate::grid::GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<gpui::AnyElement> {
+        import::watch(app, window, cx);
+        Vec::new()
     }
 
     // A data table cleared or overwritten as a whole is no table any
