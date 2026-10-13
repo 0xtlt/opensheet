@@ -46,6 +46,10 @@ pub struct Settings {
     // ---- Draw
     /// The gallery of pens of the Draw tab, in order. Never empty.
     pub pens: Vec<Pen>,
+    // ---- Automate
+    /// The folder the Office Scripts are kept in; empty: the folder of
+    /// the application (see `features/automate/scripts.rs`).
+    pub scripts_folder: String,
     // ---- Review
     /// "Dictionary language" of the Spelling dialog, as the system
     /// checker names it; empty: the language of the interface.
@@ -72,6 +76,7 @@ impl Default for Settings {
             background_error_checking: true,
             check_error_values: true,
             pens: default_pens(),
+            scripts_folder: String::new(),
             spelling_language: String::new(),
             translate_from: String::new(),
             translate_to: String::new(),
@@ -115,6 +120,7 @@ impl Settings {
         for pen in &self.pens {
             line("pen", &pen.to_setting());
         }
+        line("scripts-folder", &self.scripts_folder);
         line("spelling-language", &self.spelling_language);
         line("translate-from", &self.translate_from);
         line("translate-to", &self.translate_to);
@@ -167,6 +173,7 @@ impl Settings {
                 "background-error-checking" => set(&mut settings.background_error_checking),
                 "check-error-values" => set(&mut settings.check_error_values),
                 "pen" => pens.extend(Pen::from_setting(value)),
+                "scripts-folder" => settings.scripts_folder = value.to_string(),
                 "spelling-language" => settings.spelling_language = value.to_string(),
                 "translate-from" => settings.translate_from = value.to_string(),
                 "translate-to" => settings.translate_to = value.to_string(),
@@ -259,6 +266,7 @@ mod tests {
         settings.recalc_before_save = false;
         settings.background_error_checking = false;
         settings.check_error_values = false;
+        settings.scripts_folder = "/Users/ada/My Scripts = here".to_string();
         settings.spelling_language = "en_GB".to_string();
         settings.translate_from = "fr".to_string();
         settings.translate_to = "pt-BR".to_string();

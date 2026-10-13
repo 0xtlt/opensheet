@@ -684,24 +684,10 @@ impl ExcelApp {
             (None, 6) => self.data_tab(cx),
             (None, 7) => self.review_tab(cx),
             (None, 8) => self.view_tab(cx),
-            (None, 9) => self.automate_tab(cx),
+            (None, 9) => features::automate::automate_tab(self, cx),
             (None, 10) => self.help_tab(cx),
             _ => self.home_tab(cx),
         }
-    }
-
-    fn automate_tab(&self, cx: &mut Cx) -> Vec<AnyElement> {
-        vec![
-            group(
-                t("Office Scripts", "Scripts Office"),
-                row(vec![
-                    self.cmd_large("au-new", misc::Cmd::NewScript, false, cx),
-                    self.cmd_large("au-all", misc::Cmd::AllScripts, false, cx),
-                ]),
-            )
-            .border_r_0()
-            .into_any_element(),
-        ]
     }
 
     fn help_tab(&self, cx: &mut Cx) -> Vec<AnyElement> {
@@ -1969,8 +1955,8 @@ impl ExcelApp {
                     },
                 )]),
             )
-            .border_r_0()
             .into_any_element(),
+            features::automate::macros_group(self, cx).border_r_0().into_any_element(),
         ]
     }
 }

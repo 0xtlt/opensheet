@@ -108,12 +108,14 @@ impl ExcelApp {
             .and_then(|p| p.parent().map(PathBuf::from))
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Documents")))
             .unwrap_or_else(|| PathBuf::from("."));
-        let name = format!("{}.xlsx", self.title);
+        // A workbook that carries macros is proposed as a macro-enabled one.
+        let extension = crate::features::automate::default_extension(self);
+        let name = format!("{}.{extension}", self.title);
         let target = cx.prompt_for_new_path(&dir, Some(&name));
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(mut path))) = target.await {
                 if path.extension().is_none() {
-                    path.set_extension("xlsx");
+                    path.set_extension(extension);
                 }
                 this.update(cx, |this, cx| this.write_to(path, cx)).ok();
             }
@@ -121,7 +123,16 @@ impl ExcelApp {
         .detach();
     }
 
+    /// Write the workbook to a file, after Excel's question when the file
+    /// is of a kind that would leave its macros out.
     fn write_to(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if !crate::features::automate::asks_before_saving(self, &path, cx) {
+            self.write_unasked(path, cx);
+        }
+    }
+
+    /// Write the workbook to a file without further question.
+    pub(crate) fn write_unasked(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         // Preferences ▸ Calculation: "Recalculate workbook before saving".
         crate::features::preferences::before_save(&mut self.wb);
         match opensheet_io::save(&self.wb, self.sheet, &path) {
@@ -130,7 +141,7 @@ impl ExcelApp {
                 // leaves the document "edited".
                 let lossless = path
                     .extension()
-                    .is_some_and(|e| e.eq_ignore_ascii_case("xlsx") || e.eq_ignore_ascii_case("xlsm"));
+                    .is_some_and(|e| ["xlsx", "xlsm", "xltx", "xltm"].iter().any(|kind| e.eq_ignore_ascii_case(kind)));
                 if lossless {
                     self.wb.modified = false;
                     self.title = file_title(&path);

@@ -10,6 +10,7 @@
 //! undo history.
 
 mod csv;
+pub mod vba;
 mod xlsx;
 
 pub use xlsx::{read_thmx, write_thmx};
@@ -155,26 +156,35 @@ pub fn read_xlsx<R: Read + Seek>(reader: R, locale: &'static Locale) -> Result<W
 
 /// Write a workbook as `.xlsx` to any seekable sink, which is handed back.
 pub fn write_xlsx<W: Write + Seek>(wb: &Workbook, writer: W) -> Result<W> {
-    xlsx::write::write_workbook(wb, writer, false)
+    xlsx::write::write_workbook(wb, writer, xlsx::vba::PackageKind::Workbook)
+}
+
+/// Write a workbook as a macro-enabled workbook (`.xlsm`) to any seekable
+/// sink, which is handed back: the VBA project the workbook carries, if
+/// any, goes into the file unchanged.
+pub fn write_xlsm<W: Write + Seek>(wb: &Workbook, writer: W) -> Result<W> {
+    xlsx::write::write_workbook(wb, writer, xlsx::vba::PackageKind::MacroEnabled)
 }
 
 /// Load an `.xlsx` (or `.xlsm`) file.
 ///
 /// Formulas the engine cannot parse are replaced by their last calculated
-/// value. Content the engine has no model for is dropped.
+/// value. Content the engine has no model for is dropped, except the VBA
+/// project, which is kept as it is (`Workbook::vba`).
 pub fn load_xlsx(path: &Path, locale: &'static Locale) -> Result<Workbook> {
     let file = std::fs::File::open(path)?;
     read_xlsx(std::io::BufReader::new(file), locale)
 }
 
-/// Save a workbook as `.xlsx`. Values calculated by the last `recalc` are
-/// stored next to the formulas.
+/// Save a workbook as `.xlsx`, `.xlsm`, `.xltx` or `.xltm`. Values
+/// calculated by the last `recalc` are stored next to the formulas. The
+/// VBA project of the workbook is written into the macro-enabled kinds
+/// (`.xlsm`, `.xltm`) and left out of the others.
 pub fn save_xlsx(wb: &Workbook, path: &Path) -> Result<()> {
     // The declared content type has to match the extension for Excel to
     // open the file.
-    let macro_enabled = extension(path) == "xlsm";
-    let bytes =
-        xlsx::write::write_workbook(wb, Cursor::new(Vec::new()), macro_enabled)?.into_inner();
+    let kind = xlsx::vba::PackageKind::of_extension(&extension(path));
+    let bytes = xlsx::write::write_workbook(wb, Cursor::new(Vec::new()), kind)?.into_inner();
     write_file(path, &bytes)
 }
 
@@ -201,11 +211,11 @@ pub fn load(path: &Path, locale: &'static Locale) -> Result<Workbook> {
 }
 
 /// Save a workbook, choosing the format from the extension. `.xlsx` /
-/// `.xlsm` hold the whole workbook; `.csv` (locale delimiter) and `.tsv` /
+/// `.xlsm` (and the templates `.xltx` / `.xltm`) hold the whole workbook; `.csv` (locale delimiter) and `.tsv` /
 /// `.txt` (tab-delimited) hold the displayed values of sheet `sheet` only.
 pub fn save(wb: &Workbook, sheet: usize, path: &Path) -> Result<()> {
     match extension(path).as_str() {
-        "xlsx" | "xlsm" => save_xlsx(wb, path),
+        "xlsx" | "xlsm" | "xltx" | "xltm" => save_xlsx(wb, path),
         "csv" => save_csv(wb, sheet, path),
         "tsv" | "tab" | "txt" => save_delimited(wb, sheet, path, '\t'),
         other => Err(IoError::Unsupported(format!("cannot save as \".{other}\""))),

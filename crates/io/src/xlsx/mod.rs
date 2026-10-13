@@ -60,6 +60,7 @@ mod theme;
 
 pub use theme::{read_thmx, write_thmx};
 mod validation;
+pub(crate) mod vba;
 pub(crate) mod write;
 mod xml;
 

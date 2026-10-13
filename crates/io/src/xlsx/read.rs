@@ -1066,6 +1066,8 @@ impl<'c> SheetReader<'c> {
     }
 
     fn sheet_pr<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
+        // The name the VBA project knows the sheet by.
+        self.sheet.code_name = tag.attr("codeName").map(Cow::into_owned).filter(|name| !name.is_empty());
         if tag.attr_bool("filterMode") == Some(true) {
             super::filter::read_filter_mode(&mut self.sheet);
         }
@@ -1773,6 +1775,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     }
     super::custom_view::finish(&mut wb, &info.custom_views, &sheet_ids);
     imports.finish(&mut wb);
+    // The VBA project, kept as it is.
+    super::vba::read(&mut pkg, &rels, &workbook_xml, &mut wb);
 
     // Formulas the engine cannot calculate keep their cached result.
     super::formula::keep_cached_results(&mut wb);

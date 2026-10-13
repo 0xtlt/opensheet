@@ -92,6 +92,7 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     hyperlink::on_sheet_duplicated(wb, copy, original);
     crate::slicer::on_sheet_duplicated(wb, copy, original);
     crate::sparkline::on_sheet_duplicated(wb, copy, original);
+    crate::vba::on_sheet_duplicated(wb, copy, original);
 }
 
 /// The sheet `deleted` was just taken out of the workbook; `order` lists
