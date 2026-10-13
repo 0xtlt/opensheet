@@ -28,10 +28,20 @@
 //! itself, and Excel opens that. Brightness and contrast are read from
 //! there too (Excel 2010 and later write them so). Of pictures and
 //! shapes, the effects that are drawn (`a:effectLst`: `a:outerShdw`,
-//! `a:glow`, `a:softEdge`).
+//! `a:glow`, `a:reflection`, `a:softEdge`), and of pictures their border
+//! (`a:ln`), their bevel (`a:bevelT` of `a:sp3d`) and their rotation in
+//! space (`a:camera` of `a:scene3d`).
+//!
+//! An artistic effect is an `a14:imgEffect` of the image properties
+//! too. As in a file of Excel, the blip then names the image with the
+//! effects of the image properties done to it (`Picture::baked`, made
+//! by the application) and the layer the image as it was. Excel writes
+//! that one as HD Photo, which is neither made nor read here: the layer
+//! is written in the format the image has, and a picture whose layer
+//! cannot be read is read as the image of its blip, effects done.
 //!
 //! Not kept, because the engine has nothing for it:
-//! the other effects (reflection, inner shadows, 3-D), pictures that are linked rather than
+//! the other effects (inner shadows, extrusion, materials), pictures that are linked rather than
 //! embedded or of a format the engine does not show (EMF, SVG, TIFF),
 //! geometries outside the engine's gallery (read as rectangles, connectors
 //! as straight lines), gradients and patterns (read as one colour),
@@ -54,6 +64,7 @@ use opensheet_engine::drawing::{
     ObjectRef, Outline, Picture, PictureAdjust, Placement, Recolor, Shadow, Shape, ShapePreset,
     TextAlign, TextAnchor,
 };
+use opensheet_engine::picture_style::{Artistic, ArtisticKind, Baked, Bevel, BevelPreset, Camera, Reflection, Rotation3d};
 use opensheet_engine::style::{Font, Underline};
 use opensheet_engine::{Color, MAX_COLS, MAX_ROWS, Sheet, Workbook};
 use std::collections::HashMap;
@@ -377,6 +388,16 @@ fn push_color_alpha(x: &mut String, color: Color, transparency: f32) {
 /// The side of the shape a shadow is measured from (`algn`): the one it
 /// falls away from, as Excel's presets say it.
 fn shadow_alignment(shadow: &Shadow) -> &'static str {
+    // A shadow lying on the ground starts at the foot of the shape.
+    if shadow.lies() {
+        return if shadow.skew > 0.0 {
+            "br"
+        } else if shadow.skew < 0.0 {
+            "bl"
+        } else {
+            "b"
+        };
+    }
     if shadow.distance <= 0.0 {
         return "ctr";
     }
@@ -408,17 +429,132 @@ fn push_effects(x: &mut String, effects: &Effects) {
             length(shadow.distance)
         );
         let size = per_100k(shadow.size);
-        if size != 100_000 {
-            w!(x, " sx=\"{size}\" sy=\"{size}\"");
+        let tall = per_100k(shadow.size * shadow.squash);
+        if size != 100_000 || tall != size {
+            w!(x, " sx=\"{size}\" sy=\"{tall}\"");
+        }
+        if shadow.skew != 0.0 {
+            w!(x, " kx=\"{}\"", (shadow.skew as f64 * ANGLE_UNITS).round() as i64);
         }
         w!(x, " algn=\"{}\" rotWithShape=\"0\">", shadow_alignment(shadow));
         push_color_alpha(x, shadow.color, shadow.transparency);
         x.push_str("</a:outerShdw>");
     }
+    if let Some(reflection) = &effects.reflection {
+        // As Excel writes one: under the shape, mirrored, fading out to
+        // nearly nothing where it ends.
+        w!(
+            x,
+            "<a:reflection blurRad=\"{}\" stA=\"{}\" endA=\"300\" endPos=\"{}\" dist=\"{}\" dir=\"5400000\" sy=\"-100000\" algn=\"bl\" rotWithShape=\"0\"/>",
+            length(reflection.blur),
+            per_100k(1.0 - reflection.transparency.clamp(0.0, 1.0)),
+            per_100k(reflection.size.clamp(0.0, 1.0)),
+            length(reflection.distance)
+        );
+    }
     if effects.soft_edge > 0.0 {
         w!(x, "<a:softEdge rad=\"{}\"/>", length(effects.soft_edge));
     }
     x.push_str("</a:effectLst>");
+}
+
+/// `<a:scene3d>` and `<a:sp3d>`: the camera a drawing turned in space
+/// is seen by, and its bevel. A bevel needs a scene to be lit in, so one
+/// is written for it even when the drawing lies flat.
+fn push_3d(x: &mut String, effects: &Effects) {
+    if effects.rotation.is_none() && effects.bevel.is_none() {
+        return;
+    }
+    let angle = |degrees: f32| ((degrees as f64).rem_euclid(360.0) * ANGLE_UNITS).round() as i64;
+    x.push_str("<a:scene3d>");
+    match effects.rotation {
+        None => x.push_str("<a:camera prst=\"orthographicFront\"/>"),
+        Some(rotation) => match Camera::ALL.into_iter().find(|camera| camera.rotation() == rotation) {
+            Some(camera) => {
+                w!(x, "<a:camera prst=\"{}\"/>", camera.ooxml_name());
+            }
+            None => {
+                if rotation.perspective > 0.0 {
+                    w!(x, "<a:camera prst=\"perspectiveFront\" fov=\"{}\">", angle(rotation.perspective.min(180.0)));
+                } else {
+                    x.push_str("<a:camera prst=\"orthographicFront\">");
+                }
+                w!(
+                    x,
+                    "<a:rot lat=\"{}\" lon=\"{}\" rev=\"{}\"/></a:camera>",
+                    angle(rotation.y),
+                    angle(rotation.x),
+                    angle(rotation.z)
+                );
+            }
+        },
+    }
+    x.push_str("<a:lightRig rig=\"threePt\" dir=\"t\"/></a:scene3d>");
+    if let Some(bevel) = &effects.bevel {
+        let length = |points: f32| (points.max(0.0) as f64 * EMU_PER_PT).round() as i64;
+        w!(
+            x,
+            "<a:sp3d><a:bevelT w=\"{}\" h=\"{}\" prst=\"{}\"/></a:sp3d>",
+            length(bevel.width),
+            length(bevel.height),
+            bevel.preset.ooxml_name()
+        );
+    }
+}
+
+/// `<a:scene3d>`: the camera, as a turn in space. `None` for a camera
+/// that looks straight at the drawing, and for those that shear it.
+fn parse_scene<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<Rotation3d> {
+    let mut found = None;
+    let degrees = |t: &Tag, name: &str| {
+        let angle = t.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(0.0);
+        (angle / ANGLE_UNITS).rem_euclid(360.0) as f32
+    };
+    each_child(r, tag, |r, t| match t.name {
+        "camera" => {
+            let preset = t.attr("prst").unwrap_or_default();
+            let camera = Camera::from_ooxml_name(&preset);
+            let mut rotation = match camera {
+                Some(camera) => Some(camera.rotation()),
+                None if preset == "orthographicFront" => Some(Rotation3d { x: 0.0, y: 0.0, z: 0.0, perspective: 0.0 }),
+                None => None,
+            };
+            if let (Some(rotation), Some(_)) = (&mut rotation, t.attr("fov")) {
+                rotation.perspective = degrees(t, "fov").min(180.0);
+            }
+            each_child(r, t, |r, c| {
+                if let ("rot", Some(rotation)) = (c.name, &mut rotation) {
+                    (rotation.y, rotation.x, rotation.z) = (degrees(c, "lat"), degrees(c, "lon"), degrees(c, "rev"));
+                }
+                r.skip(c);
+            });
+            found = rotation.filter(|rotation| !rotation.is_flat());
+        }
+        _ => r.skip(t),
+    });
+    found
+}
+
+/// `<a:sp3d>`: the bevel of the top face.
+fn parse_bevel<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<Bevel> {
+    let mut found = None;
+    each_child(r, tag, |r, t| {
+        if t.name == "bevelT" {
+            // Six points each way and a round profile when not said.
+            let points = |name: &str| {
+                let emu = t.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(76_200.0);
+                (emu / EMU_PER_PT).clamp(0.0, 1584.0) as f32
+            };
+            let preset = t.attr("prst").and_then(|name| BevelPreset::from_ooxml_name(&name));
+            found = Some(Bevel {
+                preset: preset.unwrap_or(BevelPreset::Circle),
+                width: points("w"),
+                height: points("h"),
+            });
+        }
+        r.skip(t);
+    });
+    found
 }
 
 /// The extension of a blip that holds the image properties of Excel 2010.
@@ -428,7 +564,8 @@ const NS_DRAWING_2010: &str = "http://schemas.microsoft.com/office/drawing/2010/
 /// The effects inside `<a:blip>` that say how a picture is adjusted;
 /// `image` is the relationship of its image, `vector` that of its SVG
 /// document when it has one.
-fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize, vector: Option<usize>) {
+fn push_blip_effects(x: &mut String, picture: &Picture, image: usize, vector: Option<usize>) {
+    let adjust = &picture.adjust;
     if adjust.transparency > 0.0 {
         w!(x, "<a:alphaModFix amt=\"{}\"/>", per_100k(1.0 - adjust.transparency.min(1.0)));
     }
@@ -463,7 +600,7 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize, vecto
     }
     // One extension list closes the blip: the image properties, then
     // what names the SVG document.
-    let tuned = adjust.saturation != 1.0 || adjust.temperature != NEUTRAL_TEMPERATURE;
+    let tuned = picture.has_baked_effects();
     if !tuned && vector.is_none() {
         return;
     }
@@ -487,6 +624,16 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize, vecto
                 per_100k(adjust.saturation.clamp(0.0, 4.0))
             );
         }
+        if let Some(artistic) = &picture.artistic {
+            let (element, setting) = artistic.kind.ooxml();
+            let (low, high, _) = artistic.kind.amount_range();
+            w!(
+                x,
+                "<a14:imgEffect><a14:{element} trans=\"{}\" {setting}=\"{}\"/></a14:imgEffect>",
+                per_100k(artistic.transparency.clamp(0.0, 1.0)),
+                artistic.amount.clamp(low, high).round() as i64
+            );
+        }
         x.push_str("</a14:imgLayer></a14:imgProps></a:ext>");
     }
     if let Some(vector) = vector {
@@ -503,7 +650,10 @@ const WASHOUT: (f32, f32) = (0.7, -0.7);
 const CAMERA_EXT: &str = "{84589F7E-364E-4C9E-8A38-B11213B215E9}";
 
 /// `image` is the relationship of the drawing part to the image file,
-/// `vector` the one to the SVG document of a vector picture.
+/// `shown` the one to the image the blip shows (the same, or the image
+/// with its artistic effect and colours done), `vector` the one to the
+/// SVG document of a vector picture.
+#[allow(clippy::too_many_arguments)]
 fn push_picture(
     x: &mut String,
     drawing: &Drawing,
@@ -511,6 +661,7 @@ fn push_picture(
     id: usize,
     frame: Frame,
     image: usize,
+    shown: usize,
     vector: Option<usize>,
 ) {
     x.push_str("<xdr:pic><xdr:nvPicPr>");
@@ -531,10 +682,10 @@ fn push_picture(
     }
     w!(
         x,
-        "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\""
+        "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{shown}\""
     );
     let mut effects = String::new();
-    push_blip_effects(&mut effects, &picture.adjust, image, vector);
+    push_blip_effects(&mut effects, picture, image, vector);
     if effects.is_empty() {
         x.push_str("/>");
     } else {
@@ -557,7 +708,11 @@ fn push_picture(
         "<a:prstGeom prst=\"{}\"><a:avLst/></a:prstGeom>",
         picture.adjust.shape.ooxml_name()
     );
+    if picture.outline.is_some() {
+        push_outline(x, picture.outline.as_ref());
+    }
     push_effects(x, &drawing.effects);
+    push_3d(x, &drawing.effects);
     x.push_str("</xdr:spPr></xdr:pic>");
 }
 
@@ -605,11 +760,18 @@ impl PartWriter<'_> {
             DrawingKind::Shape(shape) => push_shape(x, drawing, shape, id, frame),
             DrawingKind::Picture(picture) => {
                 let image = self.image(picture);
+                let shown = match picture.baked() {
+                    Some(baked) => {
+                        let name = self.media.file(&baked.data, "png", "image/png", self.extras);
+                        self.related(name)
+                    }
+                    None => image,
+                };
                 let vector = picture.svg.as_ref().map(|document| {
                     let name = self.media.file(document, "svg", "image/svg+xml", self.extras);
                     self.related(name)
                 });
-                push_picture(x, drawing, picture, id, frame, image, vector);
+                push_picture(x, drawing, picture, id, frame, image, shown, vector);
             }
             // A SmartArt graphic: its five parts, related one after the
             // other.
@@ -1045,7 +1207,14 @@ fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Ef
         "outerShdw" => {
             let angle = t.attr_f64("dir").filter(|v| v.is_finite()).unwrap_or(0.0);
             let size = t.attr_f64("sx").filter(|v| v.is_finite() && *v > 0.0);
+            let tall = t.attr_f64("sy").filter(|v| v.is_finite() && *v != 0.0);
+            let skew = t.attr_f64("kx").filter(|v| v.is_finite()).unwrap_or(0.0);
             let mut shadow = Shadow {
+                squash: match (size, tall) {
+                    (Some(wide), Some(tall)) => (tall / wide).clamp(-10.0, 10.0) as f32,
+                    _ => 1.0,
+                },
+                skew: (skew / ANGLE_UNITS).clamp(-89.0, 89.0) as f32,
                 blur: points(t, "blurRad"),
                 distance: points(t, "dist"),
                 angle: (angle / ANGLE_UNITS).rem_euclid(360.0) as f32,
@@ -1073,6 +1242,19 @@ fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Ef
             effects.soft_edge = points(t, "rad");
             r.skip(t);
         }
+        "reflection" => {
+            let fraction = |name: &str, default: f64| {
+                let value = t.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(default);
+                (value / 100_000.0).clamp(0.0, 1.0) as f32
+            };
+            effects.reflection = Some(Reflection {
+                transparency: 1.0 - fraction("stA", 100_000.0),
+                size: fraction("endPos", 0.0),
+                distance: points(t, "dist"),
+                blur: points(t, "blurRad"),
+            });
+            r.skip(t);
+        }
         _ => r.skip(t),
     });
     effects
@@ -1084,6 +1266,7 @@ fn parse_blip_effects<'a>(
     tag: &Tag<'a>,
     palette: &Palette,
     adjust: &mut PictureAdjust,
+    more: &mut RawPicture,
 ) {
     let fraction = |t: &Tag, name: &str| {
         t.attr_f64(name)
@@ -1141,8 +1324,18 @@ fn parse_blip_effects<'a>(
                     return;
                 }
                 each_child(r, props, |r, layer| {
+                    more.layer = layer.attr_local("embed").map(|id| id.into_owned());
                     each_child(r, layer, |r, effect| {
                         each_child(r, effect, |r, e| {
+                            if let Some(kind) = ArtisticKind::from_ooxml_name(e.name) {
+                                let (low, high, preset) = kind.amount_range();
+                                let amount = e.attr_f64(kind.ooxml().1).filter(|v| v.is_finite());
+                                more.artistic = Some(Artistic {
+                                    kind,
+                                    transparency: fraction(e, "trans").unwrap_or(0.0).clamp(0.0, 1.0),
+                                    amount: amount.map_or(preset, |v| (v as f32).clamp(low, high)),
+                                });
+                            }
                             match e.name {
                                 "saturation" => {
                                     adjust.saturation = fraction(e, "sat").unwrap_or(1.0).clamp(0.0, 4.0);
@@ -1221,6 +1414,16 @@ fn parse_paint<'a>(r: &mut Reader<'a>, t: &Tag<'a>, palette: &Palette, paint: &m
         }
         _ => r.skip(t),
     }
+}
+
+/// What a picture has besides its adjustments: its border, its artistic
+/// effect and the relationship of the image as it was before the effects
+/// of the image properties (`a14:imgLayer`).
+#[derive(Default)]
+struct RawPicture {
+    outline: Option<Outline>,
+    artistic: Option<Artistic>,
+    layer: Option<String>,
 }
 
 /// `<a:ln>` as a file has it.
@@ -1378,6 +1581,8 @@ struct RawObject {
     effects: Effects,
     /// How a picture is adjusted.
     adjust: PictureAdjust,
+    /// What else a picture has.
+    picture: RawPicture,
     /// The range a linked picture shows (`a14:cameraTool`), as written.
     link: Option<String>,
     kind: RawKind,
@@ -1397,6 +1602,7 @@ impl RawObject {
             xfrm_box: None,
             effects: Effects::default(),
             adjust: PictureAdjust::default(),
+            picture: RawPicture::default(),
             link: None,
             kind,
         }
@@ -1519,7 +1725,7 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> Option
             "blip" => {
                 embed = c.attr_local("embed").map(|id| id.into_owned());
                 vector = svg::parse_extension(&mut r.fork(), c);
-                parse_blip_effects(r, c, palette, &mut object.adjust);
+                parse_blip_effects(r, c, palette, &mut object.adjust, &mut object.picture);
             }
             "srcRect" => {
                 let side = |name: &str| {
@@ -1545,7 +1751,29 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> Option
                 object.adjust.shape = preset.filter(|preset| !preset.is_line()).unwrap_or(ShapePreset::Rect);
                 r.skip(c);
             }
-            "effectLst" => object.effects = parse_effects(r, c, palette),
+            "effectLst" => {
+                // The scene and the bevel may come before or after.
+                let (bevel, rotation) = (object.effects.bevel, object.effects.rotation);
+                object.effects = Effects {
+                    bevel,
+                    rotation,
+                    ..parse_effects(r, c, palette)
+                };
+            }
+            "scene3d" => object.effects.rotation = parse_scene(r, c),
+            "sp3d" => object.effects.bevel = parse_bevel(r, c),
+            "ln" => {
+                let line = parse_line(r, c, palette);
+                if let Paint::Color(color) = line.paint {
+                    object.picture.outline = Some(Outline {
+                        color,
+                        width: line.width.unwrap_or(DEFAULT_LINE_PT),
+                        dash: line.dash,
+                        start: LineEnd::None,
+                        end: LineEnd::None,
+                    });
+                }
+            }
             _ => r.skip(c),
         }),
         _ => r.skip(t),
@@ -1945,6 +2173,38 @@ impl Loader {
                 // The bytes are shared; how they show is each picture's.
                 let mut picture = image.clone()?;
                 picture.adjust = object.adjust;
+                picture.outline = object.picture.outline;
+                // The image properties name the image as it was: the
+                // blip is then the image with their effects done.
+                let layer = object.picture.layer.filter(|id| *id != embed).and_then(|id| image_of(&id));
+                let tuned = object.picture.artistic.is_some()
+                    || picture.adjust.saturation != 1.0
+                    || picture.adjust.temperature != NEUTRAL_TEMPERATURE;
+                if let (Some(target), true) = (layer, tuned) {
+                    let original = self.images.entry(target).or_insert_with_key(|target| {
+                        pkg.read_bytes(target).ok().flatten().and_then(Picture::new)
+                    });
+                    match original.clone() {
+                        Some(original) => {
+                            picture.artistic = object.picture.artistic;
+                            picture.baked = Some(Baked {
+                                data: picture.data.clone(),
+                                saturation: picture.adjust.saturation,
+                                temperature: picture.adjust.temperature,
+                                artistic: picture.artistic,
+                            });
+                            (picture.format, picture.data, picture.pixels) = (original.format, original.data, original.pixels);
+                        }
+                        // The image as it was cannot be read (HD Photo):
+                        // the blip stands for the picture, effects done.
+                        None => {
+                            picture.adjust.saturation = 1.0;
+                            picture.adjust.temperature = NEUTRAL_TEMPERATURE;
+                        }
+                    }
+                } else {
+                    picture.artistic = object.picture.artistic;
+                }
                 // A vector picture: its document, shared like images.
                 if let Some(target) = vector.and_then(|id| image_of(&id)) {
                     let document = self.vectors.entry(target).or_insert_with_key(|target| {

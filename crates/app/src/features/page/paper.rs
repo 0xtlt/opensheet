@@ -215,11 +215,27 @@ impl ObjectPainter for PaperPainter {
         };
         match &drawing.kind {
             DrawingKind::Picture(picture) => {
-                if let Some(image) = self.image(picture) {
+                // As on screen: the pixels the frame shows, adjusted,
+                // cut to their outline, with what the picture wears
+                // (`drawings::render`), in a box about the frame.
+                use crate::features::drawings::picture as pixels;
+                let natural = (w as f32, h as f32);
+                let dress = crate::features::drawings::dress_for_page(drawing, picture);
+                let shorter = natural.0.min(natural.1).max(1.0);
+                let soft = (crate::grid::pt_to_px(drawing.effects.soft_edge.max(0.0)) / shorter).min(0.5);
+                let made = pixels::printed(picture, soft, natural, (drawing.flip_h, drawing.flip_v), &dress)
+                    .and_then(|(bitmap, share)| Some((Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?, share)));
+                if let Some((image, share)) = made {
+                    canvas.save();
+                    turn(canvas, false);
+                    let (bw, bh) = (w / share.0 as f64, h / share.1 as f64);
+                    canvas.image(&Arc::new(image), RectF::new((w - bw) / 2.0, (h - bh) / 2.0, bw, bh));
+                    canvas.restore();
+                } else if let Some(image) = self.image(picture) {
+                    // A format only the window system decodes: the
+                    // image as it is, cropped.
                     canvas.save();
                     turn(canvas, true);
-                    // A cropped picture shows the part of its image that
-                    // falls in its frame.
                     let whole = picture.adjust.uncropped(opensheet_engine::drawing::Frame::new(0.0, 0.0, w, h));
                     canvas.clip_rect(RectF::new(0.0, 0.0, w, h));
                     canvas.image(&image, RectF::new(whole.x, whole.y, whole.width, whole.height));

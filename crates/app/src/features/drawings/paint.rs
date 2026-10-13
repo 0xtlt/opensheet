@@ -138,6 +138,33 @@ pub fn extent(placed: &Placed, zoom: f32) -> (f32, f32, f32, f32) {
     (x0 - room, y0 - room, x1 + room, y1 + room)
 }
 
+/// `extent` with room for what a picture wears beyond its frame: its
+/// border, shadow, glow and reflection, and how far a turn in space can
+/// take its corners.
+pub fn extent_of(drawing: &Drawing, placed: &Placed, zoom: f32) -> (f32, f32, f32, f32) {
+    let (x0, y0, x1, y1) = extent(placed, zoom);
+    let px = |points: f32| pt_to_px(points) * zoom;
+    let (width, height) = (placed.width().abs(), placed.height().abs());
+    let effects = &drawing.effects;
+    let mut room = 0.0f32;
+    if let Some(shadow) = &effects.shadow {
+        room = room.max(px(shadow.distance + 2.0 * shadow.blur) + (shadow.size - 1.0).max(0.0) * width.max(height));
+    }
+    if let Some(glow) = &effects.glow {
+        room = room.max(px(glow.radius) + 2.0);
+    }
+    if let Some(reflection) = &effects.reflection {
+        room = room.max(px(reflection.distance + 2.0 * reflection.blur) + reflection.size * height);
+    }
+    if effects.rotation.is_some() {
+        room = room.max(width.max(height));
+    }
+    if let Some(outline) = drawing.as_picture().and_then(|picture| picture.outline) {
+        room += px(outline.width);
+    }
+    (x0 - room, y0 - room, x1 + room, y1 + room)
+}
+
 /// What painting needs besides the drawing.
 pub struct Brush<'a> {
     /// Window position of the point (0, 0) the frames are measured from.
@@ -464,35 +491,30 @@ fn draw_effects(effects: &Effects, lines: &[Polyline], stroke: f32, brush: &Brus
     }
 }
 
-/// What a picture covers: its frame, or the outline it is cropped to.
-pub fn picture_outline(adjust: &PictureAdjust, placed: &Placed, natural: (f32, f32)) -> Vec<Polyline> {
-    if adjust.shape == ShapePreset::Rect {
-        return vec![Polyline {
-            points: placed.corners().to_vec(),
-            closed: true,
-        }];
+/// What a picture wears where it is drawn.
+pub fn dress_of(drawing: &Drawing, picture: &Picture, placed: &Placed) -> super::render::Dress {
+    super::render::Dress {
+        outline: picture.outline,
+        effects: drawing.effects,
+        turn: placed.rotation,
     }
-    geometry::flatten(&adjust.shape.path(natural.0, natural.1), placed)
-        .into_iter()
-        .filter(|line| line.closed)
-        .collect()
 }
 
 fn draw_picture(drawing: &Drawing, picture: &Picture, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
-    if drawing.effects.shadow.is_some() || drawing.effects.glow.is_some() {
-        draw_effects(&drawing.effects, &picture_outline(&picture.adjust, placed, natural), 0.0, brush, out);
-    }
+    // Its border, shadow, glow, reflection, bevel and turn in space are
+    // made in pixels with it (`render.rs`).
+    let dress = dress_of(drawing, picture, placed);
     // Soft edges are made in the pixels: a fraction of the shorter side.
     let shorter = natural.0.min(natural.1).max(1.0);
     let soft = (pt_to_px(drawing.effects.soft_edge.max(0.0)) / shorter).min(0.5);
     // A vector picture that is shown as it is: from its document, sharp
     // at any zoom. Adjusted, cropped or softened, from its image.
-    let vector = if soft == 0.0 && picture.adjust == PictureAdjust::default() {
+    let vector = if soft == 0.0 && picture.adjust == PictureAdjust::default() && dress.is_plain() && !picture.has_baked_effects() {
         super::icons::image_for(picture, placed, brush.scale)
     } else {
         None
     };
-    match vector.or_else(|| picture::image_as(picture, &picture.adjust, soft, natural, placed, brush.scale)) {
+    match vector.or_else(|| picture::image_as(picture, &picture.adjust, soft, natural, placed, brush.scale, Some(&dress))) {
         Some((image, (x0, y0, x1, y1))) => out.push(Draw::Image {
             image,
             bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),
@@ -601,7 +623,7 @@ pub fn draw_cropping(picture: &Picture, placed: &Placed, natural: (f32, f32), br
             natural.0 / kept(picture.adjust.crop[0], picture.adjust.crop[2]),
             natural.1 / kept(picture.adjust.crop[1], picture.adjust.crop[3]),
         );
-        if let Some((image, (x0, y0, x1, y1))) = picture::image_as(picture, &adjust, 0.0, full, &whole, brush.scale) {
+        if let Some((image, (x0, y0, x1, y1))) = picture::image_as(picture, &adjust, 0.0, full, &whole, brush.scale, None) {
             out.push(Draw::Image {
                 image,
                 bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),

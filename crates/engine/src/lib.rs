@@ -15,6 +15,7 @@ pub mod custom_view;
 pub mod datetime;
 pub mod deps;
 pub mod drawing;
+pub mod picture_style;
 pub mod eval;
 pub mod features;
 pub mod filter;

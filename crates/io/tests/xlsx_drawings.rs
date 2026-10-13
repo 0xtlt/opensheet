@@ -1649,7 +1649,7 @@ fn picture_adjustments_and_effects_round_trip() {
     adjusted(&mut wb, 21, "Washed", PictureAdjust { recolor: Recolor::Washout, temperature: 8800.0, ..plain }, none);
     adjusted(&mut wb, 26, "Two tones", PictureAdjust { recolor: Recolor::BlackAndWhite(0.25), ..plain }, none);
     let all = Effects {
-        shadow: Some(Shadow { color: Color(0x112233), transparency: 0.5, size: 1.02, blur: 6.0, angle: 135.0, distance: 4.0 }),
+        shadow: Some(Shadow { color: Color(0x112233), transparency: 0.5, size: 1.02, blur: 6.0, angle: 135.0, distance: 4.0, ..Shadow::default() }),
         glow: Some(Glow { color: Color(0xE97132), transparency: 0.6, radius: 8.0 }),
         soft_edge: 2.5,
     };

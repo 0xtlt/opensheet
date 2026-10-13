@@ -35,6 +35,7 @@ mod icons;
 mod paint;
 mod pane;
 pub(crate) mod picture;
+mod render;
 mod smartart;
 mod svg;
 mod tabs;
@@ -1111,7 +1112,7 @@ impl Feature for Drawings {
         let zoom = p.zoom();
         for pane in paint::panes(p.layout) {
             let placed = paint::placed(p.layout, sheet, drawing, &pane);
-            if !pane.shows(paint::extent(&placed, zoom)) && crop.is_none() {
+            if !pane.shows(paint::extent_of(drawing, &placed, zoom)) && crop.is_none() {
                 continue;
             }
             let clip = p.layout.bounds_px(pane.clip.0, pane.clip.1, pane.clip.2, pane.clip.3);
@@ -1294,7 +1295,7 @@ impl Feature for Drawings {
         // nothing does.
         let mut shown: Option<(f32, f32, f32, f32)> = None;
         for pane in paint::panes(layout) {
-            let extent = paint::extent(&paint::placed(layout, sheet, drawing, &pane), layout.zoom);
+            let extent = paint::extent_of(drawing, &paint::placed(layout, sheet, drawing, &pane), layout.zoom);
             if !pane.shows(extent) {
                 continue;
             }
@@ -1396,6 +1397,15 @@ impl Feature for Drawings {
 /// top-left corner at a point of the sheet, as one undo step named
 /// `label`; it is selected, with the Picture Format tab. `None` when the
 /// sheet is protected against it.
+/// What a picture wears on a page: as on the sheet.
+pub(crate) fn dress_for_page(drawing: &Drawing, picture: &Picture) -> render::Dress {
+    render::Dress {
+        outline: picture.outline,
+        effects: drawing.effects,
+        turn: drawing.rotation,
+    }
+}
+
 pub(crate) fn insert_picture(app: &mut ExcelApp, mut drawing: Drawing, at: (f64, f64), label: &'static str, cx: &mut Cx) -> Option<u32> {
     if !app.may(Intent::EditObject(None), cx) {
         return None;
