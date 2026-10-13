@@ -18,14 +18,27 @@
 //! Read: the outline, and the layout, style and colours by their
 //! `uniqueId`. A graphic whose layout is not one the engine draws is kept
 //! as its parts and shown through the shapes of its `drawing` part.
+//!
+//! Another application lays a graphic out again from its definitions,
+//! and from ours it would not draw what is drawn here. So:
+//!
+//! * a graphic read from a file and not changed since goes back with the
+//!   parts it came with, a real SmartArt as before;
+//! * a graphic made or changed here is written in a choice
+//!   (`mc:AlternateContent`): for this application, its frame and its
+//!   five parts; for the others, the shapes it is laid out as, in a
+//!   group, which they show as it is drawn here.
 
 use super::*;
-use opensheet_engine::smartart::{ColorScheme, Foreign, Layout, Node, Piece, QuickStyle, SmartArt};
+use opensheet_engine::smartart::{ColorScheme, Foreign, Layout, Node, Origin, Piece, QuickStyle, SmartArt};
 use opensheet_engine::theme::Theme as DocumentTheme;
 
 const NS_DIAGRAM: &str = "http://schemas.openxmlformats.org/drawingml/2006/diagram";
 const NS_DSP: &str = "http://schemas.microsoft.com/office/drawing/2008/diagram";
 const REL_DRAWING: &str = "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing";
+/// What the choice holding a graphic of this application requires.
+pub(super) const NS_OWN: &str = "https://opensheet.org/2026/smartart";
+const NS_COMPATIBILITY: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 /// The parts of a graphic: what its relationship is called, where it
 /// goes and its content type, in the order of `Foreign::parts`.
@@ -125,13 +138,19 @@ fn data_xml(art: &SmartArt, drawing_rel: usize) -> String {
     let mut x = format!("{XML_DECL}<dgm:dataModel xmlns:dgm=\"{NS_DIAGRAM}\" xmlns:a=\"{NS_DRAWING}\"><dgm:ptLst>");
     w!(
         x,
-        "<dgm:pt modelId=\"{root}\" type=\"doc\"><dgm:prSet loTypeId=\"{}\" loCatId=\"{}\" qsTypeId=\"{}\" qsCatId=\"simple\" csTypeId=\"{}\" csCatId=\"{}\"/><dgm:spPr/>",
+        "<dgm:pt modelId=\"{root}\" type=\"doc\"><dgm:prSet loTypeId=\"{}\" loCatId=\"{}\" qsTypeId=\"{}\" qsCatId=\"simple\" csTypeId=\"{}\" csCatId=\"{}\"",
         art.layout.unique_id(),
         art.layout.category().ooxml_name(),
         art.style.unique_id(),
         art.colors.unique_id(),
         art.colors.category()
     );
+    // "Right to Left" is a variable of the layout.
+    x.push_str(if art.rtl {
+        "><dgm:presLayoutVars><dgm:dir val=\"rev\"/></dgm:presLayoutVars></dgm:prSet><dgm:spPr/>"
+    } else {
+        "/><dgm:spPr/>"
+    });
     push_empty_text(&mut x);
     x.push_str("</dgm:pt>");
     let (mut points, mut connections) = (String::new(), String::new());
@@ -479,9 +498,9 @@ fn with_drawing_rel(data: &str, drawing_rel: usize) -> String {
 /// counts the graphics of the workbook.
 pub(super) fn add_parts(art: &SmartArt, theme: &DocumentTheme, size: (f64, f64), number: usize, first: usize, extras: &mut Extras) -> Vec<(String, String)> {
     let drawing_rel = first + 4;
-    let contents: [String; 5] = match &art.foreign {
-        Some(foreign) => {
-            let mut parts = foreign.parts.clone();
+    let contents: [String; 5] = match art.kept_parts() {
+        Some(kept) => {
+            let mut parts = kept.clone();
             parts[0] = with_drawing_rel(&parts[0], drawing_rel);
             parts
         }
@@ -505,6 +524,80 @@ pub(super) fn add_parts(art: &SmartArt, theme: &DocumentTheme, size: (f64, f64),
         related.push((kind, format!("../diagrams/{name}")));
     }
     related
+}
+
+/// Open the choice a graphic made here is written in: what follows is
+/// its anchor for this application.
+pub(super) fn push_choice_start(x: &mut String) {
+    w!(x, "<mc:AlternateContent xmlns:mc=\"{NS_COMPATIBILITY}\"><mc:Choice xmlns:ossa=\"{NS_OWN}\" Requires=\"ossa\">");
+}
+
+/// Between the anchor for this application and the one for the others.
+pub(super) fn push_choice_else(x: &mut String) {
+    x.push_str("</mc:Choice><mc:Fallback>");
+}
+
+pub(super) fn push_choice_end(x: &mut String) {
+    x.push_str("</mc:Fallback></mc:AlternateContent>");
+}
+
+/// Give the first fill of a shape that was just written an opacity.
+fn make_translucent(shape: &mut String, opacity: f32) {
+    let Some(start) = shape.find("<a:solidFill>") else {
+        return;
+    };
+    let Some(end) = shape[start..].find("</a:solidFill>").map(|found| start + found) else {
+        return;
+    };
+    let alpha = format!("<a:alpha val=\"{}\"/>", (opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as i64);
+    let colour = &shape[start + "<a:solidFill>".len()..end];
+    let with_alpha = match colour.strip_suffix("/>") {
+        // `<a:srgbClr val="…"/>`: opened, to hold the opacity.
+        Some(open) if !open.contains('>') => {
+            let name = open.trim_start_matches('<').split(' ').next().unwrap_or("a:srgbClr").to_string();
+            format!("{open}>{alpha}</{name}>")
+        }
+        _ => match colour.rfind("</") {
+            Some(close) => format!("{}{alpha}{}", &colour[..close], &colour[close..]),
+            None => return,
+        },
+    };
+    shape.replace_range(start + "<a:solidFill>".len()..end, &with_alpha);
+}
+
+/// The graphic as a group of the shapes it is laid out as, in `frame`:
+/// what an application that does not read the choice above shows. The
+/// group and its members take ids from `next_id` on.
+pub(super) fn push_group(x: &mut String, drawing: &Drawing, pieces: &[Piece], frame: Frame, next_id: &mut usize) {
+    x.push_str("<xdr:grpSp><xdr:nvGrpSpPr>");
+    push_identity(x, drawing, *next_id);
+    *next_id += 1;
+    x.push_str("<xdr:cNvGrpSpPr/></xdr:nvGrpSpPr><xdr:grpSpPr>");
+    // The members are placed in the coordinates of the sheet: the box of
+    // the group is also the box of its children.
+    w!(
+        x,
+        "<a:xfrm><a:off x=\"{0}\" y=\"{1}\"/><a:ext cx=\"{2}\" cy=\"{3}\"/><a:chOff x=\"{0}\" y=\"{1}\"/><a:chExt cx=\"{2}\" cy=\"{3}\"/></a:xfrm></xdr:grpSpPr>",
+        emu(frame.x),
+        emu(frame.y),
+        emu(frame.width),
+        emu(frame.height)
+    );
+    for (number, piece) in pieces.iter().enumerate() {
+        let mut member = Drawing::shape(piece.shape.clone(), (piece.width, piece.height));
+        member.name = format!("{} - {}", drawing.name, number + 1);
+        member.rotation = piece.rotation;
+        member.flip_h = piece.flip_h;
+        let place = Frame::new(frame.x + piece.x as f64, frame.y + piece.y as f64, piece.width as f64, piece.height as f64);
+        let mut shape = String::new();
+        push_shape(&mut shape, &member, &piece.shape, *next_id, place);
+        *next_id += 1;
+        if piece.opacity < 1.0 {
+            make_translucent(&mut shape, piece.opacity);
+        }
+        x.push_str(&shape);
+    }
+    x.push_str("</xdr:grpSp>");
 }
 
 // ---- reading -------------------------------------------------------------------
@@ -536,6 +629,7 @@ pub(super) fn parse_frame<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, object: &mut Ra
 /// named on its root, and the relationship to the drawing part.
 struct Data {
     nodes: Vec<Node>,
+    rtl: bool,
     layout: String,
     style: String,
     colors: String,
@@ -551,6 +645,7 @@ fn parse_data(xml: &str) -> Data {
     }
     let mut data = Data {
         nodes: Vec::new(),
+        rtl: false,
         layout: String::new(),
         style: String::new(),
         colors: String::new(),
@@ -574,8 +669,17 @@ fn parse_data(xml: &str) -> Data {
                             if kind == "doc" {
                                 let named = |name: &str| c.attr(name).unwrap_or_default().into_owned();
                                 (data.layout, data.style, data.colors) = (named("loTypeId"), named("qsTypeId"), named("csTypeId"));
+                                each_child(r, c, |r, variables| {
+                                    each_child(r, variables, |r, variable| {
+                                        if variable.name == "dir" {
+                                            data.rtl = variable.attr("val").as_deref() == Some("rev");
+                                        }
+                                        r.skip(variable);
+                                    });
+                                });
+                            } else {
+                                r.skip(c);
                             }
-                            r.skip(c);
                         }
                         "t" => {
                             let mut paragraphs = 0;
@@ -716,14 +820,19 @@ fn parse_cache(xml: &str, theme: &Theme) -> Vec<Piece> {
 
 /// Read the graphic a frame names. `rels` are the relationships of the
 /// drawing part. `None` when its data part is missing.
-pub(super) fn load<R: Read + Seek>(pkg: &mut Package<R>, rels: &[Rel], ids: &[String; 4], theme: &Theme) -> Option<SmartArt> {
-    let mut part = |id: &str| {
-        let target = rels.iter().find(|rel| rel.id == id).map(|rel| rel.target.clone())?;
-        pkg.read(&target).ok().flatten()
-    };
-    let data_xml = part(&ids[0])?;
-    let definitions = [part(&ids[1]), part(&ids[2]), part(&ids[3])];
+pub(super) fn load<R: Read + Seek>(pkg: &mut Package<R>, rels: &[Rel], ids: &[String; 4], theme: &Theme, own: bool) -> Option<SmartArt> {
+    let target_of = |id: &str| rels.iter().find(|rel| rel.id == id).map(|rel| rel.target.clone());
+    let mut read = |target: Option<String>| target.and_then(|target| pkg.read(&target).ok().flatten());
+    let data_xml = read(target_of(&ids[0]))?;
+    let definitions = [read(target_of(&ids[1])), read(target_of(&ids[2])), read(target_of(&ids[3]))];
     let data = parse_data(&data_xml);
+    // The drawing part: named by the outline, or the only one there is.
+    let drawing_target = data
+        .drawing_rel
+        .as_deref()
+        .and_then(target_of)
+        .or_else(|| rels.iter().find(|rel| rel.kind == "diagramDrawing").map(|rel| rel.target.clone()));
+    let drawing = read(drawing_target).unwrap_or_default();
     // The definitions say what they are; the root of the outline says it
     // too, for a file that lost one.
     let named = |index: usize, fallback: &str| definitions[index].as_deref().and_then(unique_id).unwrap_or_else(|| fallback.to_string());
@@ -733,27 +842,36 @@ pub(super) fn load<R: Read + Seek>(pkg: &mut Package<R>, rels: &[Rel], ids: &[St
         nodes: data.nodes,
         colors: ColorScheme::from_unique_id(&named(2, &data.colors)).unwrap_or_default(),
         style: QuickStyle::from_unique_id(&named(1, &data.style)).unwrap_or_default(),
-        rtl: false,
+        rtl: data.rtl,
         foreign: None,
+        origin: None,
     };
-    if layout.is_none() {
+    let [layout_xml, style_xml, colors_xml] = definitions.map(Option::unwrap_or_default);
+    match layout {
+        // A graphic this application wrote: its parts are made again
+        // whenever it is written.
+        Some(_) if own => {}
+        // Another application's graphic of a layout that is drawn here:
+        // it goes back with its own parts while nothing changes it.
+        Some(_) => {
+            art.origin = Some(Arc::new(Origin {
+                parts: [data_xml, layout_xml, style_xml, colors_xml, drawing],
+                layout: art.layout,
+                nodes: art.nodes.clone(),
+                colors: art.colors,
+                style: art.style,
+                rtl: art.rtl,
+            }));
+        }
         // A layout that is not drawn here: the graphic as its file has it.
-        let drawing = data
-            .drawing_rel
-            .as_deref()
-            .and_then(&mut part)
-            .or_else(|| {
-                let target = rels.iter().find(|rel| rel.kind == "diagramDrawing").map(|rel| rel.target.clone())?;
-                pkg.read(&target).ok().flatten()
-            })
-            .unwrap_or_default();
-        let [layout_xml, style_xml, colors_xml] = definitions.map(Option::unwrap_or_default);
-        art.foreign = Some(Arc::new(Foreign {
-            pieces: parse_cache(&drawing, theme),
-            // The frame of the graphic, once it is placed on its sheet.
-            size: (1.0, 1.0),
-            parts: [data_xml, layout_xml, style_xml, colors_xml, drawing],
-        }));
+        None => {
+            art.foreign = Some(Arc::new(Foreign {
+                pieces: parse_cache(&drawing, theme),
+                // The frame of the graphic, once it is placed on its sheet.
+                size: (1.0, 1.0),
+                parts: [data_xml, layout_xml, style_xml, colors_xml, drawing],
+            }));
+        }
     }
     Some(art)
 }

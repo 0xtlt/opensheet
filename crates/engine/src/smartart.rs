@@ -404,6 +404,23 @@ pub struct SmartArt {
     /// The graphic as its file had it, when its layout is not one of
     /// `Layout`: it is shown from this until it is given a layout.
     pub foreign: Option<Arc<Foreign>>,
+    /// The graphic as a file had it, when its layout is one of `Layout`:
+    /// as long as nothing was changed since, it goes back to a file with
+    /// the parts it came with.
+    pub origin: Option<Arc<Origin>>,
+}
+
+/// What a file held of a graphic that is drawn here: its parts as they
+/// were, and what was read from them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Origin {
+    /// The data, layout, style, colours and drawing parts.
+    pub parts: [String; 5],
+    pub layout: Layout,
+    pub nodes: Vec<Node>,
+    pub colors: ColorScheme,
+    pub style: QuickStyle,
+    pub rtl: bool,
 }
 
 /// The name Excel gives a graphic, before its number.
@@ -466,6 +483,39 @@ impl SmartArt {
             style: QuickStyle::default(),
             rtl: false,
             foreign: None,
+            origin: None,
+        }
+    }
+
+    /// The parts the graphic came with from its file, while it is as it
+    /// was read: a file writer puts them back as they were. `None` for a
+    /// graphic made or changed here.
+    pub fn kept_parts(&self) -> Option<&[String; 5]> {
+        if let Some(foreign) = &self.foreign {
+            return Some(&foreign.parts);
+        }
+        let origin = self.origin.as_ref()?;
+        let same = origin.layout == self.layout
+            && origin.nodes == self.nodes
+            && origin.colors == self.colors
+            && origin.style == self.style
+            && origin.rtl == self.rtl;
+        same.then_some(&origin.parts)
+    }
+
+    /// How many shapes the graphic is laid out as (whatever its frame).
+    pub fn piece_count(&self) -> usize {
+        self.pieces(&Theme::default(), DEFAULT_SIZE.0, DEFAULT_SIZE.1).len()
+    }
+
+    /// How many objects the graphic is in a file: its frame alone while
+    /// it keeps the parts it came with; else its frame, and the group of
+    /// its shapes written beside it for applications that would lay it
+    /// out their own way.
+    pub fn object_count(&self) -> usize {
+        match self.kept_parts() {
+            Some(_) => 1,
+            None => 2 + self.piece_count(),
         }
     }
 

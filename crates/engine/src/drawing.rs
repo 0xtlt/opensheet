@@ -1717,7 +1717,11 @@ impl Drawing {
     /// How many objects the drawing is in a file: itself, and for a
     /// group every member, the groups among them counted the same way.
     pub fn object_count(&self) -> usize {
-        1 + self.as_group().map_or(0, |group| group.members.iter().map(Drawing::object_count).sum())
+        match &self.kind {
+            DrawingKind::Group(group) => 1 + group.members.iter().map(Drawing::object_count).sum::<usize>(),
+            DrawingKind::SmartArt(art) => art.object_count(),
+            _ => 1,
+        }
     }
 
     /// The largest id in the drawing: its own, or one of its members'.
