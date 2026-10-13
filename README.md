@@ -64,6 +64,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Boîtes de dialogue, volets latéraux et menus contextuels d'Excel, dont Format de cellule et ses six onglets.
 - Grille de 1 048 576 lignes × 16 384 colonnes, défilement fluide, zoom 10–400 %, volets figés.
 - Préférences (⌘,) : général, affichage, modification, calcul, vérification des erreurs.
+- Fenêtre étroite : le ruban replie ses groupes un à un (boutons sans libellé, puis un seul bouton qui ouvre le groupe), dans les cinq langues.
 - Affichages personnalisés : enregistrer et rappeler lignes et colonnes masquées, filtre, mise en page, zoom et sélection.
 
 **Saisie et sélection**
@@ -171,7 +172,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Sparklines : pas d'axe de dates. Plan : pas de styles automatiques ; la marge du plan n'apparaît pas en vue Mise en page.
 - Thèmes : les effets sont enregistrés mais ne changent pas le dessin ; les jeux personnalisés ne durent que la session.
 - Calcul : un fichier enregistré en mode manuel est recalculé une fois à l'ouverture.
-- Ruban : quand la fenêtre est trop étroite pour un onglet (par exemple Formules en allemand dans une fenêtre de 1 390 points de large), le ruban défile horizontalement au lieu de replier ses groupes.
+- Ruban : en se repliant, un groupe perd d'abord ses libellés au lieu de se réorganiser sur trois lignes comme dans Excel ; l'ordre de repli va toujours de droite à gauche.
 
 ### Vitesse du recalcul
 
