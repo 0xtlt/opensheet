@@ -28,7 +28,10 @@
 //! drawing sized with its cells follows them without being touched.
 
 mod adjust;
+mod artistic;
+mod compress;
 mod equation;
+mod filters;
 pub(crate) mod geometry;
 mod icon_set;
 mod icons;
@@ -36,7 +39,9 @@ pub(crate) mod letters;
 mod paint;
 mod pane;
 pub(crate) mod picture;
+mod render;
 mod smartart;
+mod styles;
 mod svg;
 mod tabs;
 mod text;
@@ -45,6 +50,8 @@ mod wordart;
 pub(crate) use wordart::print_outlined as print_shape_letters;
 #[cfg(test)]
 mod insertart_tests;
+#[cfg(test)]
+mod picture_tests;
 #[cfg(test)]
 mod ui_tests;
 #[cfg(test)]
@@ -272,6 +279,12 @@ impl Command for Cmd {
                 .any(|id| app.wb.drawing(app.sheet, id).is_some_and(|drawing| drawing.as_group().is_some())),
             Cmd::Regroup => regroupable(app).is_some(),
             Cmd::EditPoints => false,
+            // An icon stays the drawing it is; cells are drawn again
+            // whenever they change.
+            Cmd::ArtisticEffects => drawing
+                .and_then(Drawing::as_picture)
+                .is_some_and(|picture| picture.svg.is_none() && picture.link.is_none()),
+            Cmd::PictureStyles => drawing.is_some_and(|drawing| drawing.as_picture().is_some_and(|picture| picture.link.is_none())),
             Cmd::Crop
             | Cmd::CropPicture
             | Cmd::CropFill
@@ -468,15 +481,18 @@ impl Command for Cmd {
                 ];
                 app.open_command_menu(entries, 250.0, window, cx);
             }
+            Cmd::Compress => compress::open(app, window, cx),
+            Cmd::ArtisticEffects => artistic::open_gallery(app, window, cx),
+            Cmd::PictureStyles => styles::open_styles(app, window, cx),
+            Cmd::PictureBorder => styles::open_border(app, window, cx),
             Cmd::ResetPictureOnly => reset_picture(app, false, cx),
             Cmd::ResetPictureAndSize => reset_picture(app, true, cx),
             Cmd::ChangePicture => {
                 let entries = vec![MenuEntry::command(Cmd::ChangePictureFromFile, app)];
                 app.open_command_menu(entries, 220.0, window, cx);
             }
-            // Styles, artistic effects, removing the background,
-            // compressing and the online sources are not available: the
-            // status bar says so.
+            // Removing the background and the online sources are not
+            // available: the status bar says so.
             _ => app.not_implemented(self.label(), cx),
         }
     }
@@ -505,6 +521,9 @@ struct DrawingUi {
     /// The fields and the view the ribbon and the panes keep.
     tabs: tabs::TabState,
     panes: pane::PaneState,
+    /// The second images of pictures with an artistic effect, being
+    /// made off the window's thread.
+    baking: artistic::Baking,
 }
 
 /// Where the caret goes when the text of a shape starts being edited.
@@ -731,6 +750,9 @@ fn reset_picture(app: &mut ExcelApp, size: bool, cx: &mut Cx) {
         drawing.flip_v = false;
         drawing.effects = Effects::default();
         if let Some(picture) = drawing.as_picture_mut() {
+            picture.outline = None;
+            picture.artistic = None;
+            picture.baked = None;
             picture.adjust = PictureAdjust {
                 crop: if size { [0.0; 4] } else { picture.adjust.crop },
                 shape: if size { ShapePreset::Rect } else { picture.adjust.shape },
@@ -1019,6 +1041,7 @@ impl Feature for Drawings {
         svg::install(cx);
         svg::sweep(window, cx);
         icons::follow_theme(app);
+        artistic::follow(app, cx);
         // Image files dropped on the cells become pictures. The element
         // takes nothing else from the mouse.
         let mut out = vec![
@@ -1117,7 +1140,7 @@ impl Feature for Drawings {
         let zoom = p.zoom();
         for pane in paint::panes(p.layout) {
             let placed = paint::placed(p.layout, sheet, drawing, &pane);
-            if !pane.shows(paint::extent(&placed, zoom)) && crop.is_none() {
+            if !pane.shows(paint::extent_of(drawing, &placed, zoom)) && crop.is_none() {
                 continue;
             }
             let clip = p.layout.bounds_px(pane.clip.0, pane.clip.1, pane.clip.2, pane.clip.3);
@@ -1301,7 +1324,7 @@ impl Feature for Drawings {
         // nothing does.
         let mut shown: Option<(f32, f32, f32, f32)> = None;
         for pane in paint::panes(layout) {
-            let extent = paint::extent(&paint::placed(layout, sheet, drawing, &pane), layout.zoom);
+            let extent = paint::extent_of(drawing, &paint::placed(layout, sheet, drawing, &pane), layout.zoom);
             if !pane.shows(extent) {
                 continue;
             }
@@ -1403,6 +1426,47 @@ impl Feature for Drawings {
 /// top-left corner at a point of the sheet, as one undo step named
 /// `label`; it is selected, with the Picture Format tab. `None` when the
 /// sheet is protected against it.
+/// Before a workbook is written: the images a file keeps of pictures
+/// with an artistic effect are made, where they are not yet.
+pub(crate) fn before_save(wb: &mut opensheet_engine::Workbook) {
+    artistic::bake_all(wb);
+}
+
+/// The shadow and the glow of a shape for a page, in a frame `size`
+/// (pixels at 100 %): pixels red first, and the size they take, about
+/// the middle of the frame. The bitmap is flipped as the shape is but
+/// not turned: the page turns it.
+pub(crate) fn shape_effects_for_page(drawing: &Drawing, shape: &Shape, size: (f32, f32)) -> Option<(picture::Bitmap, (f32, f32))> {
+    /// Pixels of the page to a pixel of the sheet.
+    const DENSITY: f32 = 3.0;
+    let effects = Effects {
+        shadow: drawing.effects.shadow,
+        glow: drawing.effects.glow,
+        ..Effects::default()
+    };
+    if effects.is_none() || size.0 <= 0.0 || size.1 <= 0.0 {
+        return None;
+    }
+    let fit = (2400.0 / (size.0.max(size.1) * DENSITY)).min(1.0);
+    let unit = DENSITY * fit;
+    let (cover, w, h) = paint::shape_cover(shape, size, (size.0 * unit, size.1 * unit), (drawing.flip_h, drawing.flip_v), unit);
+    let (mut bitmap, _) = render::under(&cover, w, h, &effects, drawing.rotation, unit)?;
+    for pixel in bitmap.data.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let took = (bitmap.width as f32 / unit, bitmap.height as f32 / unit);
+    Some((bitmap, took))
+}
+
+/// What a picture wears on a page: as on the sheet.
+pub(crate) fn dress_for_page(drawing: &Drawing, picture: &Picture) -> render::Dress {
+    render::Dress {
+        outline: picture.outline,
+        effects: drawing.effects,
+        turn: drawing.rotation,
+    }
+}
+
 pub(crate) fn insert_picture(app: &mut ExcelApp, mut drawing: Drawing, at: (f64, f64), label: &'static str, cx: &mut Cx) -> Option<u32> {
     if !app.may(Intent::EditObject(None), cx) {
         return None;

@@ -7,9 +7,10 @@
 //! here too, once for each look it is given.
 
 use super::geometry::{self, Placed};
+use super::render::{self, Dress};
 use gpui::{App, RenderImage, Window};
 use image::{Frame, RgbaImage};
-use opensheet_engine::drawing::{Picture, PictureAdjust, ShapePreset, image_info};
+use opensheet_engine::drawing::{NEUTRAL_TEMPERATURE, Picture, PictureAdjust, ShapePreset, image_info};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -54,7 +55,7 @@ impl Bitmap {
         (bitmap.width > 0 && bitmap.height > 0).then_some(bitmap)
     }
 
-    fn offset(&self, x: u32, y: u32) -> usize {
+    pub(super) fn offset(&self, x: u32, y: u32) -> usize {
         (y as usize * self.width as usize + x as usize) * 4
     }
 
@@ -250,7 +251,7 @@ impl Bitmap {
 
     /// Make transparent what lies outside the outline of a shape drawn
     /// over the whole bitmap.
-    fn cut_to(&mut self, shape: ShapePreset, natural: (f32, f32)) {
+    pub(super) fn cut_to(&mut self, shape: ShapePreset, natural: (f32, f32)) {
         let placed = Placed::plain(0.0, 0.0, self.width as f32, self.height as f32);
         let outlines = geometry::flatten(&shape.path(natural.0.max(1.0), natural.1.max(1.0)), &placed);
         let outlines: Vec<_> = outlines.into_iter().filter(|line| line.closed && line.points.len() >= 3).collect();
@@ -297,7 +298,35 @@ impl Bitmap {
         }
     }
 
-    fn into_image(self) -> Option<Arc<RenderImage>> {
+    /// Which pixels of a frame `width` by `height` lie inside the
+    /// outline a picture is cut to, the frame flipped as the picture is.
+    /// `None` for a rectangle, which holds them all.
+    pub(super) fn outline_mask(shape: ShapePreset, width: u32, height: u32, natural: (f32, f32), flips: (bool, bool)) -> Option<Vec<bool>> {
+        if shape == ShapePreset::Rect {
+            return None;
+        }
+        let mut white = Bitmap {
+            width,
+            height,
+            data: vec![255; width as usize * height as usize * 4],
+        };
+        white.cut_to(shape, natural);
+        let white = white.oriented(flips.0, flips.1, 0);
+        Some(white.data.chunks_exact(4).map(|pixel| pixel[3] > 0).collect())
+    }
+
+    /// The picture dressed (`render::compose`): `self` is the picture
+    /// as its frame shows it, not yet flipped. The result is centred on
+    /// the frame, which takes the returned share of its width and
+    /// height.
+    pub(super) fn dressed(&self, shape: ShapePreset, natural: (f32, f32), flips: (bool, bool), dress: &Dress) -> (Bitmap, (f32, f32)) {
+        let body = self.oriented(flips.0, flips.1, 0);
+        let mask = Bitmap::outline_mask(shape, body.width, body.height, natural, flips);
+        let k = body.width as f32 / natural.0.max(1.0);
+        render::compose(&body, mask.as_deref(), dress, k)
+    }
+
+    pub(super) fn into_image(self) -> Option<Arc<RenderImage>> {
         let pixels = RgbaImage::from_raw(self.width, self.height, self.data)?;
         Some(Arc::new(RenderImage::new(vec![Frame::new(pixels)])))
     }
@@ -343,8 +372,8 @@ enum Look {
 /// drawn for.
 type Treatment = (Vec<u32>, u32, (u32, u32));
 
-fn treatment(adjust: &PictureAdjust, soft: f32, natural: (f32, f32)) -> Option<Treatment> {
-    if *adjust == PictureAdjust::default() && soft <= 0.0 {
+fn treatment(adjust: &PictureAdjust, soft: f32, natural: (f32, f32), dress: Option<&Dress>) -> Option<Treatment> {
+    if *adjust == PictureAdjust::default() && soft <= 0.0 && dress.is_none() {
         return None;
     }
     let mut bits: Vec<u32> = adjust.crop.iter().map(|v| v.to_bits()).collect();
@@ -359,13 +388,21 @@ fn treatment(adjust: &PictureAdjust, soft: f32, natural: (f32, f32)) -> Option<T
         Recolor::Washout => [3, 0, 0],
         Recolor::Duotone(dark, light) => [4, dark.value(), light.value()],
     });
-    let shaped = adjust.shape != ShapePreset::Rect;
+    // What a picture wears is measured in points: its size matters too.
+    if let Some(dress) = dress {
+        bits.push(u32::MAX);
+        bits.extend(dress.bits());
+    }
+    let shaped = adjust.shape != ShapePreset::Rect || dress.is_some();
     let natural = if shaped { (natural.0.round() as u32, natural.1.round() as u32) } else { (0, 0) };
     Some((bits, (soft * 1000.0).round() as u32, natural))
 }
 
 struct Shown {
     image: Arc<RenderImage>,
+    /// How much of the bitmap's width and height the frame of the
+    /// picture takes: all of it, unless the picture is dressed.
+    share: (f32, f32),
     /// The repaint it was last drawn at.
     used: u64,
 }
@@ -382,6 +419,10 @@ struct Decoded {
 #[derive(Default)]
 struct Cache {
     pictures: HashMap<usize, Decoded>,
+    /// Bitmaps made for something other than a picture (the shadow of a
+    /// shape), one for each slot: what it was made for, how large it
+    /// was before it was turned, and the bitmap.
+    others: HashMap<u64, (Vec<u32>, (f32, f32), Shown)>,
     repaint: u64,
     /// Bitmaps no longer wanted, whose textures `sweep` releases.
     retired: Vec<Arc<RenderImage>>,
@@ -408,7 +449,26 @@ fn level_for(width: u32, height: u32, shown: (f32, f32)) -> u8 {
 /// x1, y1) it is stretched over. `scale` is the number of device pixels
 /// per pixel. `None` when the picture cannot be decoded.
 pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
-    image_as(picture, &picture.adjust, 0.0, (placed.width().abs(), placed.height().abs()), placed, scale)
+    image_as(picture, &picture.adjust, 0.0, (placed.width().abs(), placed.height().abs()), placed, scale, None)
+}
+
+/// The image file a picture is drawn from and what is still to be done
+/// to its pixels, given the adjustments to show (the picture's own, or
+/// others while it is cropped): `Picture::shown`.
+fn source_of<'a>(picture: &'a Picture, adjust: &PictureAdjust) -> (&'a Arc<[u8]>, PictureAdjust) {
+    let (bytes, _) = picture.shown();
+    if Arc::ptr_eq(bytes, &picture.data) {
+        (bytes, *adjust)
+    } else {
+        (
+            bytes,
+            PictureAdjust {
+                saturation: 1.0,
+                temperature: NEUTRAL_TEMPERATURE,
+                ..*adjust
+            },
+        )
+    }
 }
 
 /// `image_for` with the adjustments given apart from the picture (the
@@ -422,14 +482,18 @@ pub fn image_as(
     natural: (f32, f32),
     placed: &Placed,
     scale: f32,
+    dress: Option<&Dress>,
 ) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
-    let treatment = treatment(adjust, soft, natural);
+    let (bytes, adjust) = source_of(picture, adjust);
+    let adjust = &adjust;
+    let dress = dress.filter(|dress| !dress.is_plain());
+    let treatment = treatment(adjust, soft, natural, dress);
     CACHE.with_borrow_mut(|cache| {
         let repaint = cache.repaint;
-        let key = Arc::as_ptr(&picture.data) as *const u8 as usize;
+        let key = Arc::as_ptr(bytes) as *const u8 as usize;
         let decoded = cache.pictures.entry(key).or_insert_with(|| Decoded {
-            bytes: picture.data.clone(),
-            levels: Bitmap::decode(&picture.data).into_iter().collect(),
+            bytes: bytes.clone(),
+            levels: Bitmap::decode(bytes).into_iter().collect(),
             shown: HashMap::new(),
         });
         let (full_w, full_h) = decoded.levels.first().map(|full| (full.width, full.height))?;
@@ -471,13 +535,24 @@ pub fn image_as(
                 }
                 None => &decoded.levels[level as usize],
             };
+            // Dressed: flipped first, so that the shadow falls where it
+            // should, then only turned.
+            let composed;
+            let (source, share, flipped) = match dress {
+                Some(dress) => {
+                    let share;
+                    (composed, share) = source.dressed(adjust.shape, natural, (placed.flip_h, placed.flip_v), dress);
+                    (&composed, share, true)
+                }
+                None => (source, (1.0, 1.0), false),
+            };
             let bitmap = match look {
                 Look::Upright {
                     flip_h,
                     flip_v,
                     quarters,
                     ..
-                } => source.oriented(flip_h, flip_v, quarters),
+                } => source.oriented(flip_h && !flipped, flip_v && !flipped, quarters),
                 Look::Turned {
                     tenths,
                     flip_h,
@@ -495,16 +570,142 @@ pub fn image_as(
                         }
                         keep
                     });
-                    source.turned((width as f32, height as f32), tenths as f32 / 10.0, flip_h, flip_v)
+                    source.turned(
+                        (width as f32 / share.0, height as f32 / share.1),
+                        tenths as f32 / 10.0,
+                        flip_h && !flipped,
+                        flip_v && !flipped,
+                    )
                 }
             };
             let image = bitmap.into_image()?;
-            decoded.shown.insert(key.clone(), Shown { image, used: repaint });
+            decoded.shown.insert(key.clone(), Shown { image, share, used: repaint });
         }
         let entry = decoded.shown.get_mut(&key)?;
         entry.used = repaint;
-        Some((entry.image.clone(), placed.extent()))
+        // A dressed picture is larger than its frame, about the same
+        // middle.
+        let (cx, cy) = placed.centre();
+        let (half_w, half_h) = (placed.width() / entry.share.0 / 2.0, placed.height() / entry.share.1 / 2.0);
+        let grown = Placed {
+            x0: cx - half_w,
+            y0: cy - half_h,
+            x1: cx + half_w,
+            y1: cy + half_h,
+            ..*placed
+        };
+        Some((entry.image.clone(), if entry.share == (1.0, 1.0) { placed.extent() } else { grown.extent() }))
     })
+}
+
+/// A bitmap that is made once and painted many times: the one of
+/// `slot` when it was made for `key`, else what `build` makes now (the
+/// bitmap and a size to remember with it), which takes its place.
+pub fn cached_image(slot: u64, key: Vec<u32>, build: impl FnOnce() -> Option<(Bitmap, (f32, f32))>) -> Option<(Arc<RenderImage>, (f32, f32))> {
+    CACHE.with_borrow_mut(|cache| {
+        let repaint = cache.repaint;
+        if let Some((made_for, size, shown)) = cache.others.get_mut(&slot) {
+            if *made_for == key {
+                shown.used = repaint;
+                return Some((shown.image.clone(), *size));
+            }
+        }
+        if let Some((_, _, old)) = cache.others.remove(&slot) {
+            cache.retired.push(old.image);
+        }
+        let (bitmap, size) = build()?;
+        let image = bitmap.into_image()?;
+        let shown = Shown {
+            image: image.clone(),
+            share: (1.0, 1.0),
+            used: repaint,
+        };
+        cache.others.insert(slot, (key, size, shown));
+        Some((image, size))
+    })
+}
+
+/// A copy of the image a picture is drawn from (`Picture::shown`), with
+/// at least `size` pixels each way when the image has them, and not
+/// many more.
+pub fn small_copy(picture: &Picture, size: (u32, u32)) -> Option<Bitmap> {
+    let (bytes, _) = picture.shown();
+    CACHE.with_borrow_mut(|cache| {
+        let key = Arc::as_ptr(bytes) as *const u8 as usize;
+        let decoded = cache.pictures.entry(key).or_insert_with(|| Decoded {
+            bytes: bytes.clone(),
+            levels: Bitmap::decode(bytes).into_iter().collect(),
+            shown: HashMap::new(),
+        });
+        let (full_w, full_h) = decoded.levels.first().map(|full| (full.width, full.height))?;
+        let level = level_for(full_w, full_h, (size.0 as f32, size.1 as f32)) as usize;
+        while decoded.levels.len() <= level {
+            let smaller = decoded.levels[decoded.levels.len() - 1].halved();
+            decoded.levels.push(smaller);
+        }
+        decoded.levels.get(level).cloned()
+    })
+}
+
+/// A bitmap as a PNG file.
+pub fn png_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
+    let mut rgba = bitmap.data.clone();
+    for pixel in rgba.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let pixels = RgbaImage::from_raw(bitmap.width, bitmap.height, rgba)?;
+    let mut png = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(pixels).write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(png.into_inner())
+}
+
+/// A bitmap without transparency as a JPEG file.
+pub fn jpeg_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
+    let rgb: Vec<u8> = bitmap.data.chunks_exact(4).flat_map(|pixel| [pixel[2], pixel[1], pixel[0]]).collect();
+    let pixels = image::RgbImage::from_raw(bitmap.width, bitmap.height, rgb)?;
+    let mut jpeg = Cursor::new(Vec::new());
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 92);
+    image::DynamicImage::ImageRgb8(pixels).write_with_encoder(encoder).ok()?;
+    Some(jpeg.into_inner())
+}
+
+/// A picture as a page shows it in a frame `size` (pixels at 100 %),
+/// turned by `turn` degrees and flipped: its pixels red first, a few to
+/// each pixel of the sheet, with everything the picture wears, and the
+/// share of the bitmap's width and height the frame takes. The bitmap
+/// is flipped but not turned: the page turns it.
+pub fn printed(picture: &Picture, soft: f32, size: (f32, f32), flips: (bool, bool), dress: &Dress) -> Option<(Bitmap, (f32, f32))> {
+    /// Pixels of the page to a pixel of the sheet: 288 to the inch.
+    const DENSITY: f32 = 3.0;
+    let (bytes, adjust) = source_of(picture, &picture.adjust);
+    let full = CACHE.with_borrow_mut(|cache| {
+        let key = Arc::as_ptr(bytes) as *const u8 as usize;
+        let decoded = cache.pictures.entry(key).or_insert_with(|| Decoded {
+            bytes: bytes.clone(),
+            levels: Bitmap::decode(bytes).into_iter().collect(),
+            shown: HashMap::new(),
+        });
+        decoded.levels.first().cloned()
+    })?;
+    let kept = |a: f32, b: f32| (1.0 - a - b).clamp(0.05, 1.0);
+    let whole = (
+        size.0 * DENSITY / kept(adjust.crop[0], adjust.crop[2]),
+        size.1 * DENSITY / kept(adjust.crop[1], adjust.crop[3]),
+    );
+    let mut source = full;
+    for _ in 0..level_for(source.width, source.height, whole) {
+        source = source.halved();
+    }
+    let body = source.adjusted(&adjust, soft, size);
+    let (mut bitmap, share) = if dress.is_plain() {
+        (body.oriented(flips.0, flips.1, 0), (1.0, 1.0))
+    } else {
+        body.dressed(adjust.shape, size, flips, dress)
+    };
+    for pixel in bitmap.data.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    Some((bitmap, share))
 }
 
 /// Called once per repaint: forget the bitmaps that have not been drawn
@@ -515,9 +716,17 @@ pub fn sweep(window: &mut Window, cx: &mut App) {
         cache.repaint += 1;
         let Cache {
             pictures,
+            others,
             repaint,
             retired,
         } = cache;
+        others.retain(|_, (_, _, shown)| {
+            let keep = shown.used + KEPT_FOR >= *repaint;
+            if !keep {
+                retired.push(shown.image.clone());
+            }
+            keep
+        });
         pictures.retain(|_, decoded| {
             // Nothing but this cache holds the bytes any more.
             let alive = Arc::strong_count(&decoded.bytes) > 1;
@@ -717,7 +926,7 @@ mod tests {
         assert!(soft.data[soft.offset(2, 10) + 3] < 255);
         assert_eq!(soft.data[soft.offset(10, 10) + 3], 255);
         // Each look is a bitmap of its own.
-        assert_ne!(treatment(&duo, 0.0, (8.0, 4.0)), treatment(&plain, 0.1, (8.0, 4.0)));
-        assert_eq!(treatment(&plain, 0.0, (8.0, 4.0)), None);
+        assert_ne!(treatment(&duo, 0.0, (8.0, 4.0), None), treatment(&plain, 0.1, (8.0, 4.0), None));
+        assert_eq!(treatment(&plain, 0.0, (8.0, 4.0), None), None);
     }
 }

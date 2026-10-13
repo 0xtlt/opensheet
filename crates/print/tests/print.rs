@@ -1431,3 +1431,59 @@ fn the_entire_workbook_leaves_hidden_sheets_out() {
     // Asked for by itself, a hidden sheet still prints.
     assert_eq!(opensheet_print::plan(&wb, &self::job(PrintWhat::Sheet(1))).pages.len(), 1);
 }
+
+#[test]
+fn ink_strokes_print_over_the_cells() {
+    use opensheet_engine::ink::PenKind;
+    use opensheet_print::LineCap;
+    let mut wb = Workbook::new(Locale::en());
+    enter(&mut wb, "A1", "Under the ink");
+    let job = job(PrintWhat::Sheet(0));
+    let before = render_page(&wb, &job, &plan(&wb, &job), 0).unwrap();
+    // A red pen stroke of three points, and a wide yellow highlight.
+    let pen = wb.draw_ink(0, PenKind::Pen, Color(0xFF0000), 2.0, &[(20.0, 20.0), (60.0, 50.0), (100.0, 20.0)]);
+    let marker = wb.draw_ink(0, PenKind::Highlighter, Color(0xFFFF00), 12.0, &[(10.0, 8.0), (90.0, 8.0)]);
+    assert!(pen.is_some() && marker.is_some());
+    wb.commit("ink");
+    let plan = plan(&wb, &job);
+    let scene = render_page(&wb, &job, &plan, 0).unwrap();
+    let strokes: Vec<_> = scene.ops[before.ops.len() - 1..]
+        .iter()
+        .filter_map(|op| match op {
+            Op::Stroke { path, stroke } => Some((path.clone(), stroke.clone())),
+            _ => None,
+        })
+        .filter(|(_, stroke)| stroke.cap == LineCap::Round)
+        .collect();
+    assert_eq!(strokes.len(), 2);
+    // Each in its colour, as translucent as its pen, as wide as drawn
+    // (pixels of the sheet are three quarters of a point).
+    let (pen_stroke, marker_stroke) = (&strokes[0].1, &strokes[1].1);
+    assert_eq!((pen_stroke.paint.color, pen_stroke.paint.opacity), (Color(0xFF0000), 1.0));
+    assert!((pen_stroke.width - 1.5).abs() < 1e-6, "{}", pen_stroke.width);
+    assert_eq!((marker_stroke.paint.color, marker_stroke.paint.opacity), (Color(0xFFFF00), 0.5));
+    assert!((marker_stroke.width - 9.0).abs() < 1e-6);
+    // The pen's line is rounded: more points than were drawn.
+    assert!(strokes[0].0.segments.len() > 6);
+    // A stroke far below the cells that hold something still prints:
+    // the page reaches down to it.
+    let low = wb.draw_ink(0, PenKind::Pen, Color(0x0000FF), 2.0, &[(30.0, 400.0), (80.0, 430.0)]);
+    assert!(low.is_some());
+    wb.commit("ink below");
+    let reaching = render_page(&wb, &job, &opensheet_print::plan(&wb, &job), 0).unwrap();
+    assert!(reaching.ops.iter().any(|op| matches!(op, Op::Stroke { stroke, .. } if stroke.paint.color == Color(0x0000FF))));
+    // A draft leaves ink out with the other objects, and black and
+    // white prints it black.
+    wb.update_page_setup(0, |setup| setup.draft = true);
+    wb.commit("draft");
+    let draft = render_page(&wb, &job, &plan, 0).unwrap();
+    assert!(!draft.ops.iter().any(|op| matches!(op, Op::Stroke { stroke, .. } if stroke.cap == LineCap::Round)));
+    wb.update_page_setup(0, |setup| {
+        setup.draft = false;
+        setup.black_and_white = true;
+    });
+    wb.commit("black and white");
+    let grey = render_page(&wb, &job, &plan, 0).unwrap();
+    assert!(grey.ops.iter().any(|op| matches!(op, Op::Stroke { stroke, .. } if stroke.cap == LineCap::Round && stroke.paint.color == Color::BLACK)));
+    assert!(String::from_utf8_lossy(&print_pdf(&wb, &job)).contains("%PDF"));
+}

@@ -135,6 +135,8 @@ impl ExcelApp {
     pub(crate) fn write_unasked(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         // Preferences ▸ Calculation: "Recalculate workbook before saving".
         crate::features::preferences::before_save(&mut self.wb);
+        // The pictures with an artistic effect, as a file keeps them.
+        crate::features::drawings::before_save(&mut self.wb);
         match opensheet_io::save(&self.wb, self.sheet, &path) {
             Ok(()) => {
                 // Only the workbook formats keep everything; a CSV export
