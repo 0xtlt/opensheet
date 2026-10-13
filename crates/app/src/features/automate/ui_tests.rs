@@ -1064,3 +1064,142 @@ fn a_viewer_of_vba_proposes_nothing(cx: &mut TestAppContext) {
     let editor = cx.new(|cx| super::editor::CodeEditor::viewer("Sub A()\n  workbook.\nEnd Sub", super::syntax::Language::Vba, cx));
     assert_eq!(editor.update(cx, |editor, _| editor.proposed()), None);
 }
+
+// ------------------------------------------------------- find and replace
+
+use super::editor::Bar;
+
+const FIND_TEXT: &str = "function main(workbook: ExcelScript.Workbook) {\n  let range = workbook.getActiveWorksheet().getRange(\"A1\");\n  range.setValue(1);\n  let Range2 = range;\n}\n";
+
+/// The bar shown, how many matches, and the one the selection is on.
+fn found(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> (Option<Bar>, usize, Option<usize>) {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).found())
+}
+
+fn selected(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> String {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).buffer().selected_text().to_string())
+}
+
+#[gpui::test]
+fn find_next_and_previous_with_case_and_whole_words(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Find", FIND_TEXT);
+    let pane = edit(&app, cx, "Find");
+    assert_eq!(found(&pane, cx), (None, 0, None));
+
+    // ⌘F opens the bar; what is typed is looked for as it is typed.
+    cx.simulate_keystrokes("cmd-f");
+    cx.simulate_input("range");
+    redraw(cx);
+    assert_eq!(found(&pane, cx), (Some(Bar::Find), 5, Some(0)));
+    assert_eq!(selected(&pane, cx), "range");
+    assert!(cx.debug_bounds("ce-find-count").is_some());
+    assert_eq!(editor_text(&pane, cx), FIND_TEXT, "the query went to the bar, not to the script");
+
+    // Return goes to the next match, ⇧Return to the one before, round
+    // the ends of the text.
+    cx.simulate_keystrokes("enter");
+    assert_eq!((found(&pane, cx).2, selected(&pane, cx)), (Some(1), "Range".to_string()));
+    cx.simulate_keystrokes("enter enter enter enter");
+    assert_eq!(found(&pane, cx).2, Some(0));
+    cx.simulate_keystrokes("shift-enter");
+    assert_eq!(found(&pane, cx).2, Some(4));
+
+    // Match case, then whole words.
+    click(cx, "ce-find-case");
+    assert_eq!(found(&pane, cx).1, 3);
+    click(cx, "ce-find-case");
+    click(cx, "ce-find-word");
+    assert_eq!(found(&pane, cx).1, 3);
+    click(cx, "ce-find-word");
+    assert_eq!(found(&pane, cx).1, 5);
+    // The arrows of the bar.
+    click(cx, "ce-find-next");
+    click(cx, "ce-find-next");
+    click(cx, "ce-find-prev");
+    assert!(found(&pane, cx).2.is_some());
+
+    // Escape closes the bar and gives the keys back to the text; ⌘G and
+    // ⇧⌘G go on with the same search.
+    cx.simulate_keystrokes("escape");
+    assert_eq!(found(&pane, cx).0, None);
+    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Editor);
+    cx.simulate_keystrokes("cmd-up cmd-g");
+    assert_eq!((found(&pane, cx).2, selected(&pane, cx)), (Some(0), "range".to_string()));
+    cx.simulate_keystrokes("cmd-g cmd-g");
+    assert_eq!(found(&pane, cx).2, Some(2));
+    cx.simulate_keystrokes("cmd-shift-g");
+    assert_eq!(found(&pane, cx).2, Some(1));
+    // ⌘F again offers what is selected.
+    cx.simulate_keystrokes("right shift-alt-right cmd-f");
+    redraw(cx);
+    assert_eq!(found(&pane, cx).0, Some(Bar::Find));
+    // A query that is nowhere.
+    cx.simulate_input("nowhere");
+    assert_eq!(found(&pane, cx), (Some(Bar::Find), 0, None));
+}
+
+#[gpui::test]
+fn replace_one_and_replace_all_as_one_undo_step(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Replace", FIND_TEXT);
+    let pane = edit(&app, cx, "Replace");
+    cx.simulate_keystrokes("cmd-alt-f");
+    cx.simulate_input("range");
+    click(cx, "ce-find-case");
+    assert_eq!(found(&pane, cx), (Some(Bar::Replace), 3, Some(0)));
+    // Tab to the second field, the replacement, Return: the match under
+    // the selection is replaced and the next one selected.
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("cells");
+    cx.simulate_keystrokes("enter");
+    assert!(editor_text(&pane, cx).contains("let cells = workbook"));
+    assert_eq!((found(&pane, cx).1, selected(&pane, cx)), (2, "range".to_string()));
+    // The Replace button does the same.
+    click(cx, "ce-find-replace");
+    assert!(editor_text(&pane, cx).contains("cells.setValue(1);"));
+    cx.simulate_keystrokes("cmd-z cmd-z");
+    assert_eq!(editor_text(&pane, cx), FIND_TEXT);
+
+    // Replace All, without case: every match at once, and one ⌘Z brings
+    // them all back.
+    click(cx, "ce-find-case");
+    assert_eq!(found(&pane, cx).1, 5);
+    click(cx, "ce-find-all");
+    assert_eq!(
+        editor_text(&pane, cx),
+        "function main(workbook: ExcelScript.Workbook) {\n  let cells = workbook.getActiveWorksheet().getcells(\"A1\");\n  cells.setValue(1);\n  let cells2 = cells;\n}\n"
+    );
+    assert_eq!(found(&pane, cx).1, 0);
+    assert!(pane.update(cx, |pane, cx| pane.unsaved(cx)));
+    cx.simulate_keystrokes("escape cmd-z");
+    assert_eq!(editor_text(&pane, cx), FIND_TEXT);
+}
+
+#[gpui::test]
+fn go_to_line(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    script("Lines", FIND_TEXT);
+    let pane = edit(&app, cx, "Lines");
+    for keys in ["cmd-l", "ctrl-g"] {
+        cx.simulate_keystrokes(keys);
+        assert_eq!(found(&pane, cx).0, Some(Bar::GoToLine));
+        cx.simulate_input("3");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(found(&pane, cx).0, None);
+        assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 3);
+        cx.simulate_keystrokes("cmd-up");
+    }
+    // A line beyond the last is the last; what is no number goes nowhere.
+    cx.simulate_keystrokes("cmd-l");
+    cx.simulate_input("99");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 6);
+    cx.simulate_keystrokes("cmd-l");
+    cx.simulate_input("x");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 6);
+    // The keys are back in the text.
+    cx.simulate_input("// end");
+    assert!(editor_text(&pane, cx).ends_with("// end"));
+}

@@ -1362,6 +1362,10 @@ pub static ES: &[(&str, &str)] = &[
     ("Copy as code", "Copiar como código"),
     ("This action was not recorded.", "Esta acción no se grabó."),
     ("Make changes in the workbook: each action appears here as it is recorded.", "Realice cambios en el libro: cada acción aparece aquí a medida que se graba."),
+    ("Find whole words only", "Sólo palabras completas"),
+    ("Find Previous", "Buscar anterior"),
+    ("Go to line", "Ir a la línea"),
+    ("No results", "Sin resultados"),
     // ---- Conditional formatting ----
     ("Greater Than…", "Es mayor que…"),
     ("Less Than…", "Es menor que…"),
@@ -5004,6 +5008,10 @@ pub static DE: &[(&str, &str)] = &[
     ("Copy as code", "Als Code kopieren"),
     ("This action was not recorded.", "Diese Aktion wurde nicht aufgezeichnet."),
     ("Make changes in the workbook: each action appears here as it is recorded.", "Nehmen Sie Änderungen an der Arbeitsmappe vor: Jede Aktion erscheint hier, sobald sie aufgezeichnet wird."),
+    ("Find whole words only", "Nur ganzes Wort suchen"),
+    ("Find Previous", "Vorheriges suchen"),
+    ("Go to line", "Gehe zu Zeile"),
+    ("No results", "Keine Ergebnisse"),
     // ---- Conditional formatting ----
     ("Greater Than…", "Größer als…"),
     ("Less Than…", "Kleiner als…"),
@@ -8640,6 +8648,10 @@ pub static IT: &[(&str, &str)] = &[
     ("Copy as code", "Copia come codice"),
     ("This action was not recorded.", "Questa azione non è stata registrata."),
     ("Make changes in the workbook: each action appears here as it is recorded.", "Apportare modifiche alla cartella di lavoro: ogni azione viene visualizzata qui man mano che viene registrata."),
+    ("Find whole words only", "Solo parole intere"),
+    ("Find Previous", "Trova precedente"),
+    ("Go to line", "Vai alla riga"),
+    ("No results", "Nessun risultato"),
     // ---- Conditional formatting ----
     ("Greater Than…", "Maggiore di…"),
     ("Less Than…", "Minore di…"),

@@ -26,6 +26,7 @@ mod samples;
 #[cfg(test)]
 mod sample_tests;
 mod scripts;
+mod search;
 mod syntax;
 #[cfg(test)]
 mod ui_tests;
