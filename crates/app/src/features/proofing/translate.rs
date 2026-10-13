@@ -10,7 +10,7 @@ use super::system::{self, TranslateError, Translation, Translator};
 use crate::app::ExcelApp;
 use crate::features::preferences::settings;
 use crate::features::{ChangeCause, Cx, Intent};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use crate::theme::{self, c};
 use crate::widgets::text_area::{AreaEvent, TextArea};
 use crate::widgets::{Button, Select, label};
@@ -316,7 +316,7 @@ impl Render for TranslatePane {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(label(t("From", "De")))
+                    .child(label(t_ctx("translate", "From", "De")))
                     .child(
                         Select::new("translate-from", from_names, from_index)
                             .width(190.0)
@@ -337,7 +337,7 @@ impl Render for TranslatePane {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(label(t("To", "À")))
+                    .child(label(t_ctx("translate", "To", "À")))
                     .child(
                         Select::new("translate-to", names, to_index)
                             .width(190.0)
