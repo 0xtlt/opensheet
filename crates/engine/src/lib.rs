@@ -36,6 +36,7 @@ pub mod paste_special;
 pub mod pivot;
 pub mod protect;
 pub mod recalc;
+pub mod slicer;
 pub mod refs;
 pub mod sparkline;
 pub mod structured;

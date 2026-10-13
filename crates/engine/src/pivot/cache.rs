@@ -76,13 +76,30 @@ pub struct CacheField {
     /// Number format of the source column: dates are labelled with it.
     pub num_fmt: Arc<str>,
     pub group: Option<FieldGroup>,
+    /// The formula of a calculated field, in English, naming the fields
+    /// it computes from (`Sales-Cost`, `'Unit Price'*Units`). Such a field
+    /// has no values of its own: it is only ever a value field.
+    pub formula: Option<String>,
+}
+
+/// A calculated item: an item added to a field, computed from the other
+/// items of that field (`calculatedItem`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CalcItem {
+    /// The field the item belongs to.
+    pub field: usize,
+    /// Its label: the item is the one of `CacheField::shared` reading so.
+    pub name: String,
+    /// In English, naming items of the field (`East+West`).
+    pub formula: String,
 }
 
 impl CacheField {
-    /// False for a field created by grouping another one: it has no column
-    /// in the source (`databaseField="0"`).
+    /// False for a field created by grouping another one and for a
+    /// calculated field: they have no column in the source
+    /// (`databaseField="0"`).
     pub fn is_database(&self) -> bool {
-        self.group.as_ref().is_none_or(|g| g.base.is_none())
+        self.formula.is_none() && self.group.as_ref().is_none_or(|g| g.base.is_none())
     }
 
     /// The items the field shows in a report: its groups when it is
@@ -100,6 +117,9 @@ pub struct PivotCache {
     pub fields: Vec<CacheField>,
     /// Number of source records.
     pub rows: usize,
+    /// The calculated items, in solve order: where two of them meet, the
+    /// later one gives the value.
+    pub calc_items: Vec<CalcItem>,
 }
 
 /// Identity of an item: text compares without case, as Excel merges
@@ -200,9 +220,14 @@ impl PivotCache {
                 records,
                 num_fmt,
                 group: None,
+                formula: None,
             });
         }
-        PivotCache { fields: out, rows }
+        PivotCache {
+            fields: out,
+            rows,
+            calc_items: Vec::new(),
+        }
     }
 
     /// Read the source records. Fails as Excel does when the source is not
@@ -287,9 +312,14 @@ impl PivotCache {
                 records: column,
                 num_fmt: formats[k].take().unwrap_or_else(|| general.clone()),
                 group: None,
+                formula: None,
             });
         }
-        Ok(PivotCache { fields, rows: n })
+        Ok(PivotCache {
+            fields,
+            rows: n,
+            calc_items: Vec::new(),
+        })
     }
 
     /// Index of the field named `name`, compared without case.
@@ -347,9 +377,10 @@ impl PivotCache {
     /// True when every value of the field is a number: Excel then sums it
     /// by default, and counts it otherwise.
     pub fn is_numeric(&self, field: usize) -> bool {
+        // A calculated field computes numbers.
         self.fields
             .get(field)
-            .is_some_and(|f| !f.shared.is_empty() && f.shared.iter().all(Value::is_number))
+            .is_some_and(|f| f.formula.is_some() || (!f.shared.is_empty() && f.shared.iter().all(Value::is_number)))
     }
 
     /// True for a numeric field formatted as dates or times.
@@ -467,6 +498,7 @@ impl PivotCache {
                 records: Vec::new(),
                 num_fmt: Arc::from("General"),
                 group: Some(group),
+                formula: None,
             });
         }
         Ok((out, created))
@@ -610,6 +642,7 @@ impl PivotCache {
                         items,
                         map,
                     }),
+                    formula: None,
                 });
                 let parent = out.fields.len() - 1;
                 Ok((out, parent))
@@ -720,9 +753,19 @@ impl PivotCache {
             }
             fields.push(f);
         }
+        let calc_items = self
+            .calc_items
+            .iter()
+            .filter(|item| !gone[item.field])
+            .map(|item| CalcItem {
+                field: new_index[item.field],
+                ..item.clone()
+            })
+            .collect();
         PivotCache {
             fields,
             rows: self.rows,
+            calc_items,
         }
     }
 
@@ -846,6 +889,7 @@ impl PivotCache {
                         records: Vec::new(),
                         num_fmt: of.num_fmt.clone(),
                         group: Some(group),
+                        formula: None,
                     });
                 }
             }

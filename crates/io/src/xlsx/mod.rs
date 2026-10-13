@@ -49,6 +49,8 @@ mod page;
 mod parts;
 mod pivot;
 mod protection;
+mod slicer;
+mod timeline;
 mod sparkline;
 pub(crate) mod read;
 mod stylerefs;

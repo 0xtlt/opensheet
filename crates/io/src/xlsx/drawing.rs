@@ -453,6 +453,26 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
         insert_before_end(&mut parts[at].xml, ROOT_END, &anchors);
         insert_before_end(&mut parts[at].rels, RELS_END, &rels);
     }
+    // Slicers and timelines are frames of the same parts, after the rest.
+    for (index, sheet) in wb.sheets.iter().enumerate() {
+        // Their ids come after those of the charts, the pictures, the
+        // shapes and the strokes drawn by hand.
+        let anchors = super::slicer::anchors(sheet, sheet.charts.len() + sheet.drawings.len() + sheet.inks.len() + 2);
+        if anchors.is_empty() {
+            continue;
+        }
+        let at = parts.iter().position(|part| part.sheet == index).unwrap_or_else(|| {
+            parts.push(DrawingPart {
+                sheet: index,
+                number: 0,
+                xml: format!("{XML_DECL}<xdr:wsDr xmlns:xdr=\"{NS_SHEET_DRAWING}\" xmlns:a=\"{NS_DRAWING}\">{ROOT_END}"),
+                rels: format!("{XML_DECL}<Relationships xmlns=\"{NS_PKG_REL}\">{RELS_END}"),
+                charts: Vec::new(),
+            });
+            parts.len() - 1
+        });
+        insert_before_end(&mut parts[at].xml, ROOT_END, &anchors);
+    }
     // One part per sheet, numbered in the order of the sheets.
     parts.sort_by_key(|part| part.sheet);
     for (n, part) in parts.iter_mut().enumerate() {

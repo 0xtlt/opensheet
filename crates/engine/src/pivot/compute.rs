@@ -10,6 +10,7 @@
 //! blank lines), and the grid is the product of the two lists of lines.
 
 use super::text::{self, Caption};
+use super::calc::CalcFormula;
 use super::{
     Aggregation, AxisField, BaseItem, FieldLayout, FilterKind, LabelFilter, PivotTable, ShowAs, SortOrder, Subtotals,
     Top10By, ValueFilter,
@@ -19,6 +20,7 @@ use crate::format;
 use crate::functions::wildcard_match;
 use crate::locale::Locale;
 use crate::value::{ErrorKind, Value};
+use crate::workbook::Workbook;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -647,6 +649,61 @@ struct Engine<'a> {
     rec_col: Vec<u32>,
     cube: FastMap<u32>,
     accs: Vec<Acc>,
+    /// Accumulators per cell: one per value field, then one per field the
+    /// calculated fields compute from.
+    stride: usize,
+    calc: Calculated,
+}
+
+/// The calculated fields and items of the cache, ready to be computed.
+#[derive(Default)]
+struct Calculated {
+    /// Per field of the cache: the formula of a calculated field.
+    fields: Vec<Option<CalcFormula>>,
+    /// The fields whose sums the calculated fields need, each with an
+    /// accumulator of its own after those of the value fields.
+    summed: Vec<usize>,
+    /// The calculated items in solve order: field, item, formula over the
+    /// items of the field.
+    items: Vec<(usize, u32, CalcFormula)>,
+    /// Any workbook: the functions of a formula are computed in one.
+    scratch: Option<Workbook>,
+}
+
+impl Calculated {
+    fn of(p: &PivotTable) -> Calculated {
+        let cache = &p.cache;
+        let names = cache.field_names();
+        let fields: Vec<Option<CalcFormula>> = cache
+            .fields
+            .iter()
+            .map(|f| CalcFormula::parse(f.formula.as_ref()?, &names, Locale::en()).ok())
+            .collect();
+        let mut summed: Vec<usize> = Vec::new();
+        for formula in fields.iter().flatten() {
+            for used in &formula.uses {
+                if fields[*used].is_none() && !summed.contains(used) {
+                    summed.push(*used);
+                }
+            }
+        }
+        let items: Vec<(usize, u32, CalcFormula)> = cache
+            .calc_items
+            .iter()
+            .filter_map(|item| {
+                let x = cache.calc_item_index(item)?;
+                let formula = CalcFormula::parse(&item.formula, &cache.item_names(item.field), Locale::en()).ok()?;
+                Some((item.field, x, formula))
+            })
+            .collect();
+        let any = fields.iter().any(Option::is_some) || !items.is_empty();
+        Calculated {
+            fields,
+            summed,
+            items,
+            scratch: any.then(|| Workbook::new(Locale::en())),
+        }
+    }
 }
 
 /// Collapsed state and custom captions of the items of a field, by item.
@@ -807,7 +864,10 @@ impl<'a> Engine<'a> {
             rec_col: vec![NONE; n],
             cube: FastMap::default(),
             accs: Vec::new(),
+            stride: p.data_fields.len(),
+            calc: Calculated::of(p),
         };
+        e.stride += e.calc.summed.len();
         e.rows = e.axis(true);
         e.cols = e.axis(false);
         let used = e
@@ -936,6 +996,13 @@ impl<'a> Engine<'a> {
         let mut used: Vec<(usize, Option<Option<u32>>)> =
             p.page_fields.iter().map(|pf| (pf.field, Some(pf.item))).collect();
         used.extend(self.rows.fields.iter().chain(&self.cols.fields).map(|f| (*f, None)));
+        // A slicer or a timeline filters its field wherever it is.
+        let dated = p.filters.iter().filter(|x| matches!(x.kind, FilterKind::Date { .. })).map(|x| x.field);
+        for f in p.sliced.iter().copied().chain(dated) {
+            if !used.iter().any(|(u, _)| *u == f) {
+                used.push((f, None));
+            }
+        }
         for (f, page) in used {
             let Some(pf) = p.fields.get(f) else {
                 continue;
@@ -972,6 +1039,15 @@ impl<'a> Engine<'a> {
                                 *v = false;
                             }
                         }
+                    }
+                }
+            }
+            for filter in p.filters.iter().filter(|x| x.field == f) {
+                if let FilterKind::Date { start, end } = filter.kind {
+                    for (v, item) in vis.iter_mut().zip(p.cache.items(f)) {
+                        // Whole days: a time of day does not put a record
+                        // outside its day.
+                        *v &= matches!(item, Value::Number(n) if n.floor() >= start && n.floor() <= end);
                     }
                 }
             }
@@ -1021,7 +1097,7 @@ impl<'a> Engine<'a> {
         let p = self.p;
         for filter in &p.filters {
             let (data, test): (usize, Rejects) = match &filter.kind {
-                FilterKind::Label(_) => continue,
+                FilterKind::Label(_) | FilterKind::Date { .. } => continue,
                 FilterKind::Value { data_field, test } => {
                     let test = *test;
                     (
@@ -1060,6 +1136,10 @@ impl<'a> Engine<'a> {
             let Some(cf) = p.cache.fields.get(source) else {
                 continue;
             };
+            // A calculated field has no values of its own to filter by.
+            if cf.formula.is_some() {
+                continue;
+            }
             let mut accs = vec![Acc::EMPTY; tree.nodes.len()];
             for (r, leaf) in leaves.iter().enumerate() {
                 if *leaf != NONE {
@@ -1128,15 +1208,19 @@ impl<'a> Engine<'a> {
     /// Accumulate the value fields per pair of leaves, then roll the pairs
     /// up to every pair of ancestors.
     fn aggregate(&mut self) {
-        let nd = self.nd;
-        if nd == 0 {
+        // `nd` accumulators per cell: those of the value fields, then
+        // those of the fields calculated fields compute from.
+        let nd = self.stride;
+        if self.nd == 0 {
             return;
         }
         let p = self.p;
         let sources: Vec<(&[Value], &[u32])> = p
             .data_fields
             .iter()
-            .map(|d| match p.cache.fields.get(p.cache.database_field(d.field)) {
+            .map(|d| p.cache.database_field(d.field))
+            .chain(self.calc.summed.iter().copied())
+            .map(|f| match p.cache.fields.get(f) {
                 Some(cf) => (&cf.shared[..], &cf.records[..]),
                 None => (&[][..], &[][..]),
             })
@@ -1193,8 +1277,191 @@ impl<'a> Engine<'a> {
 
     /// The summary of a value field over a pair of nodes.
     fn raw(&self, rn: u32, cn: u32, d: usize, f: Aggregation) -> Option<Value> {
-        let cell = *self.cube.get(&pair(rn, cn))?;
-        self.accs.get(cell as usize * self.nd + d)?.result(f)
+        self.raw_at(rn, cn, d, f, 0)
+    }
+
+    /// `raw`, `depth` formulas deep: calculated items compute from the
+    /// cells of other items, which may be calculated too.
+    fn raw_at(&self, rn: u32, cn: u32, d: usize, f: Aggregation, depth: u8) -> Option<Value> {
+        if !self.calc.items.is_empty() && depth < 12 {
+            // Where the formulas of two calculated items meet, the last
+            // one in solve order gives the value.
+            let hit = [self.calc_item_at(true, rn), self.calc_item_at(false, cn)].into_iter().flatten().max_by_key(|h| h.0);
+            if let Some((order, rows, level)) = hit {
+                return Some(self.calc_item_value(order, rows, level, (rn, cn), d, f, depth));
+            }
+        }
+        let field = self.p.data_fields.get(d)?.field;
+        let plain = if self.calc.fields.get(field).is_some_and(Option::is_some) {
+            let cell = *self.cube.get(&pair(rn, cn))?;
+            Some(self.calc_field_value(cell as usize, field, 0))
+        } else {
+            let cell = self.cube.get(&pair(rn, cn));
+            cell.and_then(|cell| self.accs.get(*cell as usize * self.stride + d)?.result(f))
+        };
+        if self.calc.items.is_empty() || depth >= 12 || f != Aggregation::Sum {
+            return plain;
+        }
+        // Subtotals and grand totals take the calculated items in.
+        let mut extra: Option<f64> = None;
+        for (rows, node) in [(true, rn), (false, cn)] {
+            for below in self.calc_items_below(rows, node) {
+                let v = if rows { self.raw_at(below, cn, d, f, depth + 1) } else { self.raw_at(rn, below, d, f, depth + 1) };
+                if let Some(Value::Number(n)) = v {
+                    extra = Some(extra.unwrap_or(0.0) + n);
+                }
+            }
+        }
+        match (plain, extra) {
+            (Some(Value::Number(n)), Some(more)) => Some(Value::Number(n + more)),
+            (None, Some(more)) => Some(Value::Number(more)),
+            (plain, _) => plain,
+        }
+    }
+
+    /// The value of a calculated field over the records of a cell: its
+    /// formula applied to the sums of the fields it names.
+    fn calc_field_value(&self, cell: usize, field: usize, depth: u8) -> Value {
+        let (Some(Some(formula)), Some(scratch)) = (self.calc.fields.get(field), &self.calc.scratch) else {
+            return Value::Error(ErrorKind::Name);
+        };
+        let sum = |used: usize| -> Result<f64, ErrorKind> {
+            if self.calc.fields.get(used).is_some_and(Option::is_some) {
+                // Another calculated field; one that computes from itself
+                // stops here.
+                if depth >= 12 {
+                    return Err(ErrorKind::Ref);
+                }
+                return match self.calc_field_value(cell, used, depth + 1) {
+                    Value::Number(n) => Ok(n),
+                    Value::Error(e) => Err(e),
+                    _ => Ok(0.0),
+                };
+            }
+            let Some(slot) = self.calc.summed.iter().position(|f| *f == used) else {
+                return Err(ErrorKind::Name);
+            };
+            match self.accs.get(cell * self.stride + self.nd + slot).and_then(|acc| acc.result(Aggregation::Sum)) {
+                Some(Value::Number(n)) => Ok(n),
+                Some(Value::Error(e)) => Err(e),
+                _ => Ok(0.0),
+            }
+        };
+        formula.compute(&sum, scratch)
+    }
+
+    /// The fields of an axis that have calculated items, with the depth of
+    /// their nodes.
+    fn calc_levels(&self, rows: bool) -> impl Iterator<Item = (u8, usize)> + '_ {
+        let fields = if rows { &self.rows.fields } else { &self.cols.fields };
+        fields
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| self.calc.items.iter().any(|(field, ..)| field == *f))
+            .map(|(k, f)| (k as u8 + 1, *f))
+    }
+
+    /// The calculated item a node lies under, if any: its place in the
+    /// solve order, the axis, and the depth of the item's node.
+    fn calc_item_at(&self, rows: bool, node: u32) -> Option<(usize, bool, u8)> {
+        let tree = if rows { &self.row_tree } else { &self.col_tree };
+        self.calc_levels(rows)
+            .filter_map(|(level, field)| {
+                let a = tree.ancestor(node, level);
+                let item = tree.nodes.get(a as usize)?.item;
+                let order = self.calc.items.iter().position(|(f, x, _)| *f == field && *x == item)?;
+                Some((order, rows, level))
+            })
+            .max_by_key(|h| h.0)
+    }
+
+    /// The nodes of calculated items under a node that is above them.
+    fn calc_items_below(&self, rows: bool, node: u32) -> Vec<u32> {
+        let tree = if rows { &self.row_tree } else { &self.col_tree };
+        let mut out = Vec::new();
+        let Some(start) = tree.nodes.get(node as usize) else {
+            return out;
+        };
+        for (level, field) in self.calc_levels(rows) {
+            if start.depth >= level {
+                continue;
+            }
+            // Walk down to the level of the field.
+            let mut at = vec![node];
+            for _ in start.depth..level {
+                at = at.iter().flat_map(|n| tree.nodes[*n as usize].children.iter().copied()).collect();
+            }
+            out.extend(at.into_iter().filter(|n| {
+                let item = tree.nodes[*n as usize].item;
+                self.calc.items.iter().any(|(f, x, _)| *f == field && *x == item)
+            }));
+        }
+        out
+    }
+
+    /// The value of a cell under a calculated item: its formula applied to
+    /// the cells that stand to the other items as this one to its own.
+    #[allow(clippy::too_many_arguments)]
+    fn calc_item_value(&self, order: usize, rows: bool, level: u8, at: (u32, u32), d: usize, f: Aggregation, depth: u8) -> Value {
+        let (rn, cn) = at;
+        let (Some((_, _, formula)), Some(scratch)) = (self.calc.items.get(order), &self.calc.scratch) else {
+            return Value::Error(ErrorKind::Name);
+        };
+        let tree = if rows { &self.row_tree } else { &self.col_tree };
+        let index = if rows { &self.row_index } else { &self.col_index };
+        let Some((own, below)) = self.split(rows, if rows { rn } else { cn }, level) else {
+            return Value::Error(ErrorKind::Ref);
+        };
+        let parent = tree.nodes[own as usize].parent;
+        let cell = |item: usize| -> Result<f64, ErrorKind> {
+            let Some(node) = index.get(&pair(parent, item as u32)).and_then(|n| self.descend(rows, *n, &below)) else {
+                // The item has nothing here.
+                return Ok(0.0);
+            };
+            let v = if rows { self.raw_at(node, cn, d, f, depth + 1) } else { self.raw_at(rn, node, d, f, depth + 1) };
+            match v {
+                Some(Value::Number(n)) => Ok(n),
+                Some(Value::Error(e)) => Err(e),
+                _ => Ok(0.0),
+            }
+        };
+        formula.compute(&cell, scratch)
+    }
+
+    /// Give every calculated item its nodes: one under each node above its
+    /// field, with below it the items its siblings have.
+    fn add_calc_items(&mut self, rows: bool) {
+        let levels: Vec<(u8, usize)> = self.calc_levels(rows).collect();
+        for (level, field) in levels {
+            let wanted: Vec<u32> = self
+                .calc
+                .items
+                .iter()
+                .filter(|(f, x, _)| *f == field && self.visible[field].as_ref().is_none_or(|vis| vis.get(*x as usize).copied().unwrap_or(false)))
+                .map(|(_, x, _)| *x)
+                .collect();
+            let (tree, index) = if rows {
+                (&mut self.row_tree, &mut self.row_index)
+            } else {
+                (&mut self.col_tree, &mut self.col_index)
+            };
+            let parents: Vec<u32> = (0..tree.nodes.len() as u32).filter(|n| tree.nodes[*n as usize].depth + 1 == level).collect();
+            for parent in parents {
+                let siblings = tree.nodes[parent as usize].children.clone();
+                for x in &wanted {
+                    let node = tree.child(index, parent, *x);
+                    // Copy the shape of what the siblings have below them.
+                    let mut todo: Vec<(u32, u32)> = siblings.iter().filter(|s| **s != node).map(|s| (*s, node)).collect();
+                    while let Some((from, to)) = todo.pop() {
+                        for child in tree.nodes[from as usize].children.clone() {
+                            let item = tree.nodes[child as usize].item;
+                            let copy = tree.child(index, to, item);
+                            todo.push((child, copy));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Put the children of every node in display order.
@@ -1856,6 +2123,8 @@ impl<'a> Engine<'a> {
         (self.col_tree, self.col_index, self.rec_col) = self.build_tree(&col_fields);
         self.add_empty_items(true);
         self.add_empty_items(false);
+        self.add_calc_items(true);
+        self.add_calc_items(false);
         self.aggregate();
         self.sort_tree(true);
         self.sort_tree(false);

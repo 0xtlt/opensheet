@@ -105,6 +105,9 @@ pub struct Sheet {
     pub pivots: Vec<crate::pivot::PivotTable>,
     /// Pictures and shapes floating over the cells, see `drawing.rs`.
     pub drawings: Vec<crate::drawing::Drawing>,
+    /// Slicers and timelines floating over the cells, see `slicer.rs`.
+    pub slicers: Vec<crate::slicer::Slicer>,
+    pub timelines: Vec<crate::slicer::Timeline>,
     /// Strokes drawn by hand (the Draw tab), see `ink.rs`.
     pub inks: Vec<crate::ink::Ink>,
     /// The part this sheet has in each custom view, see `custom_view.rs`.
@@ -157,6 +160,8 @@ impl Sheet {
             page: crate::page::PageSetup::default(),
             pivots: Vec::new(),
             drawings: Vec::new(),
+            slicers: Vec::new(),
+            timelines: Vec::new(),
             inks: Vec::new(),
             custom_views: Vec::new(),
             hyperlinks: Vec::new(),

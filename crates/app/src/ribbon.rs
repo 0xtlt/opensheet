@@ -7,7 +7,7 @@
 use crate::app::*;
 use crate::features::{
     self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, protection, tables, themes, validation,
+    pivot, protection, slicers, tables, themes, validation,
 };
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -1439,6 +1439,11 @@ impl ExcelApp {
             .into_any_element(),
             group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
+                t("PivotChart", "Graphique croisé dynamique"),
+                row(vec![self.cmd_large("in-pivot-chart", pivot::Cmd::PivotChart, false, cx)]),
+            )
+            .into_any_element(),
+            group(
                 t("Sparklines", "Graphiques sparkline"),
                 row(vec![self.cmd_large("in-sparklines", features::sparklines::Cmd::Menu, true, cx)]),
             )
@@ -1446,8 +1451,8 @@ impl ExcelApp {
             group(
                 t("Filters", "Filtres"),
                 row(vec![
-                    self.cmd_large("in-slicer", tables::Cmd::InsertSlicer, false, cx),
-                    self.cmd_large("in-timeline", pivot::Cmd::InsertTimeline, false, cx),
+                    self.cmd_large("in-slicer", slicers::Cmd::InsertSlicer, false, cx),
+                    self.cmd_large("in-timeline", slicers::Cmd::InsertTimeline, false, cx),
                 ]),
             )
             .into_any_element(),

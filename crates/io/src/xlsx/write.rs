@@ -969,6 +969,7 @@ impl SheetWriter<'_> {
         validation::write_ext(&mut ext, sheet, self.wb);
         extensions.push(ext);
         extensions.push(super::sparkline::ext(sheet));
+        super::slicer::write_ext(&mut extensions, sheet);
         extensions.write(&mut x);
         x.push_str("</worksheet>");
         x
@@ -1008,9 +1009,13 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         || page::has_names(wb)
         || super::filter::has_names(wb)
         || super::datatools::has_names(wb)
+        || super::slicer::has_names(wb)
         || super::custom_view::has_names(wb)
     {
         x.push_str("<definedNames>");
+        // The caches of the slicers and of the timelines, which Excel
+        // also lists as names without a value.
+        super::slicer::push_names(&mut x, wb);
         // The cells each imported text file fills.
         super::datatools::push_names(&mut x, wb);
         // The ranges of the sheets' filters, which Excel keeps as hidden
