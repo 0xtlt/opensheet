@@ -3564,3 +3564,55 @@ fn list_formulas_writes_a_sheet() {
         "Calculated Field||\nSolve Order|Field|Formula\n1|Price|=Sales/Units\n||\nCalculated Item||\nSolve Order|Item|Formula\n1|'All of it'|=East+West\n||\n||\nNote:||"
     );
 }
+
+// ---- pivot charts ---------------------------------------------------------------
+
+#[test]
+fn a_pivot_chart_follows_its_report() {
+    use crate::chart::{ChartKind, SeriesName};
+    let (mut wb, id) = sales(Locale::en());
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en());
+        p.add_field(SALES_F, Area::Values, None, Locale::en());
+    });
+    assert_eq!(wb.add_pivot_chart(1, id, ChartKind::Scatter), Err(PivotError::ChartKind));
+    assert_eq!(wb.add_pivot_chart(1, id, ChartKind::Bubble), Err(PivotError::ChartKind));
+    let chart = wb.add_pivot_chart(1, id, ChartKind::Column).unwrap();
+    wb.commit("chart");
+    let sheet = wb.sheets[1].name.clone();
+    let shown = |wb: &Workbook| {
+        let c = wb.chart(1, chart).unwrap();
+        let data = wb.chart_data(1, c);
+        (data.categories.clone(), data.series.iter().map(|s| (s.name.clone(), s.values.clone())).collect::<Vec<_>>())
+    };
+    // One series, the totals left out.
+    assert_eq!(
+        shown(&wb),
+        (vec!["East".to_string(), "West".to_string()], vec![("Sum of Sales".to_string(), vec![Some(370.0), Some(320.0)])])
+    );
+    assert_eq!(wb.chart(1, chart).unwrap().series[0].values.to_text(), format!("{sheet}!$B$4:$B$5"));
+    assert_eq!(wb.pivot_of_chart(chart).map(|(si, p, link)| (si, p.id, link.buttons)), Some((1, id, true)));
+
+    // A column field: one series per year, named by the cells above.
+    wb.update_chart(1, chart, |c| c.series[0].color = Some(Color(0x123456)));
+    update(&mut wb, id, |p| p.add_field(YEAR, Area::Columns, None, Locale::en()));
+    let (categories, series) = shown(&wb);
+    assert_eq!(categories, ["East", "West"]);
+    assert_eq!(series, [("2023".to_string(), vec![Some(250.0), Some(200.0)]), ("2024".to_string(), vec![Some(120.0), Some(120.0)])]);
+    let c = wb.chart(1, chart).unwrap();
+    assert!(matches!(c.series[1].name, SeriesName::Cell(_)));
+    assert_eq!(c.series[0].color, Some(Color(0x123456)), "the first series keeps its colour");
+    // A filter on the report is a filter on the chart; undo restores both.
+    update(&mut wb, id, |p| p.set_item_hidden(REGION, 0, true));
+    assert_eq!(shown(&wb).0, ["West"]);
+    assert!(wb.undo());
+    assert_eq!(shown(&wb).0, ["East", "West"]);
+    let fields = wb.pivot(id).unwrap().1.chart_fields();
+    assert_eq!((fields.axis, fields.legend, fields.values), (vec!["Region".to_string()], vec!["Year".to_string()], vec!["Sum of Sales".to_string()]));
+    // Once the chart is deleted the PivotTable forgets it.
+    assert!(wb.set_pivot_chart_buttons(chart, false));
+    assert!(wb.remove_chart(1, chart));
+    wb.pivot_refresh(id, false).unwrap();
+    wb.commit("refresh");
+    assert!(wb.pivot(id).unwrap().1.charts.is_empty());
+}

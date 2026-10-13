@@ -313,6 +313,7 @@ impl Workbook {
                 }
             }
         }
+        let written: Vec<u32> = placed.iter().map(|x| x.pivot.id).collect();
         for mut x in placed {
             self.pivot_write(&x);
             x.pivot.location = Some(x.body);
@@ -325,6 +326,8 @@ impl Workbook {
                 None => pivots.push(x.pivot),
             }
         }
+        // PivotCharts follow the reports just written.
+        self.sync_pivot_charts(&written);
         Ok(())
     }
 

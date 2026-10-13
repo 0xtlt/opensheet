@@ -18,6 +18,7 @@
 
 mod cache;
 mod calc;
+mod chart;
 mod commands;
 mod compute;
 mod getdata;
@@ -29,6 +30,7 @@ mod text;
 
 pub use cache::{CacheField, CalcItem, FieldGroup, GroupBy, GroupKind, PivotCache};
 pub use calc::{CalcFormula, ListLabels};
+pub use chart::{PivotChartFields, PivotChartLink, chart_kind_allowed};
 pub use commands::PivotDestination;
 pub use compute::{Report, ReportLine, ReportLineKind};
 pub use getdata::get_pivot_data;
@@ -529,6 +531,8 @@ pub struct PivotTable {
     /// The fields a slicer filters: their unchecked items are left out
     /// even while the field is in none of the areas.
     pub sliced: Vec<usize>,
+    /// The PivotCharts: charts whose series are made from the report.
+    pub charts: Vec<PivotChartLink>,
     pub options: PivotOptions,
     pub style: PivotStyle,
     /// The cells the report occupies since it was last written
@@ -588,6 +592,9 @@ pub enum PivotError {
     ItemsWithRepeatedField,
     ItemsInGroupedField,
     ItemsInPageField,
+    /// "PivotChart reports cannot use XY (Scatter), Bubble, or Stock
+    /// chart types."
+    ChartKind,
 }
 
 /// The part of a PivotTable a cell belongs to.
@@ -679,6 +686,7 @@ impl PivotTable {
             data_fields: Vec::new(),
             filters: Vec::new(),
             sliced: Vec::new(),
+            charts: Vec::new(),
             options: PivotOptions::default(),
             style: PivotStyle::default(),
             location: None,
@@ -1855,6 +1863,9 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
         for p in &mut sh.pivots {
             next += 1;
             p.id = next;
+            // The charts of the original stay its own; the copies of
+            // them on this sheet are plain charts.
+            p.charts.clear();
         }
     }
 }

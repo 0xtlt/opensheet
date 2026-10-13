@@ -1254,6 +1254,108 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras, dxfs: &mut Dxfs) {
     }
 }
 
+// ---- pivot charts -------------------------------------------------------------
+
+const NS_C14: &str = "http://schemas.microsoft.com/office/drawing/2007/8/2/chart";
+const EXT_PIVOT_OPTIONS: &str = "{781A3756-C4B2-4CAC-9D66-4F8BD8637D16}";
+
+/// A sheet name as a reference writes it.
+fn quoted_sheet(name: &str) -> String {
+    let plain = name.chars().all(|ch| ch.is_alphanumeric() || ch == '_') && !name.starts_with(|ch: char| ch.is_ascii_digit());
+    if plain { name.to_string() } else { format!("'{}'", name.replace('\'', "''")) }
+}
+
+/// The part of a chart, completed with what makes it a PivotChart when
+/// `chart` is bound to a PivotTable: the name of the table before the
+/// chart (`c:pivotSource`), a format per series inside it
+/// (`c:pivotFmts`), and the field buttons in the extensions.
+pub(crate) fn bind_chart(wb: &Workbook, chart: &opensheet_engine::chart::Chart, mut xml: String) -> String {
+    let Some((sheet, p, link)) = wb.pivot_of_chart(chart.id) else {
+        return xml;
+    };
+    // Excel writes the name of the workbook file in brackets and does not
+    // mind when the file was renamed since.
+    let mut source = String::from("<c:pivotSource><c:name>");
+    super::xml::push_text(&mut source, &format!("[workbook.xlsx]{}!{}", quoted_sheet(&wb.sheets[sheet].name), p.name));
+    source.push_str("</c:name><c:fmtId val=\"0\"/></c:pivotSource>");
+    if let Some(at) = xml.find("<c:chart>") {
+        xml.insert_str(at, &source);
+    }
+    let mut formats = String::from("<c:pivotFmts>");
+    for index in 0..chart.series.len() {
+        w!(formats, "<c:pivotFmt><c:idx val=\"{index}\"/><c:marker><c:symbol val=\"none\"/></c:marker></c:pivotFmt>");
+    }
+    formats.push_str("</c:pivotFmts>");
+    // After the title and `autoTitleDeleted`, which open the chart.
+    let after = xml.find("<c:autoTitleDeleted").and_then(|at| xml[at..].find("/>").map(|end| at + end + 2));
+    let after = after.or_else(|| xml.find("<c:chart>").map(|at| at + "<c:chart>".len()));
+    if let Some(at) = after {
+        xml.insert_str(at, &formats);
+    }
+    if let Some(at) = xml.rfind("</c:chartSpace>") {
+        let shown = u8::from(link.buttons);
+        xml.insert_str(
+            at,
+            &format!(
+                "<c:extLst><c:ext uri=\"{EXT_PIVOT_OPTIONS}\" xmlns:c14=\"{NS_C14}\"><c14:pivotOptions><c14:dropZoneFilter val=\"{shown}\"/><c14:dropZoneCategories val=\"{shown}\"/><c14:dropZoneData val=\"{shown}\"/><c14:dropZoneSeries val=\"{shown}\"/><c14:dropZonesVisible val=\"{shown}\"/></c14:pivotOptions></c:ext></c:extLst>"
+            ),
+        );
+    }
+    xml
+}
+
+/// Bind the charts read from the file to the PivotTables their parts
+/// name (`c:pivotSource`).
+fn link_charts(wb: &mut Workbook) {
+    let mut links: Vec<(String, String, u32, bool)> = Vec::new();
+    for chart in wb.sheets.iter().flat_map(|sheet| &sheet.charts) {
+        let Some(xml) = chart.foreign.as_ref().map(|foreign| &foreign.xml) else {
+            continue;
+        };
+        if !xml.contains("pivotSource") {
+            continue;
+        }
+        let mut r = Reader::new(xml);
+        let mut name = None;
+        let mut buttons = false;
+        loop {
+            match r.next() {
+                Event::Open(t) if t.name == "pivotSource" && !t.empty => loop {
+                    match r.next() {
+                        Event::Open(c) if c.name == "name" => name = Some(r.text(&c).into_owned()),
+                        Event::Open(c) => r.skip(&c),
+                        Event::Close(_) | Event::Eof => break,
+                        Event::Text(_) => {}
+                    }
+                },
+                Event::Open(t) if t.name == "dropZonesVisible" => {
+                    buttons = t.attr_bool("val").unwrap_or(true);
+                    r.skip(&t);
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+        // "[Book.xlsx]Sheet!PivotTable1": the sheet may be quoted.
+        let Some(name) = name else {
+            continue;
+        };
+        let rest = name.rsplit_once(']').map_or(name.as_str(), |(_, rest)| rest);
+        if let Some((sheet, table)) = rest.rsplit_once('!') {
+            let sheet = sheet.trim_matches('\'').replace("''", "'");
+            links.push((sheet, table.to_string(), chart.id, buttons));
+        }
+    }
+    for (sheet, table, chart, buttons) in links {
+        let Some(index) = wb.sheet_index(&sheet) else {
+            continue;
+        };
+        if let Some(p) = wb.sheets[index].pivots.iter_mut().find(|p| p.name.to_lowercase() == table.to_lowercase()) {
+            p.charts.push(opensheet_engine::pivot::PivotChartLink { chart, buttons });
+        }
+    }
+}
+
 // ---- reading: the cache ----------------------------------------------------
 
 /// An item of a cache (`<s>`, `<n>`, `<d>`, `<b>`, `<e>`, `<m>`); `None`
@@ -2288,4 +2390,5 @@ pub(crate) fn read_all<R: Read + Seek>(
             }
         }
     }
+    link_charts(wb);
 }

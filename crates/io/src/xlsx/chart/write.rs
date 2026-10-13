@@ -1367,7 +1367,8 @@ impl ChartWriter<'_> {
             .and_then(|xml| foreign::reusable(xml, &sheet_exists))
         {
             Some(xml) => xml.into_owned(),
-            None => self.generate(chart, number),
+            // A PivotChart also says which PivotTable it draws.
+            None => super::super::pivot::bind_chart(self.wb, chart, self.generate(chart, number)),
         }
     }
 

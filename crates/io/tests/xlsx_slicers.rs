@@ -256,3 +256,33 @@ fn calculated_fields_and_items_go_through_a_file() {
     assert_eq!(back.display_text(1, 6, 2).text, "310");
     assert_eq!(to_bytes(&back), bytes);
 }
+
+#[test]
+fn a_pivot_chart_goes_through_a_file() {
+    use opensheet_engine::chart::ChartKind;
+    let (mut wb, pivot) = book();
+    let chart = wb.add_pivot_chart(1, pivot, ChartKind::Column).unwrap();
+    wb.update_chart(1, chart, |c| c.anchor = (10, 1));
+    wb.commit("chart");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("pivot-chart.xlsx", &bytes);
+    all_well_formed(&bytes);
+    let part_xml = part(&bytes, "xl/charts/chart1.xml");
+    assert!(
+        part_xml.contains("<c:pivotSource><c:name>[workbook.xlsx]Sheet2!PivotTable1</c:name><c:fmtId val=\"0\"/></c:pivotSource><c:chart>"),
+        "{part_xml}"
+    );
+    assert!(part_xml.contains("<c:pivotFmts><c:pivotFmt><c:idx val=\"0\"/><c:marker><c:symbol val=\"none\"/></c:marker></c:pivotFmt></c:pivotFmts>"));
+    assert!(part_xml.contains("<c14:dropZonesVisible val=\"1\"/></c14:pivotOptions></c:ext></c:extLst></c:chartSpace>"));
+    assert!(part_xml.contains("Sheet2!$B$4:$B$6"), "{part_xml}");
+    let mut back = load(&bytes);
+    let read = back.sheets[1].charts[0].id;
+    let id = back.sheets[1].pivots[0].id;
+    assert_eq!(back.pivot_of_chart(read).map(|(_, p, link)| (p.id, link.buttons)), Some((id, true)));
+    assert_eq!(to_bytes(&back), bytes);
+    // Still bound: the chart follows a filter made after loading.
+    back.pivot_update(id, false, |p| p.set_item_hidden(0, 0, true)).unwrap();
+    back.commit("filter");
+    let data = back.chart_data(1, &back.sheets[1].charts[0]);
+    assert_eq!(data.categories, ["North", "West"]);
+}
