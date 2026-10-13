@@ -49,7 +49,9 @@ impl ExcelApp {
 
     pub fn new_workbook(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.confirm_discard(window, cx, |this, _, cx| {
-            let wb = opensheet_engine::Workbook::new(this.wb.locale);
+            let mut wb = opensheet_engine::Workbook::new(this.wb.locale);
+            // The sheets and the font Preferences ▸ General asks for.
+            crate::features::preferences::prepare_new_workbook(&mut wb);
             this.set_workbook(wb, None, format!("{}1", t("Book", "Classeur")), cx);
         });
     }
@@ -120,6 +122,8 @@ impl ExcelApp {
     }
 
     fn write_to(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        // Preferences ▸ Calculation: "Recalculate workbook before saving".
+        crate::features::preferences::before_save(&mut self.wb);
         match opensheet_io::save(&self.wb, self.sheet, &path) {
             Ok(()) => {
                 // Only the workbook formats keep everything; a CSV export

@@ -47,6 +47,7 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     page::on_structural_edit(sheet, edit, edited_sheet);
     pivot::on_structural_edit(sheet, edit, edited_sheet);
     drawing::on_structural_edit(sheet, edit, edited_sheet);
+    crate::ink::on_structural_edit(sheet, edit, edited_sheet);
     hyperlink::on_structural_edit(sheet, edit, edited_sheet);
     crate::consolidate::on_structural_edit(sheet, edit, edited_sheet);
     crate::whatif::on_structural_edit(sheet, edit, edited_sheet);
@@ -85,6 +86,8 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     page::on_sheet_duplicated(wb, copy, original);
     pivot::on_sheet_duplicated(wb, copy, original);
     drawing::on_sheet_duplicated(wb, copy, original);
+    crate::ink::on_sheet_duplicated(wb, copy, original);
+    crate::custom_view::on_sheet_duplicated(wb, copy, original);
     hyperlink::on_sheet_duplicated(wb, copy, original);
     crate::sparkline::on_sheet_duplicated(wb, copy, original);
 }

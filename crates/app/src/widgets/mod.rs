@@ -1459,7 +1459,12 @@ impl RenderOnce for ScrollArea {
                         window.paint_quad(fill(Bounds::new(origin, size(px(6.), px(thumb_h))), c(0xC1C1C1)).corner_radii(px(3.)));
                     },
                 )
+                // Pinned to the corner: left to its place in the flow, the
+                // canvas would sit under the content and paint the thumb
+                // below the box.
                 .absolute()
+                .top_0()
+                .left_0()
                 .size_full(),
             )
     }

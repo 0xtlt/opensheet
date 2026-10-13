@@ -71,7 +71,7 @@ impl SheetLinks {
         let annotated = !sheet.comments.is_empty();
         let threaded = sheet.comments.values().any(|c| c.as_thread().is_some());
         SheetLinks {
-            drawing: id(!sheet.charts.is_empty() || !sheet.drawings.is_empty()),
+            drawing: id(!sheet.charts.is_empty() || !sheet.drawings.is_empty() || !sheet.inks.is_empty()),
             vml: id(annotated),
             comments: id(annotated),
             threads: id(threaded),
@@ -146,6 +146,7 @@ impl Extras {
             sheet_rels: vec![String::new(); wb.sheets.len()],
         };
         super::drawing::add_parts(wb, drawings, &mut extras);
+        super::ink::add_parts(wb, drawings);
         for drawing in drawings.iter() {
             let links = wb.sheets.get(drawing.sheet).map(SheetLinks::of);
             if let Some(id) = links.and_then(|links| links.drawing) {

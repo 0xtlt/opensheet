@@ -191,6 +191,10 @@ struct WorkbookPart {
     /// `<calcPr>`: when formulas are calculated, and iterative calculation.
     calc_mode: CalcMode,
     iterative: IterativeCalc,
+    /// `sheetId` of each entry of `sheets`.
+    sheet_ids: Vec<u32>,
+    /// `<customWorkbookViews>`.
+    custom_views: Vec<super::custom_view::BookView>,
 }
 
 fn parse_workbook_part(xml: &str) -> WorkbookPart {
@@ -199,7 +203,11 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
     loop {
         match r.next() {
             Event::Open(t) => match t.name {
-                "workbook" | "sheets" | "definedNames" => {}
+                "workbook" | "sheets" | "definedNames" | "customWorkbookViews" => {}
+                "customWorkbookView" => {
+                    out.custom_views.extend(super::custom_view::read_book_view(&t));
+                    r.skip(&t);
+                }
                 "workbookPr" => {
                     out.date1904 = t.attr_bool("date1904").unwrap_or(false);
                     r.skip(&t);
@@ -231,6 +239,7 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
                         .or_else(|| t.attr_local("id"))
                         .map(Cow::into_owned);
                     out.sheets.push((name, rid.unwrap_or_default()));
+                    out.sheet_ids.push(t.attr_u32("sheetId").unwrap_or(0));
                     r.skip(&t);
                 }
                 "definedName" => {
@@ -991,6 +1000,9 @@ impl<'c> SheetReader<'c> {
                             super::filter::parse_auto_filter(&mut r, &t, ctx.filter_colors)
                     }
                     "dataConsolidate" => super::datatools::read_consolidate(&mut r, &t, &mut this.sheet),
+                    "customSheetViews" => {
+                        super::custom_view::read_sheet(&mut r, &t, &mut this.sheet, ctx.filter_colors)
+                    }
                     "mergeCells" => this.merges(&mut r, &t),
                     "conditionalFormatting" => {
                         let ctx = this.cond_format_context();
@@ -1651,6 +1663,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         &wb.styles.get(ctx.style(0)).font,
     );
     let mut drawings = super::drawing::Loader::new(&mut pkg, &rels);
+    let mut inks = super::ink::Loader::new();
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
             Some(rel) if rel.kind == "worksheet" => rel.target.clone(),
@@ -1691,6 +1704,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         // The anchors that held nothing the engine shows leave no gaps
         // in the stacking order of the others.
         loaded.sheet.set_object_stack(&[]);
+        inks.read_sheet(&mut pkg, &part, loaded.drawing.as_deref(), &mut loaded.sheet);
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
         sheet_parts.push(part);
@@ -1726,6 +1740,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         if page::read_name(&key, &raw.text, sheet)
             || super::filter::read_name(&key, &raw.text, scope.and_then(|sheet| wb.sheets.get_mut(sheet)))
             || imports.read_name(&key, &raw.text, scope)
+            || super::custom_view::read_name(&raw.name, &raw.text, scope.and_then(|sheet| wb.sheets.get_mut(sheet)))
             || raw.name.is_empty()
             || key.starts_with("_XLNM.")
         {
@@ -1746,6 +1761,14 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     }
 
     super::filter::finish_names(&mut wb);
+    // The custom views: the workbook part names what the sheets hold.
+    let mut sheet_ids = vec![0; wb.sheets.len()];
+    for (i, loaded) in loaded_as.iter().enumerate() {
+        if let (Some(slot), Some(id)) = (loaded.and_then(|k| sheet_ids.get_mut(k)), info.sheet_ids.get(i)) {
+            *slot = *id;
+        }
+    }
+    super::custom_view::finish(&mut wb, &info.custom_views, &sheet_ids);
     imports.finish(&mut wb);
 
     // Formulas the engine cannot calculate keep their cached result.

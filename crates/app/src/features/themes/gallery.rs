@@ -16,7 +16,8 @@ use std::rc::Rc;
 
 /// Themes in a row of the gallery, and the size of a thumbnail.
 pub(super) const PER_ROW: usize = 4;
-const THUMB_W: f32 = 84.0;
+// Wide enough for the longest names under the thumbnails ("Office 2013 - 2022").
+const THUMB_W: f32 = 98.0;
 const THUMB_H: f32 = 52.0;
 const ITEM_W: f32 = THUMB_W + 12.0;
 

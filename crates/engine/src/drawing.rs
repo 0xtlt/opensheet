@@ -1556,6 +1556,12 @@ impl Drawing {
         }
     }
 
+    /// How many objects the drawing is in a file: itself, and for a
+    /// group every member, the groups among them counted the same way.
+    pub fn object_count(&self) -> usize {
+        1 + self.as_group().map_or(0, |group| group.members.iter().map(Drawing::object_count).sum())
+    }
+
     /// The largest id in the drawing: its own, or one of its members'.
     fn max_id(&self) -> u32 {
         let members = self.as_group().map(|group| group.members.iter().map(Drawing::max_id).max().unwrap_or(0));
