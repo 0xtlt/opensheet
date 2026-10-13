@@ -228,6 +228,27 @@ pub struct TableEdit {
     pub filled: Option<(u32, usize)>,
 }
 
+/// What tables may do by themselves after an edit (Preferences ▸ Tables
+/// & Filters): both are on unless the user said otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TableAuto {
+    /// "Automatically expand tables": a table grows over what is entered
+    /// in the row under it or the column beside it.
+    pub expand: bool,
+    /// "Automatically fill formulas": a formula entered in a column of a
+    /// table fills the column.
+    pub fill_formulas: bool,
+}
+
+impl Default for TableAuto {
+    fn default() -> TableAuto {
+        TableAuto {
+            expand: true,
+            fill_formulas: true,
+        }
+    }
+}
+
 impl Table {
     pub fn header_range(&self) -> Option<Rect> {
         self.header_row
@@ -2240,7 +2261,7 @@ impl Workbook {
     /// beside it, text typed in a header cell renames the column, what is
     /// typed in the totals row becomes the column's total, and a formula
     /// entered in a column that is empty (or already calculated) fills the
-    /// column.
+    /// column. Growing and filling can be switched off (`table_auto`).
     pub fn tables_after_edit(&mut self, sheet: usize, edited: Rect) -> TableEdit {
         let mut out = TableEdit::default();
         let Some(sh) = self.sheets.get(sheet).filter(|s| !s.tables.is_empty()) else {
@@ -2249,12 +2270,15 @@ impl Workbook {
         let edited = self.clamp_to_used(sheet, edited);
         let ids: Vec<u32> = sh.tables.iter().map(|t| t.id).collect();
         for id in ids {
-            if let Some(range) = self.grown_range(sheet, id, edited) {
+            if let Some(range) = self.grown_range(sheet, id, edited).filter(|_| self.table_auto.expand) {
                 self.grow_table(sheet, id, range);
                 out.expanded = Some(id);
             }
             out.renamed |= self.sync_headers(sheet, id, edited);
             self.sync_totals(sheet, id, edited);
+            if !self.table_auto.fill_formulas {
+                continue;
+            }
             if let Some(column) = self.fill_calculated_column(sheet, id, edited) {
                 out.filled = Some((id, column));
             }
@@ -3363,6 +3387,33 @@ mod tests {
         w.commit("resize");
         assert_eq!([text(&w, "A5"), text(&w, "A7"), text(&w, "C7")], ["", "Total", "65"]);
         assert_eq!(formula(&w, "C7"), "=SUBTOTAL(109,[Sales])");
+    }
+
+    #[test]
+    fn growing_and_filling_can_be_switched_off() {
+        let (mut w, id) = sales();
+        w.table_auto = TableAuto {
+            expand: false,
+            fill_formulas: false,
+        };
+        // What is typed against the table stays outside it.
+        w.set_cell_text(0, 4, 0, "Cap").unwrap();
+        w.set_cell_text(0, 0, 3, "Double").unwrap();
+        assert_eq!(w.tables_after_edit(0, rect("A5")), TableEdit::default());
+        assert_eq!(w.tables_after_edit(0, rect("D1")), TableEdit::default());
+        assert_eq!(w.table(0, id).unwrap().range, rect("A1:C4"));
+        // A formula stays in its cell; a header typed over still renames.
+        w.table_auto.expand = true;
+        assert_eq!(w.tables_after_edit(0, rect("D1")).expanded, Some(id));
+        w.set_cell_text(0, 2, 3, "=C3*2").unwrap();
+        assert_eq!(w.tables_after_edit(0, rect("D3")).filled, None);
+        assert_eq!([formula(&w, "D2"), formula(&w, "D3")], ["", "=C3*2"]);
+        w.set_cell_text(0, 0, 1, "Area").unwrap();
+        assert!(w.tables_after_edit(0, rect("B1")).renamed);
+        w.table_auto.fill_formulas = true;
+        w.set_cell_text(0, 2, 3, "=C3*3").unwrap();
+        assert_eq!(w.tables_after_edit(0, rect("D3")).filled, Some((id, 3)));
+        assert_eq!(formula(&w, "D4"), "=C4*3");
     }
 
     #[test]

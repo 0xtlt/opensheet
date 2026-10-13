@@ -1,7 +1,9 @@
-//! The Preferences window: the page of panes, and the five panes whose
-//! settings exist in this application (General, View, Edit, Calculation,
-//! Error Checking). The other panes of Excel are on the page, greyed out:
-//! nothing of theirs is shown that would do nothing.
+//! The Preferences window: the page of panes, and the panes whose
+//! settings exist in this application (General, View, Edit, AutoCorrect,
+//! Calculation, Error Checking, Custom Lists, Tables & Filters). The
+//! other panes of Excel are on the page, greyed out: nothing of theirs is
+//! shown that would do nothing. AutoCorrect and Custom Lists, which hold
+//! lists, are in `pane_autocorrect.rs` and `pane_lists.rs`.
 //!
 //! Like Excel's, the window has no OK: a box or a choice takes effect at
 //! once, a typed value when the pane is left or the window closed.
@@ -11,12 +13,13 @@ use crate::app::ExcelApp;
 use crate::features::misc;
 use crate::features::{Command, Cx};
 use crate::i18n::t;
-use crate::shell::Modal;
-use crate::text_input::TextInput;
+use crate::shell::{Modal, RefStyle};
+use crate::text_input::{InputEvent, TextInput};
+use crate::widgets::text_area::{AreaEvent, TextArea};
 use crate::theme::{self, c};
 use crate::view::{icon, tooltip};
 use crate::widgets::{self, Button, Checkbox, GroupBox, NumberField, RadioGroup, Select, TextField, dialog, label};
-use gpui::{AnyElement, App, Context, Entity, SharedString, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
 use opensheet_engine::ops::Direction;
 use opensheet_engine::{CalcMode, IterativeCalc};
 
@@ -26,8 +29,11 @@ pub(super) enum Pane {
     General,
     View,
     Edit,
+    AutoCorrect,
     Calculation,
     ErrorChecking,
+    CustomLists,
+    Tables,
 }
 
 impl Pane {
@@ -36,6 +42,9 @@ impl Pane {
             Pane::General => t("General", "Général"),
             Pane::View => crate::i18n::t_ctx("preferences", "View", "Affichage"),
             Pane::Edit => crate::i18n::t_ctx("preferences", "Edit", "Modifier"),
+            Pane::AutoCorrect => t("AutoCorrect", "Correction automatique"),
+            Pane::CustomLists => t("Custom Lists", "Listes personnalisées"),
+            Pane::Tables => t("Tables & Filters", "Tableaux et filtres"),
             Pane::Calculation => t("Calculation", "Calcul"),
             Pane::ErrorChecking => t("Error Checking", "Vérification des erreurs"),
         }
@@ -46,6 +55,9 @@ impl Pane {
             Pane::General => "format-cells",
             Pane::View => "eye",
             Pane::Edit => "ink-pencil",
+            Pane::AutoCorrect => "spell",
+            Pane::CustomLists => "sort-asc",
+            Pane::Tables => "table",
             Pane::Calculation => "calculator",
             Pane::ErrorChecking => "misc-error-checking",
         }
@@ -62,7 +74,7 @@ fn page() -> Vec<(&'static str, Vec<Result<Pane, &'static str>>)> {
                 Ok(Pane::General),
                 Ok(Pane::View),
                 Ok(Pane::Edit),
-                Err(t("AutoCorrect", "Correction automatique")),
+                Ok(Pane::AutoCorrect),
                 Err(t("Chart", "Graphique")),
             ],
         ),
@@ -71,9 +83,9 @@ fn page() -> Vec<(&'static str, Vec<Result<Pane, &'static str>>)> {
             vec![
                 Ok(Pane::Calculation),
                 Ok(Pane::ErrorChecking),
-                Err(t("Custom Lists", "Listes personnalisées")),
+                Ok(Pane::CustomLists),
                 Err(t("AutoComplete", "Saisie semi-automatique")),
-                Err(t("Tables & Filters", "Tableaux et filtres")),
+                Ok(Pane::Tables),
             ],
         ),
         (
@@ -92,7 +104,7 @@ fn page() -> Vec<(&'static str, Vec<Result<Pane, &'static str>>)> {
 /// read when it opens (it cannot look at the application while it is
 /// being built) and kept in step as its controls change them.
 pub(super) struct Shown {
-    settings: Settings,
+    pub(super) settings: Settings,
     calc_mode: CalcMode,
     iterative: IterativeCalc,
     formula_bar: bool,
@@ -104,6 +116,13 @@ pub(super) struct Shown {
     fonts: Vec<String>,
     /// The font of a new workbook when none is chosen.
     engine_font: String,
+    /// The custom lists nobody can change, in the language of the
+    /// workbook.
+    pub(super) builtin_lists: Vec<Vec<String>>,
+    /// The sheet in front and its name: where "Import list from cells"
+    /// reads.
+    pub(super) sheet: usize,
+    pub(super) sheet_name: String,
 }
 
 fn shown(app: &ExcelApp) -> Shown {
@@ -119,6 +138,9 @@ fn shown(app: &ExcelApp) -> Shown {
         outline_symbols: sheet.outline.show_symbols,
         fonts: app.fonts.names.clone(),
         engine_font: opensheet_engine::Style::default().font.name.to_string(),
+        builtin_lists: opensheet_engine::Workbook::builtin_lists(app.wb.locale),
+        sheet: app.sheet,
+        sheet_name: sheet.name.clone(),
     }
 }
 
@@ -134,9 +156,18 @@ pub(super) fn open_on(app: &mut ExcelApp, pane: Option<Pane>, window: &mut Windo
 }
 
 pub(super) struct PreferencesWindow {
-    modal: Modal,
+    pub(super) modal: Modal,
     pub(super) pane: Option<Pane>,
     pub(super) shown: Shown,
+    /// AutoCorrect: the two boxes over the list.
+    pub(super) replace_from: Entity<TextInput>,
+    pub(super) replace_with: Entity<TextInput>,
+    /// Custom Lists: the list chosen (0 is "NEW LIST", then the built-in
+    /// ones, then the user's), its entries, and the range to import.
+    pub(super) list_at: usize,
+    pub(super) list_entries: Entity<TextArea>,
+    pub(super) import_range: Entity<TextInput>,
+    _subscriptions: Vec<Subscription>,
     pub(super) user_name: Entity<TextInput>,
     pub(super) font_size: Entity<TextInput>,
     pub(super) sheets: Entity<TextInput>,
@@ -161,9 +192,38 @@ const MODES: [CalcMode; 3] = [CalcMode::Automatic, CalcMode::AutomaticExceptTabl
 impl PreferencesWindow {
     pub(super) fn new(modal: Modal, shown: Shown, pane: Option<Pane>, cx: &mut Context<Self>) -> Self {
         let s = &shown.settings;
+        let replace_from = widgets::input(cx, "");
+        let replace_with = widgets::input(cx, "");
+        // The list follows what is typed over it, and so do its buttons.
+        let redraw = |_: &mut Self, _: Entity<TextInput>, event: &InputEvent, cx: &mut Context<Self>| {
+            if matches!(event, InputEvent::Changed) {
+                cx.notify();
+            }
+        };
+        let list_entries = cx.new(|cx| {
+            let mut area = TextArea::field(cx);
+            area.min_rows = 9;
+            area.max_height = Some(190.0);
+            area
+        });
+        let subscriptions = vec![
+            cx.subscribe(&replace_from, redraw),
+            cx.subscribe(&replace_with, redraw),
+            cx.subscribe(&list_entries, |_, _, event: &AreaEvent, cx| {
+                if matches!(event, AreaEvent::Changed) {
+                    cx.notify();
+                }
+            }),
+        ];
         PreferencesWindow {
+            import_range: modal.ref_input(RefStyle::absolute(), "", cx),
             modal,
             pane,
+            replace_from,
+            replace_with,
+            list_at: 0,
+            list_entries,
+            _subscriptions: subscriptions,
             user_name: widgets::input(cx, s.user_name.clone()),
             font_size: widgets::number_input(cx, Some(s.default_font_size as f64), 1.0, 409.0, 1.0),
             sheets: widgets::number_input(cx, Some(s.sheets_in_new_workbook as f64), 1.0, 255.0, 1.0),
@@ -175,11 +235,15 @@ impl PreferencesWindow {
     }
 
     /// Change a setting of the application.
-    fn set(&mut self, cx: &mut Context<Self>, change: impl Fn(&mut Settings)) {
+    pub(super) fn set(&mut self, cx: &mut Context<Self>, change: impl Fn(&mut Settings)) {
         change(&mut self.shown.settings);
         settings::update(change);
         // The grid and the window follow (the green corners, the tabs).
-        self.modal.update_app(cx, |_, cx| cx.notify());
+        // The workbook takes its part of them (lists, tables).
+        self.modal.update_app(cx, |app, cx| {
+            super::apply_to_workbook(&mut app.wb);
+            cx.notify();
+        });
         cx.notify();
     }
 
@@ -332,7 +396,7 @@ impl PreferencesWindow {
 
     // ---- the panes ------------------------------------------------------
 
-    fn check(
+    pub(super) fn check(
         &self,
         id: &'static str,
         text: &'static str,
@@ -627,6 +691,38 @@ impl PreferencesWindow {
     }
 }
 
+impl PreferencesWindow {
+    fn render_tables(&self, cx: &mut Context<Self>) -> AnyElement {
+        let s = &self.shown.settings;
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(
+                GroupBox::new(t("Tables", "Tableaux"))
+                    .child(self.check(
+                        "prefs-tables-expand",
+                        t("Automatically expand tables", "Développer automatiquement les tableaux"),
+                        s.tables_expand,
+                        cx,
+                        |this, on, _, cx| this.set(cx, |settings| settings.tables_expand = on),
+                    ))
+                    .child(self.check(
+                        "prefs-tables-fill",
+                        t("Automatically fill formulas", "Formules de remplissage automatique"),
+                        s.tables_fill_formulas,
+                        cx,
+                        |this, on, _, cx| this.set(cx, |settings| settings.tables_fill_formulas = on),
+                    )),
+            )
+            .child(note(t(
+                "Not available in OpenSheet: turning off table names in formulas, and the grouping of dates in filters and PivotTables.",
+                "Non disponible dans OpenSheet : la désactivation des noms de tableau dans les formules, et le regroupement des dates dans les filtres et les tableaux croisés dynamiques.",
+            )))
+            .into_any_element()
+    }
+}
+
 /// A control after its label, the labels of a pane in one column.
 fn row(text: &'static str, control: impl IntoElement) -> gpui::Div {
     div()
@@ -638,7 +734,7 @@ fn row(text: &'static str, control: impl IntoElement) -> gpui::Div {
 }
 
 /// What a pane says of the settings of Excel it does not have.
-fn note(text: &'static str) -> gpui::Div {
+pub(super) fn note(text: &'static str) -> gpui::Div {
     div()
         .text_size(px(11.5))
         .line_height(px(16.))
@@ -659,6 +755,9 @@ impl Render for PreferencesWindow {
             Some(Pane::Edit) => self.render_edit(cx),
             Some(Pane::Calculation) => self.render_calculation(cx),
             Some(Pane::ErrorChecking) => self.render_error_checking(cx),
+            Some(Pane::AutoCorrect) => self.render_autocorrect(cx),
+            Some(Pane::CustomLists) => self.render_lists(cx),
+            Some(Pane::Tables) => self.render_tables(cx),
         };
         let back = self.pane.is_some().then(|| {
             Button::new("prefs-show-all", t("Show All", "Tout afficher")).on_click(cx.listener(|this, _, _, cx| this.go(None, cx)))

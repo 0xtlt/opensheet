@@ -461,7 +461,8 @@ fn dir_delta(dir: Direction) -> (i64, i64) {
 
 impl ExcelApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let wb = Workbook::new(crate::i18n::lang().locale());
+        let mut wb = Workbook::new(crate::i18n::lang().locale());
+        features::preferences::apply_to_workbook(&mut wb);
         let fonts = Rc::new(FontResolver::new(cx.text_system().clone()));
         let cell_editor = cx.new(TextInput::new);
         let formula_input = cx.new(TextInput::new);
@@ -564,6 +565,7 @@ impl ExcelApp {
     pub fn set_workbook(&mut self, wb: Workbook, path: Option<PathBuf>, title: String, cx: &mut Context<Self>) {
         self.views = wb.sheets.iter().map(|_| SheetView::default()).collect();
         self.wb = wb;
+        features::preferences::apply_to_workbook(&mut self.wb);
         self.path = path;
         self.title = title;
         self.sheet = 0;
@@ -1206,6 +1208,7 @@ impl ExcelApp {
                 if let Some(edit) = &mut self.editing {
                     if edit.source == source {
                         edit.point = None;
+                        features::preferences::autocorrect::text_typed(self, cx);
                         self.sync_other_editor(cx);
                         self.update_ref_highlights(cx);
                         cx.notify();
@@ -1565,6 +1568,11 @@ impl ExcelApp {
 
     pub fn undo(&mut self, cx: &mut Context<Self>) {
         if self.editing.is_some() {
+            // While typing, Undo takes back the last automatic correction.
+            if features::preferences::autocorrect::undo_correction(self, cx) {
+                self.sync_other_editor(cx);
+                cx.notify();
+            }
             return;
         }
         self.wb.undo();

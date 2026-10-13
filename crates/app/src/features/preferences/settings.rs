@@ -34,6 +34,29 @@ pub struct Settings {
     /// How many places from the right the point goes (negative: zeros are
     /// added instead).
     pub decimal_places: i32,
+    // ---- AutoCorrect
+    /// "Replace text as you type".
+    pub replace_text: bool,
+    /// What is replaced by what, in the order of the pane. `None`: the
+    /// starting list of the interface language (`autocorrect.rs`), which
+    /// the user has not changed.
+    pub replacements: Option<Vec<(String, String)>>,
+    /// "Correct TWo INitial CApitals".
+    pub correct_two_capitals: bool,
+    /// "Capitalize first letter of sentences".
+    pub capitalize_sentences: bool,
+    /// "Capitalize names of days".
+    pub capitalize_days: bool,
+    /// "Replace internet and network paths with hyperlinks".
+    pub link_addresses: bool,
+    // ---- Custom Lists
+    /// The lists of the user, after the built-in ones. None is empty.
+    pub custom_lists: Vec<Vec<String>>,
+    // ---- Tables & Filters
+    /// "Automatically expand tables".
+    pub tables_expand: bool,
+    /// "Automatically fill formulas".
+    pub tables_fill_formulas: bool,
     // ---- View
     pub show_sheet_tabs: bool,
     // ---- Calculation
@@ -71,6 +94,15 @@ impl Default for Settings {
             move_direction: Direction::Down,
             fixed_decimal: false,
             decimal_places: 2,
+            replace_text: true,
+            replacements: None,
+            correct_two_capitals: true,
+            capitalize_sentences: true,
+            capitalize_days: true,
+            link_addresses: true,
+            custom_lists: Vec::new(),
+            tables_expand: true,
+            tables_fill_formulas: true,
             show_sheet_tabs: true,
             recalc_before_save: true,
             background_error_checking: true,
@@ -113,6 +145,23 @@ impl Settings {
         line("move-direction", direction_name(self.move_direction));
         line("fixed-decimal", flag(self.fixed_decimal));
         line("decimal-places", &self.decimal_places.to_string());
+        line("replace-text", flag(self.replace_text));
+        if let Some(replacements) = &self.replacements {
+            // The line that says the list is the user's, even when empty.
+            line("replacements", "own");
+            for (from, to) in replacements {
+                line("replace", &format!("{from}\t{to}"));
+            }
+        }
+        line("correct-two-capitals", flag(self.correct_two_capitals));
+        line("capitalize-sentences", flag(self.capitalize_sentences));
+        line("capitalize-days", flag(self.capitalize_days));
+        line("link-addresses", flag(self.link_addresses));
+        for list in &self.custom_lists {
+            line("custom-list", &list.join("\t"));
+        }
+        line("tables-expand", flag(self.tables_expand));
+        line("tables-fill-formulas", flag(self.tables_fill_formulas));
         line("show-sheet-tabs", flag(self.show_sheet_tabs));
         line("recalculate-before-save", flag(self.recalc_before_save));
         line("background-error-checking", flag(self.background_error_checking));
@@ -168,6 +217,27 @@ impl Settings {
                         settings.decimal_places = places;
                     }
                 }
+                "replace-text" => set(&mut settings.replace_text),
+                "replacements" if value == "own" => {
+                    settings.replacements.get_or_insert_with(Vec::new);
+                }
+                "replace" => {
+                    if let Some((from, to)) = value.split_once('\t').filter(|(from, to)| !from.trim().is_empty() && !to.trim().is_empty()) {
+                        settings.replacements.get_or_insert_with(Vec::new).push((from.trim().to_string(), to.trim().to_string()));
+                    }
+                }
+                "correct-two-capitals" => set(&mut settings.correct_two_capitals),
+                "capitalize-sentences" => set(&mut settings.capitalize_sentences),
+                "capitalize-days" => set(&mut settings.capitalize_days),
+                "link-addresses" => set(&mut settings.link_addresses),
+                "custom-list" => {
+                    let list = clean_list(value.split('\t'));
+                    if !list.is_empty() {
+                        settings.custom_lists.push(list);
+                    }
+                }
+                "tables-expand" => set(&mut settings.tables_expand),
+                "tables-fill-formulas" => set(&mut settings.tables_fill_formulas),
                 "show-sheet-tabs" => set(&mut settings.show_sheet_tabs),
                 "recalculate-before-save" => set(&mut settings.recalc_before_save),
                 "background-error-checking" => set(&mut settings.background_error_checking),
@@ -185,6 +255,18 @@ impl Settings {
         }
         settings
     }
+}
+
+/// The entries of a custom list as they are kept: trimmed, none empty,
+/// none twice (whatever the capitals), as Excel refuses them.
+pub fn clean_list<'a>(entries: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut list: Vec<String> = Vec::new();
+    for entry in entries.map(str::trim).filter(|entry| !entry.is_empty()) {
+        if !list.iter().any(|known| known.to_lowercase() == entry.to_lowercase()) {
+            list.push(entry.to_string());
+        }
+    }
+    list
 }
 
 fn file() -> Option<PathBuf> {
@@ -270,11 +352,28 @@ mod tests {
         settings.spelling_language = "en_GB".to_string();
         settings.translate_from = "fr".to_string();
         settings.translate_to = "pt-BR".to_string();
+        settings.replace_text = false;
+        settings.replacements = Some(vec![("(c)".to_string(), "©".to_string()), ("teh".to_string(), "the = it".to_string())]);
+        settings.correct_two_capitals = false;
+        settings.capitalize_sentences = false;
+        settings.capitalize_days = false;
+        settings.link_addresses = false;
+        settings.custom_lists = vec![vec!["North".to_string(), "East".to_string()], vec!["a b".to_string(), "c, d".to_string(), "e".to_string()]];
+        settings.tables_expand = false;
+        settings.tables_fill_formulas = false;
         assert_eq!(Settings::from_text(&settings.to_text()), settings);
         // An empty or damaged file gives the defaults, setting by setting.
         assert_eq!(Settings::from_text(""), Settings::default());
         let damaged = "pen = nonsense\nwhat\n= 3\nsheets-in-new-workbook = 0\ndecimal-places = 1000\nmove-direction = sideways\nfixed-decimal = maybe\n";
         assert_eq!(Settings::from_text(damaged), Settings::default());
+        // A list the user emptied stays empty: it is not the starting list.
+        let emptied = Settings {
+            replacements: Some(Vec::new()),
+            ..Settings::default()
+        };
+        assert_eq!(Settings::from_text(&emptied.to_text()), emptied);
+        // Entries of a list are trimmed; empty ones and repeats are dropped.
+        assert_eq!(Settings::from_text("custom-list = a\t\t A \tb \n").custom_lists, vec![vec!["a".to_string(), "b".to_string()]]);
     }
 
     #[test]
