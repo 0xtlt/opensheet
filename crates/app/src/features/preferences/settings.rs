@@ -46,6 +46,14 @@ pub struct Settings {
     // ---- Draw
     /// The gallery of pens of the Draw tab, in order. Never empty.
     pub pens: Vec<Pen>,
+    // ---- Review
+    /// "Dictionary language" of the Spelling dialog, as the system
+    /// checker names it; empty: the language of the interface.
+    pub spelling_language: String,
+    /// The languages last chosen in the Translator pane ("" for the
+    /// source: detect it).
+    pub translate_from: String,
+    pub translate_to: String,
 }
 
 impl Default for Settings {
@@ -64,6 +72,9 @@ impl Default for Settings {
             background_error_checking: true,
             check_error_values: true,
             pens: default_pens(),
+            spelling_language: String::new(),
+            translate_from: String::new(),
+            translate_to: String::new(),
         }
     }
 }
@@ -104,6 +115,9 @@ impl Settings {
         for pen in &self.pens {
             line("pen", &pen.to_setting());
         }
+        line("spelling-language", &self.spelling_language);
+        line("translate-from", &self.translate_from);
+        line("translate-to", &self.translate_to);
         out
     }
 
@@ -153,6 +167,9 @@ impl Settings {
                 "background-error-checking" => set(&mut settings.background_error_checking),
                 "check-error-values" => set(&mut settings.check_error_values),
                 "pen" => pens.extend(Pen::from_setting(value)),
+                "spelling-language" => settings.spelling_language = value.to_string(),
+                "translate-from" => settings.translate_from = value.to_string(),
+                "translate-to" => settings.translate_to = value.to_string(),
                 _ => {}
             }
         }
@@ -242,6 +259,9 @@ mod tests {
         settings.recalc_before_save = false;
         settings.background_error_checking = false;
         settings.check_error_values = false;
+        settings.spelling_language = "en_GB".to_string();
+        settings.translate_from = "fr".to_string();
+        settings.translate_to = "pt-BR".to_string();
         assert_eq!(Settings::from_text(&settings.to_text()), settings);
         // An empty or damaged file gives the defaults, setting by setting.
         assert_eq!(Settings::from_text(""), Settings::default());

@@ -62,11 +62,7 @@ commands! {
         CalcNow = "misc-calc-now", t("Calculate Now", "Calculer maintenant");
         CalcSheet = "misc-calc-sheet", t("Calculate Sheet", "Calculer la feuille");
         // Review
-        Spelling = "spell", t("Spelling", "Orthographe");
-        Thesaurus = "book", t("Thesaurus", "Dictionnaire des synonymes");
         WorkbookStatistics = "calculator", t("Workbook Statistics", "Statistiques du classeur");
-        CheckAccessibility = "eye", t("Check Accessibility", "Vérifier l'accessibilité");
-        Translate = "book", t("Translate", "Traduire");
         // Automate, Help
         NewScript = "function", t("New Script", "Nouveau script");
         AllScripts = "book", t("All Scripts", "Tous les scripts");

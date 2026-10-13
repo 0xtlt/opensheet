@@ -7,7 +7,7 @@
 use crate::app::*;
 use crate::features::{
     self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, protection, slicers, tables, themes, validation,
+    pivot, proofing, protection, slicers, tables, themes, validation,
 };
 use crate::i18n::t;
 use crate::ribbon_fold as fold;
@@ -720,20 +720,20 @@ impl ExcelApp {
             group(
                 t("Proofing", "Vérification"),
                 row(vec![
-                    self.cmd_large("rv-spell", misc::Cmd::Spelling, false, cx),
-                    self.cmd_large("rv-thesaurus", misc::Cmd::Thesaurus, false, cx),
+                    self.cmd_large("rv-spell", proofing::Cmd::Spelling, false, cx),
+                    self.cmd_large("rv-thesaurus", proofing::Cmd::Thesaurus, false, cx),
                     self.cmd_large("rv-stats", misc::Cmd::WorkbookStatistics, false, cx),
                 ]),
             )
             .into_any_element(),
             group(
                 t("Accessibility", "Accessibilité"),
-                row(vec![self.cmd_large("rv-access", misc::Cmd::CheckAccessibility, true, cx)]),
+                row(vec![self.cmd_large("rv-access", proofing::Cmd::AccessibilityMenu, true, cx)]),
             )
             .into_any_element(),
             group(
                 t("Language", "Langue"),
-                row(vec![self.cmd_large("rv-translate", misc::Cmd::Translate, false, cx)]),
+                row(vec![self.cmd_large("rv-translate", proofing::Cmd::Translate, false, cx)]),
             )
             .into_any_element(),
             group(
