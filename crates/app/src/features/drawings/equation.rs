@@ -132,8 +132,37 @@ impl Fonts<'_> {
     }
 }
 
+/// Slanted letters in a mathematical font: such fonts have no italic
+/// face, they hold the italic alphabets as characters of their own
+/// (U+1D434…). `None` for a font that slants its letters itself.
+fn math_italic(family: &str, text: &str) -> Option<String> {
+    if !family.contains("Math") {
+        return None;
+    }
+    let mapped = |ch: char| -> char {
+        let at = |base: u32, first: char| char::from_u32(base + (ch as u32 - first as u32)).unwrap_or(ch);
+        match ch {
+            // The italic h is Planck's constant, older than the block.
+            'h' => 'ℎ',
+            'a'..='z' => at(0x1D44E, 'a'),
+            'A'..='Z' => at(0x1D434, 'A'),
+            'α'..='ω' => at(0x1D6FC, 'α'),
+            'ϵ' => '\u{1D716}',
+            'ϑ' => '\u{1D717}',
+            'ϕ' => '\u{1D719}',
+            other => other,
+        }
+    };
+    Some(text.chars().map(mapped).collect())
+}
+
 impl Measure for Fonts<'_> {
     fn width(&self, text: &str, size: f32, italic: bool) -> f32 {
+        let slanted = if italic { math_italic(&self.family, text) } else { None };
+        let (text, italic) = match &slanted {
+            Some(slanted) => (slanted.as_str(), false),
+            None => (text, italic),
+        };
         let id = self.ts.resolve_font(&self.font(italic));
         text.chars()
             .map(|ch| self.ts.advance(id, px(size), ch).map_or(size * 0.5, |advance| f32::from(advance.width)))
@@ -467,7 +496,9 @@ impl Layout<'_> {
                 inner
             }
             Math::Function { name, arg } => {
-                let mut out = self.row(name, Style { upright: true, ..style });
+                // A little room before the name, unless it leads.
+                let mut out = MathBox::space(if first { 0.0 } else { em * 0.17 });
+                out.append(self.row(name, Style { upright: true, ..style }));
                 out.width += em * 0.17;
                 out.append(self.row(arg, style));
                 out
@@ -580,6 +611,11 @@ fn draw_box(laid: &MathBox, at: (f32, f32), color: Hsla, family: &SharedString, 
     for ink in &laid.ink {
         match ink {
             Ink::Glyphs { text, size, italic, x, y } => {
+                let slanted = if *italic { math_italic(family, text) } else { None };
+                let (text, italic) = match &slanted {
+                    Some(slanted) => (slanted, &false),
+                    None => (text, italic),
+                };
                 let font = Font {
                     family: family.clone(),
                     features: Default::default(),
@@ -1130,6 +1166,9 @@ mod tests {
         let sine = laid("sin\u{2061}x");
         assert!(matches!(&sine.ink[0], Ink::Glyphs { text, italic: false, .. } if text == "sin"));
         assert!(matches!(&sine.ink[1], Ink::Glyphs { text, italic: true, x, .. } if text == "x" && *x > 30.0));
+        // A mathematical font has its slanted letters as characters.
+        assert_eq!(math_italic("STIX Two Math", "ahZβ2").as_deref(), Some("𝑎ℎ𝑍𝛽2"));
+        assert_eq!(math_italic("Times New Roman", "a"), None);
     }
 
     #[test]

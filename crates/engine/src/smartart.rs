@@ -757,7 +757,7 @@ fn text_with_bullets(node: &Node) -> String {
 
 /// Width of a character and height of a line, as fractions of the size of
 /// the text: what an average text in a sans-serif font takes.
-const CHAR_WIDTH: f32 = 0.52;
+const CHAR_WIDTH: f32 = 0.55;
 const LINE_HEIGHT: f32 = 1.2;
 
 /// The largest and the smallest text of a graphic, in points.
@@ -767,8 +767,9 @@ const MIN_TEXT_PT: f32 = 5.0;
 /// True when a text fits a box (pixels) at a size (pixels), broken at
 /// spaces.
 fn fits(text: &str, width: f32, height: f32, size: f32) -> bool {
-    // The margins of the text in its shape grow with it.
-    let room = width - 0.6 * size;
+    // The margins of the text in its shape (a tenth of an inch on each
+    // side), and a little more as the text grows.
+    let room = width - 19.2 - 0.3 * size;
     let per_row = (room / (CHAR_WIDTH * size)).floor();
     if per_row < 1.0 {
         return false;
@@ -791,7 +792,7 @@ fn fits(text: &str, width: f32, height: f32, size: f32) -> bool {
             }
         }
     }
-    rows * LINE_HEIGHT * size <= height - 0.4 * size
+    rows * LINE_HEIGHT * size <= height - 9.6 - 0.2 * size
 }
 
 /// Give the text of every piece the largest size at which the texts of
