@@ -170,7 +170,8 @@ fn what_opensheet_does_not_have_says_so() {
     unsupported(&mut wb, "sheet.getProtection().protect();", "Worksheet.getProtection is not supported in OpenSheet");
     unsupported(&mut wb, "sheet.getRange('A1').getFormat().getFont().setSuperscript(true);", "RangeFont.setSuperscript is not supported in OpenSheet");
     unsupported(&mut wb, "sheet.getRanges('A1,C3');", "Worksheet.getRanges is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRange('A1').setValue(ExcelScript.ChartType.pie);", "ExcelScript.ChartType is not supported in OpenSheet");
+    unsupported(&mut wb, "sheet.getRange('A1').setValue(ExcelScript.ConditionalFormatType.custom);", "ExcelScript.ConditionalFormatType is not supported in OpenSheet");
+    unsupported(&mut wb, "sheet.addChart(ExcelScript.ChartType.waterfall, sheet.getRange('A1:C4'));", "ExcelScript.ChartType.waterfall is not supported in OpenSheet");
     unsupported(&mut wb, "const x = ExcelScript.ClearApplyTo.resetContents;", "ExcelScript.ClearApplyTo.resetContents is not supported in OpenSheet");
     unsupported(&mut wb, "fetch('https://example.org');", "fetch is not supported in OpenSheet");
     unsupported(&mut wb, "OfficeScript.saveCopyAs('copy.xlsx');", "OfficeScript.saveCopyAs is not supported in OpenSheet");
@@ -334,6 +335,10 @@ fn what_a_run_reports() {
         &context,
     );
     assert_eq!((out.returned.as_deref(), out.activated, out.selected), (Some("[1.5,2]"), Some(0), Some((0, Rect::new(1, 1, 2, 2)))));
+    // The sheet in front stays in front when sheets move around it.
+    let out = ok_with(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.addWorksheet('First').setPosition(0);\n}", &context);
+    assert_eq!((out.activated, wb.sheets[2].name.as_str()), (Some(2), "Sheet2"));
+    wb.undo();
     // Deleting the sheet in front brings the next one in front.
     let out = ok_with(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().delete();\n  return workbook.getActiveWorksheet().getName();\n}", &context);
     assert_eq!((out.returned.as_deref(), out.activated), (Some("\"Sheet1\""), Some(0)));

@@ -92,6 +92,7 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
     // back whatever happens.
     let empty = Workbook::new(wb.locale);
     let mode = wb.calc_mode();
+    let front = context.active_sheet.min(wb.sheets.len().saturating_sub(1));
     let host = Rc::new(RefCell::new(Host::new(std::mem::replace(wb, empty), context)));
     let compiled = Rc::new(compiled);
     let timed_out = Arc::new(AtomicBool::new(false));
@@ -139,12 +140,14 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
                 host.wb.rollback();
             }
             Outcome {
-            logs,
-            error: None,
-            returned,
-            activated: host.activated.then(|| host.active_sheet()),
-            selected: host.selected(),
-            autofit: host.autofits(),
+                logs,
+                error: None,
+                returned,
+                // The sheet in front may have moved without being
+                // activated: a sheet added, deleted or moved before it.
+                activated: (host.activated || host.active_sheet() != front).then(|| host.active_sheet()),
+                selected: host.selected(),
+                autofit: host.autofits(),
             }
         }
         Err(thrown) => {

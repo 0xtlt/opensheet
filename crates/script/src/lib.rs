@@ -186,7 +186,9 @@ pub struct Outcome {
     /// What `main` returned, as JSON text, when it returned something.
     pub returned: Option<String>,
     /// The sheet the script activated, and the range it selected (sheet,
-    /// range), for the window to follow.
+    /// range), for the window to follow. `activated` is also set when the
+    /// sheet in front is no longer at the same place among the sheets
+    /// (a sheet was added, deleted or moved before it).
     pub activated: Option<usize>,
     pub selected: Option<(usize, Rect)>,
     /// The columns and rows the script asked to fit to their content.
