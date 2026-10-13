@@ -616,8 +616,28 @@ impl PartWriter<'_> {
         }
     }
 
-    /// One anchor with its object.
+    /// One anchor with its object. A SmartArt graphic made or changed
+    /// here is written twice, in a choice: as itself for this
+    /// application, and as the group of its shapes for the others, which
+    /// would lay it out their own way.
     fn push_anchor(&mut self, x: &mut String, sheet: &Sheet, drawing: &Drawing) {
+        match drawing.as_smartart().filter(|art| art.kept_parts().is_none()) {
+            Some(art) => {
+                smartart::push_choice_start(x);
+                self.push_anchor_as(x, sheet, drawing, None);
+                smartart::push_choice_else(x);
+                let frame = sheet.drawing_frame(drawing);
+                let pieces = art.pieces(self.wb.theme(), frame.width as f32, frame.height as f32);
+                self.push_anchor_as(x, sheet, drawing, Some(&pieces));
+                smartart::push_choice_end(x);
+            }
+            None => self.push_anchor_as(x, sheet, drawing, None),
+        }
+    }
+
+    /// An anchor with its object or, given the shapes a graphic is laid
+    /// out as, with the group of them.
+    fn push_anchor_as(&mut self, x: &mut String, sheet: &Sheet, drawing: &Drawing, pieces: Option<&[opensheet_engine::smartart::Piece]>) {
         // Excel anchors everything by two cells and says apart how the
         // object follows them.
         x.push_str("<xdr:twoCellAnchor");
@@ -628,7 +648,11 @@ impl PartWriter<'_> {
         let (from, to) = corners(sheet, drawing);
         push_corner(x, "from", from);
         push_corner(x, "to", to);
-        self.push_object(x, drawing, sheet.drawing_frame(drawing));
+        let frame = sheet.drawing_frame(drawing);
+        match pieces {
+            Some(pieces) => smartart::push_group(x, drawing, pieces, frame, &mut self.next_id),
+            None => self.push_object(x, drawing, frame),
+        }
         x.push_str("<xdr:clientData");
         if !drawing.locked {
             x.push_str(" fLocksWithSheet=\"0\"");
@@ -1287,7 +1311,8 @@ fn printable(text: &str, lines: bool) -> String {
 enum RawKind {
     /// A SmartArt graphic: the relationships to its data, layout, style
     /// and colours parts.
-    Graphic([String; 4]),
+    /// `own`: written by this application, in the choice it reads.
+    Graphic { ids: [String; 4], own: bool },
     /// The relationships of the drawing part to the image and, for a
     /// vector picture, to its SVG document.
     Picture(String, Option<String>),
@@ -1588,7 +1613,7 @@ fn parse_content<'a>(
         "graphicFrame" if object.is_none() && depth == 0 => {
             let mut frame = RawObject::new(RawKind::Picture(String::new(), None));
             if let Some(ids) = smartart::parse_frame(r, t, &mut frame) {
-                frame.kind = RawKind::Graphic(ids);
+                frame.kind = RawKind::Graphic { ids, own: false };
                 *object = Some(frame);
             }
         }
@@ -1650,12 +1675,20 @@ fn parse_part(xml: &str, theme: &Theme) -> Vec<RawAnchor> {
     let mut out = Vec::new();
     let mut r = Reader::new(xml);
     let mut index = 0;
+    // The anchor that follows is in the choice this application writes
+    // its own SmartArt graphics in.
+    let mut own = false;
     loop {
         match r.next() {
             Event::Open(t) => match t.name {
-                "wsDr" | "AlternateContent" | "Choice" => {}
+                "wsDr" | "AlternateContent" => {}
+                "Choice" => own = t.attr_local("ossa").as_deref() == Some(smartart::NS_OWN),
                 "twoCellAnchor" | "oneCellAnchor" | "absoluteAnchor" => {
                     let mut anchor = parse_anchor(&mut r, &t, theme);
+                    if let Some(RawObject { kind: RawKind::Graphic { own: written_here, .. }, .. }) = &mut anchor.object {
+                        *written_here = own;
+                    }
+                    own = false;
                     index += 1;
                     anchor.index = index;
                     if anchor.object.is_some() {
@@ -1838,7 +1871,7 @@ impl Loader {
     ) -> Option<Drawing> {
         let mut drawing = match object.kind {
             RawKind::Shape(shape) => Drawing::shape(shape, (0.0, 0.0)),
-            RawKind::Graphic(ids) => Drawing::smartart(smartart::load(pkg, rels, &ids, theme)?, (0.0, 0.0)),
+            RawKind::Graphic { ids, own } => Drawing::smartart(smartart::load(pkg, rels, &ids, theme, own)?, (0.0, 0.0)),
             RawKind::Picture(embed, vector) => {
                 let image_of = |id: &str| rels.iter().find(|rel| rel.id == id && rel.kind == "image").map(|rel| rel.target.clone());
                 let target = image_of(&embed)?;

@@ -85,13 +85,56 @@ fn wordart_keeps_the_look_of_its_letters() {
     assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
 }
 
-/// The header of a GIF image: enough for a picture to know its size.
-fn gif(width: u16, height: u16) -> Vec<u8> {
-    let mut bytes = b"GIF89a".to_vec();
-    bytes.extend_from_slice(&width.to_le_bytes());
-    bytes.extend_from_slice(&height.to_le_bytes());
-    bytes.extend_from_slice(&[0, 0, 0]);
-    bytes
+/// A real PNG image of one colour: what a file keeps beside the document
+/// of a vector picture, and a picture of its own.
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let crc32 = |data: &[u8]| {
+        let mut crc = u32::MAX;
+        for byte in data {
+            crc ^= *byte as u32;
+            for _ in 0..8 {
+                crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
+            }
+        }
+        !crc
+    };
+    let mut pixels = Vec::new();
+    for _ in 0..height {
+        // Every row starts with its filter: none.
+        pixels.push(0);
+        for _ in 0..width {
+            pixels.extend_from_slice(&[0x15, 0x60, 0x82]);
+        }
+    }
+    let (mut a, mut b) = (1u32, 0u32);
+    for byte in &pixels {
+        a = (a + *byte as u32) % 65_521;
+        b = (b + a) % 65_521;
+    }
+    // A zlib stream whose blocks are stored as they are.
+    let mut stream = vec![0x78, 0x01];
+    let mut blocks = pixels.chunks(60_000).peekable();
+    while let Some(block) = blocks.next() {
+        stream.push(u8::from(blocks.peek().is_none()));
+        stream.extend_from_slice(&(block.len() as u16).to_le_bytes());
+        stream.extend_from_slice(&(!(block.len() as u16)).to_le_bytes());
+        stream.extend_from_slice(block);
+    }
+    stream.extend_from_slice(&((b << 16) | a).to_be_bytes());
+    let mut header = Vec::new();
+    header.extend_from_slice(&width.to_be_bytes());
+    header.extend_from_slice(&height.to_be_bytes());
+    // 8 bits a channel, RGB.
+    header.extend_from_slice(&[8, 2, 0, 0, 0]);
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    for (kind, data) in [(b"IHDR", header.as_slice()), (b"IDAT", stream.as_slice()), (b"IEND", &[])] {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut chunk = kind.to_vec();
+        chunk.extend_from_slice(data);
+        out.extend_from_slice(&chunk);
+        out.extend_from_slice(&crc32(&chunk).to_be_bytes());
+    }
+    out
 }
 
 #[test]
@@ -99,7 +142,7 @@ fn vector_pictures_keep_their_document_beside_an_image() {
     use opensheet_engine::drawing::Picture;
     let star = br##"<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5-6.5-4.5-6.5 4.5 2-7.5L2 9h7z"/></svg>"##;
     let mut wb = Workbook::new(Locale::en());
-    let picture = Picture::vector(star.to_vec(), gif(192, 192)).expect("a vector picture");
+    let picture = Picture::vector(star.to_vec(), png(192, 192)).expect("a vector picture");
     // Inserted at the size the document asks for, not that of its image.
     let mut first = Drawing::picture(picture.clone());
     assert_eq!(first.size, (96.0, 96.0));
@@ -111,7 +154,7 @@ fn vector_pictures_keep_their_document_beside_an_image() {
     second.offset = (200.0, 20.0);
     second.rotation = 90.0;
     wb.add_drawing(0, second).unwrap();
-    wb.add_picture(0, gif(192, 192), (10, 1)).unwrap();
+    wb.add_picture(0, png(192, 192), (10, 1)).unwrap();
     wb.commit("pictures");
     let bytes = to_bytes(&wb);
     common::keep_sample("opensheet-icons.xlsx", &bytes);
@@ -128,7 +171,7 @@ fn vector_pictures_keep_their_document_beside_an_image() {
     assert_eq!(xml.matches("r:embed=\"rId1\"").count(), 3);
     assert!(xml.contains("<a:ext uri=\"{96DAC541-7B7A-43D3-8B79-37D633B846F1}\">"));
     let rels = part(&bytes, "xl/drawings/_rels/drawing1.xml.rels");
-    assert!(rels.contains("Target=\"../media/image1.gif\"") && rels.contains("Target=\"../media/image2.svg\""), "{rels}");
+    assert!(rels.contains("Target=\"../media/image1.png\"") && rels.contains("Target=\"../media/image2.svg\""), "{rels}");
     assert_eq!(rels.matches("relationships/image\"").count(), 2);
 
     let back = load(&bytes);
@@ -165,10 +208,13 @@ fn smartart_is_written_as_five_parts_and_read_back() {
         assert_eq!(wb.drawing(0, id).unwrap().name, format!("Diagram {}", i + 1));
         expected.push(art);
     }
-    // A graphic that was never given text, beside a picture.
-    wb.add_drawing(0, Drawing::smartart(SmartArt::new(Layout::Cycle), (300.0, 300.0))).unwrap();
-    expected.push(SmartArt::new(Layout::Cycle));
-    wb.add_picture(0, gif(20, 20), (40, 1)).unwrap();
+    // A graphic that was never given text, running right to left, beside
+    // a picture.
+    let mut cycle = SmartArt::new(Layout::Cycle);
+    cycle.rtl = true;
+    wb.add_drawing(0, Drawing::smartart(cycle.clone(), (300.0, 300.0))).unwrap();
+    expected.push(cycle);
+    wb.add_picture(0, png(20, 20), (40, 1)).unwrap();
     wb.commit("graphics");
     let bytes = to_bytes(&wb);
     common::keep_sample("opensheet-smartart.xlsx", &bytes);
@@ -193,12 +239,41 @@ fn smartart_is_written_as_five_parts_and_read_back() {
     assert_eq!(xml.matches("<xdr:graphicFrame macro=\"\">").count(), 9);
     assert!(xml.contains("r:dm=\"rId1\" r:lo=\"rId2\" r:qs=\"rId3\" r:cs=\"rId4\""), "{xml}");
     assert!(xml.contains("r:dm=\"rId6\" r:lo=\"rId7\""));
+    // Each graphic is in a choice: itself for this application, the group
+    // of its shapes for the others.
+    let choice = "<mc:AlternateContent xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\"><mc:Choice xmlns:ossa=\"https://opensheet.org/2026/smartart\" Requires=\"ossa\"><xdr:twoCellAnchor>";
+    assert_eq!(xml.matches(choice).count(), 9, "{xml}");
+    assert_eq!(xml.matches("</xdr:twoCellAnchor></mc:Choice><mc:Fallback><xdr:twoCellAnchor>").count(), 9);
+    assert_eq!(xml.matches("</xdr:grpSp><xdr:clientData/></xdr:twoCellAnchor></mc:Fallback></mc:AlternateContent>").count(), 9);
+    assert_eq!(xml.matches("<xdr:grpSp>").count(), 9);
+    // The first: three blocks, each a shape with its text, in the colour,
+    // the outline and the size of text they are drawn with here.
+    let group = &xml[xml.find("<xdr:grpSp>").unwrap()..xml.find("</xdr:grpSp>").unwrap()];
+    let pieces = expected[0].pieces(wb.theme(), 480.0, 300.0);
+    assert_eq!((pieces.len(), group.matches("<xdr:sp ").count()), (3, 3));
+    assert!(group.starts_with("<xdr:grpSp><xdr:nvGrpSpPr><xdr:cNvPr id=\"3\" name=\"Diagram 1\"/><xdr:cNvGrpSpPr/></xdr:nvGrpSpPr><xdr:grpSpPr><a:xfrm><a:off x=\"190500\" y=\"190500\"/><a:ext cx=\"4572000\" cy=\"2857500\"/><a:chOff x=\"190500\" y=\"190500\"/><a:chExt cx=\"4572000\" cy=\"2857500\"/></a:xfrm></xdr:grpSpPr>"), "{group}");
+    assert!(group.contains("<xdr:cNvPr id=\"4\" name=\"Diagram 1 - 1\"/>") && group.contains("name=\"Diagram 1 - 3\""));
+    assert!(group.contains("<a:t>Plan</a:t>") && group.contains("<a:t>• Scope &amp; &lt;budget&gt;</a:t>") && group.contains("<a:t>Ship</a:t>"));
+    assert!(group.contains(&format!("<a:rPr sz=\"{}\">", pieces[2].shape.font.size as u32 * 50)), "{group}");
+    assert!(group.contains("<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:solidFill><a:schemeClr val=\"bg1\"/></a:solidFill><a:ln w=\"12700\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill></a:ln>"), "{group}");
+    // Circles that overlap let one another show there too, and the levels
+    // of a pyramid keep their slant.
+    assert!(xml.contains("<a:solidFill><a:schemeClr val=\"accent6\"><a:alpha val=\"50000\"/></a:schemeClr></a:solidFill>") || xml.contains("<a:alpha val=\"50000\"/>"), "{xml}");
+    assert!(xml.contains("<a:prstGeom prst=\"trapezoid\"><a:avLst><a:gd name=\"adj\""));
+    // No two objects of the part have the same id.
+    let mut ids: Vec<&str> = xml.split("<xdr:cNvPr id=\"").skip(1).map(|rest| rest.split('"').next().unwrap()).collect();
+    let count = ids.len();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), count);
+    assert_eq!(count, 1 + wb.sheets[0].drawings.iter().map(Drawing::object_count).sum::<usize>() - 1);
     let rels = part(&bytes, "xl/drawings/_rels/drawing1.xml.rels");
     assert!(rels.contains("<Relationship Id=\"rId5\" Type=\"http://schemas.microsoft.com/office/2007/relationships/diagramDrawing\" Target=\"../diagrams/drawing1.xml\"/>"), "{rels}");
     assert!(rels.contains("Id=\"rId46\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\""), "{rels}");
     let data = part(&bytes, "xl/diagrams/data1.xml");
     assert!(data.contains("<dsp:dataModelExt xmlns:dsp=\"http://schemas.microsoft.com/office/drawing/2008/diagram\" relId=\"rId5\""), "{data}");
     assert!(data.contains("loTypeId=\"urn:microsoft.com/office/officeart/2005/8/layout/default\" loCatId=\"list\""));
+    assert!(part(&bytes, "xl/diagrams/data9.xml").contains("<dgm:presLayoutVars><dgm:dir val=\"rev\"/></dgm:presLayoutVars></dgm:prSet>"));
     assert!(data.contains("<a:t>Scope &amp; &lt;budget&gt;</a:t>") && data.contains("phldrT=\"[Text]\" phldr=\"1\""));
     // Five entries: a point and two transitions each, and the root.
     assert_eq!((data.matches("<dgm:pt ").count(), data.matches("<dgm:cxn ").count()), (16, 5));
@@ -240,7 +315,7 @@ fn a_graphic_of_another_layout_keeps_its_parts_and_shows_its_shapes() {
     let mut wb = Workbook::new(Locale::en());
     wb.add_drawing(0, Drawing::smartart(graphic(Layout::Process, &[(0, "One"), (0, "Two")]), (400.0, 200.0))).unwrap();
     wb.commit("graphic");
-    let ours = to_bytes(&wb);
+    let ours = as_excel_writes(&to_bytes(&wb));
     let foreign_layout = part(&ours, "xl/diagrams/layout1.xml").replace("layout/process1", "layout/hProcess9");
     let foreign_data = part(&ours, "xl/diagrams/data1.xml").replace("layout/process1", "layout/hProcess9").replace("relId=\"rId5\"", "relId=\"rId9\"");
     let rels = part(&ours, "xl/drawings/_rels/drawing1.xml.rels").replace("Id=\"rId5\"", "Id=\"rId9\"");
@@ -375,4 +450,117 @@ fn equations_of_other_writers_are_read() {
     let shape = back.sheets[0].drawings[0].as_shape().unwrap();
     assert_eq!(shape.text, "E=mc^2+1∫_0▒〖cos\u{2061}〖x〗〗");
     assert_eq!(shape.math, Some(Equation::parse(&shape.text)));
+}
+
+/// A package of ours as another application would have written it: each
+/// graphic alone in its anchor, without the choice and the group. With
+/// `only_groups`, as Excel saves ours again: the groups alone.
+fn without_choices(bytes: &[u8], only_groups: bool) -> Vec<u8> {
+    let mut parts: Vec<(String, String)> = common::part_names(bytes)
+        .into_iter()
+        .filter(|name| !name.contains("/media/"))
+        .map(|name| (name.clone(), part(bytes, &name)))
+        .collect();
+    for (name, content) in &mut parts {
+        if !name.starts_with("xl/drawings/drawing") {
+            continue;
+        }
+        let mut out = String::new();
+        let mut rest = content.as_str();
+        while let Some(start) = rest.find("<mc:AlternateContent") {
+            let choice = start + rest[start..].find("<xdr:twoCellAnchor").unwrap();
+            let middle = choice + rest[choice..].find("</mc:Choice><mc:Fallback>").unwrap();
+            let end = middle + rest[middle..].find("</mc:Fallback></mc:AlternateContent>").unwrap();
+            out.push_str(&rest[..start]);
+            out.push_str(if only_groups { &rest[middle + "</mc:Choice><mc:Fallback>".len()..end] } else { &rest[choice..middle] });
+            rest = &rest[end + "</mc:Fallback></mc:AlternateContent>".len()..];
+        }
+        out.push_str(rest);
+        *content = out;
+    }
+    let borrowed: Vec<(&str, &str)> = parts.iter().map(|(name, content)| (name.as_str(), content.as_str())).collect();
+    common::package(&borrowed)
+}
+
+fn as_excel_writes(bytes: &[u8]) -> Vec<u8> {
+    without_choices(bytes, false)
+}
+
+#[test]
+fn a_graphic_of_a_file_goes_back_as_it_came_until_it_is_changed() {
+    let mut wb = Workbook::new(Locale::en());
+    let mut art = graphic(Layout::Chevron, &[(0, "Plan"), (0, "Build"), (1, "Test")]);
+    art.colors = ColorScheme::Colorful(1);
+    wb.add_drawing(0, Drawing::smartart(art.clone(), (480.0, 200.0))).unwrap();
+    wb.commit("graphic");
+    // The file of another application: a frame alone, and definitions
+    // that are its own.
+    let fixture = as_excel_writes(&to_bytes(&wb));
+    let mut parts: Vec<(String, String)> = common::part_names(&fixture).into_iter().map(|name| (name.clone(), part(&fixture, &name))).collect();
+    for (name, content) in &mut parts {
+        if name.starts_with("xl/diagrams/") && !name.contains("data") {
+            *content = content.replace("<dgm:title val=\"\"/>", "<dgm:title val=\"From Excel\"/>").replace("<dsp:spTree>", "<dsp:spTree><!-- laid out by Excel -->");
+        }
+    }
+    let borrowed: Vec<(&str, &str)> = parts.iter().map(|(name, content)| (name.as_str(), content.as_str())).collect();
+    let fixture = common::package(&borrowed);
+    assert!(!part(&fixture, "xl/drawings/drawing1.xml").contains("AlternateContent"));
+
+    // Read: the same graphic, which remembers its parts.
+    let mut back = load(&fixture);
+    let id = back.sheets[0].drawings[0].id;
+    let read = back.drawing(0, id).unwrap().as_smartart().unwrap().clone();
+    assert_eq!((read.layout, &read.nodes, read.colors), (art.layout, &art.nodes, art.colors));
+    assert!(read.kept_parts().is_some() && read.foreign.is_none());
+    assert_eq!(back.drawing(0, id).unwrap().object_count(), 1);
+    // Untouched, it is written as it came: a frame, and its five parts
+    // to the letter.
+    let again = to_bytes(&back);
+    let drawing = part(&again, "xl/drawings/drawing1.xml");
+    assert!(!drawing.contains("AlternateContent") && !drawing.contains("grpSp") && drawing.contains("<xdr:graphicFrame macro=\"\">"), "{drawing}");
+    for name in ["data1", "layout1", "quickStyle1", "colors1", "drawing1"] {
+        let name = format!("xl/diagrams/{name}.xml");
+        assert_eq!(part(&again, &name), part(&fixture, &name), "{name}");
+    }
+    assert!(part(&again, "xl/diagrams/layout1.xml").contains("From Excel"));
+    assert_eq!(load(&again).sheets[0].drawings[0].as_smartart(), Some(&read));
+    // Changed, it is one of ours: the choice, with the group of its
+    // shapes, and parts written anew.
+    back.update_drawing(0, id, |drawing| {
+        drawing.as_smartart_mut().unwrap().set_text(0, "Design");
+    });
+    back.commit("text");
+    assert!(back.drawing(0, id).unwrap().as_smartart().unwrap().kept_parts().is_none());
+    let changed = to_bytes(&back);
+    let drawing = part(&changed, "xl/drawings/drawing1.xml");
+    assert!(drawing.contains("<mc:Fallback>") && drawing.contains("<a:t>Design</a:t>"), "{drawing}");
+    assert!(!part(&changed, "xl/diagrams/layout1.xml").contains("From Excel"));
+    assert!(part(&changed, "xl/diagrams/data1.xml").contains("<a:t>Design</a:t>"));
+    // Changed back, it is again what its file said.
+    back.update_drawing(0, id, |drawing| {
+        drawing.as_smartart_mut().unwrap().set_text(0, "Plan");
+    });
+    back.commit("text");
+    assert_eq!(part(&to_bytes(&back), "xl/diagrams/layout1.xml"), part(&fixture, "xl/diagrams/layout1.xml"));
+}
+
+#[test]
+fn a_graphic_saved_by_excel_is_the_group_of_its_shapes() {
+    let mut wb = Workbook::new(Locale::en());
+    let art = graphic(Layout::Process, &[(0, "One"), (0, "Two")]);
+    wb.add_drawing(0, Drawing::smartart(art.clone(), (400.0, 200.0))).unwrap();
+    wb.commit("graphic");
+    // Excel reads the fallback of the choice and writes that alone.
+    let back = load(&without_choices(&to_bytes(&wb), true));
+    assert_eq!(back.sheets[0].drawings.len(), 1);
+    let group = back.sheets[0].drawings[0].as_group().expect("a group");
+    // Two boxes and the arrow between them, with their text.
+    let texts: Vec<&str> = group.members.iter().map(|member| member.as_shape().unwrap().text.as_str()).collect();
+    assert_eq!(texts, vec!["One", "", "Two"]);
+    assert_eq!(back.sheets[0].drawings[0].name, "Diagram 1");
+    let pieces = art.pieces(wb.theme(), 400.0, 200.0);
+    assert_eq!(group.members[0].as_shape().unwrap().fill.map(|c| c.value()), pieces[0].shape.fill.map(|c| c.value()));
+    assert_eq!(group.members[0].as_shape().unwrap().font.size, pieces[0].shape.font.size);
+    let frame = back.drawing_frame(0, back.sheets[0].drawings[0].id).unwrap();
+    assert_eq!((frame.width, frame.height), (400.0, 200.0));
 }
