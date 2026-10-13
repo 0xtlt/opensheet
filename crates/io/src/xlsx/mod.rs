@@ -28,11 +28,13 @@ macro_rules! w {
     };
 }
 
+mod background;
 mod cell_style;
 mod chart;
 mod color;
 mod comments;
 mod condfmt;
+mod custom_view;
 mod datatools;
 mod defaults;
 mod drawing;
@@ -41,12 +43,15 @@ mod ext;
 mod filter;
 mod formula;
 mod hyperlink;
+mod ink;
 mod numfmt;
 mod outline;
 mod page;
 mod parts;
 mod pivot;
 mod protection;
+mod slicer;
+mod timeline;
 mod sparkline;
 pub(crate) mod read;
 mod stylerefs;

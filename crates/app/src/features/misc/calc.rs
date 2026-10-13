@@ -192,4 +192,34 @@ mod tests {
         enter(&app, cx, &[("A9", "=A9")]);
         assert!(app.update(cx, |app, _| app.modal_open()));
     }
+
+    #[gpui::test]
+    fn error_checking_lists_the_circular_references(cx: &mut TestAppContext) {
+        let (app, cx) = open(cx);
+        // None: the entry is greyed out.
+        app.update(cx, |app, _| {
+            assert!(super::super::circular_cells(app).is_empty());
+            assert!(super::super::circular_references(app).disabled);
+        });
+        enter(&app, cx, &[("B2", "=B2+1")]);
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        app.update_in(cx, |app, window, cx| {
+            assert_eq!(super::super::circular_cells(app), vec![("$B$2".to_string(), (0, 1, 1))]);
+            // Seen from another sheet, the cell is named with its sheet.
+            app.add_sheet(cx);
+            let other = (0..app.wb.sheets.len()).find(|index| app.wb.circular_cells().iter().all(|cell| cell.0 != *index)).unwrap();
+            app.switch_sheet(other, window, cx);
+            let listed = super::super::circular_cells(app);
+            assert_eq!(listed.len(), 1);
+            let (text, (sheet, row, col)) = listed[0].clone();
+            assert_eq!(text, format!("{}!$B$2", app.wb.sheets[sheet].name));
+            // Choosing it goes there.
+            let entry = super::super::circular_references(app);
+            assert!(!entry.disabled);
+            let go = entry.submenu.unwrap().remove(0).action.unwrap();
+            go(app, window, cx);
+            assert_eq!((app.sheet, app.active()), (sheet, (row, col)));
+        });
+    }
 }

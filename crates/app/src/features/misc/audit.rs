@@ -472,6 +472,10 @@ pub(crate) fn error_cells(wb: &Workbook, sheet: usize, ignored: &HashSet<(String
     let Some(sh) = wb.sheets.get(sheet) else {
         return Vec::new();
     };
+    // The one rule there is can be switched off in Preferences.
+    if !crate::features::preferences::checks_error_values() {
+        return Vec::new();
+    }
     sh.cells
         .iter()
         .filter(|(_, cell)| matches!(cell.content, Content::Formula(_)) && cell.value.is_error())

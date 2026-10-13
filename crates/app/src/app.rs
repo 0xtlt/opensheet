@@ -382,8 +382,11 @@ pub struct ExcelApp {
     pub rename_input: Entity<TextInput>,
     pub find_input: Entity<TextInput>,
     pub editing: Option<Editing>,
-    /// The selected chart, picture or shape of the current sheet.
+    /// The selected chart, picture or shape of the current sheet; when
+    /// several are selected, the one selected last.
     pub object_sel: Option<ObjectId>,
+    /// The other selected objects (see `objects.rs`).
+    pub object_more: Vec<ObjectId>,
     /// The object put aside by Copy / Cut: its feature and its data.
     pub(crate) object_clip: Option<(usize, Rc<dyn Any>)>,
     pub clip: Option<ClipState>,
@@ -516,6 +519,7 @@ impl ExcelApp {
             find_input,
             editing: None,
             object_sel: None,
+            object_more: Vec::new(),
             object_clip: None,
             clip: None,
             drag: None,
@@ -565,6 +569,7 @@ impl ExcelApp {
         self.sheet = 0;
         self.editing = None;
         self.object_sel = None;
+        self.object_more.clear();
         self.object_clip = None;
         self.context_tab = None;
         self.clip = None;
@@ -1208,9 +1213,10 @@ impl ExcelApp {
                 }
             }
             InputEvent::Enter { shift } => {
-                let dir = if *shift { Direction::Up } else { Direction::Down };
+                // Where Return leads is a preference; it may lead nowhere.
+                let dir = features::preferences::enter_direction(*shift);
                 let origin = self.tab_origin.take();
-                if self.commit_edit(Some(dir), window, cx) {
+                if self.commit_edit(dir, window, cx) {
                     // After a run of Tab entries, Enter goes back under the
                     // first one.
                     if let (Some(col), false, true) = (origin, *shift, self.sel().is_single_cell()) {
@@ -1563,6 +1569,8 @@ impl ExcelApp {
         }
         self.wb.undo();
         self.clip = None;
+        // An object the step took away is no longer selected.
+        self.prune_object_selection(cx);
         self.refresh(cx);
     }
 
@@ -1572,6 +1580,8 @@ impl ExcelApp {
         }
         self.wb.redo();
         self.clip = None;
+        // An object the step took away is no longer selected.
+        self.prune_object_selection(cx);
         self.refresh(cx);
     }
 
@@ -1752,17 +1762,17 @@ impl ExcelApp {
     }
 
     pub fn set_font_size(&mut self, pt: f32, cx: &mut Context<Self>) {
-        // A selected shape takes the size for its own text.
+        let pt = pt.clamp(1.0, 409.0);
+        // A selected object takes the size for its own text.
         if let Some(id) = self.object_sel {
-            let size = pt.clamp(1.0, 409.0);
-            if features::all()[id.owner].object_style(self, id.id, t("Font Size", "Taille de police"), &move |s: &mut Style| s.font.set_size_pt(size), cx) {
+            let label = t("Font Size", "Taille de police");
+            if features::all()[id.owner].object_style(self, id.id, label, &|s| s.font.set_size_pt(pt), cx) {
                 return;
             }
         }
         if !self.may_all(Intent::FormatCells, cx) {
             return;
         }
-        let pt = pt.clamp(1.0, 409.0);
         let ranges = self.sel().ranges.clone();
         for r in &ranges {
             self.wb.update_style(self.sheet, *r, &|s| s.font.set_size_pt(pt));
@@ -1796,7 +1806,8 @@ impl ExcelApp {
     ];
 
     pub fn step_font_size(&mut self, grow: bool, cx: &mut Context<Self>) {
-        let cur = self.active_style().font.size_pt();
+        // The text of a selected chart element is what grows and shrinks.
+        let cur = features::charts::home_text_size(self).unwrap_or_else(|| self.active_style().font.size_pt());
         let next = if grow {
             Self::FONT_SIZES
                 .iter()
@@ -2296,7 +2307,13 @@ impl ExcelApp {
                 if self.editing.is_some() && !self.commit_edit(None, window, cx) {
                     return;
                 }
-                self.select_object(Some(id), cx);
+                // Shift or ⌘ adds the object to the selection, or takes
+                // it out: then there is nothing to drag.
+                if !self.click_object(id, shift || add, cx) {
+                    window.focus(&self.grid_focus);
+                    self.refresh(cx);
+                    return;
+                }
                 if ev.click_count >= 2 && matches!(hit, Hit::Object(_)) {
                     let event = self.zone_event(&layout, ev.position, ev.button, ev.modifiers, ev.click_count);
                     let focus = window.focused(cx);
@@ -2844,6 +2861,17 @@ impl ExcelApp {
     pub fn grid_scroll(&mut self, ev: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let delta = ev.delta.pixel_delta(px(20.0 * self.zoom));
         let (mut dx, mut dy) = (f32::from(delta.x) as f64, f32::from(delta.y) as f64);
+        // A feature's zone may scroll what it shows (the buttons of a
+        // slicer) instead of the sheet.
+        if let Some(layout) = self.current_layout() {
+            let (x, y) = layout.local(ev.position);
+            if let Some(zone) = self.zone_at(x, y, true).or_else(|| self.zone_at(x, y, false)).map(|i| self.zones[i].clone())
+                && features::all()[zone.owner].zone_scroll(self, &zone, (dx as f32, dy as f32), cx)
+            {
+                cx.notify();
+                return;
+            }
+        }
         if ev.modifiers.platform || ev.modifiers.control {
             // Zoom with Cmd/Ctrl + wheel.
             if dy.abs() > 0.5 {
@@ -2905,7 +2933,7 @@ impl ExcelApp {
         };
         let target = match hit {
             Hit::Object(id) | Hit::ObjectHandle(id, _) => {
-                self.select_object(Some(id), cx);
+                self.click_object(id, false, cx);
                 clipboard(&mut menu);
                 let order = |label: &'static str, mv: features::ZMove| {
                     MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
@@ -3348,7 +3376,12 @@ impl ExcelApp {
         self.advance(Direction::Left, cx);
     }
     pub fn on_enter_down(&mut self, _: &EnterDown, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Down, false, true, window, cx) {
+        // Where Return leads is a preference; it may lead nowhere.
+        let Some(dir) = features::preferences::enter_direction(false) else {
+            self.commit_edit(None, window, cx);
+            return;
+        };
+        if self.editing_key(dir, false, true, window, cx) {
             return;
         }
         // Enter with a copy marquee pastes, like Excel.
@@ -3359,17 +3392,21 @@ impl ExcelApp {
             return;
         }
         let origin = self.tab_origin.take();
-        self.advance(Direction::Down, cx);
+        self.advance(dir, cx);
         if let (Some(col), true) = (origin, self.sel().is_single_cell()) {
             let (r, _) = self.active();
             self.select_cell(r, col, cx);
         }
     }
     pub fn on_enter_up(&mut self, _: &EnterUp, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Up, false, true, window, cx) {
+        let Some(dir) = features::preferences::enter_direction(true) else {
+            self.commit_edit(None, window, cx);
+            return;
+        };
+        if self.editing_key(dir, false, true, window, cx) {
             return;
         }
-        self.advance(Direction::Up, cx);
+        self.advance(dir, cx);
     }
     pub fn on_edit_cell(&mut self, _: &EditCell, window: &mut Window, cx: &mut Context<Self>) {
         self.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
@@ -3405,6 +3442,11 @@ impl ExcelApp {
         self.redo(cx);
     }
     pub fn on_select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
+        // With an object selected: every object of the sheet.
+        if self.object_sel.is_some() {
+            self.select_all_objects(cx);
+            return;
+        }
         // First press selects the data region, second the whole sheet.
         let (r, c) = self.active();
         let region = self.wb.current_region(self.sheet, r, c);

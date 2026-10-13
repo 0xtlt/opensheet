@@ -5,7 +5,7 @@
 
 /// The `uri` of each `<ext>` of a worksheet, in the order Excel writes
 /// them. A feature that adds an extension adds its uri here.
-const ORDER: [&str; 5] = [
+const ORDER: [&str; 6] = [
     // x14:conditionalFormattings
     "{78C0D931-6437-407d-A8EE-F0AAD7539E65}",
     // x14:dataValidations
@@ -16,6 +16,8 @@ const ORDER: [&str; 5] = [
     "{A8765BA9-456A-4dab-B4F3-ACF838C121DE}",
     // x15:timelineRefs
     "{7E03D99C-DC04-49d9-9315-930204A7B6E9}",
+    // x14:slicerList of the slicers of tables
+    "{3A4CF648-6AED-40f4-86FF-DC5316D8AED3}",
 ];
 
 /// The `<ext>` elements of a worksheet being written.

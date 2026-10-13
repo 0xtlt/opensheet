@@ -12,7 +12,9 @@ use gpui::{
     canvas, point, prelude::*, px, size,
 };
 use opensheet_engine::Sheet;
-use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, LineEnd, Outline, Shape, ShapeTool, TEXT_MARGIN};
+use opensheet_engine::drawing::{
+    Drawing, DrawingKind, Effects, Frame, LineEnd, Outline, Picture, PictureAdjust, Shape, ShapePreset, ShapeTool, TEXT_MARGIN,
+};
 use opensheet_engine::style::Underline;
 
 /// Colour of the selection frame and of the handles (as `objects.rs`).
@@ -366,41 +368,278 @@ fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f
     }
 }
 
-/// The items that draw a picture or a shape in a frame. `natural` is the
-/// size of the frame at 100 % (the proportions of the outline depend on
-/// it). The text of a shape is drawn when `text` gives the fonts: not
-/// while it is being typed in place.
+/// How many copies of an outline, each a little larger and fainter than
+/// the one before, stand for a blurred shadow or a glow.
+const HALO_LAYERS: usize = 6;
+
+/// A blurred copy of what a drawing covers: `lines` grown by `spread`
+/// pixels, moved by `offset`, in a colour that is `alpha` strong where
+/// the copies all overlap and fades out over `blur` pixels either side
+/// of the edge. `stroke` is the width of the outline of an open line,
+/// which has nothing to fill.
+#[allow(clippy::too_many_arguments)]
+fn halo(lines: &[Polyline], stroke: f32, spread: (f32, f32), blur: f32, offset: Pt, color: Hsla, alpha: f32, brush: &Brush, out: &mut Vec<Draw>) {
+    let points = lines.iter().flat_map(|line| line.points.iter());
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+    for p in points {
+        (x0, y0, x1, y1) = (x0.min(p.0), y0.min(p.1), x1.max(p.0), y1.max(p.1));
+    }
+    if !(x1 >= x0 && y1 >= y0) || alpha <= 0.0 {
+        return;
+    }
+    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    let (width, height) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
+    let layers = if blur < 0.75 { 1 } else { HALO_LAYERS };
+    // Together the layers are as strong as one of `alpha`.
+    let each = 1.0 - (1.0 - alpha.min(0.999)).powf(1.0 / layers as f32);
+    let ink = color.opacity(each);
+    for layer in 0..layers {
+        // From the outermost in.
+        let grow = if layers == 1 { 0.0 } else { blur * (1.0 - (2 * layer + 1) as f32 / layers as f32) };
+        let (sx, sy) = ((width + 2.0 * (spread.0 + grow)) / width, (height + 2.0 * (spread.1 + grow)) / height);
+        if sx <= 0.0 || sy <= 0.0 {
+            continue;
+        }
+        for line in lines {
+            let moved: Vec<Pt> = line
+                .points
+                .iter()
+                .map(|p| (cx + (p.0 - cx) * sx + offset.0, cy + (p.1 - cy) * sy + offset.1))
+                .collect();
+            if line.closed {
+                brush.fill(&moved, ink, out);
+            } else if stroke + 2.0 * grow > 0.0 {
+                // A line has little ink to spread: the wider the copy,
+                // the fainter, or a thin line would cast a thick band.
+                let thin = (stroke / (stroke + 2.0 * grow)).clamp(0.0, 1.0);
+                let copy = Polyline { points: moved, closed: false };
+                brush.stroke(&copy, stroke + 2.0 * grow, &[], color.opacity(each * thin), out);
+            }
+        }
+    }
+}
+
+/// The shadow and the glow of a drawing, under it. `lines` is what the
+/// drawing covers, `stroke` the width of its outline.
+fn draw_effects(effects: &Effects, lines: &[Polyline], stroke: f32, brush: &Brush, out: &mut Vec<Draw>) {
+    let px = |points: f32| pt_to_px(points) * brush.zoom;
+    if let Some(shadow) = &effects.shadow {
+        let (sin, cos) = shadow.angle.to_radians().sin_cos();
+        let distance = px(shadow.distance);
+        // The size is that of the shadow next to the shape's.
+        let points = lines.iter().flat_map(|line| line.points.iter());
+        let (mut w, mut h) = (0.0f32, 0.0f32);
+        let (mut lo, mut hi) = ((f32::INFINITY, f32::INFINITY), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+        for p in points {
+            lo = (lo.0.min(p.0), lo.1.min(p.1));
+            hi = (hi.0.max(p.0), hi.1.max(p.1));
+            (w, h) = (hi.0 - lo.0, hi.1 - lo.1);
+        }
+        let spread = ((shadow.size - 1.0) * w / 2.0, (shadow.size - 1.0) * h / 2.0);
+        halo(
+            lines,
+            stroke,
+            spread,
+            px(shadow.blur),
+            (distance * cos, distance * sin),
+            engine_color(shadow.color),
+            1.0 - shadow.transparency.clamp(0.0, 1.0),
+            brush,
+            out,
+        );
+    }
+    if let Some(glow) = &effects.glow {
+        let radius = px(glow.radius);
+        halo(
+            lines,
+            stroke,
+            (radius / 2.0, radius / 2.0),
+            radius / 2.0,
+            (0.0, 0.0),
+            engine_color(glow.color),
+            1.0 - glow.transparency.clamp(0.0, 1.0),
+            brush,
+            out,
+        );
+    }
+}
+
+/// What a picture covers: its frame, or the outline it is cropped to.
+pub fn picture_outline(adjust: &PictureAdjust, placed: &Placed, natural: (f32, f32)) -> Vec<Polyline> {
+    if adjust.shape == ShapePreset::Rect {
+        return vec![Polyline {
+            points: placed.corners().to_vec(),
+            closed: true,
+        }];
+    }
+    geometry::flatten(&adjust.shape.path(natural.0, natural.1), placed)
+        .into_iter()
+        .filter(|line| line.closed)
+        .collect()
+}
+
+fn draw_picture(drawing: &Drawing, picture: &Picture, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+    if drawing.effects.shadow.is_some() || drawing.effects.glow.is_some() {
+        draw_effects(&drawing.effects, &picture_outline(&picture.adjust, placed, natural), 0.0, brush, out);
+    }
+    // Soft edges are made in the pixels: a fraction of the shorter side.
+    let shorter = natural.0.min(natural.1).max(1.0);
+    let soft = (pt_to_px(drawing.effects.soft_edge.max(0.0)) / shorter).min(0.5);
+    // A vector picture that is shown as it is: from its document, sharp
+    // at any zoom. Adjusted, cropped or softened, from its image.
+    let vector = if soft == 0.0 && picture.adjust == PictureAdjust::default() {
+        super::icons::image_for(picture, placed, brush.scale)
+    } else {
+        None
+    };
+    match vector.or_else(|| picture::image_as(picture, &picture.adjust, soft, natural, placed, brush.scale)) {
+        Some((image, (x0, y0, x1, y1))) => out.push(Draw::Image {
+            image,
+            bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),
+        }),
+        None => {
+            // A picture that cannot be decoded: a crossed-out box.
+            let corners = placed.corners();
+            brush.fill(&corners, c(0xF3F3F3), out);
+            let frame = Polyline {
+                points: corners.to_vec(),
+                closed: true,
+            };
+            brush.stroke(&frame, 1.0, &[], c(0xB0B0B0), out);
+            for (a, b) in [(0, 2), (1, 3)] {
+                let cross = Polyline {
+                    points: vec![corners[a], corners[b]],
+                    closed: false,
+                };
+                brush.stroke(&cross, 1.0, &[], c(0xC42B1C), out);
+            }
+        }
+    }
+}
+
+/// Where a frame given in pixels of the screen is drawn, with a turn.
+fn placed_at(frame: Frame, turn: (f32, bool, bool)) -> Placed {
+    Placed {
+        x0: frame.x as f32,
+        y0: frame.y as f32,
+        x1: (frame.x + frame.width) as f32,
+        y1: (frame.y + frame.height) as f32,
+        rotation: turn.0,
+        flip_h: turn.1,
+        flip_v: turn.2,
+    }
+}
+
+/// The pictures and shapes a drawing shows where it is drawn: itself, or
+/// the members of a group, each with the size it has at 100 %.
+pub fn leaves<'a>(drawing: &'a Drawing, placed: &Placed, zoom: f32) -> Vec<(&'a Drawing, Placed, (f32, f32))> {
+    let frame = Frame::new(placed.x0 as f64, placed.y0 as f64, placed.width() as f64, placed.height() as f64);
+    drawing
+        .leaves_turned(frame, (placed.rotation, placed.flip_h, placed.flip_v))
+        .into_iter()
+        .map(|leaf| {
+            let natural = ((leaf.frame.width as f32 / zoom).abs(), (leaf.frame.height as f32 / zoom).abs());
+            (leaf.drawing, placed_at(leaf.frame, (leaf.rotation, leaf.flip_h, leaf.flip_v)), natural)
+        })
+        .collect()
+}
+
+/// The items that draw a picture, a shape or a group in a frame.
+/// `natural` is the size of the frame at 100 % (the proportions of the
+/// outline depend on it). The text of a shape is drawn when `text` gives
+/// the fonts: not while it is being typed in place.
 pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     match &drawing.kind {
-        DrawingKind::Shape(shape) => draw_shape(shape, placed, natural, brush, text, out),
+        DrawingKind::Shape(shape) => {
+            if !drawing.effects.is_none() {
+                let lines = outline_of(shape, placed, natural);
+                let stroke = shape.outline.as_ref().map_or(1.0, |outline| stroke_width(outline, brush.zoom));
+                // A shape that is neither filled nor a line casts the
+                // shadow of its outline only.
+                let hollow = shape.fill.is_none() && !shape.preset.is_line();
+                let lines: Vec<Polyline> = lines
+                    .into_iter()
+                    .map(|line| Polyline {
+                        closed: line.closed && !hollow,
+                        ..line
+                    })
+                    .collect();
+                draw_effects(&drawing.effects, &lines, stroke, brush, out);
+            }
+            draw_shape(shape, placed, natural, brush, text, out);
+        }
+        DrawingKind::Picture(picture) => draw_picture(drawing, picture, placed, natural, brush, out),
         // A graphic is drawn by `smartart::draw`, which is told the theme
         // its colours come from.
         DrawingKind::SmartArt(_) => {}
-        DrawingKind::Picture(picture) => match super::icons::image_for(picture, placed, brush.scale)
-            .or_else(|| picture::image_for(picture, placed, brush.scale))
-        {
-            Some((image, (x0, y0, x1, y1))) => out.push(Draw::Image {
+        DrawingKind::Group(_) => {
+            for (member, inner, natural) in leaves(drawing, placed, brush.zoom) {
+                draw(member, &inner, natural, brush, text, out);
+            }
+        }
+    }
+}
+
+/// How long the marks of the crop handles are.
+const CROP_MARK: f32 = 14.0;
+
+/// A picture while it is being cropped: the whole image, pale where the
+/// frame cuts it off, and the black marks that move the edges of the
+/// frame. A turned picture shows its marks only.
+pub fn draw_cropping(picture: &Picture, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+    let upright = geometry::normalise_angle(placed.rotation) < 0.5 && !placed.flip_h && !placed.flip_v;
+    if upright {
+        let frame = Frame::new(placed.x0 as f64, placed.y0 as f64, placed.width() as f64, placed.height() as f64);
+        let whole = placed_at(picture.adjust.uncropped(frame), (0.0, false, false));
+        let adjust = PictureAdjust {
+            crop: [0.0; 4],
+            shape: ShapePreset::Rect,
+            ..picture.adjust
+        };
+        let kept = |a: f32, b: f32| (1.0 - a - b).max(0.05);
+        let full = (
+            natural.0 / kept(picture.adjust.crop[0], picture.adjust.crop[2]),
+            natural.1 / kept(picture.adjust.crop[1], picture.adjust.crop[3]),
+        );
+        if let Some((image, (x0, y0, x1, y1))) = picture::image_as(picture, &adjust, 0.0, full, &whole, brush.scale) {
+            out.push(Draw::Image {
                 image,
                 bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),
-            }),
-            None => {
-                // A picture that cannot be decoded: a crossed-out box.
-                let corners = placed.corners();
-                brush.fill(&corners, c(0xF3F3F3), out);
-                let frame = Polyline {
-                    points: corners.to_vec(),
-                    closed: true,
-                };
-                brush.stroke(&frame, 1.0, &[], c(0xB0B0B0), out);
-                for (a, b) in [(0, 2), (1, 3)] {
-                    let cross = Polyline {
-                        points: vec![corners[a], corners[b]],
-                        closed: false,
-                    };
-                    brush.stroke(&cross, 1.0, &[], c(0xC42B1C), out);
-                }
+            });
+        }
+        // What the frame leaves out, under a veil.
+        let veil = c(0xFFFFFF).opacity(0.6);
+        let (ix0, iy0, ix1, iy1) = (whole.x0, whole.y0, whole.x1, whole.y1);
+        let (fx0, fy0, fx1, fy1) = (placed.x0.max(ix0), placed.y0.max(iy0), placed.x1.min(ix1), placed.y1.min(iy1));
+        for (x0, y0, x1, y1) in [(ix0, iy0, ix1, fy0), (ix0, fy1, ix1, iy1), (ix0, fy0, fx0, fy1), (fx1, fy0, ix1, fy1)] {
+            if x1 > x0 && y1 > y0 {
+                brush.fill(&[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], veil, out);
             }
-        },
+        }
+    }
+    let ink = c(0x000000);
+    let frame = Polyline {
+        points: placed.corners().to_vec(),
+        closed: true,
+    };
+    brush.stroke(&frame, 1.0, &[], c(HANDLE), out);
+    // Corners: two strokes at a right angle; sides: one along the edge.
+    let along = |from: Pt, to: Pt, length: f32| {
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        let distance = dx.hypot(dy).max(0.001);
+        let reach = length.min(distance / 3.0);
+        (from.0 + dx / distance * reach, from.1 + dy / distance * reach)
+    };
+    let handles = placed.handles();
+    for i in 0..8 {
+        let at = handles[i];
+        let (before, after) = (handles[(i + 7) % 8], handles[(i + 1) % 8]);
+        let points = if i % 2 == 0 {
+            vec![along(at, before, CROP_MARK), at, along(at, after, CROP_MARK)]
+        } else {
+            vec![along(at, before, CROP_MARK / 2.0), along(at, after, CROP_MARK / 2.0)]
+        };
+        brush.stroke(&Polyline { points, closed: false }, 4.0, &[], ink, out);
     }
 }
 
@@ -412,6 +651,12 @@ pub enum Grip {
     /// An end of a line: its start (false) or its end.
     LineEnd(bool),
     Rotate,
+    /// While a picture is cropped: one of the eight marks that move the
+    /// edges of its frame over the image.
+    Crop(u8),
+    /// While a picture is cropped: the image itself, moved under its
+    /// frame.
+    Pan,
 }
 
 /// The handles of a selected drawing and where they are: the two ends of

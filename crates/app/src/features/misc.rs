@@ -17,6 +17,8 @@ mod links;
 
 pub use audit::{shown_formula, shows_formulas};
 pub use functions::function_arguments;
+#[cfg(test)]
+pub(crate) use audit::error_cells;
 pub(crate) use goto::{Kinds, Special, select_special};
 
 use self::audit::Trace;
@@ -24,7 +26,7 @@ use self::calc::CalcMode;
 use super::{Command, Cx, Feature, Painter, names};
 use crate::app::{ExcelApp, MenuEntry, NameManager};
 use crate::grid::GridLayout;
-use crate::i18n::{t, t_ctx};
+use crate::i18n::t;
 use crate::ribbon::{group, rows};
 use gpui::{AnyElement, App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*, px};
 use opensheet_engine::protect::Action;
@@ -39,10 +41,6 @@ commands! {
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert
-        // Draw
-        Draw = "brush", t_ctx("button", "Draw", "Dessiner");
-        Eraser = "clear", t("Eraser", "Gomme");
-        InkToShape = "shapes", t("Ink to Shape", "Entrée manuscrite en forme");
         // Formulas
         InsertFunction = "function", t("Insert Function", "Insérer une fonction");
         TracePrecedents = "misc-trace-precedents", t("Trace Precedents", "Repérer les antécédents");
@@ -147,7 +145,11 @@ impl Command for Cmd {
             Cmd::RemoveDependentArrows => audit::remove_arrows(app, Some(Trace::Dependents), cx),
             Cmd::ShowFormulas => audit::toggle_formulas(app, cx),
             Cmd::ErrorCheckingMenu => {
-                let entries = vec![MenuEntry::command(Cmd::ErrorChecking, app), MenuEntry::command(Cmd::TraceError, app)];
+                let entries = vec![
+                    MenuEntry::command(Cmd::ErrorChecking, app),
+                    MenuEntry::command(Cmd::TraceError, app),
+                    circular_references(app),
+                ];
                 app.open_command_menu(entries, 240.0, window, cx);
             }
             Cmd::ErrorChecking => audit::open_error_checking(app, window, cx),
@@ -203,6 +205,42 @@ impl Command for Cmd {
             _ => true,
         }
     }
+}
+
+/// The cells of the circular references, as a list under Error Checking:
+/// choosing one goes to it. Greyed out when the workbook has none.
+fn circular_references(app: &ExcelApp) -> MenuEntry {
+    let label = t("Circular References", "Références circulaires");
+    let cells: Vec<MenuEntry> = circular_cells(app)
+        .into_iter()
+        .map(|(text, (sheet, row, col))| {
+            MenuEntry::new(text, move |app, window, cx| {
+                app.switch_sheet(sheet, window, cx);
+                app.select_cell(row, col, cx);
+            })
+        })
+        .collect();
+    let none = cells.is_empty();
+    MenuEntry::submenu(label, cells).disabled(none)
+}
+
+/// What the Circular References list shows for each cell, and the cell:
+/// `$B$2` on the sheet in front, `Sheet2!$B$2` elsewhere.
+fn circular_cells(app: &ExcelApp) -> Vec<(String, (usize, u32, u32))> {
+    app.wb
+        .circular_cells()
+        .iter()
+        .filter(|(sheet, ..)| *sheet < app.wb.sheets.len())
+        .map(|(sheet, row, col)| {
+            let cell = opensheet_engine::Rect::cell(*row, *col);
+            let style = crate::shell::RefStyle {
+                sheet: *sheet != app.sheet,
+                ..crate::shell::RefStyle::absolute()
+            };
+            let text = style.format(cell, &app.wb.sheets[*sheet].name);
+            (text, (*sheet, *row, *col))
+        })
+        .collect()
 }
 
 fn set_calc_mode(app: &mut ExcelApp, mode: CalcMode, cx: &mut Cx) {

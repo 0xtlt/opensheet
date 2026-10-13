@@ -122,7 +122,8 @@ pub(super) fn follow_theme(app: &mut ExcelApp) {
             let Some(document) = picture.svg.clone().filter(|document| opensheet_engine::svg::follows_theme(document)) else {
                 continue;
             };
-            if let Some(remade) = vector(document.to_vec()) {
+            if let Some(mut remade) = vector(document.to_vec()) {
+                remade.adjust = picture.adjust.clone();
                 *picture = remade;
             }
         }
@@ -169,7 +170,7 @@ fn replace_with(app: &mut ExcelApp, icon: &Icon, cx: &mut Cx) {
     };
     edit(app, Cmd::ChangeGraphic.label(), cx, |drawing| {
         if matches!(drawing.kind, DrawingKind::Picture(_)) {
-            drawing.kind = DrawingKind::Picture(picture);
+            drawing.kind = DrawingKind::Picture(picture.clone());
         }
     });
 }
@@ -184,7 +185,16 @@ pub(super) fn repaint_selected(app: &mut ExcelApp, label: &str, change: Repaint,
     let Some(picture) = repaint(&document, change).and_then(vector) else {
         return false;
     };
-    edit(app, label, cx, |drawing| drawing.kind = DrawingKind::Picture(picture))
+    edit(app, label, cx, |drawing| {
+        // The graphic that was repainted, not what is selected with it.
+        let Some(old) = drawing.as_picture().filter(|old| old.svg.as_ref().is_some_and(|svg| Arc::ptr_eq(svg, &document))) else {
+            return;
+        };
+        // How it is adjusted and cropped stays.
+        let mut new = picture.clone();
+        new.adjust = old.adjust.clone();
+        drawing.kind = DrawingKind::Picture(new);
+    })
 }
 
 // ---- the dialog ----------------------------------------------------------

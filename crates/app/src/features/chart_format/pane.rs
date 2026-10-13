@@ -2,7 +2,9 @@
 //! "Format Axis"... It always shows the selected element of the selected
 //! chart, and every change is applied at once, as one undo step.
 
-use super::fields::{self, Field, MARKER_SHAPES, fill_of, is_lined, labels_mut, line_of, line_of_mut, marker_mut, set_fill};
+use super::fields::{
+    self, Field, MARKER_SHAPES, fill_of, is_lined, labels_mut, line_of, line_of_mut, marker_mut, set_fill, text_of,
+};
 use crate::app::ExcelApp;
 use crate::chart_view;
 use crate::features::charts::elements::{axis_name, is_horizontal};
@@ -427,7 +429,7 @@ impl FormatPane {
             let chart = &shown.chart;
             // A solid fill starts from the colour the series has now.
             let current = match shown.element {
-                ChartElement::Series(s) | ChartElement::Point(s, _) => opensheet_engine::chart::palette_color(s as usize),
+                ChartElement::Series(s) | ChartElement::Point(s, _) => crate::theme::document_theme().chart_color(s as usize),
                 _ => Color::WHITE,
             };
             let current = shown.element.series().and_then(|s| chart.series.get(s)).and_then(|s| s.color).unwrap_or(current);
@@ -533,6 +535,46 @@ impl FormatPane {
             }
         }
         self.section(title, cx, body)
+    }
+
+    /// "Text Options": the colour of the text of the selected element and
+    /// its font (of every text of the chart, for the chart area).
+    fn text_tab(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> (&'static str, Vec<AnyElement>) {
+        let text = text_of(&shown.chart, shown.element).unwrap_or_default();
+        let fill = t("Text Fill", "Remplissage du texte");
+        let color = text.color;
+        let fill_body = vec![
+            self.radio(
+                "text-fill-kind",
+                &[t("Solid fill", "Remplissage uni"), t("Automatic", "Automatique")],
+                Some(color.is_none() as usize),
+                fill,
+                cx,
+                move |chart, element, ix| {
+                    // A solid fill starts from the grey the text has by itself.
+                    let color = (ix == 0).then(|| color.unwrap_or(Color(0x595959)));
+                    element.format_text(chart, |text| text.color = color);
+                },
+            ),
+            self.color("text-color", color, fill, cx, |chart, element, color| {
+                element.format_text(chart, |text| text.color = color);
+            }),
+        ];
+        let font = t("Font", "Police");
+        let name = self.input(Field::FontName, shown, window, cx);
+        let style = |this: &Self, id: &'static str, label: &'static str, on: Option<bool>, cx: &mut Context<Self>, set: fn(&mut opensheet_engine::chart::TextFormat, Option<bool>)| {
+            this.check(id, label, on == Some(true), label, cx, move |chart, element, on| {
+                element.format_text(chart, |text| set(text, on.then_some(true)));
+            })
+        };
+        let font_body = vec![
+            row(font, TextField::new(&name).width(150.0)),
+            self.number(t("Size", "Taille"), Field::FontSize, shown, window, cx),
+            style(self, "text-bold", t("Bold", "Gras"), text.bold, cx, |text, on| text.bold = on),
+            style(self, "text-italic", t("Italic", "Italique"), text.italic, cx, |text, on| text.italic = on),
+            style(self, "text-underline", t("Underline", "Souligné"), text.underline, cx, |text, on| text.underline = on),
+        ];
+        (t("Text Options", "Options de texte"), vec![self.section(fill, cx, fill_body), self.section(font, cx, font_body)])
     }
 
     /// "Marker": options, fill and border of the markers of a series.
@@ -1233,6 +1275,16 @@ impl FormatPane {
 
     /// The tabs of the pane for an element: (title, sections).
     fn tabs(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<(&'static str, Vec<AnyElement>)> {
+        let mut tabs = self.element_tabs(shown, window, cx);
+        // Whatever is written has its "Text Options" page.
+        if text_of(&shown.chart, shown.element).is_some() {
+            tabs.push(self.text_tab(shown, window, cx));
+        }
+        tabs
+    }
+
+    /// The pages of options of the selected element itself.
+    fn element_tabs(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<(&'static str, Vec<AnyElement>)> {
         let chart = &shown.chart;
         let fill_and_line = t("Fill & Line", "Remplissage et contour");
         let border = t("Border", "Bordure");
@@ -1266,7 +1318,10 @@ impl FormatPane {
                 (fill_and_line, vec![self.fill_section(shown, false, cx)]),
                 (t("Series Options", "Options des séries"), vec![self.series_options(shown, window, cx)]),
             ],
-            ChartElement::Axis(id) => vec![(t("Axis Options", "Options d'axe"), self.axis_sections(id, shown, window, cx))],
+            ChartElement::Axis(id) => vec![
+                (t("Axis Options", "Options d'axe"), self.axis_sections(id, shown, window, cx)),
+                (fill_and_line, vec![self.line_section(t("Line", "Trait"), shown, window, cx)]),
+            ],
             ChartElement::MajorGridlines(id) | ChartElement::MinorGridlines(id) => {
                 let axis = id.of(&chart.axes);
                 let undo = t("Gridlines", "Quadrillage");
@@ -1283,7 +1338,8 @@ impl FormatPane {
                     ChartElement::MajorGridlines(_) => t("Major Gridline Options", "Options de quadrillage principal"),
                     _ => t("Minor Gridline Options", "Options de quadrillage secondaire"),
                 };
-                vec![(title, vec![self.section(title, cx, body)])]
+                // As in Excel, how the lines are drawn comes first.
+                vec![(fill_and_line, vec![self.line_section(t("Line", "Trait"), shown, window, cx)]), (title, vec![self.section(title, cx, body)])]
             }
             ChartElement::Title => {
                 let undo = t("Chart Title", "Titre du graphique");
@@ -1336,7 +1392,12 @@ impl FormatPane {
                         PLACES.iter().position(|p| *p == chart.legend),
                         undo,
                         cx,
-                        |chart, _, ix| chart.legend = PLACES[ix],
+                        // A side chosen here is where the legend goes,
+                        // wherever it had been dragged.
+                        |chart, _, ix| {
+                            chart.legend = PLACES[ix];
+                            chart.legend_layout = None;
+                        },
                     ),
                     self.check(
                         "legend-overlay",

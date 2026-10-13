@@ -935,6 +935,8 @@ impl SheetWriter<'_> {
         super::filter::write_sheet(&mut x, self.wb, index, self.dxfs);
         // dataConsolidate
         super::datatools::write_consolidate(&mut x, sheet);
+        // customSheetViews
+        super::custom_view::write_sheet(&mut x, self.wb, index, self.dxfs);
         // mergeCells
         let merges: Vec<&Rect> = sheet.merges.iter().filter(|m| !m.is_single()).collect();
         if !merges.is_empty() {
@@ -967,6 +969,7 @@ impl SheetWriter<'_> {
         validation::write_ext(&mut ext, sheet, self.wb);
         extensions.push(ext);
         extensions.push(super::sparkline::ext(sheet));
+        super::slicer::write_ext(&mut extensions, sheet);
         extensions.write(&mut x);
         x.push_str("</worksheet>");
         x
@@ -1002,8 +1005,17 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         .into_iter()
         .filter(|(_, def)| is_valid_name(&def.name))
         .collect();
-    if !names.is_empty() || page::has_names(wb) || super::filter::has_names(wb) || super::datatools::has_names(wb) {
+    if !names.is_empty()
+        || page::has_names(wb)
+        || super::filter::has_names(wb)
+        || super::datatools::has_names(wb)
+        || super::slicer::has_names(wb)
+        || super::custom_view::has_names(wb)
+    {
         x.push_str("<definedNames>");
+        // The caches of the slicers and of the timelines, which Excel
+        // also lists as names without a value.
+        super::slicer::push_names(&mut x, wb);
         // The cells each imported text file fills.
         super::datatools::push_names(&mut x, wb);
         // The ranges of the sheets' filters, which Excel keeps as hidden
@@ -1012,6 +1024,9 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         // The print areas and print titles of the sheets, which are names
         // only in files.
         page::push_names(&mut x, wb);
+        // What the custom views keep of hidden rows and columns, filters
+        // and print areas.
+        super::custom_view::push_names(&mut x, wb);
         for (scope, def) in names {
             x.push_str("<definedName name=\"");
             push_attr(&mut x, &def.name);
@@ -1053,6 +1068,7 @@ fn workbook_xml(wb: &Workbook, extra: &str) -> String {
         x.push('"');
     }
     x.push_str(" fullCalcOnLoad=\"1\"/>");
+    super::custom_view::write_workbook(&mut x, wb);
     x.push_str(extra);
     x.push_str("</workbook>");
     x

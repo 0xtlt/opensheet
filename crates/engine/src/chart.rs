@@ -340,6 +340,59 @@ pub struct Line {
     pub dash: Dash,
 }
 
+/// Where the user put an element by hand, instead of where the chart puts
+/// it by itself: fractions of the width and of the height of the chart
+/// area, as files store them (`c:manualLayout`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ManualLayout {
+    /// The left and top edges of the element.
+    pub x: f64,
+    pub y: f64,
+    /// Width and height, for the elements that can be resized (the plot
+    /// area and the legend); `None` = the size the element takes by itself.
+    pub w: Option<f64>,
+    pub h: Option<f64>,
+}
+
+impl ManualLayout {
+    /// An element moved to (x, y) that keeps its own size.
+    pub fn at(x: f64, y: f64) -> ManualLayout {
+        ManualLayout { x, y, w: None, h: None }
+    }
+}
+
+/// A data label moved away from where its point puts it: the shift, in
+/// fractions of the width and of the height of the chart area.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LabelOffset {
+    /// Position of the point in the series, from 0.
+    pub index: u32,
+    pub dx: f64,
+    pub dy: f64,
+}
+
+/// The font of a text of a chart (a title, the labels of an axis, the
+/// legend, data labels). Every part left alone is automatic: what Excel
+/// gives that text (`None`).
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct TextFormat {
+    /// Font family.
+    pub font: Option<Arc<str>>,
+    /// Size in points.
+    pub size: Option<f32>,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+    pub underline: Option<bool>,
+    pub color: Option<Color>,
+}
+
+impl TextFormat {
+    /// Whether everything is left to Excel.
+    pub fn is_auto(&self) -> bool {
+        *self == TextFormat::default()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarkerShape {
     None,
@@ -422,6 +475,7 @@ pub struct DataLabels {
     pub number_format: Option<String>,
     /// Pies: a line from an outside label to its slice.
     pub leader_lines: bool,
+    pub text: TextFormat,
 }
 
 impl Default for DataLabels {
@@ -438,6 +492,7 @@ impl Default for DataLabels {
             position: LabelPosition::Auto,
             number_format: None,
             leader_lines: true,
+            text: TextFormat::default(),
         }
     }
 }
@@ -578,6 +633,8 @@ pub struct Series {
     /// Labels of its own; `None` = those of the chart (`Chart::data_labels`
     /// and `Chart::label_options`).
     pub labels: Option<DataLabels>,
+    /// Labels dragged away from their points, in order of `index`.
+    pub label_offsets: Vec<LabelOffset>,
     pub trendlines: Vec<Trendline>,
     pub error_bars: Vec<ErrorBars>,
 }
@@ -599,6 +656,7 @@ impl Series {
             points: Vec::new(),
             explosion: 0,
             labels: None,
+            label_offsets: Vec::new(),
             trendlines: Vec::new(),
             error_bars: Vec::new(),
         }
@@ -620,6 +678,21 @@ impl Series {
 
     pub fn smooth_for(&self, kind: ChartKind) -> bool {
         self.smooth.unwrap_or(kind.is_smooth())
+    }
+
+    /// How far the label of a point was dragged from its place.
+    pub fn label_offset(&self, index: usize) -> Option<(f64, f64)> {
+        self.label_offsets.iter().find(|o| o.index as usize == index).map(|o| (o.dx, o.dy))
+    }
+
+    /// Put the label of a point (dx, dy) away from its place; (0, 0) puts
+    /// it back.
+    pub fn set_label_offset(&mut self, index: u32, dx: f64, dy: f64) {
+        self.label_offsets.retain(|o| o.index != index);
+        if dx != 0.0 || dy != 0.0 {
+            let at = self.label_offsets.partition_point(|o| o.index < index);
+            self.label_offsets.insert(at, LabelOffset { index, dx, dy });
+        }
     }
 
     pub fn point(&self, index: usize) -> Option<&PointFormat> {
@@ -764,6 +837,18 @@ pub struct Axis {
     pub major_ticks: TickMark,
     pub minor_ticks: TickMark,
     pub labels: TickLabels,
+    /// The font of the labels.
+    pub text: TextFormat,
+    pub title_text: TextFormat,
+    /// Where the title was dragged to; `None` = beside the axis.
+    pub title_layout: Option<ManualLayout>,
+    /// The line of the axis itself. Automatic: thin and grey, and not
+    /// drawn for the value axis of a chart with categories.
+    pub line: Line,
+    /// How the gridlines are drawn when they are (`major_gridlines`,
+    /// `minor_gridlines`). Automatic: thin, light grey.
+    pub major_gridline: Line,
+    pub minor_gridline: Line,
 }
 
 impl Axis {
@@ -787,6 +872,12 @@ impl Axis {
             major_ticks: TickMark::None,
             minor_ticks: TickMark::None,
             labels: TickLabels::NextToAxis,
+            text: TextFormat::default(),
+            title_text: TextFormat::default(),
+            title_layout: None,
+            line: Line::default(),
+            major_gridline: Line::default(),
+            minor_gridline: Line::default(),
         }
     }
 }
@@ -980,8 +1071,33 @@ pub struct Chart {
     pub plot_area: ShapeFormat,
     pub data_table: Option<DataTable>,
     pub blanks: BlanksAs,
+    pub title_text: TextFormat,
+    pub legend_text: TextFormat,
+    /// Where the title was dragged to; `None` = centred at the top.
+    pub title_layout: Option<ManualLayout>,
+    /// Where the legend was dragged to and the size it was given; `None`
+    /// = on the side `legend` says. The plot keeps the room it leaves for
+    /// a legend on that side.
+    pub legend_layout: Option<ManualLayout>,
+    /// The place and the size given to the plot area by hand: the inside
+    /// of the plot, the rectangle between the axes, unless
+    /// `plot_layout_outer`. `None` = what is left by the other elements.
+    pub plot_layout: Option<ManualLayout>,
+    /// `plot_layout` is the box around the plot with the labels and the
+    /// titles of its axes (what some files hold; Excel itself writes the
+    /// inside).
+    pub plot_layout_outer: bool,
     /// Set by the file reader; see `ForeignChart`.
     pub foreign: Option<Arc<ForeignChart>>,
+    /// "Chart 1": the name of the object in the Selection pane, unique
+    /// among the charts, pictures and shapes of its sheet (given by
+    /// `Workbook::add_chart` when empty).
+    pub name: String,
+    /// Place in the stacking order shared with pictures and shapes
+    /// (`Sheet::object_stack`); 0: not placed yet, above all that are.
+    pub z: u32,
+    /// Hidden from the Selection pane: not drawn, printed or clickable.
+    pub hidden: bool,
 }
 
 /// Default hole of a doughnut (Excel: 75 %).
@@ -1114,7 +1230,16 @@ impl Chart {
             plot_area: ShapeFormat::default(),
             data_table: None,
             blanks: BlanksAs::Gap,
+            title_text: TextFormat::default(),
+            legend_text: TextFormat::default(),
+            title_layout: None,
+            legend_layout: None,
+            plot_layout: None,
+            plot_layout_outer: false,
             foreign: None,
+            name: String::new(),
+            z: 0,
+            hidden: false,
         }
     }
 
@@ -1133,6 +1258,37 @@ impl Chart {
             Some(kind) if self.kind.combines_with(kind) => kind,
             _ => self.kind,
         }
+    }
+
+    /// Every element back where the chart puts it by itself.
+    pub fn clear_manual_layout(&mut self) {
+        self.title_layout = None;
+        self.legend_layout = None;
+        self.plot_layout = None;
+        self.plot_layout_outer = false;
+        let axes = &mut self.axes;
+        for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
+            axis.title_layout = None;
+        }
+        for s in &mut self.series {
+            s.label_offsets.clear();
+        }
+    }
+
+    /// The font of every text of the chart, for what applies to them all.
+    pub fn text_formats_mut(&mut self) -> Vec<&mut TextFormat> {
+        let mut out = vec![&mut self.title_text, &mut self.legend_text, &mut self.label_options.text];
+        let axes = &mut self.axes;
+        for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
+            out.push(&mut axis.text);
+            out.push(&mut axis.title_text);
+        }
+        for s in &mut self.series {
+            if let Some(labels) = &mut s.labels {
+                out.push(&mut labels.text);
+            }
+        }
+        out
     }
 
     /// The labels of a series, when it has any: its own, else the chart's.
@@ -1175,8 +1331,9 @@ impl Chart {
     }
 
     /// What the chart shows, without where it sits: a copy with `id`,
-    /// `anchor`, `offset`, `size` and `foreign` reset. Two charts with the
-    /// same content draw the same picture of the same cells.
+    /// `anchor`, `offset`, `size`, `foreign` and what its frame says
+    /// (`name`, `z`, `hidden`) reset. Two charts with the same content
+    /// draw the same picture of the same cells.
     pub fn content(&self) -> Chart {
         Chart {
             id: 0,
@@ -1184,6 +1341,9 @@ impl Chart {
             offset: (0.0, 0.0),
             size: DEFAULT_CHART_SIZE,
             foreign: None,
+            name: String::new(),
+            z: 0,
+            hidden: false,
             ..self.clone()
         }
     }
@@ -1577,7 +1737,13 @@ impl Workbook {
         self.snapshot();
         chart.id = self.next_chart_id();
         let id = chart.id;
-        self.sheets[sheet].charts.push(chart);
+        let base = crate::validation::localized(self.locale, ["Chart", "Graphique", "Gráfico", "Diagramm", "Grafico"]);
+        let sh = &mut self.sheets[sheet];
+        if chart.name.is_empty() || sh.charts.iter().any(|c| c.name.eq_ignore_ascii_case(&chart.name)) {
+            chart.name = sh.drawing_name(base);
+        }
+        chart.z = sh.top_z();
+        sh.charts.push(chart);
         Some(id)
     }
 

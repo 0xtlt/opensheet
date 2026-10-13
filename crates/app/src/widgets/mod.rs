@@ -1060,6 +1060,7 @@ pub fn number_text(value: f64, decimal_sep: char) -> String {
 pub struct TextField {
     input: Entity<TextInput>,
     width: Option<f32>,
+    height: f32,
     trailing: Option<AnyElement>,
 }
 
@@ -1068,8 +1069,16 @@ impl TextField {
         TextField {
             input: input.clone(),
             width: None,
+            height: CONTROL_H,
             trailing: None,
         }
+    }
+
+    /// Another height than that of the controls of a dialog: three rows
+    /// of fields must fit in a group of the ribbon.
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = height;
+        self
     }
 
     /// Fixed width; without it the field takes the room left in its row.
@@ -1091,7 +1100,7 @@ impl RenderOnce for TextField {
         let focused = handle.is_focused(window);
         let input = self.input.clone();
         div()
-            .h(px(CONTROL_H))
+            .h(px(self.height))
             .when_some(self.width, |d, w| d.w(px(w)).flex_none())
             .when(self.width.is_none(), |d| d.flex_1().min_w(px(40.)))
             .flex()
@@ -1124,6 +1133,7 @@ pub struct NumberField {
     id: ElementId,
     input: Entity<TextInput>,
     width: f32,
+    height: f32,
 }
 
 impl NumberField {
@@ -1132,6 +1142,7 @@ impl NumberField {
             id: id.into(),
             input: input.clone(),
             width: 64.0,
+            height: CONTROL_H,
         }
     }
 
@@ -1139,15 +1150,23 @@ impl NumberField {
         self.width = width;
         self
     }
+
+    /// See [`TextField::height`].
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = height;
+        self
+    }
 }
 
 impl RenderOnce for NumberField {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        // The two arrows fill the box, less its border.
+        let arrow_height = (self.height - 2.0) / 2.0 - 1.0;
         let arrow = |name: &'static str, icon_name: &'static str, steps: f64, input: Entity<TextInput>| {
             div()
                 .id(name)
                 .w(px(14.))
-                .h(px(10.))
+                .h(px(arrow_height))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -1167,7 +1186,7 @@ impl RenderOnce for NumberField {
             .border_color(c(theme::BORDER))
             .child(arrow("up", "chevron-up", 1.0, self.input.clone()))
             .child(arrow("down", "chevron-down", -1.0, self.input.clone()));
-        TextField::new(&self.input).width(self.width).trailing(spinner)
+        TextField::new(&self.input).width(self.width).height(self.height).trailing(spinner)
     }
 }
 
@@ -1459,7 +1478,12 @@ impl RenderOnce for ScrollArea {
                         window.paint_quad(fill(Bounds::new(origin, size(px(6.), px(thumb_h))), c(0xC1C1C1)).corner_radii(px(3.)));
                     },
                 )
+                // Pinned to the corner: left to its place in the flow, the
+                // canvas would sit under the content and paint the thumb
+                // below the box.
                 .absolute()
+                .top_0()
+                .left_0()
                 .size_full(),
             )
     }

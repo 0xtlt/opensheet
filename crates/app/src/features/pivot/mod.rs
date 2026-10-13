@@ -19,6 +19,8 @@
 //! data, fits the columns, and commits one undo step.
 
 mod actions;
+mod calculated;
+mod chart;
 mod create;
 mod dialogs;
 mod filter;
@@ -28,7 +30,10 @@ mod pane;
 mod sheet;
 mod styles;
 
-use super::{CellEdit, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse, tables};
+#[cfg(test)]
+mod ui_tests;
+
+use super::{CellEdit, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse, slicers};
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
 use crate::grid::{GridLayout, cell_font, pt_to_px};
 use crate::i18n::{t, t_ctx};
@@ -49,6 +54,8 @@ use std::sync::Arc;
 
 pub struct Pivots;
 
+pub(crate) use chart::{paint_buttons as paint_chart_buttons, refuses_chart_type, target_pivot};
+
 const ANALYZE_TAB: &str = "pivot-analyze";
 const DESIGN_TAB: &str = "pivot-design";
 /// Id of the PivotTable Fields pane.
@@ -59,7 +66,6 @@ commands! {
     pub enum Cmd {
         Insert = "pivot", t("PivotTable", "Tableau croisé dynamique");
         Recommended = "pivot", t("Recommended PivotTables", "Tableaux croisés dynamiques recommandés");
-        InsertTimeline = "clock", t("Timeline", "Chronologie");
         // PivotTable Analyze
         Options = "pivot", t("Options", "Options");
         FieldSettings = "format-cells", t("Field Settings", "Paramètres de champ");
@@ -68,7 +74,6 @@ commands! {
         GroupSelection = "group-objects", t("Group Selection", "Grouper la sélection");
         Ungroup = "group-objects", t("Ungroup", "Dissocier");
         GroupField = "group-objects", t("Group Field", "Grouper les champs");
-        FilterConnections = "link", t("Filter Connections", "Connexions de filtre");
         Refresh = "refresh", t("Refresh", "Actualiser");
         ChangeSource = "data", t("Change Data Source", "Changer la source de données");
         Clear = "clear", t("Clear", "Effacer");
@@ -76,6 +81,10 @@ commands! {
         Move = "pivot", t("Move PivotTable", "Déplacer le tableau croisé dynamique");
         CalculatedFields = "function", t("Fields, Items, & Sets", "Champs, éléments et jeux");
         PivotChart = "chart-bar", t("PivotChart", "Graphique croisé dynamique");
+        // PivotChart Analyze
+        ChartRefresh = "refresh", t("Refresh", "Actualiser");
+        ChartClear = "clear", t("Clear All", "Effacer tout");
+        ChartFieldButtons = "", t("Field Buttons", "Boutons de champ");
         FieldList = "columns", t("Field List", "Liste des champs");
         Buttons = "plus", t("+/- Buttons", "Boutons +/-");
         FieldHeaders = "table", t("Field Headers", "En-têtes de champ");
@@ -103,7 +112,8 @@ impl Command for Cmd {
 
     fn enabled(self, app: &ExcelApp) -> bool {
         match self {
-            Cmd::Insert | Cmd::Recommended | Cmd::InsertTimeline => true,
+            Cmd::Insert | Cmd::Recommended | Cmd::PivotChart => true,
+            Cmd::ChartRefresh | Cmd::ChartClear | Cmd::ChartFieldButtons => chart::chart_pivot(app).is_some(),
             Cmd::FieldSettings => active_target(app).is_some(),
             Cmd::ExpandField | Cmd::CollapseField => actions::drill_field(app).is_some(),
             Cmd::GroupSelection => actions::can_group(app),
@@ -114,6 +124,9 @@ impl Command for Cmd {
     }
 
     fn checked(self, app: &ExcelApp) -> bool {
+        if self == Cmd::ChartFieldButtons {
+            return chart::buttons_shown(app);
+        }
         let Some(pivot) = active_pivot(app) else {
             return false;
         };
@@ -139,11 +152,14 @@ impl Command for Cmd {
             // the dialog opens at once.
             Cmd::Insert if app.command_anchor == Some("in-pivot") => menus::insert_menu(app, window, cx),
             Cmd::Insert | Cmd::Recommended => create::open_create(app, window, cx),
-            // The engine has no timelines, slicer connections, calculated
-            // fields nor pivot charts.
-            Cmd::InsertTimeline | Cmd::FilterConnections | Cmd::CalculatedFields | Cmd::PivotChart => {
-                app.not_implemented(self.label(), cx)
-            }
+            Cmd::CalculatedFields => calculated::menu(app, window, cx),
+            // Outside a PivotTable there is nothing to chart yet: the
+            // PivotTable is made first.
+            Cmd::PivotChart if active_pivot(app).is_none() => create::open_create(app, window, cx),
+            Cmd::PivotChart => chart::insert(app, cx),
+            Cmd::ChartRefresh => chart::refresh(app, window, cx),
+            Cmd::ChartClear => chart::clear(app, window, cx),
+            Cmd::ChartFieldButtons => chart::toggle_buttons(app, cx),
             Cmd::Options => menus::options_menu(app, window, cx),
             Cmd::FieldSettings => dialogs::open_settings(app, window, cx),
             Cmd::ExpandField => actions::collapse_active_field(app, false, window, cx),
@@ -285,6 +301,20 @@ fn perform(
         return Outcome::Refused;
     }
     attempt(app, label, Rc::new(op), false, window, cx)
+}
+
+/// Run what a slicer or a timeline does to PivotTables (or to a table)
+/// as one undo step named `label`: the question about replacing data is
+/// asked like for any pivot command. The caller has asked the protection.
+/// True when it was done at once.
+pub(crate) fn run_op(
+    app: &mut ExcelApp,
+    label: &'static str,
+    window: &mut Window,
+    cx: &mut Cx,
+    op: impl Fn(&mut ExcelApp, bool) -> Result<(), PivotError> + 'static,
+) -> bool {
+    attempt(app, label, Rc::new(op), false, window, cx) == Outcome::Done
 }
 
 /// `perform` for the OK button of a dialog. As in Excel, the dialog stays
@@ -658,9 +688,9 @@ fn analyze_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyE
         group(
             t("Filter", "Filtrer"),
             row(vec![
-                app.cmd_large("pa-slicer", tables::Cmd::InsertSlicer, false, cx),
-                app.cmd_large("pa-timeline", Cmd::InsertTimeline, false, cx),
-                app.cmd_large("pa-connections", Cmd::FilterConnections, false, cx),
+                app.cmd_large("pa-slicer", slicers::Cmd::InsertSlicer, false, cx),
+                app.cmd_large("pa-timeline", slicers::Cmd::InsertTimeline, false, cx),
+                app.cmd_large("pa-connections", slicers::Cmd::FilterConnections, false, cx),
             ]),
         )
         .into_any_element(),
@@ -750,6 +780,12 @@ impl Feature for Pivots {
     }
 
     fn context_tabs(&self, app: &ExcelApp) -> Vec<ContextTab> {
+        if chart::chart_pivot(app).is_some() {
+            return vec![ContextTab {
+                id: chart::TAB,
+                title: t("PivotChart Analyze", "Analyse du graphique croisé dynamique"),
+            }];
+        }
         match active_pivot(app) {
             Some(_) => vec![
                 ContextTab {
@@ -766,7 +802,9 @@ impl Feature for Pivots {
     }
 
     fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        if tab == DESIGN_TAB {
+        if tab == chart::TAB {
+            chart::tab(app, cx)
+        } else if tab == DESIGN_TAB {
             design_tab(app, cx)
         } else {
             analyze_tab(app, window, cx)

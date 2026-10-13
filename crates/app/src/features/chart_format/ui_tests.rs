@@ -9,7 +9,9 @@ use crate::features::charts::elements::{element_name, listed};
 use crate::i18n::{Lang, set_lang};
 use gpui::{Modifiers, TestAppContext, VisualTestContext, point};
 use opensheet_engine::Rect;
-use opensheet_engine::chart::{Chart, ChartKind, DataTable, ErrorAmount, ErrorBars, ErrorDirection, Line, TrendKind, Trendline};
+use opensheet_engine::chart::{
+    Chart, ChartKind, Dash, DataTable, ErrorAmount, ErrorBars, ErrorDirection, Line, ManualLayout, TextFormat, TrendKind, Trendline,
+};
 use opensheet_engine::chart_layout::AxisId;
 
 fn open(cx: &mut TestAppContext) -> (Entity<ExcelApp>, &mut VisualTestContext) {
@@ -233,8 +235,8 @@ fn the_format_tab_acts_on_the_selected_element(cx: &mut TestAppContext) {
     assert!(app.update(cx, |app, _| app.popup.is_some()));
     app.update_in(cx, |app, window, cx| {
         app.close_popup(window, cx);
-        apply_shape_color(app, false, Some(Color(0xC00000)), cx);
-        apply_shape_color(app, true, Some(Color(0x000000)), cx);
+        apply_shape_color(app, Paints::Fill, Some(Color(0xC00000)), cx);
+        apply_shape_color(app, Paints::Outline, Some(Color(0x000000)), cx);
     });
     let series = chart(&app, cx).series[1].clone();
     assert_eq!(series.color, Some(Color(0xC00000)));
@@ -248,9 +250,9 @@ fn the_format_tab_acts_on_the_selected_element(cx: &mut TestAppContext) {
     // "No Fill" on the plot area, a colour on the chart area.
     app.update(cx, |app, cx| {
         app.select_chart_element(ChartElement::PlotArea, cx);
-        apply_shape_color(app, false, None, cx);
+        apply_shape_color(app, Paints::Fill, None, cx);
         app.select_chart_element(ChartElement::ChartArea, cx);
-        apply_shape_color(app, false, Some(Color(0xF2F2F2)), cx);
+        apply_shape_color(app, Paints::Fill, Some(Color(0xF2F2F2)), cx);
     });
     let c = chart(&app, cx);
     assert_eq!((c.plot_area.fill, c.chart_area.fill), (Fill::None, Fill::Solid(Color(0xF2F2F2))));
@@ -295,4 +297,143 @@ fn a_field_never_writes_to_another_element_nor_for_nothing(cx: &mut TestAppConte
     type_in(&app, cx, Field::LineWidth, "1.5");
     let c = chart(&app, cx);
     assert_eq!((c.chart_area.border.width, c.series[0].line.width), (None, Some(1.5)));
+}
+
+#[gpui::test]
+fn text_options_set_the_font_of_the_selected_element(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Column);
+    select(&app, cx, ChartElement::Title);
+    // "Text Options" is the last page of every pane of an element with text.
+    let show_text = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        pane(app, cx).update(cx, |pane, cx| pane.show_tab(9, cx));
+        redraw(cx);
+    };
+    show_text(&app, cx);
+    let reads = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, field: Field| {
+        pane(app, cx).update(cx, |pane, cx| pane.field_input(field).map(|i| i.read(cx).text().to_string()))
+    };
+    // The size Excel gives a title, and the font of the chart.
+    assert_eq!(reads(&app, cx, Field::FontSize).as_deref(), Some("14 pt"));
+    assert_eq!(reads(&app, cx, Field::FontName).as_deref(), Some(""));
+    type_in(&app, cx, Field::FontSize, "20");
+    type_in(&app, cx, Field::FontName, "Georgia");
+    let text = chart(&app, cx).title_text;
+    assert_eq!((text.size, text.font.as_deref()), (Some(20.0), Some("Georgia")));
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Format Chart"));
+    // The arrows beside the size step it; an emptied font is the chart's again.
+    pane(&app, cx).update(cx, |pane, cx| pane.step_field(Field::FontSize, 1.0, cx));
+    type_in(&app, cx, Field::FontName, "");
+    let text = chart(&app, cx).title_text;
+    assert_eq!((text.size, text.font), (Some(21.0), None));
+    // A field left as it reads is no change.
+    app.update(cx, |app, cx| app.edit_chart("mark", cx, |c| c.title_overlay = true));
+    pane(&app, cx).update(cx, |pane, cx| pane.commit_field(Field::FontSize, cx));
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("mark"));
+
+    // The labels of an axis and data labels have the page too; the
+    // labels of one series become its own.
+    app.update(cx, |app, cx| app.edit_chart("labels", cx, |c| c.data_labels = true));
+    for element in [ChartElement::Axis(AxisId::Value), ChartElement::DataLabels(1), ChartElement::Legend, ChartElement::ChartArea] {
+        select(&app, cx, element);
+        show_text(&app, cx);
+        assert!(reads(&app, cx, Field::FontSize).is_some(), "{element:?}");
+        type_in(&app, cx, Field::FontSize, "8");
+    }
+    let c = chart(&app, cx);
+    assert_eq!(c.axes.value.text.size, Some(8.0));
+    assert_eq!(c.series[1].labels.as_ref().map(|l| l.text.size), Some(Some(8.0)));
+    // The chart area set them all, the title as well.
+    assert_eq!((c.title_text.size, c.axes.category.text.size, c.label_options.text.size), (Some(8.0), Some(8.0), Some(8.0)));
+    // A series has no text: no such page, and Text Fill of the Format
+    // tab, which colours the text of the selection, is greyed.
+    select(&app, cx, ChartElement::Series(0));
+    assert!(app.update(cx, |app, _| text_of(app.selected_chart().unwrap(), app.chart_element()).is_none()));
+    let enabled = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| Cmd::TextFill.enabled(app));
+    assert!(!enabled(&app, cx));
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::Legend, cx));
+    assert!(enabled(&app, cx));
+    app.update_in(cx, |app, window, cx| app.run_command(Cmd::TextFill, window, cx));
+    redraw(cx);
+    assert!(app.update(cx, |app, _| app.popup.is_some()));
+    app.update_in(cx, |app, window, cx| {
+        app.close_popup(window, cx);
+        apply_shape_color(app, Paints::Text, Some(Color(0x0070C0)), cx);
+    });
+    assert_eq!(chart(&app, cx).legend_text.color, Some(Color(0x0070C0)));
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Text Fill"));
+}
+
+#[gpui::test]
+fn gridlines_and_axis_lines_are_formatted_and_reset(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Column);
+    let grid = ChartElement::MajorGridlines(AxisId::Value);
+    select(&app, cx, grid);
+    // "Format Major Gridlines" opens on the Line section.
+    let width = pane(&app, cx).update(cx, |pane, cx| pane.field_input(Field::LineWidth).map(|i| i.read(cx).text().to_string()));
+    assert_eq!(width.as_deref(), Some("0.75 pt"));
+    type_in(&app, cx, Field::LineWidth, "2");
+    // Shape Outline of the Format tab gives them a colour.
+    assert!(app.update(cx, |app, _| Cmd::ShapeOutline.enabled(app) && !Cmd::ShapeFill.enabled(app)));
+    app.update(cx, |app, cx| {
+        apply_shape_color(app, Paints::Outline, Some(Color(0xFF0000)), cx);
+        app.edit_chart("Line", cx, |c| {
+            if let Some(line) = line_of_mut(c, grid) {
+                line.dash = Dash::Dash;
+            }
+        });
+    });
+    let expected = Line {
+        shown: Some(true),
+        color: Some(Color(0xFF0000)),
+        width: Some(2.0),
+        dash: Dash::Dash,
+    };
+    assert_eq!(chart(&app, cx).axes.value.major_gridline, expected);
+    // The line of the axis itself, on the second page of its pane.
+    select(&app, cx, ChartElement::Axis(AxisId::Category));
+    pane(&app, cx).update(cx, |pane, cx| pane.show_tab(1, cx));
+    redraw(cx);
+    type_in(&app, cx, Field::LineWidth, "1.5");
+    assert_eq!(chart(&app, cx).axes.category.line.width, Some(1.5));
+
+    // "Reset to Match Style" gives each element its own look back, and
+    // the place the chart gives it.
+    app.update(cx, |app, cx| {
+        app.edit_chart("setup", cx, |c| {
+            c.title_layout = Some(ManualLayout::at(0.1, 0.1));
+            c.title_text.bold = Some(true);
+            c.legend_layout = Some(ManualLayout::at(0.5, 0.5));
+            c.plot_layout = Some(ManualLayout {
+                x: 0.2,
+                y: 0.2,
+                w: Some(0.5),
+                h: Some(0.5),
+            });
+            c.axes.value.text.italic = Some(true);
+        })
+    });
+    let reset = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, element: ChartElement| {
+        app.update_in(cx, |app, window, cx| {
+            app.select_chart_element(element, cx);
+            app.run_command(Cmd::ResetStyle, window, cx);
+        });
+        chart(app, cx)
+    };
+    let c = reset(&app, cx, grid);
+    assert_eq!(c.axes.value.major_gridline, Line::default());
+    assert!(c.axes.value.major_gridlines && c.title_layout.is_some());
+    let c = reset(&app, cx, ChartElement::Title);
+    assert_eq!((c.title_layout, c.title_text.clone()), (None, TextFormat::default()));
+    assert!(c.legend_layout.is_some() && c.plot_layout.is_some());
+    let c = reset(&app, cx, ChartElement::PlotArea);
+    assert_eq!(c.plot_layout, None);
+    // The axis: its line and its labels, not its gridlines' or its title's.
+    let c = reset(&app, cx, ChartElement::Axis(AxisId::Category));
+    assert_eq!(c.axes.category.line, Line::default());
+    // The chart area: everything that was moved, every font.
+    let c = reset(&app, cx, ChartElement::ChartArea);
+    assert_eq!(c.legend_layout, None);
+    assert!(c.axes.value.text.is_auto());
 }

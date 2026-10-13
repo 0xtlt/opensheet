@@ -198,7 +198,7 @@ pub(super) fn groups(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Ve
                     ])
                     .items_start(),
                 )
-                .child(app.cmd_large("td-slicer", Cmd::InsertSlicer, false, cx)),
+                .child(app.cmd_large("td-slicer", crate::features::slicers::Cmd::InsertSlicer, false, cx)),
         )
         .into_any_element(),
         group(

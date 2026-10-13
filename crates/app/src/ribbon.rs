@@ -7,7 +7,7 @@
 use crate::app::*;
 use crate::features::{
     self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, protection, tables, themes, validation,
+    pivot, protection, slicers, tables, themes, validation,
 };
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -572,13 +572,13 @@ impl ExcelApp {
 
     pub fn render_ribbon(&mut self, window: &mut Window, cx: &mut Cx) -> impl IntoElement {
         let width = f32::from(window.viewport_size().width);
-        self.ribbon_level = if width >= 1730.0 {
+        self.ribbon_level = if width >= 1752.0 {
             0
-        } else if width >= 1580.0 {
+        } else if width >= 1602.0 {
             1
-        } else if width >= 1510.0 {
+        } else if width >= 1532.0 {
             2
-        } else if width >= 1290.0 {
+        } else if width >= 1312.0 {
             3
         } else {
             4
@@ -590,7 +590,7 @@ impl ExcelApp {
         let groups: Vec<AnyElement> = match (owner, self.ribbon_tab) {
             (Some((owner, id)), _) => features::all()[owner].render_tab(self, id, window, cx),
             (None, 2) => self.insert_tab(cx),
-            (None, 3) => self.draw_tab(cx),
+            (None, 3) => features::ink::draw_tab(self, cx),
             (None, 4) => self.layout_tab(cx),
             (None, 5) => self.formulas_tab(cx),
             (None, 6) => self.data_tab(cx),
@@ -616,21 +616,6 @@ impl ExcelApp {
                 .px(px(2.))
                 .children(groups),
         )
-    }
-
-    fn draw_tab(&self, cx: &mut Cx) -> Vec<AnyElement> {
-        vec![
-            group(
-                t("Tools", "Outils"),
-                row(vec![
-                    self.cmd_large("dr-draw", misc::Cmd::Draw, false, cx),
-                    self.cmd_large("dr-eraser", misc::Cmd::Eraser, false, cx),
-                    self.cmd_large("dr-ink-shape", misc::Cmd::InkToShape, false, cx),
-                ]),
-            )
-            .border_r_0()
-            .into_any_element(),
-        ]
     }
 
     fn automate_tab(&self, cx: &mut Cx) -> Vec<AnyElement> {
@@ -782,7 +767,8 @@ impl ExcelApp {
             t("Font", "Police"),
             rows(vec![
                 row(vec![
-                    self.combo("rb-font", font_name, 138.0, t("Font", "Police"), cx, |this, window, cx| {
+                    // Wide enough for "Aptos Narrow (Corps)", the name of the theme's body font.
+                    self.combo("rb-font", font_name, 160.0, t("Font", "Police"), cx, |this, window, cx| {
                         this.open_font_menu(window, cx)
                     }),
                     self.combo("rb-size", size_text, 50.0, t("Font Size", "Taille de police"), cx, |this, window, cx| {
@@ -1453,6 +1439,11 @@ impl ExcelApp {
             .into_any_element(),
             group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
+                t("PivotChart", "Graphique croisé dynamique"),
+                row(vec![self.cmd_large("in-pivot-chart", pivot::Cmd::PivotChart, false, cx)]),
+            )
+            .into_any_element(),
+            group(
                 t("Sparklines", "Graphiques sparkline"),
                 row(vec![self.cmd_large("in-sparklines", features::sparklines::Cmd::Menu, true, cx)]),
             )
@@ -1460,8 +1451,8 @@ impl ExcelApp {
             group(
                 t("Filters", "Filtres"),
                 row(vec![
-                    self.cmd_large("in-slicer", tables::Cmd::InsertSlicer, false, cx),
-                    self.cmd_large("in-timeline", pivot::Cmd::InsertTimeline, false, cx),
+                    self.cmd_large("in-slicer", slicers::Cmd::InsertSlicer, false, cx),
+                    self.cmd_large("in-timeline", slicers::Cmd::InsertTimeline, false, cx),
                 ]),
             )
             .into_any_element(),
@@ -1851,7 +1842,7 @@ impl ExcelApp {
                         cx,
                         |this, _, cx| this.set_view_mode(ViewMode::PageLayout, cx),
                     ),
-                    self.cmd_large("vw-custom", page::Cmd::CustomViews, false, cx),
+                    self.cmd_large("vw-custom", features::custom_views::Cmd::Open, false, cx),
                 ]),
             )
             .into_any_element(),

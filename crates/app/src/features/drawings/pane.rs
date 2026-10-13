@@ -1,24 +1,31 @@
 //! The panes docked beside the sheet: Format Shape / Format Picture (fill,
-//! line, size, properties, alt text), Alt Text and Selection. Each follows
-//! the selected drawing and changes it at once, one undo step per change.
+//! line, effects, size, properties, alt text, and for a picture its
+//! corrections, colours and transparency), Alt Text and Selection. Each
+//! follows the selected drawing and changes it at once, one undo step per
+//! change; with several drawings selected the Format pane shows the one
+//! selected last and changes them all.
 
 use super::geometry::normalise_angle;
 use super::tabs::{self, dashes, in_units, length_field, set_side};
 use crate::widgets::text_area::{AreaEvent, TextArea};
-use super::{Cmd, Drawings, DrawingUi, edit, edit_drawing, edit_shape, is_picture, reset_picture, selected};
+use super::adjust;
+use super::{Cmd, DrawingUi, edit, edit_drawing, edit_shape, is_picture, reset_picture, selected};
 use crate::app::ExcelApp;
-use crate::features::{self, Command, Cx, ObjectId, ZMove};
+use crate::features::{self, Command, Cx, Intent, ObjectId, ZMove};
+use crate::objects::{engine_ref, object_of};
 use crate::i18n::{lang, t, t_ctx};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{
-    self, Button, Checkbox, ColorButton, GroupBox, ListBox, NumberField, RadioGroup, Select, TabStrip, labeled,
+    self, Button, Checkbox, ColorButton, GroupBox, NumberField, RadioGroup, Select, TabStrip, labeled,
 };
 use gpui::{
     AnyElement, Context, Entity, Focusable, MouseButton, MouseDownEvent, SharedString, Subscription, WeakEntity, Window,
     div, prelude::*, px,
 };
-use opensheet_engine::drawing::{Drawing, LineEnd, Placement, TextAnchor};
+use opensheet_engine::drawing::{
+    Drawing, Glow, LineEnd, NEUTRAL_TEMPERATURE, ObjectRef, Placement, Recolor, SEPIA, ShadowPreset, TextAnchor,
+};
 use opensheet_engine::style::Color;
 
 pub(super) const FORMAT: &str = "drawing-format";
@@ -46,13 +53,40 @@ pub(super) fn keep_descriptions(app: &mut ExcelApp, cx: &mut Cx) {
     }
 }
 
-/// The two pages of the Format pane.
+/// The pages of the Format pane. A shape has the first three, a picture
+/// the last three, a group Effects and Size.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Section {
     /// "Fill & Line".
     Fill,
+    /// "Effects": shadow, glow, soft edges.
+    Effects,
     /// "Size & Properties".
     Size,
+    /// "Picture": corrections, colour, transparency.
+    Picture,
+}
+
+impl Section {
+    fn title(self) -> &'static str {
+        match self {
+            Section::Fill => t("Fill & Line", "Remplissage et contour"),
+            Section::Effects => t("Effects", "Effets"),
+            Section::Size => t("Size & Properties", "Taille et propriétés"),
+            Section::Picture => t("Picture", "Image"),
+        }
+    }
+
+    /// The pages Excel shows for a kind of drawing.
+    fn of(drawing: &Drawing) -> Vec<Section> {
+        if is_picture(drawing) {
+            vec![Section::Effects, Section::Size, Section::Picture]
+        } else if drawing.as_shape().is_some() {
+            vec![Section::Fill, Section::Effects, Section::Size]
+        } else {
+            vec![Section::Effects, Section::Size]
+        }
+    }
 }
 
 /// A box of several lines for a pane; it scrolls past `height`.
@@ -123,7 +157,134 @@ enum Field {
     Width,
     Rotation,
     LineWidth,
+    /// One of the numbers of the Effects and Picture pages.
+    Look(Look),
 }
+
+/// The numbers of the Effects and Picture pages: each is read from the
+/// drawing and written back the same way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Look {
+    ShadowTransparency,
+    ShadowSize,
+    ShadowBlur,
+    ShadowAngle,
+    ShadowDistance,
+    GlowSize,
+    GlowTransparency,
+    SoftEdge,
+    Brightness,
+    Contrast,
+    Saturation,
+    Temperature,
+    Transparency,
+}
+
+impl Look {
+    const ALL: [Look; 13] = [
+        Look::ShadowTransparency,
+        Look::ShadowSize,
+        Look::ShadowBlur,
+        Look::ShadowAngle,
+        Look::ShadowDistance,
+        Look::GlowSize,
+        Look::GlowTransparency,
+        Look::SoftEdge,
+        Look::Brightness,
+        Look::Contrast,
+        Look::Saturation,
+        Look::Temperature,
+        Look::Transparency,
+    ];
+
+    /// Smallest and largest value, the step of the spinner, and the unit
+    /// shown after the field.
+    fn range(self) -> (f64, f64, f64, &'static str) {
+        match self {
+            Look::ShadowTransparency | Look::GlowTransparency | Look::Transparency => (0.0, 100.0, 1.0, "%"),
+            Look::ShadowSize => (1.0, 200.0, 1.0, "%"),
+            Look::ShadowBlur | Look::SoftEdge => (0.0, 100.0, 1.0, "pt"),
+            Look::ShadowAngle => (0.0, 359.9, 1.0, "°"),
+            Look::ShadowDistance => (0.0, 200.0, 1.0, "pt"),
+            Look::GlowSize => (0.0, 150.0, 1.0, "pt"),
+            Look::Brightness | Look::Contrast => (-100.0, 100.0, 1.0, "%"),
+            Look::Saturation => (0.0, 400.0, 1.0, "%"),
+            Look::Temperature => (1500.0, 11500.0, 100.0, "K"),
+        }
+    }
+
+    /// The number as the field shows it. A drawing without shadow or
+    /// glow shows what the first change would start from.
+    pub(super) fn of(self, drawing: &Drawing) -> Option<f64> {
+        let shadow = adjust::shadow_of(drawing);
+        let glow = drawing.effects.glow;
+        let picture = drawing.as_picture().map(|picture| picture.adjust);
+        let value = match self {
+            Look::ShadowTransparency => shadow.transparency * 100.0,
+            Look::ShadowSize => shadow.size * 100.0,
+            Look::ShadowBlur => shadow.blur,
+            Look::ShadowAngle => shadow.angle,
+            Look::ShadowDistance => shadow.distance,
+            Look::GlowSize => glow.map_or(0.0, |glow| glow.radius),
+            Look::GlowTransparency => glow.map_or(60.0, |glow| glow.transparency * 100.0),
+            Look::SoftEdge => drawing.effects.soft_edge,
+            Look::Brightness => picture?.brightness * 100.0,
+            Look::Contrast => picture?.contrast * 100.0,
+            Look::Saturation => picture?.saturation * 100.0,
+            Look::Temperature => picture?.temperature,
+            Look::Transparency => picture?.transparency * 100.0,
+        };
+        // As typed: no more decimals than a field shows.
+        Some((value as f64 * 100.0).round() / 100.0)
+    }
+
+    /// Write a number typed in the field to the selected drawings.
+    pub(super) fn set(self, app: &mut ExcelApp, value: f64, cx: &mut Cx) {
+        let (min, max, _, _) = self.range();
+        let value = value.clamp(min, max) as f32;
+        let glow_label = t("Glow", "Lumière");
+        match self {
+            Look::ShadowTransparency => adjust::set_shadow(app, cx, |shadow| shadow.transparency = value / 100.0),
+            Look::ShadowSize => adjust::set_shadow(app, cx, |shadow| shadow.size = value / 100.0),
+            Look::ShadowBlur => adjust::set_shadow(app, cx, |shadow| shadow.blur = value),
+            Look::ShadowAngle => adjust::set_shadow(app, cx, |shadow| shadow.angle = value),
+            Look::ShadowDistance => adjust::set_shadow(app, cx, |shadow| shadow.distance = value),
+            // No size is no glow.
+            Look::GlowSize => adjust::set_effects(app, glow_label, cx, |effects| {
+                effects.glow = (value > 0.0).then(|| Glow {
+                    radius: value,
+                    ..effects.glow.unwrap_or(DEFAULT_GLOW)
+                });
+            }),
+            Look::GlowTransparency => adjust::set_effects(app, glow_label, cx, |effects| {
+                if let Some(glow) = &mut effects.glow {
+                    glow.transparency = value / 100.0;
+                }
+            }),
+            Look::SoftEdge => {
+                adjust::set_effects(app, t("Soft Edges", "Bordures adoucies"), cx, |effects| effects.soft_edge = value)
+            }
+            Look::Brightness => {
+                adjust::adjust(app, t("Picture Corrections", "Corrections de l'image"), cx, |a| a.brightness = value / 100.0)
+            }
+            Look::Contrast => {
+                adjust::adjust(app, t("Picture Corrections", "Corrections de l'image"), cx, |a| a.contrast = value / 100.0)
+            }
+            Look::Saturation => adjust::adjust(app, t("Picture Color", "Couleur de l'image"), cx, |a| a.saturation = value / 100.0),
+            Look::Temperature => adjust::adjust(app, t("Picture Color", "Couleur de l'image"), cx, |a| a.temperature = value),
+            Look::Transparency => {
+                adjust::adjust(app, t("Picture Transparency", "Transparence d'image"), cx, |a| a.transparency = value / 100.0)
+            }
+        }
+    }
+}
+
+/// The glow a size typed in the pane starts from.
+const DEFAULT_GLOW: Glow = Glow {
+    color: Color(0x156082),
+    transparency: 0.6,
+    radius: 0.0,
+};
 
 /// What the fields of the pane were last filled from.
 #[derive(Clone, Debug, PartialEq)]
@@ -134,6 +295,9 @@ struct Shown {
     rotation: f32,
     line_width: Option<f32>,
     alt_text: String,
+    /// The numbers of the Effects and Picture pages, in the order of
+    /// `Look::ALL`.
+    looks: Vec<Option<f64>>,
 }
 
 struct FormatPane {
@@ -143,18 +307,27 @@ struct FormatPane {
     width: Entity<TextInput>,
     rotation: Entity<TextInput>,
     line_width: Entity<TextInput>,
+    /// A field for each of `Look::ALL`.
+    looks: Vec<Entity<TextInput>>,
     alt_text: Entity<TextArea>,
     shown: Option<Shown>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl FormatPane {
-    fn new(app: Entity<ExcelApp>, section: Section, window: &mut Window, cx: &mut Context<Self>) -> FormatPane {
+    fn new(app: Entity<ExcelApp>, section: Section, cx: &mut Context<Self>) -> FormatPane {
         let limit = 5000.0 / tabs::length_unit().1;
         let height = widgets::number_input(cx, None, 0.0, limit, 0.1);
         let width = widgets::number_input(cx, None, 0.0, limit, 0.1);
         let rotation = widgets::number_input(cx, None, -3600.0, 3600.0, 1.0);
         let line_width = widgets::number_input(cx, None, 0.0, 1584.0, 0.25);
+        let looks: Vec<Entity<TextInput>> = Look::ALL
+            .iter()
+            .map(|look| {
+                let (min, max, step, _) = look.range();
+                widgets::number_input(cx, None, min, max, step)
+            })
+            .collect();
         let alt_text = description_area(84.0, cx);
         let mut subscriptions = vec![
             // The pane shows the selected drawing as it is now.
@@ -165,14 +338,16 @@ impl FormatPane {
                 }
             }),
         ];
-        for (field, input) in [
+        let mut fields = vec![
             (Field::Height, &height),
             (Field::Width, &width),
             (Field::Rotation, &rotation),
             (Field::LineWidth, &line_width),
-        ] {
-            subscriptions.push(cx.subscribe_in(input, window, move |this, input, event: &InputEvent, _, cx| {
-                this.on_field(field, input, event, cx)
+        ];
+        fields.extend(Look::ALL.iter().zip(&looks).map(|(look, input)| (Field::Look(*look), input)));
+        for (field, input) in fields {
+            subscriptions.push(cx.subscribe(input, move |this, input, event: &InputEvent, cx| {
+                this.on_field(field, &input, event, cx)
             }));
         }
         FormatPane {
@@ -182,14 +357,15 @@ impl FormatPane {
             width,
             rotation,
             line_width,
+            looks,
             alt_text,
             shown: None,
             _subscriptions: subscriptions,
         }
     }
 
-    /// Change the selected drawing from a control of the pane.
-    fn change(&self, label: &'static str, cx: &mut Context<Self>, change: impl FnOnce(&mut Drawing)) {
+    /// Change the selected drawings from a control of the pane.
+    fn change(&self, label: &'static str, cx: &mut Context<Self>, change: impl Fn(&mut Drawing)) {
         self.app.update(cx, |app, cx| edit(app, label, cx, change)).ok();
     }
 
@@ -245,6 +421,12 @@ impl FormatPane {
                     self.app.update(cx, |app, cx| tabs::set_outline(app, cx, |outline| outline.width = points)).ok();
                 }
             }
+            Field::Look(look) => {
+                let was = Look::ALL.iter().position(|other| *other == look).and_then(|i| shown.looks[i]);
+                if was.is_some_and(|was| (typed - was).abs() > 0.004) {
+                    self.app.update(cx, |app, cx| look.set(app, typed, cx)).ok();
+                }
+            }
         }
         // Whatever was typed, the fields show the drawing again.
         self.shown = None;
@@ -261,18 +443,22 @@ impl FormatPane {
             rotation: drawing.rotation,
             line_width: drawing.as_shape().and_then(|shape| shape.outline).map(|outline| outline.width),
             alt_text: drawing.alt_text.clone(),
+            looks: Look::ALL.iter().map(|look| look.of(drawing)).collect(),
         });
         if now == self.shown {
             return;
         }
         let decimal = lang().locale().decimal_sep;
         let number = |value: Option<f64>| value.map(|v| widgets::number_text(v, decimal)).unwrap_or_default();
-        let fields = [
+        let mut fields = vec![
             (&self.height, number(now.as_ref().map(|n| n.height))),
             (&self.width, number(now.as_ref().map(|n| n.width))),
             (&self.rotation, number(now.as_ref().map(|n| n.rotation as f64))),
             (&self.line_width, number(now.as_ref().and_then(|n| n.line_width).map(f64::from))),
         ];
+        for (i, input) in self.looks.iter().enumerate() {
+            fields.push((input, number(now.as_ref().and_then(|n| n.looks[i]))));
+        }
         for (field, text) in fields {
             if !field.read(cx).focus_handle(cx).is_focused(window) {
                 field.update(cx, |field, cx| field.set_text(text, cx));
@@ -437,6 +623,183 @@ impl FormatPane {
         page.child(line).into_any_element()
     }
 
+    /// A number of the Effects or Picture page with its label and unit.
+    fn look_field(&self, look: Look, label: &'static str) -> gpui::Div {
+        let index = Look::ALL.iter().position(|other| *other == look).unwrap_or(0);
+        let id: SharedString = format!("dw-look-{index}").into();
+        labeled(
+            label,
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .child(NumberField::new(id, &self.looks[index]).width(72.0))
+                .child(div().w(px(16.)).child(look.range().3)),
+        )
+        .justify_between()
+    }
+
+    /// "Effects": the shadow with all its numbers, the glow, and for a
+    /// picture its soft edges.
+    fn effects(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> AnyElement {
+        let shadow = drawing.effects.shadow;
+        let mut presets = vec![item(t("No Shadow", "Aucune ombre"))];
+        let locale = lang().locale();
+        presets.extend(ShadowPreset::ALL.iter().map(|preset| item(preset.name(locale))));
+        // The preset the shadow is, the first one for a shadow changed
+        // by hand.
+        let preset = match shadow {
+            None => 0,
+            Some(shadow) => ShadowPreset::ALL
+                .iter()
+                .position(|preset| preset.shadow().angle == shadow.angle && (preset.shadow().distance == 0.0) == (shadow.distance == 0.0))
+                .map_or(1, |i| i + 1),
+        };
+        let shadow_box = GroupBox::new(t("Shadow", "Ombre"))
+            .child(
+                labeled(
+                    t("Presets", "Présélections"),
+                    Select::new("dw-shadow-preset", presets, Some(preset))
+                        .width(190.0)
+                        .disabled(locked)
+                        .on_change(cx.listener(|this, choice: &usize, _, cx| {
+                            let made = choice.checked_sub(1).and_then(|i| ShadowPreset::ALL.get(i)).map(|preset| preset.shadow());
+                            this.app
+                                .update(cx, |app, cx| adjust::set_effects(app, t("Shadow", "Ombre"), cx, |effects| effects.shadow = made))
+                                .ok();
+                        })),
+                )
+                .justify_between(),
+            )
+            .child(
+                labeled(
+                    t("Color", "Couleur"),
+                    ColorButton::new("dw-shadow-color", Some(Some(adjust::shadow_of(drawing).color))).more(&self.app).on_pick(
+                        cx.listener(|this, color: &Option<Color>, _, cx| {
+                            if let Some(color) = *color {
+                                this.app.update(cx, |app, cx| adjust::set_shadow(app, cx, |shadow| shadow.color = color)).ok();
+                            }
+                        }),
+                    ),
+                )
+                .justify_between(),
+            )
+            .child(self.look_field(Look::ShadowTransparency, t("Transparency", "Transparence")))
+            .child(self.look_field(Look::ShadowSize, t("Size", "Taille")))
+            .child(self.look_field(Look::ShadowBlur, t("Blur", "Flou")))
+            .child(self.look_field(Look::ShadowAngle, t("Angle", "Angle")))
+            .child(self.look_field(Look::ShadowDistance, t("Distance", "Distance")));
+        let glow = drawing.effects.glow.unwrap_or(DEFAULT_GLOW);
+        let glow_box = GroupBox::new(t("Glow", "Lumière"))
+            .child(
+                labeled(
+                    t("Color", "Couleur"),
+                    ColorButton::new("dw-glow-color", Some(Some(glow.color))).more(&self.app).on_pick(cx.listener(
+                        |this, color: &Option<Color>, _, cx| {
+                            let Some(color) = *color else {
+                                return;
+                            };
+                            this.app
+                                .update(cx, |app, cx| {
+                                    adjust::set_effects(app, t("Glow", "Lumière"), cx, |effects| {
+                                        // A colour for a drawing without
+                                        // glow gives it Excel's smallest.
+                                        let glow = effects.glow.get_or_insert(Glow { radius: 5.0, ..DEFAULT_GLOW });
+                                        glow.color = color;
+                                    })
+                                })
+                                .ok();
+                        },
+                    )),
+                )
+                .justify_between(),
+            )
+            .child(self.look_field(Look::GlowSize, t("Size", "Taille")))
+            .child(self.look_field(Look::GlowTransparency, t("Transparency", "Transparence")));
+        let mut page = div().flex().flex_col().gap(px(14.)).child(shadow_box).child(glow_box);
+        if is_picture(drawing) {
+            page = page.child(GroupBox::new(t("Soft Edges", "Bordures adoucies")).child(self.look_field(Look::SoftEdge, t("Size", "Taille"))));
+        }
+        page.into_any_element()
+    }
+
+    /// "Picture": corrections, colour and transparency of a picture.
+    fn picture(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> AnyElement {
+        let Some(adjust) = drawing.as_picture().map(|picture| picture.adjust) else {
+            return div().into_any_element();
+        };
+        let reset = |id: &'static str, cx: &mut Context<Self>, undo: fn(&mut opensheet_engine::drawing::PictureAdjust), label: &'static str| {
+            div().flex().child(Button::new(id, t("Reset", "Rétablir")).disabled(locked).on_click(cx.listener(
+                move |this, _, _, cx| {
+                    this.app.update(cx, |app, cx| adjust::adjust(app, label, cx, undo)).ok();
+                },
+            )))
+        };
+        let corrections_label = t("Picture Corrections", "Corrections de l'image");
+        let color_label = t("Picture Color", "Couleur de l'image");
+        // The recolourings of the pane: the plain ones of the gallery.
+        let recolors = [
+            (t("No Recolor", "Aucune recolorisation"), Recolor::None),
+            (t("Grayscale", "Nuances de gris"), Recolor::Grayscale),
+            (t("Sepia", "Sépia"), Recolor::Duotone(SEPIA.0, SEPIA.1)),
+            (t("Washout", "Estompé"), Recolor::Washout),
+            (t("Black and White", "Noir et blanc"), Recolor::BlackAndWhite(0.5)),
+        ];
+        let recolor = recolors.iter().position(|(_, recolor)| *recolor == adjust.recolor);
+        let corrections = GroupBox::new(corrections_label)
+            .child(self.look_field(Look::Brightness, t("Brightness", "Luminosité")))
+            .child(self.look_field(Look::Contrast, t("Contrast", "Contraste")))
+            .child(reset(
+                "dw-reset-corrections",
+                cx,
+                |adjust| {
+                    adjust.brightness = 0.0;
+                    adjust.contrast = 0.0;
+                },
+                corrections_label,
+            ));
+        let color = GroupBox::new(color_label)
+            .child(self.look_field(Look::Saturation, t("Saturation", "Saturation")))
+            .child(self.look_field(Look::Temperature, t("Temperature", "Température")))
+            .child(
+                labeled(
+                    t("Recolor", "Recolorier"),
+                    Select::new("dw-recolor", recolors.iter().map(|(name, _)| item(name)).collect(), recolor)
+                        .width(170.0)
+                        .disabled(locked)
+                        .on_change(cx.listener(move |this, choice: &usize, _, cx| {
+                            let Some((_, recolor)) = recolors.get(*choice).copied() else {
+                                return;
+                            };
+                            this.app
+                                .update(cx, |app, cx| adjust::adjust(app, color_label, cx, |adjust| adjust.recolor = recolor))
+                                .ok();
+                        })),
+                )
+                .justify_between(),
+            )
+            .child(reset(
+                "dw-reset-color",
+                cx,
+                |adjust| {
+                    adjust.saturation = 1.0;
+                    adjust.temperature = NEUTRAL_TEMPERATURE;
+                    adjust.recolor = Recolor::None;
+                },
+                color_label,
+            ));
+        let transparency = GroupBox::new(t("Picture Transparency", "Transparence d'image"))
+            .child(self.look_field(Look::Transparency, t("Transparency", "Transparence")));
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .child(corrections)
+            .child(color)
+            .child(transparency)
+            .into_any_element()
+    }
+
     fn size_and_properties(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> AnyElement {
         let takes_text = drawing.as_shape().is_some_and(|shape| !shape.preset.is_line());
         let mut size = GroupBox::new(t("Size", "Taille"))
@@ -564,13 +927,17 @@ impl Render for FormatPane {
                 ))
                 .into_any_element();
         };
-        // A picture has no fill or line of its own: one page only.
-        let has_fill = drawing.as_shape().is_some();
-        let section = if has_fill { self.section } else { Section::Size };
+        // The pages of its kind; the one last shown when it has it.
+        let sections = Section::of(&drawing);
+        let section = if sections.contains(&self.section) { self.section } else { Section::Size };
         let page = match section {
             Section::Fill => self.fill_and_line(&drawing, locked, cx),
+            Section::Effects => self.effects(&drawing, locked, cx),
             Section::Size => self.size_and_properties(&drawing, locked, cx),
+            Section::Picture => self.picture(&drawing, locked, cx),
         };
+        let titles: Vec<SharedString> = sections.iter().map(|section| item(section.title())).collect();
+        let shown = sections.iter().position(|other| *other == section).unwrap_or(0);
         div()
             .id("dw-format-pane")
             .size_full()
@@ -580,22 +947,14 @@ impl Render for FormatPane {
             .flex()
             .flex_col()
             .gap(px(12.))
-            .when(has_fill, |d| {
-                d.child(
-                    TabStrip::new(
-                        "dw-format-tabs",
-                        vec![
-                            item(t("Fill & Line", "Remplissage et contour")),
-                            item(t("Size & Properties", "Taille et propriétés")),
-                        ],
-                        (section == Section::Size) as usize,
-                    )
-                    .on_change(cx.listener(|this, choice: &usize, _, cx| {
-                        this.section = if *choice == 0 { Section::Fill } else { Section::Size };
+            .child(
+                TabStrip::new("dw-format-tabs", titles, shown).on_change(cx.listener(move |this, choice: &usize, _, cx| {
+                    if let Some(section) = sections.get(*choice) {
+                        this.section = *section;
                         cx.notify();
-                    })),
-                )
-            })
+                    }
+                })),
+            )
             .child(page)
             .into_any_element()
     }
@@ -603,7 +962,11 @@ impl Render for FormatPane {
 
 /// Open the Format pane on a page ("Format Shape…", the launcher of the
 /// Size group, "More Rotation Options…").
-pub(super) fn open_format(app: &mut ExcelApp, section: Section, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_format(app: &mut ExcelApp, section: Section, _window: &mut Window, cx: &mut Cx) {
+    show_format(app, section, cx);
+}
+
+fn show_format(app: &mut ExcelApp, section: Section, cx: &mut Cx) {
     let title = title_for(app);
     let existing = app.ext_mut::<DrawingUi>().panes.format.clone().filter(|_| app.pane_open(FORMAT));
     let view = match existing {
@@ -616,7 +979,7 @@ pub(super) fn open_format(app: &mut ExcelApp, section: Section, window: &mut Win
         }
         None => {
             let entity = cx.entity();
-            let view = cx.new(|cx| FormatPane::new(entity, section, window, cx));
+            let view = cx.new(|cx| FormatPane::new(entity, section, cx));
             app.ext_mut::<DrawingUi>().panes.format = Some(view.clone());
             view
         }
@@ -627,9 +990,19 @@ pub(super) fn open_format(app: &mut ExcelApp, section: Section, window: &mut Win
 }
 
 /// The selection changed: the Format pane is named after what is selected
-/// now.
+/// now. There is one Format pane: the one of a chart that was open turns
+/// into this one when a picture or a shape is selected.
 pub(super) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {
-    if !app.pane_open(FORMAT) || selected(app).is_none() {
+    let Some(drawing) = selected(app) else {
+        return;
+    };
+    if app.pane_open(features::chart_format::PANE) {
+        let section = Section::of(drawing)[0];
+        app.close_pane(features::chart_format::PANE, cx);
+        show_format(app, section, cx);
+        return;
+    }
+    if !app.pane_open(FORMAT) {
         return;
     }
     let title = title_for(app);
@@ -737,71 +1110,293 @@ pub(super) fn open_alt_text(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx
 
 // ----------------------------------------------------------- the selection
 
-/// The Selection pane: every floating object of the sheet, the one on top
-/// first.
-struct SelectionPane {
-    app: WeakEntity<ExcelApp>,
+/// A row of the Selection pane.
+#[derive(Clone)]
+pub(super) struct Row {
+    pub(super) id: ObjectId,
+    /// The chart, picture or shape of the engine it is; the objects of
+    /// other features have no name or place of their own to change.
+    object: Option<ObjectRef>,
+    pub(super) name: SharedString,
+    pub(super) hidden: bool,
+    pub(super) selected: bool,
 }
 
-/// The name of an object in the Selection pane: a drawing has one; the
-/// objects of other features are numbered.
-fn object_name(app: &ExcelApp, id: ObjectId) -> SharedString {
-    if id.owner == features::index_of(&Drawings) {
-        if let Some(drawing) = app.wb.drawing(app.sheet, id.id) {
-            return drawing.name.clone().into();
+/// A row of the Selection pane being dragged to another place.
+#[derive(Clone)]
+struct DraggedRow {
+    object: ObjectRef,
+    name: SharedString,
+}
+
+/// The name that follows the pointer while a row is dragged.
+struct DragName(SharedString);
+
+impl Render for DragName {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .h(px(ROW_H))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .bg(c(0xFFFFFF))
+            .border_1()
+            .border_color(c(theme::ACCENT))
+            .rounded(px(2.))
+            .text_size(px(12.))
+            .child(self.0.clone())
+    }
+}
+
+const ROW_H: f32 = 24.0;
+
+/// The Selection pane: every floating object of the sheet, the one on top
+/// first, with its name (a double click renames it) and whether it shows.
+/// A click selects, with Shift or ⌘ it adds to the selection; a row is
+/// dragged to another place in the stacking order.
+struct SelectionPane {
+    app: WeakEntity<ExcelApp>,
+    /// The object being renamed and the field its name is typed in.
+    rename: Option<(ObjectRef, Entity<TextInput>)>,
+    _subscriptions: Vec<Subscription>,
+}
+
+/// The rows of the Selection pane, topmost first: hidden objects too.
+pub(super) fn selection_rows(app: &ExcelApp) -> Vec<Row> {
+    let sheet = app.sheet;
+    let mut rows: Vec<Row> = Vec::new();
+    // The objects of other features lie above charts and drawings.
+    for (id, _) in features::objects(app, sheet).into_iter().rev() {
+        if engine_ref(id).is_none() {
+            rows.push(Row {
+                id,
+                object: None,
+                name: format!("{} {}", t("Object", "Objet"), id.id).into(),
+                hidden: false,
+                selected: app.is_object_selected(id),
+            });
         }
     }
-    format!("{} {}", t("Chart", "Graphique"), id.id).into()
+    for object in app.wb.object_stack(sheet).into_iter().rev() {
+        let id = object_of(object);
+        rows.push(Row {
+            id,
+            object: Some(object),
+            name: match app.wb.object_name(sheet, object) {
+                // A chart of a file that named none.
+                Some("") | None => t("Chart", "Graphique").into(),
+                Some(name) => name.to_string().into(),
+            },
+            hidden: app.wb.object_hidden(sheet, object).unwrap_or(false),
+            selected: app.is_object_selected(id),
+        });
+    }
+    rows
+}
+
+/// Show or hide objects of the current sheet, as one undo step; those
+/// that are hidden leave the selection.
+pub(super) fn set_hidden(app: &mut ExcelApp, objects: &[ObjectRef], hidden: bool, cx: &mut Cx) {
+    if !objects.iter().all(|object| app.may(Intent::EditObject(Some(object_of(*object))), cx)) {
+        return;
+    }
+    if hidden {
+        let kept: Vec<ObjectId> = app
+            .selected_objects()
+            .into_iter()
+            .filter(|id| !engine_ref(*id).is_some_and(|object| objects.contains(&object)))
+            .collect();
+        app.select_objects(&kept, cx);
+    }
+    if app.wb.set_objects_hidden(app.sheet, objects, hidden) {
+        app.commit(if hidden { t("Hide Object", "Masquer l'objet") } else { t("Show Object", "Afficher l'objet") }, cx);
+    }
+}
+
+/// Put the object `moved` where `target` is in the Selection pane: above
+/// it when it comes from below, under it when it comes from above.
+pub(super) fn move_in_stack(app: &mut ExcelApp, moved: ObjectRef, target: ObjectRef, cx: &mut Cx) {
+    if moved == target || !app.may(Intent::EditObject(Some(object_of(moved))), cx) {
+        return;
+    }
+    let mut order = app.wb.object_stack(app.sheet);
+    let (Some(from), Some(to)) = (order.iter().position(|o| *o == moved), order.iter().position(|o| *o == target)) else {
+        return;
+    };
+    order.remove(from);
+    order.insert(to, moved);
+    if app.wb.restack_objects(app.sheet, &order) {
+        app.commit(t("Change Order", "Changer l'ordre"), cx);
+    }
+}
+
+impl SelectionPane {
+    fn begin_rename(&mut self, row: &Row, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(object) = row.object else {
+            return;
+        };
+        let field = widgets::input(cx, row.name.to_string());
+        field.update(cx, |field, cx| field.select_all_text(cx));
+        window.focus(&field.read(cx).focus_handle(cx));
+        let subscription = cx.subscribe_in(&field, window, |this, _, event: &InputEvent, _, cx| match event {
+            InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => this.end_rename(true, cx),
+            InputEvent::Escape => this.end_rename(false, cx),
+            _ => {}
+        });
+        self.rename = Some((object, field));
+        self._subscriptions.truncate(1);
+        self._subscriptions.push(subscription);
+        cx.notify();
+    }
+
+    fn end_rename(&mut self, keep: bool, cx: &mut Context<Self>) {
+        let Some((object, field)) = self.rename.take() else {
+            return;
+        };
+        let name = field.read(cx).text().to_string();
+        if keep {
+            self.app
+                .update(cx, |app, cx| {
+                    if app.may(Intent::EditObject(Some(object_of(object))), cx) && app.wb.rename_object(app.sheet, object, &name) {
+                        app.commit(t("Rename Object", "Renommer l'objet"), cx);
+                    }
+                })
+                .ok();
+        }
+        cx.notify();
+    }
+
+    fn row(&self, index: usize, row: &Row, cx: &mut Context<Self>) -> AnyElement {
+        let renaming = self.rename.as_ref().filter(|(object, _)| Some(*object) == row.object);
+        let name: AnyElement = match renaming {
+            Some((_, field)) => widgets::TextField::new(field).into_any_element(),
+            None => div()
+                .flex_1()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .when(row.hidden, |d| d.text_color(c(theme::TEXT_MUTED)))
+                .child(row.name.clone())
+                .into_any_element(),
+        };
+        let clicked = row.clone();
+        let mut line = div()
+            .id(("dw-sel-row", index))
+            .h(px(ROW_H))
+            .px(px(6.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .rounded(px(3.))
+            .when(row.selected, |d| d.bg(c(theme::ACCENT_LIGHT)))
+            .when(!row.selected, |d| d.hover(|s| s.bg(c(theme::HOVER))))
+            .child(div().flex_1().overflow_hidden().child(name))
+            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
+                if event.click_count() >= 2 {
+                    this.begin_rename(&clicked, window, cx);
+                    return;
+                }
+                // What does not show cannot be selected.
+                if clicked.hidden {
+                    return;
+                }
+                let extend = event.modifiers().shift || event.modifiers().platform;
+                this.app
+                    .update(cx, |app, cx| {
+                        app.click_object(clicked.id, extend, cx);
+                    })
+                    .ok();
+            }));
+        if let Some(object) = row.object {
+            let hidden = row.hidden;
+            let dragged = DraggedRow {
+                object,
+                name: row.name.clone(),
+            };
+            line = line
+                .on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragName(dragged.name.clone())))
+                .drag_over::<DraggedRow>(|style, _, _, _| style.bg(c(theme::HOVER)))
+                .on_drop(cx.listener(move |this, dragged: &DraggedRow, _, cx| {
+                    let moved = dragged.object;
+                    this.app.update(cx, |app, cx| move_in_stack(app, moved, object, cx)).ok();
+                }))
+                .child(
+                    div()
+                        .id(("dw-sel-eye", index))
+                        .size(px(20.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(3.))
+                        .hover(|s| s.bg(c(theme::PRESSED)))
+                        .child(crate::view::icon("eye", 14.0, if hidden { theme::TEXT_DISABLED } else { theme::TEXT }))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.app.update(cx, |app, cx| set_hidden(app, &[object], !hidden, cx)).ok();
+                        })),
+                );
+        }
+        line.into_any_element()
+    }
 }
 
 impl Render for SelectionPane {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (objects, selected_row) = self
-            .app
-            .upgrade()
-            .map(|app| {
-                let app = app.read(cx);
-                let mut objects: Vec<(ObjectId, SharedString)> = features::objects(app, app.sheet)
-                    .into_iter()
-                    .map(|(id, _)| (id, object_name(app, id)))
-                    .collect();
-                objects.reverse();
-                let row = app.object_sel.and_then(|sel| objects.iter().position(|(id, _)| *id == sel));
-                (objects, row)
-            })
-            .unwrap_or_default();
-        let ids: Vec<ObjectId> = objects.iter().map(|(id, _)| *id).collect();
-        let names: Vec<SharedString> = objects.into_iter().map(|(_, name)| name).collect();
-        let reorder = |id: &'static str, label: &'static str, mv: ZMove, cx: &mut Context<Self>| {
-            Button::new(id, label)
-                .disabled(selected_row.is_none())
+        let rows = self.app.upgrade().map(|app| selection_rows(app.read(cx))).unwrap_or_default();
+        let any_selected = rows.iter().any(|row| row.selected);
+        let all: Vec<ObjectRef> = rows.iter().filter_map(|row| row.object).collect();
+        let reorder = |id: &'static str, icon: &'static str, mv: ZMove, cx: &mut Context<Self>| {
+            div()
+                .id(id)
+                .size(px(24.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(3.))
+                .border_1()
+                .border_color(c(theme::BORDER))
+                .when(any_selected, |d| d.hover(|s| s.bg(c(theme::HOVER))))
+                .child(crate::view::icon(icon, 14.0, if any_selected { theme::TEXT } else { theme::TEXT_DISABLED }))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.app.update(cx, |app, cx| app.reorder_object(mv, cx)).ok();
                 }))
         };
+        let show = |id: &'static str, label: &'static str, hidden: bool, cx: &mut Context<Self>| {
+            let all = all.clone();
+            Button::new(id, label).on_click(cx.listener(move |this, _, _, cx| {
+                this.app.update(cx, |app, cx| set_hidden(app, &all, hidden, cx)).ok();
+            }))
+        };
+        let list: Vec<AnyElement> = rows.iter().enumerate().map(|(index, row)| self.row(index, row, cx)).collect();
         div()
             .p(px(12.))
+            .size_full()
             .flex()
             .flex_col()
             .gap(px(8.))
             .child(
                 div()
                     .flex()
+                    .items_center()
                     .gap(px(6.))
-                    .child(reorder("dw-sel-forward", Cmd::BringForward.label(), ZMove::Forward, cx))
-                    .child(reorder("dw-sel-backward", Cmd::SendBackward.label(), ZMove::Backward, cx)),
+                    .child(show("dw-sel-show-all", t("Show All", "Afficher tout"), false, cx))
+                    .child(show("dw-sel-hide-all", t("Hide All", "Masquer tout"), true, cx))
+                    .child(div().flex_1())
+                    .child(reorder("dw-sel-forward", "chevron-up", ZMove::Forward, cx))
+                    .child(reorder("dw-sel-backward", "chevron-down", ZMove::Backward, cx)),
             )
             .child(
-                div().flex().child(
-                    ListBox::new("dw-selection-list", names, selected_row)
-                        .height(260.0)
-                        .on_change(cx.listener(move |this, row: &usize, _, cx| {
-                            let Some(id) = ids.get(*row).copied() else {
-                                return;
-                            };
-                            this.app.update(cx, |app, cx| app.select_object(Some(id), cx)).ok();
-                        })),
-                ),
+                div()
+                    .id("dw-selection-list")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .border_1()
+                    .border_color(c(theme::BORDER))
+                    .rounded(px(3.))
+                    .bg(c(0xFFFFFF))
+                    .p(px(2.))
+                    .flex()
+                    .flex_col()
+                    .children(list),
             )
     }
 }
@@ -813,11 +1408,10 @@ pub(super) fn toggle_selection(app: &mut ExcelApp, cx: &mut Cx) {
         return;
     }
     let entity = cx.entity();
-    let view = cx.new(|cx| {
-        cx.observe(&entity, |_, _, cx| cx.notify()).detach();
-        SelectionPane {
-            app: entity.downgrade(),
-        }
+    let view = cx.new(|cx| SelectionPane {
+        app: entity.downgrade(),
+        rename: None,
+        _subscriptions: vec![cx.observe(&entity, |_, _, cx| cx.notify())],
     });
     app.open_pane(SELECTION, t("Selection", "Sélection"), view, cx);
 }

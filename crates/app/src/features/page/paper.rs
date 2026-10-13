@@ -28,7 +28,11 @@ struct Measure<'a> {
 
 impl chart_layout::TextMeasure for Measure<'_> {
     fn width(&self, text: &str, size: f32, bold: bool) -> f32 {
-        let face = self.fonts.face(self.family, bold, false);
+        self.width_styled(text, size, bold, false, None)
+    }
+
+    fn width_styled(&self, text: &str, size: f32, bold: bool, italic: bool, family: Option<&str>) -> f32 {
+        let face = self.fonts.face(family.unwrap_or(self.family), bold, italic);
         self.fonts.text_width(&face, text, size as f64) as f32
     }
 }
@@ -163,7 +167,7 @@ impl ObjectPainter for PaperPainter {
                     }
                 }
                 Prim::Text(run) => {
-                    let face = fonts.face(&family, run.bold, run.italic);
+                    let face = fonts.face(run.font.as_deref().unwrap_or(&family), run.bold, run.italic);
                     let size = run.size as f64;
                     let width = fonts.text_width(&face, &run.text, size);
                     let left = match run.anchor {
@@ -180,6 +184,10 @@ impl ObjectPainter for PaperPainter {
                         canvas.rotate(-run.rotation as f64);
                     }
                     canvas.face_text(&face, &run.text, left, baseline, size, Paint::from(run.color));
+                    if run.underline {
+                        let under = baseline + size * 0.12;
+                        canvas.line(left, under, left + width, under, Stroke::solid(Paint::from(run.color), (size / 14.0).max(0.5)));
+                    }
                     canvas.restore();
                 }
             }
@@ -210,7 +218,26 @@ impl ObjectPainter for PaperPainter {
                 if let Some(image) = self.image(picture) {
                     canvas.save();
                     turn(canvas, true);
-                    canvas.image(&image, RectF::new(0.0, 0.0, w, h));
+                    // A cropped picture shows the part of its image that
+                    // falls in its frame.
+                    let whole = picture.adjust.uncropped(opensheet_engine::drawing::Frame::new(0.0, 0.0, w, h));
+                    canvas.clip_rect(RectF::new(0.0, 0.0, w, h));
+                    canvas.image(&image, RectF::new(whole.x, whole.y, whole.width, whole.height));
+                    canvas.restore();
+                }
+            }
+            // The members of a group, each where the group puts it.
+            DrawingKind::Group(_) => {
+                for leaf in drawing.leaves(opensheet_engine::drawing::Frame::new(0.0, 0.0, w, h)) {
+                    let member = Drawing {
+                        rotation: leaf.rotation,
+                        flip_h: leaf.flip_h,
+                        flip_v: leaf.flip_v,
+                        ..leaf.drawing.clone()
+                    };
+                    canvas.save();
+                    canvas.translate(leaf.frame.x, leaf.frame.y);
+                    self.paint_drawing(wb, _sheet, &member, (leaf.frame.width, leaf.frame.height), canvas);
                     canvas.restore();
                 }
             }

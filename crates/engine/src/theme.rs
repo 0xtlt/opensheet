@@ -19,7 +19,9 @@ pub mod builtin;
 
 use crate::chart::{Chart, Fill};
 use crate::condfmt::Rule;
-use crate::drawing::{DrawingKind, Shape};
+#[cfg(test)]
+use crate::drawing::DrawingKind;
+use crate::drawing::Shape;
 use crate::filter::Criteria;
 use crate::metrics::FontMetrics;
 use crate::style::{Border, Borders, Color, Font, Style, StylePatch, ThemeColor, ThemeFont, ThemeSlot};
@@ -581,18 +583,7 @@ fn retheme_sheet(theme: &Theme, sheet: &mut Sheet) {
         retheme_chart(theme, chart);
     }
     for drawing in &mut sheet.drawings {
-        match &mut drawing.kind {
-            DrawingKind::Shape(shape) => theme.resolve_shape(shape),
-            // A vector picture painted in a colour of the theme: its
-            // document is repainted. (The image kept beside it is made
-            // again by whoever can draw it.)
-            DrawingKind::Picture(picture) => {
-                if let Some(document) = picture.svg.as_deref().and_then(|document| crate::svg::rethemed(document, theme)) {
-                    picture.svg = Some(document.into());
-                }
-            }
-            DrawingKind::SmartArt(_) => {}
-        }
+        drawing.retheme(theme);
     }
 }
 
@@ -614,6 +605,16 @@ fn retheme_chart(theme: &Theme, chart: &mut Chart) {
         }
         for trendline in &mut series.trendlines {
             theme.resolve_opt(&mut trendline.line.color);
+        }
+    }
+    // The colours of the texts, of the axis lines and of the gridlines.
+    for text in chart.text_formats_mut() {
+        theme.resolve_opt(&mut text.color);
+    }
+    let axes = &mut chart.axes;
+    for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
+        for line in [&mut axis.line, &mut axis.major_gridline, &mut axis.minor_gridline] {
+            theme.resolve_opt(&mut line.color);
         }
     }
 }

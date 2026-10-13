@@ -13,6 +13,7 @@ use super::theme;
 use super::write::{NS_DOC_REL, NS_PKG_REL};
 use super::xml::{XML_DECL, push_attr};
 use opensheet_engine::Workbook;
+use opensheet_engine::slicer::SlicerSource;
 use opensheet_engine::workbook::Sheet;
 use std::fmt::Write as _;
 
@@ -53,6 +54,14 @@ pub(crate) struct SheetLinks {
     /// The query tables of the text imports, in the order of
     /// `Sheet::text_imports`; no element.
     pub queries: Vec<usize>,
+    /// The part listing the slicers of PivotTables, the one listing the
+    /// slicers of tables and the one listing the timelines; they are
+    /// named in the extensions of the worksheet.
+    pub slicers: Option<usize>,
+    pub table_slicers: Option<usize>,
+    pub timelines: Option<usize>,
+    /// The image behind the cells (`<picture>`).
+    pub background: Option<usize>,
 }
 
 impl SheetLinks {
@@ -69,7 +78,12 @@ impl SheetLinks {
         let annotated = !sheet.comments.is_empty();
         let threaded = sheet.comments.values().any(|c| c.as_thread().is_some());
         SheetLinks {
-            drawing: id(!sheet.charts.is_empty() || !sheet.drawings.is_empty()),
+            // Slicers and timelines are frames of the drawing too.
+            drawing: id(!sheet.charts.is_empty()
+                || !sheet.drawings.is_empty()
+                || !sheet.inks.is_empty()
+                || !sheet.slicers.is_empty()
+                || !sheet.timelines.is_empty()),
             vml: id(annotated),
             comments: id(annotated),
             threads: id(threaded),
@@ -77,17 +91,24 @@ impl SheetLinks {
             pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
             hyperlinks: sheet.hyperlinks.iter().filter_map(|link| id(!link.address.is_empty())).collect(),
             queries: sheet.text_imports.iter().filter_map(|_| id(true)).collect(),
+            slicers: id(sheet.slicers.iter().any(|s| matches!(s.source, SlicerSource::Pivot { .. }))),
+            table_slicers: id(sheet.slicers.iter().any(|s| matches!(s.source, SlicerSource::Table { .. }))),
+            timelines: id(!sheet.timelines.is_empty()),
+            background: id(sheet.background.is_some()),
         }
     }
 
     /// Append the elements of a worksheet that name other parts. They come
-    /// after the page setup, in this order.
+    /// after the page setup, in this order (that of the schema).
     pub fn push_elements(&self, x: &mut String) {
         if let Some(id) = self.drawing {
             w!(x, "<drawing r:id=\"rId{id}\"/>");
         }
         if let Some(id) = self.vml {
             w!(x, "<legacyDrawing r:id=\"rId{id}\"/>");
+        }
+        if let Some(id) = self.background {
+            w!(x, "<picture r:id=\"rId{id}\"/>");
         }
         if !self.tables.is_empty() {
             w!(x, "<tableParts count=\"{}\">", self.tables.len());
@@ -121,9 +142,21 @@ pub(crate) struct Extras {
     /// The pivot caches the workbook part lists: (`cacheId`, place of the
     /// relationship in `workbook_rels`).
     pivot_caches: Vec<(usize, usize)>,
+    /// The caches of slicers and timelines, which the workbook part lists
+    /// in its extensions: (which list, place of the relationship in
+    /// `workbook_rels`).
+    listed_caches: Vec<(CacheList, usize)>,
     pub parts: Vec<Part>,
     /// The relationships of each worksheet so far, as elements.
     sheet_rels: Vec<String>,
+}
+
+/// The lists of the workbook part's extensions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CacheList {
+    PivotSlicers,
+    TableSlicers,
+    Timelines,
 }
 
 impl Extras {
@@ -136,10 +169,12 @@ impl Extras {
             defaults: Vec::new(),
             workbook_rels: Vec::new(),
             pivot_caches: Vec::new(),
+            listed_caches: Vec::new(),
             parts: Vec::new(),
             sheet_rels: vec![String::new(); wb.sheets.len()],
         };
         super::drawing::add_parts(wb, drawings, &mut extras);
+        super::ink::add_parts(wb, drawings);
         for drawing in drawings.iter() {
             let links = wb.sheets.get(drawing.sheet).map(SheetLinks::of);
             if let Some(id) = links.and_then(|links| links.drawing) {
@@ -150,8 +185,11 @@ impl Extras {
         super::comments::add_parts(wb, &mut extras);
         super::table::add_parts(wb, &mut extras, dxfs);
         super::pivot::add_parts(wb, &mut extras, dxfs);
+        super::slicer::add_parts(wb, &mut extras);
+        super::timeline::add_parts(wb, &mut extras);
         super::hyperlink::add_parts(wb, &mut extras);
         super::datatools::add_parts(wb, &mut extras);
+        super::background::add_parts(wb, &mut extras);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),
@@ -224,6 +262,13 @@ impl Extras {
         self.relate_workbook(&format!("{NS_DOC_REL}/pivotCacheDefinition"), target);
     }
 
+    /// Relate the workbook to the cache of a slicer or of a timeline,
+    /// which the workbook part also lists in the extension `list`.
+    pub fn add_listed_cache(&mut self, list: CacheList, kind: &str, target: &str) {
+        self.listed_caches.push((list, self.workbook_rels.len()));
+        self.relate_workbook(kind, target);
+    }
+
     /// The relationships of the workbook part to these parts, numbered
     /// from `first`: the writer has given the ids before it to the sheets
     /// and to its own parts.
@@ -250,6 +295,19 @@ impl Extras {
                 );
             }
             x.push_str("</pivotCaches>");
+        }
+        // extLst: the caches of the slicers of PivotTables, then those of
+        // the slicers of tables, then those of the timelines.
+        let mut lists = String::new();
+        for list in [CacheList::PivotSlicers, CacheList::TableSlicers, CacheList::Timelines] {
+            let ids: Vec<usize> =
+                self.listed_caches.iter().filter(|(l, _)| *l == list).map(|(_, rel)| first + rel).collect();
+            if !ids.is_empty() {
+                super::slicer::push_workbook_ext(&mut lists, list, &ids);
+            }
+        }
+        if !lists.is_empty() {
+            w!(x, "<extLst>{lists}</extLst>");
         }
         x
     }

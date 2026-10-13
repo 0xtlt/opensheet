@@ -344,6 +344,12 @@ impl ExcelApp {
         view
     }
 
+    /// The view of the dialog in front, for the tests that drive one.
+    #[cfg(test)]
+    pub(crate) fn front_modal_view(&self) -> Option<AnyView> {
+        self.modals.last().map(|entry| entry.view.clone())
+    }
+
     /// Show a message box.
     pub fn alert(&mut self, mut alert: Alert, cx: &mut Context<Self>) {
         if alert.buttons.is_empty() {

@@ -54,6 +54,50 @@ pub fn error_text(err: &PivotError) -> &'static str {
         ),
         PivotError::InvalidName => t("PivotTable name is not valid.", "Nom du tableau croisé dynamique non valide."),
         PivotError::NoSuchPivot | PivotError::NoSuchField | PivotError::NotAValue => cannot_change_part(),
+        PivotError::ChartKind => t(
+            "The selected chart type is not supported for a PivotChart report. PivotChart reports cannot use XY (Scatter), Bubble, or Stock chart types.",
+            "Le type de graphique sélectionné n'est pas pris en charge pour un rapport de graphique croisé dynamique. Les graphiques XY (nuage de points), en bulles et boursiers ne peuvent pas être appliqués à des rapports de graphique croisé dynamique.",
+        ),
+        PivotError::BadFormula => t(
+            "The formula you typed contains an error.",
+            "La formule que vous avez tapée contient une erreur.",
+        ),
+        PivotError::FormulaReference => t(
+            "References, names, and arrays are not supported in PivotTable formulas.",
+            "Les références, les noms et les matrices ne sont pas prises en compte par les formules de tableau croisé dynamique.",
+        ),
+        PivotError::FormulaFunction => t(
+            "Your formula includes a function that cannot be used in PivotTable formulas. You cannot use functions that return variable results, such as RAND and NOW, database functions, or the GETPIVOTDATA function in PivotTable formulas.",
+            "La formule contient une fonction incompatible avec les formules de tableau croisé dynamique. Impossible d'utiliser les fonctions variables telles que ALEA, MAINTENANT, les fonctions de bases de données et la fonction LIREDONNEESTABCROISDYNAMIQUE dans les formules de tableaux croisés dynamiques.",
+        ),
+        PivotError::FormulaCircular => t(
+            "Your formula cannot be entered because calculated fields cannot contain circular references. Change the formula to make sure that it doesn't refer to its own cells.",
+            "La formule ne peut pas être saisie, car les champs calculés ne peuvent pas contenir de références circulaires. Modifiez la formule de sorte qu’elle ne comporte pas de référence à ses propres cellules.",
+        ),
+        PivotError::FormulaNameTaken => t(
+            "Calculated item or field could not be created because another item or field of the same name exists.",
+            "L'élément ou le champ calculé ne peut pas être créé car un autre élément ou champ du même nom existe déjà.",
+        ),
+        PivotError::ItemsWithAverages => t(
+            "Averages, standard deviations, and variances are not supported when a PivotTable report has calculated items.",
+            "Impossible d'utiliser les moyennes, écarts types et variances lorsqu'un rapport de tableau croisé dynamique comporte des éléments calculés.",
+        ),
+        PivotError::ItemsWithCustomSubtotals => t(
+            "Calculated items do not work with custom subtotals.",
+            "Les éléments calculés ne sont pas compatibles avec les sous-totaux personnalisés.",
+        ),
+        PivotError::ItemsWithRepeatedField => t(
+            "Multiple data fields of the same field are not supported when a PivotTable report has calculated items.",
+            "Impossible d'utiliser plusieurs champs de données pour le même champ si le rapport de tableau croisé dynamique comporte des champs calculés.",
+        ),
+        PivotError::ItemsInGroupedField => t(
+            "Group item names are not supported in calculated item formulas.",
+            "Les noms d'éléments de groupe ne sont pas gérés par les formules comportant des éléments calculés.",
+        ),
+        PivotError::ItemsInPageField => t(
+            "This field cannot be placed in the report filter because it contains calculated items. To place this field in the report filter, first delete the calculated items.",
+            "Vous ne pouvez pas placer ce champ dans le filtre du rapport, car il contient des éléments calculés. Pour placer ce champ dans le filtre du rapport, supprimez tout d’abord les éléments calculés.",
+        ),
     }
 }
 

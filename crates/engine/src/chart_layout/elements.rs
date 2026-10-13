@@ -99,6 +99,55 @@ impl ChartElement {
     }
 }
 
+impl ChartElement {
+    /// The format of the text of an element that is, or has, text: a
+    /// title, the labels of an axis, the legend, data labels.
+    pub fn text(self, chart: &crate::chart::Chart) -> Option<&crate::chart::TextFormat> {
+        match self {
+            ChartElement::Title => Some(&chart.title_text),
+            ChartElement::Legend | ChartElement::LegendEntry(_) => Some(&chart.legend_text),
+            ChartElement::Axis(axis) => Some(&axis.of(&chart.axes).text),
+            ChartElement::AxisTitle(axis) => Some(&axis.of(&chart.axes).title_text),
+            ChartElement::DataLabels(s) => {
+                let own = chart.series.get(s as usize).and_then(|series| series.labels.as_ref());
+                Some(own.map_or(&chart.label_options.text, |labels| &labels.text))
+            }
+            _ => None,
+        }
+    }
+
+    /// The size, in points, Excel gives the text of this element.
+    pub fn text_points(self) -> f32 {
+        match self {
+            ChartElement::Title => super::TITLE_POINTS,
+            ChartElement::AxisTitle(_) => super::AXIS_TITLE_POINTS,
+            _ => super::LABEL_POINTS,
+        }
+    }
+
+    /// Change the text of an element; with the chart area, every text of
+    /// the chart, as Excel does. The labels of a series that follows the
+    /// chart's become its own first. Returns whether there was a text.
+    pub fn format_text(self, chart: &mut crate::chart::Chart, f: impl Fn(&mut crate::chart::TextFormat)) -> bool {
+        match self {
+            ChartElement::ChartArea => chart.text_formats_mut().into_iter().for_each(f),
+            ChartElement::Title => f(&mut chart.title_text),
+            ChartElement::Legend | ChartElement::LegendEntry(_) => f(&mut chart.legend_text),
+            ChartElement::Axis(axis) => f(&mut axis.of_mut(&mut chart.axes).text),
+            ChartElement::AxisTitle(axis) => f(&mut axis.of_mut(&mut chart.axes).title_text),
+            ChartElement::DataLabels(s) => {
+                let shared = chart.label_options.clone();
+                let Some(series) = chart.series.get_mut(s as usize) else {
+                    return false;
+                };
+                f(&mut series.labels.get_or_insert(shared).text);
+            }
+            _ => return false,
+        }
+        true
+    }
+}
+
 /// A place where a selected element shows a handle.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Anchor {
@@ -132,6 +181,8 @@ pub struct ChartLayout {
     anchors: Vec<Anchor>,
     /// The scales of the axes that measure numbers, as they were drawn.
     scales: Vec<(AxisId, Scale)>,
+    /// (primitive, series, point) of every data label.
+    labels: Vec<(usize, u32, u32)>,
     size: (f32, f32),
 }
 
@@ -144,9 +195,15 @@ pub(crate) struct Tagger {
     boxes: Vec<(ChartElement, [f32; 4])>,
     anchors: Vec<Anchor>,
     scales: Vec<(AxisId, Scale)>,
+    /// (primitive, series, point) of every data label.
+    labels: Vec<(usize, u32, u32)>,
 }
 
 impl Tagger {
+    pub fn label(&mut self, at: usize, series: u32, point: u32) {
+        self.labels.push((at, series, point));
+    }
+
     pub fn tag(&mut self, at: usize, element: ChartElement) {
         match self.spans.last_mut() {
             Some((start, last)) if *start == at => *last = element,
@@ -187,6 +244,7 @@ impl Tagger {
             boxes: self.boxes,
             anchors: self.anchors,
             scales: self.scales,
+            labels: self.labels,
             size,
         }
     }
@@ -205,7 +263,7 @@ fn extent(prim: &Prim, measure: &dyn TextMeasure) -> [f32; 4] {
             if b[0] > b[2] { [0.0; 4] } else { b }
         }
         Prim::Text(run) => {
-            let w = measure.width(&run.text, run.size, run.bold);
+            let w = measure.width_styled(&run.text, run.size, run.bold, run.italic, run.font.as_deref());
             let h = line_height(run.size);
             let left = match run.anchor {
                 TextAnchor::Start => run.x,
@@ -336,7 +394,7 @@ impl ChartLayout {
         }
         // Text is given some air, as Excel's frames do.
         let pad = match element {
-            ChartElement::Title | ChartElement::AxisTitle(_) | ChartElement::Legend => 3.0,
+            ChartElement::Title | ChartElement::AxisTitle(_) | ChartElement::Legend => super::FRAME_PAD,
             _ => 0.0,
         };
         out.map(|b| [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad])
@@ -419,6 +477,21 @@ impl ChartLayout {
             add(*tag);
         }
         out
+    }
+
+    /// Width and height of the chart area the layout was made for.
+    pub fn size(&self) -> (f32, f32) {
+        self.size
+    }
+
+    /// The data label under a point: (series, point).
+    pub fn data_label_at(&self, x: f32, y: f32) -> Option<(u32, u32)> {
+        self.labels.iter().rev().find(|(i, ..)| in_box(&self.extents[*i], x, y, 2.0)).map(|(_, s, k)| (*s, *k))
+    }
+
+    /// The box of the data label of a point.
+    pub fn data_label_box(&self, series: u32, point: u32) -> Option<[f32; 4]> {
+        self.labels.iter().find(|(_, s, k)| *s == series && *k == point).map(|(i, ..)| self.extents[*i])
     }
 
     /// The scale an axis was drawn with: its bounds and units, automatic

@@ -17,15 +17,20 @@
 //! writes. The caller commits.
 
 mod cache;
+mod calc;
+mod chart;
 mod commands;
 mod compute;
 mod getdata;
+mod slicing;
 mod style;
 #[cfg(test)]
 mod tests;
 mod text;
 
-pub use cache::{CacheField, FieldGroup, GroupBy, GroupKind, PivotCache};
+pub use cache::{CacheField, CalcItem, FieldGroup, GroupBy, GroupKind, PivotCache};
+pub use calc::{CalcFormula, ListLabels};
+pub use chart::{PivotChartFields, PivotChartLink, chart_kind_allowed};
 pub use commands::PivotDestination;
 pub use compute::{Report, ReportLine, ReportLineKind};
 pub use getdata::get_pivot_data;
@@ -438,6 +443,13 @@ pub enum FilterKind {
         count: f64,
         by: Top10By,
     },
+    /// Keep the records whose date lies between two days, both included
+    /// (what a timeline sets). Unlike the others it applies wherever the
+    /// field is, in the report or not.
+    Date {
+        start: f64,
+        end: f64,
+    },
 }
 
 /// A label or value filter on a row or column field (`filter`).
@@ -516,6 +528,11 @@ pub struct PivotTable {
     pub data_fields: Vec<DataField>,
     /// Label and value filters, applied in order.
     pub filters: Vec<PivotFilter>,
+    /// The fields a slicer filters: their unchecked items are left out
+    /// even while the field is in none of the areas.
+    pub sliced: Vec<usize>,
+    /// The PivotCharts: charts whose series are made from the report.
+    pub charts: Vec<PivotChartLink>,
     pub options: PivotOptions,
     pub style: PivotStyle,
     /// The cells the report occupies since it was last written
@@ -555,6 +572,29 @@ pub enum PivotError {
     InvalidName,
     /// The cell is not a value of a PivotTable.
     NotAValue,
+    /// The formula of a calculated field or item cannot be read.
+    BadFormula,
+    /// "References, names, and arrays are not supported in PivotTable
+    /// formulas."
+    FormulaReference,
+    /// The formula uses a function whose result varies (RAND, NOW) or
+    /// that reads a PivotTable.
+    FormulaFunction,
+    /// The formula computes from itself.
+    FormulaCircular,
+    /// Another field or item has the name.
+    FormulaNameTaken,
+    /// Calculated items do not go with averages, standard deviations and
+    /// variances, with custom subtotals, with a field that is twice in
+    /// the values, with a grouped field, nor in the filter area.
+    ItemsWithAverages,
+    ItemsWithCustomSubtotals,
+    ItemsWithRepeatedField,
+    ItemsInGroupedField,
+    ItemsInPageField,
+    /// "PivotChart reports cannot use XY (Scatter), Bubble, or Stock
+    /// chart types."
+    ChartKind,
 }
 
 /// The part of a PivotTable a cell belongs to.
@@ -645,6 +685,8 @@ impl PivotTable {
             page_fields: Vec::new(),
             data_fields: Vec::new(),
             filters: Vec::new(),
+            sliced: Vec::new(),
+            charts: Vec::new(),
             options: PivotOptions::default(),
             style: PivotStyle::default(),
             location: None,
@@ -849,10 +891,12 @@ impl PivotTable {
             }
         }
         let mut used = vec![false; nf];
+        // Calculated fields are value fields only.
+        let calculated: Vec<bool> = self.cache.fields.iter().map(|f| f.formula.is_some()).collect();
         let mut keep_axis = |list: &mut Vec<AxisField>| {
             let mut values = false;
             list.retain(|a| match a {
-                AxisField::Field(f) if *f < nf && !used[*f] => {
+                AxisField::Field(f) if *f < nf && !used[*f] && !calculated[*f] => {
                     used[*f] = true;
                     true
                 }
@@ -866,7 +910,7 @@ impl PivotTable {
         keep_axis(&mut self.row_fields);
         keep_axis(&mut self.col_fields);
         self.page_fields.retain(|p| {
-            let ok = p.field < nf && !used[p.field];
+            let ok = p.field < nf && !used[p.field] && !calculated[p.field];
             if ok {
                 used[p.field] = true;
             }
@@ -893,10 +937,13 @@ impl PivotTable {
         self.filters.retain(|f| {
             f.field < nf
                 && match f.kind {
-                    FilterKind::Label(_) => true,
+                    FilterKind::Label(_) | FilterKind::Date { .. } => true,
                     FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => data_field < nd,
                 }
         });
+        self.sliced.retain(|f| *f < nf);
+        self.sliced.sort_unstable();
+        self.sliced.dedup();
         for f in &mut self.fields {
             if f.sort.by_value.is_some_and(|d| d >= nd) {
                 f.sort.by_value = None;
@@ -1043,7 +1090,7 @@ impl PivotTable {
             .filter_map(|mut f| {
                 f.field = field(f.field)?;
                 match &mut f.kind {
-                    FilterKind::Label(_) => {}
+                    FilterKind::Label(_) | FilterKind::Date { .. } => {}
                     FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => {
                         *data_field = data(*data_field)?
                     }
@@ -1051,6 +1098,7 @@ impl PivotTable {
                 Some(f)
             })
             .collect();
+        self.sliced = self.sliced.iter().filter_map(|f| field(*f)).collect();
         for f in &mut self.fields {
             f.sort.by_value = f.sort.by_value.and_then(data);
         }
@@ -1064,7 +1112,9 @@ impl PivotTable {
         self.row_fields.retain(|a| *a != AxisField::Field(field));
         self.col_fields.retain(|a| *a != AxisField::Field(field));
         self.page_fields.retain(|p| p.field != field);
-        self.filters.retain(|f| f.field != field);
+        // What a timeline set stays: it filters the field wherever it is.
+        self.filters
+            .retain(|f| f.field != field || matches!(f.kind, FilterKind::Date { .. }));
         self.normalize();
     }
 
@@ -1074,6 +1124,10 @@ impl PivotTable {
     /// In the other areas the field moves there from where it was.
     pub fn add_field(&mut self, field: usize, area: Area, position: Option<usize>, locale: &Locale) {
         if field >= self.fields.len() {
+            return;
+        }
+        // A calculated field has no items: it is only ever a value field.
+        if area != Area::Values && self.cache.fields[field].formula.is_some() {
             return;
         }
         if area == Area::Values {
@@ -1113,7 +1167,8 @@ impl PivotTable {
                     let at = position.unwrap_or(usize::MAX).min(self.page_fields.len());
                     self.page_fields.insert(at, PageField { field, item: None });
                     // Label and value filters only apply on an axis.
-                    self.filters.retain(|f| f.field != field);
+                    self.filters
+                        .retain(|f| f.field != field || matches!(f.kind, FilterKind::Date { .. }));
                 }
             }
         }
@@ -1128,7 +1183,7 @@ impl PivotTable {
         self.data_fields.remove(index);
         self.filters.retain(|f| match f.kind {
             FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => data_field != index,
-            FilterKind::Label(_) => true,
+            FilterKind::Label(_) | FilterKind::Date { .. } => true,
         });
         for f in &mut self.fields {
             if f.sort.by_value == Some(index) {
@@ -1430,12 +1485,33 @@ impl PivotTable {
     /// value test or a Top 10).
     pub fn set_value_filter(&mut self, field: usize, filter: Option<FilterKind>) {
         self.filters
-            .retain(|f| f.field != field || matches!(f.kind, FilterKind::Label(_)));
+            .retain(|f| f.field != field || matches!(f.kind, FilterKind::Label(_) | FilterKind::Date { .. }));
         if let Some(kind) = filter
-            && !matches!(kind, FilterKind::Label(_))
+            && !matches!(kind, FilterKind::Label(_) | FilterKind::Date { .. })
         {
             self.filters.push(PivotFilter { field, kind });
         }
+    }
+
+    /// Set, replace or remove (`None`) the days a date field is limited
+    /// to, first and last day included.
+    pub fn set_date_filter(&mut self, field: usize, days: Option<(f64, f64)>) {
+        self.filters
+            .retain(|f| f.field != field || !matches!(f.kind, FilterKind::Date { .. }));
+        if let Some((start, end)) = days {
+            self.filters.push(PivotFilter {
+                field,
+                kind: FilterKind::Date { start, end },
+            });
+        }
+    }
+
+    /// The days a date field is limited to.
+    pub fn date_filter(&self, field: usize) -> Option<(f64, f64)> {
+        self.filters.iter().find_map(|f| match f.kind {
+            FilterKind::Date { start, end } if f.field == field => Some((start, end)),
+            _ => None,
+        })
     }
 
     // ---- layout ------------------------------------------------------------
@@ -1787,6 +1863,9 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
         for p in &mut sh.pivots {
             next += 1;
             p.id = next;
+            // The charts of the original stay its own; the copies of
+            // them on this sheet are plain charts.
+            p.charts.clear();
         }
     }
 }

@@ -11,7 +11,7 @@ use crate::grid::Draw;
 use crate::i18n::{t, t_ctx};
 use crate::shell::Alert;
 use gpui::{CursorStyle, ExternalPaths, Modifiers, MouseButton, PathPromptOptions, Window};
-use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, ShapeTool};
+use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, PictureAdjust, ShapeTool};
 use std::path::PathBuf;
 
 /// The zone that covers the cells while a shape waits to be drawn.
@@ -51,7 +51,79 @@ pub(super) enum Drag {
         flips: (bool, bool),
         lock_aspect: bool,
         changed: bool,
+        /// The other selected drawings and how they were turned: they
+        /// turn with this one.
+        others: Vec<(u32, f32)>,
     },
+    /// A crop mark of a picture, or its image under the frame, with what
+    /// the picture was when the button went down.
+    Crop {
+        id: u32,
+        grip: Grip,
+        pane: Pane,
+        pressed: (f64, f64),
+        frame: Frame,
+        rotation: f32,
+        flips: (bool, bool),
+        adjust: PictureAdjust,
+        changed: bool,
+    },
+}
+
+/// A crop as the screen shows it: the sides of a flipped picture are
+/// those of its image the other way round. (Doing it twice undoes it.)
+pub(super) fn seen_crop(crop: [f32; 4], flips: (bool, bool)) -> [f32; 4] {
+    let [mut l, mut t, mut r, mut b] = crop;
+    if flips.0 {
+        (l, r) = (r, l);
+    }
+    if flips.1 {
+        (t, b) = (b, t);
+    }
+    [l, t, r, b]
+}
+
+/// What dragging a crop mark (or the image) by `delta` makes of a
+/// picture that was in `frame` with the crop `adjust`: its new frame and
+/// its new crop. The image stays where it is on the sheet under a mark;
+/// the frame stays where it is when the image is moved.
+pub(super) fn cropped(
+    grip: Grip,
+    frame: Frame,
+    rotation: f32,
+    flips: (bool, bool),
+    adjust: &PictureAdjust,
+    delta: (f64, f64),
+    keep_aspect: bool,
+) -> (Frame, [f32; 4]) {
+    // The drag along the sides of the picture, and the picture in a box
+    // of its own with its corner at the origin.
+    let (sin, cos) = (-(rotation as f64)).to_radians().sin_cos();
+    let local = (delta.0 * cos - delta.1 * sin, delta.0 * sin + delta.1 * cos);
+    let own = Frame::new(0.0, 0.0, frame.width, frame.height);
+    let seen = PictureAdjust {
+        crop: seen_crop(adjust.crop, flips),
+        ..*adjust
+    };
+    let image = seen.uncropped(own);
+    let (placed, crop) = match grip {
+        Grip::Crop(handle) => {
+            let kept = geometry::resize(own, 0.0, handle, local, keep_aspect, false);
+            (
+                geometry::resize(frame, rotation, handle, delta, keep_aspect, false),
+                PictureAdjust::crop_between(image, kept),
+            )
+        }
+        _ => {
+            let moved = Frame {
+                x: image.x + local.0,
+                y: image.y + local.1,
+                ..image
+            };
+            (frame, PictureAdjust::crop_between(moved, own))
+        }
+    };
+    (placed, seen_crop(crop, flips))
 }
 
 /// True where a click selects a drawing: on a picture anywhere in its
@@ -61,6 +133,9 @@ pub(super) enum Drag {
 pub(super) fn hits(drawing: &Drawing, placed: &Placed, natural: (f32, f32), zoom: f32, p: Pt) -> bool {
     match &drawing.kind {
         DrawingKind::Picture(_) | DrawingKind::SmartArt(_) => placed.contains(p),
+        DrawingKind::Group(_) => paint::leaves(drawing, placed, zoom)
+            .iter()
+            .any(|(member, inner, natural)| hits(member, inner, *natural, zoom, p)),
         DrawingKind::Shape(shape) => {
             let lines = paint::outline_of(shape, placed, natural);
             let is_line = shape.preset.is_line();
@@ -205,15 +280,40 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
         // A right click on a handle is a right click on its drawing.
         return ZoneResponse::Ignored;
     }
-    if !app.may(Intent::EditObject(Some(object_id(&Drawings, handle.id))), cx) {
+    // The handle of one of several selected objects works on them all.
+    if !app.may_edit_selected_objects(cx) {
         return ZoneResponse::Handled;
     }
     end_text_edit(app, cx);
-    let (Some(layout), Some(drawing)) = (app.current_layout(), app.wb.drawing(app.sheet, handle.id)) else {
+    let Some(layout) = app.current_layout() else {
+        return ZoneResponse::Handled;
+    };
+    app.remember_object_boxes(&layout);
+    let others: Vec<(u32, f32)> = super::selected_ids(app)
+        .into_iter()
+        .filter(|id| *id != handle.id)
+        .filter_map(|id| app.wb.drawing(app.sheet, id).map(|drawing| (id, drawing.rotation)))
+        .collect();
+    let Some(drawing) = app.wb.drawing(app.sheet, handle.id) else {
         return ZoneResponse::Handled;
     };
     let sheet = &app.wb.sheets[app.sheet];
     let pane = paint::pane_at(&layout, ev.x, ev.y).unwrap_or_else(|| paint::panes(&layout)[0]);
+    if let (Grip::Crop(_) | Grip::Pan, Some(picture)) = (handle.grip, drawing.as_picture()) {
+        let drag = Drag::Crop {
+            id: handle.id,
+            grip: handle.grip,
+            pane,
+            pressed: paint::sheet_point(&layout, sheet, &pane, ev.x, ev.y),
+            frame: sheet.drawing_frame(drawing),
+            rotation: drawing.rotation,
+            flips: (drawing.flip_h, drawing.flip_v),
+            adjust: picture.adjust,
+            changed: false,
+        };
+        app.ext_mut::<DrawingUi>().drag = Some(drag);
+        return ZoneResponse::Capture;
+    }
     let drag = Drag::Grip {
         id: handle.id,
         grip: handle.grip,
@@ -224,6 +324,7 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
         flips: (drawing.flip_h, drawing.flip_v),
         lock_aspect: drawing.lock_aspect,
         changed: false,
+        others,
     };
     app.ext_mut::<DrawingUi>().drag = Some(drag);
     ZoneResponse::Capture
@@ -263,10 +364,11 @@ pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, _cx: 
             rotation,
             flips,
             lock_aspect,
+            others,
             ..
         } => {
             let now = paint::sheet_point(&layout, &app.wb.sheets[sheet_index], &pane, ev.x, ev.y);
-            drag_grip(app, id, grip, &layout, &pane, (pressed, now), (frame, rotation, flips, lock_aspect), ev);
+            drag_grip(app, id, grip, &layout, &pane, (pressed, now), (frame, rotation, flips, lock_aspect), &others, ev);
             Drag::Grip {
                 id,
                 grip,
@@ -277,6 +379,41 @@ pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, _cx: 
                 flips,
                 lock_aspect,
                 changed: true,
+                others,
+            }
+        }
+        Drag::Crop {
+            id,
+            grip,
+            pane,
+            pressed,
+            frame,
+            rotation,
+            flips,
+            adjust,
+            ..
+        } => {
+            let now = paint::sheet_point(&layout, &app.wb.sheets[sheet_index], &pane, ev.x, ev.y);
+            let delta = (now.0 - pressed.0, now.1 - pressed.1);
+            let (placed, crop) = cropped(grip, frame, rotation, flips, &adjust, delta, ev.modifiers.shift);
+            app.wb.update_drawing(sheet_index, id, |drawing| {
+                drawing.anchor = (0, 0);
+                drawing.offset = (placed.x.max(0.0) as f32, placed.y.max(0.0) as f32);
+                drawing.size = (placed.width as f32, placed.height as f32);
+                if let Some(picture) = drawing.as_picture_mut() {
+                    picture.adjust.crop = crop;
+                }
+            });
+            Drag::Crop {
+                id,
+                grip,
+                pane,
+                pressed,
+                frame,
+                rotation,
+                flips,
+                adjust,
+                changed: true,
             }
         }
     };
@@ -285,7 +422,9 @@ pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, _cx: 
 
 /// Apply the drag of a handle: `points` are where the press was and where
 /// the pointer is on the sheet, `was` the frame, the rotation, the flips
-/// and the aspect lock of the drawing when the button went down.
+/// and the aspect lock of the drawing when the button went down. The
+/// other selected objects take the same proportions, and `others` (the
+/// other selected drawings) the same turn.
 #[allow(clippy::too_many_arguments)]
 fn drag_grip(
     app: &mut ExcelApp,
@@ -295,6 +434,7 @@ fn drag_grip(
     pane: &Pane,
     points: ((f64, f64), (f64, f64)),
     was: (Frame, f32, (bool, bool), bool),
+    others: &[(u32, f32)],
     ev: &ZoneEvent,
 ) {
     let sheet = app.sheet;
@@ -308,6 +448,10 @@ fn drag_grip(
             // Shift asks the same of any drawing.
             let resized = geometry::resize(frame, rotation, handle, delta, lock_aspect || shift, alt || control);
             app.wb.set_drawing_frame(sheet, id, resized);
+            if frame.width > 0.0 && frame.height > 0.0 {
+                let (sx, sy) = (resized.width / frame.width, resized.height / frame.height);
+                app.scale_other_objects(layout, object_id(&Drawings, id), handle, sx, sy);
+            }
         }
         Grip::LineEnd(end) => {
             let (start_point, end_point) = geometry::line_ends(frame, flips.0, flips.1, rotation);
@@ -329,10 +473,16 @@ fn drag_grip(
                 drawing.rotation = 0.0;
             });
         }
+        // The marks of a picture being cropped have a drag of their own.
+        Grip::Crop(_) | Grip::Pan => {}
         Grip::Rotate => {
             let placed = paint::placed_frame(layout, &app.wb.sheets[sheet], frame, (rotation, flips.0, flips.1), pane);
             let angle = geometry::drag_angle(placed.centre(), (ev.x, ev.y), shift);
             app.wb.update_drawing(sheet, id, |drawing| drawing.rotation = angle);
+            for (other, was) in others {
+                let turned = geometry::normalise_angle(was + angle - rotation);
+                app.wb.update_drawing(sheet, *other, |drawing| drawing.rotation = turned);
+            }
         }
     }
 }
@@ -364,9 +514,14 @@ pub(super) fn mouse_up(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, window:
             if changed {
                 let label = match grip {
                     Grip::Rotate => t("Rotate Object", "Faire pivoter l'objet"),
-                    Grip::Resize(_) | Grip::LineEnd(_) => t("Size Object", "Dimensionner l'objet"),
+                    _ => t("Size Object", "Dimensionner l'objet"),
                 };
                 app.commit(label, cx);
+            }
+        }
+        Drag::Crop { changed, .. } => {
+            if changed {
+                app.commit(t("Crop Picture", "Rogner l'image"), cx);
             }
         }
     }
@@ -498,7 +653,7 @@ fn replace_picture(app: &mut ExcelApp, files: Vec<Vec<u8>>, cx: &mut Cx) {
     };
     super::edit(app, t("Change Picture", "Modifier l'image"), cx, |drawing| {
         if matches!(drawing.kind, DrawingKind::Picture(_)) {
-            drawing.kind = DrawingKind::Picture(picture);
+            drawing.kind = DrawingKind::Picture(picture.clone());
         }
     });
 }
@@ -598,5 +753,37 @@ mod tests {
         let (frame, flip_h, flip_v) = drawn(ShapeTool::Line, (0.0, 50.0), (200.0, 58.0), true);
         assert!(frame.height.abs() < 1e-6 && (frame.width - 200.0).abs() < 1e-6);
         assert_eq!((flip_h, flip_v), (false, false));
+    }
+
+    #[test]
+    fn crop_marks_move_the_frame_over_the_image() {
+        let plain = PictureAdjust::default();
+        let frame = Frame::new(100.0, 100.0, 200.0, 100.0);
+        let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-5);
+        // The right side pulled in by 50: a quarter of the image goes.
+        let (placed, crop) = cropped(Grip::Crop(3), frame, 0.0, (false, false), &plain, (-50.0, 0.0), false);
+        assert_eq!(placed, Frame::new(100.0, 100.0, 150.0, 100.0));
+        assert!(near(crop, [0.0, 0.0, 0.25, 0.0]), "{crop:?}");
+        // Then the top-left corner in by (30, 20) from there.
+        let once = PictureAdjust { crop, ..plain };
+        let (placed, crop) = cropped(Grip::Crop(0), placed, 0.0, (false, false), &once, (30.0, 20.0), false);
+        assert_eq!(placed, Frame::new(130.0, 120.0, 120.0, 80.0));
+        assert!(near(crop, [0.15, 0.2, 0.25, 0.0]), "{crop:?}");
+        // Moving the image right by 20 shows more of its left.
+        let twice = PictureAdjust { crop, ..plain };
+        let (still, crop) = cropped(Grip::Pan, placed, 0.0, (false, false), &twice, (20.0, 0.0), false);
+        assert_eq!(still, placed);
+        assert!(near(crop, [0.05, 0.2, 0.35, 0.0]), "{crop:?}");
+        // A flipped picture: the side dragged on screen is the other
+        // side of the image.
+        let (_, crop) = cropped(Grip::Crop(3), frame, 0.0, (true, false), &plain, (-50.0, 0.0), false);
+        assert!(near(crop, [0.25, 0.0, 0.0, 0.0]), "{crop:?}");
+        // Turned a quarter, its right side is at the bottom of the
+        // screen: dragging up there cuts the right of the image.
+        let (_, crop) = cropped(Grip::Crop(3), frame, 90.0, (false, false), &plain, (0.0, -50.0), false);
+        assert!(near(crop, [0.0, 0.0, 0.25, 0.0]), "{crop:?}");
+        // Pulled out past the image: room around it.
+        let (_, crop) = cropped(Grip::Crop(7), frame, 0.0, (false, false), &plain, (-20.0, 0.0), false);
+        assert!(near(crop, [-0.1, 0.0, 0.0, 0.0]), "{crop:?}");
     }
 }

@@ -105,6 +105,13 @@ pub struct Sheet {
     pub pivots: Vec<crate::pivot::PivotTable>,
     /// Pictures and shapes floating over the cells, see `drawing.rs`.
     pub drawings: Vec<crate::drawing::Drawing>,
+    /// Slicers and timelines floating over the cells, see `slicer.rs`.
+    pub slicers: Vec<crate::slicer::Slicer>,
+    pub timelines: Vec<crate::slicer::Timeline>,
+    /// Strokes drawn by hand (the Draw tab), see `ink.rs`.
+    pub inks: Vec<crate::ink::Ink>,
+    /// The part this sheet has in each custom view, see `custom_view.rs`.
+    pub custom_views: Vec<crate::custom_view::CustomSheetView>,
     /// Hyperlinks on cells, see `hyperlink.rs`.
     pub hyperlinks: Vec<crate::hyperlink::Hyperlink>,
     /// Defined names whose scope is this sheet, keyed by uppercase name
@@ -115,6 +122,9 @@ pub struct Sheet {
     pub outline: crate::outline::Outline,
     /// Sparklines, by group (Insert > Sparklines), see `sparkline.rs`.
     pub sparklines: Vec<crate::sparkline::SparklineGroup>,
+    /// The picture repeated behind the cells (Page Layout ▸ Background).
+    /// It is shown on screen only: a background is not printed.
+    pub background: Option<crate::drawing::Picture>,
 }
 
 impl Sheet {
@@ -153,10 +163,15 @@ impl Sheet {
             page: crate::page::PageSetup::default(),
             pivots: Vec::new(),
             drawings: Vec::new(),
+            slicers: Vec::new(),
+            timelines: Vec::new(),
+            inks: Vec::new(),
+            custom_views: Vec::new(),
             hyperlinks: Vec::new(),
             names: BTreeMap::new(),
             outline: crate::outline::Outline::default(),
             sparklines: Vec::new(),
+            background: None,
         }
     }
 
@@ -1378,6 +1393,17 @@ impl Workbook {
             self.snapshot();
             self.sheets[index].tab_color = color;
         }
+    }
+
+    /// Give a sheet a background picture, or (`None`) take it away.
+    /// Returns false when there is no such sheet.
+    pub fn set_sheet_background(&mut self, sheet: usize, picture: Option<crate::drawing::Picture>) -> bool {
+        if sheet >= self.sheets.len() {
+            return false;
+        }
+        self.snapshot();
+        self.sheets[sheet].background = picture;
+        true
     }
 
     pub fn set_frozen(&mut self, sheet: usize, rows: u32, cols: u32) {

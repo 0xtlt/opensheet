@@ -387,9 +387,9 @@ fn gallery_sections() -> Vec<(&'static str, Vec<ShapeTool>)> {
         (t("Rectangles", "Rectangles"), vec![Rectangle, RoundedRectangle]),
         (
             t("Basic Shapes", "Formes de base"),
-            vec![TextBox, Ellipse, Triangle, RightTriangle, Diamond, Pentagon, Hexagon],
+            vec![TextBox, Ellipse, Triangle, RightTriangle, Trapezoid, Diamond, Pentagon, Hexagon],
         ),
-        (t("Block Arrows", "Flèches pleines"), vec![RightArrow, LeftArrow, UpArrow, DownArrow]),
+        (t("Block Arrows", "Flèches pleines"), vec![RightArrow, LeftArrow, UpArrow, DownArrow, Chevron]),
         (t("Stars and Banners", "Étoiles et bannières"), vec![Star5]),
         (t("Callouts", "Bulles et légendes"), vec![Callout]),
     ]
@@ -560,7 +560,7 @@ pub(super) fn set_outline_color(app: &mut ExcelApp, color: Option<Color>, cx: &m
 
 /// Change the outline of the selected shape (giving it one if it has
 /// none).
-pub(super) fn set_outline(app: &mut ExcelApp, cx: &mut Cx, change: impl FnOnce(&mut Outline)) {
+pub(super) fn set_outline(app: &mut ExcelApp, cx: &mut Cx, change: impl Fn(&mut Outline)) {
     edit_shape(app, Cmd::ShapeOutline.label(), cx, |shape| change(shape.outline.get_or_insert_with(new_outline)));
 }
 
@@ -789,29 +789,24 @@ pub(super) fn open_outline(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 
 // ------------------------------------------------------------------- align
 
-/// The Align menu. Aligning and distributing need several objects, and
-/// one is selected at a time: those entries are shown greyed out, as
-/// Excel shows them for a single object.
+/// The Align menu: aligning takes two selected objects and distributing
+/// three; with fewer the entries are greyed out, as Excel shows them.
 pub(super) fn open_align_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let off = |label: &'static str, icon_name: &'static str| {
-        let entry = MenuEntry::new(label, |_, _, _| {}).disabled(true);
-        if icon_name.is_empty() { entry } else { entry.icon(icon_name) }
-    };
     let unavailable = |label: &'static str| MenuEntry::new(label, move |app, _, cx| app.not_implemented(label, cx));
     let gridlines = app.wb.sheets[app.sheet].show_gridlines;
     let entries = vec![
-        off(t("Align Left", "Aligner à gauche"), "align-left"),
-        off(t("Align Center", "Aligner au centre"), "align-center"),
-        off(t("Align Right", "Aligner à droite"), "align-right"),
+        MenuEntry::command(Cmd::AlignLeft, app),
+        MenuEntry::command(Cmd::AlignCenter, app),
+        MenuEntry::command(Cmd::AlignRight, app),
         MenuEntry::separator(),
-        off(t("Align Top", "Aligner en haut"), "align-top"),
-        off(t("Align Middle", "Aligner au milieu"), "align-middle"),
-        off(t("Align Bottom", "Aligner en bas"), "align-bottom"),
+        MenuEntry::command(Cmd::AlignTop, app),
+        MenuEntry::command(Cmd::AlignMiddle, app),
+        MenuEntry::command(Cmd::AlignBottom, app),
         MenuEntry::separator(),
-        off(t("Distribute Horizontally", "Répartir horizontalement"), ""),
-        off(t("Distribute Vertically", "Répartir verticalement"), ""),
+        MenuEntry::command(Cmd::DistributeHorizontally, app),
+        MenuEntry::command(Cmd::DistributeVertically, app),
         MenuEntry::separator(),
-        unavailable(t("Snap to Grid", "Aligner sur la grille")),
+        MenuEntry::command(Cmd::SnapToGrid, app).checked(app.snap_to_grid()),
         unavailable(t("Snap to Shape", "Aligner sur la forme")),
         MenuEntry::new(t("View Gridlines", "Afficher le quadrillage"), |app, _, cx| app.toggle_gridlines(cx)).checked(gridlines),
     ];
