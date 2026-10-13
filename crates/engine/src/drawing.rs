@@ -1455,6 +1455,9 @@ pub struct Drawing {
     pub name: String,
     /// Description for screen readers (`descr`).
     pub alt_text: String,
+    /// "Mark as decorative": the object says nothing a screen reader
+    /// should read, so it needs no description.
+    pub decorative: bool,
     pub kind: DrawingKind,
     /// Cell holding the top-left corner (row, col).
     pub anchor: (u32, u32),
@@ -1498,6 +1501,7 @@ impl Drawing {
             id: 0,
             name: String::new(),
             alt_text: String::new(),
+            decorative: false,
             kind,
             anchor: (0, 0),
             offset: (0.0, 0.0),
