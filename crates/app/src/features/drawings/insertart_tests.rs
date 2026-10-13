@@ -296,3 +296,202 @@ fn the_icons_draw(cx: &mut TestAppContext) {
         sheet.save(std::path::Path::new(&directory).join("opensheet-icons.png")).expect("the sheet of icons");
     }
 }
+
+// ----------------------------------------------------------------- SmartArt
+
+use opensheet_engine::smartart::{ColorScheme, Layout, QuickStyle, SmartArt};
+
+fn art(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> SmartArt {
+    drawing(app, cx, id).as_smartart().expect("a graphic").clone()
+}
+
+fn outline(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> String {
+    art(app, cx, id).outline().iter().map(|(level, text)| format!("{}{text}", ">".repeat(*level))).collect::<Vec<_>>().join("|")
+}
+
+fn choose_line(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, line: usize) {
+    app.update(cx, |app, _| app.ext_mut::<smartart::SmartUi>().set_node(id, line));
+}
+
+#[gpui::test]
+fn a_smartart_graphic_is_chosen_typed_and_restructured(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    // Insert ▸ SmartArt opens the dialog; a layout is picked and OK inserts.
+    run(&app, cx, Cmd::SmartArt);
+    assert!(app.update(cx, |app, _| app.modal_open()));
+    app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+    let dialog = app.update_in(cx, |app, window, cx| smartart::open_dialog(app, window, cx)).expect("the dialog");
+    redraw(cx);
+    dialog.update_in(cx, |dialog, window, cx| {
+        dialog.layout = Layout::Process;
+        dialog.ok(&(), window, cx);
+    });
+    redraw(cx);
+    let id = ids(&app, cx)[0];
+    let inserted = drawing(&app, cx, id);
+    assert_eq!((inserted.name.as_str(), inserted.size), ("Diagram 1", (576.0, 384.0)));
+    assert_eq!(art(&app, cx, id), SmartArt::new(Layout::Process));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Insert SmartArt Graphic"));
+    // It is selected, its tab shows and its Text Pane is open on the
+    // first line: what is typed goes there, and the graphic follows.
+    assert_eq!(app.update(cx, |app, _| (selected(app).map(|d| d.id), app.context_tab, smartart::pane_shown(app))), (Some(id), Some(SMARTART_TAB), true));
+    cx.simulate_input("Plan");
+    assert_eq!(outline(&app, cx, id), "Plan||");
+    // Return adds a line under it; Tab makes it a detail of the first.
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    cx.simulate_input("Scope");
+    cx.simulate_keystrokes("tab");
+    redraw(cx);
+    assert_eq!(outline(&app, cx, id), "Plan|>Scope||");
+    cx.simulate_keystrokes("shift-tab");
+    redraw(cx);
+    assert_eq!(outline(&app, cx, id), "Plan|Scope||");
+    // Down goes to the next line; Backspace on an empty line removes it.
+    cx.simulate_keystrokes("down");
+    redraw(cx);
+    cx.simulate_keystrokes("backspace");
+    redraw(cx);
+    assert_eq!(outline(&app, cx, id), "Plan|Scope|");
+    let pane = app.update(cx, |app, _| smartart::pane(app)).expect("the pane");
+    assert_eq!(pane.read_with(cx, |pane, cx| pane.texts(cx)), vec!["Plan", "Scope", ""]);
+    // Typing is one undo step, each change of the outline another.
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Delete"));
+    undo(&app, cx);
+    undo(&app, cx);
+    undo(&app, cx);
+    assert_eq!(outline(&app, cx, id), "Plan|Scope||");
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Typing"));
+    undo(&app, cx);
+    assert_eq!(outline(&app, cx, id), "Plan|||");
+    redraw(cx);
+    assert_eq!(pane.read_with(cx, |pane, cx| pane.texts(cx)), vec!["Plan", "", "", ""]);
+}
+
+#[gpui::test]
+fn the_smartart_design_tab_changes_the_graphic(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = app.update_in(cx, |app, window, cx| smartart::insert(app, Layout::OrgChart, window, cx)).expect("a graphic");
+    redraw(cx);
+    app.update(cx, |app, cx| {
+        app.wb.update_drawing(app.sheet, id, |drawing| {
+            let lines = [(0, "Head"), (1, "Sales"), (1, "Works"), (2, "Plant")];
+            drawing.as_smartart_mut().unwrap().set_outline(&lines.map(|(level, text)| (level, text.to_string())));
+        });
+        app.commit("setup", cx);
+    });
+    redraw(cx);
+    // A click on a box of the selected graphic chooses its entry.
+    let at = app.update(cx, |app, _| {
+        let layout = app.current_layout().unwrap();
+        let pane = *paint::panes(&layout).last().unwrap();
+        let drawing = selected(app).unwrap();
+        let frame = app.wb.sheets[app.sheet].drawing_frame(drawing);
+        let placed = paint::placed(&layout, &app.wb.sheets[app.sheet], drawing, &pane);
+        let pieces = drawing.as_smartart().unwrap().pieces(app.wb.theme(), frame.width as f32, frame.height as f32);
+        let works = pieces.iter().find(|piece| piece.shape.text == "Works").unwrap();
+        let at = smartart::placed_piece(works, &placed, (frame.width as f32, frame.height as f32)).centre();
+        layout.to_window(at.0, at.1)
+    });
+    cx.simulate_click(at, Modifiers::none());
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| smartart::current_line(app)), Some(2));
+    assert_eq!(frame_of(&app, cx, id), frame_of(&app, cx, id));
+    // Add Shape, around the chosen entry.
+    run(&app, cx, Cmd::SmartAddShape);
+    assert!(app.update(cx, |app, _| app.popup.take().is_some()));
+    run(&app, cx, Cmd::SmartAddAfter);
+    assert_eq!(outline(&app, cx, id), "Head|>Sales|>Works|>>Plant|>");
+    assert_eq!(app.update(cx, |app, _| smartart::current_line(app)), Some(4));
+    undo(&app, cx);
+    choose_line(&app, cx, id, 2);
+    run(&app, cx, Cmd::SmartAddAbove);
+    assert_eq!(outline(&app, cx, id), "Head|>Sales|>|>>Works|>>>Plant");
+    undo(&app, cx);
+    choose_line(&app, cx, id, 2);
+    run(&app, cx, Cmd::SmartAddBullet);
+    assert_eq!(outline(&app, cx, id), "Head|>Sales|>Works|>>Plant|>>");
+    undo(&app, cx);
+    // Move Up, Promote, and what cannot be done is greyed out.
+    choose_line(&app, cx, id, 2);
+    assert!(app.update(cx, |app, _| Cmd::SmartMoveUp.enabled(app) && !Cmd::SmartMoveDown.enabled(app)));
+    run(&app, cx, Cmd::SmartMoveUp);
+    assert_eq!(outline(&app, cx, id), "Head|>Works|>>Plant|>Sales");
+    assert_eq!(app.update(cx, |app, _| smartart::current_line(app)), Some(1));
+    run(&app, cx, Cmd::SmartPromote);
+    assert_eq!(outline(&app, cx, id), "Head|Works|>Plant|>Sales");
+    assert!(app.update(cx, |app, _| !Cmd::SmartPromote.enabled(app) && Cmd::SmartDemote.enabled(app)));
+    run(&app, cx, Cmd::SmartDemote);
+    assert_eq!(outline(&app, cx, id), "Head|>Works|>>Plant|>>Sales");
+    // Right to Left is a switch.
+    run(&app, cx, Cmd::SmartRightToLeft);
+    assert!(art(&app, cx, id).rtl && app.update(cx, |app, _| Cmd::SmartRightToLeft.checked(app)));
+    run(&app, cx, Cmd::SmartRightToLeft);
+    // The galleries open and draw; what they choose keeps the text.
+    for (cmd, choice) in [(Cmd::SmartLayouts, smartart::Choice::Layouts), (Cmd::SmartColors, smartart::Choice::Colors), (Cmd::SmartStyles, smartart::Choice::Styles)] {
+        run(&app, cx, cmd);
+        assert!(app.update(cx, |app, _| app.popup.take().is_some()), "{choice:?}");
+    }
+    let before = outline(&app, cx, id);
+    app.update(cx, |app, cx| {
+        smartart::change(app, "layout", cx, |art, _| {
+            art.set_layout(Layout::Cycle);
+            true
+        });
+        smartart::change(app, "look", cx, |art, _| {
+            (art.colors, art.style) = (ColorScheme::Colorful(1), QuickStyle::WhiteOutline);
+            true
+        });
+    });
+    redraw(cx);
+    assert_eq!((art(&app, cx, id).layout, outline(&app, cx, id)), (Layout::Cycle, before));
+    run(&app, cx, Cmd::SmartReset);
+    assert_eq!((art(&app, cx, id).colors, art(&app, cx, id).style), (ColorScheme::default(), QuickStyle::Simple));
+    // Nothing to reset: no undo step.
+    let label = undo_label(&app, cx);
+    run(&app, cx, Cmd::SmartReset);
+    assert_eq!(undo_label(&app, cx), label);
+    // A protected sheet keeps its graphics as they are.
+    app.update(cx, |app, cx| {
+        let sheet = app.sheet;
+        app.wb.protect_sheet(sheet, opensheet_engine::protect::SheetProtection::default(), "");
+        app.commit("setup", cx);
+        assert!(!smartart::add_shape(app, smartart::Side::After, cx));
+        app.wb.unprotect_sheet(sheet, "").expect("no password");
+        app.commit("setup", cx);
+    });
+    // The message that said so is dismissed.
+    assert!(app.update(cx, |app, _| app.modal_open()));
+    app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+    redraw(cx);
+    // Convert to Shapes: the two boxes of a process and the arrow between
+    // them, where they were; the graphic and its pane are gone.
+    app.update(cx, |app, cx| {
+        assert_eq!(selected(app).map(|d| d.id), Some(id), "still selected");
+        smartart::change(app, "setup", cx, |art, _| {
+            art.set_layout(Layout::Process);
+            art.set_outline(&[(0, "Head".to_string()), (0, "Works".to_string())]);
+            true
+        });
+    });
+    let frame = frame_of(&app, cx, id);
+    run(&app, cx, Cmd::SmartConvert);
+    let shapes: Vec<Drawing> = ids(&app, cx).into_iter().map(|id| drawing(&app, cx, id)).collect();
+    assert_eq!(shapes.len(), 3);
+    assert!(shapes.iter().all(|shape| shape.as_shape().is_some()));
+    assert_eq!((shapes[0].as_shape().unwrap().text.as_str(), shapes[2].as_shape().unwrap().text.as_str()), ("Head", "Works"));
+    assert_eq!(shapes[1].as_shape().unwrap().preset, opensheet_engine::drawing::ShapePreset::RightArrow);
+    let first = frame_of(&app, cx, shapes[0].id);
+    assert!(first.0 >= frame.0 && first.1 >= frame.1 && first.0 + first.2 <= frame.0 + frame.2);
+    assert!(!app.update(cx, |app, _| smartart::pane_shown(app)));
+    undo(&app, cx);
+    assert_eq!(ids(&app, cx), vec![id]);
+}
+
+/// Where a drawing is on its sheet: (x, y, width, height), rounded.
+fn frame_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> (i64, i64, i64, i64) {
+    app.update(cx, |app, _| {
+        let frame = app.wb.drawing_frame(app.sheet, id).expect("the drawing");
+        (frame.x.round() as i64, frame.y.round() as i64, frame.width.round() as i64, frame.height.round() as i64)
+    })
+}

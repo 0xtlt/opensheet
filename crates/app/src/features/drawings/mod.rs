@@ -64,6 +64,7 @@ pub struct Drawings;
 const PICTURE_TAB: &str = "picture-format";
 const SHAPE_TAB: &str = "shape-format";
 const GRAPHICS_TAB: &str = "graphics-format";
+const SMARTART_TAB: &str = "smartart-design";
 
 commands! {
     /// What the user can ask of pictures and shapes.
@@ -118,6 +119,24 @@ commands! {
         TextOutline = "borders", t("Text Outline", "Contour du texte");
         TextEffects = "wordart", t("Text Effects", "Effets du texte");
         WordArtStyles = "wordart", t("Quick Styles", "Styles rapides");
+        // SmartArt Design
+        SmartAddShape = "shapes", t("Add Shape", "Ajouter une forme");
+        SmartAddAfter = "", t("Add Shape After", "Ajouter la forme après");
+        SmartAddBefore = "", t("Add Shape Before", "Ajouter la forme avant");
+        SmartAddAbove = "", t("Add Shape Above", "Ajouter la forme au-dessus");
+        SmartAddBelow = "", t("Add Shape Below", "Ajouter la forme en dessous");
+        SmartAddBullet = "plus", t("Add Bullet", "Ajouter une puce");
+        SmartTextPane = "textbox", t("Text Pane", "Volet Texte");
+        SmartPromote = "indent-dec", t("Promote", "Promouvoir");
+        SmartDemote = "indent-inc", t("Demote", "Abaisser");
+        SmartRightToLeft = "undo", t("Right to Left", "De droite à gauche");
+        SmartMoveUp = "chevron-up", t("Move Up", "Monter");
+        SmartMoveDown = "chevron-down", t("Move Down", "Descendre");
+        SmartLayouts = "smartart", t("Change Layout", "Modifier la disposition");
+        SmartColors = "fill", t("Change Colors", "Modifier les couleurs");
+        SmartStyles = "cell-styles", t("SmartArt Styles", "Styles SmartArt");
+        SmartReset = "refresh", t("Reset Graphic", "Rétablir l'image");
+        SmartConvert = "shapes", t("Convert to Shapes", "Convertir en formes");
         // Graphics Format
         ChangeGraphic = "picture", t("Change Graphic", "Changer d'image");
         ChangeGraphicFromIcons = "shapes", t("From Icons…", "À partir d'icônes…");
@@ -154,6 +173,29 @@ impl Command for Cmd {
             }
             // One object is selected at a time: there is nothing to group.
             Cmd::Group | Cmd::EditPoints => false,
+            Cmd::SmartAddShape
+            | Cmd::SmartAddAfter
+            | Cmd::SmartAddBefore
+            | Cmd::SmartAddAbove
+            | Cmd::SmartAddBelow
+            | Cmd::SmartAddBullet
+            | Cmd::SmartTextPane
+            | Cmd::SmartPromote
+            | Cmd::SmartDemote
+            | Cmd::SmartRightToLeft
+            | Cmd::SmartMoveUp
+            | Cmd::SmartMoveDown
+            | Cmd::SmartLayouts
+            | Cmd::SmartColors
+            | Cmd::SmartStyles
+            | Cmd::SmartReset
+            | Cmd::SmartConvert => smartart::can(app, self),
+            // A graphic is not turned.
+            Cmd::Rotate | Cmd::RotateRight | Cmd::RotateLeft | Cmd::FlipVertical | Cmd::FlipHorizontal | Cmd::MoreRotation
+                if drawing.is_some_and(smartart::is_graphic) =>
+            {
+                false
+            }
             Cmd::ChangeGraphic | Cmd::ChangeGraphicFromIcons | Cmd::GraphicsFill | Cmd::GraphicsOutline => {
                 drawing.is_some_and(icons::is_graphic)
             }
@@ -178,6 +220,14 @@ impl Command for Cmd {
             }
             Cmd::EditText => shape.is_some_and(|shape| !shape.preset.is_line()),
             _ => true,
+        }
+    }
+
+    fn checked(self, app: &ExcelApp) -> bool {
+        match self {
+            Cmd::SmartRightToLeft => smartart::selected_art(app).is_some_and(|(_, art)| art.rtl),
+            Cmd::SmartTextPane => smartart::pane_shown(app),
+            _ => false,
         }
     }
 
@@ -240,6 +290,24 @@ impl Command for Cmd {
             Cmd::Icons => {
                 icons::open_dialog(app, false, window, cx);
             }
+            Cmd::SmartArt
+            | Cmd::SmartAddShape
+            | Cmd::SmartAddAfter
+            | Cmd::SmartAddBefore
+            | Cmd::SmartAddAbove
+            | Cmd::SmartAddBelow
+            | Cmd::SmartAddBullet
+            | Cmd::SmartTextPane
+            | Cmd::SmartPromote
+            | Cmd::SmartDemote
+            | Cmd::SmartRightToLeft
+            | Cmd::SmartMoveUp
+            | Cmd::SmartMoveDown
+            | Cmd::SmartLayouts
+            | Cmd::SmartColors
+            | Cmd::SmartStyles
+            | Cmd::SmartReset
+            | Cmd::SmartConvert => smartart::run(app, self, window, cx),
             Cmd::ChangeGraphic => {
                 let entries = vec![
                     MenuEntry::command(Cmd::ChangePictureFromFile, app),
@@ -605,6 +673,10 @@ impl Feature for Drawings {
 
     fn context_tabs(&self, app: &ExcelApp) -> Vec<ContextTab> {
         match selected(app) {
+            Some(drawing) if smartart::is_graphic(drawing) => vec![ContextTab {
+                id: SMARTART_TAB,
+                title: t("SmartArt Design", "Création de graphique SmartArt"),
+            }],
             Some(drawing) if icons::is_graphic(drawing) => vec![ContextTab {
                 id: GRAPHICS_TAB,
                 title: t("Graphics Format", "Format du graphique"),
@@ -622,7 +694,9 @@ impl Feature for Drawings {
     }
 
     fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        if tab == GRAPHICS_TAB {
+        if tab == SMARTART_TAB {
+            smartart::design_tab(app, cx)
+        } else if tab == GRAPHICS_TAB {
             icons::graphics_tab(app, window, cx)
         } else if tab == PICTURE_TAB {
             tabs::picture_tab(app, window, cx)
@@ -660,6 +734,9 @@ impl Feature for Drawings {
     }
 
     fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+        if let Some(response) = smartart::mouse_down(app, zone, ev, window, cx) {
+            return response;
+        }
         tool::mouse_down(app, zone, ev, window, cx)
     }
 
@@ -745,6 +822,9 @@ impl Feature for Drawings {
                 DrawingKind::SmartArt(art) => {
                     let level = geometry::Placed::plain(placed.x0, placed.y0, placed.x1, placed.y1);
                     smartart::draw(art, app.wb.theme(), &level, natural, &brush, Some(&*app.fonts), app.wb.locale, &mut items);
+                    if is_selected {
+                        smartart::paint_selection(p, drawing, art, &level, natural, &brush, &mut items);
+                    }
                 }
                 _ => paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items),
             }
@@ -838,7 +918,10 @@ impl Feature for Drawings {
         let Some(drawing) = app.wb.drawing(app.sheet, id) else {
             return;
         };
-        if is_picture(drawing) {
+        if smartart::is_graphic(drawing) {
+            app.context_tab = Some(SMARTART_TAB);
+            smartart::open_pane(app, window, cx);
+        } else if is_picture(drawing) {
             app.context_tab = Some(if icons::is_graphic(drawing) { GRAPHICS_TAB } else { PICTURE_TAB });
             cx.notify();
         } else if drawing.as_shape().is_some_and(|shape| shape.preset.is_line()) {
@@ -858,6 +941,7 @@ impl Feature for Drawings {
         if id.is_none() {
             pane::keep_descriptions(app, cx);
         }
+        smartart::selection_changed(app, id, cx);
         pane::selection_changed(app, cx);
     }
 

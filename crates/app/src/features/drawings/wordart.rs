@@ -501,6 +501,23 @@ fn apply_style(app: &mut ExcelApp, style: WordArtStyle, cx: &mut Cx) {
 
 // ---- inserting -----------------------------------------------------------
 
+/// Where the top-left corner of a new object of the given size goes for
+/// it to sit in the middle of what the window shows of the sheet (the
+/// scrolling pane); on the active cell when the grid has not been laid
+/// out yet.
+pub(super) fn middle_of_view(app: &ExcelApp, size: (f32, f32)) -> (f64, f64) {
+    let sheet = &app.wb.sheets[app.sheet];
+    let middle = app.current_layout().and_then(|layout| {
+        let pane = *paint::panes(&layout).last()?;
+        let (x, y) = ((pane.clip.0 + pane.clip.2) / 2.0, (pane.clip.1 + pane.clip.3) / 2.0);
+        Some(paint::sheet_point(&layout, sheet, &pane, x, y))
+    });
+    match middle {
+        Some((x, y)) => ((x - size.0 as f64 / 2.0).max(0.0), (y - size.1 as f64 / 2.0).max(0.0)),
+        None => sheet.corner_point((app.active(), (0.0, 0.0))),
+    }
+}
+
 /// Insert WordArt in the middle of what the window shows of the sheet,
 /// with its text selected, ready to be typed over.
 pub(super) fn insert(app: &mut ExcelApp, style: WordArtStyle, window: &mut Window, cx: &mut Cx) {
@@ -510,17 +527,7 @@ pub(super) fn insert(app: &mut ExcelApp, style: WordArtStyle, window: &mut Windo
     let sheet = app.sheet;
     let shape = style.shape(t("Your text here", "Votre texte ici"));
     let (width, height) = fitted_size(&shape, &app.fonts, cx.text_system());
-    // The middle of the scrolling pane; the active cell when the grid has
-    // not been laid out yet.
-    let middle = app.current_layout().and_then(|layout| {
-        let pane = *paint::panes(&layout).last()?;
-        let (x, y) = ((pane.clip.0 + pane.clip.2) / 2.0, (pane.clip.1 + pane.clip.3) / 2.0);
-        Some(paint::sheet_point(&layout, &app.wb.sheets[sheet], &pane, x, y))
-    });
-    let (x, y) = match middle {
-        Some((x, y)) => ((x - width as f64 / 2.0).max(0.0), (y - height as f64 / 2.0).max(0.0)),
-        None => app.wb.sheets[sheet].corner_point((app.active(), (0.0, 0.0))),
-    };
+    let (x, y) = middle_of_view(app, (width, height));
     let mut drawing = Drawing::shape(shape, (width, height));
     drawing.offset = (x as f32, y as f32);
     let Some(id) = app.wb.add_drawing(sheet, drawing) else {

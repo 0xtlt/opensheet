@@ -167,7 +167,7 @@ impl Brush<'_> {
 
     /// `dashes`: lengths of dashes and gaps in pixels; empty for a solid
     /// line.
-    fn stroke(&self, line: &Polyline, width: f32, dashes: &[f32], color: Hsla, out: &mut Vec<Draw>) {
+    pub(super) fn stroke(&self, line: &Polyline, width: f32, dashes: &[f32], color: Hsla, out: &mut Vec<Draw>) {
         if line.points.len() < 2 {
             return;
         }
@@ -426,7 +426,10 @@ pub fn grips(drawing: &Drawing, placed: &Placed) -> Vec<(Grip, Pt)> {
         .enumerate()
         .map(|(i, p)| (Grip::Resize(i as u8), p))
         .collect();
-    out.push((Grip::Rotate, placed.rotation_handle(ROTATION_GAP)));
+    // A SmartArt graphic is not turned.
+    if !matches!(drawing.kind, DrawingKind::SmartArt(_)) {
+        out.push((Grip::Rotate, placed.rotation_handle(ROTATION_GAP)));
+    }
     out
 }
 
