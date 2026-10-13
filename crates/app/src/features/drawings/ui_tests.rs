@@ -1242,3 +1242,20 @@ fn the_format_pane_follows_the_kind_of_object(cx: &mut TestAppContext) {
     click_at(&app, cx, 700.0, 400.0);
     assert_eq!(open_panes(&app, cx), (true, false));
 }
+
+#[gpui::test]
+fn crop_chosen_in_its_menu_shows_the_marks(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let id = add_picture(&app, cx);
+    run(&app, cx, Cmd::Crop);
+    // A click on the first entry of the menu, "Crop".
+    let entry = app.update(cx, |app, _| {
+        let popup = app.popup.as_ref().expect("the Crop menu");
+        let panel = popup.geometry.borrow().panels[0];
+        point(panel.origin.x + px(40.), panel.origin.y + px(18.))
+    });
+    click(cx, entry);
+    assert!(app.update(cx, |app, _| app.popup.is_none()), "the menu closes");
+    assert_eq!(app.update(cx, |app, _| cropping(app)), Some(id));
+    assert_eq!(selection(&app, cx), Some(id));
+}

@@ -227,8 +227,9 @@ fn number_row(app: &mut ExcelApp, id: &'static str, title: &'static str, kind: F
         .items_center()
         .gap(px(4.))
         .child(div().w(px(62.)).flex_none().text_size(px(11.5)).child(title))
-        .child(NumberField::new(id, &input).width(72.0))
-        .child(div().w(px(16.)).text_color(c(theme::TEXT_MUTED)).child(unit))
+        // Three of these rows fit in a group of the ribbon.
+        .child(NumberField::new(id, &input).width(72.0).height(20.0))
+        .child(div().w(px(20.)).flex_none().whitespace_nowrap().text_color(c(theme::TEXT_MUTED)).child(unit))
         .into_any_element()
 }
 

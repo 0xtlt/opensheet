@@ -403,8 +403,11 @@ fn halo(lines: &[Polyline], stroke: f32, spread: (f32, f32), blur: f32, offset: 
             if line.closed {
                 brush.fill(&moved, ink, out);
             } else if stroke + 2.0 * grow > 0.0 {
+                // A line has little ink to spread: the wider the copy,
+                // the fainter, or a thin line would cast a thick band.
+                let thin = (stroke / (stroke + 2.0 * grow)).clamp(0.0, 1.0);
                 let copy = Polyline { points: moved, closed: false };
-                brush.stroke(&copy, stroke + 2.0 * grow, &[], ink, out);
+                brush.stroke(&copy, stroke + 2.0 * grow, &[], color.opacity(each * thin), out);
             }
         }
     }
