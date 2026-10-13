@@ -9,7 +9,8 @@ use super::geometry::normalise_angle;
 use super::tabs::{self, dashes, in_units, length_field, set_side};
 use crate::widgets::text_area::{AreaEvent, TextArea};
 use super::adjust;
-use super::{Cmd, DrawingUi, edit, edit_drawing, edit_shape, is_picture, reset_picture, selected};
+use super::styles;
+use super::{Cmd, DrawingUi, edit, edit_drawing, edit_picture, edit_shape, is_picture, reset_picture, selected};
 use crate::app::ExcelApp;
 use crate::features::{self, Command, Cx, Intent, ObjectId, ZMove};
 use crate::objects::{engine_ref, object_of};
@@ -26,6 +27,7 @@ use gpui::{
 use opensheet_engine::drawing::{
     Drawing, Glow, LineEnd, NEUTRAL_TEMPERATURE, ObjectRef, Placement, Recolor, SEPIA, ShadowPreset, TextAnchor,
 };
+use opensheet_engine::picture_style::{Artistic, ArtisticKind, Bevel, BevelPreset, Camera, Reflection};
 use opensheet_engine::style::Color;
 
 pub(super) const FORMAT: &str = "drawing-format";
@@ -178,10 +180,23 @@ pub(super) enum Look {
     Saturation,
     Temperature,
     Transparency,
+    ReflectionTransparency,
+    ReflectionSize,
+    ReflectionBlur,
+    ReflectionDistance,
+    BevelWidth,
+    BevelHeight,
+    RotationX,
+    RotationY,
+    RotationZ,
+    Perspective,
+    BorderWidth,
+    ArtisticTransparency,
+    ArtisticAmount,
 }
 
 impl Look {
-    const ALL: [Look; 13] = [
+    const ALL: [Look; 26] = [
         Look::ShadowTransparency,
         Look::ShadowSize,
         Look::ShadowBlur,
@@ -195,6 +210,19 @@ impl Look {
         Look::Saturation,
         Look::Temperature,
         Look::Transparency,
+        Look::ReflectionTransparency,
+        Look::ReflectionSize,
+        Look::ReflectionBlur,
+        Look::ReflectionDistance,
+        Look::BevelWidth,
+        Look::BevelHeight,
+        Look::RotationX,
+        Look::RotationY,
+        Look::RotationZ,
+        Look::Perspective,
+        Look::BorderWidth,
+        Look::ArtisticTransparency,
+        Look::ArtisticAmount,
     ];
 
     /// Smallest and largest value, the step of the spinner, and the unit
@@ -210,6 +238,15 @@ impl Look {
             Look::Brightness | Look::Contrast => (-100.0, 100.0, 1.0, "%"),
             Look::Saturation => (0.0, 400.0, 1.0, "%"),
             Look::Temperature => (1500.0, 11500.0, 100.0, "K"),
+            Look::ReflectionTransparency | Look::ReflectionSize | Look::ArtisticTransparency => (0.0, 100.0, 1.0, "%"),
+            Look::ReflectionBlur => (0.0, 100.0, 0.5, "pt"),
+            Look::ReflectionDistance => (0.0, 100.0, 1.0, "pt"),
+            Look::BevelWidth | Look::BevelHeight => (0.0, 1584.0, 1.0, "pt"),
+            Look::RotationX | Look::RotationY | Look::RotationZ => (0.0, 359.9, 5.0, "°"),
+            Look::Perspective => (0.0, 120.0, 5.0, "°"),
+            Look::BorderWidth => (0.0, 1584.0, 0.25, "pt"),
+            // Each effect has its own range, within this one.
+            Look::ArtisticAmount => (0.0, 100.0, 1.0, ""),
         }
     }
 
@@ -219,7 +256,25 @@ impl Look {
         let shadow = adjust::shadow_of(drawing);
         let glow = drawing.effects.glow;
         let picture = drawing.as_picture().map(|picture| picture.adjust);
+        // What the first change would start from, as for the shadow.
+        let reflection = drawing.effects.reflection.unwrap_or(Reflection::presets()[0]);
+        let bevel = drawing.effects.bevel;
+        let rotation = drawing.effects.rotation.unwrap_or(styles::FLAT);
+        let artistic = drawing.as_picture().and_then(|picture| picture.artistic);
         let value = match self {
+            Look::ReflectionTransparency => reflection.transparency * 100.0,
+            Look::ReflectionSize => reflection.size * 100.0,
+            Look::ReflectionBlur => reflection.blur,
+            Look::ReflectionDistance => reflection.distance,
+            Look::BevelWidth => bevel.map_or(0.0, |bevel| bevel.width),
+            Look::BevelHeight => bevel.map_or(0.0, |bevel| bevel.height),
+            Look::RotationX => rotation.x,
+            Look::RotationY => rotation.y,
+            Look::RotationZ => rotation.z,
+            Look::Perspective => rotation.perspective,
+            Look::BorderWidth => drawing.as_picture()?.outline.map_or(0.0, |outline| outline.width),
+            Look::ArtisticTransparency => artistic?.transparency * 100.0,
+            Look::ArtisticAmount => artistic?.amount,
             Look::ShadowTransparency => shadow.transparency * 100.0,
             Look::ShadowSize => shadow.size * 100.0,
             Look::ShadowBlur => shadow.blur,
@@ -243,7 +298,58 @@ impl Look {
         let (min, max, _, _) = self.range();
         let value = value.clamp(min, max) as f32;
         let glow_label = t("Glow", "Lumière");
+        let reflection_label = t_ctx("effect", "Reflection", "Réflexion");
+        let reflect = |app: &mut ExcelApp, cx: &mut Cx, change: &dyn Fn(&mut Reflection)| {
+            adjust::set_effects(app, reflection_label, cx, |effects| change(effects.reflection.get_or_insert(Reflection::presets()[0])));
+        };
+        let bevel_label = t("Bevel", "Biseau");
+        // A picture turned back to lie flat, seen in parallel, is not
+        // turned at all.
+        let turn = |app: &mut ExcelApp, cx: &mut Cx, change: &dyn Fn(&mut opensheet_engine::picture_style::Rotation3d)| {
+            adjust::set_effects(app, t("3-D Rotation", "Rotation 3D"), cx, |effects| {
+                let mut rotation = effects.rotation.unwrap_or(styles::FLAT);
+                change(&mut rotation);
+                effects.rotation = (!rotation.is_flat() || rotation.perspective > 0.0).then_some(rotation);
+            });
+        };
+        let artistic_label = t("Artistic Effects", "Effets artistiques");
         match self {
+            Look::ReflectionTransparency => reflect(app, cx, &|r| r.transparency = value / 100.0),
+            Look::ReflectionSize => reflect(app, cx, &|r| r.size = value / 100.0),
+            Look::ReflectionBlur => reflect(app, cx, &|r| r.blur = value),
+            Look::ReflectionDistance => reflect(app, cx, &|r| r.distance = value),
+            // No width is no bevel.
+            Look::BevelWidth => adjust::set_effects(app, bevel_label, cx, |effects| {
+                effects.bevel = (value > 0.0).then(|| Bevel {
+                    width: value,
+                    ..effects.bevel.unwrap_or(Bevel::preset(BevelPreset::Circle))
+                });
+            }),
+            Look::BevelHeight => adjust::set_effects(app, bevel_label, cx, |effects| {
+                if let Some(bevel) = &mut effects.bevel {
+                    bevel.height = value;
+                }
+            }),
+            Look::RotationX => turn(app, cx, &|r| r.x = value),
+            Look::RotationY => turn(app, cx, &|r| r.y = value),
+            Look::RotationZ => turn(app, cx, &|r| r.z = value),
+            Look::Perspective => turn(app, cx, &|r| r.perspective = value),
+            Look::BorderWidth => styles::set_border_width(app, value, cx),
+            Look::ArtisticTransparency => {
+                edit_picture(app, artistic_label, cx, |picture| {
+                    if let Some(artistic) = &mut picture.artistic {
+                        artistic.transparency = value / 100.0;
+                    }
+                });
+            }
+            Look::ArtisticAmount => {
+                edit_picture(app, artistic_label, cx, |picture| {
+                    if let Some(artistic) = &mut picture.artistic {
+                        let (low, high, _) = artistic.kind.amount_range();
+                        artistic.amount = value.clamp(low, high);
+                    }
+                });
+            }
             Look::ShadowTransparency => adjust::set_shadow(app, cx, |shadow| shadow.transparency = value / 100.0),
             Look::ShadowSize => adjust::set_shadow(app, cx, |shadow| shadow.size = value / 100.0),
             Look::ShadowBlur => adjust::set_shadow(app, cx, |shadow| shadow.blur = value),
@@ -718,9 +824,192 @@ impl FormatPane {
             .child(self.look_field(Look::GlowTransparency, t("Transparency", "Transparence")));
         let mut page = div().flex().flex_col().gap(px(14.)).child(shadow_box).child(glow_box);
         if is_picture(drawing) {
-            page = page.child(GroupBox::new(t("Soft Edges", "Bordures adoucies")).child(self.look_field(Look::SoftEdge, t("Size", "Taille"))));
+            page = page
+                .child(GroupBox::new(t("Soft Edges", "Bordures adoucies")).child(self.look_field(Look::SoftEdge, t("Size", "Taille"))))
+                .child(self.reflection_box(drawing, locked, cx))
+                .child(self.bevel_box(drawing, locked, cx))
+                .child(self.rotation_box(drawing, locked, cx));
         }
         page.into_any_element()
+    }
+
+    /// "Reflection": its presets and its four numbers.
+    fn reflection_box(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> GroupBox {
+        let locale = lang().locale();
+        let presets = Reflection::presets();
+        let mut names = vec![item(t("No Reflection", "Aucune réflexion"))];
+        names.extend((0..presets.len()).map(|index| item(Reflection::preset_name(index, locale))));
+        // The preset the reflection is; none of them for one changed by
+        // hand.
+        let chosen = match drawing.effects.reflection {
+            None => Some(0),
+            Some(reflection) => presets.iter().position(|preset| *preset == reflection).map(|i| i + 1),
+        };
+        GroupBox::new(t_ctx("effect", "Reflection", "Réflexion"))
+            .child(
+                labeled(
+                    t("Presets", "Présélections"),
+                    Select::new("dw-reflection-preset", names, chosen)
+                        .width(190.0)
+                        .disabled(locked)
+                        .on_change(cx.listener(move |this, choice: &usize, _, cx| {
+                            let made = choice.checked_sub(1).and_then(|i| presets.get(i)).copied();
+                            this.app
+                                .update(cx, |app, cx| {
+                                    adjust::set_effects(app, t_ctx("effect", "Reflection", "Réflexion"), cx, |effects| effects.reflection = made)
+                                })
+                                .ok();
+                        })),
+                )
+                .justify_between(),
+            )
+            .child(self.look_field(Look::ReflectionTransparency, t("Transparency", "Transparence")))
+            .child(self.look_field(Look::ReflectionSize, t("Size", "Taille")))
+            .child(self.look_field(Look::ReflectionBlur, t("Blur", "Flou")))
+            .child(self.look_field(Look::ReflectionDistance, t("Distance", "Distance")))
+    }
+
+    /// "3-D Format": the bevel of the top face.
+    fn bevel_box(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> GroupBox {
+        let locale = lang().locale();
+        let mut names = vec![item(t("No Bevel", "Aucun biseau"))];
+        names.extend(BevelPreset::ALL.iter().map(|preset| item(preset.name(locale))));
+        let chosen = match drawing.effects.bevel {
+            None => 0,
+            Some(bevel) => BevelPreset::ALL.iter().position(|preset| *preset == bevel.preset).map_or(0, |i| i + 1),
+        };
+        GroupBox::new(t("3-D Format", "Format 3D"))
+            .child(
+                labeled(
+                    t("Top bevel", "Biseau supérieur"),
+                    Select::new("dw-bevel-preset", names, Some(chosen))
+                        .width(170.0)
+                        .disabled(locked)
+                        .on_change(cx.listener(|this, choice: &usize, _, cx| {
+                            // Another profile keeps the size the bevel has.
+                            let preset = choice.checked_sub(1).and_then(|i| BevelPreset::ALL.get(i)).copied();
+                            this.app
+                                .update(cx, |app, cx| {
+                                    adjust::set_effects(app, t("Bevel", "Biseau"), cx, |effects| {
+                                        effects.bevel = preset.map(|preset| match effects.bevel {
+                                            Some(bevel) => Bevel { preset, ..bevel },
+                                            None => Bevel::preset(preset),
+                                        });
+                                    })
+                                })
+                                .ok();
+                        })),
+                )
+                .justify_between(),
+            )
+            .child(self.look_field(Look::BevelWidth, t("Width", "Largeur")))
+            .child(self.look_field(Look::BevelHeight, t("Height", "Hauteur")))
+    }
+
+    /// "3-D Rotation": the cameras of the gallery, and the three angles
+    /// and the angle of view typed.
+    fn rotation_box(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> GroupBox {
+        let locale = lang().locale();
+        let mut names = vec![item(t("No Rotation", "Aucune rotation"))];
+        names.extend(Camera::ALL.iter().map(|camera| item(camera.name(locale))));
+        let chosen = match drawing.effects.rotation {
+            None => Some(0),
+            Some(rotation) => Camera::ALL.iter().position(|camera| camera.rotation() == rotation).map(|i| i + 1),
+        };
+        GroupBox::new(t("3-D Rotation", "Rotation 3D"))
+            .child(
+                labeled(
+                    t("Presets", "Présélections"),
+                    Select::new("dw-rotation-preset", names, chosen)
+                        .width(190.0)
+                        .disabled(locked)
+                        .on_change(cx.listener(|this, choice: &usize, _, cx| {
+                            let made = choice.checked_sub(1).and_then(|i| Camera::ALL.get(i)).map(|camera| camera.rotation());
+                            this.app
+                                .update(cx, |app, cx| {
+                                    adjust::set_effects(app, t("3-D Rotation", "Rotation 3D"), cx, |effects| effects.rotation = made)
+                                })
+                                .ok();
+                        })),
+                )
+                .justify_between(),
+            )
+            .child(self.look_field(Look::RotationX, t("X Rotation", "Rotation X")))
+            .child(self.look_field(Look::RotationY, t("Y Rotation", "Rotation Y")))
+            .child(self.look_field(Look::RotationZ, t("Z Rotation", "Rotation Z")))
+            .child(self.look_field(Look::Perspective, t("Perspective", "Perspective")))
+    }
+
+    /// "Line": the border of a picture.
+    fn border_box(&self, drawing: &Drawing, cx: &mut Context<Self>) -> GroupBox {
+        let outline = drawing.as_picture().and_then(|picture| picture.outline);
+        GroupBox::new(t_ctx("outline", "Line", "Trait"))
+            .child(
+                labeled(
+                    t("Color", "Couleur"),
+                    ColorButton::new("dw-border-color", Some(outline.map(|outline| outline.color)))
+                        .none_label(t("No line", "Aucun trait"))
+                        .more(&self.app)
+                        .on_pick(cx.listener(|this, color: &Option<Color>, _, cx| {
+                            let color = *color;
+                            this.app
+                                .update(cx, |app, cx| {
+                                    styles::set_border(app, cx, |outline| match color {
+                                        Some(color) => {
+                                            outline.get_or_insert(opensheet_engine::drawing::Outline::solid(color, 1.0)).color = color;
+                                        }
+                                        None => *outline = None,
+                                    })
+                                })
+                                .ok();
+                        })),
+                )
+                .justify_between(),
+            )
+            .child(self.look_field(Look::BorderWidth, t("Width", "Largeur")))
+    }
+
+    /// "Artistic Effects": the effect, how much of the image shows
+    /// through it, and its one setting.
+    fn artistic_box(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> GroupBox {
+        let locale = lang().locale();
+        let artistic = drawing.as_picture().and_then(|picture| picture.artistic);
+        let mut names = vec![item(t_ctx("artistic", "None", "Aucun"))];
+        names.extend(ArtisticKind::ALL.iter().map(|kind| item(kind.name(locale))));
+        let chosen = artistic.and_then(|artistic| ArtisticKind::ALL.iter().position(|kind| *kind == artistic.kind)).map_or(0, |i| i + 1);
+        let label = t("Artistic Effects", "Effets artistiques");
+        let mut group = GroupBox::new(label).child(
+            labeled(
+                t("Artistic Effect", "Effet artistique"),
+                Select::new("dw-artistic", names, Some(chosen))
+                    .width(170.0)
+                    .disabled(locked)
+                    .on_change(cx.listener(move |this, choice: &usize, _, cx| {
+                        let made = choice.checked_sub(1).and_then(|i| ArtisticKind::ALL.get(i)).map(|kind| Artistic::preset(*kind));
+                        this.app
+                            .update(cx, |app, cx| edit_picture(app, label, cx, |picture| picture.artistic = made))
+                            .ok();
+                    })),
+            )
+            .justify_between(),
+        );
+        if let Some(artistic) = artistic {
+            group = group
+                .child(self.look_field(Look::ArtisticTransparency, t("Transparency", "Transparence")))
+                .child(self.look_field(Look::ArtisticAmount, artistic.kind.amount_name(locale)))
+                .child(div().flex().child(Button::new("dw-reset-artistic", t("Reset", "Rétablir")).disabled(locked).on_click(cx.listener(
+                    move |this, _, _, cx| {
+                        this.app
+                            .update(cx, |app, cx| {
+                                edit_picture(app, label, cx, |picture| {
+                                    picture.artistic = picture.artistic.map(|artistic| Artistic::preset(artistic.kind));
+                                })
+                            })
+                            .ok();
+                    },
+                ))));
+        }
+        group
     }
 
     /// "Picture": corrections, colour and transparency of a picture.
@@ -794,9 +1083,11 @@ impl FormatPane {
             .flex()
             .flex_col()
             .gap(px(14.))
+            .child(self.border_box(drawing, cx))
             .child(corrections)
             .child(color)
             .child(transparency)
+            .child(self.artistic_box(drawing, locked, cx))
             .into_any_element()
     }
 

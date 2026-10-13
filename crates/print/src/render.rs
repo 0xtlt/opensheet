@@ -974,6 +974,42 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// The strokes of the Draw tab, over everything else as on the
+    /// sheet: each a rounded line through its points, as wide and as
+    /// translucent as its pen made it.
+    fn draw_ink(&self, canvas: &mut Canvas) {
+        let (x, y, w, h) = self.layout.body;
+        let body = RectF::new(x, y, w, h);
+        let unit = self.layout.unit;
+        for ink in &self.sh.inks {
+            let frame = self.sh.ink_frame(ink);
+            let width = ink.width_in((frame.width as f32, frame.height as f32)) as f64 * unit;
+            let (ox, oy) = self.layout.to_paper(frame.x, frame.y);
+            let reach = width / 2.0;
+            let covered = RectF::new(ox - reach, oy - reach, frame.width * unit + width, frame.height * unit + width);
+            if !covered.intersects(&body) {
+                continue;
+            }
+            let points: Vec<(f64, f64)> = opensheet_engine::ink::curve(&ink.points_in((frame.width as f32, frame.height as f32)), 6)
+                .into_iter()
+                .map(|(px, py)| (ox + px as f64 * unit, oy + py as f64 * unit))
+                .collect();
+            let paint = Paint::translucent(self.ink(ink.color), ink.kind.opacity());
+            canvas.save();
+            canvas.clip_rect(body);
+            match points[..] {
+                [] => {}
+                // A dot.
+                [(px, py)] => canvas.fill_path(Path::ellipse(RectF::new(px - reach, py - reach, width, width)), paint),
+                _ => canvas.stroke_path(
+                    Path::polyline(&points),
+                    Stroke::solid(paint, width).cap(LineCap::Round).join(crate::scene::LineJoin::Round),
+                ),
+            }
+            canvas.restore();
+        }
+    }
+
     // -------------------------------------------------------------- notes
 
     /// "As displayed on sheet": the notes that are shown on the sheet
@@ -1311,6 +1347,7 @@ pub(crate) fn render_as(job: &PageJob, setup: &PageSetup) -> Scene {
     renderer.draw_headings(&mut canvas);
     if !setup.draft {
         renderer.draw_objects(&mut canvas);
+        renderer.draw_ink(&mut canvas);
     }
     renderer.draw_notes(&mut canvas);
     renderer.draw_header_footer(&mut canvas);

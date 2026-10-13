@@ -200,11 +200,33 @@ impl Letters {
                     descent: line.descent,
                 })
                 .collect();
-            let places = geometry.place(&measured, align);
-            for ((line, measure), place) in lines.iter().zip(&measured).zip(&places) {
+            let mut places = geometry.place(&measured, align);
+            // Between two curves Excel stretches the ink of a line, not the
+            // box of its font: the letters reach both curves and both ends
+            // (seen by opening the same file in Excel). Letters set on a
+            // path keep the measures of their font.
+            let stretched = places.iter().all(|place| matches!(place, LinePlace::Between { .. }));
+            let inked: Vec<Option<Ink>> = lines.iter().map(|line| if stretched { ink(line) } else { None }).collect();
+            let measured: Vec<WarpLine> = measured
+                .iter()
+                .zip(&inked)
+                .map(|(measure, ink)| match ink {
+                    Some(ink) => WarpLine {
+                        width: ink.right - ink.left,
+                        ascent: ink.above,
+                        descent: ink.below,
+                    },
+                    None => *measure,
+                })
+                .collect();
+            if stretched {
+                places = geometry.place(&measured, align);
+            }
+            for (((line, measure), place), ink) in lines.iter().zip(&measured).zip(&places).zip(&inked) {
                 let bends = matches!(place, LinePlace::Between { .. });
+                let left = ink.as_ref().map_or(0.0, |ink| ink.left);
                 let map = |x: f64, y: f64, centre: f64| {
-                    let at = geometry.map(place, measure, x, y, centre);
+                    let at = geometry.map(place, measure, x - left, y, centre - left);
                     (at.0 + frame.0, at.1 + frame.1)
                 };
                 trace(line, &mut pieces, bends, &map);
@@ -257,6 +279,15 @@ impl Letters {
             })
             .fold(0.0, f64::max);
         (reach + 4.0).ceil()
+    }
+
+    /// Where the ink of the letters is, from its top to its bottom. A
+    /// reflection mirrors the ink, not the box of the lines: opened in
+    /// Excel, the mirror image of a word starts right under its letters.
+    fn ink_span(&self) -> (f64, f64) {
+        let ys = self.pieces.iter().flat_map(|piece| piece.contours.iter().flatten()).map(|point| point.1);
+        let (top, bottom) = ys.fold((f64::INFINITY, f64::NEG_INFINITY), |(top, bottom), y| (top.min(y), bottom.max(y)));
+        if top.is_finite() && bottom > top { (top, bottom) } else { (self.bounds.1, self.bounds.3) }
     }
 
     /// The reflection of the text, if any piece has one: how far under
@@ -323,8 +354,7 @@ impl Letters {
                 reflections.push(reflection);
             }
         }
-        let (_, by0, _, by1) = self.bounds;
-        let height = by1 - by0;
+        let ink = self.ink_span();
         out.push_str("<defs>");
         for (i, shadow) in shadows.iter().enumerate() {
             let spread = shadow.blur as f64 * self.per_point / 2.0;
@@ -366,8 +396,8 @@ impl Letters {
         for (i, reflection) in reflections.iter().enumerate() {
             // The mirror image starts under the text and fades out over
             // the part of its height it reaches.
-            let from = by1 + reflection.distance as f64 * self.per_point;
-            let to = from + (reflection.reach as f64 * height).max(1.0);
+            let from = ink.1 + reflection.distance as f64 * self.per_point;
+            let to = from + (reflection.reach as f64 * (ink.1 - ink.0)).max(1.0);
             let _ = write!(
                 out,
                 r#"<linearGradient id="f{i}" gradientUnits="userSpaceOnUse" x1="0" y1="{from:.2}" x2="0" y2="{to:.2}"><stop offset="0" stop-color="white" stop-opacity="{:.3}"/><stop offset="1" stop-color="white" stop-opacity="0"/></linearGradient>"#,
@@ -410,7 +440,7 @@ impl Letters {
         }
         for (i, reflection) in reflections.iter().enumerate() {
             // Mirrored about the line half the gap under the text.
-            let mirror = by1 + reflection.distance as f64 * self.per_point / 2.0;
+            let mirror = ink.1 + reflection.distance as f64 * self.per_point / 2.0;
             let _ = write!(out, r#"<g mask="url(#m{i})""#);
             if reflection.blur > 0.0 {
                 let _ = write!(out, r#" filter="url(#r{i})""#);
@@ -576,8 +606,9 @@ impl Letters {
                 canvas.stroke_path(Letters::page_path(piece, &moved), round(shadow.color, opacity, width));
             }
         }
-        let (x0, _, x1, bottom) = self.bounds;
-        let height = self.bounds.3 - self.bounds.1;
+        let (x0, _, x1, _) = self.bounds;
+        let (ink_top, bottom) = self.ink_span();
+        let height = bottom - ink_top;
         for piece in &self.pieces {
             let Some(reflection) = piece.effects.reflection else {
                 continue;
@@ -701,6 +732,70 @@ fn wrapped(lines: Vec<Line>, room: f64) -> Vec<Line> {
 /// by `map` (x along the line, y below the baseline, the middle of its
 /// letter along the line). `bends`: straight strokes are cut into short
 /// pieces, because `map` bends them.
+/// Where the ink of a line is: from `left` to `right` along it, `above`
+/// its baseline and `below` it (negative when no letter comes down to
+/// the baseline).
+struct Ink {
+    left: f64,
+    right: f64,
+    above: f64,
+    below: f64,
+}
+
+/// The ink of a line, from the outlines of its letters. `None` for a
+/// line without ink (empty, or spaces only) or too thin to stretch.
+fn ink(line: &Line) -> Option<Ink> {
+    let mut bounds = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let mut reach = |point: P| {
+        bounds = (bounds.0.min(point.0), bounds.1.min(point.1), bounds.2.max(point.0), bounds.3.max(point.1));
+    };
+    for glyph in &line.glyphs {
+        // As in `trace`: from the font to the line, y downwards.
+        let local = |x: f32, y: f32| {
+            let (x, y) = (x as f64, y as f64);
+            let x = if glyph.slanted { x + SLANT * y } else { x };
+            (glyph.x + x * glyph.size, -y * glyph.size)
+        };
+        let mut pen = (0.0, 0.0);
+        for outline in &glyph.steps {
+            match *outline {
+                OutlineStep::Move(x, y) | OutlineStep::Line(x, y) => {
+                    pen = local(x, y);
+                    reach(pen);
+                }
+                OutlineStep::Quad(cx, cy, x, y) => {
+                    let (control, end) = (local(cx, cy), local(x, y));
+                    // The curve goes furthest where its slope turns.
+                    for (from, by, to) in [(pen.0, control.0, end.0), (pen.1, control.1, end.1)] {
+                        let turn = from - 2.0 * by + to;
+                        if turn.abs() > f64::EPSILON {
+                            let t = (from - by) / turn;
+                            if t > 0.0 && t < 1.0 {
+                                let s = 1.0 - t;
+                                let at = (
+                                    s * s * pen.0 + 2.0 * s * t * control.0 + t * t * end.0,
+                                    s * s * pen.1 + 2.0 * s * t * control.1 + t * t * end.1,
+                                );
+                                reach(at);
+                            }
+                        }
+                    }
+                    pen = end;
+                    reach(pen);
+                }
+                OutlineStep::Close => {}
+            }
+        }
+    }
+    let size = line.size.max(1.0);
+    (bounds.2 - bounds.0 > size * 0.05 && bounds.3 - bounds.1 > size * 0.05).then(|| Ink {
+        left: bounds.0,
+        right: bounds.2,
+        above: -bounds.1,
+        below: bounds.3,
+    })
+}
+
 fn trace(line: &Line, pieces: &mut [Piece], bends: bool, map: &dyn Fn(f64, f64, f64) -> P) {
     for glyph in &line.glyphs {
         let centre = glyph.x + glyph.advance / 2.0;

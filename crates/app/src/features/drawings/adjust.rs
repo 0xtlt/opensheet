@@ -450,13 +450,18 @@ pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
     // Soft edges are made in the pixels of pictures; a shape has none.
     let pictures = selected(app).is_some_and(|drawing| drawing.as_picture().is_some());
     let off = |label: &'static str| MenuEntry::new(label, |_, _, _| {}).disabled(true);
+    // A reflection, a bevel and a turn in space are made in pixels
+    // too: a picture has them, a shape does not.
+    let family = |label: &'static str, entries: Vec<MenuEntry>| {
+        if pictures { MenuEntry::submenu(label, entries) } else { off(label) }
+    };
     let entries = vec![
         MenuEntry::submenu(shadow_label, shadow),
-        off(t_ctx("effect", "Reflection", "Réflexion")),
+        family(t_ctx("effect", "Reflection", "Réflexion"), super::styles::reflection_menu(app)),
         MenuEntry::submenu(glow_label, glow),
         MenuEntry::submenu(soft_label, soft).disabled(!pictures),
-        off(t("Bevel", "Biseau")),
-        off(t("3-D Rotation", "Rotation 3D")),
+        family(t("Bevel", "Biseau"), super::styles::bevel_menu(app)),
+        family(t("3-D Rotation", "Rotation 3D"), super::styles::rotation_menu(app)),
     ];
     app.open_command_menu(entries, 220.0, window, cx);
 }

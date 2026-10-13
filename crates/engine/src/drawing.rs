@@ -222,6 +222,14 @@ pub struct Picture {
     /// `data` is the image of those cells as they last looked; whoever
     /// can draw cells makes it again when they change.
     pub link: Option<Arc<Expr>>,
+    /// "Picture Border": a line along the outline the picture is cut to
+    /// (`a:ln` of the picture).
+    pub outline: Option<Outline>,
+    /// The artistic effect, and the image made with it (and with the
+    /// saturation and the colour temperature) that a file keeps: see
+    /// `picture_style::Baked`.
+    pub artistic: Option<crate::picture_style::Artistic>,
+    pub baked: Option<crate::picture_style::Baked>,
 }
 
 impl Picture {
@@ -236,6 +244,9 @@ impl Picture {
             svg: None,
             adjust: PictureAdjust::default(),
             link: None,
+            outline: None,
+            artistic: None,
+            baked: None,
         })
     }
 
@@ -450,6 +461,20 @@ pub struct Shadow {
     pub angle: f32,
     /// How far, points.
     pub distance: f32,
+    /// The height of the shadow next to its width (`sy` over `sx`): 1
+    /// for a shadow shaped like what casts it; less for one lying on the
+    /// ground, negative for one that falls forward, mirrored. Such a
+    /// shadow is measured from the bottom edge.
+    pub squash: f32,
+    /// How far the shadow leans, degrees (`kx`).
+    pub skew: f32,
+}
+
+impl Shadow {
+    /// True for a shadow lying on the ground: squashed or leaning.
+    pub fn lies(&self) -> bool {
+        self.squash != 1.0 || self.skew != 0.0
+    }
 }
 
 impl Default for Shadow {
@@ -462,6 +487,8 @@ impl Default for Shadow {
             blur: 4.0,
             angle: 45.0,
             distance: 3.0,
+            squash: 1.0,
+            skew: 0.0,
         }
     }
 }
@@ -553,11 +580,20 @@ pub struct Effects {
     /// "Soft Edges": how far in from its edges the drawing fades out,
     /// points; 0 for sharp edges (`a:softEdge`).
     pub soft_edge: f32,
+    pub reflection: Option<crate::picture_style::Reflection>,
+    pub bevel: Option<crate::picture_style::Bevel>,
+    /// "3-D Rotation": the drawing turned in space.
+    pub rotation: Option<crate::picture_style::Rotation3d>,
 }
 
 impl Effects {
     pub fn is_none(&self) -> bool {
-        self.shadow.is_none() && self.glow.is_none() && self.soft_edge <= 0.0
+        self.shadow.is_none()
+            && self.glow.is_none()
+            && self.soft_edge <= 0.0
+            && self.reflection.is_none()
+            && self.bevel.is_none()
+            && self.rotation.is_none()
     }
 }
 
@@ -606,13 +642,18 @@ pub enum ShapePreset {
     /// `Shape::adjust` is how far in its top corners are, as a fraction
     /// of the shorter side (0.25 when not given).
     Trapezoid,
+    /// A rectangle with its top-left and bottom-right corners rounded
+    /// (`round2DiagRect`), and one with those corners cut off
+    /// (`snip2DiagRect`): the outlines of two picture styles.
+    Round2DiagRect,
+    Snip2DiagRect,
 }
 
 /// How far a quarter circle's control points sit from its ends.
 const KAPPA: f32 = 0.552_284_8;
 
 impl ShapePreset {
-    pub const ALL: [ShapePreset; 17] = [
+    pub const ALL: [ShapePreset; 19] = [
         ShapePreset::Rect,
         ShapePreset::RoundRect,
         ShapePreset::Ellipse,
@@ -630,6 +671,8 @@ impl ShapePreset {
         ShapePreset::Callout,
         ShapePreset::Chevron,
         ShapePreset::Trapezoid,
+        ShapePreset::Round2DiagRect,
+        ShapePreset::Snip2DiagRect,
     ];
 
     /// The `prst` attribute. Excel writes a line with arrowheads as
@@ -653,6 +696,8 @@ impl ShapePreset {
             ShapePreset::Callout => "wedgeRectCallout",
             ShapePreset::Chevron => "chevron",
             ShapePreset::Trapezoid => "trapezoid",
+            ShapePreset::Round2DiagRect => "round2DiagRect",
+            ShapePreset::Snip2DiagRect => "snip2DiagRect",
         }
     }
 
@@ -724,6 +769,27 @@ impl ShapePreset {
         };
         match self {
             ShapePreset::Rect => polygon(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]),
+            ShapePreset::Round2DiagRect | ShapePreset::Snip2DiagRect => {
+                // A sixth of the shorter side off two opposite corners.
+                let cut = width.min(height) / 6.0;
+                let rx = if width > 0.0 { cut / width } else { 0.0 };
+                let ry = if height > 0.0 { cut / height } else { 0.0 };
+                if self == ShapePreset::Snip2DiagRect {
+                    polygon(&[(rx, 0.0), (1.0, 0.0), (1.0, 1.0 - ry), (1.0 - rx, 1.0), (0.0, 1.0), (0.0, ry)])
+                } else {
+                    let (kx, ky) = (rx * (1.0 - KAPPA), ry * (1.0 - KAPPA));
+                    vec![
+                        MoveTo(rx, 0.0),
+                        LineTo(1.0, 0.0),
+                        LineTo(1.0, 1.0 - ry),
+                        CurveTo(1.0, 1.0 - ky, 1.0 - kx, 1.0, 1.0 - rx, 1.0),
+                        LineTo(0.0, 1.0),
+                        LineTo(0.0, ry),
+                        CurveTo(0.0, ky, kx, 0.0, rx, 0.0),
+                        Close,
+                    ]
+                }
+            }
             ShapePreset::RoundRect => {
                 let radius = width.min(height) / 6.0;
                 let rx = if width > 0.0 { radius / width } else { 0.0 };
@@ -846,6 +912,12 @@ impl ShapePreset {
     pub fn text_rect_adjusted(self, width: f32, height: f32, adjust: Option<f32>) -> [f32; 4] {
         match self {
             ShapePreset::Rect | ShapePreset::Line | ShapePreset::Callout => [0.0, 0.0, 1.0, 1.0],
+            ShapePreset::Round2DiagRect | ShapePreset::Snip2DiagRect => {
+                let inset = width.min(height) / 6.0 * 0.5;
+                let x = if width > 0.0 { inset / width } else { 0.0 };
+                let y = if height > 0.0 { inset / height } else { 0.0 };
+                [x, y, 1.0 - x, 1.0 - y]
+            }
             ShapePreset::RoundRect => {
                 // Clear of the round corners.
                 let inset = width.min(height) / 6.0 * 0.292_89;
@@ -1715,6 +1787,9 @@ impl Drawing {
             DrawingKind::Picture(picture) => {
                 if let Recolor::Duotone(dark, light) = &mut picture.adjust.recolor {
                     (*dark, *light) = (theme.resolve(*dark), theme.resolve(*light));
+                }
+                if let Some(outline) = &mut picture.outline {
+                    outline.color = theme.resolve(outline.color);
                 }
                 // A vector picture painted in a colour of the theme: its
                 // document is repainted. (The image kept beside it is
