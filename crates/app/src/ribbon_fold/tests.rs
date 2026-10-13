@@ -319,11 +319,13 @@ fn large_buttons_restack_in_three_rows_before_they_lose_their_labels(cx: &mut Te
     show_tab(&app, cx, 1);
     let wide = fit_at(&app, cx, 3200.0);
     let paste = controls(&app, cx)["rb-paste"];
+    let cut = controls(&app, cx)["rb-cut"];
     let width = width_where(&app, cx, 0, Mode::Stacked).expect("Clipboard gives way");
     let fit = fit_at(&app, cx, width);
     let all = controls(&app, cx);
     assert_eq!((all["rb-paste"].2 - all["rb-paste"].0, all["rb-paste"].3 - all["rb-paste"].1), (paste.2 - paste.0, paste.3 - paste.1));
-    assert!(all["rb-cut"].2 - all["rb-cut"].0 < 34.0, "Cut has lost its label: {:?}", all["rb-cut"]);
+    // (Cut is as wide as Copy under it, which keeps its arrow.)
+    assert!(all["rb-cut"].2 - all["rb-cut"].0 < cut.2 - cut.0 - 20.0, "Cut has lost its label: {:?} after {cut:?}", all["rb-cut"]);
     assert!(fit.widths[0] < wide.widths[0] - 40.0);
 }
 
