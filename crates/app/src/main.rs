@@ -148,6 +148,7 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Save As…", "Enregistrer sous…"), SaveAs),
                 MenuItem::separator(),
                 MenuItem::action(t("Print…", "Imprimer…"), Print),
+                MenuItem::submenu(features::share::menu_bar()),
             ],
         },
         Menu {

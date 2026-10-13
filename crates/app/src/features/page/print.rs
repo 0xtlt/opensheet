@@ -169,6 +169,14 @@ fn job<'a>(app: &ExcelApp, what: usize, ignore_area: bool, painter: &'a PaperPai
     job
 }
 
+/// The whole workbook as a PDF, as Print ▸ Entire Workbook would save it
+/// (what Share ▸ Send PDF sends); `None` when there is nothing to print.
+pub(crate) fn workbook_pdf(app: &ExcelApp, cx: &App) -> Option<Vec<u8>> {
+    let painter = PaperPainter::new(cx);
+    let job = job(app, 1, false, &painter);
+    (!plan(&app.wb, &job).output.is_empty()).then(|| print_pdf(&app.wb, &job))
+}
+
 /// Open the Print screen on the current sheet.
 pub(crate) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     if app.is_editing() && !app.commit_edit(None, window, cx) {

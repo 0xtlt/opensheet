@@ -36,7 +36,6 @@ pub struct Misc;
 commands! {
     /// The formula tools, and the ribbon commands without a home.
     pub enum Cmd {
-        Share = "share", t("Share", "Partager");
         // Home
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
@@ -64,7 +63,6 @@ commands! {
         // Review
         Spelling = "spell", t("Spelling", "Orthographe");
         Thesaurus = "book", t("Thesaurus", "Dictionnaire des synonymes");
-        WorkbookStatistics = "calculator", t("Workbook Statistics", "Statistiques du classeur");
         CheckAccessibility = "eye", t("Check Accessibility", "Vérifier l'accessibilité");
         Translate = "book", t("Translate", "Traduire");
         // Automate, Help

@@ -3728,9 +3728,11 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "image",
+ "objc",
  "opensheet_engine",
  "opensheet_io",
  "opensheet_print",
+ "raw-window-handle",
  "unicode-segmentation",
 ]
 
