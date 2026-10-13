@@ -1126,6 +1126,7 @@ pub static ES: &[(&str, &str)] = &[
     ("outline|Line", "Línea"),
     ("artistic|None", "Ninguno"),
     ("Artistic Effect", "Efecto artístico"),
+    ("Artistic Effects Options…", "Opciones de efectos artísticos…"),
     // ---- Objects: selection, arrangement, picture tools ----
     ("Crop Picture", "Recortar imagen"),
     ("Crop to Shape", "Recortar a la forma"),
@@ -4798,6 +4799,7 @@ pub static DE: &[(&str, &str)] = &[
     ("outline|Line", "Linie"),
     ("artistic|None", "Ohne"),
     ("Artistic Effect", "Künstlerischer Effekt"),
+    ("Artistic Effects Options…", "Optionen für künstlerische Effekte…"),
     // ---- Objects: selection, arrangement, picture tools ----
     ("Crop Picture", "Bild zuschneiden"),
     ("Crop to Shape", "Auf Form zuschneiden"),
@@ -8464,6 +8466,7 @@ pub static IT: &[(&str, &str)] = &[
     ("outline|Line", "Linea"),
     ("artistic|None", "Nessuno"),
     ("Artistic Effect", "Effetto artistico"),
+    ("Artistic Effects Options…", "Opzioni effetti artistici…"),
     // ---- Objects: selection, arrangement, picture tools ----
     ("Crop Picture", "Ritaglia immagine"),
     ("Crop to Shape", "Ritaglia forma"),

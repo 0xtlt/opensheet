@@ -251,3 +251,140 @@ fn the_gallery_samples_the_picture() {
     // No two styles look the same.
     assert_eq!(seen.len(), PictureStyle::ALL.len());
 }
+
+// ------------------------------------------------------- artistic effects
+
+#[gpui::test]
+fn an_artistic_effect_is_made_off_the_window_thread(cx: &mut TestAppContext) {
+    use opensheet_engine::picture_style::{Artistic, ArtisticKind};
+    let (app, cx) = open(cx);
+    let id = add_photo(&app, cx);
+    assert!(app.update(cx, |app, _| Cmd::ArtisticEffects.enabled(app)));
+    app.update_in(cx, |app, window, cx| app.run_command(Cmd::ArtisticEffects, window, cx));
+    redraw(cx);
+    assert!(app.update(cx, |app, _| app.popup.is_some()), "the gallery");
+    app.update(cx, |app, cx| {
+        app.popup = None;
+        artistic::set_artistic(app, Some(Artistic::preset(ArtisticKind::Cutout)), cx);
+    });
+    // Chosen: the picture has the effect, its second image is to come.
+    let chosen = drawing(&app, cx, id);
+    assert_eq!(chosen.as_picture().unwrap().artistic, Some(Artistic::preset(ArtisticKind::Cutout)));
+    assert!(chosen.as_picture().unwrap().needs_baking());
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Artistic Effects"));
+    // The window is drawn, the image is made in the background, and the
+    // picture gets it without a step in the undo history.
+    redraw(cx);
+    redraw(cx);
+    let made = drawing(&app, cx, id);
+    let picture = made.as_picture().unwrap();
+    assert!(!picture.needs_baking(), "the second image arrived");
+    let baked = picture.baked().unwrap().data.clone();
+    assert!(baked.starts_with(b"\x89PNG") && baked != picture.data);
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Artistic Effects"));
+    // The pane's two numbers.
+    app.update(cx, |app, cx| {
+        assert_eq!(pane::Look::ArtisticAmount.of(selected(app).unwrap()), Some(1.0));
+        pane::Look::ArtisticAmount.set(app, 40.0, cx);
+        pane::Look::ArtisticTransparency.set(app, 25.0, cx);
+    });
+    let tuned = drawing(&app, cx, id).as_picture().unwrap().artistic.unwrap();
+    // A cutout has at most six shades.
+    assert_eq!((tuned.amount, tuned.transparency), (6.0, 0.25));
+    redraw(cx);
+    redraw(cx);
+    assert!(!drawing(&app, cx, id).as_picture().unwrap().needs_baking());
+    // Undone twice the first image is wanted again: it was kept.
+    app.update(cx, |app, cx| {
+        app.undo(cx);
+        app.undo(cx);
+    });
+    redraw(cx);
+    let again = drawing(&app, cx, id);
+    assert_eq!(again.as_picture().unwrap().baked().map(|b| b.data.clone()), Some(baked));
+    // Saturation is kept in the second image too.
+    app.update(cx, |app, cx| {
+        artistic::set_artistic(app, None, cx);
+        pane::Look::Saturation.set(app, 200.0, cx);
+    });
+    redraw(cx);
+    redraw(cx);
+    let vivid = drawing(&app, cx, id);
+    let picture = vivid.as_picture().unwrap();
+    assert!(picture.artistic.is_none() && picture.baked().is_some());
+    assert_eq!(picture.shown().1.saturation, 1.0);
+    // Reset Picture: the image as it was.
+    app.update_in(cx, |app, window, cx| app.run_command(Cmd::ResetPictureOnly, window, cx));
+    let reset = drawing(&app, cx, id);
+    assert!(!reset.as_picture().unwrap().has_baked_effects() && reset.as_picture().unwrap().baked.is_none());
+}
+
+/// Every artistic effect on a photograph: in a workbook for Excel (the
+/// filtered image in the blip, the photograph beside it) and side by
+/// side for the eye.
+#[test]
+fn every_artistic_effect_is_written_with_its_image() {
+    use opensheet_engine::picture_style::{Artistic, ArtisticKind};
+    let photo = styles::sample_photo(480, 320);
+    let png = picture::png_of(&photo).unwrap();
+    let mut wb = opensheet_engine::Workbook::new(opensheet_engine::Locale::en());
+    let mut tiles = vec![photo.clone()];
+    for (i, kind) in ArtisticKind::ALL.into_iter().enumerate() {
+        let (row, col) = (1 + 12 * (i as u32 / 4), 1 + 4 * (i as u32 % 4));
+        wb.set_cell_text(0, row - 1, col, kind.name(opensheet_engine::Locale::en())).unwrap();
+        let id = wb.add_picture(0, png.clone(), (row, col)).expect("a picture");
+        wb.update_drawing(0, id, |d| {
+            d.size = (240.0, 160.0);
+            d.name = kind.name(opensheet_engine::Locale::en()).to_string();
+            d.as_picture_mut().unwrap().artistic = Some(Artistic::preset(kind));
+        });
+        tiles.push(filters::apply(&photo, &Artistic::preset(kind)));
+    }
+    // One with its colours changed only, and one with both.
+    let warm = wb.add_picture(0, png.clone(), (49, 1)).unwrap();
+    wb.update_drawing(0, warm, |d| {
+        d.size = (240.0, 160.0);
+        let picture = d.as_picture_mut().unwrap();
+        picture.adjust.saturation = 2.0;
+        picture.adjust.temperature = 8800.0;
+    });
+    wb.commit("effects");
+    before_save(&mut wb);
+    let pictures: Vec<&opensheet_engine::drawing::Picture> = wb.sheets[0].drawings.iter().filter_map(Drawing::as_picture).collect();
+    assert!(pictures.iter().all(|picture| !picture.needs_baking()));
+    let bytes = opensheet_io::write_xlsx(&wb, std::io::Cursor::new(Vec::new())).unwrap().into_inner();
+    if let Some(directory) = samples() {
+        std::fs::write(directory.join("opensheet-artistic-effects.xlsx"), &bytes).unwrap();
+        contact_sheet(&tiles, 4, (500, 340)).save(directory.join("opensheet-artistic-effects.png")).unwrap();
+    }
+    // Read back: the photograph, the effect, and the image made of it.
+    let back = opensheet_io::read_xlsx(std::io::Cursor::new(bytes), opensheet_engine::Locale::en()).unwrap();
+    for (kind, drawing) in ArtisticKind::ALL.into_iter().zip(&back.sheets[0].drawings) {
+        let picture = drawing.as_picture().unwrap();
+        assert_eq!(picture.artistic, Some(Artistic::preset(kind)));
+        assert_eq!(&picture.data[..], &png[..], "{kind:?}");
+        let baked = picture.baked().unwrap_or_else(|| panic!("{kind:?}: no second image"));
+        let shown = Bitmap::decode(&baked.data).unwrap();
+        assert_eq!(shown, filters::apply(&photo, &Artistic::preset(kind)), "{kind:?}");
+    }
+    let last = back.sheets[0].drawings.last().and_then(Drawing::as_picture).unwrap();
+    assert!((last.adjust.saturation - 2.0).abs() < 1e-3 && last.baked().is_some());
+}
+
+/// How long the effects take on a photograph of twelve million pixels:
+/// run with `OPENSHEET_TIMING=1` to see (they are made off the window's
+/// thread whatever the answer).
+#[test]
+fn effects_on_a_large_photograph() {
+    use opensheet_engine::picture_style::{Artistic, ArtisticKind};
+    let timed = std::env::var_os("OPENSHEET_TIMING").is_some();
+    let photo = if timed { styles::sample_photo(4000, 3000) } else { styles::sample_photo(400, 300) };
+    for kind in ArtisticKind::ALL {
+        let start = std::time::Instant::now();
+        let made = filters::apply(&photo, &Artistic::preset(kind));
+        assert_eq!(made.data.len(), photo.data.len());
+        if timed {
+            eprintln!("{kind:?}: {:.2} s", start.elapsed().as_secs_f32());
+        }
+    }
+}

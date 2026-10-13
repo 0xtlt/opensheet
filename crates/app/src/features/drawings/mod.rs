@@ -28,7 +28,9 @@
 //! drawing sized with its cells follows them without being touched.
 
 mod adjust;
+mod artistic;
 mod equation;
+mod filters;
 pub(crate) mod geometry;
 mod icon_set;
 mod icons;
@@ -271,6 +273,11 @@ impl Command for Cmd {
                 .any(|id| app.wb.drawing(app.sheet, id).is_some_and(|drawing| drawing.as_group().is_some())),
             Cmd::Regroup => regroupable(app).is_some(),
             Cmd::EditPoints => false,
+            // An icon stays the drawing it is; cells are drawn again
+            // whenever they change.
+            Cmd::ArtisticEffects => drawing
+                .and_then(Drawing::as_picture)
+                .is_some_and(|picture| picture.svg.is_none() && picture.link.is_none()),
             Cmd::PictureStyles => drawing.is_some_and(|drawing| drawing.as_picture().is_some_and(|picture| picture.link.is_none())),
             Cmd::Crop
             | Cmd::CropPicture
@@ -467,6 +474,7 @@ impl Command for Cmd {
                 ];
                 app.open_command_menu(entries, 250.0, window, cx);
             }
+            Cmd::ArtisticEffects => artistic::open_gallery(app, window, cx),
             Cmd::PictureStyles => styles::open_styles(app, window, cx),
             Cmd::PictureBorder => styles::open_border(app, window, cx),
             Cmd::ResetPictureOnly => reset_picture(app, false, cx),
@@ -506,6 +514,9 @@ struct DrawingUi {
     /// The fields and the view the ribbon and the panes keep.
     tabs: tabs::TabState,
     panes: pane::PaneState,
+    /// The second images of pictures with an artistic effect, being
+    /// made off the window's thread.
+    baking: artistic::Baking,
 }
 
 /// Where the caret goes when the text of a shape starts being edited.
@@ -1023,6 +1034,7 @@ impl Feature for Drawings {
         svg::install(cx);
         svg::sweep(window, cx);
         icons::follow_theme(app);
+        artistic::follow(app, cx);
         // Image files dropped on the cells become pictures. The element
         // takes nothing else from the mouse.
         let mut out = vec![
@@ -1406,6 +1418,12 @@ impl Feature for Drawings {
 /// top-left corner at a point of the sheet, as one undo step named
 /// `label`; it is selected, with the Picture Format tab. `None` when the
 /// sheet is protected against it.
+/// Before a workbook is written: the images a file keeps of pictures
+/// with an artistic effect are made, where they are not yet.
+pub(crate) fn before_save(wb: &mut opensheet_engine::Workbook) {
+    artistic::bake_all(wb);
+}
+
 /// What a picture wears on a page: as on the sheet.
 pub(crate) fn dress_for_page(drawing: &Drawing, picture: &Picture) -> render::Dress {
     render::Dress {

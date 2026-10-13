@@ -762,7 +762,10 @@ impl PartWriter<'_> {
                 let image = self.image(picture);
                 let shown = match picture.baked() {
                     Some(baked) => {
-                        let name = self.media.file(&baked.data, "png", "image/png", self.extras);
+                        // In the format it was made in: a PNG, or a JPEG
+                        // for a photograph.
+                        let format = opensheet_engine::drawing::image_info(&baked.data).map_or(opensheet_engine::drawing::ImageFormat::Png, |info| info.format);
+                        let name = self.media.file(&baked.data, format.extension(), format.mime(), self.extras);
                         self.related(name)
                     }
                     None => image,

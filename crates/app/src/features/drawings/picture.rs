@@ -628,6 +628,16 @@ pub fn png_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
     Some(png.into_inner())
 }
 
+/// A bitmap without transparency as a JPEG file.
+pub fn jpeg_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
+    let rgb: Vec<u8> = bitmap.data.chunks_exact(4).flat_map(|pixel| [pixel[2], pixel[1], pixel[0]]).collect();
+    let pixels = image::RgbImage::from_raw(bitmap.width, bitmap.height, rgb)?;
+    let mut jpeg = Cursor::new(Vec::new());
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 92);
+    image::DynamicImage::ImageRgb8(pixels).write_with_encoder(encoder).ok()?;
+    Some(jpeg.into_inner())
+}
+
 /// A picture as a page shows it in a frame `size` (pixels at 100 %),
 /// turned by `turn` degrees and flipped: its pixels red first, a few to
 /// each pixel of the sheet, with everything the picture wears, and the
