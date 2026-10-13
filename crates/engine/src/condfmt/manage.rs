@@ -328,6 +328,45 @@ impl Workbook {
         self.carry_cond_formats(src_sheet, src, dest_sheet, dest, true)
     }
 
+    /// Carry conditional formats along with cells pasted with their rows
+    /// and columns exchanged (Paste Special ▸ Transpose): `out` is where
+    /// one turned copy of `src` lands. The cells written lose the rules
+    /// they had; each rule of the copied cells is given again for the
+    /// turned cells, as a rule of its own of the highest priority, its
+    /// relative references turned with them.
+    pub(crate) fn transpose_cond_formats(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, out: Rect) -> bool {
+        use crate::paste_special::{transposed, turned};
+        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
+            return false;
+        }
+        let mut copies = Vec::new();
+        for cf in self.cond_formats(src_sheet) {
+            let pieces: Vec<Rect> = cf.ranges.iter().filter_map(|r| r.intersection(&src)).collect();
+            let ranges: Vec<Rect> = pieces.iter().filter_map(|piece| turned(piece, &src, &out)).collect();
+            let (Some(first), false) = (pieces.first(), ranges.is_empty()) else {
+                continue;
+            };
+            // The formulas are read from the first copied cell, turned
+            // for the cell it becomes, then follow the ranges given.
+            let mut copy = cf.clone();
+            copy.set_ranges(vec![Rect::cell(first.r0, first.c0)]);
+            let to = (out.r0 + (first.c0 - src.c0), out.c0 + (first.r0 - src.r0));
+            copy.rule.map_exprs(&mut |e| transposed(e, (first.r0, first.c0), to));
+            copy.ranges = vec![Rect::cell(to.0, to.1)];
+            copy.set_ranges(normalize_ranges(ranges));
+            copies.push(copy);
+        }
+        if copies.is_empty() && !self.cond_formats(dest_sheet).iter().any(|cf| cf.intersects(&out)) {
+            return false;
+        }
+        self.snapshot();
+        let rules = &mut self.sheets[dest_sheet].cond_formats;
+        remove_cells(rules, &[out]);
+        rules.splice(0..0, copies);
+        self.caches.cond.invalidate();
+        true
+    }
+
     fn carry_cond_formats(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest: Rect, moved: bool) -> bool {
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return false;

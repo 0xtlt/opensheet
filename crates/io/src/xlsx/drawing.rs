@@ -498,6 +498,10 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize, vecto
 /// The brightness and the contrast Excel writes for "Washout".
 const WASHOUT: (f32, f32) = (0.7, -0.7);
 
+/// The extension of a picture's properties that says which cells a
+/// linked picture shows.
+const CAMERA_EXT: &str = "{84589F7E-364E-4C9E-8A38-B11213B215E9}";
+
 /// `image` is the relationship of the drawing part to the image file,
 /// `vector` the one to the SVG document of a vector picture.
 fn push_picture(
@@ -511,7 +515,20 @@ fn push_picture(
 ) {
     x.push_str("<xdr:pic><xdr:nvPicPr>");
     push_identity(x, drawing, id);
-    push_non_visual(x, "cNvPicPr", "", "picLocks", drawing);
+    match &picture.link {
+        // A linked picture, as Excel writes its camera: the range in an
+        // extension of the picture's own properties.
+        Some(link) => {
+            x.push_str("<xdr:cNvPicPr><a:picLocks");
+            if drawing.lock_aspect {
+                x.push_str(" noChangeAspect=\"1\"");
+            }
+            w!(x, " noChangeArrowheads=\"1\"/><a:extLst><a:ext uri=\"{CAMERA_EXT}\"><a14:cameraTool xmlns:a14=\"{}\" cellRange=\"", math::NS_A14);
+            push_attr(x, &link.to_text(opensheet_engine::Locale::en()));
+            x.push_str("\"/></a:ext></a:extLst></xdr:cNvPicPr>");
+        }
+        None => push_non_visual(x, "cNvPicPr", "", "picLocks", drawing),
+    }
     w!(
         x,
         "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\""
@@ -643,6 +660,13 @@ impl PartWriter<'_> {
                 let pieces = art.pieces(self.wb.theme(), frame.width as f32, frame.height as f32);
                 self.push_anchor_as(x, sheet, drawing, Some(&pieces));
                 smartart::push_choice_end(x);
+            }
+            // A linked picture is for those who know the extension it
+            // is described in; Excel leaves the others nothing.
+            None if drawing.as_picture().is_some_and(|picture| picture.link.is_some()) => {
+                w!(x, "<mc:AlternateContent xmlns:mc=\"{}\"><mc:Choice xmlns:a14=\"{}\" Requires=\"a14\">", math::NS_MC, math::NS_A14);
+                self.push_anchor_as(x, sheet, drawing, None);
+                x.push_str("</mc:Choice><mc:Fallback/></mc:AlternateContent>");
             }
             None => self.push_anchor_as(x, sheet, drawing, None),
         }
@@ -1354,6 +1378,8 @@ struct RawObject {
     effects: Effects,
     /// How a picture is adjusted.
     adjust: PictureAdjust,
+    /// The range a linked picture shows (`a14:cameraTool`), as written.
+    link: Option<String>,
     kind: RawKind,
 }
 
@@ -1371,6 +1397,7 @@ impl RawObject {
             xfrm_box: None,
             effects: Effects::default(),
             adjust: PictureAdjust::default(),
+            link: None,
             kind,
         }
     }
@@ -1402,7 +1429,19 @@ impl RawObject {
                     if matches!(locks.name, "spLocks" | "picLocks" | "cxnSpLocks" | "grpSpLocks") {
                         self.lock_aspect = locks.attr_bool("noChangeAspect").unwrap_or(false);
                     }
-                    r.skip(locks);
+                    if locks.name != "extLst" {
+                        r.skip(locks);
+                        return;
+                    }
+                    // `extLst` > `ext` > `a14:cameraTool`.
+                    each_child(r, locks, |r, ext| {
+                        each_child(r, ext, |r, mark| {
+                            if mark.name == "cameraTool" {
+                                self.link = mark.attr("cellRange").map(|range| range.into_owned());
+                            }
+                            r.skip(mark);
+                        });
+                    });
                 });
             }
             _ => r.skip(t),
@@ -1914,6 +1953,12 @@ impl Loader {
                     });
                     picture.svg = document.clone();
                 }
+                // A linked picture: a reference or a name, nothing else.
+                picture.link = object
+                    .link
+                    .and_then(|range| opensheet_engine::parser::parse_formula(range.trim_start_matches('='), opensheet_engine::Locale::en()).ok())
+                    .filter(|link| matches!(link, opensheet_engine::ast::Expr::Ref(_) | opensheet_engine::ast::Expr::Name(_)))
+                    .map(Arc::new);
                 Drawing::picture(picture)
             }
             RawKind::Group { members, child_box } => {

@@ -1452,6 +1452,41 @@ impl Workbook {
         self.tile_validation(src_sheet, src, dest_sheet, &[dest]);
     }
 
+    /// Give the cells of `out` the rules of the block `src` with its rows
+    /// and columns exchanged (Paste Special ▸ Transpose): `out` is where
+    /// one turned copy of `src` lands. Cells without a rule clear the
+    /// rule of the cell they land on; the relative references of the
+    /// formulas are turned with the cells. Recorded for undo.
+    pub(crate) fn transpose_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, out: Rect) {
+        use crate::paste_special::{transposed, turned};
+        if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
+            return;
+        }
+        let mut copies = Vec::new();
+        for rule in &self.sheets[src_sheet].validations {
+            for piece in rule.ranges.iter().filter_map(|r| r.intersection(&src)) {
+                let Some(range) = turned(&piece, &src, &out) else {
+                    continue;
+                };
+                let mut copy = rule.clone();
+                copy.set_ranges(vec![Rect::cell(piece.r0, piece.c0)]);
+                copy.map_formulas(|e| transposed(e, (piece.r0, piece.c0), (range.r0, range.c0)));
+                copy.ranges = vec![range];
+                copies.push(copy);
+            }
+        }
+        let has_rules = self.sheets[dest_sheet].validations.iter().any(|rule| rule.ranges.iter().any(|r| r.intersects(&out)));
+        if copies.is_empty() && !has_rules {
+            return;
+        }
+        self.snapshot();
+        let sh = &mut self.sheets[dest_sheet];
+        remove_bands(sh, &[out]);
+        for copy in copies {
+            store(sh, copy);
+        }
+    }
+
     /// As `copy_validation`, laying `src` over each of `dests`: a
     /// destination holds a whole number of copies of `src` (one cell
     /// pasted over a selection, a row filled down) or one copy cut short,

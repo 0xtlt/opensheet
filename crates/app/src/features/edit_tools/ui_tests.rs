@@ -541,6 +541,14 @@ fn a_linked_picture_follows_its_cells(cx: &mut TestAppContext) {
     });
     let (_, formula) = link(&app, cx);
     assert_eq!(formula, "=Stock!$A$2:$B$3");
+    // Saved and opened again, both pictures still name their cells.
+    let bytes = app.update(cx, |app, _| opensheet_io::write_xlsx(&app.wb, std::io::Cursor::new(Vec::new())).unwrap().into_inner());
+    if let Some(dir) = std::env::var_os("OPENSHEET_SAMPLES") {
+        std::fs::write(std::path::Path::new(&dir).join("opensheet-linked-picture-of-cells.xlsx"), &bytes).unwrap();
+    }
+    let back = opensheet_io::read_xlsx(std::io::Cursor::new(&bytes), opensheet_engine::Locale::en()).unwrap();
+    let sources: Vec<_> = back.linked_pictures().into_iter().map(|(sheet, _, source)| (sheet, source.sheet, source.rect.name())).collect();
+    assert_eq!(sources, vec![(0, 0, "A2:B3".to_string()), (1, 0, "A2:B3".to_string())]);
 }
 
 #[gpui::test]
