@@ -1403,6 +1403,8 @@ impl Render for ExcelApp {
             .child(status)
             .children(find)
             .children(popup)
+            // The drop-down of a ribbon group folded for want of room.
+            .child(crate::ribbon_fold::panel_layer())
             .children(popup_view)
             .children(modals)
     }

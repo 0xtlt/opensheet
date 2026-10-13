@@ -10,6 +10,7 @@ use crate::features::{
     pivot, protection, slicers, tables, themes, validation,
 };
 use crate::i18n::t;
+use crate::ribbon_fold as fold;
 use crate::theme::{self, c};
 use crate::view::{icon, tooltip};
 use gpui::{AnyElement, Context, FontWeight, SharedString, Stateful, Window, div, prelude::*, px};
@@ -49,6 +50,28 @@ pub fn group(label: &'static str, content: impl IntoElement) -> gpui::Div {
 /// A group with the small arrow that opens its dialog (see
 /// `ExcelApp::launcher`).
 pub fn launcher_group(label: &'static str, content: impl IntoElement, launcher: Option<AnyElement>) -> gpui::Div {
+    // When the window is too narrow the group is folded into one button;
+    // its drop-down is the group as it is built here (`ribbon_fold.rs`).
+    let slot = fold::next_group();
+    let whole = whole_group(label, content, launcher);
+    if slot.mode != fold::Mode::Folded {
+        return whole;
+    }
+    if slot.open {
+        fold::show_panel(whole.border_r_0());
+    }
+    div()
+        .h_full()
+        .flex()
+        .items_center()
+        .px(px(4.))
+        .border_r_1()
+        .border_color(c(theme::BORDER))
+        .child(fold::folded_button(label, &slot))
+}
+
+/// A group in full: its controls over its name.
+fn whole_group(label: &'static str, content: impl IntoElement, launcher: Option<AnyElement>) -> gpui::Div {
     div()
         .h_full()
         .flex()
@@ -69,6 +92,20 @@ pub fn launcher_group(label: &'static str, content: impl IntoElement, launcher: 
                 .child(label)
                 .children(launcher.map(|l| div().absolute().right(px(-4.)).top(px(1.)).child(l))),
         )
+}
+
+/// A long label of a large button on two lines, like Office: broken at
+/// the space nearest to its middle.
+pub(crate) fn split_label(label: &str) -> (&str, &str) {
+    let middle = label.len() / 2;
+    let split = label
+        .match_indices(' ')
+        .map(|(i, _)| i)
+        .min_by_key(|i| i.abs_diff(middle));
+    match split {
+        Some(i) if label.chars().count() > 11 => (&label[..i], &label[i + 1..]),
+        _ => (label, ""),
+    }
 }
 
 /// Controls stacked in up to three rows.
@@ -320,18 +357,20 @@ impl ExcelApp {
         cx: &mut Cx,
         f: impl Fn(&mut Self, &mut Window, &mut Cx) + 'static,
     ) -> AnyElement {
-        // Break long labels onto two lines like Office does: at the space
-        // nearest to the middle.
-        let middle = label.len() / 2;
-        let split = label
-            .match_indices(' ')
-            .map(|(i, _)| i)
-            .min_by_key(|i| i.abs_diff(middle));
-        let (line1, line2) = match split {
-            Some(i) if label.chars().count() > 11 => (&label[..i], &label[i + 1..]),
-            _ => (label, ""),
-        };
+        fold::saw_icon(icon_name);
         let color = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
+        // In a group short of room, a large button is a small one that
+        // has lost its label (the tip still names it).
+        if fold::compact() {
+            let content = div()
+                .flex()
+                .items_center()
+                .gap(px(2.))
+                .child(icon(icon_name, 16.0, color))
+                .when(dropdown, |d| d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED)));
+            return self.small(id, content, label, active, cx, f).into_any_element();
+        }
+        let (line1, line2) = split_label(label);
         div()
             .id(id)
             .relative()
@@ -570,36 +609,13 @@ impl ExcelApp {
         self.open_menu("file-tab", entries, 230.0, window, cx);
     }
 
+    /// The ribbon: the groups of the tab shown, fitted to the width of the
+    /// window by `ribbon_fold.rs`. It scrolls sideways only when the tab
+    /// does not fit even with every group folded.
     pub fn render_ribbon(&mut self, window: &mut Window, cx: &mut Cx) -> impl IntoElement {
-        let width = f32::from(window.viewport_size().width);
-        self.ribbon_level = if width >= 1752.0 {
-            0
-        } else if width >= 1602.0 {
-            1
-        } else if width >= 1532.0 {
-            2
-        } else if width >= 1312.0 {
-            3
-        } else {
-            4
-        };
-        let context = features::context_tabs(self);
-        let owner = self
-            .context_tab
-            .and_then(|id| context.iter().find(|(_, tab)| tab.id == id).map(|(owner, _)| (*owner, id)));
-        let groups: Vec<AnyElement> = match (owner, self.ribbon_tab) {
-            (Some((owner, id)), _) => features::all()[owner].render_tab(self, id, window, cx),
-            (None, 2) => self.insert_tab(cx),
-            (None, 3) => features::ink::draw_tab(self, cx),
-            (None, 4) => self.layout_tab(cx),
-            (None, 5) => self.formulas_tab(cx),
-            (None, 6) => self.data_tab(cx),
-            (None, 7) => self.review_tab(cx),
-            (None, 8) => self.view_tab(cx),
-            (None, 9) => self.automate_tab(cx),
-            (None, 10) => self.help_tab(cx),
-            _ => self.home_tab(cx),
-        };
+        // The window less the margins, the border and the padding below.
+        let available = f32::from(window.viewport_size().width) - 22.0;
+        let fitted = fold::fitted(cx.weak_entity(), self.ribbon_key(), available);
         div().w_full().flex_none().px_2().pb(px(4.)).bg(c(theme::CHROME_BG)).child(
             div()
                 .id("ribbon")
@@ -614,8 +630,42 @@ impl ExcelApp {
                 .rounded(px(8.))
                 .py(px(3.))
                 .px(px(2.))
-                .children(groups),
+                .child(fitted),
         )
+    }
+
+    /// What tells the tab shown from the others, in the language shown:
+    /// the steps taken to fit one are of no use to another.
+    pub(crate) fn ribbon_key(&self) -> String {
+        let context = features::context_tabs(self);
+        let tab = match self.context_tab.filter(|id| context.iter().any(|(_, tab)| tab.id == *id)) {
+            Some(id) => id.to_string(),
+            None => self.ribbon_tab.to_string(),
+        };
+        format!("{tab}/{}", crate::i18n::lang().code())
+    }
+
+    /// The groups of the tab shown, at a compaction level of the tabs
+    /// that have their own (`ribbon_level`).
+    pub(crate) fn ribbon_groups(&mut self, level: u8, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+        self.ribbon_level = level;
+        let context = features::context_tabs(self);
+        let owner = self
+            .context_tab
+            .and_then(|id| context.iter().find(|(_, tab)| tab.id == id).map(|(owner, _)| (*owner, id)));
+        match (owner, self.ribbon_tab) {
+            (Some((owner, id)), _) => features::all()[owner].render_tab(self, id, window, cx),
+            (None, 2) => self.insert_tab(cx),
+            (None, 3) => features::ink::draw_tab(self, cx),
+            (None, 4) => self.layout_tab(cx),
+            (None, 5) => self.formulas_tab(cx),
+            (None, 6) => self.data_tab(cx),
+            (None, 7) => self.review_tab(cx),
+            (None, 8) => self.view_tab(cx),
+            (None, 9) => self.automate_tab(cx),
+            (None, 10) => self.help_tab(cx),
+            _ => self.home_tab(cx),
+        }
     }
 
     fn automate_tab(&self, cx: &mut Cx) -> Vec<AnyElement> {
