@@ -8,18 +8,21 @@
 //! image of the text block (`svg.rs`): GPUI's glyphs have a colour and
 //! nothing else.
 //!
-//! Not done: Transform (warped text), glow, reflection, bevels, gradient
-//! fills of letters; one size per shape on screen (the size of its first
-//! run), because GPUI lays a text out at one size.
+//! Warped text (Transform), gradients, reflections and letters of
+//! several sizes are drawn as outlines taken from the fonts
+//! (`letters.rs`), which this module asks for when a shape needs them.
+//!
+//! Not done: glow and bevels of letters.
 
 use super::geometry::Placed;
+use super::letters::Letters;
 use super::paint::{self, Brush};
 use super::text::TextLook;
 use super::{Cmd, DrawingUi, Drawings, SHAPE_TAB, TextStart, begin_text_edit, selected, svg, tabs};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::features::{Command, Cx, Intent, object_id};
 use crate::grid::{Draw, FontResolver, pt_to_px};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use crate::theme::{self, c, engine_color};
 use crate::widgets::ColorGrid;
 use gpui::{
@@ -28,7 +31,8 @@ use gpui::{
 };
 use opensheet_engine::drawing::{Drawing, Shape, TEXT_MARGIN};
 use opensheet_engine::style::{Color, Font as EngineFont, Style, Underline};
-use opensheet_engine::wordart::{TextEffects, TextOutline, TextShadow, WordArtStyle};
+use opensheet_engine::textwarp::{TextWarp, WarpPreset};
+use opensheet_engine::wordart::{GradientKind, TextEffects, TextGradient, TextOutline, TextReflection, TextShadow, WordArtStyle};
 use std::fmt::Write as _;
 use std::ops::Range;
 
@@ -353,6 +357,83 @@ pub(super) fn draw_art(shape: &Shape, placed: &Placed, natural: (f32, f32), brus
     });
 }
 
+/// True when the text of a shape can only be drawn as outlines: warped,
+/// filled with a gradient, reflected, or set in more than one size.
+pub(super) fn needs_outlines(shape: &Shape) -> bool {
+    let looks = || std::iter::once(&shape.effects).chain(shape.runs.iter().map(|run| &run.effects));
+    shape.warp.is_some()
+        || looks().any(|effects| effects.gradient.is_some() || effects.reflection.is_some())
+        || shape.runs.iter().any(|run| run.font.size != shape.font.size)
+}
+
+thread_local! {
+    /// The images of the texts drawn as outlines, by what they were made
+    /// from: tracing the letters of a text again at every repaint would
+    /// be wasted work.
+    static OUTLINED: std::cell::RefCell<std::collections::HashMap<u64, Option<(String, ArtBox)>>> = std::cell::RefCell::default();
+}
+
+/// Draw the text of a shape as outlines (see `letters.rs`): an image of
+/// the whole text, turned with the shape. False when the fonts of the
+/// text have no outlines to give; it is then drawn the plain way.
+pub(super) fn draw_outlined(shape: &Shape, placed: &Placed, brush: &Brush, fonts: &FontResolver, out: &mut Vec<Draw>) -> bool {
+    use std::hash::{Hash, Hasher};
+    let (width, height) = (placed.width().abs(), placed.height().abs());
+    let (left, top) = (placed.x0.min(placed.x1), placed.y0.min(placed.y1));
+    let turn = super::geometry::normalise_angle(placed.rotation);
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!(
+        "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
+        shape.text, shape.font, shape.effects, shape.runs, shape.warp, shape.align, shape.anchor, shape.wrap, shape.preset
+    )
+    .hash(&mut hasher);
+    for value in [width, height, brush.zoom, turn, brush.scale] {
+        value.to_bits().hash(&mut hasher);
+    }
+    shape.adjust.map(f32::to_bits).hash(&mut hasher);
+    let key = hasher.finish();
+    let made = OUTLINED.with_borrow_mut(|known| {
+        if known.len() > 256 {
+            known.clear();
+        }
+        known
+            .entry(key)
+            .or_insert_with(|| {
+                let letters = Letters::of(shape, width as f64, height as f64, brush.zoom as f64, fonts)?;
+                let (document, at) = letters.svg(turn as f64, (width as f64 / 2.0, height as f64 / 2.0), brush.scale as f64);
+                Some((document, (at.0 as f32, at.1 as f32, at.2 as f32, at.3 as f32)))
+            })
+            .clone()
+    });
+    let Some((document, (x, y, w, h))) = made else {
+        return false;
+    };
+    if let Some(image) = svg::image(&document, (false, false), 0) {
+        let origin = point(brush.origin.x + px(left + x), brush.origin.y + px(top + y));
+        out.push(Draw::Image {
+            image,
+            bounds: Bounds::new(origin, size(px(w), px(h))),
+        });
+    }
+    true
+}
+
+/// Print the text of a shape as outlines, in its frame `width` by
+/// `height` (pixels at 100 %): warped text and letters with a look a
+/// line of plain text cannot have. False when there is nothing of the
+/// kind, or no outlines: the text is then printed as plain text.
+pub(crate) fn print_outlined(shape: &Shape, default_font: &str, width: f64, height: f64, canvas: &mut opensheet_print::Canvas) -> bool {
+    if shape.math.is_some() || !(needs_outlines(shape) || shape.has_text_effects()) {
+        return false;
+    }
+    let family = |name: &std::sync::Arc<str>| if name.is_empty() { default_font.to_string() } else { name.to_string() };
+    let Some(letters) = Letters::with_fonts(shape, width, height, 1.0, &family, canvas.fonts()) else {
+        return false;
+    };
+    letters.print(canvas);
+    true
+}
+
 // ---- measuring -----------------------------------------------------------
 
 /// The width of a line of text in a font, in pixels: the advances of its
@@ -396,7 +477,8 @@ pub(super) fn fitted_size(shape: &Shape, fonts: &FontResolver, ts: &TextSystem) 
 /// text, keeping its top-left corner. Part of the undo step being made.
 pub(super) fn fit_to_text(app: &mut ExcelApp, id: u32, cx: &mut Cx) {
     let sheet = app.sheet;
-    let Some(shape) = app.wb.drawing(sheet, id).and_then(Drawing::as_shape).filter(|shape| !shape.wrap) else {
+    // A warped text fills the box it is given: the box does not follow it.
+    let Some(shape) = app.wb.drawing(sheet, id).and_then(Drawing::as_shape).filter(|shape| !shape.wrap && shape.warp.is_none()) else {
         return;
     };
     let fitted = fitted_size(shape, &app.fonts, cx.text_system());
@@ -485,7 +567,36 @@ pub(super) fn set_fill(app: &mut ExcelApp, color: Option<Color>, cx: &mut Cx) {
     format(app, Cmd::TextFill.label(), cx, &|font, effects| {
         font.color = color;
         effects.hollow = color.is_none();
+        effects.gradient = None;
     });
+}
+
+/// Text Fill ▸ Gradient: fill the letters with a gradient made from
+/// their colour (`build`), or with that one colour again.
+fn set_gradient(app: &mut ExcelApp, build: Option<&dyn Fn(Color) -> TextGradient>, cx: &mut Cx) {
+    format(app, t("Text Gradient", "Dégradé du texte"), cx, &|font, effects| {
+        effects.gradient = build.map(|build| build(font.color.unwrap_or(Color::BLACK)));
+        if effects.gradient.is_some() {
+            effects.hollow = false;
+        }
+    });
+}
+
+fn set_reflection(app: &mut ExcelApp, reflection: Option<TextReflection>, cx: &mut Cx) {
+    format(app, t("Text Reflection", "Reflet du texte"), cx, &|_, effects| effects.reflection = reflection);
+}
+
+/// Text Effects ▸ Transform: warp the text of the selected shape, or
+/// set it level again. A warp of the same kind keeps its adjustments.
+pub(super) fn set_warp(app: &mut ExcelApp, preset: Option<WarpPreset>, cx: &mut Cx) -> bool {
+    let Some(id) = selected(app).filter(|drawing| drawing.as_shape().is_some()).map(|drawing| drawing.id) else {
+        return false;
+    };
+    format_shape(app, id, t("Transform", "Transformer"), cx, &|shape, _| {
+        if shape.warp.map(|warp| warp.preset) != preset {
+            shape.warp = preset.map(TextWarp::from);
+        }
+    })
 }
 
 fn set_outline(app: &mut ExcelApp, cx: &mut Cx, change: &dyn Fn(&mut Option<TextOutline>)) {
@@ -746,10 +857,72 @@ fn shadows() -> [(&'static str, f32, f32); 9] {
     ]
 }
 
-/// The Text Effects menu: the shadows. Transform (warped text) is shown
-/// greyed out: it is not available.
+/// The name of a warp as Excel shows it.
+pub(super) fn warp_name(preset: WarpPreset) -> &'static str {
+    match preset {
+        WarpPreset::ArchUp => t("Arch Up (Curve)", "Arc vers le haut"),
+        WarpPreset::ArchDown => t("Arch Down (Curve)", "Arc vers le bas"),
+        WarpPreset::Circle => t("Circle (Curve)", "Cercle"),
+        WarpPreset::Button => t("Button (Curve)", "Bouton"),
+        WarpPreset::Plain => t("Plain Text", "Texte brut"),
+        WarpPreset::Stop => t_ctx("warp", "Stop", "Panneau stop"),
+        WarpPreset::Triangle => t("Triangle Up", "Triangle à l'endroit"),
+        WarpPreset::TriangleInverted => t("Triangle Down", "Triangle à l'envers"),
+        WarpPreset::Chevron => t("Chevron Up", "Chevron vers le haut"),
+        WarpPreset::ChevronInverted => t("Chevron Down", "Chevron vers le bas"),
+        WarpPreset::RingInside => t("Ring Inside", "Anneau intérieur"),
+        WarpPreset::RingOutside => t("Ring Outside", "Anneau extérieur"),
+        WarpPreset::ArchUpPour => t("Arch Up (Pour)", "Arc étiré vers le haut"),
+        WarpPreset::ArchDownPour => t("Arch Down (Pour)", "Arc étiré vers le bas"),
+        WarpPreset::CirclePour => t("Circle (Pour)", "Cercle étiré"),
+        WarpPreset::ButtonPour => t("Button (Pour)", "Bouton étiré"),
+        WarpPreset::CurveUp => t("Curve Up", "Courbé vers le haut"),
+        WarpPreset::CurveDown => t("Curve Down", "Courbé vers le bas"),
+        WarpPreset::CanUp => t("Can Up", "Arc épais vers le haut"),
+        WarpPreset::CanDown => t("Can Down", "Arc épais vers le bas"),
+        WarpPreset::Wave1 => t("Wave 1", "Vague 1"),
+        WarpPreset::Wave2 => t("Wave 2", "Vague 2"),
+        WarpPreset::DoubleWave1 => t("Double Wave 1", "Double vague 1"),
+        WarpPreset::Wave4 => t("Double Wave 2", "Double vague 2"),
+        WarpPreset::Inflate => t("Inflate", "Gonflé"),
+        WarpPreset::Deflate => t("Deflate", "Compressé"),
+        WarpPreset::InflateBottom => t("Inflate Bottom", "Gonflé en bas"),
+        WarpPreset::DeflateBottom => t("Deflate Bottom", "Compressé en bas"),
+        WarpPreset::InflateTop => t("Inflate Top", "Gonflé en haut"),
+        WarpPreset::DeflateTop => t("Deflate Top", "Compressé en haut"),
+        WarpPreset::DeflateInflate => t("Deflate Inflate", "Compressé-gonflé"),
+        WarpPreset::DeflateInflateDeflate => t("Deflate Inflate Deflate", "Compressé-gonflé-compressé"),
+        WarpPreset::FadeRight => t("Fade Right", "Rétréci (droite)"),
+        WarpPreset::FadeLeft => t("Fade Left", "Rétréci (gauche)"),
+        WarpPreset::FadeUp => t("Fade Up", "Rétréci (haut)"),
+        WarpPreset::FadeDown => t("Fade Down", "Rétréci (bas)"),
+        WarpPreset::SlantUp => t("Slant Up", "Incliné vers le haut (1)"),
+        WarpPreset::SlantDown => t("Slant Down", "Incliné vers le bas (1)"),
+        WarpPreset::CascadeUp => t("Cascade Up", "Cascade (haut)"),
+        WarpPreset::CascadeDown => t("Cascade Down", "Cascade (bas)"),
+    }
+}
+
+/// The entries of Reflection Variations, with Excel's names.
+fn reflections() -> [&'static str; 9] {
+    [
+        t("Tight Reflection: Touching", "Réflexion rapprochée\u{a0}: contact"),
+        t("Half Reflection: Touching", "Semi-réflexion\u{a0}: contact"),
+        t("Full Reflection: Touching", "Pleine réflexion\u{a0}: contact"),
+        t("Tight Reflection: 4 point offset", "Réflexion rapprochée\u{a0}: décalage 4 points"),
+        t("Half Reflection: 4 point offset", "Semi-réflexion\u{a0}: décalage 4 points"),
+        t("Full Reflection: 4 point offset", "Pleine réflexion\u{a0}: décalage 4 points"),
+        t("Tight Reflection: 8 point offset", "Réflexion rapprochée\u{a0}: décalage 8 points"),
+        t("Half Reflection: 8 point offset", "Semi-réflexion\u{a0}: décalage 8 points"),
+        t("Full Reflection: 8 point offset", "Pleine réflexion\u{a0}: décalage 8 points"),
+    ]
+}
+
+/// The Text Effects menu: Shadow, Reflection and Transform, which opens
+/// its gallery.
 pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let current = selected(app).and_then(Drawing::as_shape).and_then(|shape| shape.effects.shadow);
+    let effects = selected(app).and_then(Drawing::as_shape).map(|shape| shape.effects);
+    let current = effects.and_then(|effects| effects.shadow);
     let mut entries = vec![
         MenuEntry::new(t("No Shadow", "Aucune ombre"), |app, _, cx| set_shadow(app, None, cx)).checked(current.is_none()),
         MenuEntry::separator(),
@@ -761,11 +934,200 @@ pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
         };
         entries.push(MenuEntry::new(name, move |app, _, cx| set_shadow(app, Some(shadow), cx)).checked(current == Some(shadow)));
     }
+    let mirrored = effects.and_then(|effects| effects.reflection);
+    let mut mirrors = vec![
+        MenuEntry::new(t("No Reflection", "Aucun reflet"), |app, _, cx| set_reflection(app, None, cx)).checked(mirrored.is_none()),
+        MenuEntry::separator(),
+    ];
+    for (name, reflection) in reflections().into_iter().zip(TextReflection::PRESETS) {
+        mirrors.push(MenuEntry::new(name, move |app, _, cx| set_reflection(app, Some(reflection), cx)).checked(mirrored == Some(reflection)));
+    }
     let entries = vec![
         MenuEntry::submenu(t("Shadow", "Ombre"), entries),
-        MenuEntry::new(t("Transform", "Transformer"), |_, _, _| {}).disabled(true),
+        MenuEntry::submenu(t("Reflection", "Reflet"), mirrors),
+        MenuEntry::new(t("Transform", "Transformer"), open_transform),
     ];
     app.open_command_menu(entries, 200.0, window, cx);
+}
+
+// ---- gradients -------------------------------------------------------------
+
+/// The ways a gradient of the Gradient menu runs, with Excel's names.
+fn gradient_kinds() -> [(&'static str, GradientKind); 9] {
+    [
+        (t("Linear Diagonal - Top Left to Bottom Right", "Diagonale linéaire - Du coin supérieur gauche au coin inférieur droit"), GradientKind::Linear(45.0)),
+        (t("Linear Down", "Linéaire vers le bas"), GradientKind::Linear(90.0)),
+        (t("Linear Diagonal - Top Right to Bottom Left", "Diagonale linéaire - Du coin supérieur droit au coin inférieur gauche"), GradientKind::Linear(135.0)),
+        (t("Linear Right", "Linéaire vers la droite"), GradientKind::Linear(0.0)),
+        (t("From Center", "Du centre"), GradientKind::FromCentre),
+        (t("Linear Left", "Linéaire vers la gauche"), GradientKind::Linear(180.0)),
+        (t("Linear Diagonal - Bottom Left to Top Right", "Diagonale linéaire - Du coin inférieur gauche au coin supérieur droit"), GradientKind::Linear(315.0)),
+        (t("Linear Up", "Linéaire vers le haut"), GradientKind::Linear(270.0)),
+        (t("Linear Diagonal - Bottom Right to Top Left", "Diagonale linéaire - Du coin inférieur droit au coin supérieur gauche"), GradientKind::Linear(225.0)),
+    ]
+}
+
+/// A gradient of the menu made from the colour of the letters: from a
+/// light tint of it to itself (light variations), or from itself to a
+/// dark shade (dark variations).
+pub(super) fn variation(color: Color, dark: bool, kind: GradientKind) -> TextGradient {
+    let base = color.plain();
+    if dark {
+        TextGradient::between(base, opensheet_engine::theme::tint(base, -0.6), kind)
+    } else {
+        TextGradient::between(opensheet_engine::theme::tint(base, 0.8), base, kind)
+    }
+}
+
+/// Text Fill ▸ Gradient: no gradient, and the light and dark variations
+/// of the colour of the text.
+pub(super) fn open_gradient(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    let shape = selected(app).and_then(Drawing::as_shape);
+    let current = shape.and_then(|shape| shape.effects.gradient);
+    let color = shape.and_then(|shape| shape.font.color).unwrap_or(Color::BLACK);
+    let variations = |dark: bool| -> Vec<MenuEntry> {
+        gradient_kinds()
+            .into_iter()
+            .map(|(name, kind)| {
+                MenuEntry::new(name, move |app, _, cx| set_gradient(app, Some(&|color| variation(color, dark, kind)), cx))
+                    .checked(current == Some(variation(color, dark, kind)))
+            })
+            .collect()
+    };
+    let entries = vec![
+        MenuEntry::new(t("No Gradient", "Aucun dégradé"), |app, _, cx| set_gradient(app, None, cx)).checked(current.is_none()),
+        MenuEntry::separator(),
+        MenuEntry::submenu(t("Light Variations", "Variations claires"), variations(false)),
+        MenuEntry::submenu(t("Dark Variations", "Variations sombres"), variations(true)),
+    ];
+    app.open_command_menu(entries, 220.0, window, cx);
+}
+
+/// The row of the Text Fill drop-down that leads to the gradients.
+pub(super) fn gradient_row(app: &WeakEntity<ExcelApp>) -> impl IntoElement + use<> {
+    let app = app.clone();
+    div()
+        .id("wordart-gradient")
+        .h(px(24.))
+        .px(px(4.))
+        .flex()
+        .items_center()
+        .justify_between()
+        .rounded(px(3.))
+        .hover(|s| s.bg(c(theme::HOVER)))
+        .child(t("Gradient", "Dégradé"))
+        .child(crate::view::icon("chevron-right", 10.0, theme::TEXT_MUTED))
+        .on_click(move |_, window, cx| {
+            app.update(cx, |app, cx| {
+                app.popup = None;
+                open_gradient(app, window, cx);
+                cx.notify();
+            })
+            .ok();
+        })
+}
+
+// ---- the Transform gallery -------------------------------------------------
+
+/// The letters the gallery shows in a warp (none: level), in a box.
+fn warp_sample(preset: Option<WarpPreset>, fonts: &FontResolver, box_size: (f32, f32), scale: f32) -> Option<(String, ArtBox)> {
+    let mut shape = opensheet_engine::drawing::ShapeTool::TextBox.shape();
+    shape.text = "abcde".to_string();
+    shape.font.set_name("Helvetica");
+    shape.font.set_size_pt(11.0);
+    shape.font.color = Some(Color(0x404040));
+    shape.align = opensheet_engine::drawing::TextAlign::Center;
+    shape.anchor = opensheet_engine::drawing::TextAnchor::Middle;
+    shape.wrap = false;
+    shape.warp = preset.map(TextWarp::from);
+    let letters = Letters::of(&shape, box_size.0 as f64, box_size.1 as f64, 1.0, fonts)?;
+    let (document, at) = letters.svg(0.0, (0.0, 0.0), scale as f64);
+    Some((document, (at.0 as f32, at.1 as f32, at.2 as f32, at.3 as f32)))
+}
+
+/// The drop-down of Text Effects ▸ Transform: no transform, the warps
+/// that follow a path, and the others, each shown on "abcde".
+struct TransformGallery {
+    app: WeakEntity<ExcelApp>,
+    fonts: std::rc::Rc<FontResolver>,
+    current: Option<WarpPreset>,
+}
+
+impl TransformGallery {
+    fn button(&self, preset: Option<WarpPreset>) -> impl IntoElement + use<> {
+        const BOX: (f32, f32) = (64.0, 44.0);
+        let app = self.app.clone();
+        let fonts = self.fonts.clone();
+        let name = preset.map_or(t("No Transform", "Aucune transformation"), warp_name);
+        div()
+            .id(("wordart-warp", preset.map_or(0, |preset| 1 + preset as usize)))
+            .w(px(BOX.0 + 8.0))
+            .h(px(BOX.1 + 8.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(3.))
+            .border_1()
+            .border_color(c(if self.current == preset { theme::ACCENT } else { theme::BORDER }))
+            .bg(c(0xFFFFFF))
+            .overflow_hidden()
+            .hover(|s| s.border_color(c(theme::ACCENT)))
+            .tooltip(crate::view::tooltip(name))
+            .child(
+                canvas(
+                    |_, _, _| {},
+                    move |bounds: Bounds<Pixels>, _, window, _| {
+                        let Some((document, (x, y, w, h))) = warp_sample(preset, &fonts, BOX, window.scale_factor()) else {
+                            return;
+                        };
+                        if let Some(image) = svg::image(&document, (false, false), 0) {
+                            let area = Bounds::new(point(bounds.origin.x + px(x), bounds.origin.y + px(y)), size(px(w), px(h)));
+                            let _ = window.paint_image(area, Default::default(), image, 0, false);
+                        }
+                    },
+                )
+                .w(px(BOX.0))
+                .h(px(BOX.1))
+                .flex_none(),
+            )
+            .on_click(move |_, _, cx| {
+                app.update(cx, |app, cx| {
+                    app.popup = None;
+                    set_warp(app, preset, cx);
+                    cx.notify();
+                })
+                .ok();
+            })
+    }
+}
+
+impl Render for TransformGallery {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let heading = |label: &'static str| div().h(px(22.)).flex().items_center().text_color(c(theme::TEXT_MUTED)).child(label);
+        let grid = |presets: &[WarpPreset]| div().flex().flex_wrap().gap(px(4.)).children(presets.iter().map(|preset| self.button(Some(*preset))));
+        let (follow, warp) = WarpPreset::ALL.split_at(WarpPreset::FOLLOW_PATH);
+        div()
+            .id("wordart-transform")
+            .w(px(4.0 * 72.0 + 3.0 * 4.0 + 16.0))
+            .p(px(8.))
+            .flex()
+            .flex_col()
+            .text_size(px(12.))
+            .child(heading(t("No Transform", "Aucune transformation")))
+            .child(self.button(None))
+            .child(heading(t("Follow Path", "Suivre la trajectoire")))
+            .child(grid(follow))
+            .child(heading(t("Warp", "Déformation")))
+            .child(grid(warp))
+    }
+}
+
+/// Open the Transform gallery under the Text Effects button.
+pub(super) fn open_transform(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    let weak = cx.weak_entity();
+    let fonts = app.fonts.clone();
+    let current = selected(app).and_then(Drawing::as_shape).and_then(|shape| shape.warp).map(|warp| warp.preset);
+    tabs::open_dropdown(app, window, cx, |_| TransformGallery { app: weak, fonts, current });
 }
 
 #[cfg(test)]

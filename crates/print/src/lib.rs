@@ -23,6 +23,7 @@ mod svg;
 mod ttf;
 
 pub use fonts::{Face, FontDb};
+pub use ttf::OutlineStep;
 pub use image::{Image, Pixels};
 pub use pdf::DocInfo;
 pub use scene::{Canvas, LineCap, LineJoin, Op, Paint, Path, RectF, Scene, Segment, Stroke, TextStyle};

@@ -765,6 +765,12 @@ impl Render for ColorMenu {
                 // Only a line has ends to put arrowheads on.
                 .child(self.side_row(Side::Arrows, t("Arrows", "Flèches"), is_line, cx));
         }
+        if paint == Paint::Text {
+            // The gradients of the letters, as in Excel's Text Fill.
+            column = column
+                .child(div().h(px(1.)).my(px(3.)).bg(c(theme::BORDER)))
+                .child(super::wordart::gradient_row(&self.app));
+        }
         div()
             .p(px(8.))
             .flex()
