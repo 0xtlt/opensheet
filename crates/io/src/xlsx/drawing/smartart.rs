@@ -277,6 +277,24 @@ fn style_xml(style: QuickStyle) -> String {
     x
 }
 
+/// A list of theme colours, each letting half of what is under it show
+/// (those that say how much themselves keep their own word).
+fn half_shown(colors: &str) -> String {
+    let mut out = String::new();
+    for entry in colors.split("<a:schemeClr ").filter(|entry| !entry.is_empty()) {
+        out.push_str("<a:schemeClr ");
+        if entry.contains("<a:alpha") {
+            out.push_str(entry);
+        } else if let Some(open) = entry.strip_suffix("/>").filter(|open| !open.contains('<')) {
+            out.push_str(open);
+            out.push_str("><a:alpha val=\"50000\"/></a:schemeClr>");
+        } else {
+            out.push_str(&entry.replace("</a:schemeClr>", "<a:alpha val=\"50000\"/></a:schemeClr>"));
+        }
+    }
+    out
+}
+
 /// The colours part: for each label, the colours of the theme its shapes
 /// run through.
 fn colors_xml(colors: ColorScheme) -> String {
@@ -342,11 +360,7 @@ fn colors_xml(colors: ColorScheme) -> String {
                 "<a:schemeClr val=\"lt1\"><a:alpha val=\"0\"/></a:schemeClr>".to_string(),
                 "<a:schemeClr val=\"dk1\"><a:alpha val=\"0\"/></a:schemeClr>".to_string(),
             ),
-            "vennNode1" => (
-                method,
-                fills.replace("\"/>", "\"><a:alpha val=\"50000\"/></a:schemeClr>"),
-                lines.clone(),
-            ),
+            "vennNode1" => (method, half_shown(&fills), lines.clone()),
             _ => (method, fills.clone(), lines.clone()),
         };
         w!(

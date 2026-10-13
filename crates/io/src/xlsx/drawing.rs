@@ -60,6 +60,7 @@ const MAX_PX: f64 = 600_000_000.0;
 const ROOT_END: &str = "</xdr:wsDr>";
 const RELS_END: &str = "</Relationships>";
 
+mod smartart;
 mod svg;
 mod wordart;
 
@@ -327,7 +328,14 @@ fn push_picture(x: &mut String, drawing: &Drawing, id: usize, frame: Frame, imag
 
 /// One anchor with its object. `id` is the object's own in the part,
 /// `image` the relationship to the image of a picture.
-fn push_anchor(x: &mut String, sheet: &Sheet, drawing: &Drawing, id: usize, image: Option<(usize, Option<usize>)>) {
+fn push_anchor(
+    x: &mut String,
+    sheet: &Sheet,
+    drawing: &Drawing,
+    id: usize,
+    image: Option<(usize, Option<usize>)>,
+    graphic: Option<usize>,
+) {
     // Excel anchors everything by two cells and says apart how the
     // object follows them.
     x.push_str("<xdr:twoCellAnchor");
@@ -343,7 +351,11 @@ fn push_anchor(x: &mut String, sheet: &Sheet, drawing: &Drawing, id: usize, imag
         (DrawingKind::Shape(shape), _) => push_shape(x, drawing, shape, id, frame),
         (DrawingKind::Picture(_), Some((image, vector))) => push_picture(x, drawing, id, frame, image, vector),
         (DrawingKind::Picture(_), None) => {}
-        (DrawingKind::SmartArt(_), _) => {}
+        (DrawingKind::SmartArt(_), _) => {
+            if let Some(first) = graphic {
+                smartart::push_frame(x, drawing, id, first);
+            }
+        }
     }
     x.push_str("<xdr:clientData");
     if !drawing.locked {
@@ -397,6 +409,8 @@ impl Media {
 /// image files to the package.
 pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mut Extras) {
     let mut media = Media::default();
+    // SmartArt graphics are numbered through the workbook.
+    let mut graphics = 0;
     for (index, sheet) in wb.sheets.iter().enumerate() {
         if sheet.drawings.is_empty() {
             continue;
@@ -420,13 +434,15 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
         // relationships of the part.
         let charts = sheet.charts.len();
         let mut anchors = String::new();
-        let mut images: Vec<String> = Vec::new();
+        // What the part relates to after its charts: (type, target).
+        let mut links: Vec<(String, String)> = Vec::new();
         for (k, drawing) in sheet.drawings.iter().enumerate() {
             let mut related = |name: String| {
-                let place = images.iter().position(|known| *known == name);
+                let target = format!("../media/{name}");
+                let place = links.iter().position(|(_, known)| *known == target);
                 let place = place.unwrap_or_else(|| {
-                    images.push(name);
-                    images.len() - 1
+                    links.push((format!("{NS_DOC_REL}/image"), target));
+                    links.len() - 1
                 });
                 charts + 1 + place
             };
@@ -438,16 +454,20 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
                     .map(|document| related(media.file(document, "svg", "image/svg+xml", extras)));
                 (image, vector)
             });
-            push_anchor(&mut anchors, sheet, drawing, charts + 2 + k, image);
+            // A SmartArt graphic: its five parts, related one after the
+            // other.
+            let graphic = drawing.as_smartart().map(|art| {
+                graphics += 1;
+                let first = charts + 1 + links.len();
+                let frame = sheet.drawing_frame(drawing);
+                links.extend(smartart::add_parts(art, wb.theme(), (frame.width, frame.height), graphics, first, extras));
+                first
+            });
+            push_anchor(&mut anchors, sheet, drawing, charts + 2 + k, image, graphic);
         }
         let mut rels = String::new();
-        for (k, name) in images.iter().enumerate() {
-            push_relationship(
-                &mut rels,
-                charts + 1 + k,
-                &format!("{NS_DOC_REL}/image"),
-                &format!("../media/{name}"),
-            );
+        for (k, (kind, target)) in links.iter().enumerate() {
+            push_relationship(&mut rels, charts + 1 + k, kind, target);
         }
         insert_before_end(&mut parts[at].xml, ROOT_END, &anchors);
         insert_before_end(&mut parts[at].rels, RELS_END, &rels);
@@ -797,6 +817,9 @@ fn printable(text: &str, lines: bool) -> String {
 
 /// What an anchor holds, as its part says it.
 enum RawKind {
+    /// A SmartArt graphic: the relationships to its data, layout, style
+    /// and colours parts.
+    Graphic([String; 4]),
     /// The relationships of the drawing part to the image and, for a
     /// vector picture, to its SVG document.
     Picture(String, Option<String>),
@@ -997,6 +1020,14 @@ fn parse_content<'a>(
     match t.name {
         "pic" if object.is_none() => *object = parse_picture(r, t),
         "sp" | "cxnSp" if object.is_none() => *object = Some(parse_shape(r, t, theme)),
+        // A frame holds a chart (which the charts read) or a graphic.
+        "graphicFrame" if object.is_none() => {
+            let mut frame = RawObject::new(RawKind::Picture(String::new(), None));
+            if let Some(ids) = smartart::parse_frame(r, t, &mut frame) {
+                frame.kind = RawKind::Graphic(ids);
+                *object = Some(frame);
+            }
+        }
         "AlternateContent" | "Choice" if depth < MAX_NESTING => {
             each_child(r, t, |r, c| parse_content(r, c, theme, depth + 1, object))
         }
@@ -1142,6 +1173,10 @@ impl Loader {
             };
             let mut drawing = match object.kind {
                 RawKind::Shape(shape) => Drawing::shape(shape, (0.0, 0.0)),
+                RawKind::Graphic(ids) => match smartart::load(pkg, &rels, &ids, &theme) {
+                    Some(art) => Drawing::smartart(art, (0.0, 0.0)),
+                    None => continue,
+                },
                 RawKind::Picture(embed, vector) => {
                     let image_of = |id: &str| rels.iter().find(|rel| rel.id == id && rel.kind == "image").map(|rel| rel.target.clone());
                     let Some(target) = image_of(&embed) else {
@@ -1190,6 +1225,12 @@ impl Loader {
                 _ => continue,
             }
             stand_up(sheet, &mut drawing);
+            // The shapes a graphic keeps from its file were laid out for
+            // the frame it has.
+            let frame = sheet.drawing_frame(&drawing);
+            if let Some(foreign) = drawing.as_smartart_mut().and_then(|art| art.foreign.as_mut()) {
+                Arc::make_mut(foreign).size = (frame.width as f32, frame.height as f32);
+            }
             // An anchor can be made to say what no file written from here
             // says (a second corner before the first, offsets larger than
             // their cells, a place beyond the last cell): the drawing is
@@ -1221,6 +1262,7 @@ impl Loader {
             let base = match (&drawing.kind, object.name.trim()) {
                 (DrawingKind::Picture(_), "") => "Picture",
                 (DrawingKind::Shape(_), "") => "Shape",
+                (DrawingKind::SmartArt(_), "") => "Diagram",
                 (_, name) => name,
             };
             let mut name = object.name.clone();
