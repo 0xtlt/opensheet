@@ -108,6 +108,10 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(invalid "Invalid", topItems "TopItems", topPercent "TopPercent", bottomItems "BottomItems", bottomPercent "BottomPercent"),
     },
     ApiEnum {
+        name: "ContentType",
+        members: members!(plain "Plain", mention "Mention"),
+    },
+    ApiEnum {
         name: "DataValidationAlertStyle",
         members: members!(stop "Stop", warning "Warning", information "Information"),
     },

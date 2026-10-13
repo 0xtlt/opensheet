@@ -12,7 +12,7 @@ use opensheet_engine::value::Value;
 use opensheet_engine::workbook::{DefinedName, Workbook};
 
 use super::util::{absolute_address, range_arg};
-use super::{ApiClass, Call, Fail, Res, Ret, class, enum_value, object, state_of, table};
+use super::{ApiClass, Call, Fail, Res, Ret, class, comment, enum_value, object, state_of, table};
 use crate::host::{Host, MAX_SHEETS, to_script};
 
 /// The identifier of a sheet as Excel writes them.
@@ -207,6 +207,22 @@ pub(super) const WORKBOOK: ApiClass = class!("Workbook", "The workbook the scrip
     getNamedItem "(name: string): NamedItem | undefined" "The defined name of the workbook spelled this way; undefined when there is none." => |h, c| name_in(h, c, NameScope::Workbook);
     addNamedItem "(name: string, reference: Range | string, comment?: string): NamedItem" "Defines a name for a range, a formula or a constant (formulas in English)." => |h, c| add_name(h, c, NameScope::Workbook, false);
     addNamedItemFormulaLocal "(name: string, formula: string, comment?: string): NamedItem" "Defines a name from a formula written in the language of the workbook." => |h, c| add_name(h, c, NameScope::Workbook, true);
+    addComment "(cellAddress: Range | string, content: ExcelScript.CommentRichContent | string, contentType?: ExcelScript.ContentType): Comment" "Starts a comment thread on a cell (an address without a sheet is read on the active one), as the user of the application. The content is text, or { richContent, mentions } to name people." => |h, c| {
+        let active = h.active_sheet();
+        comment::add(h, c, active)
+    };
+    getComments "(): Comment[]" "Every comment of the workbook." => |h, _| Ok(comment::all(h, None, true));
+    getComment "(commentId: string): Comment | undefined" "The comment with this identifier; undefined when there is none." => |h, c| comment::by_id(h, c, None);
+    getCommentByCell "(cellAddress: Range | string): Comment" "The comment of a cell. Fails when the cell has none." => |h, c| {
+        let active = h.active_sheet();
+        comment::by_cell(h, c, active)
+    };
+    getCommentByReplyId "(replyId: string): Comment" "The comment a reply belongs to. Fails when there is no such reply." => |h, c| comment::by_reply(h, c, None);
+    addNote "(cellAddress: Range | string, content: string): Note" "Puts a note on a cell (an address without a sheet is read on the active one)." => |h, c| {
+        let active = h.active_sheet();
+        comment::add_note(h, c, active)
+    };
+    getNotes "(): Note[]" "Every note of the workbook." => |h, _| Ok(comment::all(h, None, false));
     getName "(): string" "The name of the workbook's file." => |h, _| Ok(h.workbook_name.clone().into());
     getApplication "(): Application" "The application: calculation." => |_, _| Ok(Ret::object("Application", vec![]));
 });

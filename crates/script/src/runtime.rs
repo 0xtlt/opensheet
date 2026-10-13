@@ -376,7 +376,7 @@ fn frame(stack: &str) -> Option<(u32, u32)> {
 
 /// One call of a method of the model. The answer starts with a letter:
 /// `u` for undefined, `v` and JSON data, `o` and objects of the model,
-/// `e` and an error.
+/// `d` and the milliseconds of a date, `e` and an error.
 fn dispatch(host: &RefCell<Host>, class: usize, member: usize, payload: &str) -> String {
     let error = |kind: ErrorKind, message: &str| {
         let kind = if kind == ErrorKind::Unsupported { "Unsupported" } else { "Runtime" };
@@ -407,6 +407,7 @@ fn dispatch(host: &RefCell<Host>, class: usize, member: usize, payload: &str) ->
                 Ret::Nothing => "u".to_string(),
                 Ret::Value(value) => format!("v{value}"),
                 Ret::Object(value) => format!("o{value}"),
+                Ret::Date(milliseconds) => format!("d{milliseconds}"),
             }
         }
         Ok(Err(fail)) => error(fail.kind, &fail.message),

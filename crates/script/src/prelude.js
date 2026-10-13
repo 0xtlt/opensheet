@@ -48,6 +48,8 @@
         return JSON.parse(answer.slice(1));
       case 111: // o
         return revive(JSON.parse(answer.slice(1)));
+      case 100: // d
+        return new Date(Number(answer.slice(1)));
       default: {
         const error = JSON.parse(answer.slice(1));
         throw failure(error.k, error.m);

@@ -16,6 +16,7 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
   const dataBar = rule(ExcelScript.ConditionalFormatType.dataBar).getDataBar()!;
   const custom = rule(ExcelScript.ConditionalFormatType.custom).getCustom()!;
   const ruleFormat = cellValue.getCellValue()!.getFormat();
+  const comment = sheet.addComment("B2", "Why?");
   return {
     Workbook: workbook,
     Application: workbook.getApplication(),
@@ -40,6 +41,9 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     ChartLegend: chart.getLegend(),
     RangeAreas: cellValue.getRanges(),
     DataValidation: range.getDataValidation(),
+    Comment: comment,
+    CommentReply: comment.addCommentReply("Because"),
+    Note: sheet.addNote("C3", "A note"),
     ConditionalFormat: cellValue,
     CellValueConditionalFormat: cellValue.getCellValue(),
     ColorScaleConditionalFormat: rule(ExcelScript.ConditionalFormatType.colorScale).getColorScale(),

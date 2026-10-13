@@ -41,6 +41,7 @@ pub(crate) struct Host {
     pub selected: bool,
     pub logs: Vec<Log>,
     pub workbook_name: String,
+    pub user_name: String,
     pub autofits: Vec<(i64, bool, u32, u32)>,
     /// Cells were changed since formulas were calculated.
     stale: bool,
@@ -77,6 +78,7 @@ impl Host {
             selected: false,
             logs: Vec::new(),
             workbook_name: context.workbook_name.clone(),
+            user_name: context.user_name.clone(),
             autofits: Vec::new(),
             stale: false,
             restructured: false,

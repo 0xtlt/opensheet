@@ -121,6 +121,9 @@ pub struct Context {
     pub time_limit: Duration,
     /// The name of the workbook's file, for `Workbook.getName`.
     pub workbook_name: String,
+    /// The name of the user of the application: the author of the
+    /// comments and notes a script writes.
+    pub user_name: String,
 }
 
 impl Default for Context {
@@ -131,6 +134,7 @@ impl Default for Context {
             active_cell: (0, 0),
             time_limit: Duration::from_secs(120),
             workbook_name: "Book1.xlsx".to_string(),
+            user_name: "Author".to_string(),
         }
     }
 }

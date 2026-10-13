@@ -15,7 +15,7 @@ use opensheet_engine::workbook::{Content, Sheet, SheetVisibility};
 
 use super::util::{color_arg, color_text, parse_color, range_arg, resolve, table_fail};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
-use super::{ApiClass, Call, Res, Ret, chart, class, enum_value, object, state_of, table};
+use super::{ApiClass, Call, Res, Ret, chart, class, comment, enum_value, object, state_of, table};
 use crate::host::{Host, MAX_SHEETS, rect_from};
 
 /// The sheet a Worksheet object (or one of its parts) stands for.
@@ -454,6 +454,32 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
     addNamedItemFormulaLocal "(name: string, formula: string, comment?: string): NamedItem" "Defines a name of the worksheet from a formula in the language of the workbook." => |h, c| {
         let sheet = this_sheet(h, c)?;
         add_name(h, c, NameScope::Sheet(sheet), true)
+    };
+    addComment "(cellAddress: Range | string, content: ExcelScript.CommentRichContent | string, contentType?: ExcelScript.ContentType): Comment" "Starts a comment thread on a cell of the worksheet, as the user of the application." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::add(h, c, sheet)
+    };
+    getComments "(): Comment[]" "The comments of the worksheet." => |h, c| Ok(comment::all(h, Some(this_sheet(h, c)?), true));
+    getComment "(commentId: string): Comment | undefined" "The comment of the worksheet with this identifier; undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::by_id(h, c, Some(sheet))
+    };
+    getCommentByCell "(cellAddress: Range | string): Comment" "The comment of a cell of the worksheet. Fails when the cell has none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::by_cell(h, c, sheet)
+    };
+    getCommentByReplyId "(replyId: string): Comment" "The comment of the worksheet a reply belongs to. Fails when there is no such reply." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::by_reply(h, c, Some(sheet))
+    };
+    addNote "(cellAddress: Range | string, content: string): Note" "Puts a note on a cell of the worksheet." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::add_note(h, c, sheet)
+    };
+    getNotes "(): Note[]" "The notes of the worksheet." => |h, c| Ok(comment::all(h, Some(this_sheet(h, c)?), false));
+    getNote "(key: number | string): Note | undefined" "The note of a cell of the worksheet (by address), or the note at a place among its notes (0-based); undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::note_by_key(h, c, sheet)
     };
     replaceAll "(text: string, replacement: string, criteria: ExcelScript.ReplaceCriteria): number" "Replaces a text in the constants and formulas of the worksheet; returns how many cells changed." => |h, c| {
         let sheet = this_sheet(h, c)?;

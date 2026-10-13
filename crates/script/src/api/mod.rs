@@ -10,6 +10,7 @@ use crate::host::Host;
 
 mod areas;
 mod chart;
+mod comment;
 mod condfmt;
 mod enums;
 mod format;
@@ -63,6 +64,8 @@ pub(crate) enum Ret {
     /// An object of the model, several of them in an array, or `null` for
     /// what does not exist (the script sees `undefined`).
     Object(J),
+    /// A `Date`: milliseconds since 1970, UTC.
+    Date(f64),
 }
 
 impl Ret {
@@ -239,6 +242,9 @@ pub(crate) static API: &[ApiClass] = &[
     condfmt::RANGE_FONT,
     condfmt::RANGE_BORDER,
     validation::DATA_VALIDATION,
+    comment::COMMENT,
+    comment::COMMENT_REPLY,
+    comment::NOTE,
 ];
 
 pub(crate) use enums::ENUMS;

@@ -186,6 +186,36 @@ fn data_validation_rules_alerts_and_invalid_cells() {
     validation();
 }
 
+fn comments() {
+    use opensheet_engine::comment::Comment;
+    let mut wb = stock();
+    let context = Context {
+        user_name: "Ada Script".into(),
+        ..Context::default()
+    };
+    ok_with(&mut wb, include_str!("model/comments.ts"), &context);
+    let held = &wb.sheets[0].comments;
+    assert_eq!(held.keys().copied().collect::<Vec<_>>(), [(1, 1), (3, 0)]);
+    let Some(Comment::Thread(thread)) = held.get(&(1, 1)) else {
+        panic!("a thread on B2");
+    };
+    assert_eq!((thread.first.author.name.as_str(), thread.replies.len(), thread.resolved), ("Ada Script", 1, false));
+    assert_eq!(thread.replies[0].mentions.len(), 2);
+    assert_eq!(thread.replies[0].mentions[1].person.user_id, "ann@example.org");
+    let Some(Comment::Note(note)) = held.get(&(3, 0)) else {
+        panic!("a note on A4");
+    };
+    assert!(note.visible && note.frame.is_some_and(|frame| frame.size == (200.0, 80.0)));
+    // A protected sheet lets nobody edit comments unless it allows objects.
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("sheet.addNote(\"F1\", \"x\");")).message.contains("protected"));
+}
+
+#[test]
+fn comments_replies_mentions_and_notes() {
+    comments();
+}
+
 #[test]
 fn conditional_formats_of_every_kind() {
     condfmt();
@@ -253,7 +283,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments] {
         scenario();
     }
     let called = members_called();
