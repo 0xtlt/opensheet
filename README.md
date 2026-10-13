@@ -159,7 +159,7 @@ cargo run -p opensheet_io --example chart_gallery -- galerie.xlsx
 - Formes et images : un graphique n'entre pas dans un groupe ; les membres d'un groupe ne se sélectionnent pas un par un ; pas de styles d'image, d'effets artistiques, de reflet, de biseau ni de 3D ; le flou des ombres est approché ; les réglages de couleur et les effets ne sont pas imprimés.
 - WordArt : pas de transformation (texte déformé), de dégradé, de biseau ni de reflet ; une forme affiche tout son texte à la taille de son premier passage.
 - Icônes : jeu de pictogrammes propre au projet (celui d'Office n'est pas libre) ; pas de conversion en forme.
-- SmartArt : le texte se modifie dans le volet Texte, pas dans les formes ; pas d'onglet Format SmartArt.
+- SmartArt : le texte se modifie dans le volet Texte, pas dans les formes ; pas d'onglet Format SmartArt. Un SmartArt créé ou modifié dans OpenSheet s'ouvre dans Excel comme un groupe de formes d'aspect identique (OpenSheet, lui, le relit comme un SmartArt) ; un SmartArt venu d'Excel et non modifié est réécrit tel quel.
 - Équations : pas de curseur dans l'équation construite, la saisie se fait au format linéaire ; à l'impression, le texte linéaire.
 - Dessin : l'encre est enregistrée sous forme de formes libres (Excel la rouvre comme des formes) ; elle n'est pas imprimée et reste au-dessus des autres objets.
 - Préférences : les volets absents d'OpenSheet sont grisés (correction automatique, listes personnalisées, compatibilité…) ; pas de style de référence L1C1.
