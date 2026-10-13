@@ -29,6 +29,9 @@ mod pane;
 mod sheet;
 mod styles;
 
+#[cfg(test)]
+mod ui_tests;
+
 use super::{CellEdit, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse, slicers};
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
 use crate::grid::{GridLayout, cell_font, pt_to_px};
