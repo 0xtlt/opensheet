@@ -167,8 +167,15 @@ pub(super) const WORKBOOK: ApiClass = class!("Workbook", "The workbook the scrip
     getWorksheet "(key: string): Worksheet | undefined" "The worksheet with this name or ID; undefined when there is none." => |h, c| {
         Ok(Ret::maybe(find_sheet(h, c.str(0)?).map(|i| h.worksheet(i))))
     };
-    getFirstWorksheet "(visibleOnly?: boolean): Worksheet" "The first worksheet." => |h, _| Ok(Ret::Object(h.worksheet(0)));
-    getLastWorksheet "(visibleOnly?: boolean): Worksheet" "The last worksheet." => |h, _| Ok(Ret::Object(h.worksheet(h.wb.sheets.len() - 1)));
+    getFirstWorksheet "(visibleOnly?: boolean): Worksheet" "The first worksheet (the first visible one on request)." => |h, c| {
+        let first = if c.opt_bool(0)?.unwrap_or(false) { h.wb.nearest_visible_sheet(0) } else { 0 };
+        Ok(Ret::Object(h.worksheet(first)))
+    };
+    getLastWorksheet "(visibleOnly?: boolean): Worksheet" "The last worksheet (the last visible one on request)." => |h, c| {
+        let count = h.wb.sheets.len();
+        let last = if c.opt_bool(0)?.unwrap_or(false) { h.wb.next_visible_sheet(count, false).unwrap_or(count - 1) } else { count - 1 };
+        Ok(Ret::Object(h.worksheet(last)))
+    };
     addWorksheet "(name?: string): Worksheet" "Adds a worksheet after the others. It is not activated." => |h, c| {
         h.permit(c, &Action::InsertSheet)?;
         let name = c.opt_str(0)?;

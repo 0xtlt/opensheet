@@ -11,7 +11,7 @@ use opensheet_engine::names::NameScope;
 use opensheet_engine::protect::Action;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::table::TableOption;
-use opensheet_engine::workbook::{Content, Sheet};
+use opensheet_engine::workbook::{Content, Sheet, SheetVisibility};
 
 use super::util::{color_arg, color_text, parse_color, range_arg, resolve, table_fail};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
@@ -279,8 +279,11 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         let values_only = c.opt_bool(0)?.unwrap_or(false);
         Ok(Ret::maybe(used_rect(h, sheet, values_only).map(|rect| h.range(sheet, rect))))
     };
-    activate "(): void" "Brings the worksheet in front." => |h, c| {
+    activate "(): void" "Brings the worksheet in front. A hidden worksheet cannot be." => |h, c| {
         let sheet = this_sheet(h, c)?;
+        if !h.wb.sheets[sheet].is_visible() {
+            return Err(c.fail("A hidden worksheet cannot be activated."));
+        }
         h.activate(sheet);
         Ok(Ret::Nothing)
     };
@@ -336,24 +339,45 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         }
         Ok(Ret::Nothing)
     };
-    getNext "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet after this one; undefined for the last." => |h, c| {
+    getNext "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet after this one (the next visible one on request); undefined for the last." => |h, c| {
         let sheet = this_sheet(h, c)?;
-        Ok(Ret::maybe((sheet + 1 < h.wb.sheets.len()).then(|| h.worksheet(sheet + 1))))
+        let next = if c.opt_bool(0)?.unwrap_or(false) {
+            h.wb.next_visible_sheet(sheet, true)
+        } else {
+            (sheet + 1 < h.wb.sheets.len()).then_some(sheet + 1)
+        };
+        Ok(Ret::maybe(next.map(|i| h.worksheet(i))))
     };
-    getPrevious "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet before this one; undefined for the first." => |h, c| {
+    getPrevious "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet before this one (the previous visible one on request); undefined for the first." => |h, c| {
         let sheet = this_sheet(h, c)?;
-        Ok(Ret::maybe(sheet.checked_sub(1).map(|i| h.worksheet(i))))
+        let previous = if c.opt_bool(0)?.unwrap_or(false) { h.wb.next_visible_sheet(sheet, false) } else { sheet.checked_sub(1) };
+        Ok(Ret::maybe(previous.map(|i| h.worksheet(i))))
     };
-    getVisibility "(): ExcelScript.SheetVisibility" "Visible: OpenSheet has no hidden worksheets." => |h, c| {
-        this_sheet(h, c)?;
-        Ok("Visible".into())
+    getVisibility "(): ExcelScript.SheetVisibility" "Visible, Hidden, or VeryHidden for a worksheet Unhide… does not list." => |h, c| {
+        Ok(match h.wb.sheets[this_sheet(h, c)?].visibility {
+            SheetVisibility::Visible => "Visible",
+            SheetVisibility::Hidden => "Hidden",
+            SheetVisibility::VeryHidden => "VeryHidden",
+        }.into())
     };
-    setVisibility "(visibility: ExcelScript.SheetVisibility): void" "Accepts Visible only: hiding a worksheet is not supported in OpenSheet." => |h, c| {
-        this_sheet(h, c)?;
-        match enum_value(c, 0, "SheetVisibility")?.ok_or_else(|| c.invalid())? {
-            "Visible" => Ok(Ret::Nothing),
-            other => Err(c.unsupported(format!("Worksheet.setVisibility({other}): hiding a worksheet"))),
+    setVisibility "(visibility: ExcelScript.SheetVisibility): void" "Hides the worksheet (Hidden, or VeryHidden to keep it out of Unhide…) or shows it again. The last visible worksheet cannot be hidden." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        let visibility = match enum_value(c, 0, "SheetVisibility")?.ok_or_else(|| c.invalid())? {
+            "Hidden" => SheetVisibility::Hidden,
+            "VeryHidden" => SheetVisibility::VeryHidden,
+            _ => SheetVisibility::Visible,
+        };
+        if h.wb.sheets[sheet].visibility == visibility {
+            return Ok(Ret::Nothing);
         }
+        h.permit(c, if visibility == SheetVisibility::Visible { &Action::UnhideSheet } else { &Action::HideSheet })?;
+        if !h.wb.set_sheet_visibility(sheet, visibility) {
+            return Err(c.fail("A workbook must contain at least one visible worksheet."));
+        }
+        if visibility != SheetVisibility::Visible {
+            h.sheet_hidden(sheet);
+        }
+        Ok(Ret::Nothing)
     };
     getTabColor "(): string" "The colour of the tab as #RRGGBB; empty text for none." => |h, c| {
         let sheet = this_sheet(h, c)?;

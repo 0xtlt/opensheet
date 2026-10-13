@@ -40,6 +40,16 @@ fn worksheets() {
     assert_eq!(out.activated, Some(3));
     assert!(!wb.sheets[3].show_gridlines && !wb.sheets[3].show_headers);
     assert_eq!(wb.sheets[3].tab_color.map(|c| c.value()), Some(0x00FF00));
+    use opensheet_engine::workbook::SheetVisibility::{Hidden, Visible};
+    assert_eq!(wb.sheets.iter().map(|s| s.visibility).collect::<Vec<_>>(), [Visible, Visible, Visible, Visible, Visible, Hidden]);
+    // A script that fails after hiding sheets leaves them as they were;
+    // the last visible sheet stays; a protected structure refuses.
+    let all = "for (const s of workbook.getWorksheets()) { s.setVisibility(ExcelScript.SheetVisibility.hidden); }";
+    assert!(fails(&mut wb, &script(all)).message.contains("at least one visible worksheet"));
+    wb.protect_workbook(true, false, "");
+    let show = "workbook.getLastWorksheet().setVisibility(ExcelScript.SheetVisibility.visible);";
+    assert!(fails(&mut wb, &script(show)).message.contains("protected"));
+    ok_body(&mut wb, "workbook.getLastWorksheet().setVisibility(ExcelScript.SheetVisibility.hidden);");
 }
 
 fn names() {

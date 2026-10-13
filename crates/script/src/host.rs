@@ -129,14 +129,24 @@ impl Host {
     pub fn sheet_deleted(&mut self, index: usize) {
         let id = self.sheet_ids.remove(index);
         if id == self.active {
-            // As in Excel, the next sheet comes in front (the one before
-            // for the last).
-            self.active = self.sheet_id(index.min(self.sheet_ids.len() - 1));
+            // As in Excel, the next sheet with a tab comes in front (the
+            // one before for the last).
+            let next = self.wb.nearest_visible_sheet(index.min(self.sheet_ids.len() - 1));
+            self.active = self.sheet_id(next);
             self.selection = Rect::cell(0, 0);
             self.active_cell = (0, 0);
             self.activated = true;
         }
         self.restructured();
+    }
+
+    /// A sheet was hidden: when it was the one in front, the nearest
+    /// sheet with a tab takes its place, as when it is hidden by hand.
+    pub fn sheet_hidden(&mut self, index: usize) {
+        if self.sheet_id(index) == self.active {
+            let next = self.wb.nearest_visible_sheet(index);
+            self.activate(next);
+        }
     }
 
     pub fn sheet_moved(&mut self, from: usize, to: usize) {
