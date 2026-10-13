@@ -785,6 +785,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
     let plot_border = p.stroke(&chart.plot_area.border, false, GRIDLINE, 0.75);
     p.tag(ChartElement::PlotArea);
     p.area(ChartElement::PlotArea, geo.rect());
+    p.rect_effects(px0, py0, px1, py1, &chart.plot_area.effects);
     p.rect_styled(px0, py0, px1, py1, plot_fill, plot_border);
 
     // A line across the plot at fraction `f` of an axis that runs up

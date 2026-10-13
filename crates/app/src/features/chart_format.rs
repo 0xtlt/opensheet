@@ -21,7 +21,8 @@ use crate::theme::{self, c};
 use crate::widgets::{ColorGrid, TextField};
 use fields::{Field, fill_of, line_of, line_of_mut, set_fill};
 use gpui::{AnyElement, Context, Entity, Focusable, Render, Subscription, WeakEntity, Window, div, prelude::*, px};
-use opensheet_engine::chart::Fill;
+use opensheet_engine::chart::{Chart, Fill};
+use opensheet_engine::drawing::{Effects, Glow, ShadowPreset};
 use opensheet_engine::chart_layout::ChartElement;
 use opensheet_engine::style::Color;
 
@@ -103,8 +104,13 @@ impl Command for Cmd {
                 let anchor = app.command_anchor;
                 charts::open_ribbon_view(app, anchor, view, window, cx);
             }
-            // Effects and the outline of text are not in the chart model.
-            Cmd::ShapeEffects | Cmd::TextOutline | Cmd::TextEffects => app.not_implemented(self.label(), cx),
+            Cmd::ShapeEffects => {
+                let entries = effects_menu(app);
+                app.open_command_menu(entries, 220.0, window, cx);
+            }
+            // The outline and the effects of text are not in the chart
+            // model: the commands are shown greyed out.
+            Cmd::TextOutline | Cmd::TextEffects => {}
         }
     }
 
@@ -116,10 +122,86 @@ impl Command for Cmd {
             Cmd::ShapeFill => fill_of(chart, app.chart_element()).is_some(),
             Cmd::ShapeOutline => line_of(chart, app.chart_element()).is_some(),
             Cmd::TextFill => text_of(chart, app.chart_element()).is_some(),
-            Cmd::ShapeEffects | Cmd::TextOutline | Cmd::TextEffects => false,
+            Cmd::ShapeEffects => effects_of(chart, app.chart_element()).is_some(),
+            Cmd::TextOutline | Cmd::TextEffects => false,
             _ => true,
         }
     }
+}
+
+/// The effects of an element that has some: the chart area and the plot
+/// area, the two shapes of a chart whose format the model keeps.
+fn effects_of(chart: &Chart, element: ChartElement) -> Option<Effects> {
+    match element {
+        ChartElement::ChartArea => Some(chart.chart_area.effects),
+        ChartElement::PlotArea => Some(chart.plot_area.effects),
+        _ => None,
+    }
+}
+
+/// Change the effects of the selected element, as one undo step.
+fn set_effects(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Effects) + 'static) {
+    let element = app.chart_element();
+    app.edit_chart(label, cx, move |chart| match element {
+        ChartElement::ChartArea => change(&mut chart.chart_area.effects),
+        ChartElement::PlotArea => change(&mut chart.plot_area.effects),
+        _ => {}
+    });
+}
+
+/// Radii of the Glow variations, points: those of Excel's gallery.
+const GLOWS: [f32; 4] = [5.0, 8.0, 11.0, 18.0];
+
+/// The menu of Shape Effects: the shadows and the glows Excel offers,
+/// each ticked when the selected element has it. Soft edges, bevels and
+/// reflections are not drawn on a chart and are greyed out.
+fn effects_menu(app: &ExcelApp) -> Vec<MenuEntry> {
+    let current = app.selected_chart().and_then(|chart| effects_of(chart, app.chart_element())).unwrap_or_default();
+    let shadow_label = t("Shadow", "Ombre");
+    let mut shadow = vec![
+        MenuEntry::new(t("No Shadow", "Aucune ombre"), move |app, _, cx| set_effects(app, shadow_label, cx, |effects| effects.shadow = None))
+            .checked(current.shadow.is_none()),
+        MenuEntry::separator(),
+    ];
+    for preset in ShadowPreset::ALL {
+        shadow.push(
+            MenuEntry::new(preset.name(app.wb.locale), move |app, _, cx| {
+                set_effects(app, shadow_label, cx, move |effects| effects.shadow = Some(preset.shadow()));
+            })
+            .checked(current.shadow == Some(preset.shadow())),
+        );
+    }
+    let glow_label = t("Glow", "Lumière");
+    let mut glow = vec![
+        MenuEntry::new(t("No Glow", "Aucun éclat"), move |app, _, cx| set_effects(app, glow_label, cx, |effects| effects.glow = None))
+            .checked(current.glow.is_none()),
+        MenuEntry::separator(),
+    ];
+    for radius in GLOWS {
+        let colours = (1..=6)
+            .map(|n| {
+                let made = Glow {
+                    color: app.wb.theme().accent(n, 0.0),
+                    transparency: 0.6,
+                    radius,
+                };
+                MenuEntry::new(format!("{} {n}", t("Accent", "Accentuation")), move |app, _, cx| {
+                    set_effects(app, glow_label, cx, move |effects| effects.glow = Some(made));
+                })
+                .checked(current.glow == Some(made))
+            })
+            .collect();
+        glow.push(MenuEntry::submenu(format!("{radius} pt"), colours));
+    }
+    let off = |label: &'static str| MenuEntry::new(label, |_, _, _| {}).disabled(true);
+    vec![
+        MenuEntry::submenu(shadow_label, shadow),
+        off(t_ctx("effect", "Reflection", "Réflexion")),
+        MenuEntry::submenu(glow_label, glow),
+        off(t("Soft Edges", "Bordures adoucies")),
+        off(t("Bevel", "Biseau")),
+        off(t("3-D Rotation", "Rotation 3D")),
+    ]
 }
 
 /// The elements of the selected chart, for the Chart Elements box.
