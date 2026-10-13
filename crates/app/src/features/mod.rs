@@ -1099,6 +1099,14 @@ pub trait Feature: Sync + 'static {
     /// one was deselected (`None`).
     fn object_selected(&self, _app: &mut ExcelApp, _id: Option<u32>, _cx: &mut Cx) {}
 
+    /// Tab (or Shift+Tab, `forward` false) with the object selected: an
+    /// object that holds others (a group one of whose members is
+    /// selected) goes to the next of them and answers true; else the
+    /// next object of the sheet is selected.
+    fn object_cycle(&self, _app: &mut ExcelApp, _id: u32, _forward: bool, _cx: &mut Cx) -> bool {
+        false
+    }
+
     /// Whether a point of the grid element is on an object that does not
     /// fill its frame (a line, a rotated shape, a shape without fill).
     /// `None`: anywhere in the frame.

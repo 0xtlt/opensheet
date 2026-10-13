@@ -1,9 +1,22 @@
 //! SmartArt on the sheet: a graphic is laid out by the engine as a list of
 //! shapes (`SmartArt::pieces`), which are drawn here like any shape.
+//!
+//! An entry of the outline is typed in two places that show the same
+//! thing: its line of the Text Pane, and its shape on the sheet (a click
+//! on a shape of the selected graphic chooses its entry, a second click
+//! or a key types in it). Both write to the graphic as they are typed
+//! in, so each follows the other and the graphic is laid out again at
+//! every key.
+//!
+//! The "Format" tab works on the shapes that are chosen in the graphic
+//! (Shift or ⌘ and a click choose several; all of them when none is):
+//! its commands are those of Shape Format, which are handed a stand-in
+//! for each shape and whose changes are kept with the entry of the shape
+//! (`format_nodes`).
 
 use super::geometry::{self, Placed};
 use super::paint::{self, Brush};
-use super::{Cmd, Drawings, SMARTART_TAB, selected, tabs};
+use super::{Cmd, Drawings, SMARTART_TAB, TextStart, edit_shape, selected, tabs};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::features::{Command, Cx, Intent, Painter, Zone, ZoneEvent, ZoneResponse, object_id};
 use crate::grid::{Draw, FontResolver, Layer};
@@ -13,13 +26,15 @@ use crate::shell::Modal;
 use crate::text_input::{InputEvent, NavKey, TextInput};
 use crate::theme::{self, c, ca};
 use crate::view::tooltip;
+use crate::widgets::text_area::{AreaEvent, OutlineKey, TextArea};
 use crate::widgets::{self, ListBox};
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, Focusable, MouseButton, Pixels, SharedString, Subscription, WeakEntity, Window, canvas, div,
-    prelude::*, px,
+    AnyElement, App, Bounds, Context, Entity, EntityInputHandler, Focusable, MouseButton, Pixels, SharedString, Subscription, WeakEntity, Window,
+    canvas, div, prelude::*, px,
 };
 use opensheet_engine::Locale;
-use opensheet_engine::drawing::Drawing;
+use opensheet_engine::drawing::{Drawing, ShapeTool};
+use opensheet_engine::wordart::TextEffects;
 use opensheet_engine::smartart::{Category, ColorScheme, DEFAULT_SIZE, Layout, Line, Piece, QuickStyle, SmartArt, placeholder};
 use opensheet_engine::theme::Theme;
 use std::sync::Arc;
@@ -42,13 +57,23 @@ pub(super) fn placed_piece(piece: &Piece, placed: &Placed, natural: (f32, f32)) 
 /// The items that draw a graphic in a frame. A graphic is never turned:
 /// its frame stands as its cells do. The shapes come first, then what is
 /// written in them, so that shapes that overlap hide no text.
-pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32, f32), brush: &Brush, fonts: Option<&FontResolver>, locale: &Locale, out: &mut Vec<Draw>) {
+/// The text of the shape that shows entry `typed` is left out: the field
+/// it is being typed in lies over it.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32, f32), brush: &Brush, fonts: Option<&FontResolver>, locale: &Locale, typed: Option<usize>, out: &mut Vec<Draw>) {
     let pieces = art.pieces(theme, natural.0, natural.1);
     for piece in &pieces {
         let at = placed_piece(piece, placed, natural);
         let size = (piece.width, piece.height);
         let mut shape = piece.shape.clone();
         shape.text.clear();
+        // The shadow and the glow the Format tab gave the shape lie
+        // under it.
+        if !piece.effects.is_none() {
+            let mut stand_in = Drawing::shape(shape.clone(), size);
+            stand_in.effects = piece.effects;
+            paint::draw_effects(&stand_in, &shape, &at, size, brush, out);
+        }
         // A fill that lets what is under it show is painted here.
         if let (Some(fill), true) = (shape.fill, piece.opacity < 1.0) {
             for line in geometry::flatten(&shape.path(size.0, size.1), &at).iter().filter(|line| line.closed) {
@@ -61,7 +86,8 @@ pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32
     let Some(fonts) = fonts else {
         return;
     };
-    for piece in pieces.iter().filter(|piece| piece.node.is_some()) {
+    let typed = typed.and_then(|line| piece_of(&pieces, line)).and_then(|piece| piece.node);
+    for piece in pieces.iter().filter(|piece| piece.node.is_some() && piece.node != typed) {
         let at = placed_piece(piece, placed, natural);
         let mut shape = piece.shape.clone();
         (shape.fill, shape.outline) = (None, None);
@@ -82,9 +108,29 @@ pub(super) struct SmartUi {
     /// outline). Set by a click on a shape of the selected graphic and by
     /// the line being typed in the Text Pane.
     node: Option<(u32, usize)>,
+    /// The other entries chosen with it (Shift or ⌘ and a click), for
+    /// the Format tab.
+    also: Vec<usize>,
     /// Text was typed in the Text Pane and is not an undo step yet.
     typing: bool,
     pane: Option<Entity<TextPane>>,
+    /// The entry being typed in its shape.
+    edit: Option<NodeEdit>,
+}
+
+/// An entry of a graphic being typed in the shape that shows it.
+struct NodeEdit {
+    id: u32,
+    line: usize,
+    area: Entity<TextArea>,
+    _subscription: Subscription,
+}
+
+/// The shape that shows a line of the outline: its own, or the one that
+/// lists it under the entry it belongs to (the pieces of a graphic each
+/// name the first line they show).
+pub(super) fn piece_of(pieces: &[Piece], line: usize) -> Option<&Piece> {
+    pieces.iter().filter(|piece| piece.node.is_some_and(|first| first <= line)).max_by_key(|piece| piece.node)
 }
 
 impl SmartUi {
@@ -92,6 +138,7 @@ impl SmartUi {
     #[cfg(test)]
     pub(super) fn set_node(&mut self, id: u32, line: usize) {
         self.node = Some((id, line));
+        self.also.clear();
     }
 }
 
@@ -114,6 +161,17 @@ pub(super) fn current_line(app: &ExcelApp) -> Option<usize> {
     let (id, art) = selected_art(app)?;
     let (of, line) = app.ext::<SmartUi>()?.node?;
     (of == id && line < art.outline().len()).then_some(line)
+}
+
+/// The lines of the outline the Format tab works on: the entry that is
+/// chosen and those chosen with it.
+pub(super) fn chosen_lines(app: &ExcelApp) -> Vec<usize> {
+    let Some(line) = current_line(app) else {
+        return Vec::new();
+    };
+    let mut lines = vec![line];
+    lines.extend(app.ext::<SmartUi>().map(|ui| ui.also.clone()).unwrap_or_default());
+    lines
 }
 
 /// What was typed in the Text Pane becomes one undo step.
@@ -140,7 +198,14 @@ pub(super) fn change(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl 
     let Some(mut art) = app.wb.drawing(sheet, id).and_then(Drawing::as_smartart).cloned() else {
         return false;
     };
+    let levels = |art: &SmartArt| art.outline().into_iter().map(|(level, _)| level).collect::<Vec<_>>();
+    let before = levels(&art);
     let changed = change(&mut art, &mut line);
+    // The lines are not what they were: only the entry the command
+    // worked on stays chosen.
+    if levels(&art) != before {
+        app.ext_mut::<SmartUi>().also.clear();
+    }
     if changed {
         app.wb.update_drawing(sheet, id, |drawing| {
             if let Some(stored) = drawing.as_smartart_mut() {
@@ -177,6 +242,300 @@ fn type_text(app: &mut ExcelApp, id: u32, line: usize, text: &str, cx: &mut Cx) 
     ui.typing |= differs;
     ui.node = Some((id, line));
     cx.notify();
+}
+
+// ---- typing in a shape ---------------------------------------------------
+
+/// The entry being typed in its shape: (graphic, line).
+pub(super) fn editing(app: &ExcelApp) -> Option<(u32, usize)> {
+    app.ext::<SmartUi>()?.edit.as_ref().map(|edit| (edit.id, edit.line))
+}
+
+/// The line of a graphic whose text the field over its shape shows.
+pub(super) fn typed_line(app: &ExcelApp, id: u32) -> Option<usize> {
+    editing(app).filter(|(of, _)| *of == id).map(|(_, line)| line)
+}
+
+/// Start typing an entry of a graphic in its shape, with the editor
+/// text boxes use. False when the entry is not there or the sheet's
+/// protection holds the graphic.
+pub(super) fn begin_edit(app: &mut ExcelApp, id: u32, line: usize, start: TextStart, window: &mut Window, cx: &mut Cx) -> bool {
+    let text = app
+        .wb
+        .drawing(app.sheet, id)
+        .and_then(Drawing::as_smartart)
+        .filter(|art| art.foreign.is_none())
+        .and_then(|art| art.outline().get(line).map(|(_, text)| text.clone()));
+    let Some(text) = text else {
+        return false;
+    };
+    if !app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
+        return false;
+    }
+    end_edit(app, cx);
+    if !app.is_object_selected(object_id(&Drawings, id)) {
+        app.select_object(Some(object_id(&Drawings, id)), cx);
+    }
+    let area = cx.new(|cx| {
+        let mut area = TextArea::new(cx);
+        area.outline_keys = true;
+        area.set_text(text, cx);
+        area
+    });
+    area.update(cx, |area, cx| match start {
+        TextStart::Typed(typed) => area.replace_text_in_range(None, &typed, window, cx),
+        TextStart::At(position) => area.caret_at_next_paint(position),
+        TextStart::All => area.select_all_text(cx),
+        TextStart::End => {}
+    });
+    let subscription = cx.subscribe_in(&area, window, on_area);
+    window.focus(&area.read(cx).focus_handle(cx));
+    let ui = app.ext_mut::<SmartUi>();
+    ui.node = Some((id, line));
+    ui.edit = Some(NodeEdit {
+        id,
+        line,
+        area: area.clone(),
+        _subscription: subscription,
+    });
+    // What was typed to start with is in the graphic at once.
+    let typed = area.read(cx).text().to_string();
+    type_text(app, id, line, &typed, cx);
+    cx.notify();
+    true
+}
+
+/// Stop typing in a shape: what was typed is one undo step. False when
+/// nothing was being typed.
+pub(super) fn end_edit(app: &mut ExcelApp, cx: &mut Cx) -> bool {
+    let ended = app.ext_mut::<SmartUi>().edit.take().is_some();
+    flush(app, cx);
+    if ended {
+        cx.notify();
+    }
+    ended
+}
+
+/// The field follows the entry the commands act on after the outline
+/// changed under it (a shape was added, the entry went up or down).
+fn retarget(app: &mut ExcelApp, cx: &mut Cx) {
+    let Some((id, _)) = editing(app) else {
+        return;
+    };
+    let line = app.ext::<SmartUi>().and_then(|ui| ui.node).filter(|(of, _)| *of == id).map(|(_, line)| line);
+    let text = line.and_then(|line| {
+        let art = app.wb.drawing(app.sheet, id).and_then(Drawing::as_smartart)?;
+        art.outline().get(line).map(|(_, text)| text.clone())
+    });
+    let (Some(line), Some(text)) = (line, text) else {
+        app.ext_mut::<SmartUi>().edit = None;
+        return;
+    };
+    if let Some(edit) = app.ext_mut::<SmartUi>().edit.as_mut() {
+        edit.line = line;
+        let area = edit.area.clone();
+        if area.read(cx).text() != text {
+            area.update(cx, |area, cx| area.set_text(text, cx));
+        }
+    }
+    cx.notify();
+}
+
+/// What the field over a shape reports: its text as it changes, and the
+/// keys that work on the outline.
+fn on_area(app: &mut ExcelApp, area: &Entity<TextArea>, event: &AreaEvent, window: &mut Window, cx: &mut Cx) {
+    let Some((id, line)) = editing(app) else {
+        return;
+    };
+    match event {
+        AreaEvent::Changed => {
+            // An entry is one line, here as in the Text Pane.
+            let mut text = area.read(cx).text().to_string();
+            if text.contains(['\n', '\r']) {
+                text.retain(|ch| !matches!(ch, '\n' | '\r'));
+                area.update(cx, |area, cx| area.set_text(text.clone(), cx));
+            }
+            type_text(app, id, line, &text, cx);
+        }
+        // Escape leaves the text; its shape stays chosen.
+        AreaEvent::Escape => {
+            end_edit(app, cx);
+            window.focus(&app.grid_focus);
+        }
+        AreaEvent::Blurred => {
+            end_edit(app, cx);
+        }
+        // Return: a new shape after this one, which takes the caret.
+        AreaEvent::Outline(OutlineKey::Enter) => {
+            change(app, t("Add Shape", "Ajouter une forme"), cx, |art, at| {
+                *at = art.add_after(line).or(*at);
+                true
+            });
+            retarget(app, cx);
+        }
+        // Tab and Shift+Tab: one level down or up, where the entry can go.
+        AreaEvent::Outline(key) => {
+            let cmd = if *key == OutlineKey::ShiftTab { Cmd::SmartPromote } else { Cmd::SmartDemote };
+            restructure(app, cmd, cx);
+            retarget(app, cx);
+        }
+        _ => {}
+    }
+}
+
+/// Typing with a graphic selected goes to the entry that is chosen in
+/// it. True when the selected object is a graphic (the keys are its own,
+/// whether an entry takes them or not).
+pub(super) fn typed(app: &mut ExcelApp, id: u32, text: &str, window: &mut Window, cx: &mut Cx) -> bool {
+    if app.wb.drawing(app.sheet, id).and_then(Drawing::as_smartart).is_none() {
+        return false;
+    }
+    if let Some(line) = current_line(app) {
+        begin_edit(app, id, line, TextStart::Typed(text.to_string()), window, cx);
+    }
+    true
+}
+
+/// Escape with an entry chosen: the graphic as a whole is selected
+/// again. False when no entry was chosen.
+pub(super) fn leave_node(app: &mut ExcelApp, cx: &mut Cx) -> bool {
+    if current_line(app).is_none() {
+        return false;
+    }
+    let ui = app.ext_mut::<SmartUi>();
+    ui.node = None;
+    ui.also.clear();
+    cx.notify();
+    true
+}
+
+/// The field in which an entry is typed, over its shape.
+pub(super) fn overlay(app: &ExcelApp, layout: &crate::grid::GridLayout, cx: &mut Cx) -> Option<AnyElement> {
+    let edit = app.ext::<SmartUi>()?.edit.as_ref()?;
+    let sheet = &app.wb.sheets[app.sheet];
+    let drawing = app.wb.drawing(app.sheet, edit.id)?;
+    let art = drawing.as_smartart()?;
+    let frame = sheet.drawing_frame(drawing);
+    let natural = (frame.width as f32, frame.height as f32);
+    let pieces = art.pieces(app.wb.theme(), natural.0, natural.1);
+    let piece = piece_of(&pieces, edit.line)?;
+    // In the pane that shows the middle of the shape.
+    paint::panes(layout).into_iter().find_map(|pane| {
+        let whole = paint::placed(layout, sheet, drawing, &pane);
+        let at = placed_piece(piece, &Placed::plain(whole.x0, whole.y0, whole.x1, whole.y1), natural);
+        let (x, y) = at.centre();
+        pane.contains(x, y).then(|| super::area_overlay(app, &edit.area, &piece.shape, &at, (piece.width, piece.height), &pane, layout.zoom, cx))
+    })
+}
+
+// ---- the look of one shape -----------------------------------------------
+
+/// Whether the shapes of the selected graphic take a look of their own
+/// (those of a graphic shown as its file had it do not).
+pub(super) fn can_format(app: &ExcelApp) -> bool {
+    selected_art(app).is_some_and(|(_, art)| art.foreign.is_none())
+}
+
+/// Run a command of Shape Format on the chosen shapes of the selected
+/// graphic (on all of them when none is chosen), as one undo step:
+/// `change` is given a shape standing for each, and what it changed is
+/// kept with the entry. `None` when the selection is not a graphic; else
+/// whether anything changed.
+pub(super) fn format_nodes(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: &dyn Fn(&mut Drawing)) -> Option<bool> {
+    let (id, art) = selected_art(app)?;
+    if art.foreign.is_some() {
+        return Some(false);
+    }
+    let frame = app.wb.drawing_frame(app.sheet, id)?;
+    let theme = app.wb.theme_arc();
+    let chosen = chosen_lines(app);
+    Some(self::change(app, label, cx, |art, _| {
+        let pieces = art.pieces(&theme, frame.width as f32, frame.height as f32);
+        // An entry listed in the shape of another is formatted with it.
+        let mut lines: Vec<usize> = if chosen.is_empty() {
+            pieces.iter().filter_map(|piece| piece.node).collect()
+        } else {
+            chosen.iter().filter_map(|line| piece_of(&pieces, *line)?.node).collect()
+        };
+        lines.sort_unstable();
+        lines.dedup();
+        let mut changed = false;
+        for line in lines {
+            let Some(piece) = pieces.iter().find(|piece| piece.node == Some(line)) else {
+                continue;
+            };
+            let mut stand_in = Drawing::shape(piece.shape.clone(), (piece.width, piece.height));
+            stand_in.effects = piece.effects;
+            let effects = stand_in.effects;
+            change(&mut stand_in);
+            let Some(now) = stand_in.as_shape() else {
+                continue;
+            };
+            let was = &piece.shape;
+            changed |= art.set_format(line, |format| {
+                if now.preset != was.preset {
+                    format.preset = Some(now.preset);
+                }
+                if now.fill != was.fill {
+                    format.fill = Some(now.fill);
+                }
+                if now.outline != was.outline {
+                    format.outline = Some(now.outline);
+                }
+                if stand_in.effects != effects {
+                    format.effects = Some(stand_in.effects);
+                }
+                if let Some(color) = now.font.color.filter(|color| Some(*color) != was.font.color) {
+                    format.text_color = Some(color);
+                }
+                // Of what letters can wear, a graphic keeps their
+                // outline and whether they are filled.
+                if (now.effects.hollow, now.effects.outline) != (was.effects.hollow, was.effects.outline) {
+                    format.text_effects = Some(TextEffects {
+                        hollow: now.effects.hollow,
+                        outline: now.effects.outline,
+                        ..TextEffects::default()
+                    });
+                }
+            });
+        }
+        changed
+    }))
+}
+
+/// "Larger" and "Smaller": the chosen shapes, one step.
+fn resize(app: &mut ExcelApp, cmd: Cmd, cx: &mut Cx) -> bool {
+    let larger = cmd == Cmd::SmartLarger;
+    let chosen = chosen_lines(app);
+    let Some((id, _)) = selected_art(app).filter(|_| !chosen.is_empty()) else {
+        return false;
+    };
+    let Some(frame) = app.wb.drawing_frame(app.sheet, id) else {
+        return false;
+    };
+    let theme = app.wb.theme_arc();
+    change(app, cmd.label(), cx, |art, _| {
+        let pieces = art.pieces(&theme, frame.width as f32, frame.height as f32);
+        let mut lines: Vec<usize> = chosen.iter().filter_map(|line| piece_of(&pieces, *line)?.node).collect();
+        lines.sort_unstable();
+        lines.dedup();
+        lines.into_iter().fold(false, |changed, line| art.set_format(line, |format| format.resize(larger)) || changed)
+    })
+}
+
+/// "Change Shape": the shapes of the gallery that have an inside.
+fn open_change_shape(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    let label = Cmd::SmartChangeShape.label();
+    let entries = ShapeTool::ALL
+        .into_iter()
+        .filter(|tool| !tool.preset().is_line() && *tool != ShapeTool::TextBox)
+        .map(|tool| {
+            MenuEntry::new(tabs::tool_name(tool, app.wb.locale), move |app, _, cx| {
+                edit_shape(app, label, cx, |shape| shape.preset = tool.preset());
+            })
+        })
+        .collect();
+    app.open_command_menu(entries, 240.0, window, cx);
 }
 
 /// The line a new shape is added next to when none is chosen: the last
@@ -247,6 +606,8 @@ pub(super) fn can(app: &ExcelApp, cmd: Cmd) -> bool {
         Cmd::SmartPromote => line.is_some_and(|at| lines[at].0 > 0),
         Cmd::SmartDemote => line.is_some_and(|at| at > 0 && lines[at - 1].0 >= lines[at].0),
         Cmd::SmartMoveUp | Cmd::SmartMoveDown => line.is_some_and(|at| art.clone().move_entry(at, cmd == Cmd::SmartMoveUp).is_some()),
+        // A shape is made larger or smaller by itself, not all at once.
+        Cmd::SmartLarger | Cmd::SmartSmaller => line.is_some(),
         _ => true,
     }
 }
@@ -297,6 +658,7 @@ pub(super) fn convert(app: &mut ExcelApp, cx: &mut Cx) -> bool {
         drawing.offset = (frame.x as f32 + piece.x, frame.y as f32 + piece.y);
         drawing.rotation = piece.rotation;
         drawing.flip_h = piece.flip_h;
+        drawing.effects = piece.effects;
         // A line keeps its direction: it is level or upright here.
         last = app.wb.add_drawing(sheet, drawing).or(last);
     }
@@ -317,42 +679,80 @@ pub(super) struct NodeZone {
 /// The zones of the entries of the selected graphic, and the frame around
 /// the one that is chosen.
 pub(super) fn paint_selection(p: &mut Painter, drawing: &Drawing, art: &SmartArt, placed: &Placed, natural: (f32, f32), brush: &Brush, items: &mut Vec<Draw>) {
-    let chosen = p.app.ext::<SmartUi>().and_then(|ui| ui.node).filter(|(id, _)| *id == drawing.id).map(|(_, line)| line);
+    let chosen = if selected(p.app).is_some_and(|lead| lead.id == drawing.id) { chosen_lines(p.app) } else { Vec::new() };
     for piece in art.pieces(p.app.wb.theme(), natural.0, natural.1) {
         let Some(line) = piece.node else {
             continue;
         };
         let at = placed_piece(&piece, placed, natural);
-        if chosen == Some(line) {
+        if chosen.contains(&line) {
+            // The frame of a shape chosen inside the graphic: as that of
+            // an object, a size smaller.
+            let around = Placed::plain(at.x0 - 2.0, at.y0 - 2.0, at.x1 + 2.0, at.y1 + 2.0);
             let frame = geometry::Polyline {
-                points: Placed::plain(at.x0 - 2.0, at.y0 - 2.0, at.x1 + 2.0, at.y1 + 2.0).corners().to_vec(),
+                points: around.corners().to_vec(),
                 closed: true,
             };
-            brush.stroke(&frame, 1.0, &[3.0, 2.0], c(0x5F5F5F), items);
+            brush.stroke(&frame, 1.0, &[], c(0x5F5F5F), items);
+            for handle in around.handles() {
+                brush.disc(handle, 3.5, c(0x5F5F5F), items);
+                brush.disc(handle, 2.5, c(0xFFFFFF), items);
+            }
         }
         p.zone((at.x0, at.y0, at.x1, at.y1), NodeZone { id: drawing.id, line });
     }
 }
 
-/// A press on a shape of the selected graphic chooses its entry; twice,
-/// it opens the Text Pane on its line.
+/// A press on a shape of the selected graphic chooses its entry; on the
+/// entry that is chosen already, or twice, it types in the shape, the
+/// caret where the press was.
 pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> Option<ZoneResponse> {
     let node = zone.payload::<NodeZone>()?;
     if ev.button != MouseButton::Left {
         return Some(ZoneResponse::Ignored);
     }
-    flush(app, cx);
-    app.ext_mut::<SmartUi>().node = Some((node.id, node.line));
-    if ev.click_count >= 2 {
-        open_pane(app, window, cx);
+    let chosen = app.ext::<SmartUi>().and_then(|ui| ui.node) == Some((node.id, node.line));
+    // Shift or ⌘: the shape joins those that are chosen, or leaves them.
+    if ev.modifiers.shift || ev.modifiers.platform {
+        end_edit(app, cx);
+        let lead = current_line(app);
+        let ui = app.ext_mut::<SmartUi>();
+        match lead {
+            None => ui.node = Some((node.id, node.line)),
+            Some(line) if line == node.line => {
+                ui.node = (!ui.also.is_empty()).then(|| (node.id, ui.also.remove(0)));
+            }
+            Some(_) => match ui.also.iter().position(|line| *line == node.line) {
+                Some(at) => {
+                    ui.also.remove(at);
+                }
+                None => ui.also.push(node.line),
+            },
+        }
+        cx.notify();
+        return Some(ZoneResponse::Handled);
     }
-    focus_pane_line(app, node.line, cx);
+    app.ext_mut::<SmartUi>().also.clear();
+    if chosen || ev.click_count >= 2 {
+        begin_edit(app, node.id, node.line, TextStart::At(ev.position), window, cx);
+        return Some(ZoneResponse::Handled);
+    }
+    end_edit(app, cx);
+    app.ext_mut::<SmartUi>().node = Some((node.id, node.line));
+    // The keys are the graphic's from here on, not a line's of the pane.
+    window.focus(&app.grid_focus);
     cx.notify();
     Some(ZoneResponse::Handled)
 }
 
 /// The selection left the graphic: what was typed is kept, the pane goes.
 pub(super) fn selection_changed(app: &mut ExcelApp, id: Option<u32>, cx: &mut Cx) {
+    if editing(app).is_some_and(|(of, _)| Some(of) != id) {
+        end_edit(app, cx);
+    }
+    if app.ext::<SmartUi>().and_then(|ui| ui.node).is_some_and(|(of, _)| Some(of) != id) {
+        app.ext_mut::<SmartUi>().also.clear();
+    }
     let shown = app.ext::<SmartUi>().and_then(|ui| ui.pane.as_ref()).map(|pane| pane.read(cx).id);
     if shown.is_some() && shown != id {
         flush(app, cx);
@@ -593,15 +993,6 @@ pub(super) fn pane(app: &ExcelApp) -> Option<Entity<TextPane>> {
     app.ext::<SmartUi>()?.pane.clone()
 }
 
-fn focus_pane_line(app: &mut ExcelApp, line: usize, cx: &mut Cx) {
-    if let Some(pane) = app.ext::<SmartUi>().and_then(|ui| ui.pane.clone()) {
-        pane.update(cx, |pane, cx| {
-            pane.focus = Some(line);
-            cx.notify();
-        });
-    }
-}
-
 // ---- names ---------------------------------------------------------------
 
 pub(super) fn layout_name(layout: Layout) -> &'static str {
@@ -645,7 +1036,7 @@ fn preview(art: SmartArt, theme: Arc<Theme>, width: f32, height: f32) -> impl In
             };
             let mut items = Vec::new();
             let placed = Placed::plain(1.0, 1.0, width - 1.0, height - 1.0);
-            draw(&art, &theme, &placed, (width - 2.0, height - 2.0), &brush, None, opensheet_engine::Locale::en(), &mut items);
+            draw(&art, &theme, &placed, (width - 2.0, height - 2.0), &brush, None, opensheet_engine::Locale::en(), None, &mut items);
             crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
         },
     )
@@ -948,6 +1339,40 @@ pub(super) fn design_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
     ]
 }
 
+/// The groups of the "Format" tab of a graphic: the shapes that are
+/// chosen in it, and their text.
+pub(super) fn format_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
+    vec![
+        group(
+            t("Shapes", "Formes"),
+            rows(vec![
+                app.cmd_labeled("saf-shape", Cmd::SmartChangeShape, true, cx),
+                app.cmd_labeled("saf-larger", Cmd::SmartLarger, false, cx),
+                app.cmd_labeled("saf-smaller", Cmd::SmartSmaller, false, cx),
+            ]),
+        )
+        .into_any_element(),
+        group(
+            t("Shape Styles", "Styles de formes"),
+            rows(vec![
+                app.cmd_labeled("saf-fill", Cmd::ShapeFill, true, cx),
+                app.cmd_labeled("saf-outline", Cmd::ShapeOutline, true, cx),
+                app.cmd_labeled("saf-effects", Cmd::ShapeEffects, true, cx),
+            ]),
+        )
+        .into_any_element(),
+        group(
+            t("WordArt Styles", "Styles WordArt"),
+            rows(vec![
+                app.cmd_labeled("saf-text-fill", Cmd::TextFill, true, cx),
+                app.cmd_labeled("saf-text-outline", Cmd::TextOutline, true, cx),
+            ]),
+        )
+        .border_r_0()
+        .into_any_element(),
+    ]
+}
+
 /// Run a command of the tab.
 pub(super) fn run(app: &mut ExcelApp, cmd: Cmd, window: &mut Window, cx: &mut Cx) {
     match cmd {
@@ -988,10 +1413,14 @@ pub(super) fn run(app: &mut ExcelApp, cmd: Cmd, window: &mut Window, cx: &mut Cx
         Cmd::SmartStyles => open_gallery(app, Choice::Styles, window, cx),
         Cmd::SmartReset => {
             change(app, cmd.label(), cx, |art, _| {
-                let before = (art.colors, art.style);
+                let before = art.clone();
                 art.reset();
-                (art.colors, art.style) != before
+                *art != before
             });
+        }
+        Cmd::SmartChangeShape => open_change_shape(app, window, cx),
+        Cmd::SmartLarger | Cmd::SmartSmaller => {
+            resize(app, cmd, cx);
         }
         Cmd::SmartConvert => {
             convert(app, cx);

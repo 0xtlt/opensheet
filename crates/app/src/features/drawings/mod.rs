@@ -5,7 +5,11 @@
 //! Selecting (one object or several), moving, nudging, deleting, copying,
 //! pasting, restacking and aligning come from `objects.rs` through the
 //! `*_object` hooks below; a command of this feature works on every
-//! selected drawing (`edit`), and on the members of a selected group. What that
+//! selected drawing (`edit`), and on the members of a selected group. A
+//! member can be selected inside its group (a click on it once the
+//! group is selected): `selected` and `selected_ids` then name the
+//! member, which the engine finds and changes through its id as it does
+//! a drawing of the sheet, so that every command here works on it. What that
 //! file cannot know is done here: a drawing is hit where it is drawn (a
 //! line along its length, a turned shape where it was turned to), and it
 //! has handles of its own (the eight of its turned frame and the one that
@@ -53,6 +57,8 @@ mod insertart_tests;
 #[cfg(test)]
 mod picture_tests;
 #[cfg(test)]
+mod smartgroup_tests;
+#[cfg(test)]
 mod ui_tests;
 #[cfg(test)]
 mod warp_tests;
@@ -89,6 +95,7 @@ const PICTURE_TAB: &str = "picture-format";
 const SHAPE_TAB: &str = "shape-format";
 const GRAPHICS_TAB: &str = "graphics-format";
 const SMARTART_TAB: &str = "smartart-design";
+const SMARTART_FORMAT_TAB: &str = "smartart-format";
 const EQUATION_TAB: &str = "equation";
 
 commands! {
@@ -194,6 +201,10 @@ commands! {
         SmartStyles = "cell-styles", t("SmartArt Styles", "Styles SmartArt");
         SmartReset = "refresh", t("Reset Graphic", "Rétablir l'image");
         SmartConvert = "shapes", t("Convert to Shapes", "Convertir en formes");
+        // SmartArt Format
+        SmartChangeShape = "shapes", t("Change Shape", "Modifier la forme");
+        SmartLarger = "plus", t("Larger", "Plus grande");
+        SmartSmaller = "minus", t("Smaller", "Plus petite");
         // Graphics Format
         ChangeGraphic = "picture", t("Change Graphic", "Changer d'image");
         ChangeGraphicFromIcons = "shapes", t("From Icons…", "À partir d'icônes…");
@@ -247,7 +258,16 @@ impl Command for Cmd {
             | Cmd::SmartColors
             | Cmd::SmartStyles
             | Cmd::SmartReset
-            | Cmd::SmartConvert => smartart::can(app, self),
+            | Cmd::SmartConvert
+            | Cmd::SmartChangeShape
+            | Cmd::SmartLarger
+            | Cmd::SmartSmaller => smartart::can(app, self),
+            // The shapes of a graphic are formatted from its Format tab.
+            Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::ShapeEffects | Cmd::TextFill | Cmd::TextOutline
+                if drawing.is_some_and(smartart::is_graphic) =>
+            {
+                smartart::can_format(app)
+            }
             // A graphic is not turned.
             Cmd::Rotate | Cmd::RotateRight | Cmd::RotateLeft | Cmd::FlipVertical | Cmd::FlipHorizontal | Cmd::MoreRotation
                 if drawing.is_some_and(smartart::is_graphic) =>
@@ -274,7 +294,7 @@ impl Command for Cmd {
                 let all = app.selected_objects();
                 all.len() >= 2 && all.iter().all(|id| id.owner == owner())
             }
-            Cmd::Ungroup => selected_ids(app)
+            Cmd::Ungroup => selected_tops(app)
                 .into_iter()
                 .any(|id| app.wb.drawing(app.sheet, id).is_some_and(|drawing| drawing.as_group().is_some())),
             Cmd::Regroup => regroupable(app).is_some(),
@@ -285,6 +305,8 @@ impl Command for Cmd {
                 .and_then(Drawing::as_picture)
                 .is_some_and(|picture| picture.svg.is_none() && picture.link.is_none()),
             Cmd::PictureStyles => drawing.is_some_and(|drawing| drawing.as_picture().is_some_and(|picture| picture.link.is_none())),
+            // The crop marks are those of a picture of the sheet.
+            Cmd::Crop | Cmd::CropPicture | Cmd::CropFill | Cmd::CropFit if member_selected(app).is_some() => false,
             Cmd::Crop
             | Cmd::CropPicture
             | Cmd::CropFill
@@ -438,7 +460,10 @@ impl Command for Cmd {
             | Cmd::SmartColors
             | Cmd::SmartStyles
             | Cmd::SmartReset
-            | Cmd::SmartConvert => smartart::run(app, self, window, cx),
+            | Cmd::SmartConvert
+            | Cmd::SmartChangeShape
+            | Cmd::SmartLarger
+            | Cmd::SmartSmaller => smartart::run(app, self, window, cx),
             Cmd::ChangeGraphic => {
                 let entries = vec![
                     MenuEntry::command(Cmd::ChangePictureFromFile, app),
@@ -518,6 +543,8 @@ struct DrawingUi {
     crop: Option<u32>,
     /// The drawings the last Ungroup let go: Regroup takes them back.
     ungrouped: Vec<u32>,
+    /// The member selected inside the selected group: (group, member).
+    member: Option<(u32, u32)>,
     /// The fields and the view the ribbon and the panes keep.
     tabs: tabs::TabState,
     panes: pane::PaneState,
@@ -542,10 +569,94 @@ fn owner() -> usize {
     super::index_of(&Drawings)
 }
 
-/// The selected picture or shape.
+/// The selected picture or shape: a drawing of the sheet, or the member
+/// that is selected inside the selected group.
 fn selected(app: &ExcelApp) -> Option<&Drawing> {
     let id = app.object_sel.filter(|id| id.owner == owner())?;
-    app.wb.drawing(app.sheet, id.id)
+    let id = member_selected(app).map_or(id.id, |(_, member)| member);
+    app.wb.drawing(app.sheet, id)
+}
+
+/// The member selected inside the selected group, with its group:
+/// (group, member). Only while the group is the one object selected and
+/// still holds the member.
+fn member_selected(app: &ExcelApp) -> Option<(u32, u32)> {
+    let (group, member) = app.ext::<DrawingUi>()?.member?;
+    let lead = app.object_sel.filter(|id| id.owner == owner())?;
+    let holds = lead.id == group && app.object_more.is_empty() && app.wb.group_of(app.sheet, member) == Some(group);
+    holds.then_some((group, member))
+}
+
+/// Select a member inside its group (the group is selected if it is
+/// not), or with `None` the group as a whole again.
+fn select_member(app: &mut ExcelApp, group: u32, member: Option<u32>, cx: &mut Cx) {
+    let member = member.filter(|member| app.wb.group_of(app.sheet, *member) == Some(group));
+    if editing_text(app).is_some() && editing_text(app) != member {
+        end_text_edit(app, cx);
+    }
+    end_crop(app, cx);
+    let id = object_id(&Drawings, group);
+    if app.object_sel != Some(id) || !app.object_more.is_empty() {
+        app.select_object(Some(id), cx);
+    }
+    app.ext_mut::<DrawingUi>().member = member.map(|member| (group, member));
+    // The tab and the panes are those of what is selected now.
+    let tabs: Vec<&str> = Drawings.context_tabs(app).iter().map(|tab| tab.id).collect();
+    if app.context_tab.is_some_and(|tab| !tabs.contains(&tab)) {
+        app.context_tab = None;
+    }
+    pane::selection_changed(app, cx);
+    cx.notify();
+}
+
+/// Select a drawing by its id, wherever it is: on the sheet, or inside
+/// a group.
+fn select_drawing(app: &mut ExcelApp, id: u32, cx: &mut Cx) {
+    match app.wb.group_of(app.sheet, id) {
+        Some(group) => select_member(app, group, Some(id), cx),
+        None => app.select_object(Some(object_id(&Drawings, id)), cx),
+    }
+}
+
+/// The member of a group that is drawn at a point of the grid element,
+/// the topmost first.
+fn member_at(app: &ExcelApp, group: u32, layout: &GridLayout, x: f32, y: f32) -> Option<u32> {
+    let sheet = &app.wb.sheets[app.sheet];
+    let holder = app.wb.drawing(app.sheet, group)?;
+    let pane = paint::pane_at(layout, x, y)?;
+    paint::members(holder, sheet, layout, &pane)
+        .into_iter()
+        .rev()
+        .find(|(member, placed, natural)| tool::hits(member, placed, *natural, layout.zoom, (x, y)))
+        .map(|(member, ..)| member.id)
+}
+
+/// Tab inside a group: the member after (or before) the selected one.
+fn cycle_member(app: &mut ExcelApp, forward: bool, cx: &mut Cx) -> bool {
+    let Some((group, member)) = member_selected(app) else {
+        return false;
+    };
+    let ids: Vec<u32> = app
+        .wb
+        .drawing(app.sheet, group)
+        .and_then(Drawing::as_group)
+        .map(|held| held.members.iter().filter(|member| !member.hidden).map(|member| member.id).collect())
+        .unwrap_or_default();
+    let Some(at) = ids.iter().position(|id| *id == member) else {
+        return false;
+    };
+    let next = if forward { (at + 1) % ids.len() } else { (at + ids.len() - 1) % ids.len() };
+    select_member(app, group, Some(ids[next]), cx);
+    true
+}
+
+/// Escape with a member selected: its group as a whole again.
+fn leave_member(app: &mut ExcelApp, cx: &mut Cx) -> bool {
+    let Some((group, _)) = member_selected(app) else {
+        return false;
+    };
+    select_member(app, group, None, cx);
+    true
 }
 
 /// Whether a drawing is a picture (it gets the "Picture Format" tab) or a
@@ -565,8 +676,18 @@ fn edit_drawing(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: i
     true
 }
 
-/// The selected pictures and shapes, the one selected last first.
+/// The selected pictures and shapes, the one selected last first; the
+/// member selected inside a group stands for its group.
 fn selected_ids(app: &ExcelApp) -> Vec<u32> {
+    match member_selected(app) {
+        Some((_, member)) => vec![member],
+        None => selected_tops(app),
+    }
+}
+
+/// The selected pictures and shapes as objects of the sheet (a group,
+/// not the member selected in it).
+fn selected_tops(app: &ExcelApp) -> Vec<u32> {
     app.selected_objects()
         .into_iter()
         .filter(|id| id.owner == owner())
@@ -617,6 +738,15 @@ fn edit_leaves(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mu
 /// Change the selected shapes, and those in the selected groups (nothing
 /// happens to a picture).
 fn edit_shape(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Shape)) -> bool {
+    // In a graphic, the shapes that are chosen in it.
+    let on_shape = |drawing: &mut Drawing| {
+        if let Some(shape) = drawing.as_shape_mut() {
+            change(shape);
+        }
+    };
+    if let Some(done) = smartart::format_nodes(app, label, cx, &on_shape) {
+        return done;
+    }
     let is_shape = |drawing: &Drawing| drawing.as_shape().is_some();
     let any = selected_ids(app)
         .into_iter()
@@ -649,7 +779,7 @@ fn edit_picture(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&m
 
 /// "Group": the selected pictures and shapes become one object.
 fn group(app: &mut ExcelApp, cx: &mut Cx) {
-    let ids = selected_ids(app);
+    let ids = selected_tops(app);
     if !Cmd::GroupObjects.enabled(app) || !app.may_edit_selected_objects(cx) {
         return;
     }
@@ -668,7 +798,7 @@ fn ungroup(app: &mut ExcelApp, cx: &mut Cx) {
         return;
     }
     let mut freed = Vec::new();
-    for id in selected_ids(app) {
+    for id in selected_tops(app) {
         let members = app.wb.ungroup_drawing(app.sheet, id);
         if members.is_empty() {
             // Not a group: it stays selected with the others.
@@ -689,8 +819,9 @@ fn ungroup(app: &mut ExcelApp, cx: &mut Cx) {
 /// selected.
 fn regroupable(app: &ExcelApp) -> Option<Vec<u32>> {
     let ids = app.ext::<DrawingUi>().map(|ui| ui.ungrouped.clone())?;
-    let selected = selected_ids(app);
-    let whole = ids.len() >= 2 && ids.iter().all(|id| app.wb.drawing(app.sheet, *id).is_some());
+    let selected = selected_tops(app);
+    let on_sheet = |id: &u32| app.wb.sheets[app.sheet].drawings.iter().any(|drawing| drawing.id == *id);
+    let whole = ids.len() >= 2 && ids.iter().all(on_sheet);
     (whole && ids.iter().any(|id| selected.contains(id))).then_some(ids)
 }
 
@@ -831,7 +962,7 @@ fn begin_text_edit(app: &mut ExcelApp, id: u32, start: TextStart, window: &mut W
         return;
     }
     end_text_edit(app, cx);
-    app.select_object(Some(object_id(&Drawings, id)), cx);
+    select_drawing(app, id, cx);
     let Some(shape) = app.wb.drawing(app.sheet, id).and_then(Drawing::as_shape) else {
         return;
     };
@@ -908,7 +1039,7 @@ fn text_overlay(app: &ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyE
     let sheet = &app.wb.sheets[app.sheet];
     let drawing = app.wb.drawing(app.sheet, edit.id)?;
     let shape = drawing.as_shape()?;
-    let frame = sheet.drawing_frame(drawing);
+    let (frame, ..) = sheet.shown(drawing);
     // In the pane that shows the middle of the shape.
     let panes = paint::panes(layout);
     let in_pane = |pane: &paint::Pane| {
@@ -917,20 +1048,27 @@ fn text_overlay(app: &ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyE
         pane.contains(cx, cy).then_some(placed)
     };
     let (pane, placed) = panes.iter().find_map(|pane| in_pane(pane).map(|placed| (*pane, placed)))?;
-    let (x0, y0, x1, y1) = paint::text_box(shape, &placed, (frame.width as f32, frame.height as f32), layout.zoom);
+    Some(area_overlay(app, &edit.area, shape, &placed, (frame.width as f32, frame.height as f32), &pane, layout.zoom, cx))
+}
+
+/// A field in which a text is typed, over the shape that shows the text:
+/// `shape` drawn in `placed` (its size at 100 % being `natural`), in a
+/// pane of the grid.
+#[allow(clippy::too_many_arguments)]
+fn area_overlay(app: &ExcelApp, field: &Entity<TextArea>, shape: &Shape, placed: &geometry::Placed, natural: (f32, f32), pane: &paint::Pane, zoom: f32, cx: &mut Cx) -> AnyElement {
+    let (x0, y0, x1, y1) = paint::text_box(shape, placed, natural, zoom);
     // The font follows the shape (bold from the Home tab) and the zoom.
-    let look = paint::text_look(shape, layout.zoom, &app.fonts);
-    edit.area.update(cx, |area, cx| {
+    let look = paint::text_look(shape, zoom, &app.fonts);
+    field.update(cx, |area, cx| {
         if area.align != look.align() || area.caret_color != Some(look.color) {
             area.align = look.align();
             area.caret_color = Some(look.color);
             cx.notify();
         }
     });
-    let area = edit.area.clone();
+    let area = field.clone();
     let (cx0, cy0, cx1, cy1) = pane.clip;
-    Some(
-        div()
+    div()
             .absolute()
             .left(px(cx0))
             .top(px(cy0))
@@ -963,10 +1101,9 @@ fn text_overlay(app: &ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyE
                         window.focus(&area.read(cx).focus_handle(cx));
                         area.update(cx, |area, cx| area.caret_to_point(event.position, cx));
                     })
-                    .child(div().flex_none().w_full().child(edit.area.clone())),
+                    .child(div().flex_none().w_full().child(field.clone())),
             )
-            .into_any_element(),
-    )
+            .into_any_element()
 }
 
 impl Feature for Drawings {
@@ -976,10 +1113,16 @@ impl Feature for Drawings {
 
     fn context_tabs(&self, app: &ExcelApp) -> Vec<ContextTab> {
         match selected(app) {
-            Some(drawing) if smartart::is_graphic(drawing) => vec![ContextTab {
-                id: SMARTART_TAB,
-                title: t("SmartArt Design", "Création de graphique SmartArt"),
-            }],
+            Some(drawing) if smartart::is_graphic(drawing) => vec![
+                ContextTab {
+                    id: SMARTART_TAB,
+                    title: t("SmartArt Design", "Création de graphique SmartArt"),
+                },
+                ContextTab {
+                    id: SMARTART_FORMAT_TAB,
+                    title: t("Format", "Format"),
+                },
+            ],
             Some(drawing) if icons::is_graphic(drawing) => vec![ContextTab {
                 id: GRAPHICS_TAB,
                 title: t("Graphics Format", "Format du graphique"),
@@ -1016,6 +1159,8 @@ impl Feature for Drawings {
             equation::equation_tab(app, cx)
         } else if tab == SMARTART_TAB {
             smartart::design_tab(app, cx)
+        } else if tab == SMARTART_FORMAT_TAB {
+            smartart::format_tab(app, cx)
         } else if tab == GRAPHICS_TAB {
             icons::graphics_tab(app, window, cx)
         } else if tab == PICTURE_TAB {
@@ -1055,6 +1200,7 @@ impl Feature for Drawings {
                 .into_any_element(),
         ];
         out.extend(text_overlay(app, layout, cx));
+        out.extend(smartart::overlay(app, layout, cx));
         out
     }
 
@@ -1136,6 +1282,11 @@ impl Feature for Drawings {
         let natural = (frame.width as f32, frame.height as f32);
         let is_selected = app.is_object_selected(object_id(&Drawings, drawing.id));
         let typing = editing_text(app) == Some(drawing.id);
+        // In a group: the member whose text is being typed, the member
+        // that is selected, and whether a click may select one.
+        let typed_member = editing_text(app).filter(|id| app.wb.group_of(app.sheet, *id) == Some(drawing.id));
+        let member = member_selected(app).filter(|(group, _)| *group == drawing.id).and_then(|(_, member)| app.wb.drawing(app.sheet, member));
+        let opens = is_selected && app.selected_objects().len() == 1 && drawing.as_group().is_some();
         let crop = drawing.as_picture().filter(|_| cropping(app) == Some(drawing.id));
         let zoom = p.zoom();
         for pane in paint::panes(p.layout) {
@@ -1171,23 +1322,43 @@ impl Feature for Drawings {
             match &drawing.kind {
                 DrawingKind::SmartArt(art) => {
                     let level = geometry::Placed::plain(placed.x0, placed.y0, placed.x1, placed.y1);
-                    smartart::draw(art, app.wb.theme(), &level, natural, &brush, Some(&*app.fonts), app.wb.locale, &mut items);
+                    let typed = smartart::typed_line(app, drawing.id);
+                    smartart::draw(art, app.wb.theme(), &level, natural, &brush, Some(&*app.fonts), app.wb.locale, typed, &mut items);
                     if is_selected {
                         smartart::paint_selection(p, drawing, art, &level, natural, &brush, &mut items);
                     }
                 }
-                _ => paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items),
+                _ => paint::draw_except(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), typed_member, &mut items),
             }
             if typing {
                 equation::draw_preview(app, drawing, &placed, &brush, &mut items);
             }
+            // The handles are those of the member selected in a group,
+            // whose own frame is then dashed.
+            let (held, held_at) = match member {
+                Some(member) => (member, paint::placed(p.layout, sheet, member, &pane)),
+                None => (drawing, placed),
+            };
             if is_selected {
-                paint::draw_selection(drawing, &placed, &brush, &mut items);
+                if member.is_some() {
+                    paint::draw_group_frame(&placed, &brush, &mut items);
+                }
+                paint::draw_selection(held, &held_at, &brush, &mut items);
             }
             p.push(Draw::Clipped { clip, items });
             if !is_selected {
                 continue;
             }
+            // The members of the selected group take the mouse: a click
+            // selects one, a drag moves it.
+            if opens {
+                for (inside, at, _) in paint::members(drawing, sheet, p.layout, &pane) {
+                    let (x0, y0, x1, y1) = at.extent();
+                    let zone = (x0.max(pane.clip.0) - 3.0, y0.max(pane.clip.1) - 3.0, x1.min(pane.clip.2) + 3.0, y1.min(pane.clip.3) + 3.0);
+                    p.zone(zone, tool::MemberZone { group: drawing.id, member: inside.id });
+                }
+            }
+            let (drawing, placed) = (held, held_at);
             let warp_grips = paint::warp_grips(drawing, &placed, brush.zoom);
             for (grip, at) in paint::grips(drawing, &placed).into_iter().chain(warp_grips) {
                 if !pane.contains(at.0, at.1) {
@@ -1217,6 +1388,15 @@ impl Feature for Drawings {
             return;
         }
         let (x, y) = app.wb.sheets[sheet].corner_point((place.anchor, place.offset));
+        // With a member selected in the group, the arrow keys move the
+        // member: by as much as the group was asked to move.
+        if let Some((_, member)) = member_selected(app).filter(|(group, _)| *group == id) {
+            let (Some(whole), Some(own)) = (app.wb.drawing_frame(sheet, id), app.wb.drawing_frame(sheet, member)) else {
+                return;
+            };
+            app.wb.set_drawing_frame(sheet, member, Frame::new(own.x + x - whole.x, own.y + y - whole.y, own.width, own.height));
+            return;
+        }
         app.wb.set_drawing_frame(sheet, id, Frame::new(x, y, place.size.0 as f64, place.size.1 as f64));
     }
 
@@ -1231,6 +1411,16 @@ impl Feature for Drawings {
     }
 
     fn delete_object(&self, app: &mut ExcelApp, id: u32) {
+        // With a member selected in the group, the member goes; a group
+        // left with one member lets it go.
+        if let Some((_, member)) = member_selected(app).filter(|(group, _)| *group == id) {
+            if editing_text(app) == Some(member) {
+                app.ext_mut::<DrawingUi>().text = None;
+            }
+            app.ext_mut::<DrawingUi>().member = None;
+            app.wb.remove_drawing(app.sheet, member);
+            return;
+        }
         // What was being typed in it goes with it.
         if editing_text(app) == Some(id) {
             app.ext_mut::<DrawingUi>().text = None;
@@ -1275,7 +1465,14 @@ impl Feature for Drawings {
         let Some(drawing) = app.wb.drawing(app.sheet, id) else {
             return;
         };
-        if smartart::is_graphic(drawing) {
+        if drawing.as_group().is_some() {
+            // The member under the pointer is selected and typed in.
+            let member = app.current_layout().and_then(|layout| member_at(app, id, &layout, ev.x, ev.y));
+            if let Some(member) = member {
+                select_member(app, id, Some(member), cx);
+                begin_text_edit(app, member, TextStart::At(ev.position), window, cx);
+            }
+        } else if smartart::is_graphic(drawing) {
             app.context_tab = Some(SMARTART_TAB);
             smartart::open_pane(app, window, cx);
         } else if is_picture(drawing) {
@@ -1289,11 +1486,20 @@ impl Feature for Drawings {
         }
     }
 
+    fn object_cycle(&self, app: &mut ExcelApp, _id: u32, forward: bool, cx: &mut Cx) -> bool {
+        cycle_member(app, forward, cx)
+    }
+
     fn object_selected(&self, app: &mut ExcelApp, id: Option<u32>, cx: &mut Cx) {
-        // Typing in a shape ends when the selection leaves it, and a
-        // description typed in a pane is kept.
-        if editing_text(app).is_some() && editing_text(app) != id {
+        // Typing in a shape ends when the selection leaves it (or the
+        // group it is in), and a description typed in a pane is kept.
+        let typed_in = editing_text(app).map(|typed| app.wb.group_of(app.sheet, typed).unwrap_or(typed));
+        if typed_in.is_some() && typed_in != id {
             end_text_edit(app, cx);
+        }
+        // A member stays selected only while its group is.
+        if app.ext::<DrawingUi>().and_then(|ui| ui.member).is_some_and(|(group, _)| Some(group) != id || !app.object_more.is_empty()) {
+            app.ext_mut::<DrawingUi>().member = None;
         }
         // Cropping too, and when other objects join the selection.
         if cropping(app).is_some() && (cropping(app) != id || app.selected_objects().len() > 1) {
@@ -1348,6 +1554,11 @@ impl Feature for Drawings {
 
     /// Typing with a shape selected starts its text, after what it holds.
     fn object_typed(&self, app: &mut ExcelApp, id: u32, text: &str, window: &mut Window, cx: &mut Cx) -> bool {
+        // In a group, the member that is selected takes the keys.
+        let id = member_selected(app).filter(|(group, _)| *group == id).map_or(id, |(_, member)| member);
+        if smartart::typed(app, id, text, window, cx) {
+            return true;
+        }
         begin_text_edit(app, id, TextStart::Typed(text.to_string()), window, cx);
         editing_text(app) == Some(id)
     }
@@ -1355,6 +1566,7 @@ impl Feature for Drawings {
     /// Bold, font, colours and alignment of the Home tab go to the text of
     /// the selected shape; a picture has no use for them.
     fn object_style(&self, app: &mut ExcelApp, id: u32, label: &str, change: &dyn Fn(&mut Style), cx: &mut Cx) -> bool {
+        let id = member_selected(app).filter(|(group, _)| *group == id).map_or(id, |(_, member)| member);
         let takes_text = app
             .wb
             .drawing(app.sheet, id)
@@ -1418,7 +1630,7 @@ impl Feature for Drawings {
     /// Escape puts down the shape that was waiting to be drawn, or ends
     /// "Select Objects".
     fn cancel(&self, app: &mut ExcelApp, cx: &mut Cx) -> bool {
-        tool::disarm(app, cx) || end_crop(app, cx) || app.end_object_pointer(cx)
+        tool::disarm(app, cx) || end_crop(app, cx) || smartart::leave_node(app, cx) || leave_member(app, cx) || app.end_object_pointer(cx)
     }
 }
 

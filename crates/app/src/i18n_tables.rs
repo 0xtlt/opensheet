@@ -1031,6 +1031,9 @@ pub static ES: &[(&str, &str)] = &[
     ("Flip Object", "Voltear objeto"),
     ("Picture Format", "Formato de la imagen"),
     ("Shape Format", "Formato de forma"),
+    // ---- SmartArt Format, group members ----
+    ("Larger", "Grande"),
+    ("Smaller", "Pequeña"),
     // ---- Shapes: drawing tool ----
     (
         "Click and drag to insert a text box.",
@@ -4909,6 +4912,9 @@ pub static DE: &[(&str, &str)] = &[
     ("Flip Object", "Objekt kippen"),
     ("Picture Format", "Bildformat"),
     ("Shape Format", "Formformat"),
+    // ---- SmartArt Format, group members ----
+    ("Larger", "Größer"),
+    ("Smaller", "Kleiner"),
     // ---- Shapes: drawing tool ----
     ("Click and drag to insert a text box.", "Klicken und ziehen, um ein Textfeld einzufügen."),
     ("Click and drag to insert an AutoShape.", "Klicken und ziehen, um eine AutoForm einzufügen."),
@@ -8778,6 +8784,9 @@ pub static IT: &[(&str, &str)] = &[
     ("Flip Object", "Capovolgi oggetto"),
     ("Picture Format", "Formato immagine"),
     ("Shape Format", "Formato forma"),
+    // ---- SmartArt Format, group members ----
+    ("Larger", "Più grande"),
+    ("Smaller", "Più piccola"),
     // ---- Shapes: drawing tool ----
     (
         "Click and drag to insert a text box.",

@@ -15,6 +15,13 @@
 //! Office's, which cannot be copied here. The presentation points Office
 //! adds to the outline are left out: it makes them again.
 //!
+//! What the Format tab gave the shape of an entry is on the point of the
+//! entry, with the elements Office uses on its presentation points:
+//! `custScaleX` / `custScaleY` of `dgm:prSet` (Larger, Smaller),
+//! `dgm:spPr` (the outline of Change Shape, fill, line, effects) and the
+//! run properties of `dgm:t` (the fill and the outline of the text). The
+//! shapes of the `drawing` part and of the group carry the same look.
+//!
 //! Read: the outline, and the layout, style and colours by their
 //! `uniqueId`. A graphic whose layout is not one the engine draws is kept
 //! as its parts and shown through the shapes of its `drawing` part.
@@ -30,7 +37,8 @@
 //!   group, which they show as it is drawn here.
 
 use super::*;
-use opensheet_engine::smartart::{ColorScheme, Foreign, Layout, Node, Origin, Piece, QuickStyle, SmartArt};
+use opensheet_engine::smartart::{ColorScheme, Foreign, Layout, Node, NodeFormat, Origin, Piece, QuickStyle, SmartArt};
+use opensheet_engine::wordart::{TextEffects, TextOutline};
 use opensheet_engine::theme::Theme as DocumentTheme;
 
 const NS_DIAGRAM: &str = "http://schemas.openxmlformats.org/drawingml/2006/diagram";
@@ -88,6 +96,60 @@ pub(super) fn push_frame(x: &mut String, drawing: &Drawing, id: usize, first: us
     );
 }
 
+/// `<dgm:prSet>` and `<dgm:spPr>` of the point of an entry: what was
+/// changed by hand of its shape.
+fn push_point_look(x: &mut String, format: &NodeFormat, placeholder: bool) {
+    x.push_str("<dgm:prSet");
+    if placeholder {
+        x.push_str(" phldrT=\"[Text]\" phldr=\"1\"");
+    }
+    if let Some((across, down)) = format.scale {
+        let percent = |factor: f32| (factor as f64 * 100_000.0).round() as i64;
+        w!(x, " custScaleX=\"{}\" custScaleY=\"{}\"", percent(across), percent(down));
+    }
+    x.push_str("/>");
+    if format.preset.is_none() && format.fill.is_none() && format.outline.is_none() && format.effects.is_none() {
+        x.push_str("<dgm:spPr/>");
+        return;
+    }
+    x.push_str("<dgm:spPr>");
+    if let Some(preset) = format.preset {
+        w!(x, "<a:prstGeom prst=\"{}\"><a:avLst/></a:prstGeom>", preset.ooxml_name());
+    }
+    match format.fill {
+        Some(Some(color)) => push_solid_fill(x, color),
+        Some(None) => x.push_str("<a:noFill/>"),
+        None => {}
+    }
+    if let Some(outline) = &format.outline {
+        push_outline(x, outline.as_ref());
+    }
+    if let Some(effects) = &format.effects {
+        // An empty list says "none", which is not "as the style has it".
+        if effects.is_none() {
+            x.push_str("<a:effectLst/>");
+        } else {
+            push_effects(x, effects);
+        }
+    }
+    x.push_str("</dgm:spPr>");
+}
+
+/// The outline and the fill of letters, inside the properties of a run:
+/// what "Text Outline" and "Text Fill" set.
+fn push_letters(x: &mut String, color: Option<Color>, effects: Option<&TextEffects>) {
+    if let Some(outline) = effects.and_then(|effects| effects.outline) {
+        w!(x, "<a:ln w=\"{}\">", (outline.width.max(0.0) as f64 * EMU_PER_PT).round() as i64);
+        push_solid_fill(x, outline.color);
+        x.push_str("<a:prstDash val=\"solid\"/></a:ln>");
+    }
+    if effects.is_some_and(|effects| effects.hollow) {
+        x.push_str("<a:noFill/>");
+    } else if let Some(color) = color {
+        push_solid_fill(x, color);
+    }
+}
+
 fn push_empty_text(x: &mut String) {
     x.push_str("<dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></dgm:t>");
 }
@@ -102,13 +164,25 @@ fn data_xml(art: &SmartArt, drawing_rel: usize) -> String {
             *next += 1;
             let id = model_id(1, index);
             w!(points, "<dgm:pt modelId=\"{id}\">");
-            if node.text.is_empty() {
-                points.push_str("<dgm:prSet phldrT=\"[Text]\" phldr=\"1\"/><dgm:spPr/>");
+            let lettered = node.format.text_color.is_some() || node.format.text_effects.is_some();
+            push_point_look(points, &node.format, node.text.is_empty());
+            if node.text.is_empty() && !lettered {
                 push_empty_text(points);
+            } else if node.text.is_empty() {
+                // The look of the text that will be typed.
+                points.push_str("<dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\">");
+                push_letters(points, node.format.text_color, node.format.text_effects.as_ref());
+                points.push_str("</a:endParaRPr></a:p></dgm:t>");
             } else {
-                points.push_str("<dgm:prSet/><dgm:spPr/><dgm:t><a:bodyPr/><a:lstStyle/>");
+                points.push_str("<dgm:t><a:bodyPr/><a:lstStyle/>");
                 for paragraph in node.text.split('\n') {
-                    points.push_str("<a:p><a:r><a:rPr lang=\"en-US\"/><a:t>");
+                    if lettered {
+                        points.push_str("<a:p><a:r><a:rPr lang=\"en-US\">");
+                        push_letters(points, node.format.text_color, node.format.text_effects.as_ref());
+                        points.push_str("</a:rPr><a:t>");
+                    } else {
+                        points.push_str("<a:p><a:r><a:rPr lang=\"en-US\"/><a:t>");
+                    }
                     push_text(points, paragraph);
                     points.push_str("</a:t></a:r></a:p>");
                 }
@@ -429,9 +503,14 @@ fn cache_xml(pieces: &[Piece]) -> String {
             None => x.push_str("<a:noFill/>"),
         }
         push_outline(&mut x, shape.outline.as_ref());
+        if piece.effects.is_none() {
+            x.push_str("<a:effectLst/>");
+        } else {
+            push_effects(&mut x, &piece.effects);
+        }
         w!(
             x,
-            "<a:effectLst/></dsp:spPr><dsp:style><a:lnRef idx=\"2\">{black}</a:lnRef><a:fillRef idx=\"1\">{black}</a:fillRef><a:effectRef idx=\"0\">{black}</a:effectRef><a:fontRef idx=\"minor\"><a:schemeClr val=\"lt1\"/></a:fontRef></dsp:style>"
+            "</dsp:spPr><dsp:style><a:lnRef idx=\"2\">{black}</a:lnRef><a:fillRef idx=\"1\">{black}</a:fillRef><a:effectRef idx=\"0\">{black}</a:effectRef><a:fontRef idx=\"minor\"><a:schemeClr val=\"lt1\"/></a:fontRef></dsp:style>"
         );
         if piece.node.is_some() {
             // The text, in the box it is laid out in.
@@ -454,9 +533,7 @@ fn cache_xml(pieces: &[Piece]) -> String {
                     w!(x, "<a:endParaRPr lang=\"en-US\" sz=\"{size}\" kern=\"1200\"/>");
                 } else {
                     w!(x, "<a:r><a:rPr lang=\"en-US\" sz=\"{size}\" kern=\"1200\">");
-                    if let Some(color) = shape.font.color {
-                        push_solid_fill(&mut x, color);
-                    }
+                    push_letters(&mut x, shape.font.color, Some(&shape.effects));
                     x.push_str("</a:rPr><a:t>");
                     push_text(&mut x, paragraph);
                     x.push_str("</a:t></a:r>");
@@ -588,6 +665,7 @@ pub(super) fn push_group(x: &mut String, drawing: &Drawing, pieces: &[Piece], fr
         member.name = format!("{} - {}", drawing.name, number + 1);
         member.rotation = piece.rotation;
         member.flip_h = piece.flip_h;
+        member.effects = piece.effects;
         let place = Frame::new(frame.x + piece.x as f64, frame.y + piece.y as f64, piece.width as f64, piece.height as f64);
         let mut shape = String::new();
         push_shape(&mut shape, &member, &piece.shape, *next_id, place);
@@ -636,12 +714,25 @@ struct Data {
     drawing_rel: Option<String>,
 }
 
-fn parse_data(xml: &str) -> Data {
-    /// A point: its kind, and its text when it is an entry.
+/// The fill and the outline of letters in the properties of a run; the
+/// first properties met are those of the entry.
+fn parse_letters<'a>(r: &mut Reader<'a>, properties: &Tag<'a>, palette: &Palette, letters: &mut Option<(Paint, Option<RawLine>)>) {
+    let (mut fill, mut line) = (Paint::Unset, None);
+    each_child(r, properties, |r, part| match part.name {
+        "ln" => line = Some(parse_line(r, part, palette)),
+        _ => parse_paint(r, part, palette, &mut fill),
+    });
+    letters.get_or_insert((fill, line));
+}
+
+fn parse_data(xml: &str, palette: &Palette) -> Data {
+    /// A point: its kind, and its text and the look of its shape when it
+    /// is an entry.
     struct Point {
         id: String,
         entry: bool,
         text: String,
+        format: NodeFormat,
     }
     let mut data = Data {
         nodes: Vec::new(),
@@ -664,8 +755,46 @@ fn parse_data(xml: &str) -> Data {
                     let id = t.attr("modelId").unwrap_or_default().into_owned();
                     let kind = t.attr("type").map(|kind| kind.into_owned()).unwrap_or_else(|| "node".to_string());
                     let mut text = String::new();
+                    let mut format = NodeFormat::default();
+                    // The letters of the entry: those of its first run,
+                    // or of the end of its paragraph when it has none.
+                    let mut letters: Option<(Paint, Option<RawLine>)> = None;
                     each_child(&mut r, &t, |r, c| match c.name {
+                        "spPr" => each_child(r, c, |r, part| match part.name {
+                            "prstGeom" => {
+                                format.preset = part.attr("prst").and_then(|name| ShapePreset::from_ooxml_name(&name));
+                                r.skip(part);
+                            }
+                            "ln" => {
+                                let line = parse_line(r, part, palette);
+                                format.outline = match line.paint {
+                                    Paint::Color(color) => Some(Some(Outline {
+                                        color,
+                                        width: line.width.unwrap_or(DEFAULT_LINE_PT),
+                                        dash: line.dash,
+                                        start: line.start,
+                                        end: line.end,
+                                    })),
+                                    Paint::Nothing => Some(None),
+                                    Paint::Unset => None,
+                                };
+                            }
+                            "effectLst" => format.effects = Some(parse_effects(r, part, palette)),
+                            _ => {
+                                let mut fill = Paint::Unset;
+                                parse_paint(r, part, palette, &mut fill);
+                                match fill {
+                                    Paint::Color(color) => format.fill = Some(Some(color)),
+                                    Paint::Nothing => format.fill = Some(None),
+                                    Paint::Unset => {}
+                                }
+                            }
+                        }),
                         "prSet" => {
+                            if let (Some(across), Some(down)) = (c.attr_f64("custScaleX"), c.attr_f64("custScaleY")) {
+                                let factor = |percent: f64| (percent / 100_000.0).clamp(0.1, 10.0) as f32;
+                                format.scale = Some((factor(across), factor(down)));
+                            }
                             if kind == "doc" {
                                 let named = |name: &str| c.attr(name).unwrap_or_default().into_owned();
                                 (data.layout, data.style, data.colors) = (named("loTypeId"), named("qsTypeId"), named("csTypeId"));
@@ -695,8 +824,10 @@ fn parse_data(xml: &str) -> Data {
                                 each_child(r, p, |r, run| match run.name {
                                     "r" | "fld" => each_child(r, run, |r, part| match part.name {
                                         "t" => text.push_str(&printable(&r.text(part), false)),
+                                        "rPr" => parse_letters(r, part, palette, &mut letters),
                                         _ => r.skip(part),
                                     }),
+                                    "endParaRPr" => parse_letters(r, run, palette, &mut letters),
                                     _ => r.skip(run),
                                 });
                             });
@@ -706,10 +837,31 @@ fn parse_data(xml: &str) -> Data {
                     if kind == "doc" {
                         root = id.clone();
                     }
+                    if let Some((fill, line)) = letters {
+                        let outline = line.and_then(|line| match line.paint {
+                            Paint::Color(color) => Some(TextOutline {
+                                color,
+                                width: line.width.unwrap_or(DEFAULT_LINE_PT),
+                            }),
+                            _ => None,
+                        });
+                        let hollow = matches!(fill, Paint::Nothing);
+                        if let Paint::Color(color) = fill {
+                            format.text_color = Some(color);
+                        }
+                        if hollow || outline.is_some() {
+                            format.text_effects = Some(TextEffects {
+                                hollow,
+                                outline,
+                                ..TextEffects::default()
+                            });
+                        }
+                    }
                     points.push(Point {
                         id,
                         entry: matches!(kind.as_str(), "node" | "asst"),
                         text,
+                        format,
                     });
                 }
                 "cxn" => {
@@ -745,6 +897,7 @@ fn parse_data(xml: &str) -> Data {
             .map(|point| Node {
                 text: point.text.clone(),
                 children: children(&point.id, points, links, depth + 1),
+                format: point.format.clone(),
             })
             .collect()
     }
@@ -806,6 +959,7 @@ fn parse_cache(xml: &str, theme: &Theme) -> Vec<Piece> {
                             rotation: object.rotation,
                             flip_h: object.flip_h,
                             opacity: 1.0,
+                            effects: object.effects,
                         });
                     }
                 }
@@ -825,7 +979,7 @@ pub(super) fn load<R: Read + Seek>(pkg: &mut Package<R>, rels: &[Rel], ids: &[St
     let mut read = |target: Option<String>| target.and_then(|target| pkg.read(&target).ok().flatten());
     let data_xml = read(target_of(&ids[0]))?;
     let definitions = [read(target_of(&ids[1])), read(target_of(&ids[2])), read(target_of(&ids[3]))];
-    let data = parse_data(&data_xml);
+    let data = parse_data(&data_xml, theme.palette);
     // The drawing part: named by the outline, or the only one there is.
     let drawing_target = data
         .drawing_rel

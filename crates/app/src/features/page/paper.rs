@@ -299,6 +299,19 @@ impl ObjectPainter for PaperPainter {
                                 paint_shape_text(wb, &piece.shape, pw, ph, canvas);
                             }
                         } else {
+                            // The shadow and the glow of a shape that
+                            // was given some, under it.
+                            let effects = (!piece.effects.is_none())
+                                .then(|| {
+                                    let mut stand_in = Drawing::shape(piece.shape.clone(), (piece.width, piece.height));
+                                    stand_in.effects = piece.effects;
+                                    crate::features::drawings::shape_effects_for_page(&stand_in, &piece.shape, (piece.width, piece.height))
+                                })
+                                .flatten()
+                                .and_then(|(bitmap, took)| Some((Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?, took)));
+                            if let Some((image, (bw, bh))) = effects {
+                                canvas.image(&Arc::new(image), RectF::new((pw - bw as f64) / 2.0, (ph - bh as f64) / 2.0, bw as f64, bh as f64));
+                            }
                             paint_shape(&piece.shape, pw, ph, canvas);
                         }
                         canvas.restore();

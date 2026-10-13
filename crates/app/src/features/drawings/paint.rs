@@ -119,15 +119,11 @@ pub fn placed_frame(layout: &GridLayout, sheet: &Sheet, frame: Frame, turn: (f32
     }
 }
 
-/// Where a drawing is drawn in a pane.
+/// Where a drawing is drawn in a pane (a member of a group: where its
+/// group puts it).
 pub fn placed(layout: &GridLayout, sheet: &Sheet, drawing: &Drawing, pane: &Pane) -> Placed {
-    placed_frame(
-        layout,
-        sheet,
-        sheet.drawing_frame(drawing),
-        (drawing.rotation, drawing.flip_h, drawing.flip_v),
-        pane,
-    )
+    let (frame, rotation, flip_h, flip_v) = sheet.shown(drawing);
+    placed_frame(layout, sheet, frame, (rotation, flip_h, flip_v), pane)
 }
 
 /// The box a drawing may paint in: its turned frame, with room for its
@@ -217,7 +213,7 @@ impl Brush<'_> {
         }
     }
 
-    fn disc(&self, centre: Pt, radius: f32, color: Hsla, out: &mut Vec<Draw>) {
+    pub(super) fn disc(&self, centre: Pt, radius: f32, color: Hsla, out: &mut Vec<Draw>) {
         let points: Vec<Pt> = (0..20)
             .map(|i| {
                 let angle = i as f32 / 20.0 * std::f32::consts::TAU;
@@ -428,7 +424,7 @@ pub(super) fn shape_cover(shape: &Shape, natural: (f32, f32), size: (f32, f32), 
 
 /// The shadow and the glow of a shape, under it: its outline blurred
 /// (`render::under`), made once for each look and size.
-fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+pub(super) fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
     let effects = Effects {
         shadow: drawing.effects.shadow,
         glow: drawing.effects.glow,
@@ -567,6 +563,12 @@ pub fn leaves<'a>(drawing: &'a Drawing, placed: &Placed, zoom: f32) -> Vec<(&'a 
 /// outline depend on it). The text of a shape is drawn when `text` gives
 /// the fonts: not while it is being typed in place.
 pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
+    draw_except(drawing, placed, natural, brush, text, None, out);
+}
+
+/// `draw`, without the text of the member `typed` of a group: the field
+/// it is being typed in lies over it.
+pub fn draw_except(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, typed: Option<u32>, out: &mut Vec<Draw>) {
     match &drawing.kind {
         DrawingKind::Shape(shape) => {
             draw_effects(drawing, shape, placed, natural, brush, out);
@@ -578,7 +580,7 @@ pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Bru
         DrawingKind::SmartArt(_) => {}
         DrawingKind::Group(_) => {
             for (member, inner, natural) in leaves(drawing, placed, brush.zoom) {
-                draw(member, &inner, natural, brush, text, out);
+                draw(member, &inner, natural, brush, text.filter(|_| typed != Some(member.id)), out);
             }
         }
     }
@@ -720,6 +722,33 @@ pub fn grips(drawing: &Drawing, placed: &Placed) -> Vec<(Grip, Pt)> {
         out.push((Grip::Rotate, placed.rotation_handle(ROTATION_GAP)));
     }
     out
+}
+
+/// The frame of a group one of whose members is selected: dashed, and
+/// without handles (those are the member's).
+pub fn draw_group_frame(placed: &Placed, brush: &Brush, out: &mut Vec<Draw>) {
+    let frame = Polyline {
+        points: placed.corners().to_vec(),
+        closed: true,
+    };
+    brush.stroke(&frame, 1.0, &[4.0, 3.0], c(HANDLE), out);
+}
+
+/// The members of a group where the group is drawn, bottom-most first:
+/// each with its place and the size it has at 100 %. (`leaves` goes into
+/// the groups among them; this does not.)
+pub fn members<'a>(group: &'a Drawing, sheet: &Sheet, layout: &GridLayout, pane: &Pane) -> Vec<(&'a Drawing, Placed, (f32, f32))> {
+    let Some(held) = group.as_group() else {
+        return Vec::new();
+    };
+    held.members
+        .iter()
+        .filter(|member| !member.hidden)
+        .map(|member| {
+            let (frame, ..) = sheet.shown(member);
+            (member, placed(layout, sheet, member, pane), (frame.width as f32, frame.height as f32))
+        })
+        .collect()
 }
 
 /// The frame and the handles of the selected drawing.

@@ -369,6 +369,10 @@ pub(super) fn open_color(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 /// Change the effects of the selected drawings (and of the members of
 /// the selected groups), as one undo step.
 pub(super) fn set_effects(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Effects)) {
+    // In a graphic, the shapes that are chosen in it.
+    if super::smartart::format_nodes(app, label, cx, &|drawing| change(&mut drawing.effects)).is_some() {
+        return;
+    }
     edit_leaves(app, label, cx, |drawing| change(&mut drawing.effects));
 }
 
