@@ -268,6 +268,57 @@ mod tests {
         );
     }
 
+    #[gpui::test]
+    fn the_dialog_shows_the_sheet_in_front_and_the_workbook(cx: &mut gpui::TestAppContext) {
+        use crate::features::help::ui_tests::click_ribbon;
+        use crate::features::share::ui_tests::{open, redraw};
+        let (app, cx) = open(cx);
+        app.update(cx, |app, cx| {
+            app.wb.add_sheet(1);
+            app.wb.set_cell_text(0, 0, 0, "Tea").unwrap();
+            app.wb.set_cell_text(1, 3, 2, "=1+1").unwrap();
+            app.wb.set_note(1, 0, 0, "Ada", "Ada:\nA note");
+            app.commit("setup", cx);
+            app.select_cell(4, 4, cx);
+        });
+        redraw(cx);
+        // What is being typed counts: it is entered first.
+        cx.simulate_input("12");
+        click_ribbon(&app, cx, 7, "rv-stats");
+        let shown = |app: &gpui::Entity<ExcelApp>, cx: &mut gpui::VisualTestContext| {
+            app.update(cx, |app, cx| {
+                let view = app.front_modal_view().expect("a dialog").downcast::<StatsDialog>().ok().expect("the statistics");
+                let dialog = view.read(cx);
+                (pairs(dialog.sheet.clone()), pairs(dialog.workbook.clone()))
+            })
+        };
+        let (sheet, workbook) = shown(&app, cx);
+        assert_eq!(sheet, [pair("End of sheet", "E5"), pair("Cells with data", "2")]);
+        assert_eq!(
+            workbook,
+            [pair("Sheets", "2"), pair("Cells with data", "3"), pair("Formulas", "1"), pair("Notes", "1")]
+        );
+        // Return closes it; nothing but the entry changed the workbook.
+        cx.simulate_keystrokes("enter");
+        app.update(cx, |app, _| {
+            assert!(!app.modal_open());
+            assert_eq!(app.wb.sheets[0].value_at(4, 4), opensheet_engine::Value::Number(12.0));
+        });
+        // On the other sheet, the lines are those of that sheet.
+        app.update_in(cx, |app, window, cx| {
+            app.switch_sheet(1, window, cx);
+            app.run_command(Cmd::Open, window, cx);
+        });
+        redraw(cx);
+        let (sheet, _) = shown(&app, cx);
+        assert_eq!(
+            sheet,
+            [pair("End of sheet", "C4"), pair("Cells with data", "1"), pair("Formulas", "1"), pair("Notes", "1")]
+        );
+        cx.simulate_keystrokes("escape");
+        app.update(cx, |app, _| assert!(!app.modal_open()));
+    }
+
     #[test]
     fn every_kind_of_thing_has_its_line_in_excels_order() {
         let all = Counts {

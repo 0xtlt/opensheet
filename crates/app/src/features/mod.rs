@@ -234,6 +234,7 @@ pub mod drawings;
 pub mod edit_tools;
 pub mod filters;
 pub mod format_cells;
+pub mod help;
 pub mod ink;
 pub mod misc;
 pub mod names;

@@ -15,7 +15,7 @@
 
 pub mod system;
 #[cfg(test)]
-mod ui_tests;
+pub(crate) mod ui_tests;
 
 use self::system::{Item, system};
 use super::{Command, Cx};

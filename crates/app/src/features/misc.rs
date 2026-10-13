@@ -68,8 +68,6 @@ commands! {
         // Automate, Help
         NewScript = "function", t("New Script", "Nouveau script");
         AllScripts = "book", t("All Scripts", "Tous les scripts");
-        Help = "book", t("Help", "Aide");
-        Feedback = "comment", t("Feedback", "Commentaires");
     }
 }
 

@@ -709,8 +709,8 @@ impl ExcelApp {
             group(
                 t("Help", "Aide"),
                 row(vec![
-                    self.cmd_large("hp-help", misc::Cmd::Help, false, cx),
-                    self.cmd_large("hp-feedback", misc::Cmd::Feedback, false, cx),
+                    self.cmd_large("hp-help", features::help::Cmd::Help, false, cx),
+                    self.cmd_large("hp-feedback", features::help::Cmd::Feedback, false, cx),
                 ]),
             )
             .border_r_0()
