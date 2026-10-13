@@ -2194,6 +2194,44 @@ impl Workbook {
         Ok(())
     }
 
+    // ---- cells that make room ---------------------------------------------------
+
+    /// Insert > Cells and Delete > Cells with a shift: blank cells come in
+    /// at `rect` and what was there moves down (or right), or the cells of
+    /// `rect` go and what lies below (or to their right) closes up. Only
+    /// the columns (the rows) of `rect` move; formulas, names, merged
+    /// areas, notes and rules follow. Refused when the move would tear a
+    /// table, a merged area or the filter of the sheet. Takes the undo
+    /// snapshot; the caller commits.
+    pub fn shift_cells(&mut self, sheet: usize, rect: Rect, down: bool, insert: bool) -> Result<(), TableError> {
+        let sh = self.sheets.get(sheet).ok_or(TableError::NotFound)?;
+        let shift = if down {
+            CellShift {
+                down,
+                lo: rect.c0,
+                hi: rect.c1,
+                at: rect.r0,
+                count: rect.rows(),
+                insert,
+            }
+        } else {
+            CellShift {
+                down,
+                lo: rect.r0,
+                hi: rect.r1,
+                at: rect.c0,
+                count: rect.cols(),
+                insert,
+            }
+        };
+        if blocked(&shift, sh, None) {
+            return Err(TableError::Blocked);
+        }
+        self.snapshot();
+        shift_cells(self, sheet, shift);
+        Ok(())
+    }
+
     // ---- following edits ------------------------------------------------------
 
     /// To call after cells were typed, pasted or cleared (`edited` is the

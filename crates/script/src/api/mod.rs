@@ -12,6 +12,7 @@ mod enums;
 mod format;
 mod range;
 mod table;
+mod util;
 mod workbook;
 mod worksheet;
 
@@ -139,10 +140,6 @@ impl<'a> Call<'a> {
         self.arg(index).as_f64().ok_or_else(|| self.invalid())
     }
 
-    pub fn opt_num(&self, index: usize) -> Res<Option<f64>> {
-        if self.has(index) { self.num(index).map(Some) } else { Ok(None) }
-    }
-
     /// A whole number.
     pub fn int(&self, index: usize) -> Res<i64> {
         let n = self.num(index)?;
@@ -163,11 +160,6 @@ impl<'a> Call<'a> {
 
     pub fn array(&self, index: usize) -> Res<&'a [J]> {
         self.arg(index).as_array().map(Vec::as_slice).ok_or_else(|| self.invalid())
-    }
-
-    /// The state of an object of the model given as an argument.
-    pub fn object(&self, index: usize, class: &str) -> Res<&'a [J]> {
-        state_of(self.arg(index), class).ok_or_else(|| self.invalid())
     }
 
     /// A number of the state of the object the call is made on.
@@ -212,10 +204,12 @@ pub(crate) static API: &[ApiClass] = &[
     worksheet::AUTO_FILTER,
     range::RANGE,
     range::RANGE_SORT,
+    range::REMOVE_DUPLICATES_RESULT,
     format::RANGE_FORMAT,
     format::RANGE_FILL,
     format::RANGE_FONT,
     format::RANGE_BORDER,
+    format::FORMAT_PROTECTION,
     table::TABLE,
     table::TABLE_COLUMN,
     table::FILTER,
@@ -235,4 +229,19 @@ pub(crate) fn enum_value<'a>(call: &Call<'a>, index: usize, name: &str) -> Res<O
         .find(|e| e.name == name)
         .is_some_and(|e| e.members.iter().any(|(_, value)| *value == text));
     if known { Ok(Some(text)) } else { Err(call.invalid()) }
+}
+
+/// The members that answered a call in this process, for the test that
+/// proves every listed member runs.
+static CALLED: std::sync::Mutex<std::collections::BTreeSet<(&'static str, &'static str)>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+pub(crate) fn note_call(class: &'static str, member: &'static str) {
+    if let Ok(mut called) = CALLED.lock() {
+        called.insert((class, member));
+    }
+}
+
+pub(crate) fn called() -> Vec<(&'static str, &'static str)> {
+    CALLED.lock().map(|called| called.iter().copied().collect()).unwrap_or_default()
 }

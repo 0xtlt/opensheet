@@ -88,6 +88,7 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
     // workbook moves into the host for the time of the run and comes
     // back whatever happens.
     let empty = Workbook::new(wb.locale);
+    let mode = wb.calc_mode();
     let host = Rc::new(RefCell::new(Host::new(std::mem::replace(wb, empty), context)));
     let compiled = Rc::new(compiled);
     let timed_out = Arc::new(AtomicBool::new(false));
@@ -140,6 +141,10 @@ fn execute(compiled: Compiled, wb: &mut Workbook, context: &Context) -> Outcome 
             // A script that fails changes nothing: its changes go here,
             // and the results of formulas calculated on the way with them.
             host.wb.rollback();
+            // The calculation mode is not part of what is undone.
+            if host.wb.calc_mode() != mode {
+                host.wb.set_calc_mode(mode);
+            }
             if host.calculated {
                 host.wb.calculate_now();
             }
@@ -366,9 +371,14 @@ fn dispatch(host: &RefCell<Host>, class: usize, member: usize, payload: &str) ->
     // The engine must not take the application down with it: what it
     // could not do ends the run, and the run is undone.
     match catch_unwind(AssertUnwindSafe(|| (member.run)(&mut host, &call))) {
-        Ok(Ok(Ret::Nothing)) => "u".to_string(),
-        Ok(Ok(Ret::Value(value))) => format!("v{value}"),
-        Ok(Ok(Ret::Object(value))) => format!("o{value}"),
+        Ok(Ok(answer)) => {
+            crate::api::note_call(class.name, member.name);
+            match answer {
+                Ret::Nothing => "u".to_string(),
+                Ret::Value(value) => format!("v{value}"),
+                Ret::Object(value) => format!("o{value}"),
+            }
+        }
         Ok(Err(fail)) => error(fail.kind, &fail.message),
         Err(_) => {
             let message = format!("{}.{} failed inside OpenSheet; the script was stopped.", class.name, member.name);

@@ -102,6 +102,8 @@ pub struct Context {
     pub active_cell: (u32, u32),
     /// A script still running after this long is stopped with an error.
     pub time_limit: Duration,
+    /// The name of the workbook's file, for `Workbook.getName`.
+    pub workbook_name: String,
 }
 
 impl Default for Context {
@@ -111,6 +113,7 @@ impl Default for Context {
             selection: Rect::new(0, 0, 0, 0),
             active_cell: (0, 0),
             time_limit: Duration::from_secs(120),
+            workbook_name: "Book1.xlsx".to_string(),
         }
     }
 }
@@ -206,6 +209,14 @@ pub fn run(source: &str, wb: &mut Workbook, context: &Context) -> Outcome {
 /// member that works: the table the bindings themselves are made of.
 pub fn api() -> &'static [ApiClass] {
     api::API
+}
+
+/// The members (class, name) that answered at least one call since the
+/// process started: what the tests of this crate use to prove that every
+/// member [`api`] lists runs.
+#[doc(hidden)]
+pub fn members_called() -> Vec<(&'static str, &'static str)> {
+    api::called()
 }
 
 /// The enums of the `ExcelScript` namespace a script can use.

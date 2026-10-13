@@ -9,7 +9,7 @@ use opensheet_engine::locale::Locale;
 use opensheet_engine::protect::Action;
 use opensheet_engine::recalc::CalcMode;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
-use opensheet_engine::value::{ErrorKind as CellError, Value};
+use opensheet_engine::value::Value;
 use opensheet_engine::workbook::Workbook;
 
 use crate::api::{Call, Res, object};
@@ -40,6 +40,7 @@ pub(crate) struct Host {
     pub activated: bool,
     pub selected: bool,
     pub logs: Vec<Log>,
+    pub workbook_name: String,
     pub autofits: Vec<(i64, bool, u32, u32)>,
     /// Cells were changed since formulas were calculated.
     stale: bool,
@@ -67,6 +68,7 @@ impl Host {
             activated: false,
             selected: false,
             logs: Vec::new(),
+            workbook_name: context.workbook_name.clone(),
             autofits: Vec::new(),
             stale: false,
             restructured: false,
@@ -249,11 +251,6 @@ pub(crate) fn to_script(value: &Value) -> J {
         Value::Error(e) => J::from(e.as_str()),
         Value::Array(a) => to_script(a.get(0, 0)),
     }
-}
-
-/// The text of an error value, in English.
-pub(crate) fn error_text(error: CellError) -> &'static str {
-    error.as_str()
 }
 
 /// Clip a rectangle given as numbers by the script to the sheet.
