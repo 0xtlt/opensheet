@@ -736,6 +736,157 @@ impl PasswordError {
 
 // ---- the question --------------------------------------------------------
 
+/// A range of a protected sheet that may be edited all the same
+/// (`<protectedRange>`): by anyone when it has no password, else by who
+/// gives its password, once.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProtectedRange {
+    /// Tells the ranges of a session apart, for the passwords given; not
+    /// kept in files.
+    pub id: u64,
+    /// The title, unique on its sheet.
+    pub name: String,
+    /// The cells (`sqref`).
+    pub ranges: Vec<Rect>,
+    pub password: Option<PasswordHash>,
+    /// The Windows accounts allowed without a password, as files hold
+    /// them; kept untouched.
+    pub security_descriptor: Option<String>,
+}
+
+impl ProtectedRange {
+    /// A range with a fresh `id`.
+    pub fn new(name: &str, ranges: Vec<Rect>, password: Option<PasswordHash>) -> ProtectedRange {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        ProtectedRange {
+            id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            name: name.to_string(),
+            ranges,
+            password,
+            security_descriptor: None,
+        }
+    }
+}
+
+/// Why a range that may be edited cannot be made or changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RangeError {
+    /// The title is empty or not a valid one.
+    BadTitle,
+    /// Another range of the sheet has this title.
+    TitleTaken,
+    /// No cells.
+    NoCells,
+}
+
+/// What is left of `rect` outside `hole`: up to four rectangles.
+fn subtract(rect: Rect, hole: Rect) -> Vec<Rect> {
+    if hole.r1 < rect.r0 || hole.r0 > rect.r1 || hole.c1 < rect.c0 || hole.c0 > rect.c1 {
+        return vec![rect];
+    }
+    let mut rest = Vec::new();
+    if hole.r0 > rect.r0 {
+        rest.push(Rect::new(rect.r0, rect.c0, hole.r0 - 1, rect.c1));
+    }
+    if hole.r1 < rect.r1 {
+        rest.push(Rect::new(hole.r1 + 1, rect.c0, rect.r1, rect.c1));
+    }
+    let (top, bottom) = (rect.r0.max(hole.r0), rect.r1.min(hole.r1));
+    if hole.c0 > rect.c0 {
+        rest.push(Rect::new(top, rect.c0, bottom, hole.c0 - 1));
+    }
+    if hole.c1 < rect.c1 {
+        rest.push(Rect::new(top, hole.c1 + 1, bottom, rect.c1));
+    }
+    rest
+}
+
+impl Workbook {
+    /// Whether a range that may be edited is open: it has no password, or
+    /// its password was given.
+    fn range_open(&self, range: &ProtectedRange) -> bool {
+        range.password.is_none() || self.unlocked_ranges.contains(&range.id)
+    }
+
+    /// Whether every cell of `rect` on a protected sheet can be changed:
+    /// it is unlocked, or inside an open range.
+    fn editable(&self, sheet: &Sheet, rect: Rect) -> bool {
+        if self.all_unlocked(sheet, rect) {
+            return true;
+        }
+        let mut rest = vec![rect];
+        for range in sheet.protected_ranges.iter().filter(|range| self.range_open(range)) {
+            for open in &range.ranges {
+                rest = rest.into_iter().flat_map(|piece| subtract(piece, *open)).collect();
+            }
+        }
+        rest.len() < 64 && rest.iter().all(|piece| self.all_unlocked(sheet, *piece))
+    }
+
+    /// The range whose password would let `rects` be edited: the first
+    /// one still closed that holds some of those cells, when the sheet is
+    /// protected and refuses the edit.
+    pub fn range_awaiting_password(&self, sheet: usize, rects: &[Rect]) -> Option<usize> {
+        let sh = self.sheets.get(sheet)?;
+        sh.protection.as_ref()?;
+        if rects.iter().all(|rect| self.editable(sh, *rect)) {
+            return None;
+        }
+        sh.protected_ranges
+            .iter()
+            .position(|range| !self.range_open(range) && range.ranges.iter().any(|open| rects.iter().any(|rect| open.intersects(rect))))
+    }
+
+    /// Give the password of a range: it stays open until the workbook is
+    /// closed. Not an undo step.
+    pub fn unlock_range(&mut self, sheet: usize, index: usize, password: &str) -> Result<(), PasswordError> {
+        let range = self.sheets.get(sheet).and_then(|sh| sh.protected_ranges.get(index)).ok_or(PasswordError::Wrong)?;
+        if range.password.as_ref().is_some_and(|hash| !hash.verify(password)) {
+            return Err(PasswordError::Wrong);
+        }
+        if !self.unlocked_ranges.contains(&range.id) {
+            self.unlocked_ranges.push(range.id);
+        }
+        Ok(())
+    }
+
+    /// A title no range of `sheet` has yet: "Range1", "Range2"…
+    pub fn protected_range_title(&self, sheet: usize, base: &str) -> String {
+        let taken = |title: &str| self.sheets.get(sheet).is_some_and(|sh| sh.protected_ranges.iter().any(|range| range.name.eq_ignore_ascii_case(title)));
+        (1..).map(|n| format!("{base}{n}")).find(|title| !taken(title)).unwrap_or_default()
+    }
+
+    fn check_protected_range(&self, sheet: usize, range: &ProtectedRange, except: Option<usize>) -> Result<(), RangeError> {
+        // What Excel accepts as a title: letters, digits and underscores,
+        // not starting with a digit.
+        let valid = range.name.chars().next().is_some_and(|ch| ch.is_alphabetic() || ch == '_') && range.name.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '.');
+        if !valid {
+            return Err(RangeError::BadTitle);
+        }
+        if range.ranges.is_empty() {
+            return Err(RangeError::NoCells);
+        }
+        let key = range.name.to_lowercase();
+        let taken = self.sheets.get(sheet).is_some_and(|sh| sh.protected_ranges.iter().enumerate().any(|(index, other)| Some(index) != except && other.name.to_lowercase() == key));
+        if taken { Err(RangeError::TitleTaken) } else { Ok(()) }
+    }
+
+    /// Whether `range` could be added to `sheet`, or replace the one at
+    /// `except`.
+    pub fn protected_range_valid(&self, sheet: usize, range: &ProtectedRange, except: Option<usize>) -> Result<(), RangeError> {
+        self.check_protected_range(sheet, range, except)
+    }
+
+    /// Replace the ranges of `sheet` that may be edited (the list of the
+    /// Allow Edit Ranges dialog, confirmed). The caller commits.
+    pub fn set_protected_ranges(&mut self, sheet: usize, ranges: Vec<ProtectedRange>) {
+        if sheet < self.sheets.len() {
+            self.snapshot();
+            self.sheets[sheet].protected_ranges = ranges;
+        }
+    }
+}
+
 /// Something the user is about to do, as far as protection cares.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action<'a> {
@@ -995,7 +1146,7 @@ impl Workbook {
         let Some(protection) = &sh.protection else {
             return Ok(());
         };
-        let unlocked = |ranges: &[Rect]| ranges.iter().all(|r| self.all_unlocked(sh, *r));
+        let unlocked = |ranges: &[Rect]| ranges.iter().all(|r| self.editable(sh, *r));
         let when = |allowed: bool, denied: Denied| if allowed { Ok(()) } else { Err(denied) };
         match *action {
             Action::EditCells { ranges, .. } => when(unlocked(ranges), Denied::Sheet),
@@ -1297,8 +1448,22 @@ impl Workbook {
 }
 
 /// See `features::on_structural_edit`: protection covers the whole sheet,
-/// there is nothing to move.
-pub(crate) fn on_structural_edit(_sheet: &mut Sheet, _edit: StructuralEdit, _edited_sheet: &str) {}
+/// but the ranges that may be edited follow the rows and columns of
+/// theirs; one whose cells are all deleted is forgotten.
+pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited_sheet: &str) {
+    if sheet.name != edited_sheet {
+        return;
+    }
+    sheet.protected_ranges.retain_mut(|range| {
+        range.ranges.retain_mut(|rect| {
+            let mut moved = crate::filter::AutoFilter::new(*rect);
+            let kept = moved.adjust(edit);
+            *rect = moved.range;
+            kept
+        });
+        !range.ranges.is_empty()
+    });
+}
 
 /// See `features::on_sheet_renamed`: protection names no sheet.
 pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
@@ -1932,5 +2097,78 @@ mod tests {
         assert!(w.commit("Run Script"));
         assert!(w.sheets[0].protection.is_none() && !w.can_undo());
         assert_eq!(w.value_at(0, 0, 0), crate::Value::Number(4.0));
+    }
+
+    #[test]
+    fn ranges_that_may_be_edited() {
+        let mut w = wb(&[("A1", "1"), ("B2", "2"), ("D4", "4")]);
+        let free = ProtectedRange::new("Free", vec![rect("A1:B2")], None);
+        let secret = ProtectedRange::new("Secret", vec![rect("D4:E5"), rect("G1")], Some(PasswordHash::salted("pw", b"0123456789abcdef", 1000)));
+        assert_eq!(w.protected_range_valid(0, &free, None), Ok(()));
+        w.set_protected_ranges(0, vec![free.clone(), secret.clone()]);
+        w.commit("Allow Edit Ranges");
+        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("free", vec![rect("A1")], None), None), Err(RangeError::TitleTaken));
+        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("free", vec![rect("A1")], None), Some(0)), Ok(()));
+        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("1st", vec![rect("A1")], None), None), Err(RangeError::BadTitle));
+        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("", vec![rect("A1")], None), None), Err(RangeError::BadTitle));
+        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("Empty", Vec::new(), None), None), Err(RangeError::NoCells));
+        assert_eq!(w.protected_range_title(0, "Range"), "Range1");
+
+        let edit = |w: &Workbook, range: &str| w.permits(&Action::EditCells { sheet: 0, ranges: &[rect(range)] });
+        // Nothing changes while the sheet is not protected.
+        assert_eq!(edit(&w, "C3"), Ok(()));
+        assert_eq!(w.range_awaiting_password(0, &[rect("D4")]), None);
+        w.protect_sheet(0, SheetProtection::default(), "");
+        // A range without a password is open to everyone.
+        assert_eq!(edit(&w, "A1:B2"), Ok(()));
+        assert_eq!(edit(&w, "B2"), Ok(()));
+        assert_eq!(edit(&w, "B2:C2"), Err(Denied::Sheet));
+        assert_eq!(edit(&w, "C3"), Err(Denied::Sheet));
+        assert_eq!(w.range_awaiting_password(0, &[rect("C3")]), None);
+        // One with a password asks for it, once.
+        assert_eq!(edit(&w, "D4"), Err(Denied::Sheet));
+        assert_eq!(w.range_awaiting_password(0, &[rect("D5:E5")]), Some(1));
+        assert_eq!(w.unlock_range(0, 1, "wrong"), Err(PasswordError::Wrong));
+        assert_eq!(edit(&w, "D4"), Err(Denied::Sheet));
+        assert_eq!(w.unlock_range(0, 1, "pw"), Ok(()));
+        assert_eq!(edit(&w, "D4:E5"), Ok(()));
+        assert_eq!(edit(&w, "G1"), Ok(()));
+        assert_eq!(w.range_awaiting_password(0, &[rect("D4")]), None);
+        // Unlocked cells beside an open range make one editable block.
+        w.unprotect_sheet(0, "").unwrap();
+        w.update_style(0, rect("C1:C2"), &|s| s.locked = false);
+        w.commit("unlock");
+        w.protect_sheet(0, SheetProtection::default(), "");
+        assert_eq!(edit(&w, "A1:C2"), Ok(()));
+        assert_eq!(edit(&w, "A1:C3"), Err(Denied::Sheet));
+        // The password stays given through an undo.
+        w.set_cell_text(0, 3, 3, "changed").unwrap();
+        w.commit("typed");
+        w.undo();
+        assert_eq!(edit(&w, "D4"), Ok(()));
+    }
+
+    #[test]
+    fn ranges_follow_rows_and_columns() {
+        let mut w = wb(&[("A1", "1")]);
+        w.set_protected_ranges(0, vec![ProtectedRange::new("Mid", vec![rect("B2:C3")], None), ProtectedRange::new("Top", vec![rect("A1:B1"), rect("E5")], None)]);
+        w.commit("Allow Edit Ranges");
+        // A row inserted inside a range makes it taller.
+        w.insert_rows(0, 2, 1);
+        w.commit("Insert");
+        assert_eq!(w.sheets[0].protected_ranges[0].ranges, [rect("B2:C4")]);
+        assert_eq!(w.sheets[0].protected_ranges[1].ranges, [rect("A1:B1"), rect("E6")]);
+        // Deleting all the cells of a range forgets it; a range keeps the
+        // cells it has left.
+        w.delete_rows(0, 0, 1);
+        w.commit("Delete");
+        let left: Vec<(&str, &[Rect])> = w.sheets[0].protected_ranges.iter().map(|range| (range.name.as_str(), range.ranges.as_slice())).collect();
+        assert_eq!(left, [("Mid", &[rect("B1:C3")][..]), ("Top", &[rect("E5")][..])]);
+        w.delete_cols(0, 1, 2);
+        w.commit("Delete");
+        assert_eq!(w.sheets[0].protected_ranges.len(), 1);
+        assert_eq!(w.sheets[0].protected_ranges[0].ranges, [rect("C5")]);
+        w.undo();
+        assert_eq!(w.sheets[0].protected_ranges.len(), 2);
     }
 }

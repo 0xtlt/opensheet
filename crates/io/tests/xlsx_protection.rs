@@ -479,3 +479,65 @@ fn damaged_protection_costs_nothing_else() {
         assert_eq!(again.protection, wb.protection);
     }
 }
+
+/// Review > Allow Edit Ranges: `<protectedRanges>`, between
+/// `<sheetProtection>` and what follows it, with the password hashed as
+/// the sheet's is.
+#[test]
+fn ranges_that_may_be_edited_round_trip() {
+    use opensheet_engine::protect::ProtectedRange;
+    let rect = |name: &str| Rect::parse(name).unwrap();
+    let mut wb = Workbook::new(Locale::en());
+    for (cell, text) in [("A1", "Open to all"), ("A3", "Password: pw"), ("C3", "x"), ("A5", "Locked")] {
+        enter(&mut wb, 0, cell, text);
+    }
+    let salted = PasswordHash::salted("pw", b"0123456789abcdef", 100_000);
+    let mut described = ProtectedRange::new("Legacy_1", vec![rect("E1")], Some(PasswordHash::legacy("pw")));
+    described.security_descriptor = Some("O:WDG:WDD:(A;;CC;;;S-1-5-21-1)".into());
+    wb.set_protected_ranges(
+        0,
+        vec![ProtectedRange::new("Range1", vec![rect("A1:B1")], None), ProtectedRange::new("Budget", vec![rect("A3:B3"), rect("C3")], Some(salted)), described],
+    );
+    wb.commit("Allow Edit Ranges");
+    wb.protect_sheet(0, SheetProtection::default(), "");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("protected-ranges.xlsx", &bytes);
+
+    let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
+    assert_well_formed("sheet1", &sheet);
+    assert_worksheet_order("sheet1", &sheet);
+    let start = sheet.find("<protectedRanges>").expect("the ranges");
+    let end = sheet.find("</protectedRanges>").unwrap();
+    assert!(sheet[..start].ends_with("<sheetProtection sheet=\"1\" objects=\"1\" scenarios=\"1\"/>"), "{sheet}");
+    let ranges = &sheet[start..end];
+    assert!(ranges.contains("<protectedRange sqref=\"A1:B1\" name=\"Range1\"/>"), "{ranges}");
+    assert!(ranges.contains("<protectedRange algorithmName=\"SHA-512\" hashValue=\""), "{ranges}");
+    assert!(ranges.contains("\" saltValue=\"MDEyMzQ1Njc4OWFiY2RlZg==\" spinCount=\"100000\" sqref=\"A3:B3 C3\" name=\"Budget\"/>"), "{ranges}");
+    assert!(ranges.contains("<protectedRange password=\"CF75\" sqref=\"E1\" name=\"Legacy_1\" securityDescriptor=\"O:WDG:WDD:(A;;CC;;;S-1-5-21-1)\"/>"), "{ranges}");
+
+    let mut back = load(&bytes);
+    let read = &back.sheets[0].protected_ranges;
+    let written = &wb.sheets[0].protected_ranges;
+    assert_eq!(read.len(), 3);
+    for (a, b) in read.iter().zip(written) {
+        assert_eq!((&a.name, &a.ranges, &a.password, &a.security_descriptor), (&b.name, &b.ranges, &b.password, &b.security_descriptor));
+    }
+    assert_eq!(may_edit(&back, 0, "A1"), Ok(()));
+    assert_eq!(may_edit(&back, 0, "A5"), Err(Denied::Sheet));
+    // The password was not given in this session yet.
+    assert_eq!(may_edit(&back, 0, "C3"), Err(Denied::Sheet));
+    assert_eq!(back.range_awaiting_password(0, &[rect("C3")]), Some(1));
+    assert_eq!(back.unlock_range(0, 1, "pw"), Ok(()));
+    assert_eq!(may_edit(&back, 0, "C3"), Ok(()));
+    assert_eq!(back.unlock_range(0, 2, "pw"), Ok(()));
+
+    // Ranges Excel wrote on a sheet that is not protected are kept; one
+    // without cells or without a title is left out.
+    let plain = sheet.replace("<sheetProtection sheet=\"1\" objects=\"1\" scenarios=\"1\"/>", "").replace("sqref=\"E1\"", "sqref=\"\"");
+    let names = common::part_names(&bytes);
+    let texts: Vec<String> = names.iter().map(|n| if n == "xl/worksheets/sheet1.xml" { plain.clone() } else { part(&bytes, n) }).collect();
+    let parts: Vec<(&str, &str)> = names.iter().map(String::as_str).zip(texts.iter().map(String::as_str)).collect();
+    let back = load(&package(&parts));
+    assert!(back.sheets[0].protection.is_none());
+    assert_eq!(back.sheets[0].protected_ranges.len(), 2);
+}

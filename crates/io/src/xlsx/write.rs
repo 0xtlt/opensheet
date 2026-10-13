@@ -932,6 +932,7 @@ impl SheetWriter<'_> {
         if let Some(protection) = &sheet.protection {
             protection::write_sheet(&mut x, protection);
         }
+        protection::write_ranges(&mut x, &sheet.protected_ranges);
         // scenarios
         super::datatools::write_scenarios(&mut x, sheet, self.wb.locale);
         // autoFilter (the rows it hides are hidden rows of sheetData)
