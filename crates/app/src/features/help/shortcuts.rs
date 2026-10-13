@@ -13,11 +13,16 @@ use gpui::{App, KeyBindingContextPredicate, Keystroke};
 /// Where a binding must apply to be listed.
 const CONTEXTS: [&str; 2] = ["Grid", "Workbook"];
 
-/// What an action does, by the name it was declared under. An action
-/// bound without a line here is listed under its own name, spaced out.
+/// What an action does, by the name it was declared under: the label of
+/// its command, or the words of Excel's own list of shortcuts where it has
+/// them. An action bound without a line here is listed under its own
+/// name, spaced out.
 fn described(action: &str) -> Option<&'static str> {
     Some(match action {
-        "MoveUp" | "MoveDown" | "MoveLeft" | "MoveRight" => t("Move one cell", "Se déplacer d’une cellule"),
+        "MoveUp" => t("Select Cell Up", "Sélectionner une cellule en haut"),
+        "MoveDown" => t("Select Cell Down", "Sélectionner une cellule vers le bas"),
+        "MoveLeft" => t("Select Cell Left", "Sélectionner la cellule de gauche"),
+        "MoveRight" => t("Select Cell Right", "Sélectionner la cellule de droite"),
         "ExtendUp" | "ExtendDown" | "ExtendLeft" | "ExtendRight" => {
             t("Extend the selection by one cell", "Étendre la sélection d’une cellule")
         }
@@ -28,11 +33,11 @@ fn described(action: &str) -> Option<&'static str> {
             "Extend the selection to the edge of the current data region",
             "Étendre la sélection jusqu’au bord de la zone de données active",
         ),
-        "NextCell" => t("Complete the entry and move right", "Valider la saisie et aller à droite"),
-        "PrevCell" => t("Complete the entry and move left", "Valider la saisie et aller à gauche"),
-        "EnterDown" => t("Complete the entry and move down", "Valider la saisie et descendre"),
-        "EnterUp" => t("Complete the entry and move up", "Valider la saisie et monter"),
-        "EditCell" => t("Edit the active cell", "Modifier la cellule active"),
+        "NextCell" => t("Move Right One Cell", "Déplacer vers la droite d’une cellule"),
+        "PrevCell" => t("Move Left One Cell", "Déplacer vers la gauche d’une cellule"),
+        "EnterDown" => t("Move Down One Cell", "Descendre d’une cellule"),
+        "EnterUp" => t("Move Up One Cell", "Monter d’une cellule"),
+        "EditCell" => t("Enter Edit Mode", "Activer le mode d’édition"),
         "ClearContents" => t("Clear Contents", "Effacer le contenu"),
         "Copy" => t("Copy", "Copier"),
         "Cut" => t("Cut", "Couper"),
@@ -45,10 +50,10 @@ fn described(action: &str) -> Option<&'static str> {
         "PageUp" => t("Move one screen up", "Remonter d’un écran"),
         "PageDown" => t("Move one screen down", "Descendre d’un écran"),
         "GoRowStart" => t("Move to the beginning of the row", "Atteindre le début de la ligne"),
-        "GoStart" => t("Move to the beginning of the sheet", "Atteindre le début de la feuille"),
-        "GoEnd" => t("Move to the last cell in use on the sheet", "Atteindre la dernière cellule utilisée de la feuille"),
-        "SelectColumn" => t("Select the entire column", "Sélectionner toute la colonne"),
-        "SelectRow" => t("Select the entire row", "Sélectionner toute la ligne"),
+        "GoStart" => t("Go to cell A1", "Aller à la cellule A1"),
+        "GoEnd" => t("Go to last cell of the used range", "Atteindre la dernière cellule de la plage utilisée"),
+        "SelectColumn" => t("Select an entire column", "Sélectionner une colonne entière"),
+        "SelectRow" => t("Select an entire row", "Sélectionner une ligne entière"),
         "InsertDate" => t("Enter the date", "Insérer la date"),
         "AutoSum" => t("AutoSum", "Somme automatique"),
         "InsertRows" => t("Insert cells, rows or columns", "Insérer des cellules, des lignes ou des colonnes"),
@@ -69,8 +74,8 @@ fn described(action: &str) -> Option<&'static str> {
         "ZoomIn" => t("Zoom In", "Zoom avant"),
         "ZoomOut" => t("Zoom Out", "Zoom arrière"),
         "ZoomReset" => t("Actual Size", "Taille réelle"),
-        "NextSheet" => t("Move to the next sheet", "Atteindre la feuille suivante"),
-        "PrevSheet" => t("Move to the previous sheet", "Atteindre la feuille précédente"),
+        "NextSheet" => t("Next Sheet", "Feuille suivante"),
+        "PrevSheet" => t("Previous Sheet", "Feuille précédente"),
         "FormatCells" => t("Format Cells", "Format de cellule"),
         "Print" => t("Print…", "Imprimer…"),
         "ToggleFilter" => t("Filter", "Filtrer"),

@@ -132,7 +132,7 @@ pub(crate) fn saved_file(path: Option<&Path>, modified: bool) -> Option<&Path> {
 /// Where temporary copies are written: a folder of their own, so that the
 /// copy carries the name of the workbook.
 fn copies_dir() -> PathBuf {
-    std::env::temp_dir().join("OpenSheet").join(t("Shared", "Partagé"))
+    std::env::temp_dir().join("OpenSheet").join("Shared")
 }
 
 /// The file to send: the saved workbook when it is up to date, else a

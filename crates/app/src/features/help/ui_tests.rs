@@ -106,7 +106,8 @@ fn the_shortcuts_are_those_the_application_binds(cx: &mut TestAppContext) {
     assert_eq!(keys_of("Copy"), Some("⌘C"));
     assert_eq!(keys_of("Go To"), Some("⌃G, ⌘G, F5"));
     assert_eq!(keys_of("New Comment"), Some("⇧⌘M, ⇧⌘F2"));
-    assert_eq!(keys_of("Move one cell"), Some("↑, ↓, ←, →"));
+    assert_eq!(keys_of("Select Cell Up"), Some("↑"));
+    assert_eq!(keys_of("Move to the edge of the current data region"), Some("⌘↑, ⌘↓, ⌘←, ⌘→, ⌃↑, ⌃↓, ⌃←, ⌃→"));
     assert_eq!(keys_of("Preferences"), Some("⌘,"));
     // Every key bound on the sheet or on the window is in the list, once.
     let bound: Vec<String> = cx.update(|_, cx| {
