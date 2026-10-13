@@ -105,6 +105,10 @@ pub struct Sheet {
     pub pivots: Vec<crate::pivot::PivotTable>,
     /// Pictures and shapes floating over the cells, see `drawing.rs`.
     pub drawings: Vec<crate::drawing::Drawing>,
+    /// Strokes drawn by hand (the Draw tab), see `ink.rs`.
+    pub inks: Vec<crate::ink::Ink>,
+    /// The part this sheet has in each custom view, see `custom_view.rs`.
+    pub custom_views: Vec<crate::custom_view::CustomSheetView>,
     /// Hyperlinks on cells, see `hyperlink.rs`.
     pub hyperlinks: Vec<crate::hyperlink::Hyperlink>,
     /// Defined names whose scope is this sheet, keyed by uppercase name
@@ -153,6 +157,8 @@ impl Sheet {
             page: crate::page::PageSetup::default(),
             pivots: Vec::new(),
             drawings: Vec::new(),
+            inks: Vec::new(),
+            custom_views: Vec::new(),
             hyperlinks: Vec::new(),
             names: BTreeMap::new(),
             outline: crate::outline::Outline::default(),

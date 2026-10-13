@@ -233,6 +233,20 @@ fn cell_menu(here: Option<CommentKind>) -> &'static [Cmd] {
 /// The full name of the person at the keyboard: asked from the system
 /// once, as Excel does when it first runs, and kept for the session.
 pub(self) fn user_name() -> &'static str {
+    // The name typed in Preferences ▸ General comes first. Names are kept
+    // for the life of the application: there are as many as were typed.
+    if let Some(name) = super::preferences::user_name() {
+        static TYPED: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+        let mut typed = TYPED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        return match typed.iter().find(|known| **known == name) {
+            Some(known) => known,
+            None => {
+                let kept: &'static str = Box::leak(name.into_boxed_str());
+                typed.push(kept);
+                kept
+            }
+        };
+    }
     static NAME: OnceLock<String> = OnceLock::new();
     NAME.get_or_init(|| {
         let clean = |name: String| Some(name.trim().to_string()).filter(|name| !name.is_empty());

@@ -31,6 +31,7 @@ fn bind_keys(cx: &mut App) {
     features::misc::bind_keys(cx);
     features::edit_tools::bind_keys(cx);
     features::data_tools::bind_keys(cx);
+    features::preferences::bind_keys(cx);
     features::outline::bind_keys(cx);
     let g = Some("Grid");
     let w = Some("Workbook");
@@ -130,7 +131,11 @@ pub(crate) fn set_menus(cx: &mut App) {
     cx.set_menus(vec![
         Menu {
             name: "OpenSheet".into(),
-            items: vec![MenuItem::action(t("Quit OpenSheet", "Quitter OpenSheet"), Quit)],
+            items: vec![
+                MenuItem::action(t("Preferences…", "Préférences…"), features::preferences::OpenPreferences),
+                MenuItem::separator(),
+                MenuItem::action(t("Quit OpenSheet", "Quitter OpenSheet"), Quit),
+            ],
         },
         Menu {
             name: t("File", "Fichier").into(),
@@ -171,6 +176,8 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Zoom In", "Zoom avant"), ZoomIn),
                 MenuItem::action(t("Zoom Out", "Zoom arrière"), ZoomOut),
                 MenuItem::action(t("Actual Size", "Taille réelle"), ZoomReset),
+                MenuItem::separator(),
+                MenuItem::action(t("Custom Views…", "Affichages personnalisés…"), features::custom_views::CustomViewsDialog),
             ],
         },
     ]);
