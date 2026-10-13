@@ -888,3 +888,179 @@ fn saving_without_the_macros_asks_excel_s_question(cx: &mut TestAppContext) {
     assert_eq!(app.update(cx, |app, _| default_extension(app)), "xlsx");
     assert!(!app.update(cx, |app, cx| asks_before_saving(app, &xlsx, cx)));
 }
+
+// ------------------------------------------------------------- completion
+
+/// A new script in the editor, the caret on an empty line inside `main`.
+fn new_script(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<CodeEditorPane> {
+    click_ribbon_new(app, cx);
+    let pane = the_pane(app, cx);
+    pane.update(cx, |pane, cx| pane.editor.update(cx, |editor, cx| editor.set_text("", cx)));
+    cx.simulate_input("function main(workbook: ExcelScript.Workbook) {");
+    cx.simulate_keystrokes("enter");
+    pane
+}
+
+/// The names the list of completions shows, and the selected one.
+fn proposed(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> Option<(Vec<String>, usize)> {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).proposed())
+}
+
+fn hinted(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> Option<String> {
+    pane.update(cx, |pane, cx| pane.editor.read(cx).hinted())
+}
+
+/// The line of the caret, with `|` at the caret.
+fn caret_line(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> String {
+    editor_shown(pane, cx).lines().find(|line| line.contains('|')).unwrap_or_default().trim().to_string()
+}
+
+#[gpui::test]
+fn a_dot_opens_the_list_typing_filters_it_and_return_takes_an_entry(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    assert_eq!(proposed(&pane, cx), None);
+    cx.simulate_input("workbook.");
+    let (names, selected) = proposed(&pane, cx).expect("the list is open");
+    assert!(names.contains(&"getActiveWorksheet".to_string()) && names.contains(&"getTables".to_string()));
+    assert_eq!(selected, 0);
+    // The list is drawn, with the first entries.
+    redraw(cx);
+    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(0)).is_some());
+    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(40)).is_none());
+
+    // Each letter narrows the list; the signature stands beside the entry.
+    cx.simulate_input("getA");
+    assert_eq!(proposed(&pane, cx), Some((vec!["getActiveCell".to_string(), "getActiveWorksheet".to_string(), "getApplication".to_string()], 0)));
+    cx.simulate_input("ctiveW");
+    assert_eq!(proposed(&pane, cx), Some((vec!["getActiveWorksheet".to_string()], 0)));
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail()).as_deref(), Some("(): Worksheet"));
+    // Backspace widens it again.
+    cx.simulate_keystrokes("backspace backspace backspace backspace backspace backspace");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names.len()), Some(3));
+
+    // ↓ and ↑ move in the list, not in the text; Return takes the entry.
+    cx.simulate_keystrokes("down");
+    assert_eq!(proposed(&pane, cx).map(|(_, selected)| selected), Some(1));
+    cx.simulate_keystrokes("down down");
+    assert_eq!(proposed(&pane, cx).map(|(_, selected)| selected), Some(0));
+    cx.simulate_keystrokes("up up");
+    assert_eq!(proposed(&pane, cx).map(|(_, selected)| selected), Some(1));
+    cx.simulate_keystrokes("enter");
+    assert_eq!(proposed(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet|");
+
+    // The chain goes on: the members of what the call returns; Tab takes
+    // an entry too.
+    cx.simulate_input("().");
+    assert!(proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"getRange".to_string()) && !names.contains(&"getActiveWorksheet".to_string())));
+    cx.simulate_input("getRangeB");
+    cx.simulate_keystrokes("tab");
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getRangeByIndexes|");
+    // One undo step takes the entry back, leaving what was typed.
+    cx.simulate_keystrokes("cmd-z");
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getRangeB|");
+}
+
+#[gpui::test]
+fn the_list_never_holds_typing_back(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    // Escape closes the list and leaves the text and the pane as they are.
+    cx.simulate_input("workbook.get");
+    assert!(proposed(&pane, cx).is_some());
+    cx.simulate_keystrokes("escape");
+    assert_eq!(proposed(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.get|");
+    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Editor);
+    // The next letter opens it again.
+    cx.simulate_input("T");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["getTable".to_string(), "getTables".to_string()]));
+    // What matches nothing closes the list; the letters are typed all the same.
+    cx.simulate_input("zz");
+    assert_eq!(proposed(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.getTzz|");
+    // Return then breaks the line, as without a list.
+    cx.simulate_keystrokes("enter");
+    assert_eq!(editor_text(&pane, cx).lines().count(), 4);
+    // Nothing is proposed for a name the script does not explain, in a
+    // string or in a comment.
+    cx.simulate_input("thing.");
+    assert_eq!(proposed(&pane, cx), None);
+    cx.simulate_input(" let s = \"workbook.");
+    assert_eq!(proposed(&pane, cx), None);
+    cx.simulate_keystrokes("end");
+    cx.simulate_input("; // workbook.");
+    assert_eq!(proposed(&pane, cx), None);
+    // Moving the caret closes the list.
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("workbook.");
+    assert!(proposed(&pane, cx).is_some());
+    cx.simulate_keystrokes("left");
+    assert_eq!(proposed(&pane, cx), None);
+}
+
+#[gpui::test]
+fn enums_and_variables_are_completed(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    cx.simulate_input("let sheet = workbook.getActiveWorksheet();");
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input("sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.");
+    assert!(proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"HorizontalAlignment".to_string()) && names.contains(&"ChartType".to_string())));
+    cx.simulate_input("Hor");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["HorizontalAlignment".to_string()]));
+    cx.simulate_keystrokes("enter");
+    cx.simulate_input(".");
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names[..4].to_vec()), Some(vec!["general".to_string(), "left".to_string(), "center".to_string(), "right".to_string()]));
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail()).as_deref(), Some("= \"General\""));
+    cx.simulate_input("c");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(caret_line(&pane, cx), "sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center|)");
+    // A click on an entry takes it.
+    cx.simulate_keystrokes("end enter");
+    cx.simulate_input("sheet.getAutoFilter().");
+    redraw(cx);
+    let (names, _) = proposed(&pane, cx).expect("the list is open");
+    let index = names.iter().position(|name| name == "clearCriteria").expect("clearCriteria");
+    let row = pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(index)).expect("the entry is drawn");
+    cx.simulate_click(row, Modifiers::none());
+    assert_eq!(caret_line(&pane, cx), "sheet.getAutoFilter().clearCriteria|");
+    assert_eq!(proposed(&pane, cx), None);
+}
+
+#[gpui::test]
+fn the_parameters_show_inside_the_parentheses_of_a_call(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let pane = new_script(&app, cx);
+    cx.simulate_input("workbook.getActiveWorksheet().getCell");
+    assert_eq!(hinted(&pane, cx), None);
+    cx.simulate_keystrokes("escape");
+    cx.simulate_input("(");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell([row: number], column: number): Range"));
+    cx.simulate_input("3, ");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell(row: number, [column: number]): Range"));
+    // Back over the comma with the arrow keys: the first parameter again.
+    cx.simulate_keystrokes("left left");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell([row: number], column: number): Range"));
+    // Escape hides the hint; past the closing parenthesis there is none.
+    cx.simulate_keystrokes("escape");
+    assert_eq!(hinted(&pane, cx), None);
+    cx.simulate_keystrokes("end");
+    assert_eq!(hinted(&pane, cx), None);
+    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getCell(3, )|");
+    // The hint and the list together, in an argument.
+    cx.simulate_keystrokes("left");
+    cx.simulate_input("workbook.getT");
+    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell(row: number, [column: number]): Range"));
+    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["getTable".to_string(), "getTables".to_string()]));
+    redraw(cx);
+    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(1)).is_some());
+}
+
+#[gpui::test]
+fn a_viewer_of_vba_proposes_nothing(cx: &mut TestAppContext) {
+    let (_, cx) = open(cx);
+    let editor = cx.new(|cx| super::editor::CodeEditor::viewer("Sub A()\n  workbook.\nEnd Sub", super::syntax::Language::Vba, cx));
+    assert_eq!(editor.update(cx, |editor, _| editor.proposed()), None);
+}

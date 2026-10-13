@@ -16,6 +16,7 @@
 //! OpenSheet does not run.
 
 mod buffer;
+mod complete;
 mod editor;
 mod macros;
 mod pane;

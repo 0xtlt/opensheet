@@ -10,6 +10,7 @@
 //! script costs nothing while it is drawn.
 
 use super::buffer::CodeBuffer;
+use super::complete::{self, Completion, Hint};
 use super::syntax::{Language, LineState, Token, highlight_line, line_states};
 use crate::text_input as line;
 use crate::theme::{self, c, ca};
@@ -43,6 +44,12 @@ const COLOR_TYPE: u32 = 0x267F99;
 const COLOR_PROBLEM: u32 = 0xE51400;
 const COLOR_CURRENT_LINE: u32 = 0xF3F8F5;
 const COLOR_GUTTER_TEXT: u32 = 0x8A8A8A;
+
+/// The list of completions: how many entries show at once, the height
+/// of one and the width of the list.
+const PROPOSAL_ROWS: usize = 8;
+const PROPOSAL_ROW: f32 = 20.0;
+const PROPOSAL_WIDTH: f32 = 440.0;
 
 pub fn bind_keys(cx: &mut App) {
     let c = Some(CONTEXT);
@@ -89,6 +96,18 @@ struct Geometry {
     char_width: Pixels,
     /// The lines in view: index of the line and its shaped text.
     lines: Vec<(usize, ShapedLine)>,
+    /// The entries of the list of completions that are drawn: their
+    /// place in the list and where they are.
+    proposal_rows: Vec<(usize, Bounds<Pixels>)>,
+}
+
+/// The list of completions while it is open.
+struct Proposal {
+    completion: Completion,
+    /// The entry Return and Tab take.
+    selected: usize,
+    /// The first entry shown.
+    first: usize,
 }
 
 pub(crate) struct CodeEditor {
@@ -110,6 +129,10 @@ pub(crate) struct CodeEditor {
     /// Bring the caret into view at the next paint.
     reveal: bool,
     geometry: Option<Geometry>,
+    /// What is proposed after the dot being typed.
+    proposal: Option<Proposal>,
+    /// The parameters of the call the caret is in.
+    hint: Option<Hint>,
 }
 
 impl EventEmitter<EditorEvent> for CodeEditor {}
@@ -131,6 +154,8 @@ impl CodeEditor {
             selecting: false,
             reveal: false,
             geometry: None,
+            proposal: None,
+            hint: None,
         }
     }
 
@@ -164,6 +189,8 @@ impl CodeEditor {
         self.scroll_top = 0.0;
         self.scroll_left = 0.0;
         self.goal_col = None;
+        self.proposal = None;
+        self.hint = None;
         self.states = line_states(self.language, self.buffer.text());
         cx.notify();
     }
@@ -194,8 +221,7 @@ impl CodeEditor {
     pub fn go_to_line(&mut self, line: u32, column: Option<u32>, cx: &mut Context<Self>) {
         self.buffer.go_to_line(line, column);
         self.goal_col = None;
-        self.reveal = true;
-        cx.notify();
+        self.moved(cx);
     }
 
     /// Line and column of the caret, 1-based as the status shows them.
@@ -208,13 +234,105 @@ impl CodeEditor {
         self.states = line_states(self.language, self.buffer.text());
         self.goal_col = None;
         self.reveal = true;
+        self.proposal = None;
+        self.refresh_hint();
         cx.emit(EditorEvent::Changed);
         cx.notify();
     }
 
     fn moved(&mut self, cx: &mut Context<Self>) {
         self.reveal = true;
+        // The list was for the place the caret has left.
+        self.proposal = None;
+        self.refresh_hint();
         cx.notify();
+    }
+
+    // ---- completion -------------------------------------------------------
+
+    /// Whether the editor proposes anything: for a script being written.
+    fn completes(&self) -> bool {
+        !self.read_only && self.language == Language::TypeScript
+    }
+
+    /// Show the parameters of the call the caret is in, if it is in one.
+    fn refresh_hint(&mut self) {
+        self.hint = if self.completes() && self.buffer.selection().is_empty() { complete::hint(self.buffer.text(), self.buffer.caret()) } else { None };
+    }
+
+    /// Open, narrow or close the list for what stands before the caret:
+    /// what was typed decides again, the best match is selected.
+    fn propose(&mut self, cx: &mut Context<Self>) {
+        self.proposal = None;
+        if self.completes() && self.buffer.selection().is_empty() {
+            if let Some(completion) = complete::complete(self.buffer.text(), self.buffer.caret()) {
+                self.proposal = Some(Proposal {
+                    completion,
+                    selected: 0,
+                    first: 0,
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    /// Move the selection of the list by `by` entries, round the ends.
+    fn step_proposal(&mut self, by: isize, cx: &mut Context<Self>) -> bool {
+        let Some(proposal) = &mut self.proposal else {
+            return false;
+        };
+        let count = proposal.completion.entries.len() as isize;
+        proposal.selected = (proposal.selected as isize + by).rem_euclid(count) as usize;
+        // Keep the selected entry among those shown.
+        if proposal.selected < proposal.first {
+            proposal.first = proposal.selected;
+        } else if proposal.selected >= proposal.first + PROPOSAL_ROWS {
+            proposal.first = proposal.selected + 1 - PROPOSAL_ROWS;
+        }
+        cx.notify();
+        true
+    }
+
+    /// Put an entry of the list in the text, in place of what was typed
+    /// of it. False when the list is not open.
+    fn accept_proposal(&mut self, index: Option<usize>, cx: &mut Context<Self>) -> bool {
+        let Some(proposal) = self.proposal.take() else {
+            return false;
+        };
+        let Some(entry) = proposal.completion.entries.get(index.unwrap_or(proposal.selected)) else {
+            return false;
+        };
+        let range = proposal.completion.start..self.buffer.caret();
+        let name = entry.name.clone();
+        self.edit(cx, |buffer| buffer.replace(range, &name));
+        true
+    }
+
+    /// The names the list shows, the selected one and the first shown.
+    #[cfg(test)]
+    pub fn proposed(&self) -> Option<(Vec<String>, usize)> {
+        self.proposal.as_ref().map(|proposal| (proposal.completion.entries.iter().map(|entry| entry.name.clone()).collect(), proposal.selected))
+    }
+
+    /// Where an entry of the list was drawn, when it is among those shown.
+    #[cfg(test)]
+    pub fn proposal_row(&self, index: usize) -> Option<Point<Pixels>> {
+        self.geometry.as_ref()?.proposal_rows.iter().find(|(row, _)| *row == index).map(|(_, place)| place.center())
+    }
+
+    /// What stands beside the selected entry of the list.
+    #[cfg(test)]
+    pub fn proposed_detail(&self) -> Option<String> {
+        self.proposal.as_ref().and_then(|proposal| proposal.completion.entries.get(proposal.selected)).map(|entry| entry.detail.clone())
+    }
+
+    /// The hint shown, the parameter being typed between brackets.
+    #[cfg(test)]
+    pub fn hinted(&self) -> Option<String> {
+        self.hint.as_ref().map(|hint| match &hint.active {
+            Some(active) => format!("{}[{}]{}", &hint.signature[..active.start], &hint.signature[active.clone()], &hint.signature[active.end..]),
+            None => hint.signature.clone(),
+        })
     }
 
     /// Run an edit unless the text is read-only.
@@ -284,12 +402,18 @@ impl CodeEditor {
     }
 
     fn up(&mut self, _: &line::Up, _: &mut Window, cx: &mut Context<Self>) {
+        if self.step_proposal(-1, cx) {
+            return;
+        }
         let to = self.vertical(-1);
         self.buffer.move_to(to);
         self.moved(cx);
     }
 
     fn down(&mut self, _: &line::Down, _: &mut Window, cx: &mut Context<Self>) {
+        if self.step_proposal(1, cx) {
+            return;
+        }
         let to = self.vertical(1);
         self.buffer.move_to(to);
         self.moved(cx);
@@ -308,12 +432,18 @@ impl CodeEditor {
     }
 
     fn page_up(&mut self, _: &PageUp, _: &mut Window, cx: &mut Context<Self>) {
+        if self.step_proposal(-(PROPOSAL_ROWS as isize - 1), cx) {
+            return;
+        }
         let to = self.vertical(-self.page());
         self.buffer.move_to(to);
         self.moved(cx);
     }
 
     fn page_down(&mut self, _: &PageDown, _: &mut Window, cx: &mut Context<Self>) {
+        if self.step_proposal(PROPOSAL_ROWS as isize - 1, cx) {
+            return;
+        }
         let to = self.vertical(self.page());
         self.buffer.move_to(to);
         self.moved(cx);
@@ -390,7 +520,12 @@ impl CodeEditor {
     }
 
     fn backspace(&mut self, _: &line::Backspace, _: &mut Window, cx: &mut Context<Self>) {
+        // A list that is open follows what is left of the word.
+        let proposing = self.proposal.is_some();
         self.edit(cx, CodeBuffer::backspace);
+        if proposing {
+            self.propose(cx);
+        }
     }
 
     fn delete(&mut self, _: &line::Delete, _: &mut Window, cx: &mut Context<Self>) {
@@ -398,6 +533,9 @@ impl CodeEditor {
     }
 
     fn enter(&mut self, _: &line::Enter, _: &mut Window, cx: &mut Context<Self>) {
+        if self.accept_proposal(None, cx) {
+            return;
+        }
         self.edit(cx, CodeBuffer::newline);
     }
 
@@ -409,6 +547,9 @@ impl CodeEditor {
         // A viewer has nothing to indent: Tab goes on to the next control.
         if self.read_only {
             cx.propagate();
+            return;
+        }
+        if self.accept_proposal(None, cx) {
             return;
         }
         self.edit(cx, CodeBuffer::indent);
@@ -423,7 +564,12 @@ impl CodeEditor {
     }
 
     fn escape(&mut self, _: &line::Escape, _: &mut Window, cx: &mut Context<Self>) {
-        // Escape leaves the editor for whatever holds it.
+        // Escape closes the list, then the hint; with neither it leaves
+        // the editor for whatever holds it.
+        if self.proposal.take().is_some() || self.hint.take().is_some() {
+            cx.notify();
+            return;
+        }
         cx.propagate();
     }
 
@@ -499,6 +645,13 @@ impl CodeEditor {
     }
 
     fn on_mouse_down(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // A click on an entry of the list takes it.
+        let clicked = self.geometry.as_ref().and_then(|geometry| geometry.proposal_rows.iter().find(|(_, row)| row.contains(&event.position)).map(|(index, _)| *index));
+        if let Some(index) = clicked.filter(|_| self.proposal.is_some()) {
+            self.accept_proposal(Some(index), cx);
+            return;
+        }
+        self.proposal = None;
         self.selecting = true;
         self.goal_col = None;
         let at = self.index_for_point(event.position);
@@ -513,6 +666,7 @@ impl CodeEditor {
         } else {
             self.buffer.move_to(at);
         }
+        self.refresh_hint();
         cx.notify();
     }
 
@@ -571,6 +725,7 @@ impl EntityInputHandler for CodeEditor {
         }
         let range = range_utf16.as_ref().map(|range| self.buffer.range_from_utf16(range)).or(self.marked.take());
         self.marked = None;
+        let typed = range.is_none();
         match range {
             // What an input method composed replaces its draft.
             Some(range) => self.buffer.replace(range, text),
@@ -578,6 +733,11 @@ impl EntityInputHandler for CodeEditor {
             None => self.buffer.type_text(text),
         }
         self.changed(cx);
+        // After a dot, and while the word after it is typed, the list of
+        // what can stand there; typing goes on whatever it shows.
+        if typed {
+            self.propose(cx);
+        }
     }
 
     fn replace_and_mark_text_in_range(
@@ -649,6 +809,19 @@ struct Prepared {
     /// The thumb of the vertical scroll bar, when the text is taller than
     /// the box.
     thumb: Option<Bounds<Pixels>>,
+    proposal: Option<ProposalBox>,
+    hint: Option<(Bounds<Pixels>, ShapedLine)>,
+}
+
+/// The list of completions as one paint draws it.
+struct ProposalBox {
+    bounds: Bounds<Pixels>,
+    /// Each entry shown: its place in the list, its row, its name and
+    /// what stands beside it.
+    rows: Vec<(usize, Bounds<Pixels>, ShapedLine, ShapedLine)>,
+    selected: usize,
+    /// The line about the selected entry, under the list.
+    about: Option<(Bounds<Pixels>, ShapedLine)>,
 }
 
 impl IntoElement for EditorElement {
@@ -845,12 +1018,77 @@ impl Element for EditorElement {
             let top = scroll_top / (content_height - height) * (height - length);
             Bounds::new(point(bounds.right() - px(7.), bounds.top() + px(top)), size(px(5.), px(length)))
         });
+
+        // The hint of the call and the list of completions hang from the
+        // caret: the hint above its line, the list below, each on the
+        // other side when it has no room on its own.
+        let caret_at = caret_x.map(|x| point(text_left - px(scroll_left) + x, line_top(caret_line)));
+        let fit_x = |x: Pixels, width: Pixels| x.min(bounds.right() - width - px(8.)).max(bounds.left() + px(2.));
+        let row = px(PROPOSAL_ROW);
+        let mut hint_below = false;
+        let hint = caret_at.zip(editor.hint.as_ref()).map(|(at, hint)| {
+            let active = hint.active.clone().unwrap_or(0..0);
+            let run = |len: usize, color: Hsla| TextRun {
+                len,
+                font: code_font(),
+                color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            let runs: Vec<TextRun> = [
+                run(active.start, c(theme::TEXT_MUTED)),
+                run(active.len(), c(theme::ACCENT_DARK)),
+                run(hint.signature.len() - active.end, c(theme::TEXT_MUTED)),
+            ]
+            .into_iter()
+            .filter(|run| run.len > 0)
+            .collect();
+            let shaped = window.text_system().shape_line(hint.signature.clone().into(), px(FONT_SIZE), &runs, None);
+            let width = (shaped.width + px(12.)).min(bounds.size.width - px(12.));
+            hint_below = at.y - row - px(2.) < bounds.top();
+            let y = if hint_below { at.y + px(LINE_HEIGHT) + px(2.) } else { at.y - row - px(2.) };
+            (Bounds::new(point(fit_x(at.x, width), y), size(width, row)), shaped)
+        });
+        let proposal = caret_at.zip(editor.proposal.as_ref()).map(|(at, proposal)| {
+            let entries = &proposal.completion.entries;
+            let shown = entries.iter().enumerate().skip(proposal.first).take(PROPOSAL_ROWS);
+            let about = entries.get(proposal.selected).map(|entry| entry.about).filter(|about| !about.is_empty());
+            let count = entries.len().min(PROPOSAL_ROWS);
+            let width = px(PROPOSAL_WIDTH).min(bounds.size.width - px(12.)).max(px(120.));
+            let box_height = row * (count + about.is_some() as usize) as f32;
+            let mut below = at.y + px(LINE_HEIGHT) + px(2.);
+            if hint_below && hint.is_some() {
+                below += row + px(2.);
+            }
+            let above = at.y - box_height - px(2.) - if hint.is_some() && !hint_below { row + px(2.) } else { px(0.) };
+            let y = if below + box_height > bounds.bottom() && above >= bounds.top() { above } else { below };
+            let origin = point(fit_x(at.x, width), y);
+            let rows = shown
+                .enumerate()
+                .map(|(line, (index, entry))| {
+                    let place = Bounds::new(point(origin.x, origin.y + row * line as f32), size(width, row));
+                    (index, place, plain(entry.name.clone().into(), c(theme::TEXT), window), plain(entry.detail.clone().into(), c(theme::TEXT_MUTED), window))
+                })
+                .collect();
+            let about = about.map(|about| {
+                let place = Bounds::new(point(origin.x, origin.y + row * count as f32), size(width, row));
+                (place, plain(about.into(), c(theme::TEXT_MUTED), window))
+            });
+            ProposalBox {
+                bounds: Bounds::new(origin, size(width, box_height)),
+                rows,
+                selected: proposal.selected,
+                about,
+            }
+        });
         Some(Prepared {
             geometry: Geometry {
                 bounds,
                 text_left,
                 char_width,
                 lines,
+                proposal_rows: proposal.iter().flat_map(|proposal| proposal.rows.iter().map(|(index, place, _, _)| (*index, *place))).collect(),
             },
             scroll_top,
             scroll_left,
@@ -861,6 +1099,8 @@ impl Element for EditorElement {
             caret,
             problems,
             thumb,
+            proposal,
+            hint,
         })
     }
 
@@ -925,6 +1165,35 @@ impl Element for EditorElement {
                     gpui::transparent_black(),
                     gpui::BorderStyle::Solid,
                 ));
+            }
+            // Over the text: the hint of the call and the list.
+            let panel = |place: Bounds<Pixels>, window: &mut Window| {
+                window.paint_quad(gpui::quad(place, px(3.), c(0xFFFFFF), px(1.), c(theme::BORDER), gpui::BorderStyle::Solid));
+            };
+            let text_y = |place: &Bounds<Pixels>| place.top() + (place.size.height - line_height) / 2.0;
+            if let Some((place, shaped)) = &prepared.hint {
+                panel(*place, window);
+                window.with_content_mask(Some(ContentMask { bounds: *place }), |window| {
+                    let _ = shaped.paint(point(place.left() + px(6.), text_y(place)), line_height, window, cx);
+                });
+            }
+            if let Some(list) = &prepared.proposal {
+                panel(list.bounds, window);
+                window.with_content_mask(Some(ContentMask { bounds: list.bounds }), |window| {
+                    for (index, place, name, detail) in &list.rows {
+                        if *index == list.selected {
+                            window.paint_quad(fill(*place, ca(0x0A64D2, 0.16)));
+                        }
+                        let y = text_y(place);
+                        let _ = name.paint(point(place.left() + px(6.), y), line_height, window, cx);
+                        let _ = detail.paint(point(place.left() + px(6.) + name.width + px(10.), y), line_height, window, cx);
+                    }
+                    if let Some((place, about)) = &list.about {
+                        window.paint_quad(fill(*place, c(theme::PANEL_BG)));
+                        window.paint_quad(fill(Bounds::new(place.origin, size(place.size.width, px(1.))), c(theme::BORDER)));
+                        let _ = about.paint(point(place.left() + px(6.), text_y(place)), line_height, window, cx);
+                    }
+                });
             }
         });
         let (geometry, scroll_top, scroll_left) = (prepared.geometry, prepared.scroll_top, prepared.scroll_left);
