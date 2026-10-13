@@ -1354,6 +1354,14 @@ pub static ES: &[(&str, &str)] = &[
     ("Zip Code + 4", "Código postal + 4"),
     ("Phone Number", "Número de teléfono"),
     ("Social Security Number", "Número del seguro social"),
+    // ---- Automate: Record Actions, completion, find in the editor (J15) ----
+    ("Record Actions", "Grabar acciones"),
+    ("Recording", "Grabando"),
+    ("Stop Recording", "Detener grabación"),
+    ("Recorded actions", "Acciones grabadas"),
+    ("Copy as code", "Copiar como código"),
+    ("This action was not recorded.", "Esta acción no se grabó."),
+    ("Make changes in the workbook: each action appears here as it is recorded.", "Realice cambios en el libro: cada acción aparece aquí a medida que se graba."),
     // ---- Conditional formatting ----
     ("Greater Than…", "Es mayor que…"),
     ("Less Than…", "Es menor que…"),
@@ -4988,6 +4996,14 @@ pub static DE: &[(&str, &str)] = &[
     ("Zip Code + 4", "Postleitzahl + 4"),
     ("Phone Number", "Telefonnummer"),
     ("Social Security Number", "Sozialversicherungsnummer"),
+    // ---- Automate: Record Actions, completion, find in the editor (J15) ----
+    ("Record Actions", "Aktionen aufzeichnen"),
+    ("Recording", "Aufzeichnung"),
+    ("Stop Recording", "Aufzeichnung beenden"),
+    ("Recorded actions", "Aufgezeichnete Aktionen"),
+    ("Copy as code", "Als Code kopieren"),
+    ("This action was not recorded.", "Diese Aktion wurde nicht aufgezeichnet."),
+    ("Make changes in the workbook: each action appears here as it is recorded.", "Nehmen Sie Änderungen an der Arbeitsmappe vor: Jede Aktion erscheint hier, sobald sie aufgezeichnet wird."),
     // ---- Conditional formatting ----
     ("Greater Than…", "Größer als…"),
     ("Less Than…", "Kleiner als…"),
@@ -8616,6 +8632,14 @@ pub static IT: &[(&str, &str)] = &[
     ("Zip Code + 4", "C.A.P. + 4"),
     ("Phone Number", "Numero di telefono"),
     ("Social Security Number", "Numero Previdenza Sociale"),
+    // ---- Automate: Record Actions, completion, find in the editor (J15) ----
+    ("Record Actions", "Registra azioni"),
+    ("Recording", "Registrazione"),
+    ("Stop Recording", "Ferma registrazione"),
+    ("Recorded actions", "Azioni registrate"),
+    ("Copy as code", "Copia come codice"),
+    ("This action was not recorded.", "Questa azione non è stata registrata."),
+    ("Make changes in the workbook: each action appears here as it is recorded.", "Apportare modifiche alla cartella di lavoro: ogni azione viene visualizzata qui man mano che viene registrata."),
     // ---- Conditional formatting ----
     ("Greater Than…", "Maggiore di…"),
     ("Less Than…", "Minore di…"),

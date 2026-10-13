@@ -9,7 +9,7 @@
 
 use super::Before;
 use super::code::{Scope, Step, member, quote, runs_of};
-use super::compare::{Formats, content_at};
+use super::compare::{Formats, Pair, content_at, side_by_side};
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
 use opensheet_engine::{Content, Rect, Sheet, Value, Workbook};
 use std::collections::BTreeSet;
@@ -32,15 +32,14 @@ impl Touched {
             contents: BTreeSet::new(),
             formats: BTreeSet::new(),
         };
-        let positions: BTreeSet<(u32, u32)> = ws.cells.keys().chain(ts.cells.keys()).copied().collect();
-        for pos in positions {
+        for Pair { pos, contents, styles } in side_by_side(ws, ts) {
             if touched.contents.len() + touched.formats.len() > MAX_TOUCHED {
                 break;
             }
-            if content_at(ws, pos) != content_at(ts, pos) {
+            if contents.0 != contents.1 {
                 touched.contents.insert(pos);
             }
-            if !formats.same(ws.style_id_at(pos.0, pos.1), ts.style_id_at(pos.0, pos.1)) {
+            if !formats.same(styles.0, styles.1) {
                 touched.formats.insert(pos);
             }
         }

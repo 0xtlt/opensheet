@@ -181,7 +181,9 @@ pub(crate) fn play(wb: &mut Workbook, front: usize, steps: &[Step]) -> Result<Ou
         active_sheet: front,
         ..Context::default()
     };
-    wb.snapshot();
+    // No snapshot of the whole workbook here: each member of the engine
+    // notes what it changes, which is all `rollback` needs, and a copy
+    // of a large workbook per statement tried is what recording costs.
     let outcome = opensheet_script::run(&script(steps), wb, &context);
     match &outcome.error {
         Some(error) => {

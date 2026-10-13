@@ -12,7 +12,7 @@ use opensheet_engine::chart::Chart;
 use opensheet_engine::refs::cell_name;
 use opensheet_engine::style::{Border, Color, Style, StyleId};
 use opensheet_engine::table::Table;
-use opensheet_engine::{Content, Sheet, Value, Workbook};
+use opensheet_engine::{Cell, Content, Sheet, Value, Workbook};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Sizes are kept in pixels and scripts give them in points.
@@ -74,6 +74,10 @@ impl<'a> Formats<'a> {
 
     pub fn same(&mut self, a: StyleId, b: StyleId) -> bool {
         let (wa, wb) = (self.a, self.b);
+        // Copies of one workbook share the formats they had in common.
+        if a == b && std::ptr::eq(wa.styles.get(a), wb.styles.get(b)) {
+            return true;
+        }
         *self.known.entry((a, b)).or_insert_with(|| {
             let (sa, sb) = (wa.styles.get(a), wb.styles.get(b));
             sa == sb || shown(sa) == shown(sb)
@@ -82,12 +86,51 @@ impl<'a> Formats<'a> {
 }
 
 /// What a cell holds: nothing for a cell that is not there.
-pub(crate) fn content_at(sheet: &Sheet, pos: (u32, u32)) -> &Content {
+fn content_of(cell: Option<&Cell>) -> &Content {
     const EMPTY: &Content = &Content::Empty;
-    match sheet.cells.get(&pos).map(|cell| &cell.content) {
+    match cell.map(|cell| &cell.content) {
         Some(Content::Value(Value::Empty)) | None => EMPTY,
         Some(content) => content,
     }
+}
+
+pub(crate) fn content_at(sheet: &Sheet, pos: (u32, u32)) -> &Content {
+    content_of(sheet.cells.get(&pos))
+}
+
+/// A cell of each of two sheets at one position: what it holds and the
+/// number of its format (the one of its row or column for a cell that is
+/// not there).
+pub(crate) struct Pair<'a> {
+    pub pos: (u32, u32),
+    pub contents: (&'a Content, &'a Content),
+    pub styles: (StyleId, StyleId),
+}
+
+/// The cells of two sheets side by side, in order: every position where
+/// either has a cell, once. Two sorted maps are walked together, which
+/// is what makes comparing large sheets after every action bearable.
+pub(crate) fn side_by_side<'a>(a: &'a Sheet, b: &'a Sheet) -> impl Iterator<Item = Pair<'a>> {
+    let mut left = a.cells.iter().peekable();
+    let mut right = b.cells.iter().peekable();
+    std::iter::from_fn(move || {
+        let pos = match (left.peek(), right.peek()) {
+            (Some((x, _)), Some((y, _))) => **x.min(y),
+            (Some((x, _)), None) => **x,
+            (None, Some((y, _))) => **y,
+            (None, None) => return None,
+        };
+        let cell_a = left.next_if(|(at, _)| **at == pos).map(|(_, cell)| cell);
+        let cell_b = right.next_if(|(at, _)| **at == pos).map(|(_, cell)| cell);
+        Some(Pair {
+            pos,
+            contents: (content_of(cell_a), content_of(cell_b)),
+            styles: (
+                cell_a.map_or_else(|| a.inherited_style(pos.0, pos.1), |cell| cell.style),
+                cell_b.map_or_else(|| b.inherited_style(pos.0, pos.1), |cell| cell.style),
+            ),
+        })
+    })
 }
 
 fn same_size(a: Option<&f32>, b: Option<&f32>, standard_a: f32, standard_b: f32) -> bool {
@@ -133,15 +176,13 @@ pub(crate) fn same_table(a: &Table, b: &Table) -> bool {
 fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Found) {
     let name = &b.name;
     // Cells: what they hold and how they are formatted.
-    let positions: BTreeSet<(u32, u32)> = a.cells.keys().chain(b.cells.keys()).copied().collect();
-    for pos in positions {
-        if content_at(a, pos) != content_at(b, pos) {
-            found.add(|| format!("{name}!{}: {:?} / {:?}", cell_name(pos.0, pos.1), content_at(a, pos), content_at(b, pos)));
+    for Pair { pos, contents, styles } in side_by_side(a, b) {
+        if contents.0 != contents.1 {
+            found.add(|| format!("{name}!{}: {:?} / {:?}", cell_name(pos.0, pos.1), contents.0, contents.1));
         }
-        let (style_a, style_b) = (a.style_id_at(pos.0, pos.1), b.style_id_at(pos.0, pos.1));
-        if !formats.same(style_a, style_b) {
+        if !formats.same(styles.0, styles.1) {
             let (wa, wb) = (formats.a, formats.b);
-            found.add(|| format!("{name}!{} format: {:?} / {:?}", cell_name(pos.0, pos.1), shown(wa.styles.get(style_a)), shown(wb.styles.get(style_b))));
+            found.add(|| format!("{name}!{} format: {:?} / {:?}", cell_name(pos.0, pos.1), shown(wa.styles.get(styles.0)), shown(wb.styles.get(styles.1))));
         }
     }
     for col in keys(&a.col_styles, &b.col_styles) {

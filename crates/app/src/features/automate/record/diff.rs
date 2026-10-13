@@ -11,7 +11,7 @@
 //! is no script: the action is one the recorder cannot write.
 
 use super::code::{Scope, Step, color, member, number, play, points, quote, rects_of, runs_of};
-use super::compare::{Formats, content_at, differences, distance, same_chart, shown};
+use super::compare::{Formats, Pair, content_at, differences, distance, same_chart, shown, side_by_side};
 use opensheet_engine::chart::{Chart, ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::filter::{AutoFilter, Criteria, CustomOp, DynamicFilter, SortState};
 use opensheet_engine::input::parse_input;
@@ -98,11 +98,6 @@ pub(crate) fn reach(work: &mut Workbook, target: &Workbook, scope: &mut Scope, r
 
 fn pairs<'a>(work: &'a Workbook, target: &'a Workbook) -> impl Iterator<Item = (&'a Sheet, &'a Sheet)> {
     work.sheets.iter().zip(&target.sheets)
-}
-
-/// The cells of two sheets, each once.
-fn positions(a: &Sheet, b: &Sheet) -> BTreeSet<(u32, u32)> {
-    a.cells.keys().chain(b.cells.keys()).copied().collect()
 }
 
 // ------------------------------------------------------------------ sheets
@@ -463,10 +458,9 @@ fn contents(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
     let mut count = 0;
     for (ws, ts) in pairs(work, target) {
         let (mut cleared, mut written) = (BTreeSet::new(), BTreeSet::new());
-        for pos in positions(ws, ts) {
-            let then = content_at(ts, pos);
-            if content_at(ws, pos) != then {
-                if matches!(then, Content::Empty) { cleared.insert(pos) } else { written.insert(pos) };
+        for Pair { pos, contents, .. } in side_by_side(ws, ts) {
+            if contents.0 != contents.1 {
+                if matches!(contents.1, Content::Empty) { cleared.insert(pos) } else { written.insert(pos) };
             }
         }
         count += cleared.len() + written.len();
@@ -726,8 +720,7 @@ fn cell_formats(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> 
         let on = scope.on(&ts.name);
         let mut groups: BTreeMap<Change, BTreeSet<(u32, u32)>> = BTreeMap::new();
         let mut bordered: BTreeSet<(u32, u32)> = BTreeSet::new();
-        for pos in positions(ws, ts) {
-            let pair = (ws.style_id_at(pos.0, pos.1), ts.style_id_at(pos.0, pos.1));
+        for Pair { pos, styles: pair, .. } in side_by_side(ws, ts) {
             if formats.same(pair.0, pair.1) {
                 continue;
             }

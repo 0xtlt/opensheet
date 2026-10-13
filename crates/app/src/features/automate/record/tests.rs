@@ -886,3 +886,164 @@ fn an_action_undone_leaves_the_list_and_one_redone_comes_back(cx: &mut TestAppCo
     let script = stop(&app, cx);
     assert_eq!(statements(&script), ["selectedSheet.getRange(\"A1:C5\").clear(ExcelScript.ClearApplyTo.contents);"]);
 }
+
+#[gpui::test]
+fn a_range_filled_with_one_entry(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    // One entry for a whole selection (Ctrl+Return in Excel), committed
+    // as the window commits any entry: one statement for the range.
+    let script = replayed(&app, cx, |app, cx| {
+        select(app, cx, "A1:B3");
+        act(app, cx, |app, _, cx| {
+            for row in 0..3 {
+                for col in 0..2 {
+                    app.wb.set_cell_text(0, row, col, "x").expect("a value");
+                }
+            }
+            app.commit("Typing", cx);
+        });
+        select(app, cx, "D1:D3");
+        act(app, cx, |app, _, cx| {
+            for row in 0..3 {
+                app.wb.set_cell_text(0, row, 3, &format!("=LEN(A{})+$B$1", row + 1)).expect("a formula");
+            }
+            app.commit("Typing", cx);
+        });
+        // A block of different values, as a paste from elsewhere leaves.
+        select(app, cx, "F1");
+        act(app, cx, |app, _, cx| {
+            app.wb.paste_text(0, 0, 5, "a\t1\nb\t=F1&\"!\"\n\t2.5");
+            app.commit("Paste", cx);
+        });
+    });
+    assert_eq!(
+        statements(&script),
+        [
+            "selectedSheet.getRange(\"A1:B3\").setValue(\"x\");",
+            "selectedSheet.getRange(\"D1:D3\").setFormula(\"=LEN(A1)+$B$1\");",
+            "selectedSheet.getRange(\"F1:G2\").setFormulas([[\"a\", \"1\"], [\"b\", \"=F1&\\\"!\\\"\"]]);",
+            "selectedSheet.getRange(\"G3\").setValue(2.5);",
+        ]
+    );
+}
+
+#[gpui::test]
+fn work_on_another_sheet_names_the_sheet(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    act(&app, cx, |app, window, cx| {
+        app.add_sheet(cx);
+        app.switch_sheet(0, window, cx);
+    });
+    let script = replayed(&app, cx, |app, cx| {
+        enter(app, cx, "E1", "here");
+        act(app, cx, |app, window, cx| app.switch_sheet(1, window, cx));
+        enter(app, cx, "A1", "=Sheet1!B2*2");
+        select(app, cx, "A1:B2");
+        act(app, cx, |app, _, cx| app.toggle_bold(cx));
+        act(app, cx, |app, _, cx| app.insert_rows(cx));
+    });
+    assert_eq!(
+        statements(&script),
+        [
+            "selectedSheet.getRange(\"E1\").setValue(\"here\");",
+            "workbook.getWorksheet(\"Sheet2\").getRange(\"A1\").setFormula(\"=Sheet1!B2*2\");",
+            "workbook.getWorksheet(\"Sheet2\").getRange(\"A1:B2\").getFormat().getFont().setBold(true);",
+            "workbook.getWorksheet(\"Sheet2\").getRange(\"1:2\").insert(ExcelScript.InsertShiftDirection.down);",
+        ]
+    );
+}
+
+// --------------------------------------------------------------- the pane
+
+fn click(cx: &mut VisualTestContext, name: &'static str) {
+    let position = cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is not drawn")).center();
+    cx.simulate_click(position, Modifiers::none());
+    settle(cx);
+}
+
+#[gpui::test]
+fn the_pane_lists_the_actions_and_stop_saves_the_script(cx: &mut TestAppContext) {
+    use super::super::scripts;
+    let (app, cx) = open(cx);
+    // Record Actions on the Automate tab.
+    app.update(cx, |app, cx| super::super::show_tab(app, cx));
+    settle(cx);
+    let button = app.update(cx, |app, _| app.anchors.borrow().get("au-record").map(|bounds| bounds.center())).expect("Record Actions is on the ribbon");
+    cx.simulate_click(button, Modifiers::none());
+    settle(cx);
+    assert!(cx.debug_bounds("ce-recording").is_some());
+    assert!(cx.debug_bounds("ce-rec-action-0").is_none());
+
+    enter(&app, cx, "A1", "12");
+    select(&app, cx, "A1");
+    act(&app, cx, |app, _, cx| app.toggle_bold(cx));
+    settle(cx);
+    assert!(cx.debug_bounds("ce-rec-action-0").is_some());
+    assert!(cx.debug_bounds("ce-rec-action-1").is_some());
+    assert!(cx.debug_bounds("ce-rec-action-2").is_none());
+
+    // Copy as code: the statements of one action, with their comment.
+    click(cx, "ce-rec-copy-1");
+    let copied = cx.read_from_clipboard().and_then(|item| item.text()).unwrap_or_default();
+    assert_eq!(copied, "// Set font bold to true for range A1 on selectedSheet\nselectedSheet.getRange(\"A1\").getFormat().getFont().setBold(true);\n");
+
+    // New Script while recording does not leave the list.
+    act(&app, cx, |app, window, cx| app.run_command(Cmd::NewScript, window, cx));
+    assert_eq!(pane(&app, cx).update(cx, |pane, _| pane.page.clone()), Page::Recording);
+
+    // Stop: the script is saved under a name of its own and opened.
+    click(cx, "ce-rec-stop");
+    let pane = pane(&app, cx);
+    assert_eq!(pane.update(cx, |pane, _| (pane.page.clone(), pane.open.clone(), pane.recorder.is_none())), (Page::Editor, Some("Script".to_string()), true));
+    let saved = scripts::load("Script").expect("the script was saved");
+    assert_eq!(
+        saved.body,
+        "function main(workbook: ExcelScript.Workbook) {\n\tlet selectedSheet = workbook.getActiveWorksheet();\n\t// Set range A1 on selectedSheet\n\tselectedSheet.getRange(\"A1\").setValue(12);\n\t// Set font bold to true for range A1 on selectedSheet\n\tselectedSheet.getRange(\"A1\").getFormat().getFont().setBold(true);\n}\n"
+    );
+    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).text().to_string()), saved.body);
+    // What is done after Stop is no longer recorded, and nothing is wrong
+    // with the script.
+    enter(&app, cx, "B1", "later");
+    assert!(pane.update(cx, |pane, _| pane.problems.is_empty()));
+}
+
+/// How long the recorder takes over one action on a large sheet: run by
+/// hand (`--ignored --nocapture`) when the recorder changes.
+#[gpui::test]
+#[ignore = "a measure, not a test"]
+fn timing_on_a_large_sheet(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    act(&app, cx, |app, _, cx| {
+        for row in 0..20_000u32 {
+            for col in 0..5u32 {
+                app.wb.set_value(0, row, col, opensheet_engine::Value::Number((row * 7 + col) as f64));
+            }
+        }
+        app.commit("seed", cx);
+    });
+    let clock = std::time::Instant::now();
+    enter(&app, cx, "H1", "12");
+    println!("typing, not recording: {:?}", clock.elapsed());
+    start(&app, cx);
+    for (what, action) in [("typing", 0), ("bold", 1), ("insert row", 2), ("sort", 3)] {
+        let clock = std::time::Instant::now();
+        match action {
+            0 => enter(&app, cx, "G1", "12"),
+            1 => {
+                select(&app, cx, "A1:E10");
+                act(&app, cx, |app, _, cx| app.toggle_bold(cx));
+            }
+            2 => {
+                select(&app, cx, "A5");
+                act(&app, cx, |app, _, cx| app.insert_rows(cx));
+            }
+            _ => {
+                select(&app, cx, "B3");
+                act(&app, cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::SortDescending, window, cx));
+            }
+        }
+        println!("{what}: {:?}", clock.elapsed());
+    }
+    println!("{:?}", listed(&app, cx));
+}
