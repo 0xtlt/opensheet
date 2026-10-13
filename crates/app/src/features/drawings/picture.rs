@@ -594,6 +594,40 @@ pub fn image_as(
     })
 }
 
+/// A copy of the image a picture is drawn from (`Picture::shown`), with
+/// at least `size` pixels each way when the image has them, and not
+/// many more.
+pub fn small_copy(picture: &Picture, size: (u32, u32)) -> Option<Bitmap> {
+    let (bytes, _) = picture.shown();
+    CACHE.with_borrow_mut(|cache| {
+        let key = Arc::as_ptr(bytes) as *const u8 as usize;
+        let decoded = cache.pictures.entry(key).or_insert_with(|| Decoded {
+            bytes: bytes.clone(),
+            levels: Bitmap::decode(bytes).into_iter().collect(),
+            shown: HashMap::new(),
+        });
+        let (full_w, full_h) = decoded.levels.first().map(|full| (full.width, full.height))?;
+        let level = level_for(full_w, full_h, (size.0 as f32, size.1 as f32)) as usize;
+        while decoded.levels.len() <= level {
+            let smaller = decoded.levels[decoded.levels.len() - 1].halved();
+            decoded.levels.push(smaller);
+        }
+        decoded.levels.get(level).cloned()
+    })
+}
+
+/// A bitmap as a PNG file.
+pub fn png_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
+    let mut rgba = bitmap.data.clone();
+    for pixel in rgba.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let pixels = RgbaImage::from_raw(bitmap.width, bitmap.height, rgba)?;
+    let mut png = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(pixels).write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(png.into_inner())
+}
+
 /// A picture as a page shows it in a frame `size` (pixels at 100 %),
 /// turned by `turn` degrees and flipped: its pixels red first, a few to
 /// each pixel of the sheet, with everything the picture wears, and the

@@ -37,6 +37,7 @@ mod pane;
 pub(crate) mod picture;
 mod render;
 mod smartart;
+mod styles;
 mod svg;
 mod tabs;
 mod text;
@@ -44,6 +45,8 @@ mod tool;
 mod wordart;
 #[cfg(test)]
 mod insertart_tests;
+#[cfg(test)]
+mod picture_tests;
 #[cfg(test)]
 mod ui_tests;
 
@@ -268,6 +271,7 @@ impl Command for Cmd {
                 .any(|id| app.wb.drawing(app.sheet, id).is_some_and(|drawing| drawing.as_group().is_some())),
             Cmd::Regroup => regroupable(app).is_some(),
             Cmd::EditPoints => false,
+            Cmd::PictureStyles => drawing.is_some_and(|drawing| drawing.as_picture().is_some_and(|picture| picture.link.is_none())),
             Cmd::Crop
             | Cmd::CropPicture
             | Cmd::CropFill
@@ -463,6 +467,8 @@ impl Command for Cmd {
                 ];
                 app.open_command_menu(entries, 250.0, window, cx);
             }
+            Cmd::PictureStyles => styles::open_styles(app, window, cx),
+            Cmd::PictureBorder => styles::open_border(app, window, cx),
             Cmd::ResetPictureOnly => reset_picture(app, false, cx),
             Cmd::ResetPictureAndSize => reset_picture(app, true, cx),
             Cmd::ChangePicture => {
@@ -726,6 +732,9 @@ fn reset_picture(app: &mut ExcelApp, size: bool, cx: &mut Cx) {
         drawing.flip_v = false;
         drawing.effects = Effects::default();
         if let Some(picture) = drawing.as_picture_mut() {
+            picture.outline = None;
+            picture.artistic = None;
+            picture.baked = None;
             picture.adjust = PictureAdjust {
                 crop: if size { [0.0; 4] } else { picture.adjust.crop },
                 shape: if size { ShapePreset::Rect } else { picture.adjust.shape },
