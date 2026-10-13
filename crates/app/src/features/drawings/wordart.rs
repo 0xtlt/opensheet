@@ -373,6 +373,13 @@ thread_local! {
     static OUTLINED: std::cell::RefCell<std::collections::HashMap<u64, Option<(String, ArtBox)>>> = std::cell::RefCell::default();
 }
 
+/// The images made so far for texts drawn as outlines: `None` for a
+/// text whose fonts gave no outlines.
+#[cfg(test)]
+pub(super) fn outlined_documents() -> Vec<Option<String>> {
+    OUTLINED.with_borrow(|known| known.values().map(|made| made.as_ref().map(|(document, _)| document.clone())).collect())
+}
+
 /// Draw the text of a shape as outlines (see `letters.rs`): an image of
 /// the whole text, turned with the shape. False when the fonts of the
 /// text have no outlines to give; it is then drawn the plain way.

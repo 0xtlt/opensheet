@@ -389,3 +389,53 @@ fn snap_to_shape_brings_edges_together(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::SnapToGrid);
     assert!(app.update(cx, |app, _| !app.snap_to_shape() && !app.snap_to_grid()));
 }
+
+#[gpui::test]
+fn the_image_of_warped_letters_has_ink(cx: &mut TestAppContext) {
+    use crate::grid::FontResolver;
+    use opensheet_engine::wordart::TextGradient;
+    // A document asked for before the renderer is there (the first frame
+    // of a window opened on a file) is drawn once it is.
+    let early = r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#123456"/></svg>"##;
+    assert!(svg::image(early, (false, false), 0).is_none());
+    cx.update(|cx| svg::install(cx));
+    assert!(svg::image(early, (false, false), 0).is_some());
+    let fonts = cx.update(|cx| FontResolver::new(cx.text_system().clone()));
+    let mut shape = WordArtStyle(1).shape("Warped");
+    shape.warp = Some(TextWarp::from(WarpPreset::Triangle));
+    shape.effects.gradient = Some(TextGradient::between(Color(0xFFC000), Color(0xC00000), GradientKind::Linear(90.0)));
+    shape.effects.reflection = Some(TextReflection::PRESETS[1]);
+    let Some(shown) = letters::Letters::of(&shape, 300.0, 120.0, 1.0, &fonts) else {
+        // No outlines for the font this machine draws the text with.
+        return;
+    };
+    let (document, _) = shown.svg(0.0, (150.0, 60.0), 2.0);
+    let bitmap = svg::rasterize(document.as_bytes()).expect("the renderer reads the document");
+    let inked = bitmap.data.chunks_exact(4).filter(|pixel| pixel[3] > 200).count();
+    assert!(inked > 2_000, "{inked} opaque pixels of {}x{}", bitmap.width, bitmap.height);
+}
+
+#[gpui::test]
+fn a_warped_text_of_a_file_is_drawn_from_the_first_frames(cx: &mut TestAppContext) {
+    cx.update(crate::bind_keys);
+    let (app, cx) = cx.add_window_view(ExcelApp::new);
+    // As a file brings it: there before the window has drawn anything.
+    app.update(cx, |app, cx| {
+        let mut shape = WordArtStyle(1).shape("Warped");
+        shape.warp = Some(TextWarp::from(WarpPreset::Wave1));
+        let mut drawing = Drawing::shape(shape, (230.0, 110.0));
+        drawing.offset = (40.0, 40.0);
+        app.wb.add_drawing(0, drawing).unwrap();
+        app.commit("setup", cx);
+    });
+    redraw(cx);
+    redraw(cx);
+    let documents = wordart::outlined_documents();
+    assert_eq!(documents.len(), 1, "the text was traced once");
+    let Some(document) = &documents[0] else {
+        // No outlines for the font this machine draws the text with.
+        return;
+    };
+    // Its image was made, not given up on.
+    assert!(svg::image(document, (false, false), 0).is_some());
+}
