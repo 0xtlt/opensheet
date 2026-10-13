@@ -4,6 +4,7 @@
 //! Problems lists.
 
 use super::editor::{CodeEditor, EditorEvent};
+use super::record::Recorder;
 use super::run::{self, OutputKind, OutputLine, Runs};
 use super::samples::SAMPLES;
 use super::scripts;
@@ -19,7 +20,7 @@ use gpui::{
     AnyElement, App, Context, Entity, Focusable, FontWeight, PathPromptOptions, SharedString, Subscription, Task, WeakEntity, Window, div,
     prelude::*, px,
 };
-use opensheet_script::{LogLevel, Script, ScriptError};
+use opensheet_script::{ErrorKind, LogLevel, Script, ScriptError};
 use std::cell::RefCell;
 use std::time::Duration;
 
@@ -43,6 +44,8 @@ pub(crate) enum Page {
     Script(ScriptRef),
     /// The editor, on the script named by `CodeEditorPane::open`.
     Editor,
+    /// Record Actions: the actions recorded so far, and Stop.
+    Recording,
 }
 
 /// The lists under the editor.
@@ -74,6 +77,10 @@ pub(crate) struct CodeEditorPane {
     check: Option<Task<()>>,
     /// `Runs::finished` as last seen.
     seen_finished: u64,
+    /// What records the actions of the user, while Record Actions is on.
+    pub(crate) recorder: Option<Recorder>,
+    /// Hears of every change of the window while recording.
+    record_watch: Option<Subscription>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -94,6 +101,8 @@ impl CodeEditorPane {
             trouble: None,
             check: None,
             seen_finished: 0,
+            recorder: None,
+            record_watch: None,
             _subscriptions: subscriptions,
         };
         // Unsaved text left by the pane of another workbook.
@@ -131,7 +140,7 @@ impl CodeEditorPane {
     /// The script whose page or text is shown.
     pub(crate) fn current(&self) -> Option<ScriptRef> {
         match &self.page {
-            Page::List => None,
+            Page::List | Page::Recording => None,
             Page::Script(script) => Some(script.clone()),
             Page::Editor => self.open.clone().map(ScriptRef::Mine),
         }
@@ -177,7 +186,8 @@ impl CodeEditorPane {
     }
 
     fn set_problems(&mut self, problems: Vec<ScriptError>, cx: &mut Context<Self>) {
-        let marks = problems.iter().filter_map(|problem| Some((problem.line?, SharedString::from(problem.message.clone())))).collect();
+        // What the checker finds in a script that can run is a warning.
+        let marks = problems.iter().filter_map(|problem| Some((problem.line?, SharedString::from(problem.message.clone()), problem.kind == ErrorKind::Check))).collect();
         self.editor.update(cx, |editor, cx| editor.set_marks(marks, cx));
         // A first problem brings its list forward; the last one solved
         // gives the place back to the output.
@@ -224,6 +234,12 @@ impl CodeEditorPane {
     /// Do `then` right away when the editor has nothing to lose, else ask
     /// first, as Excel does when a changed script is left.
     fn leave_script(&mut self, window: &mut Window, cx: &mut Context<Self>, then: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static) {
+        // While actions are recorded the pane shows them: Stop comes first.
+        if self.recorder.is_some() {
+            self.page = Page::Recording;
+            cx.notify();
+            return;
+        }
         if !self.unsaved(cx) {
             then(self, window, cx);
             return;
@@ -585,6 +601,178 @@ impl CodeEditorPane {
         self.with_app(cx, move |app, cx| app.alert(alert, cx));
     }
 
+    // ---- Record Actions ------------------------------------------------------
+
+    /// Start recording: from now on every change of the workbook is an
+    /// action of the list. `recorder` was made by the window, which
+    /// cannot be read from here while it runs a command.
+    pub(crate) fn start_recording(&mut self, recorder: Recorder, window: &mut Window, cx: &mut Context<Self>) {
+        if self.recorder.is_some() {
+            self.page = Page::Recording;
+            cx.notify();
+            return;
+        }
+        self.leave_script(window, cx, {
+            let recorder = RefCell::new(Some(recorder));
+            move |pane, window, cx| {
+                let Some(recorder) = recorder.borrow_mut().take() else {
+                    return;
+                };
+                pane.recorder = Some(recorder);
+                pane.record_watch = pane.app.upgrade().map(|app| cx.observe_in(&app, window, Self::workbook_watched));
+                pane.page = Page::Recording;
+                pane.trouble = None;
+                cx.notify();
+            }
+        });
+    }
+
+    /// The window changed while recording: the recorder looks at what
+    /// was done to the workbook.
+    fn workbook_watched(&mut self, app: Entity<ExcelApp>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(recorder) = &mut self.recorder else {
+            return;
+        };
+        let changed = {
+            let app = app.read(cx);
+            // A script that runs is not an action to record, nor what is
+            // being typed in a cell.
+            if run::is_running(app) {
+                return;
+            }
+            let fonts = app.fonts.clone();
+            let ts = window.text_system().clone();
+            recorder.observe(app, &|wb, outcome| {
+                run::refit(wb, outcome, &fonts, &ts);
+                wb.commit("");
+                wb.clear_history();
+            })
+        };
+        if changed {
+            cx.notify();
+        }
+    }
+
+    /// Stop: the actions recorded become a script of the user's, saved
+    /// under a name of its own and shown in the editor.
+    pub(crate) fn stop_recording(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(recorder) = self.recorder.take() else {
+            return;
+        };
+        self.record_watch = None;
+        self.page = Page::List;
+        let saved = scripts::create().and_then(|mut script| {
+            script.body = recorder.script();
+            scripts::save(&script).map(|()| script.name)
+        });
+        match saved {
+            Ok(name) => self.open_in_editor(&name, window, cx),
+            Err(error) => self.trouble = Some(error),
+        }
+        cx.notify();
+    }
+
+    /// "Copy as code": the statements of one action go to the clipboard.
+    pub(crate) fn copy_as_code(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(action) = self.recorder.as_ref().and_then(|recorder| recorder.actions.get(index)) {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(action.code()));
+        }
+    }
+
+    fn render_recording(&self, cx: &mut Context<Self>) -> AnyElement {
+        let actions = self.recorder.as_ref().map(|recorder| recorder.actions.as_slice()).unwrap_or_default();
+        let mut rows: Vec<AnyElement> = Vec::new();
+        if actions.is_empty() {
+            rows.push(
+                div()
+                    .px(px(12.))
+                    .py(px(6.))
+                    .text_color(c(theme::TEXT_MUTED))
+                    .child(t(
+                        "Make changes in the workbook: each action appears here as it is recorded.",
+                        "Modifiez le classeur : chaque action apparaît ici à mesure qu'elle est enregistrée.",
+                    ))
+                    .into_any_element(),
+            );
+        }
+        for (index, action) in actions.iter().enumerate() {
+            let details: Vec<AnyElement> = if action.recorded {
+                action.steps.iter().map(|step| div().truncate().child(step.comment.clone()).into_any_element()).collect()
+            } else {
+                vec![div().text_color(c(0xA4262C)).child(t("This action was not recorded.", "Cette action n'a pas été enregistrée.")).into_any_element()]
+            };
+            rows.push(
+                div()
+                    .id(("ce-rec-action", index))
+                    .debug_selector(move || format!("ce-rec-action-{index}"))
+                    .mx(px(6.))
+                    .px(px(6.))
+                    .py(px(5.))
+                    .flex()
+                    .items_start()
+                    .gap(px(8.))
+                    .rounded(px(4.))
+                    .hover(|s| s.bg(c(theme::HOVER)))
+                    .child(div().flex_none().w(px(18.)).text_color(c(theme::TEXT_MUTED)).child(format!("{}", index + 1)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .child(div().truncate().child(action.label.clone()))
+                            .child(div().text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).children(details)),
+                    )
+                    .when(action.recorded, |d| {
+                        d.child(
+                            div()
+                                .id(("ce-rec-copy", index))
+                                .debug_selector(move || format!("ce-rec-copy-{index}"))
+                                .flex_none()
+                                .h(px(22.))
+                                .px(px(5.))
+                                .flex()
+                                .items_center()
+                                .rounded(px(4.))
+                                .hover(|s| s.bg(c(theme::PRESSED)))
+                                .child(icon("copy", 13.0, theme::TEXT))
+                                .tooltip(tooltip(t("Copy as code", "Copier en tant que code")))
+                                .on_click(cx.listener(move |pane, _, _, cx| pane.copy_as_code(index, cx))),
+                        )
+                    })
+                    .into_any_element(),
+            );
+        }
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex_none()
+                    .px(px(12.))
+                    .py(px(6.))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(div().flex_none().size(px(9.)).rounded(px(5.)).bg(c(0xD13438)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .truncate()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .debug_selector(|| "ce-recording".to_string())
+                            .child(format!("{}…", t("Recording", "Enregistrement"))),
+                    )
+                    .child(Self::tool("ce-rec-stop", "automate-stop", t("Stop", "Arrêter"), t("Stop Recording", "Arrêt de l'enregistrement"), true, cx, |pane, window, cx| {
+                        pane.stop_recording(window, cx)
+                    })),
+            )
+            .children(self.render_trouble())
+            .child(Self::heading(t("Recorded actions", "Actions enregistrées")))
+            .child(div().id("ce-rec-list").flex_1().min_h(px(0.)).overflow_y_scroll().pb(px(8.)).children(rows))
+            .into_any_element()
+    }
+
     // ---- drawing -----------------------------------------------------------
 
     /// A flat button of the pane: an icon, a label or both.
@@ -888,6 +1076,7 @@ impl CodeEditorPane {
                     (Some(line), None) => format!("[{line}]"),
                     _ => String::new(),
                 };
+                let warning = problem.kind == ErrorKind::Check;
                 div()
                     .id(("ce-problem", index))
                     .debug_selector(move || format!("ce-problem-{index}"))
@@ -897,7 +1086,7 @@ impl CodeEditorPane {
                     .items_start()
                     .gap(px(6.))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(div().flex_none().text_color(c(0xA4262C)).child("✕"))
+                    .child(div().flex_none().text_color(c(if warning { 0x8A6100 } else { 0xA4262C })).child(if warning { "⚠" } else { "✕" }))
                     .child(div().flex_1().min_w(px(0.)).child(problem.message.clone()))
                     .child(div().flex_none().text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).child(place))
                     .on_click(cx.listener(move |pane, _, window, cx| {
@@ -1023,6 +1212,7 @@ impl Render for CodeEditorPane {
             Page::List => self.render_list(cx),
             Page::Script(script) => self.render_script(&script, running.as_deref(), output, cx),
             Page::Editor => self.render_editor(running.as_deref(), output, cx),
+            Page::Recording => self.render_recording(cx),
         };
         div().size_full().child(content)
     }
