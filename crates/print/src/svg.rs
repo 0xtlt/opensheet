@@ -87,8 +87,16 @@ fn crc32(bytes: &[u8]) -> u32 {
     !crc
 }
 
+/// A PNG file of pixels given as red, green, blue and alpha, rows from
+/// the top. `per_inch` is recorded as the size the image is meant to be
+/// seen at (a picture drawn at twice the size of the screen says 192, and
+/// is then inserted at the size of the cells it shows).
+pub fn png_file(width: u32, height: u32, rgba: &[u8], per_inch: Option<f64>) -> Option<Vec<u8>> {
+    png(width, height, 4, rgba, per_inch)
+}
+
 /// A PNG file of raw pixels, `channels` bytes each, rows from the top.
-fn png(width: u32, height: u32, channels: usize, data: &[u8]) -> Option<Vec<u8>> {
+fn png(width: u32, height: u32, channels: usize, data: &[u8], per_inch: Option<f64>) -> Option<Vec<u8>> {
     let stride = width as usize * channels;
     if stride == 0 || data.len() < stride * height as usize {
         return None;
@@ -114,6 +122,15 @@ fn png(width: u32, height: u32, channels: usize, data: &[u8]) -> Option<Vec<u8>>
     header.extend_from_slice(&height.to_be_bytes());
     header.extend_from_slice(&[8, if channels == 4 { 6 } else { 2 }, 0, 0, 0]);
     chunk(b"IHDR", &header);
+    if let Some(per_inch) = per_inch.filter(|density| density.is_finite() && *density > 0.0) {
+        // Pixels per metre, both ways.
+        let per_metre = (per_inch / 0.0254).round() as u32;
+        let mut density = Vec::with_capacity(9);
+        density.extend_from_slice(&per_metre.to_be_bytes());
+        density.extend_from_slice(&per_metre.to_be_bytes());
+        density.push(1);
+        chunk(b"pHYs", &density);
+    }
     chunk(b"IDAT", &packed);
     chunk(b"IEND", &[]);
     Some(out)
@@ -123,8 +140,8 @@ fn png(width: u32, height: u32, channels: usize, data: &[u8]) -> Option<Vec<u8>>
 fn data_uri(image: &Image) -> Option<String> {
     let (kind, bytes) = match &image.pixels {
         Pixels::Jpeg(bytes) => ("jpeg", bytes.clone()),
-        Pixels::Rgb(data) => ("png", png(image.width, image.height, 3, data)?),
-        Pixels::Rgba(data) => ("png", png(image.width, image.height, 4, data)?),
+        Pixels::Rgb(data) => ("png", png(image.width, image.height, 3, data, None)?),
+        Pixels::Rgba(data) => ("png", png(image.width, image.height, 4, data, None)?),
     };
     Some(format!("data:image/{kind};base64,{}", base64(&bytes)))
 }
@@ -280,6 +297,18 @@ mod tests {
         assert_eq!(base64(b"f"), "Zg==");
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn a_png_says_how_large_it_is_meant_to_be() {
+        let file = png_file(2, 1, &[255, 0, 0, 255, 0, 0, 255, 255], Some(192.0)).unwrap();
+        let info = opensheet_engine::drawing::image_info(&file).unwrap();
+        assert_eq!(info.pixels, (2, 1));
+        let (width, height) = info.natural_size();
+        assert!((width - 1.0).abs() < 1e-4 && (height - 0.5).abs() < 1e-4);
+        let decoded = Image::from_file_bytes(&file).unwrap();
+        assert_eq!((decoded.width, decoded.height), (2, 1));
+        assert!(png_file(2, 2, &[0; 8], None).is_none(), "too few pixels");
     }
 
     #[test]

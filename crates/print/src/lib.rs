@@ -26,7 +26,7 @@ pub use fonts::{Face, FontDb};
 pub use image::{Image, Pixels};
 pub use pdf::DocInfo;
 pub use scene::{Canvas, LineCap, LineJoin, Op, Paint, Path, RectF, Scene, Segment, Stroke, TextStyle};
-pub use svg::scene_svg;
+pub use svg::{png_file, scene_svg};
 
 use opensheet_engine::chart::Chart;
 use opensheet_engine::condfmt::Adornment;

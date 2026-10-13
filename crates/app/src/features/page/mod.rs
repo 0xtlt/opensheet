@@ -24,6 +24,8 @@ mod scene;
 mod setup;
 mod views;
 
+pub(crate) use paper::PaperPainter;
+
 pub(crate) use self::print::workbook_pdf;
 
 use super::{

@@ -364,7 +364,8 @@ fn the_paste_drop_down_pastes_each_kind(cx: &mut TestAppContext) {
     let entries = menu(&app, cx);
     assert_eq!(entries.first().map(String::as_str), Some("Paste"));
     assert_eq!(entries.last().map(String::as_str), Some("Paste Special…"));
-    assert_eq!(entries.len(), 13);
+    assert_eq!(entries.len(), 15);
+    assert_eq!(&entries[12..14], ["Picture", "Linked Picture"]);
     app.update(cx, |app, cx| {
         app.popup = None;
         cx.notify();
@@ -410,6 +411,194 @@ fn text_from_another_application_is_offered_as_text(cx: &mut TestAppContext) {
     assert_eq!(dialogs(&app, cx), 0);
     assert_eq!(value(&app, cx, "C2"), Value::text("b"));
     assert_eq!(value(&app, cx, "B3"), Value::Number(1.0));
+}
+
+// ---------------------------------------------------------- pictures of cells
+
+use opensheet_engine::Color;
+use opensheet_engine::drawing::Drawing;
+
+fn drawings(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<Drawing> {
+    app.update(cx, |app, _| app.wb.sheets[app.sheet].drawings.clone())
+}
+
+/// The colour of a picture at a point given in pixels of the sheet from
+/// its corner (the picture is drawn at twice that size).
+fn colour_at(drawing: &Drawing, x: u32, y: u32) -> [u8; 4] {
+    let picture = drawing.as_picture().expect("a picture");
+    let pixels = image::load_from_memory(&picture.data).expect("a PNG file").into_rgba8();
+    pixels.get_pixel(x * 2, y * 2).0
+}
+
+/// A1:B2 with a red A1, a bold number in B1 and a green B2.
+fn painted(wb: &mut Workbook) {
+    enter(wb, &[("A1", "Tea"), ("B1", "12.5"), ("A2", "Coffee"), ("B2", "7")]);
+    wb.update_style(0, Rect::parse("A1").unwrap(), &|s| s.fill = Some(Color(0xFF0000)));
+    wb.update_style(0, Rect::parse("B2").unwrap(), &|s| s.fill = Some(Color(0x00B050)));
+    wb.update_style(0, Rect::parse("B1").unwrap(), &|s| s.font.bold = true);
+}
+
+/// Width and height of a range on the first sheet, in pixels at 100 %.
+fn extent(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str) -> (f32, f32) {
+    let rect = Rect::parse(range).unwrap();
+    app.update(cx, |app, _| {
+        let sheet = &app.wb.sheets[0];
+        let (x0, y0) = sheet.corner_point(((rect.r0, rect.c0), (0.0, 0.0)));
+        let (x1, y1) = sheet.corner_point(((rect.r1 + 1, rect.c1 + 1), (0.0, 0.0)));
+        ((x1 - x0) as f32, (y1 - y0) as f32)
+    })
+}
+
+#[gpui::test]
+fn the_copied_cells_are_pasted_as_a_picture(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, painted);
+    assert!(!app.update(cx, |app, _| Cmd::PastePicture.enabled(app)), "nothing is copied");
+    copy(&app, cx, "A1:B2");
+    select(&app, cx, "D5");
+    run(&app, cx, Cmd::PastePicture);
+    let pictures = drawings(&app, cx);
+    assert_eq!(pictures.len(), 1);
+    let picture = &pictures[0];
+    // An ordinary picture, the size of the cells, its corner on D5.
+    assert!(picture.as_picture().is_some_and(|p| p.link.is_none() && p.svg.is_none()));
+    let (width, height) = extent(&app, cx, "A1:B2");
+    assert!((picture.size.0 - width).abs() < 0.5 && (picture.size.1 - height).abs() < 0.5, "{:?}", picture.size);
+    let frame = app.update(cx, |app, _| app.wb.drawing_frame(0, picture.id).unwrap());
+    let corner = app.update(cx, |app, _| app.wb.sheets[0].corner_point(((4, 3), (0.0, 0.0))));
+    assert!((frame.x - corner.0).abs() < 0.5 && (frame.y - corner.1).abs() < 0.5);
+    // It looks like the cells: the fills are where the cells are.
+    let (column, row) = extent(&app, cx, "A1");
+    let red = colour_at(picture, column as u32 / 2, row as u32 / 2);
+    assert!(red[0] > 200 && red[1] < 60 && red[2] < 60, "{red:?}");
+    let green = colour_at(picture, column as u32 + 8, row as u32 + row as u32 / 2);
+    assert!(green[0] < 60 && green[1] > 140 && green[2] < 120, "{green:?}");
+    // A cell without a fill lets what is under the picture show, as in
+    // Excel.
+    let blank = colour_at(picture, column as u32 + 4, 3);
+    assert_eq!(blank[3], 0, "B1 has no fill: {blank:?}");
+    // The picture is selected; one step of undo takes it away.
+    assert!(app.update(cx, |app, _| app.object_sel.is_some()));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Paste Picture"));
+    app.update(cx, |app, cx| app.undo(cx));
+    assert!(drawings(&app, cx).is_empty());
+    // A protected sheet takes no picture.
+    edit(&app, cx, |wb| {
+        wb.protect_sheet(0, Default::default(), "");
+    });
+    copy(&app, cx, "A1:B2");
+    run(&app, cx, Cmd::PastePicture);
+    assert!(drawings(&app, cx).is_empty());
+}
+
+#[gpui::test]
+fn a_linked_picture_follows_its_cells(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, painted);
+    copy(&app, cx, "A1:B2");
+    select(&app, cx, "D5");
+    run(&app, cx, Cmd::PasteLinkedPicture);
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Paste Linked Picture"));
+    let link = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        redraw(cx);
+        let picture = drawings(app, cx).remove(0);
+        let text = app.update(cx, |app, _| picture.as_picture().unwrap().link_text(app.wb.locale));
+        (picture, text.unwrap_or_default())
+    };
+    let (before, formula) = link(&app, cx);
+    assert_eq!(formula, "=$A$1:$B$2");
+    let (column, row) = extent(&app, cx, "A1");
+    let at = (column as u32 / 2, row as u32 / 2);
+    assert!(colour_at(&before, at.0, at.1)[0] > 200);
+    // The cell turns blue: so does the picture, without a step of its own.
+    edit(&app, cx, |wb| wb.update_style(0, Rect::parse("A1").unwrap(), &|s| s.fill = Some(Color(0x0000FF))));
+    let (after, _) = link(&app, cx);
+    let blue = colour_at(&after, at.0, at.1);
+    assert!(blue[2] > 200 && blue[0] < 60, "{blue:?}");
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
+    // Undoing the fill brings the red back in the picture too.
+    app.update(cx, |app, cx| app.undo(cx));
+    let (undone, _) = link(&app, cx);
+    assert!(colour_at(&undone, at.0, at.1)[0] > 200);
+    // A row inserted above: the picture goes on showing the same cells.
+    edit(&app, cx, |wb| wb.insert_rows(0, 0, 1));
+    let (moved, formula) = link(&app, cx);
+    assert_eq!(formula, "=$A$2:$B$3");
+    assert!(colour_at(&moved, at.0, at.1)[0] > 200);
+    // On another sheet the formula names the sheet, and follows its name.
+    let second = app.update(cx, |app, cx| {
+        let second = app.wb.add_sheet(1);
+        app.commit("setup", cx);
+        second
+    });
+    copy(&app, cx, "A2:B3");
+    app.update_in(cx, |app, window, cx| app.switch_sheet(second, window, cx));
+    run(&app, cx, Cmd::PasteLinkedPicture);
+    let (_, formula) = link(&app, cx);
+    assert_eq!(formula, "=Sheet1!$A$2:$B$3");
+    edit(&app, cx, |wb| {
+        wb.rename_sheet(0, "Stock");
+    });
+    let (_, formula) = link(&app, cx);
+    assert_eq!(formula, "=Stock!$A$2:$B$3");
+}
+
+#[gpui::test]
+fn copy_as_picture_puts_a_picture_on_the_clipboard(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, painted);
+    copy(&app, cx, "A1:B2");
+    // Home ▸ Copy offers Copy and Copy as Picture…
+    run(&app, cx, Cmd::CopyMenu);
+    assert_eq!(menu(&app, cx), ["Copy", "Copy as Picture…"]);
+    app.update(cx, |app, cx| {
+        app.popup = None;
+        cx.notify();
+    });
+    run(&app, cx, Cmd::CopyAsPicture);
+    assert_eq!(dialogs(&app, cx), 1);
+    // "As shown on screen" is chosen; Return copies.
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(dialogs(&app, cx), 0);
+    assert!(app.update(cx, |app, _| app.clip.is_none()), "the cells are no longer what Paste pastes");
+    let item = cx.read_from_clipboard().expect("something was copied");
+    let image = item
+        .entries()
+        .iter()
+        .find_map(|entry| match entry {
+            gpui::ClipboardEntry::Image(image) => Some(image.clone()),
+            _ => None,
+        })
+        .expect("a picture");
+    assert!(image.bytes().starts_with(b"\x89PNG"));
+    // Paste puts it on the sheet as a picture the size of the cells.
+    select(&app, cx, "D5");
+    app.update(cx, |app, cx| app.paste(PasteMode::All, cx));
+    redraw(cx);
+    let pictures = drawings(&app, cx);
+    assert_eq!(pictures.len(), 1);
+    let (width, height) = extent(&app, cx, "A1:B2");
+    assert!((pictures[0].size.0 - width).abs() < 1.0 && (pictures[0].size.1 - height).abs() < 1.0, "{:?}", pictures[0].size);
+    assert_eq!(value(&app, cx, "D5"), Value::Empty, "no cell was pasted");
+
+    // "As shown when printed": the sheet prints in black and white, so
+    // the picture has no fill.
+    edit(&app, cx, |wb| {
+        wb.update_page_setup(0, |setup| setup.black_and_white = true);
+    });
+    select(&app, cx, "A1:B2");
+    assert!(app.update(cx, |app, cx| picture::copy(app, true, cx)));
+    let printed = cx.read_from_clipboard().and_then(|item| {
+        item.entries().iter().find_map(|entry| match entry {
+            gpui::ClipboardEntry::Image(image) => Some(image.bytes().to_vec()),
+            _ => None,
+        })
+    });
+    let pixels = image::load_from_memory(&printed.expect("a picture")).unwrap().into_rgba8();
+    let (column, row) = extent(&app, cx, "A1");
+    let pixel = pixels.get_pixel(column as u32, row as u32).0;
+    assert_eq!(pixel[3], 0, "{pixel:?}");
 }
 
 // ---------------------------------------------------------------- hyperlinks
