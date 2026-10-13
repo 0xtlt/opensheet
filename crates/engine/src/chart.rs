@@ -1159,11 +1159,27 @@ pub struct SeriesData {
     pub format: String,
 }
 
+/// Whether a range of category labels holds several levels of them, and
+/// which way they run: `Some(true)` for one level per column (the series
+/// run down columns), `Some(false)` for one level per row, `None` for a
+/// single line of labels. `values`: the values of the series they name.
+pub fn category_levels(categories: Rect, values: Rect) -> Option<bool> {
+    if categories.rows() < 2 || categories.cols() < 2 {
+        return None;
+    }
+    Some(values.cols() == 1 || (values.rows() > 1 && categories.rows() >= categories.cols()))
+}
+
 /// What a chart plots, read from the workbook.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct ChartData {
     /// Category labels (formatted cell text); numbered 1.. when absent.
+    /// With labels on several levels, those of the level next to the plot.
     pub categories: Vec<String>,
+    /// The outer levels of the category labels, the one next to
+    /// `categories` first: one text per point, empty where the point
+    /// belongs to the group of the point before it.
+    pub outer_levels: Vec<Vec<String>>,
     /// X values (scatter charts).
     pub x_values: Vec<Option<f64>>,
     pub series: Vec<SeriesData>,
@@ -1179,6 +1195,33 @@ pub struct ChartData {
 }
 
 impl ChartData {
+    /// The groups of an outer level of category labels: (first point,
+    /// last point, label), covering `points` points. A group ends where
+    /// the next label of its level, or of a level further out, begins.
+    pub fn level_groups(&self, level: usize, points: usize) -> Vec<(usize, usize, String)> {
+        let mut groups: Vec<(usize, usize, String)> = Vec::new();
+        let starts = |k: usize| self.outer_levels[level..].iter().any(|texts| texts.get(k).is_some_and(|text| !text.is_empty()));
+        for k in 0..points {
+            match groups.last_mut() {
+                Some(group) if !starts(k) => group.1 = k,
+                _ => groups.push((k, k, self.outer_levels[level].get(k).cloned().unwrap_or_default())),
+            }
+        }
+        groups
+    }
+
+    /// The label of a category with those of its outer levels before it
+    /// ("2024 Q1"), as a legend or a data label names a point.
+    pub fn category_name(&self, point: usize) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for level in (0..self.outer_levels.len()).rev() {
+            let group = self.level_groups(level, self.categories.len()).into_iter().find(|(first, last, _)| (*first..=*last).contains(&point));
+            parts.extend(group.map(|(_, _, text)| text).filter(|text| !text.is_empty()));
+        }
+        parts.extend(self.categories.get(point).cloned());
+        parts.join(" ")
+    }
+
     /// The automatic colour of the `index`-th series or point.
     pub fn palette_color(&self, index: usize) -> Color {
         palette_color_of(self.accents.as_ref().unwrap_or(&PALETTE), index)
@@ -1653,12 +1696,27 @@ impl Workbook {
             });
         }
         // Categories / X values come from the first series that has them.
-        if let Some(cats) = chart.series.iter().find_map(|s| s.categories.as_ref()) {
+        if let Some((cats, values)) = chart.series.iter().find_map(|s| Some((s.categories.as_ref()?, &s.values))) {
             if let Some((si, rect)) = self.resolve_chart_ref(cats, own_sheet) {
                 let sh = &self.sheets[si];
+                // A block of labels holds one level per column (per row
+                // when the series run along rows), the one next to the
+                // data last; a scatter chart reads all of it as X values.
+                let levels = if chart.kind.is_xy() { None } else { category_levels(cats.rect(), values.rect()) };
+                let (inner, outer): (Rect, Vec<Rect>) = match levels {
+                    Some(true) => (
+                        Rect::new(rect.r0, rect.c1, rect.r1, rect.c1),
+                        (rect.c0..rect.c1).rev().map(|c| Rect::new(rect.r0, c, rect.r1, c)).collect(),
+                    ),
+                    Some(false) => (
+                        Rect::new(rect.r1, rect.c0, rect.r1, rect.c1),
+                        (rect.r0..rect.r1).rev().map(|r| Rect::new(r, rect.c0, r, rect.c1)).collect(),
+                    ),
+                    None => (rect, Vec::new()),
+                };
                 let mut first = true;
-                for r in rect.r0..=rect.r1 {
-                    for c in rect.c0..=rect.c1 {
+                for r in inner.r0..=inner.r1 {
+                    for c in inner.c0..=inner.c1 {
                         let v = sh.value_at(r, c);
                         if first && matches!(v, Value::Number(_)) {
                             data.x_format = self.styles.get(sh.style_id_at(r, c)).num_fmt.to_string();
@@ -1671,7 +1729,32 @@ impl Workbook {
                         data.categories.push(self.display_text(si, r, c).text);
                     }
                 }
+                for level in outer {
+                    let texts = (level.r0..=level.r1)
+                        .flat_map(|r| (level.c0..=level.c1).map(move |c| (r, c)))
+                        .map(|(r, c)| self.display_text(si, r, c).text)
+                        .collect();
+                    data.outer_levels.push(texts);
+                }
             }
+        }
+        // A PivotChart plots the items of its report and nothing else,
+        // with one level of labels per row field.
+        if let Some(plan) = self.pivot_chart_points(chart.id) {
+            let keep = |list: &mut Vec<Option<f64>>| {
+                if !list.is_empty() {
+                    *list = plan.keep.iter().map(|k| list.get(*k).copied().flatten()).collect();
+                }
+            };
+            for series in &mut data.series {
+                keep(&mut series.values);
+                keep(&mut series.sizes);
+                series.x_values = (0..plan.keep.len()).map(|k| Some(k as f64 + 1.0)).collect();
+            }
+            data.x_values = (0..plan.keep.len()).map(|k| Some(k as f64 + 1.0)).collect();
+            points = plan.keep.len();
+            data.categories = plan.labels;
+            data.outer_levels = plan.outer_levels;
         }
         if data.categories.len() < points {
             for i in data.categories.len()..points {
@@ -1783,6 +1866,29 @@ impl Workbook {
 mod tests {
     use super::*;
     use crate::tests::wb;
+
+    #[test]
+    fn category_labels_in_two_columns_make_two_levels() {
+        let w = wb(&[
+            ("A1", "Year"), ("B1", "Quarter"), ("C1", "Sales"),
+            ("A2", "2024"), ("B2", "Q1"), ("C2", "10"),
+            ("B3", "Q2"), ("C3", "12"),
+            ("A4", "2025"), ("B4", "Q1"), ("C4", "9"),
+            ("B5", "Q2"), ("C5", "14"),
+        ]);
+        let mut chart = w.chart_from_range(0, Rect::parse("B1:C5").unwrap(), ChartKind::Column);
+        let name = w.sheets[0].name.clone();
+        chart.series[0].categories = Some(abs_ref(&name, Rect::parse("A2:B5").unwrap()));
+        let data = w.chart_data(0, &chart);
+        assert_eq!(data.categories, ["Q1", "Q2", "Q1", "Q2"]);
+        assert_eq!(data.outer_levels, [["2024", "", "2025", ""]]);
+        assert_eq!(data.series[0].values, [Some(10.0), Some(12.0), Some(9.0), Some(14.0)]);
+        assert_eq!(data.level_groups(0, 4), [(0, 1, "2024".to_string()), (2, 3, "2025".to_string())]);
+        assert_eq!(data.category_name(3), "2025 Q2");
+        // Series along rows: one level per row, the one next to the data last.
+        assert_eq!(category_levels(Rect::parse("B1:E2").unwrap(), Rect::parse("B3:E3").unwrap()), Some(false));
+        assert_eq!(category_levels(Rect::parse("A2:A5").unwrap(), Rect::parse("C2:C5").unwrap()), None);
+    }
 
     fn table() -> Workbook {
         wb(&[

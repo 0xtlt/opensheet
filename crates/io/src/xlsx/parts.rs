@@ -62,6 +62,9 @@ pub(crate) struct SheetLinks {
     pub timelines: Option<usize>,
     /// The image behind the cells (`<picture>`).
     pub background: Option<usize>,
+    /// The properties of the form controls, in the order of
+    /// `Sheet::controls` (`<controls>`).
+    pub controls: Vec<usize>,
 }
 
 impl SheetLinks {
@@ -84,7 +87,8 @@ impl SheetLinks {
                 || !sheet.inks.is_empty()
                 || !sheet.slicers.is_empty()
                 || !sheet.timelines.is_empty()),
-            vml: id(annotated),
+            // The form controls are shapes of the same VML drawing.
+            vml: id(annotated || !sheet.controls.is_empty()),
             comments: id(annotated),
             threads: id(threaded),
             tables: sheet.tables.iter().filter_map(|_| id(true)).collect(),
@@ -95,12 +99,20 @@ impl SheetLinks {
             table_slicers: id(sheet.slicers.iter().any(|s| matches!(s.source, SlicerSource::Table { .. }))),
             timelines: id(!sheet.timelines.is_empty()),
             background: id(sheet.background.is_some()),
+            controls: sheet.controls.iter().filter_map(|_| id(true)).collect(),
         }
     }
 
     /// Append the elements of a worksheet that name other parts. They come
     /// after the page setup, in this order (that of the schema).
+    #[cfg(test)]
     pub fn push_elements(&self, x: &mut String) {
+        self.push_elements_with(x, "");
+    }
+
+    /// [`SheetLinks::push_elements`] with the `<controls>` block of the
+    /// sheet (see `control.rs`), which goes among them.
+    pub fn push_elements_with(&self, x: &mut String, controls: &str) {
         if let Some(id) = self.drawing {
             w!(x, "<drawing r:id=\"rId{id}\"/>");
         }
@@ -110,6 +122,7 @@ impl SheetLinks {
         if let Some(id) = self.background {
             w!(x, "<picture r:id=\"rId{id}\"/>");
         }
+        x.push_str(controls);
         if !self.tables.is_empty() {
             w!(x, "<tableParts count=\"{}\">", self.tables.len());
             for id in &self.tables {
@@ -183,6 +196,7 @@ impl Extras {
             }
         }
         super::comments::add_parts(wb, &mut extras);
+        super::control::add_parts(wb, &mut extras);
         super::table::add_parts(wb, &mut extras, dxfs);
         super::pivot::add_parts(wb, &mut extras, dxfs);
         super::slicer::add_parts(wb, &mut extras);

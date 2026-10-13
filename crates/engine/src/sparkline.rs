@@ -106,6 +106,11 @@ pub struct SparklineGroup {
     pub min: AxisBound,
     pub max: AxisBound,
     pub colors: SparklineColors,
+    /// "Date Axis Type": the cells holding the date of each point, one
+    /// row or one column shared by the sparklines of the group. The
+    /// points are then placed by their date, so that uneven intervals
+    /// leave room. `None`: "General Axis Type", points evenly spaced.
+    pub date_axis: Option<DataRef>,
 }
 
 impl SparklineGroup {
@@ -129,6 +134,7 @@ impl SparklineGroup {
             min: AxisBound::Individual,
             max: AxisBound::Individual,
             colors: SparklineColors::default(),
+            date_axis: None,
         }
     }
 
@@ -289,13 +295,45 @@ pub struct SharedScale {
 /// a cell `width` by `height`; sizes that do not follow the cell (the
 /// room around the plot, line weights, markers) are multiplied by `zoom`.
 pub fn shapes(group: &SparklineGroup, values: &[Option<f64>], shared: SharedScale, width: f32, height: f32, zoom: f32) -> Vec<SparkShape> {
+    shapes_at(group, values, None, shared, width, height, zoom)
+}
+
+/// [`shapes`] with the date of each value for a group that has a date
+/// axis (`Workbook::sparkline_dates`): a point is placed by its date, and
+/// one without a date is not drawn.
+pub fn shapes_at(
+    group: &SparklineGroup,
+    values: &[Option<f64>],
+    dates: Option<&[Option<f64>]>,
+    shared: SharedScale,
+    width: f32,
+    height: f32,
+    zoom: f32,
+) -> Vec<SparkShape> {
     let mut out = Vec::new();
-    let mut values: Vec<Option<f64>> = values.to_vec();
+    // (place along the axis, value), from left to right.
+    let mut points: Vec<(f64, Option<f64>)> = match dates {
+        Some(dates) => {
+            let mut dated: Vec<(f64, Option<f64>)> = values.iter().zip(dates).filter_map(|(value, date)| date.map(|date| (date, *value))).collect();
+            dated.sort_by(|a, b| a.0.total_cmp(&b.0));
+            dated
+        }
+        None => values.iter().enumerate().map(|(i, value)| (i as f64, *value)).collect(),
+    };
+    let place_min = points.first().map_or(0.0, |point| point.0);
+    let place_max = points.last().map_or(0.0, |point| point.0);
     if group.right_to_left {
-        values.reverse();
+        for point in &mut points {
+            point.0 = place_min + place_max - point.0;
+        }
+        points.reverse();
     }
+    let places: Vec<f64> = points.iter().map(|point| point.0).collect();
+    let values: Vec<Option<f64>> = points.iter().map(|point| point.1).collect();
+    // The smallest step between two places: the width of a column.
+    let step = places.windows(2).map(|pair| pair[1] - pair[0]).filter(|gap| *gap > 0.0).fold(f64::INFINITY, f64::min);
+    let step = if step.is_finite() { step } else { 1.0 };
     let numbers: Vec<f64> = values.iter().flatten().copied().collect();
-    let n = values.len();
     if numbers.is_empty() || width <= 0.0 || height <= 0.0 {
         return out;
     }
@@ -343,7 +381,13 @@ pub fn shapes(group: &SparklineGroup, values: &[Option<f64>], shared: SharedScal
                     y1 - (((v - lo) / span).clamp(0.0, 1.0) as f32) * (y1 - y0)
                 }
             };
-            let x_of = |i: usize| if n > 1 { x0 + i as f32 * (x1 - x0) / (n - 1) as f32 } else { (x0 + x1) / 2.0 };
+            let x_of = |i: usize| {
+                if place_max > place_min {
+                    x0 + ((places[i] - place_min) / (place_max - place_min)) as f32 * (x1 - x0)
+                } else {
+                    (x0 + x1) / 2.0
+                }
+            };
             if group.show_axis && lo <= 0.0 && hi >= 0.0 && span > 0.0 {
                 out.push(axis(y_of(0.0)));
             }
@@ -395,7 +439,10 @@ pub fn shapes(group: &SparklineGroup, values: &[Option<f64>], shared: SharedScal
                 }
             };
             let base_y = if span <= 0.0 { if lo > 0.0 { y1 } else { y0 } } else { y_of(base) };
-            let slot = (x1 - x0) / n as f32;
+            // One slot per step of the axis: with dates, the days (or
+            // months) without a value keep their room.
+            let slots = (((place_max - place_min) / step).round() + 1.0).max(1.0);
+            let slot = (x1 - x0) / slots as f32;
             let gap = (slot * 0.15).min(2.0 * zoom);
             for (i, value) in values.iter().enumerate() {
                 let Some(v) = value else {
@@ -405,7 +452,8 @@ pub fn shapes(group: &SparklineGroup, values: &[Option<f64>], shared: SharedScal
                 if win_loss && *v == 0.0 {
                     continue;
                 }
-                let (left, right) = (x0 + i as f32 * slot + gap, x0 + (i + 1) as f32 * slot - gap);
+                let at = ((places[i] - place_min) / step) as f32;
+                let (left, right) = (x0 + at * slot + gap, x0 + (at + 1.0) * slot - gap);
                 let y = y_of(shown);
                 // The smallest column still shows.
                 let (top, bottom) = if y <= base_y { (y.min(base_y - 1.0), base_y) } else { (base_y, y.max(base_y + 1.0)) };
@@ -517,6 +565,68 @@ impl Workbook {
             }
         }
         out
+    }
+
+    /// The dates of the points of the sparklines of a group that has a
+    /// date axis, in the order of the cells of its date range and with
+    /// the hidden rows and columns left out as `sparkline_values` leaves
+    /// them out: `None` for a cell that holds no date. `None` for a group
+    /// with a general axis.
+    pub fn sparkline_dates(&self, group: &SparklineGroup) -> Option<Vec<Option<f64>>> {
+        let dates = group.date_axis.as_ref()?;
+        let sh = &self.sheets[self.sheet_index(&dates.sheet)?];
+        let range = dates.range;
+        let mut out = Vec::new();
+        for row in range.r0..=range.r1 {
+            if !group.show_hidden && sh.is_row_hidden(row) {
+                continue;
+            }
+            for col in range.c0..=range.c1 {
+                if !group.show_hidden && sh.hidden_cols.contains(&col) {
+                    continue;
+                }
+                out.push(match sh.value_at(row, col) {
+                    Value::Number(n) if n.is_finite() => Some(n),
+                    _ => None,
+                });
+            }
+        }
+        Some(out)
+    }
+
+    /// Axis > Date Axis Type: the sparklines in `ranges` take their dates
+    /// from `dates` (one row or one column of cells holding as many cells
+    /// as each sparkline has points), or go back to the general axis
+    /// (`None`). `Err(Mismatch)` when the range does not fit.
+    pub fn set_sparkline_date_axis(&mut self, sheet: usize, ranges: &[Rect], dates: Option<(usize, Rect)>) -> Result<bool, SparklineError> {
+        let Some(sh) = self.sheets.get(sheet) else {
+            return Ok(false);
+        };
+        let groups = sh.sparkline_groups_in(ranges);
+        let axis = match dates {
+            Some((data_sheet, range)) => {
+                let name = self.sheets.get(data_sheet).ok_or(SparklineError::BadData)?.name.clone();
+                let range = self.clamp_data(data_sheet, range);
+                if range.rows() > 1 && range.cols() > 1 {
+                    return Err(SparklineError::Mismatch);
+                }
+                let cells = range.rows() as u64 * range.cols() as u64;
+                let fits = |s: &Sparkline| s.data.range.rows() as u64 * s.data.range.cols() as u64 == cells;
+                if !groups.iter().all(|g| sh.sparklines[*g].sparklines.iter().all(fits)) {
+                    return Err(SparklineError::Mismatch);
+                }
+                Some(DataRef { sheet: name, range })
+            }
+            None => None,
+        };
+        if groups.is_empty() {
+            return Ok(false);
+        }
+        self.snapshot();
+        for g in groups {
+            self.sheets[sheet].sparklines[g].date_axis = axis.clone();
+        }
+        Ok(true)
     }
 
     /// The ends of the vertical axis the sparklines of a group share
@@ -816,6 +926,15 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     let shift = |lo: u32, hi: u32| shift_interval(lo, hi, insert, at, count, max);
     let own = same_name(&sheet.name, edited_sheet);
     for group in &mut sheet.sparklines {
+        // The dates follow their cells; without them the axis is general.
+        if let Some(dates) = group.date_axis.as_mut().filter(|dates| same_name(&dates.sheet, edited_sheet)) {
+            let r = dates.range;
+            match if rows { shift(r.r0, r.r1) } else { shift(r.c0, r.c1) } {
+                Some((a, b)) if rows => dates.range = Rect::new(a, r.c0, b, r.c1),
+                Some((a, b)) => dates.range = Rect::new(r.r0, a, r.r1, b),
+                None => group.date_axis = None,
+            }
+        }
         group.sparklines.retain_mut(|s| {
             if own {
                 let moved = if rows { shift(s.row, s.row) } else { shift(s.col, s.col) };
@@ -841,6 +960,11 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
 }
 
 pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
+    for dates in sheet.sparklines.iter_mut().filter_map(|group| group.date_axis.as_mut()) {
+        if same_name(&dates.sheet, old) {
+            dates.sheet = new.to_string();
+        }
+    }
     for s in sheet.sparklines.iter_mut().flat_map(|group| group.sparklines.iter_mut()) {
         if same_name(&s.data.sheet, old) {
             s.data.sheet = new.to_string();
@@ -860,6 +984,11 @@ pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet) {
     for sheet in &mut wb.sheets {
         if !sheet.sparklines.is_empty() {
             sheet.drop_sparklines(|s| same_name(&s.data.sheet, &deleted.name));
+        }
+        for group in &mut sheet.sparklines {
+            if group.date_axis.as_ref().is_some_and(|dates| same_name(&dates.sheet, &deleted.name)) {
+                group.date_axis = None;
+            }
         }
     }
 }
@@ -1203,5 +1332,85 @@ mod tests {
         assert_eq!(all[13].negative, Color(0xA5A5A5));
         assert_eq!(all[28], SparklineColors::default());
         assert_eq!(tinted(4, 0.39997558519241921), Color(0x8FAADC));
+    }
+
+    #[test]
+    fn a_date_axis_places_points_by_their_date() {
+        let group = SparklineGroup::new(SparklineType::Line);
+        let values = [Some(1.0), Some(3.0), Some(2.0), Some(5.0)];
+        // Days 1, 2, 3 and 11: the last point stands far from the others.
+        let dates = [Some(1.0), Some(2.0), Some(3.0), Some(11.0)];
+        let even = lines(&shapes(&group, &values, SharedScale::default(), 106.0, 26.0, 1.0));
+        let dated = lines(&shapes_at(&group, &values, Some(&dates), SharedScale::default(), 106.0, 26.0, 1.0));
+        let xs = |line: &[(f32, f32)]| line.iter().map(|point| point.0).collect::<Vec<_>>();
+        let (even, dated) = (xs(&even[0]), xs(&dated[0]));
+        assert_eq!((even[0], even[3]), (dated[0], dated[3]), "the ends stay at the ends");
+        assert!((even[1] - even[0] - (even[3] - even[2])).abs() < 0.01, "evenly spaced without dates");
+        assert!((dated[1] - dated[0]) * 7.9 < dated[3] - dated[2], "{dated:?}");
+        assert!((dated[1] - (3.0 + 10.0)).abs() < 0.01, "one tenth of the 100 pixels: {dated:?}");
+        // Dates out of order are put in order; a point without a date is
+        // not drawn.
+        let shuffled = lines(&shapes_at(&group, &[Some(5.0), Some(1.0), Some(9.0), Some(3.0)], Some(&[Some(11.0), Some(1.0), None, Some(2.0)]), SharedScale::default(), 106.0, 26.0, 1.0));
+        assert_eq!(shuffled[0].len(), 3);
+        assert_eq!(xs(&shuffled[0]), [dated[0], dated[1], dated[3]]);
+        assert!(shuffled[0][0].1 > shuffled[0][2].1, "the value of day 1 is the smallest: it is lowest");
+        // Columns: one slot per day, so the missing days leave gaps.
+        let group = SparklineGroup::new(SparklineType::Column);
+        let bars = rects(&shapes_at(&group, &values, Some(&dates), SharedScale::default(), 113.0, 26.0, 1.0));
+        assert_eq!(bars.len(), 4);
+        let slot = 107.0 / 11.0;
+        assert!((bars[1].0 - bars[0].0 - slot).abs() < 0.01);
+        assert!((bars[3].0 - bars[2].0 - 8.0 * slot).abs() < 0.05, "{bars:?}");
+        assert!(bars[3].2 <= 110.01);
+        // Right to left mirrors the places.
+        let mut group = SparklineGroup::new(SparklineType::Line);
+        group.right_to_left = true;
+        let mirrored = xs(&lines(&shapes_at(&group, &values, Some(&dates), SharedScale::default(), 106.0, 26.0, 1.0))[0]);
+        assert!((mirrored[0] - dated[0]).abs() < 0.01 && (mirrored[1] - (106.0 - dated[2])).abs() < 0.01, "{mirrored:?}");
+    }
+
+    #[test]
+    fn the_date_range_of_a_group_is_set_checked_and_follows_its_cells() {
+        let mut wb = book();
+        for (c, day) in ["45000", "45001", "45003", "45010"].iter().enumerate() {
+            wb.set_cell_text(0, 5, c as u32, day).unwrap();
+        }
+        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3")).unwrap();
+        wb.commit("Insert Sparkline");
+        let group = |wb: &Workbook| wb.sheets[0].sparklines[0].clone();
+        assert_eq!(wb.sparkline_dates(&group(&wb)), None);
+        // A range of another length, or a block, does not fit.
+        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A6:C6")))), Err(SparklineError::Mismatch));
+        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A5:D6")))), Err(SparklineError::Mismatch));
+        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((9, rect("A6:D6")))), Err(SparklineError::BadData));
+        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("H9")], Some((0, rect("A6:D6")))), Ok(false));
+        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A6:D6")))), Ok(true));
+        wb.commit("Sparkline Axis");
+        assert_eq!(group(&wb).date_axis.as_ref().map(|d| d.range.name()), Some("A6:D6".to_string()));
+        assert_eq!(wb.sparkline_dates(&group(&wb)), Some(vec![Some(45000.0), Some(45001.0), Some(45003.0), Some(45010.0)]));
+        // A hidden column leaves the values and the dates together.
+        wb.set_cols_hidden(0, 1, 1, true);
+        wb.commit("hide");
+        let g = group(&wb);
+        assert_eq!(wb.sparkline_dates(&g).unwrap().len(), wb.sparkline_values(&g, &g.sparklines[0]).len());
+        assert!(wb.undo());
+        // The range follows its cells, and its sheet's name.
+        wb.insert_rows(0, 0, 2);
+        wb.commit("insert");
+        assert_eq!(group(&wb).date_axis.as_ref().map(|d| d.range.name()), Some("A8:D8".to_string()));
+        assert!(wb.rename_sheet(0, "Data"));
+        wb.commit("rename");
+        assert_eq!(group(&wb).date_axis.as_ref().map(|d| d.sheet.clone()), Some("Data".to_string()));
+        // Without its dates the group has a general axis again.
+        wb.delete_rows(0, 7, 1);
+        wb.commit("delete");
+        assert_eq!(group(&wb).date_axis, None);
+        assert!(wb.undo());
+        // General Axis Type.
+        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F3")], None), Ok(true));
+        wb.commit("Sparkline Axis");
+        assert_eq!(group(&wb).date_axis, None);
+        assert!(wb.undo());
+        assert!(group(&wb).date_axis.is_some());
     }
 }

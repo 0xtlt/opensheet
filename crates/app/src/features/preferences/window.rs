@@ -507,6 +507,15 @@ impl PreferencesWindow {
                         this.set(cx, |settings| settings.show_sheet_tabs = on);
                     })),
             )
+            .child(GroupBox::new(t("In Ribbon, Show", "Dans le ruban, afficher")).child(self.check(
+                "prefs-developer",
+                t("Developer tab", "Onglet Développeur"),
+                shown.settings.developer_tab,
+                cx,
+                |this, on, _, cx| {
+                    this.set(cx, |settings| settings.developer_tab = on);
+                },
+            )))
             .child(
                 // These three belong to the sheet in front, as in Excel.
                 GroupBox::new(t("Window options", "Options de fenêtre"))

@@ -1293,11 +1293,19 @@ pub(crate) fn bind_chart(wb: &Workbook, chart: &opensheet_engine::chart::Chart, 
         xml.insert_str(at, &formats);
     }
     if let Some(at) = xml.rfind("</c:chartSpace>") {
-        let shown = u8::from(link.buttons);
+        // In the order Excel writes them; `dropZonesVisible` says that
+        // some are shown.
+        use opensheet_engine::pivot::ChartButtonKind as Kind;
+        let flag = |kind: Kind| u8::from(link.shows(kind));
         xml.insert_str(
             at,
             &format!(
-                "<c:extLst><c:ext uri=\"{EXT_PIVOT_OPTIONS}\" xmlns:c14=\"{NS_C14}\"><c14:pivotOptions><c14:dropZoneFilter val=\"{shown}\"/><c14:dropZoneCategories val=\"{shown}\"/><c14:dropZoneData val=\"{shown}\"/><c14:dropZoneSeries val=\"{shown}\"/><c14:dropZonesVisible val=\"{shown}\"/></c14:pivotOptions></c:ext></c:extLst>"
+                "<c:extLst><c:ext uri=\"{EXT_PIVOT_OPTIONS}\" xmlns:c14=\"{NS_C14}\"><c14:pivotOptions><c14:dropZoneFilter val=\"{}\"/><c14:dropZoneCategories val=\"{}\"/><c14:dropZoneData val=\"{}\"/><c14:dropZoneSeries val=\"{}\"/><c14:dropZonesVisible val=\"{}\"/></c14:pivotOptions></c:ext></c:extLst>",
+                flag(Kind::Filter),
+                flag(Kind::Axis),
+                flag(Kind::Value),
+                flag(Kind::Legend),
+                u8::from(link.buttons()),
             ),
         );
     }
@@ -1307,7 +1315,7 @@ pub(crate) fn bind_chart(wb: &Workbook, chart: &opensheet_engine::chart::Chart, 
 /// Bind the charts read from the file to the PivotTables their parts
 /// name (`c:pivotSource`).
 fn link_charts(wb: &mut Workbook) {
-    let mut links: Vec<(String, String, u32, bool)> = Vec::new();
+    let mut links: Vec<(String, String, u32, [bool; 4])> = Vec::new();
     for chart in wb.sheets.iter().flat_map(|sheet| &sheet.charts) {
         let Some(xml) = chart.foreign.as_ref().map(|foreign| &foreign.xml) else {
             continue;
@@ -1317,7 +1325,9 @@ fn link_charts(wb: &mut Workbook) {
         }
         let mut r = Reader::new(xml);
         let mut name = None;
-        let mut buttons = false;
+        // Filter, legend, axis, values; and whether any shows at all.
+        let mut zones = [false; 4];
+        let mut visible = false;
         loop {
             match r.next() {
                 Event::Open(t) if t.name == "pivotSource" && !t.empty => loop {
@@ -1328,8 +1338,15 @@ fn link_charts(wb: &mut Workbook) {
                         Event::Text(_) => {}
                     }
                 },
-                Event::Open(t) if t.name == "dropZonesVisible" => {
-                    buttons = t.attr_bool("val").unwrap_or(true);
+                Event::Open(t) if t.name.starts_with("dropZone") => {
+                    let on = t.attr_bool("val").unwrap_or(true);
+                    match t.name {
+                        "dropZoneFilter" => zones[0] = on,
+                        "dropZoneSeries" => zones[1] = on,
+                        "dropZoneCategories" => zones[2] = on,
+                        "dropZoneData" => zones[3] = on,
+                        _ => visible = on,
+                    }
                     r.skip(&t);
                 }
                 Event::Eof => break,
@@ -1343,15 +1360,15 @@ fn link_charts(wb: &mut Workbook) {
         let rest = name.rsplit_once(']').map_or(name.as_str(), |(_, rest)| rest);
         if let Some((sheet, table)) = rest.rsplit_once('!') {
             let sheet = sheet.trim_matches('\'').replace("''", "'");
-            links.push((sheet, table.to_string(), chart.id, buttons));
+            links.push((sheet, table.to_string(), chart.id, if visible { zones } else { [false; 4] }));
         }
     }
-    for (sheet, table, chart, buttons) in links {
+    for (sheet, table, chart, shown) in links {
         let Some(index) = wb.sheet_index(&sheet) else {
             continue;
         };
         if let Some(p) = wb.sheets[index].pivots.iter_mut().find(|p| p.name.to_lowercase() == table.to_lowercase()) {
-            p.charts.push(opensheet_engine::pivot::PivotChartLink { chart, buttons });
+            p.charts.push(opensheet_engine::pivot::PivotChartLink { chart, shown });
         }
     }
 }

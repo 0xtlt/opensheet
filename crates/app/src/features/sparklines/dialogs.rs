@@ -1,7 +1,7 @@
 //! The dialogs of sparklines: Create Sparklines (also Edit Group Location
-//! & Data), Edit Sparkline Data, Hidden and Empty Cell Settings, and the
-//! small boxes that ask for a number (a custom end of the vertical axis,
-//! a line weight).
+//! & Data), Edit Sparkline Data, Sparkline Date Range, Hidden and Empty
+//! Cell Settings, and the small boxes that ask for a number (a custom end
+//! of the vertical axis, a line weight).
 
 use super::{active_group, change, labels};
 use crate::app::ExcelApp;
@@ -280,6 +280,98 @@ impl Render for SingleDialog {
                 "Sélectionnez une plage de données sources pour le graphique sparkline :",
             )))
             .child(div().flex().child(RefEdit::new(&self.data, &self.modal).width(380.0)))
+            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+    }
+}
+
+// ----------------------------------------------------- Sparkline Date Range
+
+/// Give the selected sparklines a date axis reading `dates`, or the
+/// general axis back (`None`). False, with Excel's message, when the
+/// range does not hold one date for each point.
+pub(super) fn set_date_axis(app: &mut ExcelApp, dates: Option<(usize, Rect)>, cx: &mut Cx) -> bool {
+    if !app.may(Intent::ChangeSheet, cx) {
+        return false;
+    }
+    let (sheet, ranges) = (app.sheet, app.sel().ranges.clone());
+    match app.wb.set_sparkline_date_axis(sheet, &ranges, dates) {
+        Ok(changed) => {
+            if changed {
+                app.commit(labels::axis(), cx);
+            }
+            true
+        }
+        Err(_) => {
+            let block = dates.is_some_and(|(_, range)| range.rows() > 1 && range.cols() > 1);
+            let message = if block {
+                t(
+                    "Date axis reference is not valid because the cells are not all in the same column or row. Select cells that are all in a single column or row.",
+                    "La référence de l’axe des dates n’est pas valide car les cellules ne se trouvent pas toutes dans la même colonne ou ligne. Sélectionnez des cellules qui se trouvent toutes dans une même colonne ou ligne.",
+                )
+            } else {
+                date_reference_refusal()
+            };
+            warn(app, message, cx);
+            false
+        }
+    }
+}
+
+fn date_reference_refusal() -> &'static str {
+    t("Date axis reference is not valid.", "La référence de l’axe des dates n’est pas valide.")
+}
+
+/// Axis > Date Axis Type: the range that holds the dates.
+pub(super) struct DateRangeDialog {
+    modal: Modal,
+    pub(super) range: Entity<TextInput>,
+}
+
+pub(super) fn open_date_range(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<Entity<DateRangeDialog>> {
+    active_group(app)?;
+    if !app.may(Intent::ChangeSheet, cx) {
+        return None;
+    }
+    // The range the group has, as the data ranges are written.
+    let current = active_group(app)?.date_axis.as_ref().map(|dates| {
+        let style = RefStyle {
+            sheet: dates.sheet != app.wb.sheets[app.sheet].name,
+            ..DATA
+        };
+        style.format(dates.range, &dates.sheet)
+    });
+    Some(app.open_modal(window, cx, move |modal, _, cx| DateRangeDialog {
+        range: modal.ref_input(DATA, current.unwrap_or_default(), cx),
+        modal,
+    }))
+}
+
+impl DateRangeDialog {
+    pub(super) fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.range.read(cx).text().to_string();
+        let done = self.modal.update_app(cx, |app, cx| match typed_range(app, &text) {
+            Some(dates) => set_date_axis(app, Some(dates), cx),
+            None => {
+                warn(app, date_reference_refusal(), cx);
+                false
+            }
+        });
+        if done == Some(true) {
+            self.modal.close(window, cx);
+        }
+    }
+}
+
+impl Render for DateRangeDialog {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        dialog(&self.modal, t("Sparkline Date Range", "Graphique sparkline - Plage de dates"))
+            .width(420.0)
+            .on_ok(cx.listener(Self::ok))
+            .child(label(t(
+                "Select the range that contains the date values for the Sparkline data",
+                "Sélectionnez la plage qui contient les valeurs de date pour les données du graphique sparkline",
+            )))
+            .child(div().flex().child(RefEdit::new(&self.range, &self.modal).width(380.0)))
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }

@@ -1673,6 +1673,8 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         &wb.styles.get(ctx.style(0)).font,
     );
     let mut drawings = super::drawing::Loader::new(&mut pkg, &rels);
+    // Form controls have ids unique in the workbook.
+    let mut next_control_id = 1;
     let mut inks = super::ink::Loader::new();
     for (i, (name, rid)) in info.sheets.iter().enumerate() {
         let part = match rels.iter().find(|r| r.id == *rid) {
@@ -1688,6 +1690,7 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         let mut loaded = SheetReader::read(&xml, name, &ctx);
         super::hyperlink::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
         super::background::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
+        super::control::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet, &mut next_control_id);
         drop(xml);
         loaded.sheet.charts = read_charts(
             &mut pkg,

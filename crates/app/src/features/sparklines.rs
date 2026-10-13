@@ -280,7 +280,7 @@ impl Command for Cmd {
 }
 
 /// The Axis menu, as Excel lays it out: the horizontal axis, then the
-/// two ends of the vertical one. (The date axis is not built.)
+/// two ends of the vertical one.
 fn axis_menu(app: &ExcelApp) -> Vec<MenuEntry> {
     let Some(group) = active_group(app) else {
         return Vec::new();
@@ -310,8 +310,17 @@ fn axis_menu(app: &ExcelApp) -> Vec<MenuEntry> {
             .checked(matches!(current, AxisBound::Custom(_))),
         ]
     };
+    let dated = group.date_axis.is_some();
     let mut entries = vec![
         heading(t("Horizontal Axis Options", "Options de l'axe horizontal")),
+        MenuEntry::new(t("General Axis Type", "Type de l'axe général"), |app, _, cx| {
+            dialogs::set_date_axis(app, None, cx);
+        })
+        .checked(!dated),
+        MenuEntry::new(t("Date Axis Type...", "Type de l'axe de date..."), |app, window, cx| {
+            dialogs::open_date_range(app, window, cx);
+        })
+        .checked(dated),
         flag(t("Show Axis", "Afficher l'axe"), group.show_axis, |group, on| group.show_axis = on),
         flag(
             t("Plot Data Right-to-Left", "Tracer les données de droite à gauche"),
@@ -345,6 +354,7 @@ pub(crate) fn paint_cells(p: &mut Painter) {
             continue;
         }
         let shared = app.wb.sparkline_scale(group);
+        let dates = app.wb.sparkline_dates(group);
         for sparkline in in_view {
             // The sparkline of a merged cell fills the merged area.
             let cells = sheet.merge_at(sparkline.row, sparkline.col).unwrap_or(Rect::cell(sparkline.row, sparkline.col));
@@ -358,7 +368,7 @@ pub(crate) fn paint_cells(p: &mut Painter) {
             }
             let values = app.wb.sparkline_values(group, sparkline);
             let outer = std::mem::take(&mut p.items);
-            for shape in opensheet_engine::sparkline::shapes(group, &values, shared, width, height, zoom) {
+            for shape in opensheet_engine::sparkline::shapes_at(group, &values, dates.as_deref(), shared, width, height, zoom) {
                 match shape {
                     SparkShape::Rect { x0: a, y0: b, x1: c, y1: d, color } => {
                         p.rect(x0 + a, y0 + b, x0 + c, y0 + d, theme::engine_color(color));

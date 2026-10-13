@@ -1898,7 +1898,9 @@ impl RawChart {
             };
             let mut series = Series {
                 name: d.raw.name,
-                categories: d.raw.categories.map(|c| innermost_level(&c, &values)),
+                // Labels in several columns are several levels of labels;
+                // the X values of a scatter chart are one line of numbers.
+                categories: d.raw.categories.map(|c| if drawn_as.is_xy() { innermost_level(&c, &values) } else { c }),
                 // A colour that is the automatic one is no colour of its own.
                 color: Some(d.looks.ink).filter(|ink| ink.value() != palette_color_of(&accents, position).value()),
                 kind: own_kind,

@@ -30,7 +30,7 @@ mod text;
 
 pub use cache::{CacheField, CalcItem, FieldGroup, GroupBy, GroupKind, PivotCache};
 pub use calc::{CalcFormula, ListLabels};
-pub use chart::{PivotChartFields, PivotChartLink, chart_kind_allowed};
+pub use chart::{ChartButtonKind, PivotChartFields, PivotChartLink, PivotChartPoints, chart_kind_allowed};
 pub use commands::PivotDestination;
 pub use compute::{Report, ReportLine, ReportLineKind};
 pub use getdata::get_pivot_data;

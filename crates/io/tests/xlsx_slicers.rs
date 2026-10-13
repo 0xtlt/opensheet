@@ -278,8 +278,24 @@ fn a_pivot_chart_goes_through_a_file() {
     let mut back = load(&bytes);
     let read = back.sheets[1].charts[0].id;
     let id = back.sheets[1].pivots[0].id;
-    assert_eq!(back.pivot_of_chart(read).map(|(_, p, link)| (p.id, link.buttons)), Some((id, true)));
+    assert_eq!(back.pivot_of_chart(read).map(|(_, p, link)| (p.id, link.shown)), Some((id, [true; 4])));
     assert_eq!(to_bytes(&back), bytes);
+    // Each kind of field buttons is kept on its own.
+    {
+        use opensheet_engine::pivot::ChartButtonKind;
+        let mut some = load(&bytes);
+        some.set_pivot_chart_button_kind(read, ChartButtonKind::Value, false);
+        some.set_pivot_chart_button_kind(read, ChartButtonKind::Legend, false);
+        some.commit("buttons");
+        let bytes = to_bytes(&some);
+        let part_xml = part(&bytes, "xl/charts/chart1.xml");
+        assert!(
+            part_xml.contains("<c14:dropZoneFilter val=\"1\"/><c14:dropZoneCategories val=\"1\"/><c14:dropZoneData val=\"0\"/><c14:dropZoneSeries val=\"0\"/><c14:dropZonesVisible val=\"1\"/>"),
+            "{part_xml}"
+        );
+        let again = load(&bytes);
+        assert_eq!(again.pivot_of_chart(again.sheets[1].charts[0].id).unwrap().2.shown, [true, false, true, false]);
+    }
     // Still bound: the chart follows a filter made after loading.
     back.pivot_update(id, false, |p| p.set_item_hidden(0, 0, true)).unwrap();
     back.commit("filter");
@@ -310,5 +326,35 @@ fn slicers_a_timeline_a_calculated_field_and_a_chart_together() {
     let back = load(&bytes);
     assert_eq!((back.sheets[1].slicers.len(), back.sheets[1].timelines.len(), back.sheets[1].charts.len()), (2, 1, 1));
     assert!(back.timeline(back.sheets[1].timelines[0].id).is_some() && timeline > 0);
+    assert_eq!(to_bytes(&back), bytes);
+}
+
+/// A PivotChart of a report with two row fields: the items on two levels
+/// of labels, the lines of the outer items left out of the caches.
+#[test]
+fn a_pivot_chart_with_two_row_fields_writes_its_levels() {
+    use opensheet_engine::chart::ChartKind;
+    use opensheet_engine::pivot::Area;
+    let (mut wb, pivot) = book();
+    let locale = wb.locale;
+    wb.pivot_update(pivot, false, |p| p.add_field(1, Area::Rows, None, locale)).unwrap();
+    let chart = wb.add_pivot_chart(1, pivot, ChartKind::Column).unwrap();
+    wb.update_chart(1, chart, |c| c.anchor = (2, 5));
+    wb.commit("chart");
+    let bytes = to_bytes(&wb);
+    common::keep_sample("pivot-chart-multilevel.xlsx", &bytes);
+    all_well_formed(&bytes);
+    let data = wb.chart_data(1, wb.chart(1, chart).unwrap());
+    let points = data.categories.len();
+    assert!(points >= 3 && data.outer_levels.len() == 1, "{data:?}");
+    let xml = part(&bytes, "xl/charts/chart1.xml");
+    assert!(xml.contains(&format!("<c:multiLvlStrCache><c:ptCount val=\"{points}\"/><c:lvl><c:pt idx=\"0\"><c:v>{}</c:v></c:pt>", data.categories[0])), "{xml}");
+    assert_eq!(xml.matches("<c:lvl>").count(), 2 * wb.chart(1, chart).unwrap().series.len());
+    // The values: one point per item, numbered from 0.
+    assert!(xml.contains(&format!("<c:numCache><c:formatCode>General</c:formatCode><c:ptCount val=\"{points}\"/><c:pt idx=\"0\">")), "{xml}");
+    let back = load(&bytes);
+    let read = back.sheets[1].charts[0].id;
+    assert_eq!(back.chart_data(1, back.chart(1, read).unwrap()).outer_levels, data.outer_levels);
+    assert_eq!(back.chart_data(1, back.chart(1, read).unwrap()).series[0].values, data.series[0].values);
     assert_eq!(to_bytes(&back), bytes);
 }

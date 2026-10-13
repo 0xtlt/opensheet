@@ -229,6 +229,7 @@ pub mod chart_format;
 pub mod charts;
 pub mod comments;
 pub mod condfmt;
+pub mod controls;
 pub mod custom_views;
 pub mod data_tools;
 pub mod drawings;
@@ -262,7 +263,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// charts, pictures and shapes, which share one stacking order
 /// (`objects::stack`).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 27] = [
+    static ALL: [&dyn Feature; 28] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -277,6 +278,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &chart_format::ChartFormat,
         &drawings::Drawings,
         &slicers::Slicers,
+        &controls::Controls,
         &ink::InkFeature,
         &custom_views::CustomViews,
         &preferences::Preferences,

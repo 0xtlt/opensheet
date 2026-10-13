@@ -235,6 +235,8 @@ fn axis_menu_and_its_custom_values(cx: &mut TestAppContext) {
         labels,
         [
             "Horizontal Axis Options",
+            "General Axis Type",
+            "Date Axis Type...",
             "Show Axis",
             "Plot Data Right-to-Left",
             "Vertical Axis Minimum Value Options",
@@ -249,16 +251,16 @@ fn axis_menu_and_its_custom_values(cx: &mut TestAppContext) {
     );
     // Automatic is ticked at both ends.
     let ticked: Vec<usize> = entries.iter().enumerate().filter(|(_, e)| e.checked).map(|(i, _)| i).collect();
-    assert_eq!(ticked, [5, 10]);
+    assert_eq!(ticked, [1, 7, 12]);
     let pick = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, index: usize| {
         let action = app.update(cx, |app, _| axis_menu(app)[index].action.clone()).expect("an entry that acts");
         app.update_in(cx, |app, window, cx| action(app, window, cx));
         redraw(cx);
     };
-    pick(&app, cx, 1);
-    pick(&app, cx, 2);
-    pick(&app, cx, 6);
-    pick(&app, cx, 11);
+    pick(&app, cx, 3);
+    pick(&app, cx, 4);
+    pick(&app, cx, 8);
+    pick(&app, cx, 13);
     let g = group_of(&app, cx, "F1");
     assert!(g.show_axis && g.right_to_left);
     assert_eq!((g.min, g.max), (AxisBound::Group, AxisBound::Group));
@@ -427,4 +429,58 @@ fn sparklines_are_painted_in_their_cells(cx: &mut TestAppContext) {
         painter.items.len()
     });
     assert_eq!(none, 0);
+}
+
+#[gpui::test]
+fn the_axis_menu_gives_a_date_axis_and_takes_it_back(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    app.update(cx, |app, cx| {
+        for (c, day) in ["45000", "45001", "45003", "45010"].iter().enumerate() {
+            let _ = app.wb.set_cell_text(0, 6, c as u32, day);
+        }
+        app.wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3")).unwrap();
+        app.commit("setup", cx);
+        app.select_rect(rect("F2"), cx);
+    });
+    let entry = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, label: &str| {
+        app.update(cx, |app, _| {
+            let entries = axis_menu(app);
+            let found = entries.iter().find(|e| e.label.as_ref() == label).unwrap_or_else(|| panic!("no entry {label}"));
+            (found.checked, found.action.clone().unwrap())
+        })
+    };
+    let (general, _) = entry(&app, cx, "General Axis Type");
+    let (dated, open_dialog) = entry(&app, cx, "Date Axis Type...");
+    assert!(general && !dated);
+    // The range dialog: a range that does not fit is refused and the dialog stays.
+    app.update_in(cx, |app, window, cx| open_dialog(app, window, cx));
+    let dialog: Entity<dialogs::DateRangeDialog> = app.update(cx, |app, _| app.front_modal_view().unwrap().downcast().unwrap());
+    dialog.update(cx, |d, cx| d.range.update(cx, |field, cx| field.set_text("A7:C7", cx)));
+    dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].sparklines[0].date_axis.is_none() && app.modal_open()));
+    app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+    dialog.update(cx, |d, cx| d.range.update(cx, |field, cx| field.set_text("A7:D7", cx)));
+    dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
+    app.update(cx, |app, _| {
+        assert!(!app.modal_open());
+        let group = &app.wb.sheets[0].sparklines[0];
+        assert_eq!(group.date_axis.as_ref().map(|d| d.range.name()), Some("A7:D7".to_string()));
+        assert_eq!(app.wb.undo_label(), Some("Sparkline Axis Change"));
+    });
+    let (general, back) = entry(&app, cx, "General Axis Type");
+    assert!(!general && entry(&app, cx, "Date Axis Type...").0);
+    // The dialog proposes the range the group has.
+    let open_again = entry(&app, cx, "Date Axis Type...").1;
+    app.update_in(cx, |app, window, cx| open_again(app, window, cx));
+    let dialog: Entity<dialogs::DateRangeDialog> = app.update(cx, |app, _| app.front_modal_view().unwrap().downcast().unwrap());
+    assert_eq!(dialog.update(cx, |d, cx| d.range.read(cx).text().to_string()), "A7:D7");
+    app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
+    // General Axis Type: evenly spaced again, one undo step each.
+    app.update_in(cx, |app, window, cx| back(app, window, cx));
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].sparklines[0].date_axis.is_none()));
+    app.update(cx, |app, cx| {
+        app.wb.undo();
+        cx.notify();
+    });
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].sparklines[0].date_axis.is_some()));
 }

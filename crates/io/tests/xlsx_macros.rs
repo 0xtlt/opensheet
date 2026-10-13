@@ -297,12 +297,13 @@ fn a_workbook_without_macros_saved_as_xlsm_is_a_plain_macro_enabled_file() {
     assert!(!part(&saved, "xl/worksheets/sheet1.xml").contains("sheetPr"));
 }
 
-/// What macro-enabled files often hold beside the project and OpenSheet
-/// has no model for: form controls (a button with a macro), ActiveX
-/// controls, a dialog sheet. They are not read, so they are not written:
-/// the file saved has no trace of them, and nothing pointing at them.
+/// What macro-enabled files may hold beside the project and OpenSheet
+/// has no model for: ActiveX controls, a dialog sheet, a shape of the
+/// legacy drawing that does not say what it is. They are not read, so
+/// they are not written: the file saved has no trace of them, and nothing
+/// pointing at them. (Form controls are kept: see `xlsx_controls.rs`.)
 #[test]
-fn controls_are_dropped_without_leaving_loose_ends() {
+fn what_is_not_read_is_dropped_without_leaving_loose_ends() {
     let types = format!(
         "<?xml version=\"1.0\"?><Types xmlns=\"{CT}\"><Default Extension=\"bin\" ContentType=\"application/vnd.ms-office.vbaProject\"/><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Default Extension=\"vml\" ContentType=\"application/vnd.openxmlformats-officedocument.vmlDrawing\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.ms-excel.sheet.macroEnabled.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/><Override PartName=\"/xl/dialogsheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.dialogsheet+xml\"/><Override PartName=\"/xl/ctrlProps/ctrlProp1.xml\" ContentType=\"application/vnd.ms-excel.controlproperties+xml\"/><Override PartName=\"/xl/activeX/activeX1.xml\" ContentType=\"application/vnd.ms-office.activeX+xml\"/></Types>"
     );

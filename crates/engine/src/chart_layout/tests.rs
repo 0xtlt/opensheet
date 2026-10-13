@@ -1436,3 +1436,55 @@ fn a_pie_fills_the_box_its_plot_area_was_given() {
     let frame = elements(&w, &chart).bounds(ChartElement::PlotArea).unwrap();
     assert!(near(frame[0], 240.0) && near(frame[2], 360.0) && near(frame[1], 84.0) && near(frame[3], 204.0), "{frame:?}");
 }
+
+#[test]
+fn outer_category_labels_are_centred_under_their_group_between_separators() {
+    let w = wb(&[
+        ("A1", "Year"), ("B1", "Quarter"), ("C1", "Sales"),
+        ("A2", "2024"), ("B2", "Q1"), ("C2", "10"),
+        ("B3", "Q2"), ("C3", "12"),
+        ("A4", "2025"), ("B4", "Q3"), ("C4", "9"),
+        ("B5", "Q4"), ("C5", "14"),
+    ]);
+    let mut chart = chart_of(&w, "B1:C5", ChartKind::Column);
+    let plain = lay(&w, &chart);
+    let cats = crate::parser::parse_formula(&format!("{}!$A$2:$B$5", w.sheets[0].name), crate::locale::Locale::en());
+    let Ok(crate::ast::Expr::Ref(cats)) = cats else { panic!("a range") };
+    chart.series[0].categories = Some(cats);
+    let prims = lay(&w, &chart);
+    let (q1, q2, q3, q4) = (find_text(&prims, "Q1"), find_text(&prims, "Q2"), find_text(&prims, "Q3"), find_text(&prims, "Q4"));
+    let (y24, y25) = (find_text(&prims, "2024"), find_text(&prims, "2025"));
+    // The years on a line of their own under the quarters.
+    assert!(y24.y > q1.y + q1.size * 0.9 && y24.y == y25.y, "{} {}", y24.y, q1.y);
+    // Each centred under its two quarters.
+    let centre = |t: &TextRun| match t.anchor {
+        TextAnchor::Start => t.x + Fixed.width(&t.text, t.size, false) / 2.0,
+        TextAnchor::Middle => t.x,
+        TextAnchor::End => t.x - Fixed.width(&t.text, t.size, false) / 2.0,
+    };
+    assert!((centre(y24) - (centre(q1) + centre(q2)) / 2.0).abs() < 1.5);
+    assert!((centre(y25) - (centre(q3) + centre(q4)) / 2.0).abs() < 1.5);
+    // The plot gives up a line of labels.
+    let plot = |prims: &[Prim]| prims.iter().find_map(|p| match p {
+        Prim::Text(t) if t.text == "Q1" => Some(t.y),
+        _ => None,
+    });
+    assert!(plot(&prims).unwrap() < plot(&plain).unwrap() - q1.size * 0.9);
+    // Three separators run from the axis down past the years: at both
+    // ends and between the two groups.
+    let long: Vec<(f32, f32, f32, f32)> = prims
+        .iter()
+        .filter_map(|p| match p {
+            Prim::Line { x0, y0, x1, y1, .. } if x0 == x1 && *y1 > y24.y + y24.size * 0.5 && *y0 < q1.y => Some((*x0, *y0, *x1, *y1)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(long.len(), 3, "{long:?}");
+    let middle = long[1].0;
+    assert!(middle > centre(q2) && middle < centre(q3));
+    // Bars: the outer level is turned, left of the inner labels.
+    chart.set_kind(ChartKind::Bar);
+    let prims = lay(&w, &chart);
+    let (q1, y24) = (find_text(&prims, "Q1"), find_text(&prims, "2024"));
+    assert!(y24.rotation != 0.0 && y24.x < q1.x);
+}

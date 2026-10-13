@@ -166,6 +166,10 @@ struct AxisPlan {
     /// Labels name categories: they are centred on slots and thinned out
     /// when they do not fit.
     categories: bool,
+    /// The outer levels of category labels, the one next to `labels`
+    /// first: the groups of each as (fraction where the group begins,
+    /// where it ends, text, width).
+    outer: Vec<Vec<(f64, f64, String, f32)>>,
     title: Option<String>,
     unit: Option<String>,
     /// Fraction along the other axis where the line of this axis runs.
@@ -187,6 +191,17 @@ struct AxisPlan {
 impl AxisPlan {
     fn label_w(&self) -> f32 {
         self.labels.iter().map(|l| l.2).fold(0.0, f32::max)
+    }
+
+    /// Room one outer level of labels takes across the axis: a line of
+    /// text under an upright plot, a column of turned text beside bars.
+    fn level_room(&self, z: f32) -> f32 {
+        self.face.h + if self.vertical { 8.0 * z } else { 4.0 * z }
+    }
+
+    /// Room all the outer levels take.
+    fn outer_room(&self, z: f32) -> f32 {
+        if self.labels.is_empty() { 0.0 } else { self.outer.len() as f32 * self.level_room(z) }
     }
 }
 
@@ -617,6 +632,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
             side: side.unwrap_or(Side::Low),
             labels: if side.is_some() { scale_labels(p, axis, scale, code) } else { Vec::new() },
             categories: false,
+            outer: Vec::new(),
             title: axis.title.clone().filter(|t| !t.is_empty()),
             unit: if axis.display_unit_label { unit_name(p, axis.display_unit) } else { None },
             line_at,
@@ -653,6 +669,24 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
             } else {
                 Vec::new()
             };
+            // The groups of the outer levels, from the edge of their
+            // first slot to the edge of their last.
+            let outer = if side.is_some() {
+                let edge = |slot: f64| geo0.cat(slot.clamp(0.0, geo0.span()));
+                (0..data.outer_levels.len())
+                    .map(|level| {
+                        data.level_groups(level, n)
+                            .into_iter()
+                            .map(|(first, last, text)| {
+                                let w = p.width_of(&text, &cat_face);
+                                (edge(geo0.centre(first) - 0.5), edge(geo0.centre(last) + 0.5), text, w)
+                            })
+                            .collect()
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let boundaries: Vec<f64> = if on_ticks {
                 (0..slots).map(|k| geo0.cat(k as f64)).collect()
             } else {
@@ -663,6 +697,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
                 side: side.unwrap_or(Side::Low),
                 labels,
                 categories: true,
+                outer,
                 title: axis.title.clone().filter(|t| !t.is_empty()),
                 unit: None,
                 line_at: category_at,
@@ -702,6 +737,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
         },
         vertical: horizontal,
         categories: true,
+        outer: Vec::new(),
         unit: None,
         ticks: category_plan.ticks.clone(),
         minor_ticks: Vec::new(),
@@ -721,6 +757,7 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
     let names_w = table_rows.iter().map(|si| p.width(&p.series_name(*si), label_size)).fold(0.0, f32::max) + key_w + 8.0 * z;
     if table.is_some() {
         category_plan.labels.clear();
+        category_plan.outer.clear();
     }
 
     // ---- room around the plot ----------------------------------------------
@@ -731,9 +768,9 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
             0.0
         } else if plan.vertical {
             let w = if plan.categories { plan.label_w().min(max_cat_w) } else { plan.label_w() };
-            w + 8.0 * z
+            w + 8.0 * z + plan.outer_room(z)
         } else {
-            plan.face.h + 6.0 * z
+            plan.face.h + 6.0 * z + plan.outer_room(z)
         }
     };
     let extras = |plan: &AxisPlan| -> f32 {
@@ -1225,7 +1262,28 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
                     Side::Inside => p.write(label, x - 6.0 * z, top, face, TextAnchor::End),
                 }
             }
-            let labels_w = if plan.labels.is_empty() || plan.side == Side::Inside { 0.0 } else { label_w + 8.0 * z };
+            // The outer levels, turned, each in a column further from the
+            // plot, with a line between two groups.
+            if plan.side == Side::Low && !plan.labels.is_empty() {
+                let room = plan.level_room(z);
+                for (level, groups) in plan.outer.iter().enumerate() {
+                    let near = px0 - 6.0 * z - label_w - 2.0 * z - level as f32 * room;
+                    let mut edges: Vec<f64> = Vec::new();
+                    for (from, to, text, w) in groups {
+                        let (a, b) = (y_of(*from), y_of(*to));
+                        if !text.is_empty() && *w <= (a - b).abs() + 2.0 * z {
+                            p.write_rotated(text, near - room / 2.0, (a + b) / 2.0, face, -90.0);
+                        }
+                        edges.extend([*from, *to]);
+                    }
+                    edges.sort_by(f64::total_cmp);
+                    edges.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+                    for f in edges {
+                        p.hline(near - room, x, y_of(f).round(), AXIS);
+                    }
+                }
+            }
+            let labels_w = if plan.labels.is_empty() || plan.side == Side::Inside { 0.0 } else { label_w + 8.0 * z + plan.outer_room(z) };
             let high = plan.side == Side::High;
             let mut out = labels_w + 4.0 * z;
             if let Some(unit) = &plan.unit {
@@ -1288,12 +1346,34 @@ pub(super) fn draw_cartesian(p: &mut Painter, area: (f32, f32, f32, f32), inner:
                     p.write(label, x_of(*f).round(), top, face, TextAnchor::Middle);
                 }
             }
+            // The outer levels, each on a line further from the plot,
+            // centred under their group, with a line between two groups
+            // from the axis down to the foot of the level.
+            if plan.side != Side::High && !plan.labels.is_empty() {
+                let room = plan.level_room(z);
+                for (level, groups) in plan.outer.iter().enumerate() {
+                    let line_top = top + label_h + 2.0 * z + level as f32 * room;
+                    let mut edges: Vec<f64> = Vec::new();
+                    for (from, to, text, w) in groups {
+                        let (a, b) = (x_of(*from).min(x_of(*to)), x_of(*from).max(x_of(*to)));
+                        if !text.is_empty() && *w <= (b - a) + 2.0 * z {
+                            p.write(text, (a + b) / 2.0, line_top, face, TextAnchor::Middle);
+                        }
+                        edges.extend([*from, *to]);
+                    }
+                    edges.sort_by(f64::total_cmp);
+                    edges.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+                    for f in edges {
+                        p.vline(x_of(f).round(), y, line_top + room - 1.0 * z, AXIS);
+                    }
+                }
+            }
             let labels_h = if plan.categories && plan.side == Side::Low && table.is_some() {
                 table_h
             } else if plan.labels.is_empty() || plan.side == Side::Inside {
                 0.0
             } else {
-                label_h + 6.0 * z
+                label_h + 6.0 * z + plan.outer_room(z)
             };
             let high = plan.side == Side::High;
             let mut out = labels_h + 2.0 * z;

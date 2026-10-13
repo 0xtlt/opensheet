@@ -630,6 +630,7 @@ impl<'a> Renderer<'a> {
         // Sparklines lie over the fill of their cell and under its text.
         for group in &sh.sparklines {
             let shared = self.job.wb.sparkline_scale(group);
+            let dates = self.job.wb.sparkline_dates(group);
             for sparkline in &group.sparklines {
                 let (Some(i), Some(j)) = (pane.row_index(sparkline.row), pane.col_index(sparkline.col)) else {
                     continue;
@@ -645,7 +646,7 @@ impl<'a> Renderer<'a> {
                 canvas.clip_rect(r);
                 canvas.translate(r.x, r.y);
                 canvas.scale(pane.unit, pane.unit);
-                for shape in opensheet_engine::sparkline::shapes(group, &values, shared, size.0, size.1, 1.0) {
+                for shape in opensheet_engine::sparkline::shapes_at(group, &values, dates.as_deref(), shared, size.0, size.1, 1.0) {
                     match shape {
                         SparkShape::Rect { x0, y0, x1, y1, color } => {
                             canvas.fill_rect(RectF::new(x0 as f64, y0 as f64, (x1 - x0) as f64, (y1 - y0) as f64), self.ink(color));

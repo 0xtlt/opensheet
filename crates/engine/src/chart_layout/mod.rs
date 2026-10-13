@@ -864,8 +864,7 @@ impl Painter<'_> {
         if self.varied() {
             let n = self.data.series.first().map_or(0, |s| s.values.len());
             for i in 0..n {
-                let name = self.data.categories.get(i).cloned().unwrap_or_default();
-                entries.push((name, Key::Swatch(self.point_color(0, i))));
+                entries.push((self.data.category_name(i), Key::Swatch(self.point_color(0, i))));
             }
         } else {
             for i in 0..self.data.series.len().min(chart.series.len()) {
@@ -1211,8 +1210,8 @@ pub(crate) fn label_text(p: &Painter, series: usize, point: usize, percent: Opti
             if let Some(Some(x)) = sd.x_values.get(point) {
                 parts.push(fmt_value(*x, &p.data.x_format, locale));
             }
-        } else if let Some(name) = p.data.categories.get(point) {
-            parts.push(name.clone());
+        } else if point < p.data.categories.len() {
+            parts.push(p.data.category_name(point));
         }
     }
     if labels.value

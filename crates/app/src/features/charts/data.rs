@@ -295,7 +295,8 @@ impl Render for SelectData {
         let labels: Vec<SharedString> = if xy {
             data.x_values.iter().map(|x| x.map(|x| x.to_string()).unwrap_or_default().into()).collect()
         } else {
-            data.categories.iter().map(|name| name.clone().into()).collect()
+            // Labels on several levels read outer level first ("2024 Q1").
+            (0..data.categories.len()).map(|k| data.category_name(k).into()).collect()
         };
         let complex = self.applied.is_empty() && !self.series.is_empty();
         let has = self.selected.is_some();
