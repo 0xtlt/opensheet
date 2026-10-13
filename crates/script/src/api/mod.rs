@@ -8,12 +8,19 @@ use serde_json::Value as J;
 use crate::ErrorKind;
 use crate::host::Host;
 
+mod areas;
 mod chart;
+mod comment;
+mod condfmt;
 mod enums;
 mod format;
+mod pivot;
+mod protection;
 mod range;
+mod shape;
 mod table;
 mod util;
+mod validation;
 mod workbook;
 mod worksheet;
 
@@ -60,6 +67,8 @@ pub(crate) enum Ret {
     /// An object of the model, several of them in an array, or `null` for
     /// what does not exist (the script sees `undefined`).
     Object(J),
+    /// A `Date`: milliseconds since 1970, UTC.
+    Date(f64),
 }
 
 impl Ret {
@@ -202,6 +211,7 @@ pub(crate) static API: &[ApiClass] = &[
     workbook::NAMED_ITEM,
     worksheet::WORKSHEET,
     worksheet::FREEZE_PANES,
+    protection::WORKSHEET_PROTECTION,
     worksheet::AUTO_FILTER,
     range::RANGE,
     range::RANGE_SORT,
@@ -218,6 +228,43 @@ pub(crate) static API: &[ApiClass] = &[
     chart::CHART,
     chart::CHART_TITLE,
     chart::CHART_LEGEND,
+    areas::RANGE_AREAS,
+    areas::RANGE_VIEW,
+    condfmt::CONDITIONAL_FORMAT,
+    condfmt::CELL_VALUE,
+    condfmt::COLOR_SCALE,
+    condfmt::DATA_BAR,
+    condfmt::BAR_POSITIVE,
+    condfmt::BAR_NEGATIVE,
+    condfmt::ICON_SET,
+    condfmt::PRESET,
+    condfmt::TEXT,
+    condfmt::TOP_BOTTOM,
+    condfmt::CUSTOM,
+    condfmt::FORMULA_RULE,
+    condfmt::RANGE_FORMAT,
+    condfmt::RANGE_FILL,
+    condfmt::RANGE_FONT,
+    condfmt::RANGE_BORDER,
+    validation::DATA_VALIDATION,
+    comment::COMMENT,
+    comment::COMMENT_REPLY,
+    comment::NOTE,
+    pivot::PIVOT_TABLE,
+    pivot::PIVOT_HIERARCHY,
+    pivot::ROW_COLUMN_HIERARCHY,
+    pivot::FILTER_HIERARCHY,
+    pivot::DATA_HIERARCHY,
+    pivot::PIVOT_FIELD,
+    pivot::PIVOT_ITEM,
+    pivot::PIVOT_LAYOUT,
+    shape::SHAPE,
+    shape::SHAPE_FILL,
+    shape::SHAPE_LINE,
+    shape::TEXT_FRAME,
+    shape::TEXT_RANGE,
+    shape::SHAPE_FONT,
+    shape::IMAGE,
 ];
 
 pub(crate) use enums::ENUMS;

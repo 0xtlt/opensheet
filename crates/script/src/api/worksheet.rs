@@ -11,11 +11,11 @@ use opensheet_engine::names::NameScope;
 use opensheet_engine::protect::Action;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::table::TableOption;
-use opensheet_engine::workbook::{Content, Sheet};
+use opensheet_engine::workbook::{Content, Sheet, SheetVisibility};
 
-use super::util::{color_arg, color_text, parse_color, range_arg, resolve, table_fail};
+use super::util::{color_arg, color_text, parse_color, range_arg, resolve, resolve_areas, table_fail};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
-use super::{ApiClass, Call, Res, Ret, chart, class, enum_value, object, state_of, table};
+use super::{ApiClass, Call, Res, Ret, areas, chart, class, comment, enum_value, object, pivot, shape, state_of, table};
 use crate::host::{Host, MAX_SHEETS, rect_from};
 
 /// The sheet a Worksheet object (or one of its parts) stands for.
@@ -274,13 +274,31 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         let rect = rect_from(c.int(0)?, c.int(1)?, 1, 1).ok_or_else(|| c.invalid())?;
         Ok(Ret::Object(h.range(sheet, rect)))
     };
+    getRanges "(address?: string): RangeAreas" "Several ranges of the worksheet held together, from addresses separated by commas (A1:B2, D4) or a name; the whole worksheet without an address." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        let Some(text) = c.opt_str(0)? else {
+            return Ok(Ret::Object(areas::areas_object(h, sheet, &[Rect::new(0, 0, MAX_ROWS - 1, MAX_COLS - 1)])));
+        };
+        let (on, rects) = resolve_areas(h, c, sheet, text)?;
+        if on != sheet {
+            return Err(c.invalid());
+        }
+        Ok(Ret::Object(areas::areas_object(h, sheet, &rects)))
+    };
+    findAll "(text: string, criteria: ExcelScript.WorksheetSearchCriteria): RangeAreas | undefined" "Every cell of the worksheet holding a text, as Find All; undefined when none does." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        areas::find_all(h, c, sheet, &[])
+    };
     getUsedRange "(valuesOnly?: boolean): Range | undefined" "The smallest range holding every cell with a value or a format (values only on request); undefined for an empty sheet." => |h, c| {
         let sheet = this_sheet(h, c)?;
         let values_only = c.opt_bool(0)?.unwrap_or(false);
         Ok(Ret::maybe(used_rect(h, sheet, values_only).map(|rect| h.range(sheet, rect))))
     };
-    activate "(): void" "Brings the worksheet in front." => |h, c| {
+    activate "(): void" "Brings the worksheet in front. A hidden worksheet cannot be." => |h, c| {
         let sheet = this_sheet(h, c)?;
+        if !h.wb.sheets[sheet].is_visible() {
+            return Err(c.fail("A hidden worksheet cannot be activated."));
+        }
         h.activate(sheet);
         Ok(Ret::Nothing)
     };
@@ -336,24 +354,45 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         }
         Ok(Ret::Nothing)
     };
-    getNext "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet after this one; undefined for the last." => |h, c| {
+    getNext "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet after this one (the next visible one on request); undefined for the last." => |h, c| {
         let sheet = this_sheet(h, c)?;
-        Ok(Ret::maybe((sheet + 1 < h.wb.sheets.len()).then(|| h.worksheet(sheet + 1))))
+        let next = if c.opt_bool(0)?.unwrap_or(false) {
+            h.wb.next_visible_sheet(sheet, true)
+        } else {
+            (sheet + 1 < h.wb.sheets.len()).then_some(sheet + 1)
+        };
+        Ok(Ret::maybe(next.map(|i| h.worksheet(i))))
     };
-    getPrevious "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet before this one; undefined for the first." => |h, c| {
+    getPrevious "(visibleOnly?: boolean): Worksheet | undefined" "The worksheet before this one (the previous visible one on request); undefined for the first." => |h, c| {
         let sheet = this_sheet(h, c)?;
-        Ok(Ret::maybe(sheet.checked_sub(1).map(|i| h.worksheet(i))))
+        let previous = if c.opt_bool(0)?.unwrap_or(false) { h.wb.next_visible_sheet(sheet, false) } else { sheet.checked_sub(1) };
+        Ok(Ret::maybe(previous.map(|i| h.worksheet(i))))
     };
-    getVisibility "(): ExcelScript.SheetVisibility" "Visible: OpenSheet has no hidden worksheets." => |h, c| {
-        this_sheet(h, c)?;
-        Ok("Visible".into())
+    getVisibility "(): ExcelScript.SheetVisibility" "Visible, Hidden, or VeryHidden for a worksheet Unhide… does not list." => |h, c| {
+        Ok(match h.wb.sheets[this_sheet(h, c)?].visibility {
+            SheetVisibility::Visible => "Visible",
+            SheetVisibility::Hidden => "Hidden",
+            SheetVisibility::VeryHidden => "VeryHidden",
+        }.into())
     };
-    setVisibility "(visibility: ExcelScript.SheetVisibility): void" "Accepts Visible only: hiding a worksheet is not supported in OpenSheet." => |h, c| {
-        this_sheet(h, c)?;
-        match enum_value(c, 0, "SheetVisibility")?.ok_or_else(|| c.invalid())? {
-            "Visible" => Ok(Ret::Nothing),
-            other => Err(c.unsupported(format!("Worksheet.setVisibility({other}): hiding a worksheet"))),
+    setVisibility "(visibility: ExcelScript.SheetVisibility): void" "Hides the worksheet (Hidden, or VeryHidden to keep it out of Unhide…) or shows it again. The last visible worksheet cannot be hidden." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        let visibility = match enum_value(c, 0, "SheetVisibility")?.ok_or_else(|| c.invalid())? {
+            "Hidden" => SheetVisibility::Hidden,
+            "VeryHidden" => SheetVisibility::VeryHidden,
+            _ => SheetVisibility::Visible,
+        };
+        if h.wb.sheets[sheet].visibility == visibility {
+            return Ok(Ret::Nothing);
         }
+        h.permit(c, if visibility == SheetVisibility::Visible { &Action::UnhideSheet } else { &Action::HideSheet })?;
+        if !h.wb.set_sheet_visibility(sheet, visibility) {
+            return Err(c.fail("A workbook must contain at least one visible worksheet."));
+        }
+        if visibility != SheetVisibility::Visible {
+            h.sheet_hidden(sheet);
+        }
+        Ok(Ret::Nothing)
     };
     getTabColor "(): string" "The colour of the tab as #RRGGBB; empty text for none." => |h, c| {
         let sheet = this_sheet(h, c)?;
@@ -381,6 +420,10 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
         h.wb.snapshot();
         h.wb.sheets[sheet].show_headers = show;
         Ok(Ret::Nothing)
+    };
+    getProtection "(): WorksheetProtection" "The protection of the worksheet." => |h, c| {
+        this_sheet(h, c)?;
+        Ok(Ret::object("WorksheetProtection", vec![c.this_int(0).into()]))
     };
     getFreezePanes "(): WorksheetFreezePanes" "The frozen panes of the worksheet." => |h, c| {
         this_sheet(h, c)?;
@@ -430,6 +473,66 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
     addNamedItemFormulaLocal "(name: string, formula: string, comment?: string): NamedItem" "Defines a name of the worksheet from a formula in the language of the workbook." => |h, c| {
         let sheet = this_sheet(h, c)?;
         add_name(h, c, NameScope::Sheet(sheet), true)
+    };
+    addComment "(cellAddress: Range | string, content: ExcelScript.CommentRichContent | string, contentType?: ExcelScript.ContentType): Comment" "Starts a comment thread on a cell of the worksheet, as the user of the application." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::add(h, c, sheet)
+    };
+    getComments "(): Comment[]" "The comments of the worksheet." => |h, c| Ok(comment::all(h, Some(this_sheet(h, c)?), true));
+    getComment "(commentId: string): Comment | undefined" "The comment of the worksheet with this identifier; undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::by_id(h, c, Some(sheet))
+    };
+    getCommentByCell "(cellAddress: Range | string): Comment" "The comment of a cell of the worksheet. Fails when the cell has none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::by_cell(h, c, sheet)
+    };
+    getCommentByReplyId "(replyId: string): Comment" "The comment of the worksheet a reply belongs to. Fails when there is no such reply." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::by_reply(h, c, Some(sheet))
+    };
+    addNote "(cellAddress: Range | string, content: string): Note" "Puts a note on a cell of the worksheet." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::add_note(h, c, sheet)
+    };
+    getNotes "(): Note[]" "The notes of the worksheet." => |h, c| Ok(comment::all(h, Some(this_sheet(h, c)?), false));
+    getNote "(key: number | string): Note | undefined" "The note of a cell of the worksheet (by address), or the note at a place among its notes (0-based); undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        comment::note_by_key(h, c, sheet)
+    };
+    addPivotTable "(name: string, source: Range | string | Table, destination: Range | string): PivotTable" "Inserts a PivotTable without fields on the worksheet: of a range (header row first) or of a table, with its top-left cell at the destination." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        pivot::add(h, c, sheet)
+    };
+    getPivotTables "(): PivotTable[]" "The PivotTables of the worksheet." => |h, c| Ok(pivot::all(h, Some(this_sheet(h, c)?)));
+    getPivotTable "(name: string): PivotTable | undefined" "The PivotTable of the worksheet with this name; undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        pivot::by_name(h, c, Some(sheet))
+    };
+    refreshAllPivotTables "(): void" "Refreshes the PivotTables of the worksheet." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        pivot::refresh_all(h, c, Some(sheet))
+    };
+    addGeometricShape "(geometricShapeType: ExcelScript.GeometricShapeType): Shape" "Draws a geometric shape at the top left of the worksheet, at the size a click of its tool gives; setLeft, setTop, setWidth and setHeight place it." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_geometric(h, c, sheet)
+    };
+    addTextBox "(text?: string): Shape" "Draws a text box at the top left of the worksheet, with a text." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_text_box(h, c, sheet)
+    };
+    addLine "(startLeft: number, startTop: number, endLeft: number, endTop: number, connectorType?: ExcelScript.ConnectorType): Shape" "Draws a straight line between two points, in points from the top left of the worksheet." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_line(h, c, sheet)
+    };
+    addImage "(base64ImageString: string): Shape" "Inserts a picture (a PNG, JPEG, GIF or BMP file as base64 text) at the top left of the worksheet, at its natural size." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::add_image(h, c, sheet)
+    };
+    getShapes "(): Shape[]" "The shapes and pictures of the worksheet, the bottom-most first." => |h, c| Ok(shape::all(h, this_sheet(h, c)?));
+    getShape "(key: string): Shape | undefined" "The shape of the worksheet with this name or ID; undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        shape::find(h, c, sheet)
     };
     replaceAll "(text: string, replacement: string, criteria: ExcelScript.ReplaceCriteria): number" "Replaces a text in the constants and formulas of the worksheet; returns how many cells changed." => |h, c| {
         let sheet = this_sheet(h, c)?;

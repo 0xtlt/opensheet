@@ -1311,12 +1311,20 @@ impl ExcelApp {
                             },
                         ),
                         MenuEntry::separator(),
-                        MenuEntry::new(t("Hide Rows", "Masquer les lignes"), |a, _, cx| a.hide_rows(true, cx)),
-                        MenuEntry::new(t("Hide Columns", "Masquer les colonnes"), |a, _, cx| a.hide_cols(true, cx)),
-                        MenuEntry::new(t("Unhide Rows", "Afficher les lignes"), |a, _, cx| a.hide_rows(false, cx)),
-                        MenuEntry::new(t("Unhide Columns", "Afficher les colonnes"), |a, _, cx| {
-                            a.hide_cols(false, cx)
-                        }),
+                        MenuEntry::submenu(
+                            t("Hide & Unhide", "Masquer et afficher"),
+                            vec![
+                                MenuEntry::new(t("Hide Rows", "Masquer les lignes"), |a, _, cx| a.hide_rows(true, cx)),
+                                MenuEntry::new(t("Hide Columns", "Masquer les colonnes"), |a, _, cx| a.hide_cols(true, cx)),
+                                MenuEntry::command(features::sheets::Cmd::Hide, this),
+                                MenuEntry::separator(),
+                                MenuEntry::new(t("Unhide Rows", "Afficher les lignes"), |a, _, cx| a.hide_rows(false, cx)),
+                                MenuEntry::new(t("Unhide Columns", "Afficher les colonnes"), |a, _, cx| {
+                                    a.hide_cols(false, cx)
+                                }),
+                                MenuEntry::command(features::sheets::Cmd::Unhide, this),
+                            ],
+                        ),
                         MenuEntry::separator(),
                         MenuEntry::new(t("Rename Sheet", "Renommer la feuille"), |a, window, cx| {
                             let i = a.sheet;

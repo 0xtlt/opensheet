@@ -10,7 +10,7 @@ use opensheet_engine::refs::Rect;
 use opensheet_engine::style::{Border, BorderStyle, Borders, Font, HAlign, Style, Underline, VAlign};
 use opensheet_engine::workbook::Content;
 
-use super::util::{color_arg, color_text, this_range};
+use super::util::{color_arg, color_text, format_rects, this_range};
 use super::{ApiClass, Call, Res, Ret, class, enum_value, object};
 use crate::host::Host;
 
@@ -51,9 +51,11 @@ fn get_color(h: &mut Host, call: &Call, read: fn(&Style) -> J) -> Res<Ret> {
 /// Change the formatting of every cell of the range, as the Format Cells
 /// dialog does.
 fn set(h: &mut Host, call: &Call, change: &dyn Fn(&mut Style)) -> Res<Ret> {
-    let (sheet, rect) = this_range(h, call)?;
+    let (sheet, rects) = format_rects(h, call)?;
     h.permit_edit(call, &Edit::Format { sheet })?;
-    h.wb.update_style(sheet, rect, change);
+    for rect in rects {
+        h.wb.update_style(sheet, rect, change);
+    }
     Ok(Ret::Nothing)
 }
 
@@ -61,10 +63,14 @@ fn set(h: &mut Host, call: &Call, change: &dyn Fn(&mut Style)) -> Res<Ret> {
 
 const SIDES: [&str; 6] = ["EdgeTop", "EdgeBottom", "EdgeLeft", "EdgeRight", "InsideVertical", "InsideHorizontal"];
 
+/// The side takes the sixth place of the state; the further ranges of a
+/// RangeAreas follow it.
 fn border_object(call: &Call, side: &str) -> J {
     let mut state = call.this.to_vec();
-    state.truncate(5);
-    state.push(side.into());
+    match state.get_mut(5) {
+        Some(slot) => *slot = side.into(),
+        None => state.push(side.into()),
+    }
     object("RangeBorder", state)
 }
 
@@ -151,12 +157,14 @@ fn border_now(h: &Host, call: &Call) -> Res<Border> {
 }
 
 fn set_border(h: &mut Host, call: &Call, change: &dyn Fn(&mut Border)) -> Res<Ret> {
-    let (sheet, rect) = this_range(h, call)?;
+    let (sheet, rects) = format_rects(h, call)?;
     h.permit_edit(call, &Edit::Format { sheet })?;
-    let rect = h.wb.clamp_to_used(sheet, rect);
-    h.sized(call, rect)?;
-    for (cells, pick) in border_parts(rect, side_of(call)) {
-        h.wb.update_style(sheet, cells, &|style| change(pick(&mut style.borders)));
+    for rect in rects {
+        let rect = h.wb.clamp_to_used(sheet, rect);
+        h.sized(call, rect)?;
+        for (cells, pick) in border_parts(rect, side_of(call)) {
+            h.wb.update_style(sheet, cells, &|style| change(pick(&mut style.borders)));
+        }
     }
     Ok(Ret::Nothing)
 }
@@ -189,7 +197,7 @@ fn shown<'a>(h: &'a Host, sheet: usize, row: u32, col: u32) -> Option<(String, &
     (!text.is_empty()).then_some((text, style))
 }
 
-pub(super) const RANGE_FORMAT: ApiClass = class!("RangeFormat", "The formatting of a range. A getter gives null when the cells differ.", {
+pub(super) const RANGE_FORMAT: ApiClass = class!("RangeFormat", "The formatting of a range, or of the ranges of a RangeAreas: setters of the fill, the font, the borders, the alignment and the protection then reach them all, while getters and sizes read and set the first. A getter gives null when the cells differ.", {
     getFill "(): RangeFill" "The background of the cells." => |h, c| {
         this_range(h, c)?;
         Ok(Ret::object("RangeFill", c.this.to_vec()))

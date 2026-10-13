@@ -572,7 +572,9 @@ impl ExcelApp {
 
     fn render_sheet_tabs(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut tabs: Vec<AnyElement> = Vec::new();
-        for (i, sheet) in self.wb.sheets.iter().enumerate() {
+        // A hidden sheet has no tab.
+        for i in features::sheets::tabs(self) {
+            let sheet = &self.wb.sheets[i];
             let active = i == self.sheet;
             let renaming = self.renaming_sheet == Some(i);
             let underline = sheet.tab_color.map(theme::engine_color).unwrap_or(c(theme::ACCENT));
@@ -653,11 +655,11 @@ impl ExcelApp {
                     .px_2()
                     .gap_1()
                     .child(nav("tabs-prev", "chevron-left").on_click(cx.listener(|this, _, window, cx| {
-                        let i = this.sheet.saturating_sub(1);
+                        let i = features::sheets::neighbour(this, false);
                         this.switch_sheet(i, window, cx)
                     })))
                     .child(nav("tabs-next", "chevron-right").on_click(cx.listener(|this, _, window, cx| {
-                        let i = (this.sheet + 1).min(this.wb.sheets.len() - 1);
+                        let i = features::sheets::neighbour(this, true);
                         this.switch_sheet(i, window, cx)
                     }))),
             )
@@ -672,9 +674,11 @@ impl ExcelApp {
             .child(div().flex_1())
     }
 
-    fn open_sheet_menu(&mut self, index: usize, pos: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
-        let only = self.wb.sheets.len() <= 1;
-        let last = index + 1 >= self.wb.sheets.len();
+    pub(crate) fn open_sheet_menu(&mut self, index: usize, pos: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        // Tabs are counted, not sheets: hidden sheets are stepped over.
+        let only = self.wb.visible_sheet_count() <= 1;
+        let before = self.wb.next_visible_sheet(index, false);
+        let after = self.wb.next_visible_sheet(index, true);
         let mut menu = ContextMenu::default();
         let mut add = |section: MenuSection, entry: MenuEntry| menu.add(section, entry);
         add(
@@ -701,7 +705,8 @@ impl ExcelApp {
             MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
                 if to < a.wb.sheets.len() && a.may(Intent::MoveSheet, cx) {
                     a.wb.move_sheet(index, to);
-                    a.views.swap(index, to);
+                    let view = a.views.remove(index);
+                    a.views.insert(to, view);
                     a.sheet = to;
                     a.commit(t("Move Sheet", "Déplacer la feuille"), cx);
                 }
@@ -710,11 +715,11 @@ impl ExcelApp {
         };
         add(
             MenuSection::Data,
-            move_sheet(t("Move Left", "Déplacer vers la gauche"), index.saturating_sub(1), index == 0),
+            move_sheet(t("Move Left", "Déplacer vers la gauche"), before.unwrap_or(index), before.is_none()),
         );
         add(
             MenuSection::Data,
-            move_sheet(t("Move Right", "Déplacer vers la droite"), index + 1, last),
+            move_sheet(t("Move Right", "Déplacer vers la droite"), after.unwrap_or(index), after.is_none()),
         );
         add(
             MenuSection::Format,

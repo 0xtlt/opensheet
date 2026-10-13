@@ -31,7 +31,7 @@ const SCRIPT_STACK: usize = 4 << 20;
 const THREAD_STACK: usize = 32 << 20;
 /// The members that change nothing in the workbook though their name does
 /// not start with `get`.
-const READ_ONLY: [&str; 4] = ["find", "activate", "select", "calculate"];
+const READ_ONLY: [&str; 6] = ["find", "findAll", "isFiltered", "activate", "select", "calculate"];
 /// The longest text of one log line, in bytes.
 const MAX_LOG_TEXT: usize = 20_000;
 
@@ -166,6 +166,7 @@ fn settle(host: &mut Host, ended: Result<Option<String>, Thrown>, timed_out: boo
                 activated: (host.activated || host.active_sheet() != front).then(|| host.active_sheet()),
                 selected: host.selected(),
                 autofit: host.autofits(),
+                protection_changed: host.protection_changed,
             }
         }
         Err(thrown) => {
@@ -376,7 +377,7 @@ fn frame(stack: &str) -> Option<(u32, u32)> {
 
 /// One call of a method of the model. The answer starts with a letter:
 /// `u` for undefined, `v` and JSON data, `o` and objects of the model,
-/// `e` and an error.
+/// `d` and the milliseconds of a date, `e` and an error.
 fn dispatch(host: &RefCell<Host>, class: usize, member: usize, payload: &str) -> String {
     let error = |kind: ErrorKind, message: &str| {
         let kind = if kind == ErrorKind::Unsupported { "Unsupported" } else { "Runtime" };
@@ -407,6 +408,7 @@ fn dispatch(host: &RefCell<Host>, class: usize, member: usize, payload: &str) ->
                 Ret::Nothing => "u".to_string(),
                 Ret::Value(value) => format!("v{value}"),
                 Ret::Object(value) => format!("o{value}"),
+                Ret::Date(milliseconds) => format!("d{milliseconds}"),
             }
         }
         Ok(Err(fail)) => error(fail.kind, &fail.message),

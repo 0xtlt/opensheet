@@ -212,7 +212,8 @@ pub fn plan(wb: &Workbook, job: &PrintJob) -> PrintPlan {
     let (sheets, selection): (Vec<usize>, Option<&[Rect]>) = match &job.what {
         PrintWhat::Sheet(sheet) => (vec![*sheet], None),
         PrintWhat::Sheets(sheets) => (sheets.clone(), None),
-        PrintWhat::Workbook => ((0..wb.sheets.len()).collect(), None),
+        // Hidden sheets are not part of what the workbook prints.
+        PrintWhat::Workbook => ((0..wb.sheets.len()).filter(|i| wb.sheets[*i].is_visible()).collect(), None),
         PrintWhat::Selection { sheet, ranges } => (vec![*sheet], Some(ranges)),
     };
     let mut out = PrintPlan {

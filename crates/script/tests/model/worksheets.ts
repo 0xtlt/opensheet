@@ -37,7 +37,32 @@ function main(workbook: ExcelScript.Workbook) {
   eq(workbook.getActiveWorksheet().getName(), "Data");
   eq(data.getVisibility(), ExcelScript.SheetVisibility.visible);
   data.setVisibility(ExcelScript.SheetVisibility.visible);
-  throws(() => data.setVisibility(ExcelScript.SheetVisibility.hidden), "not supported");
+  // Hidden sheets: Last (0), Sheet1 copies and Data.
+  const tabs = () => workbook.getWorksheets().filter(s => s.getVisibility() === ExcelScript.SheetVisibility.visible).length;
+  const first = workbook.getFirstWorksheet();
+  const last = workbook.getLastWorksheet();
+  first.setVisibility(ExcelScript.SheetVisibility.hidden);
+  last.setVisibility(ExcelScript.SheetVisibility.veryHidden);
+  eq([first.getVisibility(), last.getVisibility()], ["Hidden", "VeryHidden"]);
+  eq(tabs(), workbook.getWorksheets().length - 2);
+  eq(workbook.getFirstWorksheet().getId(), first.getId());
+  eq(workbook.getFirstWorksheet(true).getId(), first.getNext()?.getId());
+  eq(workbook.getLastWorksheet(true).getId(), last.getPrevious()?.getId());
+  eq(first.getNext(true)?.getId(), first.getNext()?.getId());
+  eq(last.getPrevious()?.getNext(true), undefined);
+  eq(first.getNext()?.getPrevious(true), undefined);
+  throws(() => first.activate(), "hidden");
+  // A hidden sheet is read and written like any other.
+  first.getRange("A1").setValue(7);
+  eq(first.getRange("A1").getValue(), 7);
+  // Hiding the sheet in front brings the next tab in front.
+  data.setVisibility(ExcelScript.SheetVisibility.hidden);
+  eq(workbook.getActiveWorksheet().getId(), data.getNext(true)?.getId());
+  data.setVisibility(ExcelScript.SheetVisibility.visible);
+  data.activate();
+  first.setVisibility(ExcelScript.SheetVisibility.visible);
+  last.setVisibility(ExcelScript.SheetVisibility.hidden);
+  eq(tabs(), workbook.getWorksheets().length - 1);
   eq(data.getTabColor(), "");
   data.setTabColor("orange");
   eq(data.getTabColor(), "#FFA500");
