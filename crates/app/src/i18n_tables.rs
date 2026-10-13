@@ -1113,7 +1113,6 @@ pub static ES: &[(&str, &str)] = &[
     ("Selection", "Selección"),
     // ---- Picture styles and effects, artistic effects, SmartArt Format ----
     ("Picture Style", "Estilo de imagen"),
-    ("No Reflection", "Sin reflejo"),
     ("Reflection Options…", "Opciones de reflejo…"),
     ("No Bevel", "Sin bisel"),
     ("3-D Options…", "Opciones 3D…"),
@@ -4863,7 +4862,6 @@ pub static DE: &[(&str, &str)] = &[
     ("Selection", "Auswahl"),
     // ---- Picture styles and effects, artistic effects, SmartArt Format ----
     ("Picture Style", "Bildformatvorlage"),
-    ("No Reflection", "Keine Spiegelung"),
     ("Reflection Options…", "Spiegelungsoptionen…"),
     ("No Bevel", "Keine Abschrägung"),
     ("3-D Options…", "3D-Optionen…"),
@@ -8607,7 +8605,6 @@ pub static IT: &[(&str, &str)] = &[
     ("Selection", "Selezione"),
     // ---- Picture styles and effects, artistic effects, SmartArt Format ----
     ("Picture Style", "Stile immagine"),
-    ("No Reflection", "Nessun riflesso"),
     ("Reflection Options…", "Opzioni riflesso…"),
     ("No Bevel", "Nessuna smussatura"),
     ("3-D Options…", "Opzioni 3D…"),
