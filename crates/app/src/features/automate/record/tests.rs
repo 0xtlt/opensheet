@@ -573,3 +573,316 @@ fn the_autofilter_and_its_criteria(cx: &mut TestAppContext) {
         ]
     );
 }
+
+// ----------------------------------------------------------------- tables
+
+/// Press a button of the message box in front: Tab walks the buttons
+/// from the first one, Space presses.
+fn press_alert_button(cx: &mut VisualTestContext, index: usize) {
+    for _ in 0..=index {
+        cx.simulate_keystrokes("tab");
+    }
+    cx.simulate_keystrokes("space");
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn a_table_and_its_options(cx: &mut TestAppContext) {
+    use crate::features::tables;
+    use opensheet_engine::filter::{Criteria, FilterScope, ValueFilter};
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    let table = |app: &ExcelApp| app.wb.sheets[0].tables[0].id;
+    let script = replayed(&app, cx, |app, cx| {
+        // Insert ▸ Table and OK of its dialog.
+        select(app, cx, "B2");
+        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::Insert, window, cx));
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].tables.len()), 1);
+        // What the gallery and the name box of Table Design do.
+        act(app, cx, |app, _, cx| {
+            let id = table(app);
+            app.wb.set_table_style(0, id, Some("TableStyleLight9"));
+            app.commit("Table Style", cx);
+        });
+        act(app, cx, |app, _, cx| {
+            let id = table(app);
+            app.wb.rename_table(0, id, "Sales").expect("a name");
+            app.commit("Rename Table", cx);
+        });
+        for option in [tables::Cmd::TotalRow, tables::Cmd::BandedRows, tables::Cmd::BandedColumns, tables::Cmd::FirstColumn, tables::Cmd::LastColumn, tables::Cmd::FilterButton, tables::Cmd::FilterButton] {
+            act(app, cx, move |app, window, cx| app.run_command(option, window, cx));
+        }
+        // A filter and a sort from the buttons of the table.
+        act(app, cx, |app, _, cx| {
+            let id = table(app);
+            assert!(app.wb.set_filter_criteria(0, FilterScope::Table(id), 0, Some(Criteria::Values(ValueFilter { values: vec!["North".to_string(), "West".to_string()], ..Default::default() }))));
+            app.commit("Filter", cx);
+        });
+        act(app, cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::Clear, window, cx));
+        select(app, cx, "B3");
+        act(app, cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::SortDescending, window, cx));
+        // A value typed under the table: the table takes the row in.
+        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::TotalRow, window, cx));
+        enter(app, cx, "A6", "Centre");
+        select(app, cx, "B3");
+        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::HeaderRow, window, cx));
+        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::HeaderRow, window, cx));
+    });
+    for line in [
+        "workbook.addTable(selectedSheet.getRange(\"A1:C5\"), true);",
+        "workbook.getTable(\"Table1\").setPredefinedTableStyle(\"TableStyleLight9\");",
+        "workbook.getTable(\"Table1\").setName(\"Sales\");",
+        "workbook.getTable(\"Sales\").setShowTotals(true);",
+        "workbook.getTable(\"Sales\").setShowBandedRows(false);",
+        "workbook.getTable(\"Sales\").setShowBandedColumns(true);",
+        "workbook.getTable(\"Sales\").setHighlightFirstColumn(true);",
+        "workbook.getTable(\"Sales\").setHighlightLastColumn(true);",
+        "workbook.getTable(\"Sales\").setShowFilterButton(false);",
+        "workbook.getTable(\"Sales\").setShowFilterButton(true);",
+        "workbook.getTable(\"Sales\").getColumnByName(\"Region\").getFilter().apply({ filterOn: ExcelScript.FilterOn.values, values: [\"North\", \"West\"] });",
+        "workbook.getTable(\"Sales\").getColumnByName(\"Region\").getFilter().clear();",
+        "workbook.getTable(\"Sales\").getSort().apply([{ key: 1, ascending: false }], false);",
+        "workbook.getTable(\"Sales\").setShowTotals(false);",
+        "selectedSheet.getRange(\"A6\").setValue(\"Centre\");",
+        "workbook.getTable(\"Sales\").setShowHeaders(false);",
+        "workbook.getTable(\"Sales\").setShowHeaders(true);",
+    ] {
+        assert!(statements(&script).contains(&line), "{line}\n{script}");
+    }
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].tables[0].range), rect("A1:C6"));
+}
+
+#[gpui::test]
+fn a_table_without_headers_and_back_to_a_range(cx: &mut TestAppContext) {
+    use crate::features::tables;
+    let (app, cx) = open(cx);
+    seed(&app, cx, &[&["4", "x"], &["9", "y"], &["1", "z"]]);
+    let script = replayed(&app, cx, |app, cx| {
+        select(app, cx, "A1:B3");
+        act(app, cx, |app, _, cx| {
+            app.wb.add_table(0, rect("A1:B3"), false).expect("a table");
+            app.commit("Create Table", cx);
+        });
+        select(app, cx, "A2");
+        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::ConvertToRange, window, cx));
+        press_alert_button(cx, 0);
+        assert!(app.update(cx, |app, _| app.wb.sheets[0].tables.is_empty()));
+    });
+    let lines = statements(&script);
+    assert_eq!(lines[0], "workbook.addTable(selectedSheet.getRange(\"A1:B3\"), false);", "{script}");
+    assert!(lines.contains(&"workbook.getTable(\"Table1\").convertToRange();"), "{script}");
+}
+
+// ------------------------------------------------------------------ names
+
+#[gpui::test]
+fn names_defined_changed_and_deleted(cx: &mut TestAppContext) {
+    use opensheet_engine::names::NameScope;
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    let formula = |app: &ExcelApp, text: &str| app.wb.parse_name_formula(text, 0, 0, 0).expect("a formula");
+    let script = replayed(&app, cx, |app, cx| {
+        act(app, cx, |app, _, cx| {
+            let expr = formula(app, "=Sheet1!$B$2:$B$5");
+            app.wb.add_name(NameScope::Workbook, "Units", expr, "what was sold").expect("a name");
+            app.commit("Define Name", cx);
+        });
+        act(app, cx, |app, _, cx| {
+            let expr = formula(app, "=0.2");
+            app.wb.add_name(NameScope::Sheet(0), "Rate", expr, "").expect("a name");
+            app.commit("Define Name", cx);
+        });
+        enter(app, cx, "E1", "=SUM(Units)*Rate");
+        act(app, cx, |app, _, cx| {
+            let expr = formula(app, "=Sheet1!$B$2:$B$4");
+            app.wb.edit_name(NameScope::Workbook, "Units", "Units", expr, "three regions").expect("a name");
+            app.commit("Edit Name", cx);
+        });
+        act(app, cx, |app, _, cx| {
+            assert!(app.wb.delete_name(NameScope::Sheet(0), "Rate"));
+            app.commit("Delete Name", cx);
+        });
+    });
+    assert_eq!(
+        statements(&script),
+        [
+            "workbook.addNamedItem(\"Units\", \"=Sheet1!$B$2:$B$5\", \"what was sold\");",
+            "selectedSheet.addNamedItem(\"Rate\", \"=0.2\");",
+            "selectedSheet.getRange(\"E1\").setFormula(\"=SUM(Units)*Rate\");",
+            "workbook.getNamedItem(\"Units\").setFormula(\"=Sheet1!$B$2:$B$4\");",
+            "workbook.getNamedItem(\"Units\").setComment(\"three regions\");",
+            "selectedSheet.getNamedItem(\"Rate\").delete();",
+        ]
+    );
+}
+
+// ----------------------------------------------------------------- sheets
+
+#[gpui::test]
+fn sheets_added_renamed_moved_coloured_and_deleted(cx: &mut TestAppContext) {
+    use crate::app::ColorTarget;
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    let script = replayed(&app, cx, |app, cx| {
+        act(app, cx, |app, _, cx| app.add_sheet(cx));
+        enter(app, cx, "A1", "on the new sheet");
+        // The name typed on the tab.
+        act(app, cx, |app, window, cx| app.begin_rename_sheet(1, window, cx));
+        cx.simulate_keystrokes("cmd-a");
+        cx.simulate_input("Notes");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(app.update(cx, |app, _| app.wb.sheets[1].name.clone()), "Notes");
+        act(app, cx, |app, _, cx| app.pick_color(ColorTarget::Tab, Some(opensheet_engine::Color(0x00B050)), cx));
+        act(app, cx, |app, _, cx| app.add_sheet(cx));
+        // Move Left of the menu of the tab.
+        act(app, cx, |app, _, cx| {
+            app.wb.move_sheet(2, 0);
+            app.commit("Move Sheet", cx);
+        });
+        act(app, cx, |app, window, cx| {
+            app.switch_sheet(1, window, cx);
+            app.begin_rename_sheet(1, window, cx);
+        });
+        cx.simulate_keystrokes("cmd-a");
+        cx.simulate_input("Data");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        enter(app, cx, "E1", "still the first sheet");
+        act(app, cx, |app, _, cx| app.duplicate_sheet(1, cx));
+        act(app, cx, |app, _, cx| app.delete_sheet(0, cx));
+    });
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets.iter().map(|sheet| sheet.name.clone()).collect::<Vec<_>>()), ["Data", "Data (2)", "Notes"]);
+    assert_eq!(
+        statements(&script),
+        [
+            "workbook.addWorksheet(\"Sheet2\");",
+            "workbook.getWorksheet(\"Sheet2\").getRange(\"A1\").setValue(\"on the new sheet\");",
+            "workbook.getWorksheet(\"Sheet2\").setName(\"Notes\");",
+            "workbook.getWorksheet(\"Notes\").setTabColor(\"#00B050\");",
+            "workbook.addWorksheet(\"Sheet3\");",
+            "workbook.getWorksheet(\"Sheet3\").setPosition(0);",
+            "selectedSheet.setName(\"Data\");",
+            "selectedSheet.getRange(\"E1\").setValue(\"still the first sheet\");",
+            "selectedSheet.copy(ExcelScript.WorksheetPositionType.after, selectedSheet);",
+            "workbook.getWorksheet(\"Sheet3\").delete();",
+        ]
+    );
+}
+
+#[gpui::test]
+fn panes_frozen_and_released(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    let freeze = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, rows: u32, cols: u32| {
+        // The entries of View ▸ Freeze Panes.
+        act(app, cx, move |app, _, cx| {
+            app.wb.set_frozen(app.sheet, rows, cols);
+            app.commit("Freeze Panes", cx);
+        });
+    };
+    let script = replayed(&app, cx, |app, cx| {
+        select(app, cx, "B3");
+        act(app, cx, |app, _, cx| app.toggle_freeze(cx));
+        act(app, cx, |app, _, cx| app.toggle_freeze(cx));
+        freeze(app, cx, 1, 0);
+        freeze(app, cx, 0, 1);
+    });
+    assert_eq!(
+        statements(&script),
+        [
+            "selectedSheet.getFreezePanes().freezeAt(\"A1:A2\");",
+            "selectedSheet.getFreezePanes().unfreeze();",
+            "selectedSheet.getFreezePanes().freezeRows(1);",
+            "selectedSheet.getFreezePanes().freezeColumns(1);",
+        ]
+    );
+}
+
+// ----------------------------------------------------------------- charts
+
+#[gpui::test]
+fn a_chart_inserted_titled_and_placed(cx: &mut TestAppContext) {
+    use opensheet_engine::chart::{ChartKind, ChartTitle};
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    let chart = |app: &ExcelApp| app.wb.sheets[0].charts[0].id;
+    let script = replayed(&app, cx, |app, cx| {
+        select(app, cx, "A1:B5");
+        act(app, cx, |app, window, cx| app.insert_chart(ChartKind::Column, window, cx));
+        act(app, cx, |app, _, cx| {
+            let id = chart(app);
+            app.wb.update_chart(0, id, |chart| chart.title = ChartTitle::Text("Units by region".to_string()));
+            app.commit("Chart Title", cx);
+        });
+        act(app, cx, |app, _, cx| {
+            let id = chart(app);
+            app.wb.update_chart(0, id, |chart| chart.set_kind(ChartKind::Line));
+            app.commit("Change Chart Type", cx);
+        });
+        // Dragged and resized.
+        act(app, cx, |app, _, cx| {
+            let id = chart(app);
+            app.wb.update_chart(0, id, |chart| {
+                chart.anchor = (7, 1);
+                chart.offset = (10.0, 4.0);
+                chart.size = (360.0, 240.0);
+            });
+            app.commit("Move Chart", cx);
+        });
+    });
+    let lines = statements(&script);
+    assert_eq!(lines[0], "selectedSheet.addChart(ExcelScript.ChartType.columnClustered, selectedSheet.getRange(\"A1:B5\"));", "{script}");
+    assert!(lines.contains(&"selectedSheet.getChart(\"Chart 1\").getTitle().setText(\"Units by region\");"), "{script}");
+    assert!(lines.contains(&"selectedSheet.getChart(\"Chart 1\").setChartType(ExcelScript.ChartType.line);"), "{script}");
+    assert!(lines.contains(&"selectedSheet.getChart(\"Chart 1\").setWidth(270);"), "{script}");
+}
+
+// -------------------------------------------------------------- the list
+
+#[gpui::test]
+fn what_cannot_be_written_is_listed_as_not_recorded(cx: &mut TestAppContext) {
+    use opensheet_engine::comment::{Comment, Note};
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    start(&app, cx);
+    enter(&app, cx, "E1", "before");
+    // A note: nothing of the script API writes one.
+    act(&app, cx, |app, _, cx| {
+        app.wb.snapshot();
+        app.wb.sheets[0].comments.insert((1, 1), Comment::Note(Note::new("Thomas", "check this")));
+        app.commit("New Note", cx);
+    });
+    enter(&app, cx, "E2", "after");
+    assert_eq!(listed(&app, cx), [("Typing".to_string(), true), ("New Note".to_string(), false), ("Typing".to_string(), true)]);
+    let script = stop(&app, cx);
+    assert_eq!(statements(&script), ["selectedSheet.getRange(\"E1\").setValue(\"before\");", "selectedSheet.getRange(\"E2\").setValue(\"after\");"]);
+}
+
+#[gpui::test]
+fn an_action_undone_leaves_the_list_and_one_redone_comes_back(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    seed(&app, cx, SALES);
+    start(&app, cx);
+    enter(&app, cx, "E1", "kept");
+    select(&app, cx, "A1:C1");
+    act(&app, cx, |app, _, cx| app.toggle_bold(cx));
+    assert_eq!(listed(&app, cx).len(), 2);
+    act(&app, cx, |app, _, cx| app.undo(cx));
+    assert_eq!(listed(&app, cx), [("Typing".to_string(), true)]);
+    act(&app, cx, |app, _, cx| app.redo(cx));
+    assert_eq!(listed(&app, cx).len(), 2);
+    // Something done before the recording started is undone: an action
+    // like another.
+    act(&app, cx, |app, _, cx| {
+        app.undo(cx);
+        app.undo(cx);
+    });
+    assert!(listed(&app, cx).is_empty());
+    act(&app, cx, |app, _, cx| app.undo(cx));
+    assert_eq!(listed(&app, cx), [("Undo".to_string(), true)]);
+    let script = stop(&app, cx);
+    assert_eq!(statements(&script), ["selectedSheet.getRange(\"A1:C5\").clear(ExcelScript.ClearApplyTo.contents);"]);
+}

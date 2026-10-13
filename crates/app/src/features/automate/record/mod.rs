@@ -96,6 +96,10 @@ fn mark(wb: &Workbook) -> Mark {
 pub(crate) struct Recorder {
     /// The workbook as it was after the last action seen.
     baseline: Workbook,
+    /// The workbook as it was before the first action of the list, and
+    /// how many steps could be undone then.
+    origin: Workbook,
+    floor: usize,
     scope: Scope,
     pub actions: Vec<Recorded>,
     seen: Mark,
@@ -107,6 +111,8 @@ impl Recorder {
     pub fn start(app: &ExcelApp) -> Recorder {
         Recorder {
             baseline: app.wb.fork(),
+            origin: app.wb.fork(),
+            floor: app.wb.history_depth().0,
             scope: Scope {
                 start: app.wb.sheets.get(app.sheet).map(|sheet| sheet.name.clone()),
             },
@@ -130,27 +136,44 @@ impl Recorder {
         let was = std::mem::replace(&mut self.seen, now);
         let undone = now.1 < was.1 && now.2 > was.2;
         let after = app.wb.fork();
-        let changed = if undone && self.actions.last().is_some_and(|last| last.depth == was.1) {
-            // The last action was taken back: it leaves the script.
-            if let Some(last) = self.actions.pop() {
-                self.scope = last.scope_before;
+        let changed = if undone {
+            // The actions taken back leave the script.
+            let before = self.actions.len();
+            while self.actions.last().is_some_and(|last| last.depth > now.1) {
+                if let Some(last) = self.actions.pop() {
+                    self.scope = last.scope_before;
+                }
             }
-            self.baseline = after;
-            true
-        } else {
-            let label = if undone {
-                crate::i18n::t("Undo", "Annuler").to_string()
+            if now.1 >= self.floor {
+                self.baseline = after;
+                self.actions.len() != before
             } else {
-                app.wb.undo_label().unwrap_or_default().to_string()
-            };
-            self.record(label, after, Before::of(app), now.1, refit)
+                // Undone further than where the recording started: what
+                // was undone there is an action like another.
+                self.baseline = self.origin.fork();
+                self.floor = now.1;
+                self.record(crate::i18n::t("Undo", "Annuler").to_string(), after, None, now.1, refit) || self.actions.len() != before
+            }
+        } else {
+            // A history that is full forgets its oldest step to take a
+            // new one: every step is one place lower.
+            if now.1 == was.1 && now.2 == 0 && was.2 == 0 && app.wb.can_undo() {
+                self.floor = self.floor.saturating_sub(1);
+                for action in &mut self.actions {
+                    action.depth = action.depth.saturating_sub(1);
+                }
+            }
+            let label = app.wb.undo_label().unwrap_or_default().to_string();
+            self.record(label, after, Some(Before::of(app)), now.1, refit)
         };
         self.before = Before::of(app);
         changed
     }
 
-    /// Write the action that led from the baseline to `after`.
-    fn record(&mut self, label: String, after: Workbook, now: Before, depth: usize, refit: diff::Refit) -> bool {
+    /// Write the action that led from the baseline to `after`. `now` is
+    /// what the window shows after it, for an action the user made
+    /// there: where the selection was says nothing of a step taken back.
+    fn record(&mut self, label: String, after: Workbook, now: Option<Before>, depth: usize, refit: diff::Refit) -> bool {
         if compare::distance(&self.baseline, &after) == 0 {
             self.baseline = after;
             return false;
@@ -162,7 +185,8 @@ impl Recorder {
         let mut steps = Vec::new();
         let mut left = compare::distance(&work, after);
         let mut best: Option<Workbook> = None;
-        for candidate in candidates::of(&work, after, &self.before, &now, &self.scope) {
+        let guesses = now.map(|now| candidates::of(&work, after, &self.before, &now, &self.scope)).unwrap_or_default();
+        for candidate in guesses {
             let mut trial = work.fork();
             if diff::run(&mut trial, &self.scope, &candidate, refit).is_err() {
                 continue;

@@ -43,8 +43,22 @@ pub(crate) fn run(work: &mut Workbook, scope: &Scope, steps: &[Step], refit: Ref
 type Stage = fn(&Workbook, &Workbook, &Scope) -> Vec<Step>;
 
 /// The stages after the sheets themselves, in the order they are run.
-const STAGES: [Stage; 14] = [
-    undone, new_tables, table_options, sorts, names, contents, line_formats, cell_formats, merges, sizes, filters, panes, new_charts, chart_options,
+const STAGES: [Stage; 15] = [
+    undone,
+    new_tables,
+    table_options,
+    sorts,
+    names,
+    contents,
+    table_sizes,
+    line_formats,
+    cell_formats,
+    merges,
+    sizes,
+    filters,
+    panes,
+    new_charts,
+    chart_options,
 ];
 
 /// Write the steps that turn `work` into `target`, running them on
@@ -251,16 +265,30 @@ fn table_options(work: &Workbook, target: &Workbook, _: &Scope) -> Vec<Step> {
                 ("last column", "setHighlightLastColumn", now.last_col, table.last_col),
                 ("filter button", "setShowFilterButton", now.auto_filter.is_some(), table.auto_filter.is_some()),
             ];
-            let mut resized = false;
             for (what, setter, was, is) in options {
                 if was != is {
                     steps.push(Step::new(format!("Show the {what} of table {name}: {is}"), format!("{expr}.{setter}({is});")));
-                    // The header and total rows are rows of the table.
-                    resized |= matches!(setter, "setShowHeaders" | "setShowTotals");
                 }
             }
-            if now.range != table.range && !resized {
-                steps.push(Step::new(format!("Resize table {name} to range {}", table.range.name()), format!("{expr}.resize({});", quote(&table.range.name()))));
+        }
+    }
+    steps
+}
+
+/// The tables that are not yet the size they must be. This comes after
+/// the contents: a table grows by itself over what is typed under it.
+fn table_sizes(work: &Workbook, target: &Workbook, _: &Scope) -> Vec<Step> {
+    let mut steps = Vec::new();
+    for (ws, ts) in pairs(work, target) {
+        for table in &ts.tables {
+            let Some(now) = twin(&ws.tables, table).filter(|now| now.name == table.name) else {
+                continue;
+            };
+            if now.range != table.range && (now.header_row, now.totals_row) == (table.header_row, table.totals_row) {
+                steps.push(Step::new(
+                    format!("Resize table {} to range {}", table.name, table.range.name()),
+                    format!("{}.resize({});", table_expr(&table.name), quote(&table.range.name())),
+                ));
             }
         }
     }
