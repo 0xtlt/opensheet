@@ -402,8 +402,6 @@ pub struct ExcelApp {
     pub ribbon_tab: usize,
     /// The contextual tab shown instead of `ribbon_tab`, while it exists.
     pub context_tab: Option<&'static str>,
-    /// How much the ribbon is compacted to fit the window (0 = full).
-    pub ribbon_level: u8,
     pub popup: Option<Popup>,
     /// Anchor of the pop-up the current mouse press just closed: clicking a
     /// control again while its menu is open closes it instead of reopening.
@@ -531,7 +529,6 @@ impl ExcelApp {
             hover_owner: None,
             ribbon_tab: 1,
             context_tab: None,
-            ribbon_level: 0,
             popup: None,
             popup_dismissed: None,
             command_anchor: None,

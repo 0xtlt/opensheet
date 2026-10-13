@@ -5,27 +5,36 @@
 //! Nothing is known in advance of how wide a group is in a language: the
 //! tab is built, its groups are measured, and while they do not fit one
 //! more *step* is taken and the tab is built again, all within the layout
-//! of one frame (what is painted is the first build that fits). The steps
-//! of a tab are always the same, in this order:
+//! of one frame (what is painted is the first build that fits).
 //!
-//! 1. the four compaction levels the tabs wrote by hand
-//!    (`ExcelApp::ribbon_level`: Home drops labels, galleries shorten);
-//! 2. then, group after group from the right: the group becomes *compact*
-//!    (its large buttons become small ones without their label), then it
-//!    is *folded* into one button that opens the whole group as a
-//!    drop-down.
+//! A step takes one group one stage further, as Excel for Mac does:
 //!
-//! A step that does not make its group narrower (a group of one button is
-//! not helped by folding) is skipped. Each step remembers the width the
-//! tab needed before it: it is undone once the window offers that much.
-//! Only when every step is taken and the tab still does not fit does the
-//! ribbon scroll sideways.
+//! 1. *stacked*: the large buttons that stand side by side in a row
+//!    become small ones that keep their label, and the row stacks them
+//!    in three rows (a large button alone in its group stays as it is,
+//!    as Excel keeps Paste: the small buttons around it give way);
+//! 2. *compact*: the same without the labels;
+//! 3. *folded*: one button that opens the whole group as a drop-down.
+//!
+//! Which group gives way first is Excel's own order for each tab
+//! ([`excel_order`], read from the scaling lists of Excel for Mac's
+//! ribbon, `Excel.ribbonb`); a tab Excel does not have, and what Excel's
+//! list leaves out, go stage by stage from the right. Only the order is
+//! tabulated: a step that does not make its group narrower in the
+//! language shown is skipped, and each step remembers the width the tab
+//! needed before it, so that it is undone once the window offers that
+//! much. Only when every step is taken and the tab still does not fit
+//! does the ribbon scroll sideways.
 //!
 //! The tabs know nothing of this. `ribbon::group` asks here how the group
 //! it is building is shown ([`next_group`]); the helpers that build large
-//! buttons ask whether their group is compact ([`compact`]). Groups are
-//! told apart by their position in the tab, which is how the code of a
-//! tab builds them: the content of a group, then the group.
+//! buttons ask which form they take ([`large_form`]), `ribbon::row`
+//! says which large buttons it holds ([`row_of_larges`]) and learns with
+//! `ribbon::sep` whether its group is restacked, and the few groups
+//! that shorten a gallery or drop the labels of small buttons by
+//! themselves ask how far their group has given way ([`level`]). Groups
+//! are told apart by their position in the tab, which is how the code of
+//! a tab builds them: the content of a group, then the group.
 //!
 //! The drop-down of a folded group is the group itself, built as the tab
 //! builds it (same commands, same state, same fields), handed over here
@@ -38,38 +47,124 @@ use crate::view::icon;
 use gpui::{
     AnyElement, AvailableSpace, Bounds, MouseButton, Pixels, WeakEntity, Window, canvas, div, point, prelude::*, px, size,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-/// How a group is shown.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// How a group is shown. Each stage is narrower than the one before.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Mode {
     #[default]
     Full,
-    /// Large buttons are small and have lost their label.
+    /// Large buttons are small ones with their label, in three rows.
+    Stacked,
+    /// The same without the labels.
     Compact,
     /// One button that opens the group as a drop-down.
     Folded,
 }
 
-/// The hand-written compaction levels of the tabs (`ribbon_level`).
-pub const LEVELS: usize = 4;
+/// The form a large button takes in the group being built.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LargeForm {
+    Large,
+    /// One row: icon and label.
+    Labeled,
+    /// The icon alone (the tip keeps the name).
+    Icon,
+}
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum StepKind {
-    Level,
-    Compact(usize),
-    Fold(usize),
+use Mode::{Compact as C, Folded as F, Stacked as S};
+
+/// The order in which the groups of a tab give way in Excel for Mac:
+/// (position of the group in our tab, the stage it goes to). Read from
+/// the scaling list of each tab in Excel's `Excel.ribbonb`, where a group
+/// goes from layout size 3 to 2, 1 and then 0 (one button); Excel's
+/// groups are matched to ours by what they hold, and those Excel has and
+/// we have not are left out.
+fn excel_order(tab: &str) -> &'static [(usize, Mode)] {
+    match tab {
+        // Home: Clipboard 0, Font 1, Alignment 2, Number 3, Styles 4,
+        // Cells 5, Editing 6. Styles stacks its three buttons first, the
+        // labels beside Paste go, then those of Editing, Cells and
+        // Alignment; Editing is the first to fold, Clipboard the last.
+        "1" => &[(4, S), (0, S), (6, C), (5, C), (2, S), (4, C), (6, F), (5, F), (3, F), (2, F), (1, F), (0, F)],
+        // Insert: Tables 0, Illustrations 1, Charts 2, PivotChart 3,
+        // Sparklines 4, Filters 5, Links 6, Comments 7, Text 8, Symbols 9.
+        "2" => &[(8, S), (9, S), (1, S), (2, S), (5, S), (8, C), (9, C), (1, C), (2, C), (8, F), (9, F), (1, F), (2, F), (0, F)],
+        // Draw: Drawing Tools 0, Pens 1, Convert 2, Replay 3.
+        "3" => &[(1, S), (0, S), (2, S), (1, C), (0, F), (2, F)],
+        // Page Layout: Themes 0, Page Setup 1, Scale to Fit 2, Sheet
+        // Options 3, Arrange 4. Excel for Mac has no Arrange group on
+        // this tab: ours gives way first, and the rest follows Excel,
+        // where Page Setup keeps its large buttons the longest.
+        "4" => &[(4, S), (4, C), (4, F), (0, S), (0, C), (0, F), (3, F), (2, F), (1, S), (1, C)],
+        // Formulas: Function Library 0, Defined Names 1, Formula
+        // Auditing 2, Calculation 3.
+        "5" => &[(3, S), (0, S), (2, S), (0, C), (1, F), (2, F), (0, F)],
+        // Data: Get & Transform Data 0, Sort & Filter 1, Data Tools 2,
+        // Forecast 3, Outline 4.
+        "6" => &[(0, S), (4, S), (2, S), (4, C), (0, C), (2, C), (4, F), (1, S), (2, F), (1, F)],
+        // Review: Proofing 0, Accessibility 1, Language 2, Comments 3,
+        // Notes 4, Protect 5.
+        "7" => &[(3, S), (4, S), (0, S), (3, C), (4, C), (5, S), (5, F), (1, F), (3, F), (4, F), (0, F)],
+        // View: Workbook Views 0, Show 1, Zoom 2, Window 3, Macros 4.
+        "8" => &[(4, F), (1, F), (0, S), (3, F), (0, F), (2, F)],
+        // Automate: Scripting Tools 0, Office Scripts 1.
+        "9" => &[(1, S), (1, C), (1, F), (0, F)],
+        _ => &[],
+    }
+}
+
+/// Every step a tab can take, in order: Excel's for the tab, then what
+/// is left, stage by stage from the right.
+fn sequence(key: &str, groups: usize) -> Vec<(usize, Mode)> {
+    let tab = key.split('/').next().unwrap_or(key);
+    let mut steps: Vec<(usize, Mode)> = Vec::new();
+    let mut reached = vec![Mode::Full; groups];
+    let mut take = |group: usize, mode: Mode, steps: &mut Vec<(usize, Mode)>| {
+        // A group only ever goes further.
+        if group < groups && mode > reached[group] {
+            reached[group] = mode;
+            steps.push((group, mode));
+        }
+    };
+    for (group, mode) in excel_order(tab) {
+        take(*group, *mode, &mut steps);
+    }
+    for mode in [S, C, F] {
+        for group in (0..groups).rev() {
+            take(group, mode, &mut steps);
+        }
+    }
+    steps
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Step {
-    kind: StepKind,
+    group: usize,
+    mode: Mode,
     /// The width the tab needed before this step: what undoes it.
     need: f32,
     /// The step did not make the tab narrower: it is not applied.
     useless: bool,
+}
+
+/// What folding a group must gain, in pixels, to be done at all.
+const MIN_FOLD_GAIN: f32 = 12.0;
+
+/// Three stages a group, each built at most twice (once to try it, once
+/// more without it when it gains nothing).
+const MAX_BUILDS_PER_GROUP: usize = 6;
+
+/// The large buttons of a group, numbered as the group builds them.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Larges {
+    count: usize,
+    /// Those a row holds together with at least another one: the ones
+    /// that are restacked.
+    in_rows: Vec<usize>,
 }
 
 /// The steps taken for one tab in one language, in order.
@@ -77,36 +172,25 @@ struct Step {
 struct Plan {
     /// How many groups the tab had when the steps were taken.
     groups: usize,
+    /// The large buttons each group builds.
+    larges: Vec<Larges>,
     steps: Vec<Step>,
 }
 
 impl Plan {
-    fn level(&self) -> u8 {
-        self.steps.iter().filter(|step| step.kind == StepKind::Level).count() as u8
-    }
-
     fn modes(&self) -> Vec<Mode> {
         let mut modes = vec![Mode::Full; self.groups];
         for step in self.steps.iter().filter(|step| !step.useless) {
-            match step.kind {
-                StepKind::Compact(group) if group < modes.len() => modes[group] = Mode::Compact,
-                StepKind::Fold(group) if group < modes.len() => modes[group] = Mode::Folded,
-                _ => {}
+            if let Some(mode) = modes.get_mut(step.group) {
+                *mode = step.mode;
             }
         }
         modes
     }
 
-    /// The step after those taken: the levels, then compact and fold for
-    /// each group from the last to the first.
-    fn next(&self) -> Option<StepKind> {
-        let taken = self.steps.len();
-        if taken < LEVELS {
-            return Some(StepKind::Level);
-        }
-        let after = taken - LEVELS;
-        let group = self.groups.checked_sub(after / 2 + 1)?;
-        Some(if after % 2 == 0 { StepKind::Compact(group) } else { StepKind::Fold(group) })
+    /// The step after those taken.
+    fn next(&self, key: &str) -> Option<(usize, Mode)> {
+        sequence(key, self.groups).get(self.steps.len()).copied()
     }
 }
 
@@ -119,8 +203,17 @@ pub struct Fit {
     pub available: f32,
     /// Width the groups take as they are shown.
     pub total: f32,
-    pub level: u8,
     pub modes: Vec<Mode>,
+    /// The width of each group as it is shown.
+    pub widths: Vec<f32>,
+    /// Where the first group starts in the window, and how high the
+    /// groups are.
+    pub origin: (f32, f32),
+    pub height: f32,
+    /// The names of the groups, as the tab gave them.
+    pub labels: Vec<&'static str>,
+    /// No step is left to take.
+    pub exhausted: bool,
     /// How many times the tab was built to get there.
     pub builds: usize,
 }
@@ -129,6 +222,17 @@ pub struct Fit {
 struct Build {
     key: String,
     modes: Vec<Mode>,
+    /// The large buttons of each group, as the build before found them.
+    larges: Vec<Larges>,
+    /// Those found in this build, group after group, and in the group
+    /// whose content is being built.
+    counted: Vec<Larges>,
+    found: Larges,
+    labels: Vec<&'static str>,
+    /// The rows of large buttons of the group and its separators: what
+    /// is told when the group restacks.
+    rows: Vec<Rc<Cell<bool>>>,
+    seps: Vec<Rc<Cell<bool>>>,
     /// How many groups were built so far: the position of the group whose
     /// content is being built.
     index: usize,
@@ -199,10 +303,68 @@ pub fn toggle_group(group: usize) {
 
 // ------------------------------------------------- asked while a tab is built
 
-/// True while the content of a compact group is being built: its large
-/// buttons are made small, without their label.
-pub fn compact() -> bool {
-    with(|state| state.build.as_ref().is_some_and(|build| build.modes.get(build.index) == Some(&Mode::Compact)))
+/// The form a large button takes in the group whose content is being
+/// built, and its number in the group (for [`row_of_larges`]).
+pub fn large_form() -> (LargeForm, usize) {
+    with(|state| {
+        let Some(build) = state.build.as_mut() else {
+            return (LargeForm::Large, 0);
+        };
+        let number = build.found.count;
+        build.found.count += 1;
+        let known = build.larges.get(build.index);
+        let in_row = known.is_some_and(|known| known.in_rows.contains(&number));
+        let several = known.is_some_and(|known| known.count > 1);
+        let form = match build.modes.get(build.index) {
+            Some(Mode::Stacked) if in_row => LargeForm::Labeled,
+            // Large buttons that no row holds lose their label where
+            // they stand.
+            Some(Mode::Compact) if in_row || several => LargeForm::Icon,
+            _ => LargeForm::Large,
+        };
+        (form, number)
+    })
+}
+
+/// How far the group being built has given way, for the groups that
+/// shorten a gallery or drop the labels of their small buttons by
+/// themselves: 0 in full, 2 stacked, 4 compact. (A folded group opens in
+/// full.)
+pub fn level() -> u8 {
+    with(|state| {
+        let mode = state.build.as_ref().and_then(|build| build.modes.get(build.index).copied());
+        match mode {
+            Some(Mode::Stacked) => 2,
+            Some(Mode::Compact) => 4,
+            _ => 0,
+        }
+    })
+}
+
+/// A row that holds several large buttons (their numbers) was built: the
+/// flag that will tell it, once its group is known, to stack its
+/// controls in three rows instead.
+pub fn row_of_larges(numbers: &[usize]) -> Rc<Cell<bool>> {
+    let flag = Rc::new(Cell::new(false));
+    with(|state| {
+        if let Some(build) = state.build.as_mut() {
+            build.found.in_rows.extend_from_slice(numbers);
+            build.rows.push(flag.clone());
+        }
+    });
+    flag
+}
+
+/// A separator was built: the flag that hides it when its group is
+/// restacked (a line between two controls has no place between rows).
+pub fn sep_built() -> Rc<Cell<bool>> {
+    let flag = Rc::new(Cell::new(false));
+    with(|state| {
+        if let Some(build) = state.build.as_mut() {
+            build.seps.push(flag.clone());
+        }
+    });
+    flag
 }
 
 /// A button of the group being built shows this icon.
@@ -231,7 +393,7 @@ pub struct Slot {
 
 /// The content of a group is built: say how the group is shown, and move
 /// on to the next one.
-pub fn next_group() -> Slot {
+pub fn next_group(label: &'static str) -> Slot {
     with(|state| {
         let open = state.open.clone();
         let Some(build) = state.build.as_mut() else {
@@ -244,9 +406,23 @@ pub fn next_group() -> Slot {
             };
         };
         let index = build.index;
+        let mode = build.modes.get(index).copied().unwrap_or_default();
+        // A group that gives way stacks its rows of large buttons in
+        // three rows (they were built small, on what the build before
+        // found: only then does it apply).
+        let rows = std::mem::take(&mut build.rows);
+        let seps = std::mem::take(&mut build.seps);
+        let found = std::mem::take(&mut build.found);
+        let as_built = build.larges.get(index) == Some(&found);
+        if as_built && !rows.is_empty() && matches!(mode, Mode::Stacked | Mode::Compact) {
+            for flag in rows.iter().chain(&seps) {
+                flag.set(true);
+            }
+        }
+        build.counted.push(found);
+        build.labels.push(label);
         build.index += 1;
         let icon = build.icon.take().unwrap_or("more");
-        let mode = build.modes.get(index).copied().unwrap_or_default();
         Slot {
             mode,
             index,
@@ -364,19 +540,24 @@ fn build(
     height: Pixels,
     window: &mut Window,
     cx: &mut gpui::App,
-) -> (Vec<(AnyElement, Pixels)>, f32) {
+) -> (Vec<(AnyElement, Pixels)>, f32, Vec<Larges>, Vec<&'static str>) {
     with(|state| {
         state.panel = None;
         state.build = Some(Build {
             key: key.to_string(),
             modes: plan.modes(),
+            larges: plan.larges.clone(),
+            counted: Vec::new(),
+            found: Larges::default(),
+            labels: Vec::new(),
+            rows: Vec::new(),
+            seps: Vec::new(),
             index: 0,
             icon: None,
         });
     });
-    let level = plan.level();
-    let groups = app.update(cx, |app, cx| app.ribbon_groups(level, window, cx)).unwrap_or_default();
-    with(|state| state.build = None);
+    let groups = app.update(cx, |app, cx| app.ribbon_groups(window, cx)).unwrap_or_default();
+    let (counted, labels) = with(|state| state.build.take().map(|build| (build.counted, build.labels))).unwrap_or_default();
     let space = size(AvailableSpace::MinContent, AvailableSpace::Definite(height));
     let mut total = 0.0;
     let measured = groups
@@ -389,7 +570,7 @@ fn build(
             (element, width)
         })
         .collect();
-    (measured, total)
+    (measured, total, counted, labels)
 }
 
 /// The groups of the tab shown, fitted to `available` pixels: an element
@@ -411,23 +592,34 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
             let mut trial: Option<f32> = None;
             let mut took_step = false;
             let mut builds = 0;
-            let (groups, total) = loop {
-                let (groups, total) = build(&app, &key, &plan, height, window, cx);
+            let (groups, total, labels) = loop {
+                let (groups, total, counted, labels) = build(&app, &key, &plan, height, window, cx);
                 builds += 1;
                 if groups.len() != plan.groups {
                     // The tab changed (a group came or went): start again.
                     plan = Plan {
                         groups: groups.len(),
+                        larges: counted,
                         steps: Vec::new(),
                     };
                     trial = None;
                     if builds < 3 {
                         continue;
                     }
+                } else if counted != plan.larges {
+                    // What the groups hold changed: they were built on
+                    // what they held before.
+                    plan.larges = counted;
+                    if !plan.steps.is_empty() && builds < 3 {
+                        continue;
+                    }
                 }
                 if let Some(before) = trial.take() {
                     let last = plan.steps.last_mut().expect("a step was just taken");
-                    if last.kind != StepKind::Level && total >= before - 0.5 {
+                    // Folding hides a group: it has to be worth it (a
+                    // group of one button gains nothing to speak of).
+                    let gain = if last.mode == Mode::Folded { MIN_FOLD_GAIN } else { 0.5 };
+                    if total > before - gain {
                         last.useless = true;
                         // What was built shows the step: build without it.
                         continue;
@@ -435,14 +627,15 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
                 }
                 let fits = total <= available + 0.5;
                 // The builds are bounded whatever happens.
-                if builds > 2 * plan.groups + LEVELS + 8 {
-                    break (groups, total);
+                if builds > MAX_BUILDS_PER_GROUP * plan.groups + 8 {
+                    break (groups, total, labels);
                 }
                 if !fits {
-                    match plan.next() {
-                        Some(kind) => {
+                    match plan.next(&key) {
+                        Some((group, mode)) => {
                             plan.steps.push(Step {
-                                kind,
+                                group,
+                                mode,
                                 need: total,
                                 useless: false,
                             });
@@ -451,7 +644,7 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
                             continue;
                         }
                         // Every step is taken: the ribbon scrolls.
-                        None => break (groups, total),
+                        None => break (groups, total, labels),
                     }
                 }
                 // There is room: the last step is undone when the window
@@ -461,11 +654,12 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
                         plan.steps.pop();
                         continue;
                     }
-                    _ => break (groups, total),
+                    _ => break (groups, total, labels),
                 }
             };
             let modes = plan.modes();
-            let level = plan.level();
+            let exhausted = plan.next(&key).is_none();
+            let widths = groups.iter().map(|(_, width)| f32::from(*width)).collect();
             // The element was sized for the last layout: when the width to
             // scroll changes, the window is laid out again.
             if (total > available + 0.5 || last_fit_width(available) > available) && (last_fit_width(available) - total.max(available)).abs() > 0.5 {
@@ -481,8 +675,12 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
                     key: key.clone(),
                     available,
                     total,
-                    level,
                     modes,
+                    widths,
+                    origin: (f32::from(bounds.origin.x), f32::from(bounds.origin.y)),
+                    height: f32::from(height),
+                    labels,
+                    exhausted,
                     builds,
                 };
                 state.plans.insert(key.clone(), plan);
@@ -541,220 +739,4 @@ pub fn panel_layer() -> impl IntoElement {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn steps_come_in_the_same_order() {
-        let mut plan = Plan {
-            groups: 3,
-            steps: Vec::new(),
-        };
-        let mut order = Vec::new();
-        while let Some(kind) = plan.next() {
-            order.push(kind);
-            plan.steps.push(Step {
-                kind,
-                need: 1000.0 - order.len() as f32,
-                useless: false,
-            });
-        }
-        use StepKind::*;
-        assert_eq!(
-            order,
-            vec![Level, Level, Level, Level, Compact(2), Fold(2), Compact(1), Fold(1), Compact(0), Fold(0)]
-        );
-        assert_eq!(plan.level(), 4);
-        assert_eq!(plan.modes(), vec![Mode::Folded; 3]);
-        // Undone in the reverse order; a useless step is not applied.
-        plan.steps.truncate(7);
-        plan.steps[5].useless = true;
-        assert_eq!(plan.modes(), vec![Mode::Full, Mode::Compact, Mode::Compact]);
-        plan.steps.truncate(2);
-        assert_eq!((plan.level(), plan.modes()), (2, vec![Mode::Full; 3]));
-    }
-
-    use crate::features::{self, Command};
-    use crate::i18n::{Lang, set_lang};
-    use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext};
-    use opensheet_engine::Rect;
-    use opensheet_engine::drawing::{Frame, ShapeTool};
-
-    fn open(cx: &mut TestAppContext) -> (Entity<ExcelApp>, &mut VisualTestContext) {
-        cx.update(crate::bind_keys);
-        let (app, cx) = cx.add_window_view(ExcelApp::new);
-        cx.run_until_parked();
-        (app, cx)
-    }
-
-    /// Lay the window out at a width and say how the ribbon fitted.
-    fn fit_at(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, width: f32) -> Fit {
-        cx.simulate_resize(size(px(width), px(820.)));
-        // Twice: the element is sized from the layout before.
-        for _ in 0..2 {
-            app.update(cx, |_, cx| cx.notify());
-            cx.run_until_parked();
-            cx.simulate_mouse_move(point(px(2.), px(2.)), None, Modifiers::none());
-        }
-        last_fit()
-    }
-
-    const WIDTHS: [f32; 6] = [1700.0, 1390.0, 1200.0, 1000.0, 820.0, 640.0];
-
-    /// The tab shown fits at every width, and is whole when there is room.
-    fn check_tab(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, what: &str) {
-        for width in WIDTHS {
-            let fit = fit_at(app, cx, width);
-            let fits = fit.total <= fit.available + 0.5;
-            // In a very narrow window a tab may not fit even folded: then
-            // every group has given what it can, and the ribbon scrolls.
-            let exhausted = width < 1000.0 && fit.level as usize == LEVELS && fit.modes.iter().all(|mode| *mode != Mode::Full);
-            assert!(
-                fits || exhausted,
-                "{what} at {width}: {} wide for {} ({:?})",
-                fit.total,
-                fit.available,
-                fit.modes
-            );
-            assert!(fit.builds <= 2 * fit.modes.len() + LEVELS + 8, "{what} at {width}: {} builds", fit.builds);
-        }
-        // A second layout at the same width builds the tab once.
-        assert_eq!(fit_at(app, cx, 640.0).builds, 1, "{what}");
-        // Widening undoes every step.
-        let wide = fit_at(app, cx, 3200.0);
-        assert_eq!(wide.level, 0, "{what}");
-        assert!(wide.modes.iter().all(|mode| *mode == Mode::Full), "{what}: {:?}", wide.modes);
-    }
-
-    #[gpui::test]
-    fn every_tab_fits_in_every_language(cx: &mut TestAppContext) {
-        let (app, cx) = open(cx);
-        for lang in Lang::ALL {
-            set_lang(lang);
-            for tab in 1..=10 {
-                app.update(cx, |app, cx| {
-                    app.ribbon_tab = tab;
-                    cx.notify();
-                });
-                check_tab(&app, cx, &format!("tab {tab} in {}", lang.code()));
-            }
-        }
-        set_lang(Lang::En);
-    }
-
-    #[gpui::test]
-    fn contextual_tabs_fit_too(cx: &mut TestAppContext) {
-        let (app, cx) = open(cx);
-        // A table (Table Design) and a shape (Shape Format).
-        let shape = app.update(cx, |app, cx| {
-            app.wb.set_cell_text(0, 0, 0, "Name").unwrap();
-            app.wb.set_cell_text(0, 1, 0, "a").unwrap();
-            app.wb.add_table(0, Rect::new(0, 0, 1, 0), true).unwrap();
-            let shape = app.wb.add_shape(0, ShapeTool::Rectangle, Frame::new(300.0, 100.0, 120.0, 80.0)).unwrap();
-            app.commit("setup", cx);
-            app.select_cell(1, 0, cx);
-            shape
-        });
-        let mut seen = 0;
-        for lang in [Lang::Fr, Lang::De, Lang::En] {
-            set_lang(lang);
-            for object in [None, Some(shape)] {
-                app.update(cx, |app, cx| {
-                    let id = object.map(|id| features::object_id(&features::drawings::Drawings, id));
-                    app.select_object(id, cx);
-                });
-                let tabs = app.update(cx, |app, _| features::context_tabs(app));
-                assert!(!tabs.is_empty());
-                for (_, tab) in tabs {
-                    app.update(cx, |app, cx| {
-                        app.context_tab = Some(tab.id);
-                        cx.notify();
-                    });
-                    check_tab(&app, cx, &format!("{} in {}", tab.id, lang.code()));
-                    seen += 1;
-                }
-            }
-        }
-        assert!(seen >= 6);
-        set_lang(Lang::En);
-    }
-
-    #[gpui::test]
-    fn german_formulas_fold_at_1390_and_unfold(cx: &mut TestAppContext) {
-        let (app, cx) = open(cx);
-        set_lang(Lang::De);
-        app.update(cx, |app, cx| {
-            app.ribbon_tab = 5;
-            cx.notify();
-        });
-        let narrow = fit_at(&app, cx, 1390.0);
-        assert!(narrow.total <= narrow.available + 0.5, "{narrow:?}");
-        // It took steps to get there, and the groups on the left are whole.
-        assert!(narrow.level > 0 || narrow.modes.iter().any(|mode| *mode != Mode::Full), "{narrow:?}");
-        assert_eq!(narrow.modes.first(), Some(&Mode::Full), "{narrow:?}");
-        // Narrower still: more steps, never fewer.
-        let folded = |fit: &Fit| fit.modes.iter().filter(|mode| **mode == Mode::Folded).count();
-        let narrower = fit_at(&app, cx, 900.0);
-        assert!(folded(&narrower) >= folded(&narrow) && folded(&narrower) > 0, "{narrower:?}");
-        // Back at 1390 it looks as it did, and wide it is whole.
-        let again = fit_at(&app, cx, 1390.0);
-        assert_eq!((again.level, &again.modes), (narrow.level, &narrow.modes));
-        let wide = fit_at(&app, cx, 3200.0);
-        assert!(wide.level == 0 && wide.modes.iter().all(|mode| *mode == Mode::Full), "{wide:?}");
-        set_lang(Lang::En);
-    }
-
-    #[gpui::test]
-    fn a_folded_group_opens_and_runs_its_commands(cx: &mut TestAppContext) {
-        let (app, cx) = open(cx);
-        set_lang(Lang::En);
-        app.update(cx, |app, cx| {
-            app.ribbon_tab = 3;
-            cx.notify();
-        });
-        // The Draw tab in a window too narrow for its gallery of pens.
-        let fit = fit_at(&app, cx, 330.0);
-        let pens = 1;
-        assert_eq!(fit.modes.get(pens), Some(&Mode::Folded), "{fit:?}");
-        // A group of one button is not folded: that would not be narrower.
-        assert_eq!(fit.modes.get(2), Some(&Mode::Compact), "{fit:?}");
-        let below_ribbon = crate::theme::TITLEBAR_H + crate::theme::TABS_H + crate::theme::RIBBON_H - 10.0;
-        let pen = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.anchors.borrow().get("ink-pen-1").copied());
-        let drawing = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| !features::ink::Cmd::Select.checked(app));
-        // A click on the button of the group opens the group under it.
-        assert_eq!(open_group(), None);
-        toggle_group(pens);
-        fit_at(&app, cx, 330.0);
-        assert_eq!(open_group(), Some(pens));
-        let button = pen(&app, cx).expect("the pen was painted");
-        assert!(f32::from(button.origin.y) > below_ribbon, "{button:?}");
-        // The pen in the drop-down is the pen of the ribbon: a click takes
-        // it in hand, and the drop-down closes.
-        assert!(!drawing(&app, cx));
-        cx.simulate_click(button.center(), Modifiers::none());
-        cx.run_until_parked();
-        assert!(drawing(&app, cx));
-        assert_eq!(open_group(), None);
-        // Open again; Escape closes it (and only it: the pen stays in hand).
-        toggle_group(pens);
-        fit_at(&app, cx, 330.0);
-        assert_eq!(open_group(), Some(pens));
-        cx.simulate_keystrokes("escape");
-        cx.run_until_parked();
-        assert_eq!(open_group(), None);
-        assert!(drawing(&app, cx));
-        // A press elsewhere closes it too.
-        toggle_group(pens);
-        fit_at(&app, cx, 330.0);
-        assert_eq!(open_group(), Some(pens));
-        cx.simulate_mouse_down(point(px(300.), px(700.)), gpui::MouseButton::Left, Modifiers::none());
-        cx.simulate_mouse_up(point(px(300.), px(700.)), gpui::MouseButton::Left, Modifiers::none());
-        cx.run_until_parked();
-        assert_eq!(open_group(), None);
-        // Widening restores the group itself on the ribbon.
-        let wide = fit_at(&app, cx, 1400.0);
-        assert_eq!(wide.modes.get(pens), Some(&Mode::Full));
-        let button = pen(&app, cx).unwrap();
-        assert!(f32::from(button.origin.y) < below_ribbon, "{button:?}");
-    }
-}
+mod tests;
