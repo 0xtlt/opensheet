@@ -212,6 +212,10 @@ pub struct Picture {
     pub data: Arc<[u8]>,
     /// Width and height of the image in pixels.
     pub pixels: (u32, u32),
+    /// A vector picture (an icon, an SVG file): the SVG document. `data`
+    /// is then the PNG image of it a file keeps beside it for
+    /// applications that cannot draw vectors, and what is printed.
+    pub svg: Option<Arc<[u8]>>,
     pub adjust: PictureAdjust,
 }
 
@@ -224,8 +228,31 @@ impl Picture {
             format: info.format,
             data,
             pixels: info.pixels,
+            svg: None,
             adjust: PictureAdjust::default(),
         })
+    }
+
+    /// A vector picture: an SVG document and the image that stands for
+    /// it where vectors cannot be drawn. `None` when either is not what
+    /// it should be.
+    pub fn vector(svg: impl Into<Arc<[u8]>>, fallback: impl Into<Arc<[u8]>>) -> Option<Picture> {
+        let svg = svg.into();
+        crate::svg::svg_size(&svg)?;
+        Some(Picture {
+            svg: Some(svg),
+            ..Picture::new(fallback)?
+        })
+    }
+
+    /// The size the picture has when inserted, in pixels at 100 %: the
+    /// size a vector picture asks for, the physical size of a bitmap.
+    pub fn natural_size(&self) -> (f32, f32) {
+        self.svg
+            .as_deref()
+            .and_then(crate::svg::svg_size)
+            .or_else(|| image_info(&self.data).map(|info| info.natural_size()))
+            .unwrap_or((self.pixels.0 as f32, self.pixels.1 as f32))
     }
 }
 
@@ -559,13 +586,21 @@ pub enum ShapePreset {
     Line,
     /// A rectangular speech bubble; its tail points below the frame.
     Callout,
+    /// An arrow-shaped band pointing right, notched on the left: the
+    /// steps of a process (`chevron`). `Shape::adjust` is how deep its
+    /// point is, as a fraction of the shorter side (0.5 when not given).
+    Chevron,
+    /// A trapezoid, its short side on top: the levels of a pyramid.
+    /// `Shape::adjust` is how far in its top corners are, as a fraction
+    /// of the shorter side (0.25 when not given).
+    Trapezoid,
 }
 
 /// How far a quarter circle's control points sit from its ends.
 const KAPPA: f32 = 0.552_284_8;
 
 impl ShapePreset {
-    pub const ALL: [ShapePreset; 15] = [
+    pub const ALL: [ShapePreset; 17] = [
         ShapePreset::Rect,
         ShapePreset::RoundRect,
         ShapePreset::Ellipse,
@@ -581,6 +616,8 @@ impl ShapePreset {
         ShapePreset::Star5,
         ShapePreset::Line,
         ShapePreset::Callout,
+        ShapePreset::Chevron,
+        ShapePreset::Trapezoid,
     ];
 
     /// The `prst` attribute. Excel writes a line with arrowheads as
@@ -602,6 +639,8 @@ impl ShapePreset {
             ShapePreset::Star5 => "star5",
             ShapePreset::Line => "line",
             ShapePreset::Callout => "wedgeRectCallout",
+            ShapePreset::Chevron => "chevron",
+            ShapePreset::Trapezoid => "trapezoid",
         }
     }
 
@@ -633,6 +672,24 @@ impl ShapePreset {
     /// multiplied by its width and height. Flips, then the rotation about
     /// the centre of the frame, are applied by whoever draws.
     pub fn path(self, width: f32, height: f32) -> Vec<PathCommand> {
+        self.path_adjusted(width, height, None)
+    }
+
+    /// How far in the point of a chevron or the top corners of a
+    /// trapezoid are, as a fraction of the width of the frame. `adjust`
+    /// counts in shorter sides, as files do.
+    fn inset(self, width: f32, height: f32, adjust: Option<f32>) -> f32 {
+        let (default, most) = if self == ShapePreset::Chevron { (0.5, 1.0) } else { (0.25, 0.5) };
+        if width <= 0.0 {
+            return most;
+        }
+        let amount = adjust.filter(|a| a.is_finite()).unwrap_or(default).max(0.0);
+        (amount * width.min(height) / width).min(most)
+    }
+
+    /// The outline of the shape with its adjustment (`Shape::adjust`):
+    /// only chevrons and trapezoids have one here.
+    pub fn path_adjusted(self, width: f32, height: f32, adjust: Option<f32>) -> Vec<PathCommand> {
         use PathCommand::{Close, CurveTo, LineTo, MoveTo};
         let polygon = |points: &[(f32, f32)]| -> Vec<PathCommand> {
             let mut path: Vec<PathCommand> = points
@@ -755,6 +812,14 @@ impl ShapePreset {
                 (2.0 / 12.0, 1.0),
                 (0.0, 1.0),
             ]),
+            ShapePreset::Chevron => {
+                let d = self.inset(width, height, adjust);
+                polygon(&[(0.0, 0.0), (1.0 - d, 0.0), (1.0, 0.5), (1.0 - d, 1.0), (0.0, 1.0), (d, 0.5)])
+            }
+            ShapePreset::Trapezoid => {
+                let d = self.inset(width, height, adjust);
+                polygon(&[(0.0, 1.0), (d, 0.0), (1.0 - d, 0.0), (1.0, 1.0)])
+            }
         }
     }
 
@@ -762,6 +827,11 @@ impl ShapePreset {
     /// (`TEXT_MARGIN`): left, top, right and bottom as fractions of the
     /// frame of the given size.
     pub fn text_rect(self, width: f32, height: f32) -> [f32; 4] {
+        self.text_rect_adjusted(width, height, None)
+    }
+
+    /// The text rectangle of the shape with its adjustment.
+    pub fn text_rect_adjusted(self, width: f32, height: f32, adjust: Option<f32>) -> [f32; 4] {
         match self {
             ShapePreset::Rect | ShapePreset::Line | ShapePreset::Callout => [0.0, 0.0, 1.0, 1.0],
             ShapePreset::RoundRect => {
@@ -782,6 +852,16 @@ impl ShapePreset {
             ShapePreset::UpArrow => [0.25, ShapePreset::arrow_head(height, width) / 2.0, 0.75, 1.0],
             ShapePreset::DownArrow => [0.25, 0.0, 0.75, 1.0 - ShapePreset::arrow_head(height, width) / 2.0],
             ShapePreset::Star5 => [0.309_02, 0.381_97, 0.690_98, 0.763_93],
+            // Between the notch and the point; in the part of a trapezoid
+            // that is as wide at the top as at the bottom, more or less.
+            ShapePreset::Chevron => {
+                let d = self.inset(width, height, adjust).min(0.4);
+                [d, 0.0, 1.0 - d, 1.0]
+            }
+            ShapePreset::Trapezoid => {
+                let d = self.inset(width, height, adjust) * 2.0 / 3.0;
+                [d, 0.0, 1.0 - d, 1.0]
+            }
         }
     }
 }
@@ -998,6 +1078,36 @@ pub struct Shape {
     pub font: Font,
     pub align: TextAlign,
     pub anchor: TextAnchor,
+    /// What the letters have besides their font: an outline, a shadow
+    /// (WordArt, see `wordart.rs`).
+    pub effects: crate::wordart::TextEffects,
+    /// The looks of a text formatted in parts; empty when the whole text
+    /// has the look of `font` and `effects`.
+    pub runs: Vec<crate::wordart::TextRun>,
+    /// Lines are broken at the width of the shape (`wrap` of
+    /// `<a:bodyPr>`; WordArt is not wrapped).
+    pub wrap: bool,
+    /// The adjustment of the geometry (`adj` of `<a:avLst>`), for the
+    /// presets that have one here; `None` is the preset's own.
+    pub adjust: Option<f32>,
+    /// The text is an equation (see `math.rs`); `text` then holds it in
+    /// the linear format, which is what is typed and what applications
+    /// that draw no equations show.
+    pub math: Option<crate::math::Equation>,
+}
+
+impl Shape {
+    /// The outline of the shape in a frame of the given size (see
+    /// `ShapePreset::path`).
+    pub fn path(&self, width: f32, height: f32) -> Vec<PathCommand> {
+        self.preset.path_adjusted(width, height, self.adjust)
+    }
+
+    /// The part of the frame the text is laid out in (see
+    /// `ShapePreset::text_rect`).
+    pub fn text_rect(&self, width: f32, height: f32) -> [f32; 4] {
+        self.preset.text_rect_adjusted(width, height, self.adjust)
+    }
 }
 
 /// The entries of the Insert ▸ Shapes gallery: a geometry with the look
@@ -1024,6 +1134,8 @@ pub enum ShapeTool {
     DoubleArrow,
     TextBox,
     Callout,
+    Chevron,
+    Trapezoid,
 }
 
 /// Fill of new shapes and colour of new lines (the first accent of the
@@ -1033,7 +1145,7 @@ const ACCENT: Color = Color::themed(ThemeSlot::Accent1, 0.0, 0x156082);
 const ACCENT_DARK: Color = Color(0x042433);
 
 impl ShapeTool {
-    pub const ALL: [ShapeTool; 18] = [
+    pub const ALL: [ShapeTool; 20] = [
         ShapeTool::Rectangle,
         ShapeTool::RoundedRectangle,
         ShapeTool::Ellipse,
@@ -1052,6 +1164,8 @@ impl ShapeTool {
         ShapeTool::DoubleArrow,
         ShapeTool::TextBox,
         ShapeTool::Callout,
+        ShapeTool::Chevron,
+        ShapeTool::Trapezoid,
     ];
 
     pub fn preset(self) -> ShapePreset {
@@ -1071,6 +1185,8 @@ impl ShapeTool {
             ShapeTool::Star5 => ShapePreset::Star5,
             ShapeTool::Line | ShapeTool::Arrow | ShapeTool::DoubleArrow => ShapePreset::Line,
             ShapeTool::Callout => ShapePreset::Callout,
+            ShapeTool::Chevron => ShapePreset::Chevron,
+            ShapeTool::Trapezoid => ShapePreset::Trapezoid,
         }
     }
 
@@ -1089,6 +1205,11 @@ impl ShapeTool {
             },
             align: TextAlign::Center,
             anchor: TextAnchor::Middle,
+            effects: Default::default(),
+            runs: Vec::new(),
+            wrap: true,
+            adjust: None,
+            math: None,
         };
         if preset.is_line() {
             let arrow = |pointed: bool| if pointed { LineEnd::Triangle } else { LineEnd::None };
@@ -1114,7 +1235,7 @@ impl ShapeTool {
     /// The size a shape gets from a single click, in pixels at 100 %.
     pub fn default_size(self) -> (f32, f32) {
         match self {
-            ShapeTool::RightArrow | ShapeTool::LeftArrow | ShapeTool::TextBox => (96.0, 48.0),
+            ShapeTool::RightArrow | ShapeTool::LeftArrow | ShapeTool::TextBox | ShapeTool::Chevron => (96.0, 48.0),
             ShapeTool::UpArrow | ShapeTool::DownArrow => (48.0, 96.0),
             ShapeTool::Line | ShapeTool::Arrow | ShapeTool::DoubleArrow => (96.0, 0.0),
             ShapeTool::Callout => (144.0, 72.0),
@@ -1209,6 +1330,8 @@ impl ShapeTool {
                     "Connettore dritto a freccia",
                 ],
                 ShapeTool::TextBox => ["TextBox", "ZoneTexte", "CuadroTexto", "Textfeld", "CasellaDiTesto"],
+                ShapeTool::Chevron => ["Chevron", "Chevron", "Cheurón", "Chevron", "Gallone"],
+                ShapeTool::Trapezoid => ["Trapezoid", "Trapèze", "Trapecio", "Trapezoid", "Trapezio"],
                 ShapeTool::Callout => [
                     "Rectangular Callout",
                     "Rectangle",
@@ -1226,6 +1349,11 @@ fn picture_name(locale: &Locale) -> &'static str {
     localized(locale, ["Picture", "Image", "Imagen", "Bild", "Immagine"])
 }
 
+/// The name Excel gives a vector picture, before its number.
+fn graphic_name(locale: &Locale) -> &'static str {
+    localized(locale, ["Graphic", "Graphique", "Gráfico", "Grafik", "Elemento grafico"])
+}
+
 /// The name Excel gives a group, before its number.
 fn group_name(locale: &Locale) -> &'static str {
     localized(locale, ["Group", "Groupe", "Grupo", "Gruppieren", "Gruppo"])
@@ -1237,6 +1365,8 @@ fn group_name(locale: &Locale) -> &'static str {
 pub enum DrawingKind {
     Picture(Picture),
     Shape(Shape),
+    /// A SmartArt graphic (see `smartart.rs`).
+    SmartArt(crate::smartart::SmartArt),
     Group(Group),
 }
 
@@ -1390,14 +1520,19 @@ impl Drawing {
     /// A picture at its natural size, as Excel inserts it: it moves with
     /// its cell without being sized with it, and keeps its proportions.
     pub fn picture(picture: Picture) -> Drawing {
-        let size =
-            image_info(&picture.data).map_or((picture.pixels.0 as f32, picture.pixels.1 as f32), |i| i.natural_size());
+        let size = picture.natural_size();
         Drawing::new(DrawingKind::Picture(picture), size, Placement::MoveOnly, true)
     }
 
     /// A shape of the given size, moved and sized with its cells.
     pub fn shape(shape: Shape, size: (f32, f32)) -> Drawing {
         Drawing::new(DrawingKind::Shape(shape), size, Placement::MoveAndSize, false)
+    }
+
+    /// A SmartArt graphic of the given size, moved and sized with its
+    /// cells.
+    pub fn smartart(art: crate::smartart::SmartArt, size: (f32, f32)) -> Drawing {
+        Drawing::new(DrawingKind::SmartArt(art), size, Placement::MoveAndSize, false)
     }
 
     /// A group of the given size holding `members`, whose `offset` and
@@ -1436,9 +1571,23 @@ impl Drawing {
         }
     }
 
+    pub fn as_smartart(&self) -> Option<&crate::smartart::SmartArt> {
+        match &self.kind {
+            DrawingKind::SmartArt(art) => Some(art),
+            _ => None,
+        }
+    }
+
     pub fn as_group(&self) -> Option<&Group> {
         match &self.kind {
             DrawingKind::Group(group) => Some(group),
+            _ => None,
+        }
+    }
+
+    pub fn as_smartart_mut(&mut self) -> Option<&mut crate::smartart::SmartArt> {
+        match &mut self.kind {
+            DrawingKind::SmartArt(art) => Some(art),
             _ => None,
         }
     }
@@ -1547,7 +1696,16 @@ impl Drawing {
                 if let Recolor::Duotone(dark, light) = &mut picture.adjust.recolor {
                     (*dark, *light) = (theme.resolve(*dark), theme.resolve(*light));
                 }
+                // A vector picture painted in a colour of the theme: its
+                // document is repainted. (The image kept beside it is
+                // made again by whoever can draw it.)
+                if let Some(document) = picture.svg.as_deref().and_then(|document| crate::svg::rethemed(document, theme)) {
+                    picture.svg = Some(document.into());
+                }
             }
+            // A graphic takes its colours from the theme when it is laid
+            // out.
+            DrawingKind::SmartArt(_) => {}
             DrawingKind::Group(group) => {
                 for member in &mut group.members {
                     member.retheme(theme);
@@ -1946,7 +2104,9 @@ impl Workbook {
         let sh = &mut self.sheets[sheet];
         if drawing.name.is_empty() {
             let base = match &drawing.kind {
+                DrawingKind::Picture(picture) if picture.svg.is_some() => graphic_name(self.locale),
                 DrawingKind::Picture(_) => picture_name(self.locale),
+                DrawingKind::SmartArt(_) => crate::smartart::name(self.locale),
                 DrawingKind::Group(_) => group_name(self.locale),
                 DrawingKind::Shape(shape) => {
                     let tool = ShapeTool::ALL.into_iter().find(|tool| {
@@ -2619,12 +2779,12 @@ mod tests {
         let unnamed = w
             .add_drawing(0, Drawing::shape(ShapeTool::DoubleArrow.shape(), (50.0, 0.0)))
             .unwrap();
-        assert_eq!(named_in(&w, unnamed), "Straight Arrow Connector 19");
+        assert_eq!(named_in(&w, unnamed), "Straight Arrow Connector 21");
         w.locale = Locale::de();
         let star = w
             .add_drawing(0, Drawing::shape(ShapeTool::Star5.shape(), (50.0, 50.0)))
             .unwrap();
-        assert_eq!(named_in(&w, star), "Stern mit 5 Zacken 20");
+        assert_eq!(named_in(&w, star), "Stern mit 5 Zacken 22");
     }
 
     fn named_in(w: &Workbook, id: u32) -> String {

@@ -254,6 +254,32 @@ impl ObjectPainter for PaperPainter {
                     canvas.restore();
                 }
             }
+            // A SmartArt graphic: the shapes it is laid out as, then what
+            // is written in them. (Fills that let what is under them show
+            // are printed solid.)
+            DrawingKind::SmartArt(art) => {
+                let pieces = art.pieces(wb.theme(), w as f32, h as f32);
+                for text in [false, true] {
+                    for piece in &pieces {
+                        let (pw, ph) = (piece.width as f64, piece.height as f64);
+                        canvas.save();
+                        canvas.translate(piece.x as f64 + pw / 2.0, piece.y as f64 + ph / 2.0);
+                        if !text {
+                            canvas.rotate(-piece.rotation as f64);
+                            canvas.scale(if piece.flip_h { -1.0 } else { 1.0 }, 1.0);
+                        }
+                        canvas.translate(-pw / 2.0, -ph / 2.0);
+                        if text {
+                            if !piece.shape.text.is_empty() {
+                                paint_shape_text(wb, &piece.shape, pw, ph, canvas);
+                            }
+                        } else {
+                            paint_shape(&piece.shape, pw, ph, canvas);
+                        }
+                        canvas.restore();
+                    }
+                }
+            }
         }
     }
 
@@ -283,7 +309,7 @@ impl ObjectPainter for PaperPainter {
 const PX_PER_PT: f64 = 96.0 / 72.0;
 
 fn paint_shape(shape: &Shape, w: f64, h: f64, canvas: &mut Canvas) {
-    let commands = shape.preset.path(w as f32, h as f32);
+    let commands = shape.path(w as f32, h as f32);
     let mut path = Path::new();
     for command in &commands {
         path = match *command {
@@ -376,7 +402,7 @@ fn wrap(canvas: &Canvas, text: &str, style: &TextStyle, max_width: f64) -> Vec<S
 }
 
 fn paint_shape_text(wb: &Workbook, shape: &Shape, w: f64, h: f64, canvas: &mut Canvas) {
-    let [left, top, right, bottom] = shape.preset.text_rect(w as f32, h as f32);
+    let [left, top, right, bottom] = shape.text_rect(w as f32, h as f32);
     let (x0, x1) = (
         left as f64 * w + TEXT_MARGIN.0 as f64,
         right as f64 * w - TEXT_MARGIN.0 as f64,

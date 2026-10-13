@@ -28,13 +28,21 @@
 //! drawing sized with its cells follows them without being touched.
 
 mod adjust;
+mod equation;
 pub(crate) mod geometry;
+mod icon_set;
+mod icons;
 mod paint;
 mod pane;
 pub(crate) mod picture;
+mod smartart;
+mod svg;
 mod tabs;
 mod text;
 mod tool;
+mod wordart;
+#[cfg(test)]
+mod insertart_tests;
 #[cfg(test)]
 mod ui_tests;
 
@@ -44,7 +52,7 @@ use super::{
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{Draw, GridLayout};
-use crate::i18n::t;
+use crate::i18n::{t, t_ctx};
 use geometry::normalise_angle;
 use gpui::{
     AnyElement, ClipboardEntry, ClipboardItem, CursorStyle, Entity, EntityInputHandler, ExternalPaths, Focusable,
@@ -68,6 +76,9 @@ pub(crate) const FORMAT_PANE: &str = pane::FORMAT;
 
 const PICTURE_TAB: &str = "picture-format";
 const SHAPE_TAB: &str = "shape-format";
+const GRAPHICS_TAB: &str = "graphics-format";
+const SMARTART_TAB: &str = "smartart-design";
+const EQUATION_TAB: &str = "equation";
 
 commands! {
     /// What the user can ask of pictures and shapes.
@@ -136,6 +147,48 @@ commands! {
         TextFill = "fill", t("Text Fill", "Remplissage du texte");
         TextOutline = "borders", t("Text Outline", "Contour du texte");
         TextEffects = "wordart", t("Text Effects", "Effets du texte");
+        WordArtStyles = "wordart", t("Quick Styles", "Styles rapides");
+        // Equation
+        Equation = "function", t("Equation", "Équation");
+        EqProfessional = "", t("Professional", "Professionnel");
+        EqLinear = "", t_ctx("equation", "Linear", "Linéaire");
+        EqSymbols = "function", t("Symbols", "Symboles");
+        EqFraction = "function", t_ctx("equation", "Fraction", "Fraction");
+        EqScript = "function", t_ctx("equation", "Script", "Script");
+        EqRadical = "function", t_ctx("equation", "Radical", "Radical");
+        EqIntegral = "function", t_ctx("equation", "Integral", "Intégrale");
+        EqLargeOperator = "function", t("Large Operator", "Grand opérateur");
+        EqBracket = "function", t_ctx("equation", "Bracket", "Crochet");
+        EqFunction = "function", t_ctx("equation", "Function", "Fonction");
+        EqAccent = "function", t_ctx("equation", "Accent", "Accentuation");
+        EqLimit = "function", t("Limit and Log", "Limite et journal");
+        EqOperator = "function", t_ctx("equation", "Operator", "Opérateur");
+        EqMatrix = "function", t_ctx("equation", "Matrix", "Matrice");
+        // SmartArt Design
+        SmartAddShape = "shapes", t("Add Shape", "Ajouter une forme");
+        SmartAddAfter = "", t("Add Shape After", "Ajouter la forme après");
+        SmartAddBefore = "", t("Add Shape Before", "Ajouter la forme avant");
+        SmartAddAbove = "", t("Add Shape Above", "Ajouter la forme au-dessus");
+        SmartAddBelow = "", t("Add Shape Below", "Ajouter la forme en dessous");
+        SmartAddBullet = "plus", t("Add Bullet", "Ajouter une puce");
+        SmartTextPane = "textbox", t("Text Pane", "Volet Texte");
+        SmartPromote = "indent-dec", t("Promote", "Promouvoir");
+        SmartDemote = "indent-inc", t("Demote", "Abaisser");
+        SmartRightToLeft = "undo", t("Right to Left", "De droite à gauche");
+        SmartMoveUp = "chevron-up", t("Move Up", "Monter");
+        SmartMoveDown = "chevron-down", t("Move Down", "Descendre");
+        SmartLayouts = "smartart", t("Change Layout", "Modifier la disposition");
+        SmartColors = "fill", t("Change Colors", "Modifier les couleurs");
+        SmartStyles = "cell-styles", t("SmartArt Styles", "Styles SmartArt");
+        SmartReset = "refresh", t("Reset Graphic", "Rétablir l'image");
+        SmartConvert = "shapes", t("Convert to Shapes", "Convertir en formes");
+        // Graphics Format
+        ChangeGraphic = "picture", t("Change Graphic", "Changer d'image");
+        ChangeGraphicFromIcons = "shapes", t("From Icons…", "À partir d'icônes…");
+        ConvertToShape = "shapes", t("Convert to Shape", "Convertir en forme");
+        GraphicsFill = "fill", t("Graphics Fill", "Remplissage d'image");
+        GraphicsOutline = "borders", t("Graphics Outline", "Contour d'image");
+        GraphicsEffects = "shapes", t("Graphics Effects", "Effets d'image");
         // Both
         AltText = "comment", t("Alt Text", "Texte de remplacement");
         ViewAltText = "comment", t("View Alt Text…", "Afficher le texte de remplacement…");
@@ -163,6 +216,38 @@ impl Command for Cmd {
             Cmd::BringForward | Cmd::BringToFront | Cmd::SendBackward | Cmd::SendToBack | Cmd::Align => {
                 app.object_sel.is_some()
             }
+            Cmd::Equation => true,
+            Cmd::EqProfessional | Cmd::EqLinear | Cmd::EqSymbols => drawing.is_some_and(equation::is_equation),
+            other if equation::structure_of(other).is_some() => drawing.is_some_and(equation::is_equation),
+            Cmd::SmartAddShape
+            | Cmd::SmartAddAfter
+            | Cmd::SmartAddBefore
+            | Cmd::SmartAddAbove
+            | Cmd::SmartAddBelow
+            | Cmd::SmartAddBullet
+            | Cmd::SmartTextPane
+            | Cmd::SmartPromote
+            | Cmd::SmartDemote
+            | Cmd::SmartRightToLeft
+            | Cmd::SmartMoveUp
+            | Cmd::SmartMoveDown
+            | Cmd::SmartLayouts
+            | Cmd::SmartColors
+            | Cmd::SmartStyles
+            | Cmd::SmartReset
+            | Cmd::SmartConvert => smartart::can(app, self),
+            // A graphic is not turned.
+            Cmd::Rotate | Cmd::RotateRight | Cmd::RotateLeft | Cmd::FlipVertical | Cmd::FlipHorizontal | Cmd::MoreRotation
+                if drawing.is_some_and(smartart::is_graphic) =>
+            {
+                false
+            }
+            Cmd::ChangeGraphic | Cmd::ChangeGraphicFromIcons | Cmd::GraphicsFill | Cmd::GraphicsOutline => {
+                drawing.is_some_and(icons::is_graphic)
+            }
+            // The outlines of a document cannot become a shape of the
+            // gallery, and graphics have no effects here.
+            Cmd::ConvertToShape | Cmd::GraphicsEffects => false,
             Cmd::AlignLeft => app.can_align(Align::Left),
             Cmd::AlignCenter => app.can_align(Align::Center),
             Cmd::AlignRight => app.can_align(Align::Right),
@@ -204,12 +289,23 @@ impl Command for Cmd {
             Cmd::FormatPicture | Cmd::ResetPicture | Cmd::ResetPictureOnly | Cmd::ResetPictureAndSize | Cmd::ChangePicture => {
                 drawing.is_some_and(is_picture)
             }
-            Cmd::FormatShape | Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::TextFill => {
-                drawing.is_some_and(|drawing| !is_picture(drawing))
+            Cmd::FormatShape | Cmd::ShapeFill | Cmd::ShapeOutline => drawing.is_some_and(|drawing| !is_picture(drawing)),
+            Cmd::TextFill | Cmd::TextOutline | Cmd::TextEffects | Cmd::WordArtStyles => {
+                shape.is_some_and(|shape| !shape.preset.is_line())
             }
             Cmd::EditShape => shape.is_some(),
             Cmd::EditText => shape.is_some_and(|shape| !shape.preset.is_line()),
             _ => true,
+        }
+    }
+
+    fn checked(self, app: &ExcelApp) -> bool {
+        match self {
+            Cmd::SmartRightToLeft => smartart::selected_art(app).is_some_and(|(_, art)| art.rtl),
+            Cmd::EqProfessional => equation::shown_linear(app) == Some(false),
+            Cmd::EqLinear => equation::shown_linear(app) == Some(true),
+            Cmd::SmartTextPane => smartart::pane_shown(app),
+            _ => false,
         }
     }
 
@@ -288,6 +384,58 @@ impl Command for Cmd {
             Cmd::ShapeFill => tabs::open_fill(app, tabs::Paint::Fill, window, cx),
             Cmd::TextFill => tabs::open_fill(app, tabs::Paint::Text, window, cx),
             Cmd::ShapeOutline => tabs::open_outline(app, window, cx),
+            Cmd::Icons => {
+                icons::open_dialog(app, false, window, cx);
+            }
+            Cmd::Equation
+            | Cmd::EqProfessional
+            | Cmd::EqLinear
+            | Cmd::EqSymbols
+            | Cmd::EqFraction
+            | Cmd::EqScript
+            | Cmd::EqRadical
+            | Cmd::EqIntegral
+            | Cmd::EqLargeOperator
+            | Cmd::EqBracket
+            | Cmd::EqFunction
+            | Cmd::EqAccent
+            | Cmd::EqLimit
+            | Cmd::EqOperator
+            | Cmd::EqMatrix => equation::run(app, self, window, cx),
+            Cmd::SmartArt
+            | Cmd::SmartAddShape
+            | Cmd::SmartAddAfter
+            | Cmd::SmartAddBefore
+            | Cmd::SmartAddAbove
+            | Cmd::SmartAddBelow
+            | Cmd::SmartAddBullet
+            | Cmd::SmartTextPane
+            | Cmd::SmartPromote
+            | Cmd::SmartDemote
+            | Cmd::SmartRightToLeft
+            | Cmd::SmartMoveUp
+            | Cmd::SmartMoveDown
+            | Cmd::SmartLayouts
+            | Cmd::SmartColors
+            | Cmd::SmartStyles
+            | Cmd::SmartReset
+            | Cmd::SmartConvert => smartart::run(app, self, window, cx),
+            Cmd::ChangeGraphic => {
+                let entries = vec![
+                    MenuEntry::command(Cmd::ChangePictureFromFile, app),
+                    MenuEntry::command(Cmd::ChangeGraphicFromIcons, app),
+                ];
+                app.open_command_menu(entries, 220.0, window, cx);
+            }
+            Cmd::ChangeGraphicFromIcons => {
+                icons::open_dialog(app, true, window, cx);
+            }
+            Cmd::GraphicsFill => icons::open_paint(app, icons::Part::Fill, window, cx),
+            Cmd::GraphicsOutline => icons::open_paint(app, icons::Part::Outline, window, cx),
+            Cmd::WordArt => wordart::open_gallery(app, false, window, cx),
+            Cmd::WordArtStyles => wordart::open_gallery(app, true, window, cx),
+            Cmd::TextOutline => wordart::open_outline(app, window, cx),
+            Cmd::TextEffects => wordart::open_effects(app, window, cx),
             Cmd::EditShape => {
                 let current = selected(app).and_then(Drawing::as_shape).map(|shape| shape.preset);
                 let closed = current.is_some_and(|preset| !preset.is_line());
@@ -360,6 +508,9 @@ enum TextStart {
     Typed(String),
     /// Under the pointer (a double click).
     At(Point<Pixels>),
+    /// With the whole text selected: new WordArt, whose placeholder is
+    /// typed over.
+    All,
 }
 
 fn owner() -> usize {
@@ -556,11 +707,7 @@ fn flip(app: &mut ExcelApp, horizontal: bool, cx: &mut Cx) {
 
 /// The size a picture has when it is inserted, in pixels at 100 %.
 fn natural_size(drawing: &Drawing) -> Option<(f32, f32)> {
-    let picture = drawing.as_picture()?;
-    Some(
-        opensheet_engine::drawing::image_info(&picture.data)
-            .map_or((picture.pixels.0 as f32, picture.pixels.1 as f32), |info| info.natural_size()),
-    )
+    Some(drawing.as_picture()?.natural_size())
 }
 
 /// "Reset Picture": what was done to how the picture shows is undone
@@ -670,6 +817,7 @@ fn begin_text_edit(app: &mut ExcelApp, id: u32, start: TextStart, window: &mut W
         TextStart::Typed(typed) => area.replace_text_in_range(None, &typed, window, cx),
         // A double click puts the caret where it was made.
         TextStart::At(position) => area.caret_at_next_paint(position),
+        TextStart::All => area.select_all_text(cx),
         TextStart::End => {}
     });
     let subscription = cx.subscribe_in(&area, window, |app, _, event: &AreaEvent, window, cx| match event {
@@ -679,6 +827,8 @@ fn begin_text_edit(app: &mut ExcelApp, id: u32, start: TextStart, window: &mut W
             window.focus(&app.grid_focus);
         }
         AreaEvent::Blurred => end_text_edit(app, cx),
+        // An equation is shown built up as it is typed.
+        AreaEvent::Changed => equation::typed(app, cx),
         _ => {}
     });
     window.focus(&area.read(cx).focus_handle(cx));
@@ -706,13 +856,17 @@ fn end_text_edit(app: &mut ExcelApp, cx: &mut Cx) {
     if changed {
         app.wb.update_drawing(sheet, edit.id, |drawing| {
             if let Some(shape) = drawing.as_shape_mut() {
-                shape.text = typed;
+                shape.set_text(typed);
+                equation::retyped(shape);
             }
         });
+        wordart::fit_to_text(app, edit.id, cx);
+        equation::fit(app, edit.id, cx);
         app.commit(t("Typing", "Saisie"), cx);
     } else {
         cx.notify();
     }
+    equation::typed(app, cx);
 }
 
 /// The id of the shape whose text is being typed.
@@ -794,14 +948,31 @@ impl Feature for Drawings {
 
     fn context_tabs(&self, app: &ExcelApp) -> Vec<ContextTab> {
         match selected(app) {
+            Some(drawing) if smartart::is_graphic(drawing) => vec![ContextTab {
+                id: SMARTART_TAB,
+                title: t("SmartArt Design", "Création de graphique SmartArt"),
+            }],
+            Some(drawing) if icons::is_graphic(drawing) => vec![ContextTab {
+                id: GRAPHICS_TAB,
+                title: t("Graphics Format", "Format du graphique"),
+            }],
             Some(drawing) if is_picture(drawing) => vec![ContextTab {
                 id: PICTURE_TAB,
                 title: t("Picture Format", "Format de l'image"),
             }],
-            Some(_) => vec![ContextTab {
-                id: SHAPE_TAB,
-                title: t("Shape Format", "Format de forme"),
-            }],
+            Some(drawing) => {
+                let mut tabs = vec![ContextTab {
+                    id: SHAPE_TAB,
+                    title: t("Shape Format", "Format de forme"),
+                }];
+                if equation::is_equation(drawing) {
+                    tabs.push(ContextTab {
+                        id: EQUATION_TAB,
+                        title: t("Equation", "Équation"),
+                    });
+                }
+                tabs
+            }
             // Charts selected together with other objects are arranged
             // from this tab too.
             None if app.selected_objects().len() > 1 => vec![ContextTab {
@@ -813,7 +984,13 @@ impl Feature for Drawings {
     }
 
     fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        if tab == PICTURE_TAB {
+        if tab == EQUATION_TAB {
+            equation::equation_tab(app, cx)
+        } else if tab == SMARTART_TAB {
+            smartart::design_tab(app, cx)
+        } else if tab == GRAPHICS_TAB {
+            icons::graphics_tab(app, window, cx)
+        } else if tab == PICTURE_TAB {
             tabs::picture_tab(app, window, cx)
         } else {
             tabs::shape_tab(app, window, cx)
@@ -833,6 +1010,9 @@ impl Feature for Drawings {
 
     fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
         picture::sweep(window, cx);
+        svg::install(cx);
+        svg::sweep(window, cx);
+        icons::follow_theme(app);
         // Image files dropped on the cells become pictures. The element
         // takes nothing else from the mouse.
         let mut out = vec![
@@ -850,6 +1030,9 @@ impl Feature for Drawings {
     }
 
     fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+        if let Some(response) = smartart::mouse_down(app, zone, ev, window, cx) {
+            return response;
+        }
         if let Some(response) = crate::objects::pointer_mouse_down(app, zone, ev, cx) {
             return response;
         }
@@ -956,7 +1139,19 @@ impl Feature for Drawings {
                 }
                 continue;
             }
-            paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items);
+            match &drawing.kind {
+                DrawingKind::SmartArt(art) => {
+                    let level = geometry::Placed::plain(placed.x0, placed.y0, placed.x1, placed.y1);
+                    smartart::draw(art, app.wb.theme(), &level, natural, &brush, Some(&*app.fonts), app.wb.locale, &mut items);
+                    if is_selected {
+                        smartart::paint_selection(p, drawing, art, &level, natural, &brush, &mut items);
+                    }
+                }
+                _ => paint::draw(drawing, &placed, natural, &brush, (!typing).then_some(&*app.fonts), &mut items),
+            }
+            if typing {
+                equation::draw_preview(app, drawing, &placed, &brush, &mut items);
+            }
             if is_selected {
                 paint::draw_selection(drawing, &placed, &brush, &mut items);
             }
@@ -1050,8 +1245,11 @@ impl Feature for Drawings {
         let Some(drawing) = app.wb.drawing(app.sheet, id) else {
             return;
         };
-        if is_picture(drawing) {
-            app.context_tab = Some(PICTURE_TAB);
+        if smartart::is_graphic(drawing) {
+            app.context_tab = Some(SMARTART_TAB);
+            smartart::open_pane(app, window, cx);
+        } else if is_picture(drawing) {
+            app.context_tab = Some(if icons::is_graphic(drawing) { GRAPHICS_TAB } else { PICTURE_TAB });
             cx.notify();
         } else if drawing.as_shape().is_some_and(|shape| shape.preset.is_line()) {
             app.context_tab = Some(SHAPE_TAB);
@@ -1074,6 +1272,7 @@ impl Feature for Drawings {
         if id.is_none() {
             pane::keep_descriptions(app, cx);
         }
+        smartart::selection_changed(app, id, cx);
         pane::selection_changed(app, cx);
     }
 
@@ -1131,13 +1330,8 @@ impl Feature for Drawings {
             .drawing(app.sheet, id)
             .and_then(Drawing::as_shape)
             .is_some_and(|shape| !shape.preset.is_line());
-        if takes_text && app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
-            app.wb.update_drawing(app.sheet, id, |drawing| {
-                if let Some(shape) = drawing.as_shape_mut() {
-                    restyle(shape, change);
-                }
-            });
-            app.commit(label, cx);
+        if takes_text {
+            wordart::restyle(app, id, label, change, cx);
         }
         true
     }

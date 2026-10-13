@@ -41,7 +41,6 @@ commands! {
         GoTo = "", t("Go To…", "Atteindre…");
         GoToSpecial = "", t("Go To Special…", "Sélectionner les cellules…");
         // Insert
-        Equation = "function", t("Equation", "Équation");
         // Formulas
         InsertFunction = "function", t("Insert Function", "Insérer une fonction");
         TracePrecedents = "misc-trace-precedents", t("Trace Precedents", "Repérer les antécédents");

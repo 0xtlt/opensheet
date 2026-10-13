@@ -4,14 +4,14 @@
 
 use super::geometry::{self, Placed, Pt};
 use super::paint::{self, Grip, Pane};
-use super::{Drawings, DrawingUi, PICTURE_TAB, SHAPE_TAB, TextStart, begin_text_edit, end_text_edit, picture, selected};
+use super::{Drawings, DrawingUi, PICTURE_TAB, SHAPE_TAB, TextStart, begin_text_edit, end_text_edit, selected};
 use crate::app::ExcelApp;
 use crate::features::{Cx, Intent, Painter, Zone, ZoneEvent, ZoneResponse, object_id};
 use crate::grid::Draw;
 use crate::i18n::{t, t_ctx};
 use crate::shell::Alert;
 use gpui::{CursorStyle, ExternalPaths, Modifiers, MouseButton, PathPromptOptions, Window};
-use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, Picture, PictureAdjust, ShapeTool};
+use opensheet_engine::drawing::{Drawing, DrawingKind, Frame, PictureAdjust, ShapeTool};
 use std::path::PathBuf;
 
 /// The zone that covers the cells while a shape waits to be drawn.
@@ -132,7 +132,7 @@ pub(super) fn cropped(
 /// where the drawing is in the pane under it.
 pub(super) fn hits(drawing: &Drawing, placed: &Placed, natural: (f32, f32), zoom: f32, p: Pt) -> bool {
     match &drawing.kind {
-        DrawingKind::Picture(_) => placed.contains(p),
+        DrawingKind::Picture(_) | DrawingKind::SmartArt(_) => placed.contains(p),
         DrawingKind::Group(_) => paint::leaves(drawing, placed, zoom)
             .iter()
             .any(|(member, inner, natural)| hits(member, inner, *natural, zoom, p)),
@@ -560,11 +560,13 @@ pub(super) fn insert_pictures(app: &mut ExcelApp, files: Vec<Vec<u8>>, at: Optio
     if files.is_empty() || !app.may(Intent::EditObject(None), cx) {
         return;
     }
+    // A vector picture is drawn once as it comes in.
+    super::svg::install(cx);
     let sheet = app.sheet;
     let (x, y) = at.unwrap_or_else(|| app.wb.sheets[sheet].corner_point((app.active(), (0.0, 0.0))));
     let mut last = None;
     for (i, bytes) in files.into_iter().enumerate() {
-        let Some(picture) = Picture::new(bytes) else {
+        let Some(picture) = super::icons::picture_from(bytes) else {
             continue;
         };
         let mut drawing = Drawing::picture(picture);
@@ -578,7 +580,8 @@ pub(super) fn insert_pictures(app: &mut ExcelApp, files: Vec<Vec<u8>>, at: Optio
     };
     app.commit(t("Insert Picture", "Insérer une image"), cx);
     app.select_object(Some(object_id(&Drawings, id)), cx);
-    app.context_tab = Some(PICTURE_TAB);
+    let vector = selected(app).is_some_and(super::icons::is_graphic);
+    app.context_tab = Some(if vector { super::GRAPHICS_TAB } else { PICTURE_TAB });
 }
 
 /// Read image files; those that are not pictures are named in a message.
@@ -586,7 +589,7 @@ fn read_pictures(app: &mut ExcelApp, paths: &[PathBuf], cx: &mut Cx) -> Vec<Vec<
     let mut files = Vec::new();
     let mut refused = Vec::new();
     for path in paths {
-        match std::fs::read(path).ok().and_then(picture::importable) {
+        match std::fs::read(path).ok().and_then(super::icons::importable) {
             Some(bytes) => files.push(bytes),
             None => refused.push(path.display().to_string()),
         }
@@ -644,7 +647,8 @@ pub(super) fn pick_pictures(app: &mut ExcelApp, replace: bool, window: &mut Wind
 
 /// "Change Picture": another image in the frame of the selected picture.
 fn replace_picture(app: &mut ExcelApp, files: Vec<Vec<u8>>, cx: &mut Cx) {
-    let Some(picture) = files.into_iter().next().and_then(Picture::new) else {
+    super::svg::install(cx);
+    let Some(picture) = files.into_iter().next().and_then(super::icons::picture_from) else {
         return;
     };
     super::edit(app, t("Change Picture", "Modifier l'image"), cx, |drawing| {
@@ -666,9 +670,7 @@ pub(super) fn drop_files(app: &mut ExcelApp, paths: &ExternalPaths, window: &mut
         .filter(|path| {
             path.extension()
                 .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| {
-                    ["png", "jpg", "jpeg", "jpe", "gif", "bmp", "tif", "tiff", "webp"].contains(&extension.to_ascii_lowercase().as_str())
-                })
+                .is_some_and(super::icons::is_picture_file)
         })
         .cloned()
         .collect();

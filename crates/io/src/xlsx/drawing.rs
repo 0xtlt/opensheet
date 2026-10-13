@@ -78,6 +78,11 @@ const MAX_PX: f64 = 600_000_000.0;
 const ROOT_END: &str = "</xdr:wsDr>";
 const RELS_END: &str = "</Relationships>";
 
+mod math;
+mod smartart;
+mod svg;
+mod wordart;
+
 // ---- writing -------------------------------------------------------------------
 
 fn emu(px: f64) -> i64 {
@@ -221,58 +226,6 @@ fn push_outline(x: &mut String, outline: Option<&Outline>) {
     x.push_str("</a:ln>");
 }
 
-/// The properties of a run (`a:rPr`), or of the end of a paragraph that
-/// has none (`a:endParaRPr`).
-fn push_run_properties(x: &mut String, element: &str, font: &Font) {
-    w!(x, "<a:{element} sz=\"{}\"", font.size as u32 * 50);
-    if font.bold {
-        x.push_str(" b=\"1\"");
-    }
-    if font.italic {
-        x.push_str(" i=\"1\"");
-    }
-    match font.underline {
-        Underline::None => {}
-        Underline::Single => x.push_str(" u=\"sng\""),
-        Underline::Double => x.push_str(" u=\"dbl\""),
-    }
-    if font.strike {
-        x.push_str(" strike=\"sngStrike\"");
-    }
-    x.push('>');
-    if let Some(color) = font.color {
-        push_solid_fill(x, color);
-    }
-    for script in ["latin", "cs"] {
-        w!(x, "<a:{script} typeface=\"");
-        push_attr(x, &font.name);
-        x.push_str("\"/>");
-    }
-    w!(x, "</a:{element}>");
-}
-
-fn push_text_body(x: &mut String, shape: &Shape) {
-    w!(
-        x,
-        "<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"{}\"/><a:lstStyle/>",
-        shape.anchor.ooxml_name()
-    );
-    for paragraph in shape.text.split('\n') {
-        w!(x, "<a:p><a:pPr algn=\"{}\"/>", shape.align.ooxml_name());
-        if paragraph.is_empty() {
-            push_run_properties(x, "endParaRPr", &shape.font);
-        } else {
-            x.push_str("<a:r>");
-            push_run_properties(x, "rPr", &shape.font);
-            x.push_str("<a:t>");
-            push_text(x, paragraph);
-            x.push_str("</a:t></a:r>");
-        }
-        x.push_str("</a:p>");
-    }
-    x.push_str("</xdr:txBody>");
-}
-
 /// What a connector is read as: a line with nothing but its outline. A
 /// connector has no text in a file, so a line is written as one only when
 /// that loses nothing.
@@ -313,6 +266,39 @@ fn push_non_visual(
     }
 }
 
+/// `<a:prstGeom>`: the preset and, when the shape has one of its own, its
+/// adjustment (in 100 000ths of the shorter side).
+fn push_geometry(x: &mut String, shape: &Shape) {
+    w!(x, "<a:prstGeom prst=\"{}\">", shape.preset.ooxml_name());
+    match shape.adjust.filter(|adjust| adjust.is_finite()) {
+        Some(adjust) => {
+            let value = (adjust.clamp(0.0, 100.0) as f64 * 100_000.0).round() as i64;
+            w!(x, "<a:avLst><a:gd name=\"adj\" fmla=\"val {value}\"/></a:avLst>");
+        }
+        None => x.push_str("<a:avLst/>"),
+    }
+    x.push_str("</a:prstGeom>");
+}
+
+/// The adjustment `<a:prstGeom>` gives its preset, if it gives one the
+/// engine follows. Consumes the element.
+fn parse_adjust<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, preset: Option<ShapePreset>) -> Option<f32> {
+    let mut adjust = None;
+    each_child(r, tag, |r, list| {
+        each_child(r, list, |r, guide| {
+            if guide.name == "gd" && guide.attr("name").as_deref() == Some("adj") {
+                adjust = guide
+                    .attr("fmla")
+                    .and_then(|formula| formula.strip_prefix("val ")?.trim().parse::<f64>().ok())
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+                    .map(|value| (value / 100_000.0) as f32);
+            }
+            r.skip(guide);
+        });
+    });
+    adjust.filter(|_| matches!(preset, Some(ShapePreset::Chevron | ShapePreset::Trapezoid)))
+}
+
 fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame: Frame) {
     if is_connector(shape) {
         x.push_str("<xdr:cxnSp macro=\"\"><xdr:nvCxnSpPr>");
@@ -326,17 +312,28 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
         x.push_str("</xdr:spPr></xdr:cxnSp>");
         return;
     }
+    // A shape that holds an equation is written twice: with it, for
+    // those who know equations, and with its text for the others.
+    if shape.math.is_some() {
+        w!(x, "<mc:AlternateContent xmlns:mc=\"{}\"><mc:Choice xmlns:a14=\"{}\" Requires=\"a14\">", math::NS_MC, math::NS_A14);
+        push_shape_as(x, drawing, shape, id, frame, true);
+        x.push_str("</mc:Choice><mc:Fallback>");
+        push_shape_as(x, drawing, shape, id, frame, false);
+        x.push_str("</mc:Fallback></mc:AlternateContent>");
+    } else {
+        push_shape_as(x, drawing, shape, id, frame, false);
+    }
+}
+
+/// A shape; `equation`: with its equation rather than the text of it.
+fn push_shape_as(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame: Frame, equation: bool) {
     x.push_str("<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr>");
     push_identity(x, drawing, id);
     let text_box = if shape.text_box { " txBox=\"1\"" } else { "" };
     push_non_visual(x, "cNvSpPr", text_box, "spLocks", drawing);
     x.push_str("</xdr:nvSpPr><xdr:spPr>");
     push_xfrm(x, drawing, frame);
-    w!(
-        x,
-        "<a:prstGeom prst=\"{}\"><a:avLst/></a:prstGeom>",
-        shape.preset.ooxml_name()
-    );
+    push_geometry(x, shape);
     match shape.fill {
         Some(color) => push_solid_fill(x, color),
         None => x.push_str("<a:noFill/>"),
@@ -344,7 +341,7 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     push_outline(x, shape.outline.as_ref());
     push_effects(x, &drawing.effects);
     x.push_str("</xdr:spPr>");
-    push_text_body(x, shape);
+    wordart::push_text_body(x, shape, equation);
     x.push_str("</xdr:sp>");
 }
 
@@ -416,8 +413,9 @@ const IMG_PROPS_URI: &str = "{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}";
 const NS_DRAWING_2010: &str = "http://schemas.microsoft.com/office/drawing/2010/main";
 
 /// The effects inside `<a:blip>` that say how a picture is adjusted;
-/// `image` is the relationship of its image.
-fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize) {
+/// `image` is the relationship of its image, `vector` that of its SVG
+/// document when it has one.
+fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize, vector: Option<usize>) {
     if adjust.transparency > 0.0 {
         w!(x, "<a:alphaModFix amt=\"{}\"/>", per_100k(1.0 - adjust.transparency.min(1.0)));
     }
@@ -450,11 +448,17 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize) {
         }
         x.push_str("/>");
     }
-    // The extension list closes the blip.
-    if adjust.saturation != 1.0 || adjust.temperature != NEUTRAL_TEMPERATURE {
+    // One extension list closes the blip: the image properties, then
+    // what names the SVG document.
+    let tuned = adjust.saturation != 1.0 || adjust.temperature != NEUTRAL_TEMPERATURE;
+    if !tuned && vector.is_none() {
+        return;
+    }
+    x.push_str("<a:extLst>");
+    if tuned {
         w!(
             x,
-            "<a:extLst><a:ext uri=\"{IMG_PROPS_URI}\"><a14:imgProps xmlns:a14=\"{NS_DRAWING_2010}\"><a14:imgLayer r:embed=\"rId{image}\">"
+            "<a:ext uri=\"{IMG_PROPS_URI}\"><a14:imgProps xmlns:a14=\"{NS_DRAWING_2010}\"><a14:imgLayer r:embed=\"rId{image}\">"
         );
         if adjust.temperature != NEUTRAL_TEMPERATURE {
             w!(
@@ -470,14 +474,19 @@ fn push_blip_effects(x: &mut String, adjust: &PictureAdjust, image: usize) {
                 per_100k(adjust.saturation.clamp(0.0, 4.0))
             );
         }
-        x.push_str("</a14:imgLayer></a14:imgProps></a:ext></a:extLst>");
+        x.push_str("</a14:imgLayer></a14:imgProps></a:ext>");
     }
+    if let Some(vector) = vector {
+        svg::push_extensions(x, vector);
+    }
+    x.push_str("</a:extLst>");
 }
 
 /// The brightness and the contrast Excel writes for "Washout".
 const WASHOUT: (f32, f32) = (0.7, -0.7);
 
-/// `image` is the relationship of the drawing part to the image file.
+/// `image` is the relationship of the drawing part to the image file,
+/// `vector` the one to the SVG document of a vector picture.
 fn push_picture(
     x: &mut String,
     drawing: &Drawing,
@@ -485,6 +494,7 @@ fn push_picture(
     id: usize,
     frame: Frame,
     image: usize,
+    vector: Option<usize>,
 ) {
     x.push_str("<xdr:pic><xdr:nvPicPr>");
     push_identity(x, drawing, id);
@@ -494,7 +504,7 @@ fn push_picture(
         "</xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r=\"{NS_DOC_REL}\" r:embed=\"rId{image}\""
     );
     let mut effects = String::new();
-    push_blip_effects(&mut effects, &picture.adjust, image);
+    push_blip_effects(&mut effects, &picture.adjust, image, vector);
     if effects.is_empty() {
         x.push_str("/>");
     } else {
@@ -528,20 +538,31 @@ struct PartWriter<'a> {
     next_id: usize,
     /// The relationship of the first image; the charts have those before.
     first_image: usize,
-    /// The image files of the part, by name in `xl/media/`.
-    images: Vec<String>,
+    /// What the part relates to after its charts (image files, the
+    /// parts of SmartArt graphics): relationship type and target.
+    links: Vec<(String, String)>,
     media: &'a mut Media,
     extras: &'a mut Extras,
+    /// For the colours of SmartArt graphics.
+    wb: &'a Workbook,
+    /// SmartArt graphics are numbered through the workbook.
+    graphics: &'a mut usize,
 }
 
 impl PartWriter<'_> {
     /// The relationship of the part to the image of a picture.
     fn image(&mut self, picture: &Picture) -> usize {
         let name = self.media.name(picture, self.extras);
-        let place = self.images.iter().position(|known| *known == name);
+        self.related(name)
+    }
+
+    /// The relationship of the part to a media file.
+    fn related(&mut self, name: String) -> usize {
+        let target = format!("../media/{name}");
+        let place = self.links.iter().position(|(_, known)| *known == target);
         let place = place.unwrap_or_else(|| {
-            self.images.push(name);
-            self.images.len() - 1
+            self.links.push((format!("{NS_DOC_REL}/image"), target));
+            self.links.len() - 1
         });
         self.first_image + place
     }
@@ -554,7 +575,20 @@ impl PartWriter<'_> {
             DrawingKind::Shape(shape) => push_shape(x, drawing, shape, id, frame),
             DrawingKind::Picture(picture) => {
                 let image = self.image(picture);
-                push_picture(x, drawing, picture, id, frame, image);
+                let vector = picture.svg.as_ref().map(|document| {
+                    let name = self.media.file(document, "svg", "image/svg+xml", self.extras);
+                    self.related(name)
+                });
+                push_picture(x, drawing, picture, id, frame, image, vector);
+            }
+            // A SmartArt graphic: its five parts, related one after the
+            // other.
+            DrawingKind::SmartArt(art) => {
+                *self.graphics += 1;
+                let first = self.first_image + self.links.len();
+                let parts = smartart::add_parts(art, self.wb.theme(), (frame.width, frame.height), *self.graphics, first, self.extras);
+                self.links.extend(parts);
+                smartart::push_frame(x, drawing, id, first);
             }
             DrawingKind::Group(group) => {
                 x.push_str("<xdr:grpSp><xdr:nvGrpSpPr>");
@@ -623,18 +657,22 @@ struct Media(Vec<(Arc<[u8]>, String)>);
 impl Media {
     /// The file of a picture, stored once however many pictures show it.
     fn name(&mut self, picture: &Picture, extras: &mut Extras) -> String {
+        self.file(&picture.data, picture.format.extension(), picture.format.mime(), extras)
+    }
+
+    /// A media file of the package, stored once.
+    fn file(&mut self, bytes: &Arc<[u8]>, extension: &'static str, mime: &'static str, extras: &mut Extras) -> String {
         let known = self
             .0
             .iter()
-            .find(|(data, _)| Arc::ptr_eq(data, &picture.data) || **data == *picture.data);
+            .find(|(data, name)| name.ends_with(extension) && (Arc::ptr_eq(data, bytes) || **data == **bytes));
         if let Some((_, name)) = known {
             return name.clone();
         }
-        let extension = picture.format.extension();
         let name = format!("image{}.{extension}", self.0.len() + 1);
-        extras.add_default(extension, picture.format.mime());
-        extras.add_part(format!("xl/media/{name}"), None, picture.data.to_vec());
-        self.0.push((picture.data.clone(), name.clone()));
+        extras.add_default(extension, mime);
+        extras.add_part(format!("xl/media/{name}"), None, bytes.to_vec());
+        self.0.push((bytes.clone(), name.clone()));
         name
     }
 }
@@ -644,6 +682,8 @@ impl Media {
 /// image files to the package.
 pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mut Extras) {
     let mut media = Media::default();
+    // SmartArt graphics are numbered through the workbook.
+    let mut graphics = 0;
     for (index, sheet) in wb.sheets.iter().enumerate() {
         if sheet.drawings.is_empty() {
             continue;
@@ -671,24 +711,21 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
         let mut writer = PartWriter {
             next_id: charts + 2,
             first_image: charts + 1,
-            images: Vec::new(),
+            links: Vec::new(),
             media: &mut media,
             extras,
+            wb,
+            graphics: &mut graphics,
         };
         for drawing in &sheet.drawings {
             let mut anchor = String::new();
             writer.push_anchor(&mut anchor, sheet, drawing);
             anchors.push(anchor);
         }
-        let images = writer.images;
+        let links = writer.links;
         let mut rels = String::new();
-        for (k, name) in images.iter().enumerate() {
-            push_relationship(
-                &mut rels,
-                charts + 1 + k,
-                &format!("{NS_DOC_REL}/image"),
-                &format!("../media/{name}"),
-            );
+        for (k, (kind, target)) in links.iter().enumerate() {
+            push_relationship(&mut rels, charts + 1 + k, kind, target);
         }
         // The anchors of the part are in stacking order, bottom-most
         // first, whatever they hold: those of the charts are taken out
@@ -1238,119 +1275,6 @@ fn parse_style<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawStyle
     style
 }
 
-/// The properties of the first run of a text, which stand for the whole
-/// text here.
-struct RawRun {
-    font: Font,
-    /// The run gives its colour itself.
-    colored: bool,
-}
-
-fn parse_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawRun {
-    let mut font = Font::default();
-    if let Some(size) = tag.attr_f64("sz").filter(|size| size.is_finite()) {
-        font.size = (size / 50.0).round().clamp(2.0, 818.0) as u16;
-    }
-    font.bold = tag.attr_bool("b").unwrap_or(false);
-    font.italic = tag.attr_bool("i").unwrap_or(false);
-    font.underline = match tag.attr("u").as_deref() {
-        None | Some("none") => Underline::None,
-        Some("dbl" | "wavyDbl") => Underline::Double,
-        Some(_) => Underline::Single,
-    };
-    font.strike = matches!(
-        tag.attr("strike").as_deref(),
-        Some("sngStrike" | "dblStrike")
-    );
-    let mut paint = Paint::Unset;
-    each_child(r, tag, |r, t| match t.name {
-        "latin" => {
-            // "+mn-lt" and the like name a font of the theme.
-            if let Some(name) = t
-                .attr("typeface")
-                .filter(|name| !name.is_empty() && !name.starts_with('+'))
-            {
-                font.name = Arc::from(name.as_ref());
-            }
-            r.skip(t);
-        }
-        _ => parse_paint(r, t, palette, &mut paint),
-    });
-    if let Paint::Color(color) = paint {
-        font.color = Some(color);
-    }
-    RawRun {
-        font,
-        colored: !matches!(paint, Paint::Unset),
-    }
-}
-
-/// `<xdr:txBody>` as a file has it.
-#[derive(Default)]
-struct RawText {
-    text: String,
-    run: Option<RawRun>,
-    align: Option<TextAlign>,
-    anchor: Option<TextAnchor>,
-}
-
-fn parse_paragraph<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, out: &mut RawText) {
-    each_child(r, tag, |r, t| match t.name {
-        "pPr" => {
-            if out.align.is_none() {
-                out.align = Some(
-                    t.attr("algn")
-                        .and_then(|name| TextAlign::from_ooxml_name(&name))
-                        .unwrap_or_default(),
-                );
-            }
-            r.skip(t);
-        }
-        // A run, or a field shown as the text it had when saved.
-        "r" | "fld" => each_child(r, t, |r, c| match c.name {
-            "rPr" => {
-                let run = parse_run_properties(r, c, palette);
-                out.run.get_or_insert(run);
-            }
-            "t" => out.text.push_str(&r.text(c)),
-            _ => r.skip(c),
-        }),
-        "br" => {
-            out.text.push('\n');
-            r.skip(t);
-        }
-        "endParaRPr" => {
-            let run = parse_run_properties(r, t, palette);
-            out.run.get_or_insert(run);
-        }
-        _ => r.skip(t),
-    });
-}
-
-fn parse_text<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawText {
-    let mut out = RawText::default();
-    let mut paragraphs = 0;
-    each_child(r, tag, |r, t| match t.name {
-        "bodyPr" => {
-            out.anchor = Some(
-                t.attr("anchor")
-                    .and_then(|name| TextAnchor::from_ooxml_name(&name))
-                    .unwrap_or_default(),
-            );
-            r.skip(t);
-        }
-        "p" => {
-            if paragraphs > 0 {
-                out.text.push('\n');
-            }
-            paragraphs += 1;
-            parse_paragraph(r, t, palette, &mut out);
-        }
-        _ => r.skip(t),
-    });
-    out
-}
-
 /// A text without the characters a file cannot hold again; line breaks
 /// and tabs stay where a text has `lines`.
 fn printable(text: &str, lines: bool) -> String {
@@ -1361,8 +1285,12 @@ fn printable(text: &str, lines: bool) -> String {
 
 /// What an anchor holds, as its part says it.
 enum RawKind {
-    /// The relationship of the drawing part to the image.
-    Picture(String),
+    /// A SmartArt graphic: the relationships to its data, layout, style
+    /// and colours parts.
+    Graphic([String; 4]),
+    /// The relationships of the drawing part to the image and, for a
+    /// vector picture, to its SVG document.
+    Picture(String, Option<String>),
     Shape(Shape),
     /// The members of a group, with the box their places are given in
     /// (`chOff` and `chExt`, in pixels).
@@ -1468,7 +1396,7 @@ impl RawObject {
 /// A group with the pictures, shapes and groups in it; the charts and
 /// the other things a group may hold are left out.
 fn parse_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme, depth: usize) -> RawObject {
-    let mut object = RawObject::new(RawKind::Picture(String::new()));
+    let mut object = RawObject::new(RawKind::Picture(String::new(), None));
     let mut members = Vec::new();
     let mut child_box = None;
     each_child(r, tag, |r, t| match t.name {
@@ -1491,8 +1419,9 @@ fn parse_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme, depth: usiz
 
 fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> Option<RawObject> {
     let palette = theme.palette;
-    let mut object = RawObject::new(RawKind::Picture(String::new()));
+    let mut object = RawObject::new(RawKind::Picture(String::new(), None));
     let mut embed = None;
+    let mut vector = None;
     each_child(r, tag, |r, t| match t.name {
         "nvPicPr" => {
             object.parse_identity(r, t);
@@ -1500,6 +1429,7 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> Option
         "blipFill" => each_child(r, t, |r, c| match c.name {
             "blip" => {
                 embed = c.attr_local("embed").map(|id| id.into_owned());
+                vector = svg::parse_extension(&mut r.fork(), c);
                 parse_blip_effects(r, c, palette, &mut object.adjust);
             }
             "srcRect" => {
@@ -1532,20 +1462,21 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> Option
         _ => r.skip(t),
     });
     // A picture that is only linked has no image in the file.
-    object.kind = RawKind::Picture(embed.filter(|id| !id.is_empty())?);
+    object.kind = RawKind::Picture(embed.filter(|id| !id.is_empty())?, vector);
     Some(object)
 }
 
 fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObject {
     let palette = theme.palette;
     let connector = tag.name == "cxnSp";
-    let mut object = RawObject::new(RawKind::Picture(String::new()));
+    let mut object = RawObject::new(RawKind::Picture(String::new(), None));
     let mut text_box = false;
     let mut preset = None;
     let mut fill = Paint::Unset;
     let mut line: Option<RawLine> = None;
     let mut style = RawStyle::default();
-    let mut text = RawText::default();
+    let mut text = wordart::RawText::default();
+    let mut adjust = None;
     each_child(r, tag, |r, t| match t.name {
         "nvSpPr" | "nvCxnSpPr" => text_box = object.parse_identity(r, t),
         "spPr" => each_child(r, t, |r, c| match c.name {
@@ -1556,14 +1487,14 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
                 preset = c
                     .attr("prst")
                     .and_then(|name| ShapePreset::from_ooxml_name(&name));
-                r.skip(c);
+                adjust = parse_adjust(r, c, preset);
             }
             "ln" => line = Some(parse_line(r, c, palette)),
             "effectLst" => object.effects = parse_effects(r, c, palette),
             _ => parse_paint(r, c, palette, &mut fill),
         }),
         "style" => style = parse_style(r, t, theme),
-        "txBody" => text = parse_text(r, t, palette),
+        "txBody" => text = wordart::parse_text(r, t, palette),
         _ => r.skip(t),
     });
     // A geometry the engine does not have: the nearest thing it has.
@@ -1594,27 +1525,27 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
         end: line.end,
     });
     // Without text, a shape has the text settings of a new one.
-    let mut font = Font::default();
-    if let Some(run) = text.run {
-        font = run.font;
-        if !run.colored {
-            font.color = style.text;
-        }
-    }
-    object.kind = RawKind::Shape(Shape {
+    let mut shape = Shape {
         preset,
         text_box,
         fill: fill.filter(|_| !preset.is_line() || !connector),
         outline,
-        text: printable(&text.text, true),
-        font,
+        text: String::new(),
+        font: Font::default(),
         align: text.align.unwrap_or(if text.anchor.is_some() {
             TextAlign::Left
         } else {
             TextAlign::Center
         }),
         anchor: text.anchor.unwrap_or(TextAnchor::Middle),
-    });
+        effects: Default::default(),
+        runs: Vec::new(),
+        wrap: true,
+        adjust,
+        math: None,
+    };
+    text.into_shape(&mut shape, style.text);
+    object.kind = RawKind::Shape(shape);
     object
 }
 
@@ -1653,6 +1584,14 @@ fn parse_content<'a>(
     match t.name {
         "pic" if object.is_none() => *object = parse_picture(r, t, theme),
         "sp" | "cxnSp" if object.is_none() => *object = Some(parse_shape(r, t, theme)),
+        // A frame holds a chart (which the charts read) or a graphic.
+        "graphicFrame" if object.is_none() && depth == 0 => {
+            let mut frame = RawObject::new(RawKind::Picture(String::new(), None));
+            if let Some(ids) = smartart::parse_frame(r, t, &mut frame) {
+                frame.kind = RawKind::Graphic(ids);
+                *object = Some(frame);
+            }
+        }
         "grpSp" if object.is_none() && depth < MAX_GROUPS => *object = Some(parse_group(r, t, theme, depth)),
         "AlternateContent" | "Choice" if depth < MAX_NESTING => {
             each_child(r, t, |r, c| parse_content(r, c, theme, depth + 1, object))
@@ -1740,6 +1679,8 @@ pub(crate) struct Loader {
     /// The image files read so far, by part name; `None` for those that
     /// are missing or not images the engine shows.
     images: HashMap<String, Option<Picture>>,
+    /// The SVG documents of vector pictures, by part name.
+    vectors: HashMap<String, Option<Arc<[u8]>>>,
     /// The widths of the line styles of the workbook's theme, in points.
     line_widths: [f32; 3],
 }
@@ -1755,6 +1696,7 @@ impl Loader {
         Loader {
             next_id: 1,
             images: HashMap::new(),
+            vectors: HashMap::new(),
             line_widths: theme.map_or(LINE_WIDTHS, |xml| parse_line_widths(&xml)),
         }
     }
@@ -1799,7 +1741,7 @@ impl Loader {
                 continue;
             };
             let name = object.name.clone();
-            let Some(mut drawing) = self.build(pkg, &rels, object) else {
+            let Some(mut drawing) = self.build(pkg, &rels, object, &theme) else {
                 continue;
             };
             drawing.placement = anchor.placement;
@@ -1824,6 +1766,12 @@ impl Loader {
                 _ => continue,
             }
             stand_up(sheet, &mut drawing);
+            // The shapes a graphic keeps from its file were laid out for
+            // the frame it has.
+            let frame = sheet.drawing_frame(&drawing);
+            if let Some(foreign) = drawing.as_smartart_mut().and_then(|art| art.foreign.as_mut()) {
+                Arc::make_mut(foreign).size = (frame.width as f32, frame.height as f32);
+            }
             // An anchor can be made to say what no file written from here
             // says (a second corner before the first, offsets larger than
             // their cells, a place beyond the last cell): the drawing is
@@ -1859,6 +1807,7 @@ impl Loader {
             let base = match (&drawing.kind, name.trim()) {
                 (DrawingKind::Picture(_), "") => "Picture",
                 (DrawingKind::Shape(_), "") => "Shape",
+                (DrawingKind::SmartArt(_), "") => "Diagram",
                 (DrawingKind::Group(_), "") => "Group",
                 (_, name) => name,
             };
@@ -1885,20 +1834,28 @@ impl Loader {
         pkg: &mut Package<R>,
         rels: &[Rel],
         object: RawObject,
+        theme: &Theme,
     ) -> Option<Drawing> {
         let mut drawing = match object.kind {
             RawKind::Shape(shape) => Drawing::shape(shape, (0.0, 0.0)),
-            RawKind::Picture(embed) => {
-                let target = rels
-                    .iter()
-                    .find(|rel| rel.id == embed && rel.kind == "image")
-                    .map(|rel| rel.target.clone())?;
+            RawKind::Graphic(ids) => Drawing::smartart(smartart::load(pkg, rels, &ids, theme)?, (0.0, 0.0)),
+            RawKind::Picture(embed, vector) => {
+                let image_of = |id: &str| rels.iter().find(|rel| rel.id == id && rel.kind == "image").map(|rel| rel.target.clone());
+                let target = image_of(&embed)?;
                 let image = self.images.entry(target).or_insert_with_key(|target| {
                     pkg.read_bytes(target).ok().flatten().and_then(Picture::new)
                 });
                 // The bytes are shared; how they show is each picture's.
                 let mut picture = image.clone()?;
                 picture.adjust = object.adjust;
+                // A vector picture: its document, shared like images.
+                if let Some(target) = vector.and_then(|id| image_of(&id)) {
+                    let document = self.vectors.entry(target).or_insert_with_key(|target| {
+                        let bytes = pkg.read_bytes(target).ok().flatten()?;
+                        opensheet_engine::svg::is_svg(&bytes).then(|| Arc::from(bytes))
+                    });
+                    picture.svg = document.clone();
+                }
                 Drawing::picture(picture)
             }
             RawKind::Group { members, child_box } => {
@@ -1909,7 +1866,7 @@ impl Loader {
                 for member in members {
                     let place = member.xfrm_box;
                     let name = member.name.clone();
-                    let Some(mut drawing) = self.build(pkg, rels, member) else {
+                    let Some(mut drawing) = self.build(pkg, rels, member, theme) else {
                         continue;
                     };
                     let (x, y, w, h) = place.unwrap_or((left, top, width, height));

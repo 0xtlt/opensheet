@@ -290,6 +290,20 @@ impl Theme {
             outline.color = self.resolve(outline.color);
         }
         self.resolve_font(&mut shape.font);
+        // The letters: their outline, their shadow, and each run.
+        let effects = |effects: &mut crate::wordart::TextEffects| {
+            if let Some(outline) = &mut effects.outline {
+                outline.color = self.resolve(outline.color);
+            }
+            if let Some(shadow) = &mut effects.shadow {
+                shadow.color = self.resolve(shadow.color);
+            }
+        };
+        effects(&mut shape.effects);
+        for run in &mut shape.runs {
+            self.resolve_font(&mut run.font);
+            effects(&mut run.effects);
+        }
     }
 
     /// Work out again the theme colours of a partial style.

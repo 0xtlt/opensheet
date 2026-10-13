@@ -427,7 +427,7 @@ fn assert_same_drawings(a: &Workbook, b: &Workbook) {
 #[test]
 fn drawings_round_trip() {
     let original = sample();
-    assert_eq!(original.sheets[0].drawings.len(), 18);
+    assert_eq!(original.sheets[0].drawings.len(), 20);
     assert_eq!(original.sheets[1].drawings.len(), 6);
     assert_eq!(original.sheets[2].drawings.len(), 2);
     let formats: Vec<ImageFormat> = original.sheets[1]
@@ -457,7 +457,7 @@ fn drawings_round_trip() {
         .iter()
         .flat_map(|sheet| sheet.drawings.iter().map(|d| d.id))
         .collect();
-    assert_eq!(ids, (1..=26).collect::<Vec<u32>>());
+    assert_eq!(ids, (1..=28).collect::<Vec<u32>>());
     // Pictures of one image still share its bytes, across sheets too.
     let image = |sheet: usize, name: &str| {
         named(&loaded, sheet, name)
@@ -794,7 +794,7 @@ fn parts_say_what_the_model_says() {
         );
     }
     // How each follows the cells, and what is locked or printed.
-    assert_eq!(shapes.matches("<xdr:twoCellAnchor>").count(), 15);
+    assert_eq!(shapes.matches("<xdr:twoCellAnchor>").count(), 17);
     assert_eq!(
         shapes
             .matches("<xdr:twoCellAnchor editAs=\"oneCell\">")
@@ -813,7 +813,7 @@ fn parts_say_what_the_model_says() {
             .count(),
         1
     );
-    assert_eq!(shapes.matches("<xdr:clientData/>").count(), 17);
+    assert_eq!(shapes.matches("<xdr:clientData/>").count(), 19);
     let pictures = part(&bytes, "xl/drawings/drawing2.xml");
     assert!(pictures.contains(
         "<xdr:cNvPr id=\"4\" name=\"Picture 3\" descr=\"The logo, on its side\"/><xdr:cNvPicPr/>"
@@ -1368,7 +1368,7 @@ fn damaged_drawing_parts_never_panic() {
             let wb = read_xlsx(Cursor::new(raw_package(&damaged)), Locale::en())
                 .expect("the rest of the workbook loads");
             assert_eq!(wb.sheets.len(), 4);
-            assert_eq!(wb.sheets[0].drawings.len(), 18, "{victim} cut at {cut}");
+            assert_eq!(wb.sheets[0].drawings.len(), 20, "{victim} cut at {cut}");
             assert!(wb.sheets[1].drawings.len() <= 6, "{victim} cut at {cut}");
             attempts += 1;
         }

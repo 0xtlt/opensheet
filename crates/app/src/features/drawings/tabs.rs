@@ -166,7 +166,7 @@ pub(super) fn length_field(id: &'static str, label: &'static str, field: &Entity
         .child(div().text_color(c(theme::TEXT_MUTED)).child(length_unit().0))
 }
 
-fn size_group(app: &mut ExcelApp, crop: bool, window: &mut Window, cx: &mut Cx) -> gpui::Div {
+pub(super) fn size_group(app: &mut ExcelApp, crop: bool, window: &mut Window, cx: &mut Cx) -> gpui::Div {
     let fields: Vec<AnyElement> = size_fields(app, window, cx)
         .map(|(height, width)| {
             vec![
@@ -207,7 +207,7 @@ fn split(app: &ExcelApp, id: &'static str, caret: &'static str, menu: [Cmd; 2], 
 }
 
 /// The Arrange group of the two tabs.
-fn arrange_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
+pub(super) fn arrange_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
     group(
         t("Arrange", "Organiser"),
         div()
@@ -227,7 +227,7 @@ fn arrange_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
     )
 }
 
-fn accessibility_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
+pub(super) fn accessibility_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
     group(
         t("Accessibility", "Accessibilité"),
         row(vec![app.cmd_large("dw-alt", Cmd::AltText, false, cx)]),
@@ -347,11 +347,16 @@ pub(super) fn shape_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) ->
         .into_any_element(),
         group(
             t("WordArt Styles", "Styles WordArt"),
-            rows(vec![
-                app.cmd_labeled("sf-text-fill", Cmd::TextFill, true, cx),
-                app.cmd_labeled("sf-text-outline", Cmd::TextOutline, true, cx),
-                app.cmd_labeled("sf-text-effects", Cmd::TextEffects, true, cx),
-            ]),
+            div()
+                .flex()
+                .items_center()
+                .gap(px(2.))
+                .child(app.cmd_large("sf-wordart-styles", Cmd::WordArtStyles, true, cx))
+                .child(rows(vec![
+                    app.cmd_labeled("sf-text-fill", Cmd::TextFill, true, cx),
+                    app.cmd_labeled("sf-text-outline", Cmd::TextOutline, true, cx),
+                    app.cmd_labeled("sf-text-effects", Cmd::TextEffects, true, cx),
+                ])),
         )
         .into_any_element(),
         accessibility_group(app, cx).into_any_element(),
@@ -382,9 +387,9 @@ fn gallery_sections() -> Vec<(&'static str, Vec<ShapeTool>)> {
         (t("Rectangles", "Rectangles"), vec![Rectangle, RoundedRectangle]),
         (
             t("Basic Shapes", "Formes de base"),
-            vec![TextBox, Ellipse, Triangle, RightTriangle, Diamond, Pentagon, Hexagon],
+            vec![TextBox, Ellipse, Triangle, RightTriangle, Trapezoid, Diamond, Pentagon, Hexagon],
         ),
-        (t("Block Arrows", "Flèches pleines"), vec![RightArrow, LeftArrow, UpArrow, DownArrow]),
+        (t("Block Arrows", "Flèches pleines"), vec![RightArrow, LeftArrow, UpArrow, DownArrow, Chevron]),
         (t("Stars and Banners", "Étoiles et bannières"), vec![Star5]),
         (t("Callouts", "Bulles et légendes"), vec![Callout]),
     ]
@@ -451,7 +456,7 @@ impl Render for Gallery {
 /// Hang a view under the ribbon control whose command is running (or at
 /// the pointer). A click on the control while its drop-down is open closes
 /// it: the press closes it and the click must not open it again.
-fn open_dropdown<V: Render>(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx, build: impl FnOnce(&mut Context<V>) -> V) {
+pub(super) fn open_dropdown<V: Render>(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx, build: impl FnOnce(&mut Context<V>) -> V) {
     let anchor = app.command_anchor;
     let closed = app.ext_mut::<DrawingUi>().tabs.closed.clone();
     if let (Some((control, at)), Some(anchor)) = (closed.take(), anchor) {
@@ -542,7 +547,7 @@ pub(super) fn set_fill(app: &mut ExcelApp, color: Option<Color>, cx: &mut Cx) {
 }
 
 pub(super) fn set_text_color(app: &mut ExcelApp, color: Option<Color>, cx: &mut Cx) {
-    edit_shape(app, Cmd::TextFill.label(), cx, |shape| shape.font.color = color);
+    super::wordart::set_fill(app, color, cx);
 }
 
 /// The colour of the outline; `None` takes the outline away.
@@ -731,7 +736,10 @@ impl Render for ColorMenu {
                 shape.as_ref().map(|s| s.outline.map(|outline| outline.color)),
                 t("No Outline", "Sans contour"),
             ),
-            Paint::Text => (shape.as_ref().map(|s| s.font.color), t("Automatic", "Automatique")),
+            Paint::Text => (
+                shape.as_ref().map(|s| s.font.color.filter(|_| !s.effects.hollow)),
+                t("No Fill", "Aucun remplissage"),
+            ),
         };
         let paint = self.paint;
         let app = self.app.clone();

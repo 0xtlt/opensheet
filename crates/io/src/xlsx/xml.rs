@@ -127,6 +127,15 @@ fn tag_end(s: &str) -> Option<usize> {
 }
 
 impl<'a> Reader<'a> {
+    /// A second reader at the same place: to read an element twice, for
+    /// two things that are each read by a function of their own.
+    pub fn fork(&self) -> Reader<'a> {
+        Reader {
+            src: self.src,
+            pos: self.pos,
+        }
+    }
+
     pub fn new(src: &'a str) -> Reader<'a> {
         Reader {
             src: src.strip_prefix('\u{feff}').unwrap_or(src),

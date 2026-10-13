@@ -155,7 +155,7 @@ impl Brush<'_> {
         point(self.origin.x + px(p.0), self.origin.y + px(p.1))
     }
 
-    fn fill(&self, points: &[Pt], color: Hsla, out: &mut Vec<Draw>) {
+    pub(super) fn fill(&self, points: &[Pt], color: Hsla, out: &mut Vec<Draw>) {
         if points.len() < 3 {
             return;
         }
@@ -169,7 +169,7 @@ impl Brush<'_> {
 
     /// `dashes`: lengths of dashes and gaps in pixels; empty for a solid
     /// line.
-    fn stroke(&self, line: &Polyline, width: f32, dashes: &[f32], color: Hsla, out: &mut Vec<Draw>) {
+    pub(super) fn stroke(&self, line: &Polyline, width: f32, dashes: &[f32], color: Hsla, out: &mut Vec<Draw>) {
         if line.points.len() < 2 {
             return;
         }
@@ -232,7 +232,7 @@ pub fn text_look(shape: &Shape, zoom: f32, fonts: &FontResolver) -> TextLook {
 /// does, so that what is typed still wraps inside the shape. (Once typed,
 /// the text is drawn turned: `draw_turned_text`.)
 pub fn text_box(shape: &Shape, placed: &Placed, natural: (f32, f32), zoom: f32) -> (f32, f32, f32, f32) {
-    let [left, top, right, bottom] = shape.preset.text_rect(natural.0, natural.1);
+    let [left, top, right, bottom] = shape.text_rect(natural.0, natural.1);
     let mut width = ((right - left) * placed.width().abs() - 2.0 * TEXT_MARGIN.0 * zoom).max(1.0);
     let mut height = ((bottom - top) * placed.height().abs() - 2.0 * TEXT_MARGIN.1 * zoom).max(1.0);
     if (geometry::normalise_angle(placed.rotation + 45.0) % 180.0) >= 90.0 {
@@ -244,10 +244,10 @@ pub fn text_box(shape: &Shape, placed: &Placed, natural: (f32, f32), zoom: f32) 
 
 /// The outline of a shape on screen.
 pub fn outline_of(shape: &Shape, placed: &Placed, natural: (f32, f32)) -> Vec<Polyline> {
-    geometry::flatten(&shape.preset.path(natural.0, natural.1), placed)
+    geometry::flatten(&shape.path(natural.0, natural.1), placed)
 }
 
-fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
+pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     let lines = outline_of(shape, placed, natural);
     if let (Some(fill), false) = (shape.fill, shape.preset.is_line()) {
         for line in lines.iter().filter(|line| line.closed) {
@@ -291,9 +291,15 @@ fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush
     if let Some(fonts) = text.filter(|_| !shape.text.is_empty() && !shape.preset.is_line()) {
         let look = text_look(shape, brush.zoom, fonts);
         let turn = geometry::normalise_angle(placed.rotation);
-        if turn < 0.5 || turn > 359.5 {
+        if let Some(equation) = &shape.math {
+            // An equation, built up.
+            super::equation::draw(shape, equation, placed, natural, brush, fonts, out);
+        } else if shape.has_text_effects() {
+            // Letters with an outline or a shadow: WordArt.
+            super::wordart::draw_art(shape, placed, natural, brush, fonts, out);
+        } else if turn < 0.5 || turn > 359.5 {
             let (x0, y0, x1, y1) = text_box(shape, placed, natural, brush.zoom);
-            let (lines, rows) = look.wrap(&shape.text, x1 - x0, brush.ts);
+            let (lines, rows) = super::wordart::wrap(shape, &look, fonts, x1 - x0, brush.ts);
             let origin = brush.at((x0, y0 + look.top(rows, y1 - y0)));
             // Lines are aligned in the width of the box; a text too tall
             // for it shows above and below as far as the pane goes.
@@ -479,7 +485,14 @@ fn draw_picture(drawing: &Drawing, picture: &Picture, placed: &Placed, natural: 
     // Soft edges are made in the pixels: a fraction of the shorter side.
     let shorter = natural.0.min(natural.1).max(1.0);
     let soft = (pt_to_px(drawing.effects.soft_edge.max(0.0)) / shorter).min(0.5);
-    match picture::image_as(picture, &picture.adjust, soft, natural, placed, brush.scale) {
+    // A vector picture that is shown as it is: from its document, sharp
+    // at any zoom. Adjusted, cropped or softened, from its image.
+    let vector = if soft == 0.0 && picture.adjust == PictureAdjust::default() {
+        super::icons::image_for(picture, placed, brush.scale)
+    } else {
+        None
+    };
+    match vector.or_else(|| picture::image_as(picture, &picture.adjust, soft, natural, placed, brush.scale)) {
         Some((image, (x0, y0, x1, y1))) => out.push(Draw::Image {
             image,
             bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),
@@ -556,6 +569,9 @@ pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Bru
             draw_shape(shape, placed, natural, brush, text, out);
         }
         DrawingKind::Picture(picture) => draw_picture(drawing, picture, placed, natural, brush, out),
+        // A graphic is drawn by `smartart::draw`, which is told the theme
+        // its colours come from.
+        DrawingKind::SmartArt(_) => {}
         DrawingKind::Group(_) => {
             for (member, inner, natural) in leaves(drawing, placed, brush.zoom) {
                 draw(member, &inner, natural, brush, text, out);
@@ -658,7 +674,10 @@ pub fn grips(drawing: &Drawing, placed: &Placed) -> Vec<(Grip, Pt)> {
         .enumerate()
         .map(|(i, p)| (Grip::Resize(i as u8), p))
         .collect();
-    out.push((Grip::Rotate, placed.rotation_handle(ROTATION_GAP)));
+    // A SmartArt graphic is not turned.
+    if !matches!(drawing.kind, DrawingKind::SmartArt(_)) {
+        out.push((Grip::Rotate, placed.rotation_handle(ROTATION_GAP)));
+    }
     out
 }
 
