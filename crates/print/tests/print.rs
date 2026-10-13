@@ -1465,6 +1465,13 @@ fn ink_strokes_print_over_the_cells() {
     assert!((marker_stroke.width - 9.0).abs() < 1e-6);
     // The pen's line is rounded: more points than were drawn.
     assert!(strokes[0].0.segments.len() > 6);
+    // A stroke far below the cells that hold something still prints:
+    // the page reaches down to it.
+    let low = wb.draw_ink(0, PenKind::Pen, Color(0x0000FF), 2.0, &[(30.0, 400.0), (80.0, 430.0)]);
+    assert!(low.is_some());
+    wb.commit("ink below");
+    let reaching = render_page(&wb, &job, &opensheet_print::plan(&wb, &job), 0).unwrap();
+    assert!(reaching.ops.iter().any(|op| matches!(op, Op::Stroke { stroke, .. } if stroke.paint.color == Color(0x0000FF))));
     // A draft leaves ink out with the other objects, and black and
     // white prints it black.
     wb.update_page_setup(0, |setup| setup.draft = true);

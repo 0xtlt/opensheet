@@ -155,6 +155,25 @@ impl Layer {
         }
     }
 
+    /// The layer as pixels whose colours are not multiplied by alpha.
+    fn into_bitmap(self) -> Bitmap {
+        let mut data = Vec::with_capacity(self.px.len() * 4);
+        for p in &self.px {
+            let a = p[3].clamp(0.0, 1.0);
+            if a <= 0.0 {
+                data.extend_from_slice(&[0; 4]);
+            } else {
+                let byte = |v: f32| ((v / a).clamp(0.0, 1.0) * 255.0).round() as u8;
+                data.extend_from_slice(&[byte(p[0]), byte(p[1]), byte(p[2]), (a * 255.0).round() as u8]);
+            }
+        }
+        Bitmap {
+            width: self.w as u32,
+            height: self.h as u32,
+            data,
+        }
+    }
+
     /// The box of what is not transparent: x0, y0, x1, y1 in the frame's
     /// coordinates, the last two excluded.
     fn inked(&self) -> Option<(i32, i32, i32, i32)> {
@@ -563,6 +582,95 @@ fn reflection_layer(object: &Layer, reflection: &Reflection, k: f32) -> Option<L
     Some(out)
 }
 
+/// The shadow and the glow of something that is not made of pixels (a
+/// shape): `cover` says how much of each pixel of a canvas `w` by `h`
+/// it covers, 0 to 1. The result holds the shadow and the glow alone,
+/// to be painted under the shape, centred on the canvas, which takes
+/// the returned share of its width and height. `None` when there is
+/// nothing to paint.
+pub fn under(cover: &[f32], w: usize, h: usize, effects: &Effects, turn: f32, k: f32) -> Option<(Bitmap, (f32, f32))> {
+    let object = Layer {
+        w,
+        h,
+        ox: 0,
+        oy: 0,
+        px: cover.iter().map(|a| [0.0, 0.0, 0.0, a.clamp(0.0, 1.0)]).collect(),
+    };
+    let mut layers: Vec<Layer> = Vec::new();
+    layers.extend(effects.shadow.and_then(|shadow| shadow_layer(&object, &shadow, turn, k)));
+    layers.extend(effects.glow.and_then(|glow| glow_layer(&object, &glow, k)));
+    if layers.is_empty() {
+        return None;
+    }
+    let (mut pad_x, mut pad_y) = (0i32, 0i32);
+    for layer in &layers {
+        pad_x = pad_x.max(-layer.ox).max(layer.ox + layer.w as i32 - w as i32);
+        pad_y = pad_y.max(-layer.oy).max(layer.oy + layer.h as i32 - h as i32);
+    }
+    let mut all = Layer::new(w + 2 * pad_x as usize, h + 2 * pad_y as usize, -pad_x, -pad_y);
+    for layer in &layers {
+        all.over(layer);
+    }
+    let share = (w as f32 / all.w as f32, h as f32 / all.h as f32);
+    Some((all.into_bitmap(), share))
+}
+
+/// How much of each pixel of a canvas `w` by `h` outlines cover: the
+/// inside of the closed ones when `filled`, and a line `stroke` pixels
+/// wide along all of them.
+pub fn cover_of(lines: &[(Vec<(f32, f32)>, bool)], w: usize, h: usize, filled: bool, stroke: f32) -> Vec<f32> {
+    let mut cover = vec![0.0f32; w * h];
+    if filled {
+        let mut crossings: Vec<f32> = Vec::new();
+        for y in 0..h {
+            let level = y as f32 + 0.5;
+            crossings.clear();
+            for (points, closed) in lines {
+                if !closed || points.len() < 3 {
+                    continue;
+                }
+                for i in 0..points.len() {
+                    let (a, b) = (points[i], points[(i + 1) % points.len()]);
+                    if (a.1 <= level) != (b.1 <= level) {
+                        crossings.push(a.0 + (level - a.1) / (b.1 - a.1) * (b.0 - a.0));
+                    }
+                }
+            }
+            crossings.sort_by(f32::total_cmp);
+            for pair in crossings.chunks_exact(2) {
+                let (from, to) = ((pair[0] - 0.5).ceil().max(0.0) as usize, ((pair[1] - 0.5).floor() as i64).min(w as i64 - 1));
+                for x in from as i64..=to {
+                    cover[y * w + x as usize] = 1.0;
+                }
+            }
+        }
+    }
+    if stroke > 0.0 {
+        let half = stroke / 2.0;
+        for (points, closed) in lines {
+            let count = if *closed { points.len() } else { points.len().saturating_sub(1) };
+            for i in 0..count {
+                let (a, b) = (points[i], points[(i + 1) % points.len()]);
+                let reach = half + 1.0;
+                let (x0, x1) = ((a.0.min(b.0) - reach).floor().max(0.0) as usize, ((a.0.max(b.0) + reach).ceil() as i64).min(w as i64 - 1));
+                let (y0, y1) = ((a.1.min(b.1) - reach).floor().max(0.0) as usize, ((a.1.max(b.1) + reach).ceil() as i64).min(h as i64 - 1));
+                let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+                let length = (dx * dx + dy * dy).max(1e-9);
+                for y in y0 as i64..=y1 {
+                    for x in x0 as i64..=x1 {
+                        let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+                        let along = (((px - a.0) * dx + (py - a.1) * dy) / length).clamp(0.0, 1.0);
+                        let distance = ((px - a.0 - along * dx).powi(2) + (py - a.1 - along * dy).powi(2)).sqrt();
+                        let at = y as usize * w + x as usize;
+                        cover[at] = cover[at].max((half - distance + 0.5).clamp(0.0, 1.0));
+                    }
+                }
+            }
+        }
+    }
+    cover
+}
+
 /// The picture dressed. `body` is the picture as its frame shows it
 /// (cropped, adjusted, cut to its outline, flipped); `mask` says which of
 /// its pixels are inside that outline (all of them when not given); `k`
@@ -644,25 +752,8 @@ pub fn compose(body: &Bitmap, mask: Option<&[bool]>, dress: &Dress, k: f32) -> (
     for layer in under.iter().chain([&object]) {
         all.over(layer);
     }
-    let mut data = Vec::with_capacity(all.px.len() * 4);
-    for p in &all.px {
-        let a = p[3].clamp(0.0, 1.0);
-        if a <= 0.0 {
-            data.extend_from_slice(&[0; 4]);
-        } else {
-            let byte = |v: f32| ((v / a).clamp(0.0, 1.0) * 255.0).round() as u8;
-            data.extend_from_slice(&[byte(p[0]), byte(p[1]), byte(p[2]), (a * 255.0).round() as u8]);
-        }
-    }
     let share = (w as f32 / all.w as f32, h as f32 / all.h as f32);
-    (
-        Bitmap {
-            width: all.w as u32,
-            height: all.h as u32,
-            data,
-        },
-        share,
-    )
+    (all.into_bitmap(), share)
 }
 
 #[cfg(test)]
@@ -872,6 +963,40 @@ mod tests {
         let square = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
         let same = homography(square, square).unwrap();
         assert!((same[0] - 1.0).abs() < 1e-9 && same[1].abs() < 1e-9 && same[6].abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_shape_casts_a_blurred_shadow_of_its_outline() {
+        // A filled triangle, and the same as a line only.
+        let triangle = vec![(vec![(10.0, 50.0), (30.0, 10.0), (50.0, 50.0)], true)];
+        let filled = cover_of(&triangle, 60, 60, true, 0.0);
+        assert_eq!((filled[40 * 60 + 30], filled[15 * 60 + 12], filled[55 * 60 + 30]), (1.0, 0.0, 0.0));
+        let hollow = cover_of(&triangle, 60, 60, false, 3.0);
+        assert_eq!(hollow[40 * 60 + 30], 0.0);
+        assert!(hollow[49 * 60 + 30] > 0.9 && hollow[30 * 60 + 20] > 0.5);
+        let mut effects = Effects::default();
+        assert!(under(&filled, 60, 60, &effects, 0.0, 1.0).is_none());
+        effects.shadow = Some(Shadow {
+            color: Color(0x0000FF),
+            transparency: 0.5,
+            blur: 3.0,
+            angle: 90.0,
+            distance: 6.0,
+            ..Shadow::default()
+        });
+        let (shadow, share) = under(&filled, 60, 60, &effects, 0.0, 1.0).unwrap();
+        // Below the triangle (8 pixels down), in the shadow's colour at
+        // half strength; the triangle itself is not in the bitmap.
+        let (off_x, off_y) = ((shadow.width - 60) / 2, (shadow.height - 60) / 2);
+        assert!(share.1 < 1.0);
+        let inside = pixel(&shadow, off_x + 30, off_y + 48);
+        assert_eq!(&inside[..3], &[255, 0, 0]);
+        assert!((120..=130).contains(&inside[3]), "{inside:?}");
+        assert!(pixel(&shadow, off_x + 30, off_y + 56)[3] > 60);
+        assert_eq!(pixel(&shadow, off_x + 30, off_y + 12)[3], 0);
+        // The edge of the shadow is soft: neither nothing nor all.
+        let edge = pixel(&shadow, off_x + 30, off_y + 58)[3];
+        assert!(edge > 20 && edge < 110, "{edge}");
     }
 
     #[test]

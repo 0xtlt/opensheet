@@ -258,6 +258,15 @@ impl ObjectPainter for PaperPainter {
                 }
             }
             DrawingKind::Shape(shape) => {
+                // Its shadow and its glow, under it, as on screen.
+                let effects = crate::features::drawings::shape_effects_for_page(drawing, shape, (w as f32, h as f32))
+                    .and_then(|(bitmap, took)| Some((Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?, took)));
+                if let Some((image, (bw, bh))) = effects {
+                    canvas.save();
+                    turn(canvas, false);
+                    canvas.image(&Arc::new(image), RectF::new((w - bw as f64) / 2.0, (h - bh as f64) / 2.0, bw as f64, bh as f64));
+                    canvas.restore();
+                }
                 canvas.save();
                 turn(canvas, true);
                 paint_shape(shape, w, h, canvas);

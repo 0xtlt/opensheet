@@ -419,6 +419,10 @@ struct Decoded {
 #[derive(Default)]
 struct Cache {
     pictures: HashMap<usize, Decoded>,
+    /// Bitmaps made for something other than a picture (the shadow of a
+    /// shape), one for each slot: what it was made for, how large it
+    /// was before it was turned, and the bitmap.
+    others: HashMap<u64, (Vec<u32>, (f32, f32), Shown)>,
     repaint: u64,
     /// Bitmaps no longer wanted, whose textures `sweep` releases.
     retired: Vec<Arc<RenderImage>>,
@@ -594,6 +598,33 @@ pub fn image_as(
     })
 }
 
+/// A bitmap that is made once and painted many times: the one of
+/// `slot` when it was made for `key`, else what `build` makes now (the
+/// bitmap and a size to remember with it), which takes its place.
+pub fn cached_image(slot: u64, key: Vec<u32>, build: impl FnOnce() -> Option<(Bitmap, (f32, f32))>) -> Option<(Arc<RenderImage>, (f32, f32))> {
+    CACHE.with_borrow_mut(|cache| {
+        let repaint = cache.repaint;
+        if let Some((made_for, size, shown)) = cache.others.get_mut(&slot) {
+            if *made_for == key {
+                shown.used = repaint;
+                return Some((shown.image.clone(), *size));
+            }
+        }
+        if let Some((_, _, old)) = cache.others.remove(&slot) {
+            cache.retired.push(old.image);
+        }
+        let (bitmap, size) = build()?;
+        let image = bitmap.into_image()?;
+        let shown = Shown {
+            image: image.clone(),
+            share: (1.0, 1.0),
+            used: repaint,
+        };
+        cache.others.insert(slot, (key, size, shown));
+        Some((image, size))
+    })
+}
+
 /// A copy of the image a picture is drawn from (`Picture::shown`), with
 /// at least `size` pixels each way when the image has them, and not
 /// many more.
@@ -685,9 +716,17 @@ pub fn sweep(window: &mut Window, cx: &mut App) {
         cache.repaint += 1;
         let Cache {
             pictures,
+            others,
             repaint,
             retired,
         } = cache;
+        others.retain(|_, (_, _, shown)| {
+            let keep = shown.used + KEPT_FOR >= *repaint;
+            if !keep {
+                retired.push(shown.image.clone());
+            }
+            keep
+        });
         pictures.retain(|_, decoded| {
             // Nothing but this cache holds the bytes any more.
             let alive = Arc::strong_count(&decoded.bytes) > 1;

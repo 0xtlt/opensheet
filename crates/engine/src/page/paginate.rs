@@ -399,6 +399,13 @@ fn collect_ink(wb: &Workbook, sheet: usize, measure: Option<&dyn TextMeasure>) -
     for object in floating_objects(sh) {
         ink.push(object.cells(sh));
     }
+    // The strokes of the Draw tab print too: the cells under them are
+    // part of what the sheet holds.
+    for stroke in &sh.inks {
+        let ((r0, c0), _) = sh.ink_corners(stroke).0;
+        let ((r1, c1), _) = sh.ink_corners(stroke).1;
+        ink.push(Rect::new(r0, c0, r1.max(r0), c1.max(c0)));
+    }
     ink
 }
 

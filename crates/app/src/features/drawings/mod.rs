@@ -1424,6 +1424,32 @@ pub(crate) fn before_save(wb: &mut opensheet_engine::Workbook) {
     artistic::bake_all(wb);
 }
 
+/// The shadow and the glow of a shape for a page, in a frame `size`
+/// (pixels at 100 %): pixels red first, and the size they take, about
+/// the middle of the frame. The bitmap is flipped as the shape is but
+/// not turned: the page turns it.
+pub(crate) fn shape_effects_for_page(drawing: &Drawing, shape: &Shape, size: (f32, f32)) -> Option<(picture::Bitmap, (f32, f32))> {
+    /// Pixels of the page to a pixel of the sheet.
+    const DENSITY: f32 = 3.0;
+    let effects = Effects {
+        shadow: drawing.effects.shadow,
+        glow: drawing.effects.glow,
+        ..Effects::default()
+    };
+    if effects.is_none() || size.0 <= 0.0 || size.1 <= 0.0 {
+        return None;
+    }
+    let fit = (2400.0 / (size.0.max(size.1) * DENSITY)).min(1.0);
+    let unit = DENSITY * fit;
+    let (cover, w, h) = paint::shape_cover(shape, size, (size.0 * unit, size.1 * unit), (drawing.flip_h, drawing.flip_v), unit);
+    let (mut bitmap, _) = render::under(&cover, w, h, &effects, drawing.rotation, unit)?;
+    for pixel in bitmap.data.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    let took = (bitmap.width as f32 / unit, bitmap.height as f32 / unit);
+    Some((bitmap, took))
+}
+
 /// What a picture wears on a page: as on the sheet.
 pub(crate) fn dress_for_page(drawing: &Drawing, picture: &Picture) -> render::Dress {
     render::Dress {

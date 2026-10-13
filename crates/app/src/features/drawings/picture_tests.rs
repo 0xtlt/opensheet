@@ -388,3 +388,169 @@ fn effects_on_a_large_photograph() {
         }
     }
 }
+
+// ---------------------------------------------------------------- printing
+
+/// The colours, the crop, the outline and the effects of pictures and
+/// the shadows of shapes come out on paper as the sheet shows them.
+#[test]
+fn adjustments_and_effects_are_printed() {
+    use opensheet_engine::drawing::{Frame, Glow, PictureAdjust, Recolor, Shadow, ShadowPreset, ShapeTool};
+    use opensheet_engine::ink::PenKind;
+    use opensheet_print::Pixels;
+    let png = styles::sample_photo_png(240, 160);
+    let mut wb = opensheet_engine::Workbook::new(opensheet_engine::Locale::en());
+    let plain = PictureAdjust::default();
+    let mut place = 0u32;
+    let mut add = |wb: &mut opensheet_engine::Workbook, name: &str, change: &dyn Fn(&mut Drawing)| {
+        let (row, col) = (1 + 8 * (place / 3), 1 + 3 * (place % 3));
+        place += 1;
+        wb.set_cell_text(0, row - 1, col, name).unwrap();
+        let id = wb.add_picture(0, png.clone(), (row, col)).unwrap();
+        wb.update_drawing(0, id, |d| {
+            d.size = (150.0, 100.0);
+            d.name = name.to_string();
+            change(d);
+        });
+        id
+    };
+    let adjust = |d: &mut Drawing, adjust: PictureAdjust| d.as_picture_mut().unwrap().adjust = adjust;
+    add(&mut wb, "As inserted", &|_| {});
+    add(&mut wb, "Grayscale", &|d| adjust(d, PictureAdjust { recolor: Recolor::Grayscale, ..plain }));
+    add(&mut wb, "Sepia, brighter", &|d| adjust(d, PictureAdjust { recolor: Recolor::Duotone(Color(0), Color(0xD9C3A5)), brightness: 0.2, ..plain }));
+    add(&mut wb, "Cropped, oval", &|d| adjust(d, PictureAdjust { crop: [0.3, 0.0, 0.0, 0.2], shape: ShapePreset::Ellipse, ..plain }));
+    add(&mut wb, "Half transparent", &|d| adjust(d, PictureAdjust { transparency: 0.5, ..plain }));
+    add(&mut wb, "Vivid, warm", &|d| adjust(d, PictureAdjust { saturation: 3.0, temperature: 9500.0, contrast: 0.3, ..plain }));
+    add(&mut wb, "Turned, shadow", &|d| {
+        d.rotation = 20.0;
+        d.effects.shadow = Some(ShadowPreset::BottomRight.shadow());
+    });
+    add(&mut wb, "Flipped, soft", &|d| {
+        d.flip_h = true;
+        d.effects.soft_edge = 10.0;
+    });
+    add(&mut wb, "Glow and border", &|d| {
+        d.effects.glow = Some(Glow { color: Color(0xE97132), transparency: 0.4, radius: 11.0 });
+        d.as_picture_mut().unwrap().outline = Some(Outline::solid(Color(0x156082), 3.0));
+    });
+    // Shapes with a shadow and a glow, one of them turned.
+    let star = wb.add_shape(0, ShapeTool::Star5, Frame::new(80.0, 520.0, 110.0, 100.0)).unwrap();
+    wb.update_drawing(0, star, |d| {
+        d.rotation = 15.0;
+        d.effects.shadow = Some(Shadow { blur: 8.0, distance: 8.0, ..Shadow::default() });
+    });
+    let callout = wb.add_shape(0, ShapeTool::RoundedRectangle, Frame::new(260.0, 530.0, 140.0, 70.0)).unwrap();
+    wb.update_drawing(0, callout, |d| d.effects.glow = Some(Glow { color: Color(0x4EA72E), transparency: 0.3, radius: 12.0 }));
+    let line = wb.add_shape(0, ShapeTool::Arrow, Frame::new(450.0, 530.0, 110.0, 60.0)).unwrap();
+    wb.update_drawing(0, line, |d| d.effects.shadow = Some(ShadowPreset::Bottom.shadow()));
+    wb.draw_ink(0, PenKind::Pen, Color(0xC00000), 3.0, &[(90.0, 690.0), (140.0, 660.0), (190.0, 700.0), (260.0, 670.0)]);
+    wb.draw_ink(0, PenKind::Highlighter, Color(0xFFFF00), 14.0, &[(300.0, 680.0), (480.0, 680.0)]);
+    wb.commit("pictures");
+
+    let fonts = FontDb::standard_only();
+    let painter = PaperPainter::headless();
+    let mut job = PrintJob::new(PrintWhat::Sheet(0));
+    job.fonts = Some(&fonts);
+    job.painter = Some(&painter);
+    let planned = plan(&wb, &job);
+    assert_eq!(planned.pages.len(), 1);
+    // Every image of the page, in the order it is painted.
+    let mut images = Vec::new();
+    for page in 0..planned.pages.len() {
+        for op in render_page(&wb, &job, &planned, page).unwrap().ops {
+            if let Op::Image { image, rect } = op {
+                images.push((image, rect));
+            }
+        }
+    }
+    let rgba = |index: usize| match &images[index].0.pixels {
+        Pixels::Rgba(data) => data.clone(),
+        other => panic!("image {index} is not made of pixels: {other:?}"),
+    };
+    // Nine pictures and the shadows of three shapes.
+    assert_eq!(images.len(), 12);
+    // Grey has no colour; sepia is warm; the plain one has blue sky.
+    assert!(rgba(1).chunks_exact(4).all(|p| p[0] == p[1] && p[1] == p[2]));
+    let sky = |data: &[u8]| (data[4 * 200] as i32, data[4 * 200 + 2] as i32);
+    assert!(sky(&rgba(0)).1 > sky(&rgba(0)).0 + 40, "blue sky: {:?}", sky(&rgba(0)));
+    assert!(sky(&rgba(2)).0 > sky(&rgba(2)).1, "sepia: {:?}", sky(&rgba(2)));
+    // Cut to an ellipse: the corner is clear, the middle is not; and
+    // only what the crop keeps of the image is there (seven tenths of
+    // its width, eight of its height), stretched over the frame.
+    let cropped = &images[3].0;
+    let data = rgba(3);
+    assert_eq!(data[3], 0);
+    assert_eq!(data[((cropped.height / 2 * cropped.width + cropped.width / 2) * 4 + 3) as usize], 255);
+    assert!((cropped.width as f32 / cropped.height as f32 - 168.0 / 128.0).abs() < 0.03);
+    // Half transparent.
+    assert!((126..=129).contains(&rgba(4)[3]));
+    // The turned one is larger than its frame by its shadow, and is
+    // painted about the middle of the frame.
+    let (turned, rect) = &images[6];
+    assert!(turned.width > 240 && rect.w > 150.0 && rect.x < 0.0, "{} {rect:?}", turned.width);
+    // The shadows of the shapes are theirs alone: nothing opaque.
+    for index in 9..12 {
+        let data = rgba(index);
+        let strongest = data.chunks_exact(4).map(|p| p[3]).max().unwrap();
+        // (A thin line has little to blur: its shadow is faint.)
+        let least = if index == 11 { 8 } else { 60 };
+        assert!(strongest > least && strongest < 200, "shape {index}: {strongest}");
+    }
+    let pdf = print_pdf(&wb, &job);
+    assert!(pdf.starts_with(b"%PDF-1.7"));
+    if let Some(directory) = samples() {
+        std::fs::write(directory.join("opensheet-printed-pictures.pdf"), &pdf).unwrap();
+        opensheet_io::save_xlsx(&wb, &directory.join("opensheet-printed-pictures.xlsx")).unwrap();
+    }
+}
+
+/// On screen a shape's shadow is one bitmap, made once for each look.
+#[gpui::test]
+fn a_shape_draws_its_shadow_from_a_bitmap(cx: &mut TestAppContext) {
+    use opensheet_engine::drawing::{Frame, ShadowPreset, ShapeTool};
+    let (app, cx) = open(cx);
+    let id = app.update(cx, |app, cx| {
+        let id = app.wb.add_shape(app.sheet, ShapeTool::Ellipse, Frame::new(120.0, 80.0, 160.0, 90.0)).unwrap();
+        app.wb.update_drawing(app.sheet, id, |d| d.effects.shadow = Some(ShadowPreset::BottomRight.shadow()));
+        app.commit("setup", cx);
+        id
+    });
+    redraw(cx);
+    let items = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, turn: f32| {
+        app.update_in(cx, |app, window, _| {
+            let drawing = app.wb.drawing(app.sheet, id).unwrap().clone();
+            let placed = geometry::Placed {
+                rotation: turn,
+                ..geometry::Placed::plain(100.0, 100.0, 260.0, 190.0)
+            };
+            let ts = window.text_system().clone();
+            let brush = paint::Brush {
+                origin: point(px(0.), px(0.)),
+                zoom: 1.0,
+                scale: 2.0,
+                ts: &ts,
+                clip: gpui::Bounds::new(point(px(0.), px(0.)), gpui::size(px(800.), px(600.))),
+            };
+            let mut out = Vec::new();
+            paint::draw(&drawing, &placed, (160.0, 90.0), &brush, None, &mut out);
+            out.into_iter()
+                .filter_map(|item| match item {
+                    crate::grid::Draw::Image { image, bounds } => Some((image, bounds)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    let first = items(&app, cx, 0.0);
+    assert_eq!(first.len(), 1, "one bitmap under the shape");
+    // Wider than the shape by its blur and its offset, a little more to
+    // the right and below (it is centred on the frame, with as much
+    // room on the other side).
+    let bounds = first[0].1;
+    assert!(f32::from(bounds.size.width) > 170.0 && f32::from(bounds.origin.x) < 100.0);
+    // Painted again, the same bitmap; turned, another one.
+    let again = items(&app, cx, 0.0);
+    assert!(std::sync::Arc::ptr_eq(&first[0].0, &again[0].0));
+    let turned = items(&app, cx, 30.0);
+    assert!(!std::sync::Arc::ptr_eq(&first[0].0, &turned[0].0));
+}

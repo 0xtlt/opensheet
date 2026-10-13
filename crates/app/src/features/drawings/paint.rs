@@ -395,100 +395,93 @@ fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f
     }
 }
 
-/// How many copies of an outline, each a little larger and fainter than
-/// the one before, stand for a blurred shadow or a glow.
-const HALO_LAYERS: usize = 6;
+/// The longest side, in device pixels, the shadow of a shape is made
+/// at: a blurred thing loses nothing when it is stretched a little.
+const MAX_SHADOW_SIDE: f32 = 1200.0;
 
-/// A blurred copy of what a drawing covers: `lines` grown by `spread`
-/// pixels, moved by `offset`, in a colour that is `alpha` strong where
-/// the copies all overlap and fades out over `blur` pixels either side
-/// of the edge. `stroke` is the width of the outline of an open line,
-/// which has nothing to fill.
-#[allow(clippy::too_many_arguments)]
-fn halo(lines: &[Polyline], stroke: f32, spread: (f32, f32), blur: f32, offset: Pt, color: Hsla, alpha: f32, brush: &Brush, out: &mut Vec<Draw>) {
-    let points = lines.iter().flat_map(|line| line.points.iter());
-    let (mut x0, mut y0, mut x1, mut y1) = (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-    for p in points {
-        (x0, y0, x1, y1) = (x0.min(p.0), y0.min(p.1), x1.max(p.0), y1.max(p.1));
-    }
-    if !(x1 >= x0 && y1 >= y0) || alpha <= 0.0 {
-        return;
-    }
-    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-    let (width, height) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
-    let layers = if blur < 0.75 { 1 } else { HALO_LAYERS };
-    // Together the layers are as strong as one of `alpha`.
-    let each = 1.0 - (1.0 - alpha.min(0.999)).powf(1.0 / layers as f32);
-    let ink = color.opacity(each);
-    for layer in 0..layers {
-        // From the outermost in.
-        let grow = if layers == 1 { 0.0 } else { blur * (1.0 - (2 * layer + 1) as f32 / layers as f32) };
-        let (sx, sy) = ((width + 2.0 * (spread.0 + grow)) / width, (height + 2.0 * (spread.1 + grow)) / height);
-        if sx <= 0.0 || sy <= 0.0 {
-            continue;
-        }
-        for line in lines {
-            let moved: Vec<Pt> = line
-                .points
-                .iter()
-                .map(|p| (cx + (p.0 - cx) * sx + offset.0, cy + (p.1 - cy) * sy + offset.1))
-                .collect();
-            if line.closed {
-                brush.fill(&moved, ink, out);
-            } else if stroke + 2.0 * grow > 0.0 {
-                // A line has little ink to spread: the wider the copy,
-                // the fainter, or a thin line would cast a thick band.
-                let thin = (stroke / (stroke + 2.0 * grow)).clamp(0.0, 1.0);
-                let copy = Polyline { points: moved, closed: false };
-                brush.stroke(&copy, stroke + 2.0 * grow, &[], color.opacity(each * thin), out);
-            }
-        }
-    }
+/// How much of a canvas a shape covers: what casts its shadow. The
+/// canvas is `size` pixels plus `pad` on every side (the tail of a
+/// callout and half the outline hang outside the frame); `unit` is how
+/// many pixels a pixel of the sheet at 100 % takes.
+pub(super) fn shape_cover(shape: &Shape, natural: (f32, f32), size: (f32, f32), flips: (bool, bool), unit: f32) -> (Vec<f32>, usize, usize) {
+    let stroke = shape.outline.as_ref().map_or(0.0, |outline| (pt_to_px(outline.width) * unit).max(0.75));
+    let pad = (stroke / 2.0 + size.1 * 0.14).ceil() + 1.0;
+    let local = Placed {
+        x0: pad,
+        y0: pad,
+        x1: pad + size.0,
+        y1: pad + size.1,
+        rotation: 0.0,
+        flip_h: flips.0,
+        flip_v: flips.1,
+    };
+    let lines: Vec<(Vec<Pt>, bool)> = outline_of(shape, &local, natural).into_iter().map(|line| (line.points, line.closed)).collect();
+    let (w, h) = ((size.0 + 2.0 * pad).ceil() as usize, (size.1 + 2.0 * pad).ceil() as usize);
+    // A shape that is neither filled nor a line casts the shadow of its
+    // outline only.
+    let filled = shape.fill.is_some() && !shape.preset.is_line();
+    (super::render::cover_of(&lines, w, h, filled, stroke), w, h)
 }
 
-/// The shadow and the glow of a drawing, under it. `lines` is what the
-/// drawing covers, `stroke` the width of its outline.
-fn draw_effects(effects: &Effects, lines: &[Polyline], stroke: f32, brush: &Brush, out: &mut Vec<Draw>) {
-    let px = |points: f32| pt_to_px(points) * brush.zoom;
-    if let Some(shadow) = &effects.shadow {
-        let (sin, cos) = shadow.angle.to_radians().sin_cos();
-        let distance = px(shadow.distance);
-        // The size is that of the shadow next to the shape's.
-        let points = lines.iter().flat_map(|line| line.points.iter());
-        let (mut w, mut h) = (0.0f32, 0.0f32);
-        let (mut lo, mut hi) = ((f32::INFINITY, f32::INFINITY), (f32::NEG_INFINITY, f32::NEG_INFINITY));
-        for p in points {
-            lo = (lo.0.min(p.0), lo.1.min(p.1));
-            hi = (hi.0.max(p.0), hi.1.max(p.1));
-            (w, h) = (hi.0 - lo.0, hi.1 - lo.1);
-        }
-        let spread = ((shadow.size - 1.0) * w / 2.0, (shadow.size - 1.0) * h / 2.0);
-        halo(
-            lines,
-            stroke,
-            spread,
-            px(shadow.blur),
-            (distance * cos, distance * sin),
-            engine_color(shadow.color),
-            1.0 - shadow.transparency.clamp(0.0, 1.0),
-            brush,
-            out,
-        );
+/// The shadow and the glow of a shape, under it: its outline blurred
+/// (`render::under`), made once for each look and size.
+fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+    let effects = Effects {
+        shadow: drawing.effects.shadow,
+        glow: drawing.effects.glow,
+        ..Effects::default()
+    };
+    if effects.is_none() {
+        return;
     }
-    if let Some(glow) = &effects.glow {
-        let radius = px(glow.radius);
-        halo(
-            lines,
-            stroke,
-            (radius / 2.0, radius / 2.0),
-            radius / 2.0,
-            (0.0, 0.0),
-            engine_color(glow.color),
-            1.0 - glow.transparency.clamp(0.0, 1.0),
-            brush,
-            out,
-        );
+    let device = (placed.width().abs() * brush.scale, placed.height().abs() * brush.scale);
+    let fit = (MAX_SHADOW_SIDE / device.0.max(device.1).max(1.0)).min(1.0);
+    let made_at = ((device.0 * fit).max(1.0), (device.1 * fit).max(1.0));
+    let unit = brush.zoom * brush.scale * fit;
+    let dress = super::render::Dress {
+        outline: None,
+        effects,
+        turn: placed.rotation,
+    };
+    // Everything the bitmap depends on.
+    let mut key: Vec<u32> = dress.bits();
+    key.extend([natural.0, natural.1, made_at.0, made_at.1, unit, shape.adjust.unwrap_or(-1.0)].map(f32::to_bits));
+    key.extend(shape.outline.as_ref().map_or([0, 0], |outline| [1, outline.width.to_bits()]));
+    key.extend([shape.preset as u32, shape.fill.is_some() as u32, placed.flip_h as u32, placed.flip_v as u32]);
+    let turn = placed.rotation;
+    let made = picture::cached_image(drawing.id as u64, key, || {
+        let (cover, w, h) = shape_cover(shape, natural, made_at, (placed.flip_h, placed.flip_v), unit);
+        let (bitmap, _) = super::render::under(&cover, w, h, &effects, turn, unit)?;
+        let before = (bitmap.width as f32, bitmap.height as f32);
+        let quarters = (turn / 90.0).round();
+        let turned = if (turn - quarters * 90.0).abs() < 0.05 {
+            bitmap.oriented(false, false, (quarters as i32).rem_euclid(4) as u8)
+        } else {
+            bitmap.turned(before, turn, false, false)
+        };
+        Some((turned, before))
+    });
+    let Some((image, before)) = made else {
+        return;
+    };
+    // The bitmap is centred on the frame; `before` is its size before
+    // the turn, in the pixels it was made in.
+    let (cx, cy) = placed.centre();
+    let (half_w, half_h) = (before.0 / (brush.scale * fit) / 2.0, before.1 / (brush.scale * fit) / 2.0);
+    let (x0, y0, x1, y1) = Placed {
+        x0: cx - half_w,
+        y0: cy - half_h,
+        x1: cx + half_w,
+        y1: cy + half_h,
+        flip_h: false,
+        flip_v: false,
+        ..*placed
     }
+    .extent();
+    out.push(Draw::Image {
+        image,
+        bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),
+    });
 }
 
 /// What a picture wears where it is drawn.
@@ -573,21 +566,7 @@ pub fn leaves<'a>(drawing: &'a Drawing, placed: &Placed, zoom: f32) -> Vec<(&'a 
 pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
     match &drawing.kind {
         DrawingKind::Shape(shape) => {
-            if !drawing.effects.is_none() {
-                let lines = outline_of(shape, placed, natural);
-                let stroke = shape.outline.as_ref().map_or(1.0, |outline| stroke_width(outline, brush.zoom));
-                // A shape that is neither filled nor a line casts the
-                // shadow of its outline only.
-                let hollow = shape.fill.is_none() && !shape.preset.is_line();
-                let lines: Vec<Polyline> = lines
-                    .into_iter()
-                    .map(|line| Polyline {
-                        closed: line.closed && !hollow,
-                        ..line
-                    })
-                    .collect();
-                draw_effects(&drawing.effects, &lines, stroke, brush, out);
-            }
+            draw_effects(drawing, shape, placed, natural, brush, out);
             draw_shape(shape, placed, natural, brush, text, out);
         }
         DrawingKind::Picture(picture) => draw_picture(drawing, picture, placed, natural, brush, out),
