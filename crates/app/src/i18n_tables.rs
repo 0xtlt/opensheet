@@ -3213,6 +3213,9 @@ pub static ES: &[(&str, &str)] = &[
     ("of", "de"),
     ("Show Margins", "Mostrar márgenes"),
     ("Zoom to Page", "Zoom a la página"),
+    // ---- Find All, pictures of cells, printers ----
+    ("Find All", "Buscar todos"),
+    ("cell(s) found:", "celda(s) encontrada(s):"),
     // ---- Workbook views ----
     ("Move Page Break", "Mover saltos de página"),
     ("Show White Space", "Mostrar espacio en blanco"),
@@ -6797,6 +6800,9 @@ pub static DE: &[(&str, &str)] = &[
     ("of", "von"),
     ("Show Margins", "Seitenränder anzeigen"),
     ("Zoom to Page", "Auf Seite zoomen"),
+    // ---- Find All, pictures of cells, printers ----
+    ("Find All", "Alle suchen"),
+    ("cell(s) found:", "Zelle(n) gefunden:"),
     // ---- Workbook views ----
     ("Move Page Break", "Seitenumbruch verschieben"),
     ("Show White Space", "Leerfläche anzeigen"),
@@ -10384,6 +10390,9 @@ pub static IT: &[(&str, &str)] = &[
     ("of", "di"),
     ("Show Margins", "Mostra margini"),
     ("Zoom to Page", "Zoom sulla pagina"),
+    // ---- Find All, pictures of cells, printers ----
+    ("Find All", "Trova tutto"),
+    ("cell(s) found:", "celle trovate:"),
     // ---- Workbook views ----
     ("Move Page Break", "Sposta interruzione di pagina"),
     ("Show White Space", "Mostra spazio vuoto"),

@@ -228,6 +228,96 @@ fn find_and_select_reaches_the_cells_of_a_kind(cx: &mut TestAppContext) {
     assert_eq!(found, vec![Rect::parse("A1").unwrap(), Rect::parse("B2").unwrap()]);
 }
 
+/// The cells the Find All list of the open dialog holds, drawn again
+/// first so that it has followed the workbook.
+fn listed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Vec<(usize, u32, u32)>> {
+    redraw(cx);
+    let dialog = app
+        .update(cx, |app, _| app.front_modal_view().expect("a dialog is open").downcast::<find::FindReplace>())
+        .ok()
+        .expect("the Find dialog");
+    dialog.update(cx, |dialog, _| dialog.listed())
+}
+
+#[gpui::test]
+fn find_all_lists_the_cells_and_a_click_goes_to_one(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| {
+        enter(wb, &[("A1", "tea"), ("B2", "Teapot"), ("A3", "=LEN(\"tea\")"), ("C4", "coffee")]);
+        let second = wb.add_sheet(1);
+        wb.set_cell_text(second, 5, 2, "green tea").unwrap();
+    });
+    // Within the sheet: the two constants and the formula.
+    run(&app, cx, Cmd::Find);
+    cx.simulate_input("tea");
+    assert_eq!(listed(&app, cx), None, "no list before Find All");
+    press(cx, "find-all");
+    assert_eq!(listed(&app, cx), Some(vec![(0, 0, 0), (0, 1, 1), (0, 2, 0)]));
+    // A click on a line goes to its cell and leaves the dialog open.
+    press(cx, "find-result-2");
+    assert_eq!(active(&app, cx), (2, 0));
+    assert_eq!(dialogs(&app, cx), 1);
+    press(cx, "find-close");
+
+    // Within the workbook, looking in values with the case respected:
+    // the formula shows 3, "Teapot" has a capital, the other sheet counts.
+    app.update(cx, |app, _| {
+        let choices = app.ext_mut::<find::Choices>();
+        choices.workbook = true;
+        choices.options.look_in = opensheet_engine::find::LookIn::Values;
+        choices.options.match_case = true;
+    });
+    run(&app, cx, Cmd::Find);
+    press(cx, "find-all");
+    assert_eq!(listed(&app, cx), Some(vec![(0, 0, 0), (1, 5, 2)]));
+    press(cx, "find-result-1");
+    assert_eq!(app.update(cx, |app, _| app.sheet), 1, "the line of another sheet shows that sheet");
+    assert_eq!(active(&app, cx), (5, 2));
+    press(cx, "find-close");
+
+    // Entire cells only.
+    app.update_in(cx, |app, window, cx| {
+        app.switch_sheet(0, window, cx);
+        let choices = app.ext_mut::<find::Choices>();
+        choices.workbook = false;
+        choices.options.match_case = false;
+        choices.options.whole_cell = true;
+    });
+    run(&app, cx, Cmd::Find);
+    press(cx, "find-all");
+    assert_eq!(listed(&app, cx), Some(vec![(0, 0, 0)]));
+    // Nothing found: Excel's message, and no list.
+    press(cx, "find-close");
+    run(&app, cx, Cmd::Find);
+    cx.simulate_input("mate");
+    press(cx, "find-all");
+    assert_eq!(dialogs(&app, cx), 2);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(listed(&app, cx), None);
+}
+
+#[gpui::test]
+fn the_list_of_find_all_follows_a_replacement(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    edit(&app, cx, |wb| enter(wb, &[("A1", "tea"), ("B2", "Teapot"), ("A3", "=LEN(\"tea\")")]));
+    cx.simulate_keystrokes("ctrl-h");
+    cx.simulate_input("tea");
+    cx.simulate_keystrokes("tab");
+    cx.simulate_input("mate");
+    press(cx, "find-all");
+    assert_eq!(listed(&app, cx).map(|cells| cells.len()), Some(3));
+    // Replace changes the active cell (A1): two lines are left.
+    press(cx, "find-replace-one");
+    assert_eq!(value(&app, cx, "A1"), Value::text("mate"));
+    assert_eq!(listed(&app, cx), Some(vec![(0, 1, 1), (0, 2, 0)]));
+    // Replace All empties the list; undoing it brings the lines back.
+    press(cx, "find-replace-all");
+    cx.simulate_keystrokes("enter");
+    assert_eq!(listed(&app, cx), Some(Vec::new()));
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(listed(&app, cx), Some(vec![(0, 1, 1), (0, 2, 0)]));
+}
+
 // ------------------------------------------------------------ paste special
 
 fn copy(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str) {
