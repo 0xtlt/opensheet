@@ -14,6 +14,7 @@ mod comment;
 mod condfmt;
 mod enums;
 mod format;
+mod pivot;
 mod range;
 mod table;
 mod util;
@@ -245,6 +246,14 @@ pub(crate) static API: &[ApiClass] = &[
     comment::COMMENT,
     comment::COMMENT_REPLY,
     comment::NOTE,
+    pivot::PIVOT_TABLE,
+    pivot::PIVOT_HIERARCHY,
+    pivot::ROW_COLUMN_HIERARCHY,
+    pivot::FILTER_HIERARCHY,
+    pivot::DATA_HIERARCHY,
+    pivot::PIVOT_FIELD,
+    pivot::PIVOT_ITEM,
+    pivot::PIVOT_LAYOUT,
 ];
 
 pub(crate) use enums::ENUMS;

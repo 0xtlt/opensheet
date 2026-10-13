@@ -12,7 +12,7 @@ use opensheet_engine::value::Value;
 use opensheet_engine::workbook::{DefinedName, Workbook};
 
 use super::util::{absolute_address, range_arg};
-use super::{ApiClass, Call, Fail, Res, Ret, class, comment, enum_value, object, state_of, table};
+use super::{ApiClass, Call, Fail, Res, Ret, class, comment, enum_value, object, pivot, state_of, table};
 use crate::host::{Host, MAX_SHEETS, to_script};
 
 /// The identifier of a sheet as Excel writes them.
@@ -223,6 +223,13 @@ pub(super) const WORKBOOK: ApiClass = class!("Workbook", "The workbook the scrip
         comment::add_note(h, c, active)
     };
     getNotes "(): Note[]" "Every note of the workbook." => |h, _| Ok(comment::all(h, None, false));
+    addPivotTable "(name: string, source: Range | string | Table, destination: Range | string): PivotTable" "Inserts a PivotTable without fields: of a range (header row first) or of a table, with its top-left cell at the destination. Addresses without a sheet are read on the active one." => |h, c| {
+        let active = h.active_sheet();
+        pivot::add(h, c, active)
+    };
+    getPivotTables "(): PivotTable[]" "Every PivotTable of the workbook." => |h, _| Ok(pivot::all(h, None));
+    getPivotTable "(name: string): PivotTable | undefined" "The PivotTable with this name; undefined when there is none." => |h, c| pivot::by_name(h, c, None);
+    refreshAllPivotTables "(): void" "Refreshes every PivotTable of the workbook." => |h, c| pivot::refresh_all(h, c, None);
     getName "(): string" "The name of the workbook's file." => |h, _| Ok(h.workbook_name.clone().into());
     getApplication "(): Application" "The application: calculation." => |_, _| Ok(Ret::object("Application", vec![]));
 });

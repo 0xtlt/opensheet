@@ -12,6 +12,10 @@ macro_rules! members {
 
 pub(crate) static ENUMS: &[ApiEnum] = &[
     ApiEnum {
+        name: "AggregationFunction",
+        members: members!(unknown "Unknown", automatic "Automatic", sum "Sum", count "Count", average "Average", max "Max", min "Min", product "Product", countNumbers "CountNumbers", standardDeviation "StandardDeviation", standardDeviationP "StandardDeviationP", variance "Variance", varianceP "VarianceP"),
+    },
+    ApiEnum {
         name: "AutoFillType",
         members: members!(fillDefault "FillDefault", fillCopy "FillCopy", fillSeries "FillSeries", fillFormats "FillFormats", fillValues "FillValues", fillDays "FillDays", fillWeekdays "FillWeekdays", fillMonths "FillMonths", fillYears "FillYears", linearTrend "LinearTrend", growthTrend "GrowthTrend", flashFill "FlashFill"),
     },
@@ -156,12 +160,24 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(left "Left", right "Right", up "Up", down "Down"),
     },
     ApiEnum {
+        name: "LabelFilterCondition",
+        members: members!(unknown "Unknown", beginsWith "BeginsWith", endsWith "EndsWith", contains "Contains", greaterThan "GreaterThan", greaterThanOrEqualTo "GreaterThanOrEqualTo", lessThan "LessThan", lessThanOrEqualTo "LessThanOrEqualTo", equals "Equals", between "Between"),
+    },
+    ApiEnum {
         name: "NamedItemScope",
         members: members!(worksheet "Worksheet", workbook "Workbook"),
     },
     ApiEnum {
         name: "NamedItemType",
         members: members!(string "String", integer "Integer", double "Double", boolean "Boolean", range "Range", error "Error", array "Array"),
+    },
+    ApiEnum {
+        name: "PivotFilterType",
+        members: members!(unknown "Unknown", value "Value", manual "Manual", label "Label", date "Date"),
+    },
+    ApiEnum {
+        name: "PivotLayoutType",
+        members: members!(compact "Compact", tabular "Tabular", outline "Outline"),
     },
     ApiEnum {
         name: "RangeCopyType",
@@ -180,8 +196,16 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(forward "Forward", backwards "Backwards"),
     },
     ApiEnum {
+        name: "ShowAsCalculation",
+        members: members!(unknown "Unknown", none "None", percentOfGrandTotal "PercentOfGrandTotal", percentOfRowTotal "PercentOfRowTotal", percentOfColumnTotal "PercentOfColumnTotal", percentOfParentRowTotal "PercentOfParentRowTotal", percentOfParentColumnTotal "PercentOfParentColumnTotal", percentOfParentTotal "PercentOfParentTotal", percentOf "PercentOf", runningTotal "RunningTotal", percentRunningTotal "PercentRunningTotal", differenceFrom "DifferenceFrom", percentDifferenceFrom "PercentDifferenceFrom", rankAscending "RankAscending", rankDecending "RankDecending", index "Index"),
+    },
+    ApiEnum {
         name: "SheetVisibility",
         members: members!(visible "Visible", hidden "Hidden", veryHidden "VeryHidden"),
+    },
+    ApiEnum {
+        name: "SortBy",
+        members: members!(ascending "Ascending", descending "Descending"),
     },
     ApiEnum {
         name: "SortDataOption",
@@ -198,6 +222,18 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
     ApiEnum {
         name: "SortOrientation",
         members: members!(rows "Rows", columns "Columns"),
+    },
+    ApiEnum {
+        name: "SubtotalLocationType",
+        members: members!(atTop "AtTop", atBottom "AtBottom", off "Off"),
+    },
+    ApiEnum {
+        name: "TopBottomSelectionType",
+        members: members!(items "Items", percent "Percent", sum "Sum"),
+    },
+    ApiEnum {
+        name: "ValueFilterCondition",
+        members: members!(unknown "Unknown", equals "Equals", greaterThan "GreaterThan", greaterThanOrEqualTo "GreaterThanOrEqualTo", lessThan "LessThan", lessThanOrEqualTo "LessThanOrEqualTo", between "Between", topN "TopN", bottomN "BottomN"),
     },
     ApiEnum {
         name: "VerticalAlignment",

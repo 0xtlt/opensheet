@@ -34,10 +34,20 @@
   const protos = [];
   function revive(value) {
     if (value === null) return undefined;
+    if (typeof value !== "object") return value;
     if (Array.isArray(value)) return value.map(revive);
-    const object = Object.create(protos[value.$]);
-    object._s = value.s;
-    return object;
+    if (typeof value.$ === "number" && Array.isArray(value.s)) {
+      const object = Object.create(protos[value.$]);
+      object._s = value.s;
+      return object;
+    }
+    // Plain data that holds objects of the model (a ShowAsRule and its
+    // base field).
+    const plain = {};
+    for (const key in value) {
+      plain[key] = revive(value[key]);
+    }
+    return plain;
   }
   function call(classIndex, memberIndex, self, args) {
     const answer = op(classIndex, memberIndex, JSON.stringify([self._s, args]));

@@ -216,6 +216,45 @@ fn comments_replies_mentions_and_notes() {
     comments();
 }
 
+/// A list of sales: region, product, quantity, amount.
+fn sales() -> Workbook {
+    let rows = [
+        ["Region", "Product", "Qty", "Amount"],
+        ["North", "Pen", "10", "15"],
+        ["North", "Ink", "2", "24.5"],
+        ["South", "Pen", "5", "7.5"],
+        ["South", "Pad", "5", "15"],
+        ["East", "Ink", "1", "12.25"],
+        ["East", "Pen", "3", "4.5"],
+    ];
+    let cells: Vec<(String, &str)> = rows
+        .iter()
+        .enumerate()
+        .flat_map(|(r, row)| row.iter().enumerate().map(move |(c, text)| (format!("{}{}", (b'A' + c as u8) as char, r + 1), *text)))
+        .collect();
+    book(&cells.iter().map(|(name, text)| (name.as_str(), *text)).collect::<Vec<_>>())
+}
+
+fn pivots() {
+    use opensheet_engine::pivot::{Aggregation, FieldLayout};
+    let mut wb = sales();
+    ok(&mut wb, include_str!("model/pivots.ts"));
+    let (sheet, pivot) = wb.pivots().next().expect("a PivotTable");
+    assert_eq!((sheet, pivot.name.as_str(), pivot.anchor), (0, "Report", (4, 5)));
+    assert_eq!((pivot.row_fields.len(), pivot.col_fields.len(), pivot.data_fields.len()), (2, 0, 1));
+    assert_eq!((pivot.data_fields[0].function, pivot.data_fields[0].name.as_str()), (Aggregation::Sum, "Revenue"));
+    assert!(pivot.fields.iter().all(|f| f.layout == FieldLayout::Outline));
+    assert_eq!(wb.pivots().count(), 1);
+    // A protected sheet refuses unless it allows using PivotTables.
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("workbook.getPivotTable(\"Report\")!.refresh();")).message.contains("protected"));
+}
+
+#[test]
+fn pivot_tables_their_fields_values_filters_and_layout() {
+    pivots();
+}
+
 #[test]
 fn conditional_formats_of_every_kind() {
     condfmt();
@@ -283,7 +322,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation, comments, pivots] {
         scenario();
     }
     let called = members_called();

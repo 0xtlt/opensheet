@@ -15,7 +15,7 @@ use opensheet_engine::workbook::{Content, Sheet, SheetVisibility};
 
 use super::util::{color_arg, color_text, parse_color, range_arg, resolve, table_fail};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
-use super::{ApiClass, Call, Res, Ret, chart, class, comment, enum_value, object, state_of, table};
+use super::{ApiClass, Call, Res, Ret, chart, class, comment, enum_value, object, pivot, state_of, table};
 use crate::host::{Host, MAX_SHEETS, rect_from};
 
 /// The sheet a Worksheet object (or one of its parts) stands for.
@@ -480,6 +480,19 @@ pub(super) const WORKSHEET: ApiClass = class!("Worksheet", "A sheet of the workb
     getNote "(key: number | string): Note | undefined" "The note of a cell of the worksheet (by address), or the note at a place among its notes (0-based); undefined when there is none." => |h, c| {
         let sheet = this_sheet(h, c)?;
         comment::note_by_key(h, c, sheet)
+    };
+    addPivotTable "(name: string, source: Range | string | Table, destination: Range | string): PivotTable" "Inserts a PivotTable without fields on the worksheet: of a range (header row first) or of a table, with its top-left cell at the destination." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        pivot::add(h, c, sheet)
+    };
+    getPivotTables "(): PivotTable[]" "The PivotTables of the worksheet." => |h, c| Ok(pivot::all(h, Some(this_sheet(h, c)?)));
+    getPivotTable "(name: string): PivotTable | undefined" "The PivotTable of the worksheet with this name; undefined when there is none." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        pivot::by_name(h, c, Some(sheet))
+    };
+    refreshAllPivotTables "(): void" "Refreshes the PivotTables of the worksheet." => |h, c| {
+        let sheet = this_sheet(h, c)?;
+        pivot::refresh_all(h, c, Some(sheet))
     };
     replaceAll "(text: string, replacement: string, criteria: ExcelScript.ReplaceCriteria): number" "Replaces a text in the constants and formulas of the worksheet; returns how many cells changed." => |h, c| {
         let sheet = this_sheet(h, c)?;

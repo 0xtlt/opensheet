@@ -17,6 +17,9 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
   const custom = rule(ExcelScript.ConditionalFormatType.custom).getCustom()!;
   const ruleFormat = cellValue.getCellValue()!.getFormat();
   const comment = sheet.addComment("B2", "Why?");
+  const pivot = sheet.addPivotTable(`Pivot${round}`, "A1:C4", "K5");
+  const pivotRow = pivot.addRowHierarchy(pivot.getHierarchy("Name")!);
+  const pivotData = pivot.addDataHierarchy(pivot.getHierarchy("Qty")!);
   return {
     Workbook: workbook,
     Application: workbook.getApplication(),
@@ -44,6 +47,14 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     Comment: comment,
     CommentReply: comment.addCommentReply("Because"),
     Note: sheet.addNote("C3", "A note"),
+    PivotTable: pivot,
+    PivotHierarchy: pivot.getHierarchy("Price"),
+    RowColumnPivotHierarchy: pivotRow,
+    FilterPivotHierarchy: pivot.addFilterHierarchy(pivot.getHierarchy("Price")!),
+    DataPivotHierarchy: pivotData,
+    PivotField: pivotRow.getFields()[0],
+    PivotItem: pivotRow.getFields()[0].getItems()[0],
+    PivotLayout: pivot.getLayout(),
     ConditionalFormat: cellValue,
     CellValueConditionalFormat: cellValue.getCellValue(),
     ColorScaleConditionalFormat: rule(ExcelScript.ConditionalFormatType.colorScale).getColorScale(),
