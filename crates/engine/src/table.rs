@@ -2771,6 +2771,27 @@ mod tests {
     }
 
     #[test]
+    fn cells_shift_to_make_room_and_close_up() {
+        let mut w = wb(&[("A1", "a"), ("A2", "b"), ("B1", "x"), ("B2", "y"), ("D1", "=A2")]);
+        // Insert > Cells > Shift cells down on A1: only column A moves.
+        w.shift_cells(0, rect("A1"), true, true).unwrap();
+        w.commit("insert");
+        assert_eq!((crate::tests::val(&w, "A1"), crate::tests::val(&w, "A2"), crate::tests::val(&w, "A3"), crate::tests::val(&w, "B2")), (Value::Empty, Value::text("a"), Value::text("b"), Value::text("y")));
+        assert_eq!(w.formula_text(0, 0, 3).as_deref(), Some("=A3"));
+        // Delete > Cells > Shift cells left on A2:A3: row 2 and 3 close up.
+        w.shift_cells(0, rect("A2:A3"), false, false).unwrap();
+        w.commit("delete");
+        assert_eq!((crate::tests::val(&w, "A2"), crate::tests::val(&w, "A3")), (Value::text("y"), Value::Empty));
+        w.undo();
+        w.undo();
+        assert_eq!((crate::tests::val(&w, "A1"), crate::tests::val(&w, "A2")), (Value::text("a"), Value::text("b")));
+        // A table in the way refuses.
+        w.add_table(0, rect("A1:B2"), false).unwrap();
+        w.commit("table");
+        assert_eq!(w.shift_cells(0, rect("A2"), true, true), Err(TableError::Blocked));
+    }
+
+    #[test]
     fn creating_with_headers() {
         let (mut w, id) = sales();
         let table = w.table(0, id).unwrap();

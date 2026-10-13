@@ -650,6 +650,13 @@ impl Workbook {
                 }));
             }
         }
+        // What was written cell by cell after the snapshot is in the state
+        // the snapshot is paired with. Kept, it would be replayed over that
+        // state by a redo, and bring back what a later change of the sheets
+        // had moved or removed (a value typed, then its row deleted).
+        if let Some(at) = changes.iter().position(|ch| matches!(ch, Change::Sheets { .. })) {
+            changes.truncate(at + 1);
+        }
         self.undo_stack.push(UndoEntry {
             label: label.to_string(),
             changes,

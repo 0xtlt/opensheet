@@ -288,3 +288,21 @@ fn row_format_keeps_column_format() {
     assert!(w.style_at(0, 2, 5).fill.is_some() && !w.style_at(0, 2, 5).font.bold);
     assert!(w.style_at(0, 7, 1).font.bold && w.style_at(0, 7, 1).fill.is_none());
 }
+
+#[test]
+fn redo_after_cells_were_written_then_moved() {
+    // One transaction that types a value and then deletes the row above
+    // it: redo must give the sheet as it was left, not the value back
+    // where it was typed.
+    let mut w = wb(&[("A1", "top"), ("A2", "old")]);
+    w.snapshot();
+    w.set_value(0, 1, 0, Value::text("new"));
+    w.delete_rows(0, 0, 1);
+    w.commit("typed then moved");
+    assert_eq!(val(&w, "A1"), Value::text("new"));
+    assert_eq!(val(&w, "A2"), Value::Empty);
+    w.undo();
+    assert_eq!((val(&w, "A1"), val(&w, "A2")), (Value::text("top"), Value::text("old")));
+    w.redo();
+    assert_eq!((val(&w, "A1"), val(&w, "A2")), (Value::text("new"), Value::Empty));
+}

@@ -1,0 +1,68 @@
+function main(workbook: ExcelScript.Workbook) {
+  const sheet = workbook.getActiveWorksheet();
+  const shown = () => ["A2", "A3", "A4"].filter(a => !sheet.getRange(a).getRowHidden()).map(a => sheet.getRange(a).getValue());
+
+  const panes = sheet.getFreezePanes();
+  const frozen = () => panes.getLocation()?.getAddress();
+  eq(frozen(), undefined);
+  panes.freezeRows();
+  eq(frozen(), "Sheet1!1:1");
+  panes.freezeRows(2);
+  eq(frozen(), "Sheet1!1:2");
+  panes.freezeColumns();
+  eq(frozen(), "Sheet1!A:A");
+  panes.freezeColumns(2);
+  eq(frozen(), "Sheet1!A:B");
+  panes.freezeAt(sheet.getRange("A1:B1"));
+  eq(frozen(), "Sheet1!A1:B1");
+  panes.freezeAt("1:3");
+  eq(frozen(), "Sheet1!1:3");
+  panes.unfreeze();
+  eq(frozen(), undefined);
+  panes.freezeAt("A1");
+
+  const filter = sheet.getAutoFilter();
+  eq([filter.getEnabled(), filter.getIsDataFiltered(), filter.getRange()], [false, false, undefined]);
+  filter.apply(sheet.getRange("A1:C4"));
+  eq([filter.getEnabled(), filter.getIsDataFiltered(), filter.getRange()?.getAddress()], [true, false, "Sheet1!A1:C4"]);
+  filter.apply("A1:C4", 1, { filterOn: ExcelScript.FilterOn.custom, criterion1: ">=5" });
+  eq(filter.getIsDataFiltered(), true);
+  eq(shown(), ["Pen", "Pad"]);
+  filter.apply("A1:C4", 0, { filterOn: ExcelScript.FilterOn.values, values: ["Pen", "Ink"] });
+  eq(shown(), ["Pen"]);
+  filter.clearColumnCriteria(1);
+  eq(shown(), ["Pen", "Ink"]);
+  filter.clearCriteria();
+  eq([filter.getIsDataFiltered(), shown().length], [false, 3]);
+  filter.apply("A1:C4", 2, { filterOn: ExcelScript.FilterOn.topItems, criterion1: "1" });
+  eq(shown(), ["Ink"]);
+  filter.apply("A1:C4", 2, { filterOn: ExcelScript.FilterOn.bottomItems, criterion1: "2" });
+  eq(shown(), ["Pen", "Pad"]);
+  filter.apply("A1:C4", 2, { filterOn: ExcelScript.FilterOn.custom, criterion1: ">1", criterion2: "<10", operator: ExcelScript.FilterOperator.and });
+  eq(shown(), ["Pen", "Pad"]);
+  sheet.getRange("C3").setValue(2);
+  eq(shown(), ["Pen", "Pad"]);
+  filter.reapply();
+  eq(shown(), ["Pen", "Ink", "Pad"]);
+  filter.clearCriteria();
+  filter.apply("A1:C4", 1, { filterOn: ExcelScript.FilterOn.dynamic, dynamicCriteria: ExcelScript.DynamicFilterCriteria.aboveAverage });
+  eq(shown(), ["Pen"]);
+  filter.clearCriteria();
+  sheet.getRange("A3").getFormat().getFill().setColor("yellow");
+  sheet.getRange("A4").getFormat().getFont().setColor("red");
+  filter.apply("A1:C4", 0, { filterOn: ExcelScript.FilterOn.cellColor, color: "yellow" });
+  eq(shown(), ["Ink"]);
+  filter.apply("A1:C4", 0, { filterOn: ExcelScript.FilterOn.fontColor, color: "#FF0000" });
+  eq(shown(), ["Pad"]);
+  filter.apply("A1:C4", 0, { filterOn: ExcelScript.FilterOn.custom, criterion1: "=P*", criterion2: "<>Pad" });
+  eq(shown(), ["Pen"]);
+  throws(() => filter.apply("A1:C4", 0, { filterOn: ExcelScript.FilterOn.icon }), "ExcelScript.FilterOn.icon is not supported");
+  throws(() => filter.apply("A1:C4", 9, { filterOn: ExcelScript.FilterOn.values, values: ["x"] }), "invalid");
+  // A filtered total follows what is shown.
+  sheet.getRange("E1").setFormula("=SUBTOTAL(109,B2:B4)");
+  eq(sheet.getRange("E1").getValue(), 10);
+  filter.remove();
+  eq([filter.getEnabled(), shown().length, sheet.getRange("E1").getValue()], [false, 3, 17]);
+  filter.apply("B2");
+  eq(filter.getRange()?.getAddress(), "Sheet1!A1:C4");
+}
