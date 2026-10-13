@@ -170,7 +170,8 @@ impl Render for ConnectionsDialog {
         let chosen = self.selected_import(cx);
         let none = chosen.is_none();
         let file = chosen.as_ref().is_some_and(|(import, _)| reads_a_file(import));
-        let side = |button: Button| button.width(190.0);
+        // Wide enough for the longest label in the five languages.
+        let side = |button: Button| button.width(240.0);
         let modal = self.modal.clone();
         let locations = match (&chosen, self.locations) {
             (Some((import, place)), true) => div().child(SharedString::from(format!("{}    {}", import.name, place))),
@@ -189,7 +190,7 @@ impl Render for ConnectionsDialog {
             ),
         };
         dialog(&self.modal, t("Workbook Queries & Connections", "Requêtes et connexions du classeur"))
-            .width(560.0)
+            .width(600.0)
             .child(
                 div()
                     .flex()
