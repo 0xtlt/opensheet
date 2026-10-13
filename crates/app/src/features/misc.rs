@@ -60,12 +60,7 @@ commands! {
         CalcManual = "", t("Manual", "Manuel");
         CalcNow = "misc-calc-now", t("Calculate Now", "Calculer maintenant");
         CalcSheet = "misc-calc-sheet", t("Calculate Sheet", "Calculer la feuille");
-        // Review
-        Spelling = "spell", t("Spelling", "Orthographe");
-        Thesaurus = "book", t("Thesaurus", "Dictionnaire des synonymes");
-        CheckAccessibility = "eye", t("Check Accessibility", "Vérifier l'accessibilité");
-        Translate = "book", t("Translate", "Traduire");
-        // Automate, Help
+        // Automate
         NewScript = "function", t("New Script", "Nouveau script");
         AllScripts = "book", t("All Scripts", "Tous les scripts");
     }

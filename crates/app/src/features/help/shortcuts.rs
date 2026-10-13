@@ -97,6 +97,8 @@ fn described(action: &str) -> Option<&'static str> {
         "UngroupSelection" => t("Ungroup…", "Dissocier…"),
         "ToggleOutlineSymbols" => t("Outline symbols", "Symboles du plan"),
         "OpenPreferences" => t("Preferences…", "Préférences…"),
+        "Spelling" => t("Spelling", "Orthographe"),
+        "Thesaurus" => t("Thesaurus", "Dictionnaire des synonymes"),
         _ => return None,
     })
 }

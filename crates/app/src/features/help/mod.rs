@@ -23,7 +23,7 @@ pub(crate) mod ui_tests;
 use self::docs::{Line, Topic};
 use super::{Command, Cx};
 use crate::app::ExcelApp;
-use crate::i18n::{Lang, t};
+use crate::i18n::{Lang, t, t_ctx};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
 use crate::widgets::{self, TextField, icon};
@@ -214,7 +214,7 @@ impl HelpPane {
                 .h(px(24.))
                 .text_color(c(theme::ACCENT_DARK))
                 .child(icon("chevron-left", 10.0, theme::ACCENT_DARK))
-                .child(t("Back", "Retour"))
+                .child(t_ctx("help", "Back", "Retour"))
                 .on_click(cx.listener(|pane, _, _, cx| {
                     pane.open = None;
                     cx.notify();

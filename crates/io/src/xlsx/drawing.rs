@@ -164,8 +164,21 @@ fn push_identity(x: &mut String, drawing: &Drawing, id: usize) {
     if drawing.hidden {
         x.push_str(" hidden=\"1\"");
     }
-    x.push_str("/>");
+    if drawing.decorative {
+        // "Mark as decorative", in the extension Excel keeps it in.
+        w!(
+            x,
+            "><a:extLst><a:ext uri=\"{DECORATIVE_EXT}\"><adec:decorative xmlns:adec=\"{NS_DECORATIVE}\" val=\"1\"/></a:ext></a:extLst></xdr:cNvPr>"
+        );
+    } else {
+        x.push_str("/>");
+    }
 }
+
+/// The extension of `cNvPr` that marks an object as decorative, and the
+/// namespace of its one element.
+const DECORATIVE_EXT: &str = "{C183D7F6-B498-43B3-948B-1728B52AA6E4}";
+const NS_DECORATIVE: &str = "http://schemas.microsoft.com/office/drawing/2017/decorative";
 
 /// `<a:xfrm>`: the box of the drawing before rotation, as an application
 /// that does not follow anchors would place it.
@@ -1328,6 +1341,7 @@ enum RawKind {
 struct RawObject {
     name: String,
     alt_text: String,
+    decorative: bool,
     hidden: bool,
     lock_aspect: bool,
     rotation: f32,
@@ -1348,6 +1362,7 @@ impl RawObject {
         RawObject {
             name: String::new(),
             alt_text: String::new(),
+            decorative: false,
             hidden: false,
             lock_aspect: false,
             rotation: 0.0,
@@ -1369,7 +1384,17 @@ impl RawObject {
                 self.name = printable(&text("name"), false);
                 self.alt_text = printable(&text("descr"), true);
                 self.hidden = t.attr_bool("hidden").unwrap_or(false);
-                r.skip(t);
+                // `extLst` > `ext` > `adec:decorative`.
+                each_child(r, t, |r, list| {
+                    each_child(r, list, |r, ext| {
+                        each_child(r, ext, |r, mark| {
+                            if mark.name == "decorative" {
+                                self.decorative = mark.attr_bool("val").unwrap_or(false);
+                            }
+                            r.skip(mark);
+                        });
+                    });
+                });
             }
             "cNvSpPr" | "cNvPicPr" | "cNvCxnSpPr" | "cNvGrpSpPr" => {
                 text_box = t.attr_bool("txBox").unwrap_or(false);
@@ -1922,6 +1947,7 @@ impl Loader {
         drawing.flip_v = object.flip_v;
         drawing.lock_aspect = object.lock_aspect;
         drawing.alt_text = object.alt_text;
+        drawing.decorative = object.decorative;
         drawing.hidden = object.hidden;
         drawing.effects = object.effects;
         Some(drawing)

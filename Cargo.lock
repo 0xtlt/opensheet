@@ -3732,6 +3732,7 @@ dependencies = [
  "opensheet_engine",
  "opensheet_io",
  "opensheet_print",
+ "opensheet_script",
  "raw-window-handle",
  "unicode-segmentation",
 ]
@@ -3761,6 +3762,14 @@ dependencies = [
  "flate2",
  "opensheet_engine",
  "tempfile",
+]
+
+[[package]]
+name = "opensheet_script"
+version = "0.1.0"
+dependencies = [
+ "opensheet_engine",
+ "serde_json",
 ]
 
 [[package]]

@@ -9,6 +9,7 @@ license.workspace = true
 opensheet_engine = { path = "../engine" }
 opensheet_io = { path = "../io" }
 opensheet_print = { path = "../print" }
+opensheet_script = { path = "../script" }
 gpui = "0.2.2"
 # The crate GPUI decodes pictures with (already built for it): its bitmap
 # type is what `gpui::RenderImage` is made from.
@@ -16,9 +17,10 @@ image = "0.25"
 unicode-segmentation = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# The share sheet of macOS (`NSSharingServicePicker`) is reached through
-# Objective-C, from the view of the window. Both crates are already built
-# for GPUI.
+# The Objective-C runtime GPUI already links: for the system spelling
+# checker (NSSpellChecker) of Review > Spelling, and for the share sheet of
+# macOS (NSSharingServicePicker), which hangs from the view of the window
+# (`raw-window-handle`, also built for GPUI already).
 objc = "0.2"
 raw-window-handle = "0.6"
 
