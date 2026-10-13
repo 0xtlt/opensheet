@@ -786,6 +786,10 @@ impl ExcelApp {
         let Some(sel) = self.object_sel else {
             return false;
         };
+        // Inside a group, Tab walks its members.
+        if features::all()[sel.owner].object_cycle(self, sel.id, forward, cx) {
+            return true;
+        }
         let objects = features::objects(self, self.sheet);
         if let Some(i) = objects.iter().position(|(id, _)| *id == sel) {
             let n = objects.len();

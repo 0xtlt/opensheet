@@ -333,3 +333,218 @@ fn art_pieces(app: &ExcelApp, id: u32) -> Vec<opensheet_engine::smartart::Piece>
     let art = app.wb.drawing(app.sheet, id).and_then(Drawing::as_smartart).unwrap();
     art.pieces(app.wb.theme(), frame.width as f32, frame.height as f32)
 }
+
+// ------------------------------------------------------ one member of a group
+
+use gpui::{MouseButton as Button, Point};
+use opensheet_engine::drawing::Frame as Box4;
+
+fn add(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, tool: ShapeTool, frame: (f64, f64, f64, f64)) -> u32 {
+    let id = app.update(cx, |app, cx| {
+        let id = app.wb.add_shape(app.sheet, tool, Box4::new(frame.0, frame.1, frame.2, frame.3)).unwrap();
+        app.commit("add", cx);
+        id
+    });
+    redraw(cx);
+    id
+}
+
+fn frame(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> (i64, i64, i64, i64) {
+    app.update(cx, |app, _| {
+        let frame = app.wb.drawing_frame(app.sheet, id).expect("the drawing");
+        (frame.x.round() as i64, frame.y.round() as i64, frame.width.round() as i64, frame.height.round() as i64)
+    })
+}
+
+/// A point of the sheet (pixels at 100 % from the corner of A1) in the
+/// window.
+fn on_sheet(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, x: f64, y: f64) -> Point<Pixels> {
+    app.update(cx, |app, _| {
+        let layout = app.current_layout().unwrap();
+        let pane = *paint::panes(&layout).last().unwrap();
+        let (px_x, px_y) = paint::zoomed(&layout, &app.wb.sheets[app.sheet], x, y);
+        layout.to_window((px_x + pane.dx) as f32, (px_y + pane.dy) as f32)
+    })
+}
+
+fn click_at(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, x: f64, y: f64) {
+    let at = on_sheet(app, cx, x, y);
+    click(cx, at);
+}
+
+fn drag_at(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, from: (f64, f64), to: (f64, f64)) {
+    let (from, to) = (on_sheet(app, cx, from.0, from.1), on_sheet(app, cx, to.0, to.1));
+    let middle = point((from.x + to.x) / 2.0, (from.y + to.y) / 2.0);
+    cx.simulate_mouse_down(from, Button::Left, Modifiers::none());
+    cx.simulate_mouse_move(middle, Button::Left, Modifiers::none());
+    cx.simulate_mouse_move(to, Button::Left, Modifiers::none());
+    cx.simulate_mouse_up(to, Button::Left, Modifiers::none());
+    redraw(cx);
+}
+
+fn member(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<u32> {
+    app.update(cx, |app, _| member_selected(app).map(|(_, member)| member))
+}
+
+fn fill_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> Option<Color> {
+    app.update(cx, |app, _| app.wb.drawing(app.sheet, id).and_then(Drawing::as_shape).and_then(|shape| shape.fill))
+}
+
+/// Three shapes in a group, the group selected: a rectangle, an ellipse
+/// to its right and a diamond under them.
+fn grouped(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> (u32, [u32; 3]) {
+    let a = add(app, cx, ShapeTool::Rectangle, (100.0, 100.0, 100.0, 60.0));
+    let b = add(app, cx, ShapeTool::Ellipse, (240.0, 100.0, 80.0, 60.0));
+    let c = add(app, cx, ShapeTool::Diamond, (160.0, 190.0, 60.0, 60.0));
+    let group = app.update(cx, |app, cx| {
+        let group = app.wb.group_drawings(app.sheet, &[a, b, c]).expect("a group");
+        app.commit("group", cx);
+        app.select_object(Some(object_id(&Drawings, group)), cx);
+        group
+    });
+    redraw(cx);
+    (group, [a, b, c])
+}
+
+#[gpui::test]
+fn a_member_of_a_group_is_selected_formatted_moved_and_resized(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let (group, [a, b, c]) = grouped(&app, cx);
+    assert_eq!(frame(&app, cx, group), (100, 100, 220, 150));
+    // A click on a member of the selected group selects the member; the
+    // group stays the selected object.
+    click_at(&app, cx, 280.0, 130.0);
+    assert_eq!(member(&app, cx), Some(b));
+    assert_eq!(app.update(cx, |app, _| (app.object_sel, selected(app).map(|d| d.id))), (Some(object_id(&Drawings, group)), Some(b)));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("group"), "selecting is no undo step");
+    // Shape Format works on the member alone.
+    app.update(cx, |app, cx| tabs::set_fill(app, Some(Color(0xC00000)), cx));
+    assert_eq!((fill_of(&app, cx, b), fill_of(&app, cx, a) == Some(Color(0xC00000))), (Some(Color(0xC00000)), false));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Shape Fill"));
+    undo(&app, cx);
+    assert_ne!(fill_of(&app, cx, b), Some(Color(0xC00000)));
+    assert_eq!(member(&app, cx), Some(b), "the member stays selected");
+    // Dragged, the member moves alone and the box of the group follows.
+    drag_at(&app, cx, (280.0, 130.0), (380.0, 150.0));
+    assert_eq!(frame(&app, cx, b), (340, 120, 80, 60));
+    assert_eq!(frame(&app, cx, a), (100, 100, 100, 60));
+    assert_eq!(frame(&app, cx, group), (100, 100, 320, 150));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Move Object"));
+    undo(&app, cx);
+    assert_eq!((frame(&app, cx, b), frame(&app, cx, group)), ((240, 100, 80, 60), (100, 100, 220, 150)));
+    // Its bottom-right handle resizes it alone.
+    let handle = app.update(cx, |app, _| {
+        let layout = app.current_layout().unwrap();
+        let pane = *paint::panes(&layout).last().unwrap();
+        let held = selected(app).unwrap();
+        let placed = paint::placed(&layout, &app.wb.sheets[app.sheet], held, &pane);
+        let at = paint::grips(held, &placed).into_iter().find(|(grip, _)| *grip == Grip::Resize(4)).unwrap().1;
+        layout.to_window(at.0, at.1)
+    });
+    let to = on_sheet(&app, cx, 360.0, 200.0);
+    cx.simulate_mouse_down(handle, Button::Left, Modifiers::none());
+    cx.simulate_mouse_move(to, Button::Left, Modifiers::none());
+    cx.simulate_mouse_up(to, Button::Left, Modifiers::none());
+    redraw(cx);
+    assert_eq!(frame(&app, cx, b), (240, 100, 120, 100));
+    assert_eq!(frame(&app, cx, group), (100, 100, 260, 150));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Size Object"));
+    // The arrow keys nudge the member.
+    cx.simulate_keystrokes("right");
+    redraw(cx);
+    assert_eq!((frame(&app, cx, b), frame(&app, cx, a)), ((241, 100, 120, 100), (100, 100, 100, 60)));
+    // Tab goes to the next member, Shift+Tab back; Escape gives the
+    // group back as a whole, and Escape again deselects it.
+    cx.simulate_keystrokes("tab");
+    redraw(cx);
+    assert_eq!(member(&app, cx), Some(c));
+    cx.simulate_keystrokes("tab");
+    redraw(cx);
+    assert_eq!(member(&app, cx), Some(a));
+    cx.simulate_keystrokes("shift-tab shift-tab");
+    redraw(cx);
+    assert_eq!(member(&app, cx), Some(b));
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    assert_eq!((member(&app, cx), app.update(cx, |app, _| app.object_sel)), (None, Some(object_id(&Drawings, group))));
+    // With the group selected and no member, a drag from a member moves
+    // the whole group.
+    drag_at(&app, cx, (150.0, 130.0), (170.0, 140.0));
+    assert_eq!(member(&app, cx), None);
+    assert_eq!((frame(&app, cx, group), frame(&app, cx, a)), ((120, 110, 261, 150), (120, 110, 100, 60)));
+}
+
+#[gpui::test]
+fn a_member_of_a_group_is_typed_in_and_deleted(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let (group, [a, b, c]) = grouped(&app, cx);
+    let text = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32| app.update(cx, |app, _| app.wb.drawing(app.sheet, id).and_then(Drawing::as_shape).map(|shape| shape.text.clone()).unwrap_or_default());
+    // A key with a member selected types in it.
+    click_at(&app, cx, 150.0, 130.0);
+    assert_eq!(member(&app, cx), Some(a));
+    cx.simulate_input("North");
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| editing_text(app)), Some(a));
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    assert_eq!((text(&app, cx, a), member(&app, cx)), ("North".to_string(), Some(a)));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Typing"));
+    // A double click on another member types in that one.
+    let at = on_sheet(&app, cx, 280.0, 130.0);
+    cx.simulate_mouse_down(at, Button::Left, Modifiers::none());
+    cx.simulate_mouse_up(at, Button::Left, Modifiers::none());
+    cx.simulate_event(gpui::MouseDownEvent {
+        button: Button::Left,
+        position: at,
+        modifiers: Modifiers::none(),
+        click_count: 2,
+        first_mouse: false,
+    });
+    cx.simulate_mouse_up(at, Button::Left, Modifiers::none());
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| editing_text(app)), Some(b));
+    cx.simulate_input("East");
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    assert_eq!(text(&app, cx, b), "East");
+    // Bold from the Home tab goes to the member.
+    app.update(cx, |app, cx| {
+        Drawings.object_style(app, group, "Bold", &|style| style.font.bold = true, cx);
+    });
+    let bold = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32| app.update(cx, |app, _| app.wb.drawing(app.sheet, id).and_then(Drawing::as_shape).is_some_and(|shape| shape.font.bold));
+    assert_eq!((bold(&app, cx, b), bold(&app, cx, a)), (true, false));
+    // Delete removes the member; the group keeps the two others.
+    cx.simulate_keystrokes("delete");
+    redraw(cx);
+    let members = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.wb.drawing(app.sheet, group).and_then(Drawing::as_group).map(|held| held.members.iter().map(|m| m.id).collect::<Vec<_>>()));
+    assert_eq!(members(&app, cx), Some(vec![a, c]));
+    assert_eq!(frame(&app, cx, group), (100, 100, 120, 150));
+    assert_eq!(undo_label(&app, cx).as_deref(), Some("Delete"));
+    undo(&app, cx);
+    assert_eq!(members(&app, cx), Some(vec![a, b, c]));
+    app.update(cx, |app, cx| app.redo(cx));
+    redraw(cx);
+    // A group left with one member dissolves: the member is a shape of
+    // the sheet again, where it was.
+    app.update(cx, |app, cx| app.select_object(Some(object_id(&Drawings, group)), cx));
+    redraw(cx);
+    click_at(&app, cx, 190.0, 220.0);
+    assert_eq!(member(&app, cx), Some(c));
+    cx.simulate_keystrokes("delete");
+    redraw(cx);
+    assert_eq!(app.update(cx, |app, _| app.wb.sheets[app.sheet].drawings.iter().map(|d| d.id).collect::<Vec<_>>()), vec![a]);
+    assert_eq!(frame(&app, cx, a), (100, 100, 100, 60));
+    undo(&app, cx);
+    assert_eq!(members(&app, cx), Some(vec![a, c]));
+    // On a protected sheet a member is selected and nothing more.
+    app.update(cx, |app, cx| {
+        let sheet = app.sheet;
+        app.wb.protect_sheet(sheet, opensheet_engine::protect::SheetProtection::default(), "");
+        app.commit("protect", cx);
+        select_member(app, group, Some(a), cx);
+    });
+    redraw(cx);
+    app.update(cx, |app, cx| tabs::set_fill(app, Some(Color(0x00FF00)), cx));
+    drag_at(&app, cx, (150.0, 130.0), (200.0, 160.0));
+    assert_eq!((fill_of(&app, cx, a) == Some(Color(0x00FF00)), frame(&app, cx, a)), (false, (100, 100, 100, 60)));
+}

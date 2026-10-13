@@ -130,3 +130,43 @@ fn the_look_of_each_shape_of_a_graphic_is_kept() {
     let data = part(&to_bytes(&plain), "xl/diagrams/data1.xml");
     assert!(!data.contains("custScaleX") && !data.contains("prstGeom") && !data.contains("C00000"), "{data}");
 }
+
+// ---- a member of a group, changed inside it --------------------------------------
+
+use opensheet_engine::drawing::{Frame, ShapeTool};
+
+#[test]
+fn a_group_whose_member_was_moved_and_formatted_is_kept() {
+    let mut wb = Workbook::new(Locale::en());
+    let a = wb.add_shape(0, ShapeTool::Rectangle, Frame::new(60.0, 40.0, 120.0, 70.0)).unwrap();
+    let b = wb.add_shape(0, ShapeTool::Ellipse, Frame::new(220.0, 40.0, 90.0, 70.0)).unwrap();
+    let c = wb.add_shape(0, ShapeTool::Diamond, Frame::new(130.0, 140.0, 70.0, 70.0)).unwrap();
+    wb.update_drawing(0, a, |drawing| drawing.as_shape_mut().unwrap().set_text("Stays".to_string()));
+    let group = wb.group_drawings(0, &[a, b, c]).expect("a group");
+    // The ellipse alone: red, larger, further right; the box of the
+    // group follows it.
+    wb.update_drawing(0, b, |drawing| {
+        let shape = drawing.as_shape_mut().unwrap();
+        shape.fill = Some(Color(0xC00000));
+        shape.set_text("Moved".to_string());
+    });
+    wb.set_drawing_frame(0, b, Frame::new(320.0, 20.0, 140.0, 110.0));
+    // And the diamond is gone from the group.
+    wb.remove_drawing(0, c);
+    wb.commit("group");
+    assert_eq!(wb.drawing_frame(0, group), Some(Frame::new(60.0, 20.0, 400.0, 110.0)));
+    let bytes = to_bytes(&wb);
+    common::keep_sample("opensheet-group-member.xlsx", &bytes);
+    let sheet = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawings/drawing1.xml", &sheet);
+    assert_eq!((sheet.matches("<xdr:grpSp>").count(), sheet.matches("<xdr:sp ").count()), (1, 2));
+
+    let back = load(&bytes);
+    let held = &back.sheets[0].drawings[0];
+    let frames: Vec<(String, Frame)> = back.sheets[0].drawing_leaves(held).iter().map(|leaf| (leaf.drawing.as_shape().unwrap().text.clone(), leaf.frame)).collect();
+    let near = |frame: Frame, x: f64, y: f64, w: f64, h: f64| (frame.x - x).abs() < 0.1 && (frame.y - y).abs() < 0.1 && (frame.width - w).abs() < 0.1 && (frame.height - h).abs() < 0.1;
+    assert_eq!(frames.len(), 2);
+    assert!(frames[0].0 == "Stays" && near(frames[0].1, 60.0, 40.0, 120.0, 70.0), "{frames:?}");
+    assert!(frames[1].0 == "Moved" && near(frames[1].1, 320.0, 20.0, 140.0, 110.0), "{frames:?}");
+    assert_eq!(to_bytes(&back), bytes);
+}
