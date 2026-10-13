@@ -53,6 +53,37 @@ pub enum AreaEvent {
     Escape,
     Focused,
     Blurred,
+    /// A key the box left to its owner (`owner_keys`).
+    Key(AreaKey),
+}
+
+/// The keys a box hands to its owner while `owner_keys` is set: the owner
+/// shows a list under the text (the people a comment can name) and these
+/// keys walk it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AreaKey {
+    Up,
+    Down,
+    Enter,
+    Tab,
+    Escape,
+}
+
+/// Keep the tokens of a text in step with an edit: `edited` bytes were
+/// replaced by `new_len` bytes. A token the edit reaches into is a token
+/// no more; those after it move.
+pub(crate) fn shift_tokens(tokens: &mut Vec<Range<usize>>, edited: &Range<usize>, new_len: usize) {
+    tokens.retain_mut(|token| {
+        if token.end <= edited.start {
+            true
+        } else if token.start >= edited.end {
+            token.start = token.start - edited.end + edited.start + new_len;
+            token.end = token.end - edited.end + edited.start + new_len;
+            true
+        } else {
+            false
+        }
+    });
 }
 
 // ------------------------------------------------------------------- buffer
@@ -314,6 +345,14 @@ pub struct TextArea {
     pub align: TextAlign,
     /// The colour of the caret; black when `None`.
     pub caret_color: Option<Hsla>,
+    /// Stretches of the text that are one piece each (the people a
+    /// comment names): drawn in `token_color`, removed whole by Backspace
+    /// and Delete, and plain text again once an edit reaches into them.
+    tokens: Vec<Range<usize>>,
+    pub token_color: Option<Hsla>,
+    /// Up, Down, Return, Tab and Escape are reported as `AreaEvent::Key`
+    /// instead of acting on the text.
+    pub owner_keys: bool,
     /// Tab is left to what holds the box (a pane walks its controls with
     /// it); else it is swallowed, so that it never reaches the grid.
     tab_moves_on: bool,
@@ -341,6 +380,9 @@ impl TextArea {
             max_height: None,
             align: TextAlign::Left,
             caret_color: None,
+            tokens: Vec::new(),
+            token_color: None,
+            owner_keys: false,
             tab_moves_on: false,
             marked: None,
             shaped: None,
@@ -369,10 +411,60 @@ impl TextArea {
     pub fn set_text(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
         self.buffer.text = text.into();
         self.buffer.move_to(self.buffer.text.len());
+        self.tokens.clear();
         self.marked = None;
         self.scroll_y = px(0.);
         self.goal_x = None;
         cx.notify();
+    }
+
+    /// The tokens of the text, in its order.
+    pub fn tokens(&self) -> &[Range<usize>] {
+        &self.tokens
+    }
+
+    /// Say which stretches of the text are tokens (after `set_text`).
+    /// Those that do not fit the text are left out.
+    pub fn set_tokens(&mut self, mut tokens: Vec<Range<usize>>, cx: &mut Context<Self>) {
+        let text = &self.buffer.text;
+        tokens.retain(|token| token.start < token.end && text.get(token.clone()).is_some());
+        tokens.sort_by_key(|token| token.start);
+        self.tokens = tokens;
+        cx.notify();
+    }
+
+    /// Replace a stretch of the text by a token and leave the caret
+    /// after it.
+    pub fn insert_token(&mut self, range: Range<usize>, token: &str, cx: &mut Context<Self>) {
+        self.marked = None;
+        let start = range.start.min(self.buffer.text.len());
+        self.edit(range, token);
+        self.tokens.push(start..start + token.len());
+        self.tokens.sort_by_key(|token| token.start);
+        self.changed(cx);
+    }
+
+    /// Where the caret is, in bytes.
+    pub fn caret(&self) -> usize {
+        self.buffer.caret()
+    }
+
+    /// Change the text and keep the tokens in step.
+    fn edit(&mut self, range: Range<usize>, new: &str) {
+        let start = range.start.min(self.buffer.text.len());
+        let end = range.end.clamp(start, self.buffer.text.len());
+        shift_tokens(&mut self.tokens, &(start..end), new.len());
+        self.buffer.replace(start..end, new);
+    }
+
+    /// The token Backspace (`before`) or Delete would cut into from the
+    /// caret: it goes whole.
+    fn token_beside_caret(&self, before: bool) -> Option<Range<usize>> {
+        let caret = self.buffer.caret();
+        self.tokens
+            .iter()
+            .find(|token| if before { token.end == caret } else { token.start == caret })
+            .cloned()
     }
 
     /// The bytes of the text that are selected (empty: only a caret).
@@ -426,6 +518,7 @@ impl TextArea {
             .map_or(0, |prefix| prefix.len());
         let marked = self.marked.clone().unwrap_or(0..0);
         let mut cuts = vec![0, bold, marked.start.min(text.len()), marked.end.min(text.len()), text.len()];
+        cuts.extend(self.tokens.iter().flat_map(|token| [token.start, token.end]));
         cuts.sort_unstable();
         cuts.dedup();
         let mut runs = Vec::new();
@@ -435,10 +528,11 @@ impl TextArea {
             if end <= bold {
                 font.weight = FontWeight::BOLD;
             }
+            let token = self.tokens.iter().any(|token| token.start <= start && end <= token.end);
             runs.push(TextRun {
                 len: end - start,
                 font,
-                color: style.color,
+                color: self.token_color.filter(|_| token).unwrap_or(style.color),
                 background_color: None,
                 underline: (start >= marked.start && end <= marked.end && !marked.is_empty()).then_some(
                     UnderlineStyle {
@@ -484,7 +578,7 @@ impl TextArea {
 
     fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
         let range = self.marked.take().unwrap_or(self.buffer.selected.clone());
-        self.buffer.replace(range, text);
+        self.edit(range, text);
         self.changed(cx);
     }
 
@@ -547,13 +641,27 @@ impl TextArea {
         self.move_to(to, cx);
     }
 
+    /// Hand a key to the owner of the box when it asked for them.
+    fn to_owner(&mut self, key: AreaKey, cx: &mut Context<Self>) -> bool {
+        if self.owner_keys {
+            cx.emit(AreaEvent::Key(key));
+        }
+        self.owner_keys
+    }
+
     fn up(&mut self, _: &line::Up, _: &mut Window, cx: &mut Context<Self>) {
+        if self.to_owner(AreaKey::Up, cx) {
+            return;
+        }
         let to = self.vertical(false);
         self.buffer.move_to(to);
         cx.notify();
     }
 
     fn down(&mut self, _: &line::Down, _: &mut Window, cx: &mut Context<Self>) {
+        if self.to_owner(AreaKey::Down, cx) {
+            return;
+        }
         let to = self.vertical(true);
         self.buffer.move_to(to);
         cx.notify();
@@ -642,19 +750,28 @@ impl TextArea {
 
     fn backspace(&mut self, _: &line::Backspace, _: &mut Window, cx: &mut Context<Self>) {
         if self.buffer.selected.is_empty() {
-            self.buffer.select_to(self.buffer.previous_boundary(self.buffer.caret()));
+            match self.token_beside_caret(true) {
+                Some(token) => self.buffer.selected = token,
+                None => self.buffer.select_to(self.buffer.previous_boundary(self.buffer.caret())),
+            }
         }
         self.insert("", cx);
     }
 
     fn delete(&mut self, _: &line::Delete, _: &mut Window, cx: &mut Context<Self>) {
         if self.buffer.selected.is_empty() {
-            self.buffer.select_to(self.buffer.next_boundary(self.buffer.caret()));
+            match self.token_beside_caret(false) {
+                Some(token) => self.buffer.selected = token,
+                None => self.buffer.select_to(self.buffer.next_boundary(self.buffer.caret())),
+            }
         }
         self.insert("", cx);
     }
 
     fn enter(&mut self, _: &line::Enter, _: &mut Window, cx: &mut Context<Self>) {
+        if self.to_owner(AreaKey::Enter, cx) {
+            return;
+        }
         self.insert("\n", cx);
     }
 
@@ -671,10 +788,16 @@ impl TextArea {
     }
 
     fn escape(&mut self, _: &line::Escape, _: &mut Window, cx: &mut Context<Self>) {
+        if self.to_owner(AreaKey::Escape, cx) {
+            return;
+        }
         cx.emit(AreaEvent::Escape);
     }
 
     fn tab(&mut self, _: &line::Tab, _: &mut Window, cx: &mut Context<Self>) {
+        if self.to_owner(AreaKey::Tab, cx) {
+            return;
+        }
         if self.tab_moves_on {
             cx.propagate();
         }
@@ -780,7 +903,7 @@ impl EntityInputHandler for TextArea {
             .or(self.marked.take())
             .unwrap_or(self.buffer.selected.clone());
         self.marked = None;
-        self.buffer.replace(range, text);
+        self.edit(range, text);
         self.changed(cx);
     }
 
@@ -798,7 +921,7 @@ impl EntityInputHandler for TextArea {
             .or(self.marked.take())
             .unwrap_or(self.buffer.selected.clone());
         let start = range.start.min(self.buffer.text.len());
-        self.buffer.replace(range, text);
+        self.edit(range, text);
         self.marked = (!text.is_empty()).then_some(start..start + text.len());
         if let Some(selected) = new_selected_utf16 {
             // Given inside the composed text.
@@ -1119,6 +1242,29 @@ mod tests {
         assert_eq!(b.previous_word(b.text.len()), 13);
         assert_eq!(b.previous_boundary(0), 0);
         assert_eq!(b.next_boundary(b.text.len()), b.text.len());
+    }
+
+    #[test]
+    fn tokens_follow_edits() {
+        // "@Ann Lee" at 4..12 and "@Bob" at 17..21 of "See @Ann Lee and @Bob now".
+        let tokens = || vec![4..12, 17..21];
+        let after = |edited: Range<usize>, new_len: usize| {
+            let mut tokens = tokens();
+            shift_tokens(&mut tokens, &edited, new_len);
+            tokens
+        };
+        // Typing before, between and after: the tokens move or stay.
+        assert_eq!(after(0..0, 2), [6..14, 19..23]);
+        assert_eq!(after(13..16, 1), [4..12, 15..19]);
+        assert_eq!(after(25..25, 3), tokens());
+        // Right against a token, on either side, it stays a token.
+        assert_eq!(after(12..12, 1), [4..12, 18..22]);
+        assert_eq!(after(4..4, 1), [5..13, 18..22]);
+        // An edit that reaches into one makes it plain text.
+        assert_eq!(after(8..9, 0), [16..20]);
+        assert_eq!(after(11..18, 0), Vec::<Range<usize>>::new());
+        // Removed whole.
+        assert_eq!(after(4..12, 0), [9..13]);
     }
 
     #[test]

@@ -1556,11 +1556,7 @@ mod tests {
 
     #[test]
     fn status_bar_names_the_author() {
-        let post = |name: &str| Post {
-            author: Person::new(name),
-            time: 45_000.5,
-            text: "x".into(),
-        };
+        let post = |name: &str| Post::new(&Person::new(name), 45_000.5, "x");
         let note = Comment::Note(Note::new("Ada", "Ada:\nCheck"));
         assert_eq!(status_text("B2", &note), "Cell B2 note by Ada");
         let mut thread = Thread {
