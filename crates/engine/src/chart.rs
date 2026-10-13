@@ -940,6 +940,9 @@ pub struct ShapeFormat {
     /// Automatic: a thin light grey frame around the chart area, nothing
     /// around the plot area.
     pub border: Line,
+    /// The shadow and the glow of the area (`a:effectLst` of its
+    /// `c:spPr`; Shape Effects on the Format tab).
+    pub effects: crate::drawing::Effects,
 }
 
 /// The camera of a 3-D chart ("3-D Rotation").

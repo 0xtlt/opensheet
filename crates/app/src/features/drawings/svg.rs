@@ -114,6 +114,11 @@ pub fn image(svg: &str, flips: (bool, bool), quarters: u8) -> Option<Arc<RenderI
     if let Some(known) = known {
         return known;
     }
+    // Before the renderer is there (the first frame of a window), nothing
+    // is known about the document: it is not remembered as unreadable.
+    if RASTERIZER.with_borrow(|rasterizer| rasterizer.is_none()) {
+        return None;
+    }
     let image = rasterize(svg.as_bytes())
         .map(|bitmap| bitmap.oriented(flips.0, flips.1, quarters))
         .and_then(into_image);

@@ -5,7 +5,7 @@
 //! used.
 
 use crate::std14::Standard;
-use crate::ttf::{self, TtfFont};
+use crate::ttf::{self, OutlineStep, TtfFont};
 use opensheet_engine::page::TextMeasure;
 use opensheet_engine::style::Font;
 use std::collections::HashMap;
@@ -121,6 +121,36 @@ impl Face {
 
     pub fn has_glyph(&self, ch: char) -> bool {
         self.glyph(ch).is_some()
+    }
+
+    /// The outline of a character and how far it advances the pen, with
+    /// the size of the font as the unit and y upwards. `None` for a
+    /// standard PDF font, which has no outlines to give; a character the
+    /// face lacks comes as its "not defined" box.
+    pub fn outline(&self, ch: char) -> Option<(Vec<OutlineStep>, f64)> {
+        let font = self.ttf()?;
+        let glyph = match self.glyph(ch).unwrap_or(self.missing_glyph()) {
+            Glyph::Index(glyph) => glyph,
+            Glyph::Code(_) => return None,
+        };
+        let em = font.units_per_em as f32;
+        let scaled = font
+            .outline(glyph)
+            .into_iter()
+            .map(|step| match step {
+                OutlineStep::Move(x, y) => OutlineStep::Move(x / em, y / em),
+                OutlineStep::Line(x, y) => OutlineStep::Line(x / em, y / em),
+                OutlineStep::Quad(cx, cy, x, y) => OutlineStep::Quad(cx / em, cy / em, x / em, y / em),
+                OutlineStep::Close => OutlineStep::Close,
+            })
+            .collect();
+        Some((scaled, font.advance(glyph) as f64 / font.units_per_em as f64))
+    }
+
+    /// Whether the outlines are to be thickened (no bold file of the
+    /// family) and slanted (no italic one) when drawn.
+    pub fn synthetic_styles(&self) -> (bool, bool) {
+        (self.synthetic_bold, self.synthetic_italic)
     }
 
     /// Advance width of a glyph, in thousandths of the font size.
@@ -676,6 +706,20 @@ mod tests {
             let glyphs = "Hello".chars().filter_map(|c| ttf.glyph(c)).collect();
             let subset = ttf.subset(&glyphs);
             assert!(TtfFont::parse(subset.into(), 0).is_some());
+        }
+        // The outline of a letter: closed contours that stay within the
+        // height of the font and the advance of the letter, more or less.
+        if let Some((outline, advance)) = face.outline('O') {
+            let moves = outline.iter().filter(|step| matches!(step, OutlineStep::Move(..))).count();
+            let closes = outline.iter().filter(|step| matches!(step, OutlineStep::Close)).count();
+            assert!(moves == 2 && closes == 2, "{moves} contours");
+            assert!(advance > 0.3 && advance < 1.2, "{advance}");
+            for step in &outline {
+                if let OutlineStep::Quad(_, _, x, y) | OutlineStep::Line(x, y) | OutlineStep::Move(x, y) = *step {
+                    assert!((-0.1..=1.2).contains(&x) && (-0.3..=1.1).contains(&y), "{x} {y}");
+                }
+            }
+            assert!(face.outline(' ').is_some_and(|(space, advance)| space.is_empty() && advance > 0.0));
         }
     }
 }

@@ -765,6 +765,12 @@ impl Render for ColorMenu {
                 // Only a line has ends to put arrowheads on.
                 .child(self.side_row(Side::Arrows, t("Arrows", "Flèches"), is_line, cx));
         }
+        if paint == Paint::Text {
+            // The gradients of the letters, as in Excel's Text Fill.
+            column = column
+                .child(div().h(px(1.)).my(px(3.)).bg(c(theme::BORDER)))
+                .child(super::wordart::gradient_row(&self.app));
+        }
         div()
             .p(px(8.))
             .flex()
@@ -792,7 +798,6 @@ pub(super) fn open_outline(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 /// The Align menu: aligning takes two selected objects and distributing
 /// three; with fewer the entries are greyed out, as Excel shows them.
 pub(super) fn open_align_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let unavailable = |label: &'static str| MenuEntry::new(label, move |app, _, cx| app.not_implemented(label, cx));
     let gridlines = app.wb.sheets[app.sheet].show_gridlines;
     let entries = vec![
         MenuEntry::command(Cmd::AlignLeft, app),
@@ -807,7 +812,7 @@ pub(super) fn open_align_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut 
         MenuEntry::command(Cmd::DistributeVertically, app),
         MenuEntry::separator(),
         MenuEntry::command(Cmd::SnapToGrid, app).checked(app.snap_to_grid()),
-        unavailable(t("Snap to Shape", "Aligner sur la forme")),
+        MenuEntry::command(Cmd::SnapToShape, app).checked(app.snap_to_shape()),
         MenuEntry::new(t("View Gridlines", "Afficher le quadrillage"), |app, _, cx| app.toggle_gridlines(cx)).checked(gridlines),
     ];
     app.open_command_menu(entries, 250.0, window, cx);

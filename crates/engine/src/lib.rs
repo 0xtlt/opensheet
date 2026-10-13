@@ -53,6 +53,7 @@ pub mod validation;
 pub mod value;
 pub mod vba;
 pub mod whatif;
+pub mod textwarp;
 pub mod wordart;
 pub mod workbook;
 

@@ -754,6 +754,32 @@ fn legend_title_and_areas() {
         if ink.color == Color(0xEEEEEE) && s.ink.color == Color(0x333333))));
     chart.chart_area.fill = Fill::None;
     assert!(!matches!(&lay(&w, &chart)[0], Prim::Rect { w, .. } if *w == 480.0));
+
+    // A shadow under the plot area: faint rectangles moved down and to
+    // the right, drawn before the plot itself. A glow: around it.
+    let plot_at = |prims: &[Prim]| prims.iter().position(|p| matches!(p, Prim::Rect { fill: Some(ink), .. } if ink.color == Color(0xEEEEEE))).unwrap();
+    let before = plot_at(&lay(&w, &chart));
+    chart.plot_area.effects.shadow = Some(crate::drawing::ShadowPreset::BottomRight.shadow());
+    let prims = lay(&w, &chart);
+    let at = plot_at(&prims);
+    assert_eq!(at, before + 6);
+    let (Prim::Rect { x: px, y: py, w: pw, .. }, Prim::Rect { x, y, w: sw, fill: Some(ink), stroke: None, .. }) = (&prims[at], &prims[at - 1]) else {
+        panic!("a layer of the shadow comes right before the plot");
+    };
+    assert!(x > px && y > py && sw < pw, "the innermost layer is inside the edge of the shadow");
+    assert!(ink.color == Color(0x000000) && ink.opacity > 0.0 && ink.opacity < 0.2);
+    chart.plot_area.effects.shadow = None;
+    chart.plot_area.effects.glow = Some(crate::drawing::Glow {
+        color: Color(0x4472C4),
+        transparency: 0.6,
+        radius: 8.0,
+    });
+    let prims = lay(&w, &chart);
+    let at = plot_at(&prims);
+    let (Prim::Rect { x: px, w: pw, .. }, Prim::Rect { x, w: gw, fill: Some(ink), .. }) = (&prims[at], &prims[at - 6]) else {
+        panic!("the glow comes before the plot");
+    };
+    assert!(x < px && gw > pw && ink.color == Color(0x4472C4));
 }
 
 #[test]

@@ -32,6 +32,7 @@ mod equation;
 pub(crate) mod geometry;
 mod icon_set;
 mod icons;
+pub(crate) mod letters;
 mod paint;
 mod pane;
 pub(crate) mod picture;
@@ -41,10 +42,13 @@ mod tabs;
 mod text;
 mod tool;
 mod wordart;
+pub(crate) use wordart::print_outlined as print_shape_letters;
 #[cfg(test)]
 mod insertart_tests;
 #[cfg(test)]
 mod ui_tests;
+#[cfg(test)]
+mod warp_tests;
 
 use super::{
     Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, ObjectInfo, ObjectVerb, PaintLayer,
@@ -108,6 +112,7 @@ commands! {
         DistributeHorizontally = "", t("Distribute Horizontally", "Répartir horizontalement");
         DistributeVertically = "", t("Distribute Vertically", "Répartir verticalement");
         SnapToGrid = "", t("Snap to Grid", "Aligner sur la grille");
+        SnapToShape = "", t("Snap to Shape", "Aligner sur la forme");
         Group = "group-objects", t("Group", "Grouper");
         GroupObjects = "group-objects", t("Group", "Grouper");
         Regroup = "", t("Regroup", "Regrouper");
@@ -352,6 +357,7 @@ impl Command for Cmd {
             Cmd::DistributeHorizontally => app.align_objects(Align::DistributeHorizontally, cx),
             Cmd::DistributeVertically => app.align_objects(Align::DistributeVertically, cx),
             Cmd::SnapToGrid => app.toggle_snap_to_grid(cx),
+            Cmd::SnapToShape => app.toggle_snap_to_shape(cx),
             Cmd::Group => {
                 let entries = vec![
                     MenuEntry::command(Cmd::GroupObjects, app),
@@ -1159,7 +1165,8 @@ impl Feature for Drawings {
             if !is_selected {
                 continue;
             }
-            for (grip, at) in paint::grips(drawing, &placed) {
+            let warp_grips = paint::warp_grips(drawing, &placed, brush.zoom);
+            for (grip, at) in paint::grips(drawing, &placed).into_iter().chain(warp_grips) {
                 if !pane.contains(at.0, at.1) {
                     continue;
                 }
@@ -1170,7 +1177,7 @@ impl Feature for Drawings {
                         2 => CursorStyle::ResizeUpDown,
                         _ => CursorStyle::ResizeUpRightDownLeft,
                     },
-                    Grip::LineEnd(_) | Grip::Crop(_) => CursorStyle::Crosshair,
+                    Grip::LineEnd(_) | Grip::Crop(_) | Grip::Warp(_) => CursorStyle::Crosshair,
                     Grip::Rotate | Grip::Pan => CursorStyle::PointingHand,
                 };
                 p.zone((at.0 - 6.0, at.1 - 6.0, at.0 + 6.0, at.1 + 6.0), tool::Handle { id: drawing.id, grip })

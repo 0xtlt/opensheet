@@ -762,6 +762,8 @@ struct Stroke {
 struct Shape {
     fill: Paint,
     line: Option<Stroke>,
+    /// `a:effectLst`: kept for the chart area and the plot area.
+    effects: opensheet_engine::drawing::Effects,
 }
 
 /// A fill element, read (`None`, and nothing read, for any other element).
@@ -824,6 +826,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Shap
             });
             shape.line = Some(stroke);
         }
+        "effectLst" => shape.effects = crate::xlsx::drawing::parse_effects(r, t, palette),
         _ => match parse_paint(r, t, palette) {
             Some(paint) => shape.fill = paint,
             None => r.skip(t),
@@ -2063,6 +2066,7 @@ impl RawChart {
                 Paint::Color(color) => Fill::Solid(color),
             },
             border: line_of(self.chart_area.line, true, FRAME_GREY, OUTLINE_WIDTH),
+            effects: self.chart_area.effects,
         };
         chart.plot_area = ShapeFormat {
             fill: match self.plot_area.fill {
@@ -2070,6 +2074,7 @@ impl RawChart {
                 Paint::Color(color) => Fill::Solid(color),
             },
             border: line_of(self.plot_area.line, false, FRAME_GREY, OUTLINE_WIDTH),
+            effects: self.plot_area.effects,
         };
         chart.data_table = self.table.filter(|_| Plot::of(kind).takes_data_table());
         chart.blanks = self.blanks;

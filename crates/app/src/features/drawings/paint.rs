@@ -294,6 +294,9 @@ pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), br
         if let Some(equation) = &shape.math {
             // An equation, built up.
             super::equation::draw(shape, equation, placed, natural, brush, fonts, out);
+        } else if super::wordart::needs_outlines(shape) && super::wordart::draw_outlined(shape, placed, brush, fonts, out) {
+            // Warped text, gradients, reflections, letters of several
+            // sizes: drawn as outlines.
         } else if shape.has_text_effects() {
             // Letters with an outline or a shadow: WordArt.
             super::wordart::draw_art(shape, placed, natural, brush, fonts, out);
@@ -657,6 +660,43 @@ pub enum Grip {
     /// While a picture is cropped: the image itself, moved under its
     /// frame.
     Pan,
+    /// A handle of the warp of the text (Transform): it changes one of
+    /// its adjustments.
+    Warp(u8),
+}
+
+/// The handles of the warp of a selected shape and where they are: the
+/// yellow ones that change how far its text is bent. They turn with the
+/// shape and, like its text, are not mirrored with it.
+pub fn warp_grips(drawing: &Drawing, placed: &Placed, zoom: f32) -> Vec<(Grip, Pt)> {
+    let Some((shape, warp)) = drawing.as_shape().and_then(|shape| Some((shape, shape.warp?))) else {
+        return Vec::new();
+    };
+    let (width, height) = (placed.width().abs() as f64, placed.height().abs() as f64);
+    let (left, top) = (placed.x0.min(placed.x1), placed.y0.min(placed.y1));
+    let frame = super::letters::text_frame(shape, width, height, zoom as f64);
+    warp.geometry(frame.2 - frame.0, frame.3 - frame.1)
+        .handles
+        .iter()
+        .enumerate()
+        .map(|(i, handle)| {
+            let level = (left + (frame.0 + handle.at.0) as f32, top + (frame.1 + handle.at.1) as f32);
+            (Grip::Warp(i as u8), geometry::rotate(level, placed.centre(), placed.rotation))
+        })
+        .collect()
+}
+
+/// The warp of a shape after one of its handles was dragged to a point
+/// of the screen.
+pub fn dragged_warp(drawing: &Drawing, placed: &Placed, zoom: f32, handle: u8, to: Pt) -> Option<opensheet_engine::textwarp::TextWarp> {
+    let shape = drawing.as_shape()?;
+    let warp = shape.warp?;
+    let (width, height) = (placed.width().abs() as f64, placed.height().abs() as f64);
+    let (left, top) = (placed.x0.min(placed.x1), placed.y0.min(placed.y1));
+    let frame = super::letters::text_frame(shape, width, height, zoom as f64);
+    let level = placed.unturned(to);
+    let local = ((level.0 - left) as f64 - frame.0, (level.1 - top) as f64 - frame.1);
+    Some(warp.with_handle_at(handle as usize, local, frame.2 - frame.0, frame.3 - frame.1))
 }
 
 /// The handles of a selected drawing and where they are: the two ends of
@@ -713,6 +753,11 @@ pub fn draw_selection(drawing: &Drawing, placed: &Placed, brush: &Brush, out: &m
             brush.disc(at, 4.5, c(HANDLE), out);
             brush.disc(at, 3.5, c(0xFFFFFF), out);
         }
+    }
+    // The handles of a warp are yellow, as all adjust handles in Excel.
+    for (_, at) in warp_grips(drawing, placed, brush.zoom) {
+        brush.disc(at, 4.5, c(0x8A6D00), out);
+        brush.disc(at, 3.5, c(0xFFD966), out);
     }
 }
 

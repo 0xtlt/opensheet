@@ -953,3 +953,46 @@ fn a_symbol_goes_into_the_cell_being_edited(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
     assert!(!app.update(cx, |app, _| app.is_editing()));
 }
+
+#[gpui::test]
+fn a_symbol_goes_into_a_text_box_and_into_a_note(cx: &mut TestAppContext) {
+    use opensheet_engine::drawing::{Frame, ShapeTool};
+    let (app, cx) = open(cx);
+    // A selected shape is opened for typing, after what it holds; no cell
+    // is opened.
+    let id = app.update(cx, |app, cx| {
+        let id = app.wb.add_shape(app.sheet, ShapeTool::TextBox, Frame::new(100.0, 60.0, 160.0, 80.0)).expect("a shape");
+        app.wb.update_drawing(app.sheet, id, |drawing| drawing.as_shape_mut().unwrap().set_text("Sum ".to_string()));
+        app.commit("setup", cx);
+        app.select_object(Some(crate::features::object_id(&crate::features::drawings::Drawings, id)), cx);
+        id
+    });
+    redraw(cx);
+    let shape_text = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| app.wb.drawing(0, id).and_then(|d| d.as_shape().map(|shape| shape.text.clone())))
+    };
+    app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
+    redraw(cx);
+    assert!(!app.update(cx, |app, _| app.is_editing()));
+    cx.simulate_input("∑");
+    // Asked again while the text is being typed, the text keeps the keys.
+    app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
+    cx.simulate_input("√");
+    cx.simulate_keystrokes("escape");
+    assert_eq!(shape_text(&app, cx).as_deref(), Some("Sum ∑√"));
+    app.update(cx, |app, cx| app.select_object(None, cx));
+    // A note being typed takes the symbol too.
+    select(&app, cx, "C3");
+    cx.simulate_keystrokes("shift-f2");
+    cx.simulate_input("See ");
+    app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
+    redraw(cx);
+    assert!(!app.update(cx, |app, _| app.is_editing()));
+    cx.simulate_input("§");
+    cx.simulate_keystrokes("escape");
+    let note = app.update(cx, |app, _| {
+        app.wb.comment_at(0, 2, 2).and_then(|comment| comment.as_note().map(|note| note.text()))
+    });
+    assert!(note.is_some_and(|text| text.ends_with("See §")));
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].cells.is_empty()));
+}

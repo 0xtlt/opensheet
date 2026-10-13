@@ -437,3 +437,60 @@ fn gridlines_and_axis_lines_are_formatted_and_reset(cx: &mut TestAppContext) {
     assert_eq!(c.legend_layout, None);
     assert!(c.axes.value.text.is_auto());
 }
+
+#[gpui::test]
+fn shape_effects_give_the_areas_a_shadow_and_a_glow(cx: &mut TestAppContext) {
+    use opensheet_engine::drawing::ShadowPreset;
+    let (app, cx) = open(cx);
+    with_chart(&app, cx, ChartKind::Column);
+    // A series has no effects here; the plot area and the chart area do.
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::Series(0), cx));
+    assert!(!app.update(cx, |app, _| Cmd::ShapeEffects.enabled(app)));
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::PlotArea, cx));
+    assert!(app.update(cx, |app, _| Cmd::ShapeEffects.enabled(app)));
+    // The menu: Shadow and Glow open lists, the rest is greyed out.
+    let entries = app.update(cx, |app, _| effects_menu(app));
+    let labels: Vec<(String, bool, bool)> = entries.iter().map(|entry| (entry.label.to_string(), entry.disabled, entry.submenu.is_some())).collect();
+    assert_eq!(labels[0], ("Shadow".to_string(), false, true));
+    assert_eq!(labels[2], ("Glow".to_string(), false, true));
+    assert!(labels.iter().filter(|(_, disabled, _)| *disabled).count() == 4);
+    // "Offset: Bottom Right" from the Shadow list.
+    let pick = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, path: [&str; 2], deeper: Option<&str>| {
+        app.update_in(cx, |app, window, cx| {
+            let entries = effects_menu(app);
+            let list = entries.iter().find(|entry| entry.label.as_ref() == path[0]).and_then(|entry| entry.submenu.as_ref()).expect("a list");
+            let mut entry = list.iter().find(|entry| entry.label.as_ref() == path[1]).expect("an entry");
+            if let Some(deeper) = deeper {
+                entry = entry.submenu.as_ref().and_then(|list| list.iter().find(|entry| entry.label.as_ref() == deeper)).expect("an entry");
+            }
+            let action = entry.action.clone().expect("an action");
+            action(app, window, cx);
+        });
+        redraw(cx);
+    };
+    app.update_in(cx, |app, window, cx| app.run_command(Cmd::ShapeEffects, window, cx));
+    redraw(cx);
+    assert!(app.update(cx, |app, _| app.popup.take().is_some()));
+    pick(&app, cx, ["Shadow", "Offset: Bottom Right"], None);
+    assert_eq!(chart(&app, cx).plot_area.effects.shadow, Some(ShadowPreset::BottomRight.shadow()));
+    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Shadow"));
+    // The menu ticks it.
+    let ticked = app.update(cx, |app, _| effects_menu(app)[0].submenu.as_ref().unwrap().iter().filter(|entry| entry.checked).map(|entry| entry.label.to_string()).collect::<Vec<_>>());
+    assert_eq!(ticked, vec!["Offset: Bottom Right".to_string()]);
+    // A glow on the chart area, in the second accent of the theme.
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::ChartArea, cx));
+    pick(&app, cx, ["Glow", "8 pt"], Some("Accent 2"));
+    let glow = chart(&app, cx).chart_area.effects.glow.expect("a glow");
+    assert_eq!((glow.radius, glow.transparency), (8.0, 0.6));
+    assert_eq!(glow.color, app.update(cx, |app, _| app.wb.theme().accent(2, 0.0)));
+    // The plot area kept its shadow; each change is one step back.
+    assert!(chart(&app, cx).plot_area.effects.shadow.is_some());
+    app.update(cx, |app, cx| app.undo(cx));
+    assert_eq!(chart(&app, cx).chart_area.effects.glow, None);
+    pick(&app, cx, ["Glow", "No Glow"], None);
+    app.update(cx, |app, cx| app.select_chart_element(ChartElement::PlotArea, cx));
+    pick(&app, cx, ["Shadow", "No Shadow"], None);
+    assert!(chart(&app, cx).plot_area.effects.is_none());
+    // The outline and the effects of text stay greyed out.
+    assert!(!app.update(cx, |app, _| Cmd::TextOutline.enabled(app) || Cmd::TextEffects.enabled(app)));
+}
