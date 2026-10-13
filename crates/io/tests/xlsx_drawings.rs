@@ -787,7 +787,12 @@ fn parts_say_what_the_model_says() {
     ] {
         assert!(shapes.contains(expected), "{expected}\n{shapes}");
     }
-    for preset in ShapePreset::ALL {
+    // (Two outlines are those of picture styles, not shapes of the
+    // gallery: `picture_styles_round_trip` has them.)
+    let gallery = ShapePreset::ALL
+        .into_iter()
+        .filter(|preset| !matches!(preset, ShapePreset::Round2DiagRect | ShapePreset::Snip2DiagRect));
+    for preset in gallery {
         assert!(
             shapes.contains(&format!("<a:prstGeom prst=\"{}\">", preset.ooxml_name())),
             "{preset:?}"
@@ -1652,6 +1657,7 @@ fn picture_adjustments_and_effects_round_trip() {
         shadow: Some(Shadow { color: Color(0x112233), transparency: 0.5, size: 1.02, blur: 6.0, angle: 135.0, distance: 4.0, ..Shadow::default() }),
         glow: Some(Glow { color: Color(0xE97132), transparency: 0.6, radius: 8.0 }),
         soft_edge: 2.5,
+        ..Effects::default()
     };
     adjusted(&mut wb, 31, "Effects", plain, all);
     let shadowed = shape(&mut wb, 0, ShapeTool::Rectangle, (400.0, 40.0, 120.0, 60.0));
@@ -1753,4 +1759,127 @@ fn decorative_objects_round_trip() {
     let back = load(&raw_package(&listed));
     let flags: Vec<bool> = back.sheets[0].drawings.iter().map(|d| d.decorative).collect();
     assert_eq!(flags, vec![false, true, false]);
+}
+
+#[test]
+fn picture_styles_round_trip() {
+    use opensheet_engine::picture_style::PictureStyle;
+    let mut wb = Workbook::new(Locale::en());
+    for (i, style) in PictureStyle::ALL.into_iter().enumerate() {
+        let id = wb.add_picture(0, logo(), (1 + 6 * (i as u32 / 6), 1 + 3 * (i as u32 % 6))).expect("a picture");
+        let look = style.look();
+        change(&mut wb, 0, id, |d| {
+            d.name = style.name(Locale::en()).to_string();
+            d.effects = look.effects;
+            let picture = d.as_picture_mut().unwrap();
+            picture.adjust.shape = look.shape;
+            picture.outline = look.outline;
+        });
+    }
+    wb.commit("styles");
+    let bytes = to_bytes(&wb);
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    for expected in [
+        // Simple Frame, White: the border, then the effects.
+        "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom><a:ln w=\"88900\"><a:solidFill><a:srgbClr val=\"FFFFFF\"/></a:solidFill></a:ln><a:effectLst><a:outerShdw",
+        // A reflection as Excel writes one.
+        "<a:reflection blurRad=\"12700\" stA=\"38000\" endA=\"300\" endPos=\"28000\" dist=\"5080\" dir=\"5400000\" sy=\"-100000\" algn=\"bl\" rotWithShape=\"0\"/>",
+        // A bevel needs a scene to be lit in.
+        "</a:effectLst><a:scene3d><a:camera prst=\"orthographicFront\"/><a:lightRig rig=\"threePt\" dir=\"t\"/></a:scene3d><a:sp3d><a:bevelT w=\"25400\" h=\"19050\" prst=\"circle\"/></a:sp3d></xdr:spPr>",
+        // A camera of the gallery by its name; any other turn by its angles.
+        "<a:camera prst=\"perspectiveRelaxedModerately\"/>",
+        "<a:camera prst=\"orthographicFront\"><a:rot lat=\"0\" lon=\"0\" rev=\"360000\"/></a:camera>",
+        "<a:camera prst=\"perspectiveFront\" fov=\"2700000\"><a:rot lat=\"19800000\" lon=\"0\" rev=\"0\"/></a:camera>",
+        // A shadow lying on the ground: squashed, leaning, from the foot.
+        "sx=\"97000\" sy=\"22989\" kx=\"900000\" algn=\"br\" rotWithShape=\"0\">",
+        "sx=\"80000\" sy=\"-18000\" algn=\"b\" rotWithShape=\"0\">",
+        "<a:prstGeom prst=\"round2DiagRect\">",
+        "<a:prstGeom prst=\"snip2DiagRect\">",
+        "<a:softEdge rad=\"112522\"/>",
+    ] {
+        assert!(xml.contains(expected), "{expected} is missing from\n{xml}");
+    }
+    let back = load(&bytes);
+    for (style, drawing) in PictureStyle::ALL.into_iter().zip(&back.sheets[0].drawings) {
+        let picture = drawing.as_picture().expect("a picture");
+        assert_eq!(
+            PictureStyle::of(picture.adjust.shape, picture.outline, &drawing.effects),
+            Some(style),
+            "{}: {:?} {:?}",
+            drawing.name,
+            picture.outline,
+            drawing.effects
+        );
+    }
+    // Written again, the part says the same.
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+}
+
+#[test]
+fn an_artistic_effect_keeps_both_images() {
+    use opensheet_engine::drawing::NEUTRAL_TEMPERATURE;
+    use opensheet_engine::picture_style::{Artistic, ArtisticKind, Baked};
+    let mut wb = Workbook::new(Locale::en());
+    let filtered: Arc<[u8]> = png(48, 32, [[0x80, 0x80, 0x80], [0x40, 0x40, 0x40]]).into();
+    let id = wb.add_picture(0, logo(), (1, 1)).expect("a picture");
+    change(&mut wb, 0, id, |d| {
+        let picture = d.as_picture_mut().unwrap();
+        picture.artistic = Some(Artistic { kind: ArtisticKind::Blur, transparency: 0.25, amount: 17.0 });
+        picture.adjust.saturation = 0.66;
+        picture.baked = Some(Baked {
+            data: filtered.clone(),
+            saturation: 0.66,
+            temperature: NEUTRAL_TEMPERATURE,
+            artistic: picture.artistic,
+        });
+    });
+    // One whose second image is not made: the layer names the image.
+    let waiting = wb.add_picture(0, logo(), (8, 1)).expect("a picture");
+    change(&mut wb, 0, waiting, |d| {
+        d.as_picture_mut().unwrap().artistic = Some(Artistic::preset(ArtisticKind::MosaicBubbles));
+    });
+    wb.commit("effects");
+    let bytes = to_bytes(&wb);
+    let xml = part(&bytes, "xl/drawings/drawing1.xml");
+    assert_well_formed("drawing1.xml", &xml);
+    // The blip shows the image with the effects done; the layer keeps
+    // the image as it was.
+    assert!(
+        xml.contains("<a:blip xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:embed=\"rId2\"><a:extLst><a:ext uri=\"{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}\"><a14:imgProps xmlns:a14=\"http://schemas.microsoft.com/office/drawing/2010/main\"><a14:imgLayer r:embed=\"rId1\"><a14:imgEffect><a14:saturation sat=\"66000\"/></a14:imgEffect><a14:imgEffect><a14:artisticBlur trans=\"25000\" radius=\"17\"/></a14:imgEffect></a14:imgLayer></a14:imgProps></a:ext></a:extLst></a:blip>"),
+        "{xml}"
+    );
+    assert!(xml.contains("r:embed=\"rId1\"><a:extLst><a:ext uri=\"{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}\"><a14:imgProps xmlns:a14=\"http://schemas.microsoft.com/office/drawing/2010/main\"><a14:imgLayer r:embed=\"rId1\"><a14:imgEffect><a14:artisticMosiaicBubbles trans=\"0\" pressure=\"22\"/>"), "{xml}");
+    assert_eq!(raw_part(&bytes, "xl/media/image1.png"), logo());
+    assert_eq!(raw_part(&bytes, "xl/media/image2.png"), filtered.to_vec());
+
+    let back = load(&bytes);
+    let picture = back.sheets[0].drawings[0].as_picture().unwrap();
+    assert_eq!(&picture.data[..], &logo()[..]);
+    assert_eq!(picture.artistic, Some(Artistic { kind: ArtisticKind::Blur, transparency: 0.25, amount: 17.0 }));
+    assert!((picture.adjust.saturation - 0.66).abs() < 1e-4);
+    assert_eq!(picture.baked().map(|baked| baked.data.to_vec()), Some(filtered.to_vec()));
+    assert!(!picture.needs_baking());
+    let second = back.sheets[0].drawings[1].as_picture().unwrap();
+    assert_eq!(second.artistic, Some(Artistic::preset(ArtisticKind::MosaicBubbles)));
+    assert!(second.needs_baking());
+    assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
+
+    // As Excel writes it: the image as it was is an HD Photo file, which
+    // cannot be read. The blip then stands for the picture, effects done.
+    let mut parts: Vec<(String, Vec<u8>)> = part_names(&bytes).into_iter().map(|name| (name.clone(), raw_part(&bytes, &name))).collect();
+    for (name, data) in &mut parts {
+        if name == "xl/drawings/_rels/drawing1.xml.rels" {
+            let rels = String::from_utf8(data.clone()).unwrap();
+            assert!(rels.contains("Target=\"../media/image1.png\""), "{rels}");
+            *data = rels.replace("Target=\"../media/image1.png\"", "Target=\"../media/hdphoto1.wdp\"").into_bytes();
+        }
+    }
+    parts.push(("xl/media/hdphoto1.wdp".to_string(), b"II\xbc\x01 not really".to_vec()));
+    let listed: Vec<(&str, &[u8])> = parts.iter().map(|(name, data)| (name.as_str(), data.as_slice())).collect();
+    let from_excel = load(&raw_package(&listed));
+    let picture = from_excel.sheets[0].drawings[0].as_picture().expect("the picture is still there");
+    assert_eq!(picture.data.to_vec(), filtered.to_vec());
+    assert_eq!((picture.artistic, picture.adjust.saturation), (None, 1.0));
+    assert!(!picture.has_baked_effects());
 }

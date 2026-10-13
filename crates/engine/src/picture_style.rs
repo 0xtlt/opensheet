@@ -724,11 +724,32 @@ impl PictureStyle {
         look
     }
 
-    /// The style a picture wears: the one whose look is its own.
+    /// The style a picture wears: the one whose look is its own, to the
+    /// precision a file keeps numbers with.
     pub fn of(shape: ShapePreset, outline: Option<Outline>, effects: &Effects) -> Option<PictureStyle> {
+        let near = |a: f32, b: f32| (a - b).abs() <= 2e-3 * a.abs().max(b.abs()).max(1.0);
+        let both = |a: Option<&[f32]>, b: Option<&[f32]>| match (a, b) {
+            (None, None) => true,
+            (Some(a), Some(b)) => a.iter().zip(b).all(|(a, b)| near(*a, *b)),
+            _ => false,
+        };
+        let line = |o: &Outline| [o.color.value() as f32, o.width, o.dash as u8 as f32];
+        let shadow = |s: &Shadow| [s.color.value() as f32, s.transparency, s.size, s.blur, s.angle, s.distance, s.squash, s.skew];
+        let glow = |g: &crate::drawing::Glow| [g.color.value() as f32, g.transparency, g.radius];
+        let reflection = |r: &Reflection| [r.transparency, r.size, r.distance, r.blur];
+        let bevel = |b: &Bevel| [b.preset as u8 as f32, b.width, b.height];
+        let rotation = |r: &Rotation3d| [r.x, r.y, r.z, r.perspective];
         PictureStyle::ALL.into_iter().find(|style| {
             let look = style.look();
-            look.shape == shape && look.outline == outline && look.effects == *effects
+            let (a, b) = (&look.effects, effects);
+            look.shape == shape
+                && both(look.outline.as_ref().map(line).as_ref().map(|v| &v[..]), outline.as_ref().map(line).as_ref().map(|v| &v[..]))
+                && both(a.shadow.as_ref().map(shadow).as_ref().map(|v| &v[..]), b.shadow.as_ref().map(shadow).as_ref().map(|v| &v[..]))
+                && both(a.glow.as_ref().map(glow).as_ref().map(|v| &v[..]), b.glow.as_ref().map(glow).as_ref().map(|v| &v[..]))
+                && both(a.reflection.as_ref().map(reflection).as_ref().map(|v| &v[..]), b.reflection.as_ref().map(reflection).as_ref().map(|v| &v[..]))
+                && both(a.bevel.as_ref().map(bevel).as_ref().map(|v| &v[..]), b.bevel.as_ref().map(bevel).as_ref().map(|v| &v[..]))
+                && both(a.rotation.as_ref().map(rotation).as_ref().map(|v| &v[..]), b.rotation.as_ref().map(rotation).as_ref().map(|v| &v[..]))
+                && near(a.soft_edge, b.soft_edge)
         })
     }
 }
