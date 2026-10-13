@@ -3591,7 +3591,7 @@ fn a_pivot_chart_follows_its_report() {
         (vec!["East".to_string(), "West".to_string()], vec![("Sum of Sales".to_string(), vec![Some(370.0), Some(320.0)])])
     );
     assert_eq!(wb.chart(1, chart).unwrap().series[0].values.to_text(), format!("{sheet}!$B$4:$B$5"));
-    assert_eq!(wb.pivot_of_chart(chart).map(|(si, p, link)| (si, p.id, link.buttons)), Some((1, id, true)));
+    assert_eq!(wb.pivot_of_chart(chart).map(|(si, p, link)| (si, p.id, link.buttons())), Some((1, id, true)));
 
     // A column field: one series per year, named by the cells above.
     wb.update_chart(1, chart, |c| c.series[0].color = Some(Color(0x123456)));
@@ -3608,9 +3608,17 @@ fn a_pivot_chart_follows_its_report() {
     assert!(wb.undo());
     assert_eq!(shown(&wb).0, ["East", "West"]);
     let fields = wb.pivot(id).unwrap().1.chart_fields();
-    assert_eq!((fields.axis, fields.legend, fields.values), (vec!["Region".to_string()], vec!["Year".to_string()], vec!["Sum of Sales".to_string()]));
+    assert_eq!(
+        (fields.axis, fields.legend, fields.values),
+        (vec![(REGION, "Region".to_string())], vec![(YEAR, "Year".to_string())], vec![(0, "Sum of Sales".to_string())])
+    );
     // Once the chart is deleted the PivotTable forgets it.
     assert!(wb.set_pivot_chart_buttons(chart, false));
+    assert!(!wb.pivot_of_chart(chart).unwrap().2.buttons());
+    // One kind of buttons comes back alone.
+    assert!(wb.set_pivot_chart_button_kind(chart, ChartButtonKind::Axis, true));
+    let link = wb.pivot_of_chart(chart).unwrap().2;
+    assert!(link.buttons() && link.shows(ChartButtonKind::Axis) && !link.shows(ChartButtonKind::Value));
     assert!(wb.remove_chart(1, chart));
     wb.pivot_refresh(id, false).unwrap();
     wb.commit("refresh");

@@ -16,27 +16,73 @@ use crate::parser::parse_formula;
 use crate::refs::{Rect, col_to_letters};
 use crate::workbook::Workbook;
 
+/// The four kinds of field buttons of a PivotChart ("Field Buttons" of
+/// the PivotChart Analyze tab shows and hides each kind).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ChartButtonKind {
+    /// "Report Filter": the filter fields.
+    Filter,
+    /// "Legend (Series)": the column fields.
+    Legend,
+    /// "Axis (Categories)": the row fields.
+    Axis,
+    /// "Values": the value fields.
+    Value,
+}
+
+impl ChartButtonKind {
+    pub const ALL: [ChartButtonKind; 4] = [ChartButtonKind::Filter, ChartButtonKind::Legend, ChartButtonKind::Axis, ChartButtonKind::Value];
+}
+
 /// A chart bound to a PivotTable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PivotChartLink {
     /// `Chart::id`.
     pub chart: u32,
-    /// The field buttons are shown on the chart.
-    pub buttons: bool,
+    /// The kinds of field buttons shown on the chart, in the order of
+    /// [`ChartButtonKind::ALL`].
+    pub shown: [bool; 4],
 }
 
-/// The fields a PivotChart shows as buttons: (field or value field,
-/// caption) by zone.
+impl PivotChartLink {
+    /// A link showing every field button, as a new PivotChart does.
+    pub fn new(chart: u32) -> PivotChartLink {
+        PivotChartLink { chart, shown: [true; 4] }
+    }
+
+    pub fn shows(&self, kind: ChartButtonKind) -> bool {
+        self.shown[kind as usize]
+    }
+
+    /// Some field buttons are shown.
+    pub fn buttons(&self) -> bool {
+        self.shown.iter().any(|shown| *shown)
+    }
+}
+
+/// The fields a PivotChart shows as buttons, by zone: the index of the
+/// field (of the value field, for the values) and its caption.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PivotChartFields {
     /// "Report Filter": the filter fields.
-    pub filters: Vec<String>,
+    pub filters: Vec<(usize, String)>,
     /// "Legend (Series)": the column fields.
-    pub legend: Vec<String>,
+    pub legend: Vec<(usize, String)>,
     /// "Axis (Categories)": the row fields.
-    pub axis: Vec<String>,
+    pub axis: Vec<(usize, String)>,
     /// "Values": the value fields.
-    pub values: Vec<String>,
+    pub values: Vec<(usize, String)>,
+}
+
+impl PivotChartFields {
+    pub fn of(&self, kind: ChartButtonKind) -> &[(usize, String)] {
+        match kind {
+            ChartButtonKind::Filter => &self.filters,
+            ChartButtonKind::Legend => &self.legend,
+            ChartButtonKind::Axis => &self.axis,
+            ChartButtonKind::Value => &self.values,
+        }
+    }
 }
 
 /// False for the chart types a PivotChart cannot have: XY (scatter),
@@ -66,14 +112,14 @@ fn range(sheet: &str, rect: Rect) -> Option<RefExpr> {
 impl PivotTable {
     /// The captions of the field buttons of a PivotChart of this table.
     pub fn chart_fields(&self) -> PivotChartFields {
-        let captions = |list: &[super::AxisField]| -> Vec<String> {
-            list.iter().filter_map(|a| a.field()).map(|f| self.field_caption(f).to_string()).collect()
+        let captions = |list: &[super::AxisField]| -> Vec<(usize, String)> {
+            list.iter().filter_map(|a| a.field()).map(|f| (f, self.field_caption(f).to_string())).collect()
         };
         PivotChartFields {
-            filters: self.page_fields.iter().map(|p| self.field_caption(p.field).to_string()).collect(),
+            filters: self.page_fields.iter().map(|p| (p.field, self.field_caption(p.field).to_string())).collect(),
             legend: captions(&self.col_fields),
             axis: captions(&self.row_fields),
-            values: self.data_fields.iter().map(|d| d.name.clone()).collect(),
+            values: self.data_fields.iter().enumerate().map(|(k, d)| (k, d.name.clone())).collect(),
         }
     }
 
@@ -145,13 +191,22 @@ impl Workbook {
         }
         let id = self.add_chart(sheet, chart).ok_or(PivotError::NoSuchPivot)?;
         if let Some(p) = self.sheets[si].pivots.iter_mut().find(|p| p.id == pivot) {
-            p.charts.push(PivotChartLink { chart: id, buttons: true });
+            p.charts.push(PivotChartLink::new(id));
         }
         Ok(id)
     }
 
-    /// Show or hide the field buttons of a PivotChart.
+    /// Show or hide every field button of a PivotChart.
     pub fn set_pivot_chart_buttons(&mut self, chart: u32, shown: bool) -> bool {
+        self.edit_pivot_chart_link(chart, |link| link.shown = [shown; 4])
+    }
+
+    /// Show or hide one kind of field buttons of a PivotChart.
+    pub fn set_pivot_chart_button_kind(&mut self, chart: u32, kind: ChartButtonKind, shown: bool) -> bool {
+        self.edit_pivot_chart_link(chart, |link| link.shown[kind as usize] = shown)
+    }
+
+    fn edit_pivot_chart_link(&mut self, chart: u32, change: impl Fn(&mut PivotChartLink)) -> bool {
         let Some((si, p, _)) = self.pivot_of_chart(chart) else {
             return false;
         };
@@ -159,7 +214,7 @@ impl Workbook {
         self.snapshot();
         for p in self.sheets[si].pivots.iter_mut().filter(|p| p.id == pivot) {
             for link in p.charts.iter_mut().filter(|link| link.chart == chart) {
-                link.buttons = shown;
+                change(link);
             }
         }
         true

@@ -125,6 +125,91 @@ fn apply(app: &mut ExcelApp, id: u32, op: PaneOp, window: &mut Window, cx: &mut 
     });
 }
 
+/// The menu of the entry at `index` of an area: moving it inside the area
+/// and to another one, removing it, its settings. Shared by the pane and
+/// by the value field buttons of a PivotChart. `pending`: changes wait
+/// for "Update", and the settings with them.
+pub(super) fn entry_menu_entries(app: &ExcelApp, id: u32, area: Area, index: usize, pending: bool) -> Vec<MenuEntry> {
+    let locale = app.wb.locale;
+    let Some(pivot) = shown_pivot(app, id) else {
+        return Vec::new();
+    };
+    let moves = logic::entry_moves(pivot, area, index, locale);
+    let count = |area: Area| logic::area_entries(pivot, area, locale).len();
+    let last = count(area).saturating_sub(1);
+    let go = |label: &'static str, to: Area, position: usize, possible: bool| {
+        let op = PaneOp::Move {
+            from: area,
+            index,
+            to,
+            position,
+        };
+        entry(label, move |app, window, cx| apply(app, id, op, window, cx)).disabled(!possible)
+    };
+    let target = match area {
+        Area::Values => Some(Target::Data(index)),
+        _ => logic::area_entries(pivot, area, locale)
+            .get(index)
+            .and_then(|e| e.field)
+            .map(Target::Field),
+    };
+    let settings = if moves.value {
+        t("Value Field Settings...", "Paramètres des champs de valeurs...")
+    } else {
+        t("Field Settings...", "Paramètres de champ...")
+    };
+    vec![
+        go(t("Move Up", "Monter"), area, index.saturating_sub(1), moves.up),
+        go(t("Move Down", "Descendre"), area, index + 1, moves.down),
+        go(t("Move to Beginning", "Déplacer au début"), area, 0, moves.up),
+        go(t("Move to End", "Déplacer à la fin"), area, last, moves.down),
+        MenuEntry::separator(),
+        go(
+            t("Move to Report Filter", "Déplacer dans la zone Filtre du rapport"),
+            Area::Filters,
+            count(Area::Filters),
+            moves.to_filters,
+        )
+        .icon("filter"),
+        go(
+            t("Move to Row Labels", "Déplacer dans la zone Étiquettes de lignes"),
+            Area::Rows,
+            count(Area::Rows),
+            moves.to_rows,
+        )
+        .icon("pivot-rows"),
+        go(
+            t("Move to Column Labels", "Déplacer dans la zone Étiquettes de colonnes"),
+            Area::Columns,
+            count(Area::Columns),
+            moves.to_columns,
+        )
+        .icon("pivot-columns"),
+        go(
+            t("Move to Values", "Déplacer dans la zone Valeurs"),
+            Area::Values,
+            count(Area::Values),
+            moves.to_values,
+        )
+        .icon("pivot-sigma"),
+        MenuEntry::separator(),
+        entry(t("Remove Field", "Supprimer le champ"), move |app, window, cx| {
+            apply(app, id, PaneOp::Remove { area, index }, window, cx)
+        })
+        .icon("close"),
+        MenuEntry::separator(),
+        // The settings are those of the report as written: not
+        // while changes wait for "Update".
+        entry(settings, move |app, window, cx| {
+            if let Some(target) = target {
+                menus::open_target_settings(app, id, target, window, cx);
+            }
+        })
+        .icon("format-cells")
+        .disabled(moves.sigma || pending || target.is_none()),
+    ]
+}
+
 /// "Update": write the report of the definition that was put aside.
 fn update_deferred(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let Some(pending) = app.ext::<PivotUi>().and_then(|ui| ui.pending.clone()) else {
@@ -184,89 +269,11 @@ impl FieldsPane {
 
     /// The menu of an entry of an area.
     fn entry_menu(&self, shown: &Shown, area: Area, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let id = shown.id;
-        let pending = shown.pending;
+        let (id, pending) = (shown.id, shown.pending);
         let position = window.mouse_position();
         self.app
             .update(cx, |app, cx| {
-                let locale = app.wb.locale;
-                let Some(pivot) = shown_pivot(app, id) else {
-                    return;
-                };
-                let moves = logic::entry_moves(pivot, area, index, locale);
-                let count = |area: Area| logic::area_entries(pivot, area, locale).len();
-                let last = count(area).saturating_sub(1);
-                let go = |label: &'static str, to: Area, position: usize, possible: bool| {
-                    let op = PaneOp::Move {
-                        from: area,
-                        index,
-                        to,
-                        position,
-                    };
-                    entry(label, move |app, window, cx| apply(app, id, op, window, cx)).disabled(!possible)
-                };
-                let target = match area {
-                    Area::Values => Some(Target::Data(index)),
-                    _ => logic::area_entries(pivot, area, locale)
-                        .get(index)
-                        .and_then(|e| e.field)
-                        .map(Target::Field),
-                };
-                let settings = if moves.value {
-                    t("Value Field Settings...", "Paramètres des champs de valeurs...")
-                } else {
-                    t("Field Settings...", "Paramètres de champ...")
-                };
-                let entries: Vec<MenuEntry> = vec![
-                    go(t("Move Up", "Monter"), area, index.saturating_sub(1), moves.up),
-                    go(t("Move Down", "Descendre"), area, index + 1, moves.down),
-                    go(t("Move to Beginning", "Déplacer au début"), area, 0, moves.up),
-                    go(t("Move to End", "Déplacer à la fin"), area, last, moves.down),
-                    MenuEntry::separator(),
-                    go(
-                        t("Move to Report Filter", "Déplacer dans la zone Filtre du rapport"),
-                        Area::Filters,
-                        count(Area::Filters),
-                        moves.to_filters,
-                    )
-                    .icon("filter"),
-                    go(
-                        t("Move to Row Labels", "Déplacer dans la zone Étiquettes de lignes"),
-                        Area::Rows,
-                        count(Area::Rows),
-                        moves.to_rows,
-                    )
-                    .icon("pivot-rows"),
-                    go(
-                        t("Move to Column Labels", "Déplacer dans la zone Étiquettes de colonnes"),
-                        Area::Columns,
-                        count(Area::Columns),
-                        moves.to_columns,
-                    )
-                    .icon("pivot-columns"),
-                    go(
-                        t("Move to Values", "Déplacer dans la zone Valeurs"),
-                        Area::Values,
-                        count(Area::Values),
-                        moves.to_values,
-                    )
-                    .icon("pivot-sigma"),
-                    MenuEntry::separator(),
-                    entry(t("Remove Field", "Supprimer le champ"), move |app, window, cx| {
-                        apply(app, id, PaneOp::Remove { area, index }, window, cx)
-                    })
-                    .icon("close"),
-                    MenuEntry::separator(),
-                    // The settings are those of the report as written: not
-                    // while changes wait for "Update".
-                    entry(settings, move |app, window, cx| {
-                        if let Some(target) = target {
-                            menus::open_target_settings(app, id, target, window, cx);
-                        }
-                    })
-                    .icon("format-cells")
-                    .disabled(moves.sigma || pending || target.is_none()),
-                ];
+                let entries = entry_menu_entries(app, id, area, index, pending);
                 open_menu_at(app, position, entries, cx);
             })
             .ok();

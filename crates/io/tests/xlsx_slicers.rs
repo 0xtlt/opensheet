@@ -278,8 +278,24 @@ fn a_pivot_chart_goes_through_a_file() {
     let mut back = load(&bytes);
     let read = back.sheets[1].charts[0].id;
     let id = back.sheets[1].pivots[0].id;
-    assert_eq!(back.pivot_of_chart(read).map(|(_, p, link)| (p.id, link.buttons)), Some((id, true)));
+    assert_eq!(back.pivot_of_chart(read).map(|(_, p, link)| (p.id, link.shown)), Some((id, [true; 4])));
     assert_eq!(to_bytes(&back), bytes);
+    // Each kind of field buttons is kept on its own.
+    {
+        use opensheet_engine::pivot::ChartButtonKind;
+        let mut some = load(&bytes);
+        some.set_pivot_chart_button_kind(read, ChartButtonKind::Value, false);
+        some.set_pivot_chart_button_kind(read, ChartButtonKind::Legend, false);
+        some.commit("buttons");
+        let bytes = to_bytes(&some);
+        let part_xml = part(&bytes, "xl/charts/chart1.xml");
+        assert!(
+            part_xml.contains("<c14:dropZoneFilter val=\"1\"/><c14:dropZoneCategories val=\"1\"/><c14:dropZoneData val=\"0\"/><c14:dropZoneSeries val=\"0\"/><c14:dropZonesVisible val=\"1\"/>"),
+            "{part_xml}"
+        );
+        let again = load(&bytes);
+        assert_eq!(again.pivot_of_chart(again.sheets[1].charts[0].id).unwrap().2.shown, [true, false, true, false]);
+    }
     // Still bound: the chart follows a filter made after loading.
     back.pivot_update(id, false, |p| p.set_item_hidden(0, 0, true)).unwrap();
     back.commit("filter");

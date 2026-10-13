@@ -126,13 +126,42 @@ pub(super) fn toggle_drop_down(
     window: &mut Window,
     cx: &mut Cx,
 ) {
+    let Some(fields) = app.wb.pivot(id).and_then(|(_, pivot)| pivot.cell(row, col)).map(|cell| cell.fields.clone()) else {
+        return;
+    };
+    let anchor = app.cell_anchor(Rect::cell(row, col));
+    toggle_drop_down_at(app, id, &fields, FilterButton::Cell(row, col), anchor, press, window, cx);
+}
+
+/// What a drop-down hangs from: a cell of the report, or a field button
+/// of a PivotChart (the chart and the rank of the button).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FilterButton {
+    Cell(u32, u32),
+    Chart(u32, usize),
+}
+
+/// Open the drop-down of `fields` of PivotTable `id` at `anchor` (a point
+/// of the window), unless the press that asks for it has just closed the
+/// drop-down of the same button.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn toggle_drop_down_at(
+    app: &mut ExcelApp,
+    id: u32,
+    fields: &[usize],
+    button: FilterButton,
+    anchor: Point<Pixels>,
+    press: Option<Point<Pixels>>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if !app.may(Intent::UsePivotTable, cx) {
         return;
     }
     let ui = app.ext_mut::<PivotUi>();
     let closed = ui.filter_closed.clone();
-    let same = ui.open_filter == Some((row, col));
-    ui.open_filter = Some((row, col));
+    let same = ui.open_filter == Some(button);
+    ui.open_filter = Some(button);
     // An older dismissal is forgotten either way.
     let dismissed_here = press.is_some_and(|at| just_closed(&closed, at));
     closed.set(None);
@@ -144,11 +173,7 @@ pub(super) fn toggle_drop_down(
     let Some((_, pivot)) = app.wb.pivot(id) else {
         return;
     };
-    let Some(cell) = pivot.cell(row, col) else {
-        return;
-    };
-    let fields: Vec<(usize, SharedString)> = cell
-        .fields
+    let fields: Vec<(usize, SharedString)> = fields
         .iter()
         .map(|field| (*field, pivot.field_caption(*field).to_string().into()))
         .collect();
@@ -157,7 +182,6 @@ pub(super) fn toggle_drop_down(
     };
     let state = FieldState::of(pivot, first, locale);
     let weak = cx.weak_entity();
-    let anchor = app.cell_anchor(Rect::cell(row, col));
     let view = cx.new(|cx| {
         let search = widgets::input(cx, "");
         search.update(cx, |field, _| field.placeholder = t("Search", "Rechercher").into());
@@ -177,6 +201,27 @@ pub(super) fn toggle_drop_down(
     let focus = view.read(cx).search.read(cx).focus_handle(cx);
     window.focus(&focus);
     app.open_popup_view(anchor, view, cx);
+}
+
+/// What the headless tests of the PivotChart buttons do to a drop-down
+/// they opened with a click.
+#[cfg(test)]
+impl DropDown {
+    pub(super) fn shown_field(&self) -> usize {
+        self.state.field
+    }
+
+    /// Tick only the items with these labels, then OK.
+    pub(super) fn keep_only(&mut self, labels: &[&str], window: &mut Window, cx: &mut Context<Self>) {
+        for item in &mut self.state.checks {
+            item.checked = labels.contains(&item.label.as_ref());
+        }
+        self.ok(&(), window, cx);
+    }
+
+    pub(super) fn sort_descending(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sort(SortOrder::Descending, window, cx);
+    }
 }
 
 impl DropDown {

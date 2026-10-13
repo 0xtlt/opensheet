@@ -2879,6 +2879,11 @@ pub static ES: &[(&str, &str)] = &[
     ("Medium", "Medio"),
     ("Dark", "Oscuro"),
     ("New PivotTable Style...", "Nuevo estilo de tabla dinámica..."),
+    // ---- PivotChart buttons, multi-level axes, date sparklines, form controls ----
+    ("Show Report Filter Field Buttons", "Mostrar botones de campo de filtro de informe"),
+    ("Show Legend Field Buttons", "Mostrar botones de campo de leyenda"),
+    ("Show Axis Field Buttons", "Mostrar botones de campo de eje"),
+    ("Show Value Field Buttons", "Mostrar botones de campo de valor"),
     // ---- Slicers, timelines and PivotCharts ----
     ("We can't create a Timeline for this report because it doesn't have a field formatted as Date.", "No se puede crear una escala de tiempo para este informe porque no tiene ningún campo con formato de Fecha."),
     ("Insert Slicers", "Insertar segmentación de datos"),
@@ -6687,6 +6692,11 @@ pub static DE: &[(&str, &str)] = &[
     ("Medium", "Mittel"),
     ("Dark", "Dunkel"),
     ("New PivotTable Style...", "Neue PivotTable-Formatvorlage..."),
+    // ---- PivotChart buttons, multi-level axes, date sparklines, form controls ----
+    ("Show Report Filter Field Buttons", "Berichtsfilter-Feldschaltflächen anzeigen"),
+    ("Show Legend Field Buttons", "Legendenfelder-Schaltflächen anzeigen"),
+    ("Show Axis Field Buttons", "Achsenfelder-Schaltflächen anzeigen"),
+    ("Show Value Field Buttons", "Wertfelder-Schaltflächen anzeigen"),
     // ---- Slicers, timelines and PivotCharts ----
     ("We can't create a Timeline for this report because it doesn't have a field formatted as Date.", "Für diesen Bericht kann keine Zeitachse erstellt werden, da er kein Feld mit einem Datumsformat aufweist."),
     ("Insert Slicers", "Datenschnitt auswählen"),
@@ -10498,6 +10508,11 @@ pub static IT: &[(&str, &str)] = &[
     ("Medium", "Medio"),
     ("Dark", "Scuro"),
     ("New PivotTable Style...", "Nuovo stile tabella pivot..."),
+    // ---- PivotChart buttons, multi-level axes, date sparklines, form controls ----
+    ("Show Report Filter Field Buttons", "Mostra pulsanti campo filtro rapporto"),
+    ("Show Legend Field Buttons", "Mostra pulsanti campo legenda"),
+    ("Show Axis Field Buttons", "Mostra pulsanti campo asse"),
+    ("Show Value Field Buttons", "Mostra pulsanti campo valore"),
     // ---- Slicers, timelines and PivotCharts ----
     ("We can't create a Timeline for this report because it doesn't have a field formatted as Date.", "Non è possibile creare una sequenza temporale per questo report perché non contiene un campo formattato come data."),
     ("Insert Slicers", "Inserisci filtri dati"),

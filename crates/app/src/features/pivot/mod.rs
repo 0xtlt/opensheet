@@ -84,7 +84,7 @@ commands! {
         // PivotChart Analyze
         ChartRefresh = "refresh", t("Refresh", "Actualiser");
         ChartClear = "clear", t("Clear All", "Effacer tout");
-        ChartFieldButtons = "", t("Field Buttons", "Boutons de champ");
+        ChartFieldButtons = "filter", t("Field Buttons", "Boutons de champ");
         FieldList = "columns", t("Field List", "Liste des champs");
         Buttons = "plus", t("+/- Buttons", "Boutons +/-");
         FieldHeaders = "table", t("Field Headers", "En-têtes de champ");
@@ -159,7 +159,7 @@ impl Command for Cmd {
             Cmd::PivotChart => chart::insert(app, cx),
             Cmd::ChartRefresh => chart::refresh(app, window, cx),
             Cmd::ChartClear => chart::clear(app, window, cx),
-            Cmd::ChartFieldButtons => chart::toggle_buttons(app, cx),
+            Cmd::ChartFieldButtons => chart::buttons_menu(app, window, cx),
             Cmd::Options => menus::options_menu(app, window, cx),
             Cmd::FieldSettings => dialogs::open_settings(app, window, cx),
             Cmd::ExpandField => actions::collapse_active_field(app, false, window, cx),
@@ -234,8 +234,8 @@ struct PivotUi {
     pending: Option<PivotTable>,
     pivot_name: Option<NameBox>,
     active_field: Option<NameBox>,
-    /// The cell whose drop-down was last opened.
-    open_filter: Option<(u32, u32)>,
+    /// The button whose drop-down was last opened.
+    open_filter: Option<filter::FilterButton>,
     /// Where the press that closed that drop-down landed, and the one that
     /// closed the styles gallery: a press on their own button must not
     /// open them again.
@@ -824,6 +824,9 @@ impl Feature for Pivots {
     }
 
     fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+        if let Some(response) = chart::button_mouse_down(app, zone, ev, window, cx) {
+            return response;
+        }
         sheet::mouse_down(app, zone, ev, window, cx)
     }
 
