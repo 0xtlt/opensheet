@@ -47,9 +47,24 @@ pub struct Spill {
     pub array: Arc<Array>,
 }
 
+/// Whether a sheet has a tab: Excel's three states.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SheetVisibility {
+    #[default]
+    Visible,
+    /// Hidden: Unhide… lists it.
+    Hidden,
+    /// Hidden and left out of Unhide…: only a script (or, in Excel, the
+    /// Visual Basic editor) brings it back.
+    VeryHidden,
+}
+
 #[derive(Clone, Debug)]
 pub struct Sheet {
     pub name: String,
+    /// Whether the sheet has a tab. A hidden sheet is calculated, read by
+    /// formulas and charts, and saved like any other.
+    pub visibility: SheetVisibility,
     pub cells: BTreeMap<(u32, u32), Cell>,
     /// Explicit column widths (pixels at 100 %).
     pub col_widths: BTreeMap<u32, f32>,
@@ -134,6 +149,7 @@ impl Sheet {
     pub fn new(name: impl Into<String>) -> Sheet {
         Sheet {
             name: name.into(),
+            visibility: SheetVisibility::Visible,
             cells: BTreeMap::new(),
             col_widths: BTreeMap::new(),
             row_heights: BTreeMap::new(),
@@ -180,6 +196,11 @@ impl Sheet {
     }
 
     /// Column width in pixels at 100 % (0 when hidden).
+    /// Whether the sheet has a tab.
+    pub fn is_visible(&self) -> bool {
+        self.visibility == SheetVisibility::Visible
+    }
+
     pub fn col_width(&self, col: u32) -> f32 {
         if self.hidden_cols.contains(&col) {
             return 0.0;
@@ -1263,6 +1284,10 @@ impl Workbook {
         if self.sheets.len() <= 1 || index >= self.sheets.len() {
             return false;
         }
+        // Nor the last one that has a tab.
+        if self.sheets[index].is_visible() && self.visible_sheet_count() <= 1 {
+            return false;
+        }
         self.snapshot();
         let order: Vec<String> = self.sheets.iter().map(|s| s.name.clone()).collect();
         let order: Vec<&str> = order.iter().map(|s| s.as_str()).collect();
@@ -1400,6 +1425,49 @@ impl Workbook {
         let moved = before[from];
         self.map_all_formulas(&|e| e.with_sheet_moved(moved, &before, &after));
         crate::features::on_sheet_moved(self, moved, &before, &after);
+    }
+
+    /// The sheets that have a tab.
+    pub fn visible_sheet_count(&self) -> usize {
+        self.sheets.iter().filter(|s| s.is_visible()).count()
+    }
+
+    /// The visible sheet nearest to `index`: itself when it is visible,
+    /// else the next one to its right, else the one to its left (the
+    /// sheet Excel brings in front when the active one is hidden).
+    pub fn nearest_visible_sheet(&self, index: usize) -> usize {
+        let index = index.min(self.sheets.len().saturating_sub(1));
+        (index..self.sheets.len())
+            .chain((0..index).rev())
+            .find(|i| self.sheets[*i].is_visible())
+            .unwrap_or(index)
+    }
+
+    /// The visible sheet after (`forward`) or before `index`, if any.
+    pub fn next_visible_sheet(&self, index: usize, forward: bool) -> Option<usize> {
+        if forward {
+            (index + 1..self.sheets.len()).find(|i| self.sheets[*i].is_visible())
+        } else {
+            (0..index.min(self.sheets.len())).rev().find(|i| self.sheets[*i].is_visible())
+        }
+    }
+
+    /// Hide a sheet or show it again. Returns false, and changes nothing,
+    /// when there is no such sheet or when it is the last visible one: a
+    /// workbook keeps at least one visible sheet.
+    pub fn set_sheet_visibility(&mut self, index: usize, visibility: SheetVisibility) -> bool {
+        let Some(sheet) = self.sheets.get(index) else {
+            return false;
+        };
+        if sheet.visibility == visibility {
+            return true;
+        }
+        if visibility != SheetVisibility::Visible && sheet.is_visible() && self.visible_sheet_count() <= 1 {
+            return false;
+        }
+        self.snapshot();
+        self.sheets[index].visibility = visibility;
+        true
     }
 
     pub fn set_tab_color(&mut self, index: usize, color: Option<Color>) {

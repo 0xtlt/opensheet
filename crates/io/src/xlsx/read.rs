@@ -24,7 +24,7 @@ use opensheet_engine::style::{
     StylePatch, StyleTable, ThemeFont, Underline, VAlign,
 };
 use opensheet_engine::value::{ErrorKind, Value};
-use opensheet_engine::workbook::{Cell, Content, DefinedName, Sheet};
+use opensheet_engine::workbook::{Cell, Content, DefinedName, Sheet, SheetVisibility};
 use opensheet_engine::{Color, Locale, Theme, Workbook};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -193,6 +193,8 @@ struct WorkbookPart {
     iterative: IterativeCalc,
     /// `sheetId` of each entry of `sheets`.
     sheet_ids: Vec<u32>,
+    /// `state` of each entry of `sheets`.
+    sheet_states: Vec<SheetVisibility>,
     /// `<customWorkbookViews>`.
     custom_views: Vec<super::custom_view::BookView>,
 }
@@ -240,6 +242,11 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
                         .map(Cow::into_owned);
                     out.sheets.push((name, rid.unwrap_or_default()));
                     out.sheet_ids.push(t.attr_u32("sheetId").unwrap_or(0));
+                    out.sheet_states.push(match t.attr("state").as_deref() {
+                        Some("hidden") => SheetVisibility::Hidden,
+                        Some("veryHidden") => SheetVisibility::VeryHidden,
+                        _ => SheetVisibility::Visible,
+                    });
                     r.skip(&t);
                 }
                 "definedName" => {
@@ -1707,11 +1714,18 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         // in the stacking order of the others.
         loaded.sheet.set_object_stack(&[]);
         inks.read_sheet(&mut pkg, &part, loaded.drawing.as_deref(), &mut loaded.sheet);
+        loaded.sheet.visibility = info.sheet_states.get(i).copied().unwrap_or_default();
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
         sheet_parts.push(part);
     }
     if !sheets.is_empty() {
+        // A workbook shows at least one sheet: when the only visible ones
+        // of the file were of a kind that is not read (a chart sheet), the
+        // first one read gets its tab back.
+        if sheets.iter().all(|s| !s.is_visible()) {
+            sheets[0].visibility = SheetVisibility::Visible;
+        }
         wb.sheets = sheets;
         // What needs the whole workbook: tables have names and ids no
         // other table of any sheet may have, PivotTables share caches and
