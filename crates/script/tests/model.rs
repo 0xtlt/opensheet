@@ -165,6 +165,27 @@ fn condfmt() {
     assert!(fails(&mut wb, &script(add)).message.contains("protected"));
 }
 
+fn validation() {
+    use opensheet_engine::validation::{AlertStyle, ValidationKind};
+    let mut wb = stock();
+    ok(&mut wb, include_str!("model/validation.ts"));
+    let rules = &wb.sheets[0].validations;
+    assert_eq!(rules.len(), 3);
+    let qty = wb.validation_at(0, 2, 1).expect("a rule on B3");
+    assert_eq!((qty.kind, qty.error_style, qty.allow_blank), (ValidationKind::Whole, AlertStyle::Warning, false));
+    assert_eq!(qty.ranges, [Rect::new(1, 1, 3, 1)]);
+    // The rule is the one the dialog makes: an entry is checked by it.
+    assert!(matches!(wb.check_entry(0, 1, 1, "50"), opensheet_engine::validation::EntryCheck::Invalid(_)));
+    assert!(wb.validation_at(0, 2, 2).is_none());
+    wb.protect_sheet(0, Default::default(), "");
+    assert!(fails(&mut wb, &script("sheet.getRange(\"B2\").getDataValidation().clear();")).message.contains("protected"));
+}
+
+#[test]
+fn data_validation_rules_alerts_and_invalid_cells() {
+    validation();
+}
+
 #[test]
 fn conditional_formats_of_every_kind() {
     condfmt();
@@ -232,7 +253,7 @@ fn english_and_the_language_of_the_workbook() {
 /// the list a user is shown and what runs cannot differ.
 #[test]
 fn every_listed_member_runs() {
-    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt] {
+    for scenario in [worksheets, names, values, navigation, editing, data, format, filter, tables, charts, condfmt, validation] {
         scenario();
     }
     let called = members_called();

@@ -50,6 +50,29 @@ pub(super) fn areas_arg(h: &mut Host, call: &Call, index: usize, sheet: usize) -
     }
 }
 
+/// Cells as the fewest ranges a reader would name: runs down a column,
+/// joined across columns when they span the same rows.
+pub(super) fn rects_of_cells(mut cells: Vec<(u32, u32)>) -> Vec<Rect> {
+    cells.sort_unstable_by_key(|(row, col)| (*col, *row));
+    cells.dedup();
+    let mut runs: Vec<Rect> = Vec::new();
+    for (row, col) in cells {
+        match runs.last_mut() {
+            Some(run) if run.c0 == col && run.r1 + 1 == row => run.r1 = row,
+            _ => runs.push(Rect::cell(row, col)),
+        }
+    }
+    let mut out: Vec<Rect> = Vec::new();
+    for run in runs {
+        match out.iter_mut().find(|rect| rect.r0 == run.r0 && rect.r1 == run.r1 && rect.c1 + 1 == run.c0) {
+            Some(rect) => rect.c1 = run.c0,
+            None => out.push(run),
+        }
+    }
+    out.sort_unstable_by_key(|rect| (rect.r0, rect.c0));
+    out
+}
+
 /// `Sheet1!A1:B2,Sheet1!D4`, the ranges parted as lists are in a language.
 fn addresses(h: &Host, sheet: usize, rects: &[Rect], separator: char) -> String {
     let each: Vec<String> = rects.iter().map(|rect| address(h, sheet, *rect)).collect();

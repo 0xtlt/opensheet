@@ -108,6 +108,18 @@ pub(crate) static ENUMS: &[ApiEnum] = &[
         members: members!(invalid "Invalid", topItems "TopItems", topPercent "TopPercent", bottomItems "BottomItems", bottomPercent "BottomPercent"),
     },
     ApiEnum {
+        name: "DataValidationAlertStyle",
+        members: members!(stop "Stop", warning "Warning", information "Information"),
+    },
+    ApiEnum {
+        name: "DataValidationOperator",
+        members: members!(between "Between", notBetween "NotBetween", equalTo "EqualTo", notEqualTo "NotEqualTo", greaterThan "GreaterThan", lessThan "LessThan", greaterThanOrEqualTo "GreaterThanOrEqualTo", lessThanOrEqualTo "LessThanOrEqualTo"),
+    },
+    ApiEnum {
+        name: "DataValidationType",
+        members: members!(none "None", wholeNumber "WholeNumber", decimal "Decimal", list "List", date "Date", time "Time", textLength "TextLength", custom "Custom", inconsistent "Inconsistent", mixedCriteria "MixedCriteria"),
+    },
+    ApiEnum {
         name: "DeleteShiftDirection",
         members: members!(up "Up", left "Left"),
     },

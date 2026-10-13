@@ -39,6 +39,7 @@ function build(workbook: ExcelScript.Workbook, round: number): { [name: string]:
     ChartTitle: chart.getTitle(),
     ChartLegend: chart.getLegend(),
     RangeAreas: cellValue.getRanges(),
+    DataValidation: range.getDataValidation(),
     ConditionalFormat: cellValue,
     CellValueConditionalFormat: cellValue.getCellValue(),
     ColorScaleConditionalFormat: rule(ExcelScript.ConditionalFormatType.colorScale).getColorScale(),

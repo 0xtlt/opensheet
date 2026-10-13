@@ -349,6 +349,10 @@ pub(super) const RANGE: ApiClass = class!("Range", "A rectangle of cells of a wo
     getConditionalFormat "(id: string): ConditionalFormat | undefined" "The conditional format of the worksheet with this identifier; undefined when there is none." => |h, c| condfmt::by_id(h, c);
     clearAllConditionalFormats "(): void" "Takes the cells of the range out of every conditional format." => |h, c| condfmt::clear(h, c);
 
+    getDataValidation "(): DataValidation" "The data validation of the range." => |h, c| {
+        this_range(h, c)?;
+        Ok(Ret::object("DataValidation", c.this.to_vec()))
+    };
     getFormat "(): RangeFormat" "The formatting of the range: font, fill, borders, alignment, sizes." => |h, c| {
         this_range(h, c)?;
         Ok(Ret::object("RangeFormat", c.this.to_vec()))

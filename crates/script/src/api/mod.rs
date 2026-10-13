@@ -16,6 +16,7 @@ mod format;
 mod range;
 mod table;
 mod util;
+mod validation;
 mod workbook;
 mod worksheet;
 
@@ -237,6 +238,7 @@ pub(crate) static API: &[ApiClass] = &[
     condfmt::RANGE_FILL,
     condfmt::RANGE_FONT,
     condfmt::RANGE_BORDER,
+    validation::DATA_VALIDATION,
 ];
 
 pub(crate) use enums::ENUMS;
