@@ -607,6 +607,8 @@ fn area_xml(format: &ShapeFormat, chart_area: bool) -> String {
     } else {
         x.push_str(NO_LINE);
     }
+    // The shadow and the glow of the area, after its line as in a shape.
+    crate::xlsx::drawing::push_effects(&mut x, &format.effects);
     x.push_str("</c:spPr>");
     x
 }

@@ -1,10 +1,14 @@
 //! The text of a shape, run by run: what `a:rPr` says about the letters
 //! (font, fill, outline, shadow) and how the body holds its lines
 //! (`wrap` of `a:bodyPr`). WordArt is nothing else: a text box whose runs
-//! have an outline and a shadow, and whose text is not wrapped.
+//! have an outline and a shadow, and whose text is not wrapped. A warp of
+//! the whole text (Transform) is `a:prstTxWarp` of the body.
 
 use super::*;
-use opensheet_engine::wordart::{TextEffects, TextOutline, TextRun, TextShadow};
+use opensheet_engine::textwarp::{TextWarp, WarpPreset};
+use opensheet_engine::wordart::{
+    GradientKind, GradientStop, TextEffects, TextGradient, TextOutline, TextReflection, TextRun, TextShadow,
+};
 
 // ---- writing -------------------------------------------------------------------
 
@@ -36,21 +40,45 @@ fn push_run_properties(x: &mut String, element: &str, font: &Font, effects: &Tex
     }
     if effects.hollow {
         x.push_str("<a:noFill/>");
+    } else if let Some(gradient) = &effects.gradient {
+        push_gradient(x, gradient);
     } else if let Some(color) = font.color {
         push_solid_fill(x, color);
     }
+    let emu = |points: f32| (points.max(0.0) as f64 * EMU_PER_PT).round() as i64;
+    if effects.shadow.is_some() || effects.reflection.is_some() {
+        x.push_str("<a:effectLst>");
+    }
     if let Some(shadow) = &effects.shadow {
-        let emu = |points: f32| (points.max(0.0) as f64 * EMU_PER_PT).round() as i64;
         let angle = ((shadow.angle as f64).rem_euclid(360.0) * ANGLE_UNITS).round() as i64;
         w!(
             x,
-            "<a:effectLst><a:outerShdw blurRad=\"{}\" dist=\"{}\" dir=\"{angle}\" algn=\"tl\" rotWithShape=\"0\">",
+            "<a:outerShdw blurRad=\"{}\" dist=\"{}\" dir=\"{angle}\" algn=\"tl\" rotWithShape=\"0\">",
             emu(shadow.blur),
             emu(shadow.distance)
         );
         let alpha = (shadow.opacity < 1.0).then(|| (shadow.opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
         push_drawing_color(x, shadow.color, alpha);
-        x.push_str("</a:outerShdw></a:effectLst>");
+        x.push_str("</a:outerShdw>");
+    }
+    if let Some(reflection) = &effects.reflection {
+        // As Excel writes its Reflection Variations: the text mirrored
+        // about its bottom edge, fading to nearly nothing.
+        let percent = |part: f32| (part.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32;
+        w!(
+            x,
+            "<a:reflection blurRad=\"{}\" stA=\"{}\" endA=\"300\" endPos=\"{}\"",
+            emu(reflection.blur),
+            percent(reflection.opacity),
+            percent(reflection.reach)
+        );
+        if reflection.distance > 0.0 {
+            w!(x, " dist=\"{}\"", emu(reflection.distance));
+        }
+        x.push_str(" dir=\"5400000\" sy=\"-100000\" algn=\"bl\" rotWithShape=\"0\"/>");
+    }
+    if effects.shadow.is_some() || effects.reflection.is_some() {
+        x.push_str("</a:effectLst>");
     }
     for script in ["latin", "cs"] {
         w!(x, "<a:{script} typeface=\"");
@@ -60,22 +88,79 @@ fn push_run_properties(x: &mut String, element: &str, font: &Font, effects: &Tex
     w!(x, "</a:{element}>");
 }
 
+/// `<a:gradFill>` as Excel writes the gradients of its galleries.
+fn push_gradient(x: &mut String, gradient: &TextGradient) {
+    x.push_str("<a:gradFill flip=\"none\" rotWithShape=\"1\"><a:gsLst>");
+    for stop in gradient.stops() {
+        w!(x, "<a:gs pos=\"{}\">", (stop.at.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
+        push_drawing_color(x, stop.color, None);
+        x.push_str("</a:gs>");
+    }
+    x.push_str("</a:gsLst>");
+    match gradient.kind {
+        GradientKind::Linear(angle) => {
+            let angle = ((angle as f64).rem_euclid(360.0) * ANGLE_UNITS).round() as i64;
+            w!(x, "<a:lin ang=\"{angle}\" scaled=\"1\"/>");
+        }
+        GradientKind::FromCentre => {
+            x.push_str("<a:path path=\"circle\"><a:fillToRect l=\"50000\" t=\"50000\" r=\"50000\" b=\"50000\"/></a:path>");
+        }
+    }
+    x.push_str("<a:tileRect/></a:gradFill>");
+}
+
+/// `<a:prstTxWarp>`: the warp and the adjustments that are not the
+/// preset's own (Excel writes an empty list for those).
+fn push_warp(x: &mut String, warp: &TextWarp) {
+    w!(x, "<a:prstTxWarp prst=\"{}\">", warp.preset.ooxml_name());
+    let own = warp.preset.adjustments();
+    let changed: Vec<(&str, i32)> = warp.adjustments().into_iter().filter(|adjustment| !own.contains(adjustment)).collect();
+    if changed.is_empty() {
+        x.push_str("<a:avLst/>");
+    } else {
+        x.push_str("<a:avLst>");
+        // A list that gives one of two adjustments gives both.
+        for (name, value) in warp.adjustments() {
+            w!(x, "<a:gd name=\"{name}\" fmla=\"val {value}\"/>");
+        }
+        x.push_str("</a:avLst>");
+    }
+    x.push_str("</a:prstTxWarp>");
+}
+
 /// `<xdr:txBody>`: a paragraph for each line of the text, a run for each
 /// change of look inside it.
 pub(super) fn push_text_body(x: &mut String, shape: &Shape, equation: bool) {
     if shape.wrap {
         w!(
             x,
-            "<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"{}\"/><a:lstStyle/>",
+            "<xdr:txBody><a:bodyPr vertOverflow=\"clip\" horzOverflow=\"clip\" wrap=\"square\" rtlCol=\"0\" anchor=\"{}\"",
             shape.anchor.ooxml_name()
         );
+        match &shape.warp {
+            Some(warp) => {
+                x.push('>');
+                push_warp(x, warp);
+                x.push_str("</a:bodyPr><a:lstStyle/>");
+            }
+            None => x.push_str("/><a:lstStyle/>"),
+        }
     } else {
-        // As Excel writes WordArt: one line, and a box that fits it.
+        // As Excel writes WordArt: one line, and a box that fits it. A
+        // warped text fills its box instead, whatever size it is given.
         w!(
             x,
-            "<xdr:txBody><a:bodyPr wrap=\"none\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\" anchor=\"{}\"><a:spAutoFit/></a:bodyPr><a:lstStyle/>",
+            "<xdr:txBody><a:bodyPr wrap=\"none\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\" anchor=\"{}\">",
             shape.anchor.ooxml_name()
         );
+        match &shape.warp {
+            Some(warp) => {
+                push_warp(x, warp);
+                x.push_str("<a:noAutofit/>");
+            }
+            None => x.push_str("<a:spAutoFit/>"),
+        }
+        x.push_str("</a:bodyPr><a:lstStyle/>");
     }
     if let (true, Some(math)) = (equation, &shape.math) {
         w!(x, "<a:p><a:pPr algn=\"{}\"/>", shape.align.ooxml_name());
@@ -125,10 +210,26 @@ pub(super) struct RawRun {
     colored: bool,
 }
 
-/// `<a:effectLst>`: the outer shadow, the one effect that is kept.
-fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<TextShadow> {
+/// `<a:effectLst>`: the outer shadow and the reflection, the effects that
+/// are kept.
+fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> (Option<TextShadow>, Option<TextReflection>) {
     let mut shadow = None;
+    let mut reflection = None;
     each_child(r, tag, |r, t| {
+        if t.name == "reflection" {
+            let points = |name: &str| t.attr_f64(name).filter(|v| v.is_finite() && *v >= 0.0).map_or(0.0, |v| (v / EMU_PER_PT).min(400.0) as f32);
+            let part = |name: &str, default: f32| {
+                t.attr_f64(name).filter(|v| v.is_finite()).map_or(default, |v| (v / 100_000.0).clamp(0.0, 1.0) as f32)
+            };
+            reflection = Some(TextReflection {
+                blur: points("blurRad"),
+                opacity: part("stA", 1.0),
+                reach: part("endPos", 1.0),
+                distance: points("dist"),
+            });
+            r.skip(t);
+            return;
+        }
         if t.name != "outerShdw" {
             r.skip(t);
             return;
@@ -158,7 +259,33 @@ fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Op
             angle,
         });
     });
-    shadow
+    (shadow, reflection)
+}
+
+/// `<a:gradFill>`: its colours and the way it runs. A gradient along a
+/// shape (`rect` or `shape` paths) is read as one from the middle.
+fn parse_gradient<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<TextGradient> {
+    let mut stops = Vec::new();
+    let mut kind = GradientKind::Linear(0.0);
+    each_child(r, tag, |r, t| match t.name {
+        "gsLst" => each_child(r, t, |r, stop| {
+            let at = stop.attr_f64("pos").filter(|v| v.is_finite()).map_or(0.0, |v| (v / 100_000.0).clamp(0.0, 1.0) as f32);
+            if let Some(color) = parse_color(r, stop, palette) {
+                stops.push(GradientStop { at, color });
+            }
+        }),
+        "lin" => {
+            let angle = t.attr_f64("ang").filter(|v| v.is_finite()).map_or(0.0, |v| (v / ANGLE_UNITS).rem_euclid(360.0) as f32);
+            kind = GradientKind::Linear(angle);
+            r.skip(t);
+        }
+        "path" => {
+            kind = GradientKind::FromCentre;
+            r.skip(t);
+        }
+        _ => r.skip(t),
+    });
+    TextGradient::new(kind, &stops)
 }
 
 fn parse_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawRun {
@@ -195,8 +322,19 @@ fn parse_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette
                 });
             }
         }
-        "effectLst" => effects.shadow = parse_effects(r, t, palette),
-        _ => parse_paint(r, t, palette, &mut paint),
+        "effectLst" => (effects.shadow, effects.reflection) = parse_effects(r, t, palette),
+        // A gradient is read twice: for itself, and for the one colour
+        // of who draws no gradient (its first).
+        "gradFill" => {
+            effects.gradient = parse_gradient(&mut r.fork(), t, palette);
+            parse_paint(r, t, palette, &mut paint);
+        }
+        _ => {
+            if matches!(t.name, "solidFill" | "noFill" | "pattFill" | "blipFill") {
+                effects.gradient = None;
+            }
+            parse_paint(r, t, palette, &mut paint)
+        }
     });
     match paint {
         Paint::Color(color) => font.color = Some(color),
@@ -223,6 +361,8 @@ pub(super) struct RawText {
     pub anchor: Option<TextAnchor>,
     /// `wrap="none"`.
     unwrapped: bool,
+    /// `a:prstTxWarp` of the body.
+    warp: Option<TextWarp>,
     /// The equation of a paragraph that holds one, with the size and the
     /// colour of its letters.
     math: Option<(opensheet_engine::math::Equation, Option<RawRun>)>,
@@ -241,6 +381,7 @@ impl RawText {
     /// the shape gives runs that name none.
     pub fn into_shape(self, shape: &mut Shape, automatic: Option<Color>) {
         shape.wrap = !self.unwrapped;
+        shape.warp = self.warp;
         shape.text = self.text;
         let resolve = |run: RawRun| {
             let mut font = run.font;
@@ -347,6 +488,23 @@ fn find_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette,
     });
 }
 
+/// `<a:prstTxWarp>`; `textNoShape` and presets that do not exist are no
+/// warp.
+fn parse_warp<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<TextWarp> {
+    let mut warp = tag.attr("prst").and_then(|name| WarpPreset::from_ooxml_name(&name)).map(TextWarp::from);
+    each_child(r, tag, |r, list| {
+        each_child(r, list, |r, guide| {
+            // `fmla="val 12345"`.
+            let value = guide.attr("fmla").and_then(|formula| formula.trim().strip_prefix("val")?.trim().parse::<f64>().ok());
+            if let (Some(warp), Some(name), Some(value)) = (warp.as_mut(), guide.attr("name"), value.filter(|v| v.is_finite())) {
+                warp.set_adjustment(&name, value.clamp(i32::MIN as f64, i32::MAX as f64) as i32);
+            }
+            r.skip(guide);
+        });
+    });
+    warp
+}
+
 pub(super) fn parse_text<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> RawText {
     let mut out = RawText::default();
     let mut paragraphs = 0;
@@ -354,7 +512,13 @@ pub(super) fn parse_text<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palett
         "bodyPr" => {
             out.anchor = Some(t.attr("anchor").and_then(|name| TextAnchor::from_ooxml_name(&name)).unwrap_or_default());
             out.unwrapped = t.attr("wrap").as_deref() == Some("none");
-            r.skip(t);
+            each_child(r, t, |r, c| {
+                if c.name == "prstTxWarp" {
+                    out.warp = parse_warp(r, c);
+                } else {
+                    r.skip(c);
+                }
+            });
         }
         "p" => {
             if paragraphs > 0 {

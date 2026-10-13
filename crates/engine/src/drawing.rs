@@ -1174,6 +1174,9 @@ pub struct Shape {
     /// The adjustment of the geometry (`adj` of `<a:avLst>`), for the
     /// presets that have one here; `None` is the preset's own.
     pub adjust: Option<f32>,
+    /// The text is warped (Text Effects ▸ Transform, `a:prstTxWarp` of
+    /// `<a:bodyPr>`; see `textwarp.rs`).
+    pub warp: Option<crate::textwarp::TextWarp>,
     /// The text is an equation (see `math.rs`); `text` then holds it in
     /// the linear format, which is what is typed and what applications
     /// that draw no equations show.
@@ -1293,6 +1296,7 @@ impl ShapeTool {
             runs: Vec::new(),
             wrap: true,
             adjust: None,
+            warp: None,
             math: None,
         };
         if preset.is_line() {

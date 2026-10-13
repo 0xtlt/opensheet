@@ -189,6 +189,16 @@ pub fn parse_style(head: &[u8], os2: Option<&[u8]>) -> StyleInfo {
     style
 }
 
+/// One step of the outline of a glyph.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OutlineStep {
+    Move(f32, f32),
+    Line(f32, f32),
+    /// A quadratic curve: its control point, then its end.
+    Quad(f32, f32, f32, f32),
+    Close,
+}
+
 /// A TrueType font loaded in memory.
 pub struct TtfFont {
     /// The whole file (a collection's members share it).
@@ -379,6 +389,179 @@ impl TtfFont {
             }
         }
         out
+    }
+
+    /// The outline of a glyph as lines and quadratic curves, in font
+    /// units with y upwards; empty for a glyph without outline (a
+    /// space). Whoever draws text as shapes rather than as text (warped
+    /// letters) starts from this.
+    pub fn outline(&self, glyph: u16) -> Vec<OutlineStep> {
+        let mut out = Vec::new();
+        self.add_outline(glyph, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], 0, &mut out);
+        out
+    }
+
+    /// Add the outline of a glyph seen through a transformation
+    /// (`x' = a·x + c·y + e`, `y' = b·x + d·y + f`).
+    fn add_outline(&self, glyph: u16, m: [f32; 6], depth: usize, out: &mut Vec<OutlineStep>) {
+        let data = self.glyph_data(glyph);
+        let Some(contours) = i16_at(data, 0) else {
+            return;
+        };
+        if contours < 0 {
+            // A glyph made of other glyphs, each moved and scaled.
+            if depth > 8 {
+                return;
+            }
+            let mut at = 10;
+            loop {
+                let (Some(flags), Some(component)) = (u16_at(data, at), u16_at(data, at + 2)) else {
+                    break;
+                };
+                at += 4;
+                let (dx, dy) = if flags & 0x0001 != 0 {
+                    let pair = (i16_at(data, at).unwrap_or(0) as f32, i16_at(data, at + 2).unwrap_or(0) as f32);
+                    at += 4;
+                    pair
+                } else {
+                    let pair = (
+                        data.get(at).map_or(0.0, |v| *v as i8 as f32),
+                        data.get(at + 1).map_or(0.0, |v| *v as i8 as f32),
+                    );
+                    at += 2;
+                    pair
+                };
+                // Offsets given as point numbers to match are not followed.
+                let (dx, dy) = if flags & 0x0002 != 0 { (dx, dy) } else { (0.0, 0.0) };
+                let fixed = |at: usize| i16_at(data, at).unwrap_or(0) as f32 / 16384.0;
+                let (a, b, c, d) = if flags & 0x0008 != 0 {
+                    let scale = fixed(at);
+                    at += 2;
+                    (scale, 0.0, 0.0, scale)
+                } else if flags & 0x0040 != 0 {
+                    let pair = (fixed(at), fixed(at + 2));
+                    at += 4;
+                    (pair.0, 0.0, 0.0, pair.1)
+                } else if flags & 0x0080 != 0 {
+                    let all = (fixed(at), fixed(at + 2), fixed(at + 4), fixed(at + 6));
+                    at += 8;
+                    all
+                } else {
+                    (1.0, 0.0, 0.0, 1.0)
+                };
+                let inner = [
+                    m[0] * a + m[2] * b,
+                    m[1] * a + m[3] * b,
+                    m[0] * c + m[2] * d,
+                    m[1] * c + m[3] * d,
+                    m[0] * dx + m[2] * dy + m[4],
+                    m[1] * dx + m[3] * dy + m[5],
+                ];
+                self.add_outline(component, inner, depth + 1, out);
+                if flags & 0x0020 == 0 {
+                    break;
+                }
+            }
+            return;
+        }
+        let contours = contours as usize;
+        let mut ends = Vec::with_capacity(contours);
+        for i in 0..contours {
+            let Some(end) = u16_at(data, 10 + 2 * i) else {
+                return;
+            };
+            ends.push(end as usize);
+        }
+        let Some(count) = ends.last().map(|last| last + 1) else {
+            return;
+        };
+        let Some(instructions) = u16_at(data, 10 + 2 * contours) else {
+            return;
+        };
+        let mut at = 12 + 2 * contours + instructions as usize;
+        // One flag per point; a flag may say it repeats.
+        let mut flags = Vec::with_capacity(count);
+        while flags.len() < count {
+            let Some(&flag) = data.get(at) else {
+                return;
+            };
+            at += 1;
+            flags.push(flag);
+            if flag & 0x08 != 0 {
+                let Some(&repeat) = data.get(at) else {
+                    return;
+                };
+                at += 1;
+                for _ in 0..repeat {
+                    flags.push(flag);
+                }
+            }
+        }
+        flags.truncate(count);
+        // Coordinates are steps from the point before: a byte with its
+        // sign in the flag, a word, or nothing for "the same".
+        let mut read = |short: u8, same: u8| -> Option<Vec<f32>> {
+            let mut value = 0i32;
+            let mut values = Vec::with_capacity(count);
+            for flag in &flags {
+                if flag & short != 0 {
+                    let step = *data.get(at)? as i32;
+                    at += 1;
+                    value += if flag & same != 0 { step } else { -step };
+                } else if flag & same == 0 {
+                    value += i16_at(data, at)? as i32;
+                    at += 2;
+                }
+                values.push(value as f32);
+            }
+            Some(values)
+        };
+        let (Some(xs), Some(ys)) = (read(0x02, 0x10), read(0x04, 0x20)) else {
+            return;
+        };
+        let point = |i: usize| (m[0] * xs[i] + m[2] * ys[i] + m[4], m[1] * xs[i] + m[3] * ys[i] + m[5]);
+        let middle = |a: (f32, f32), b: (f32, f32)| ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
+        let mut first = 0;
+        for end in ends {
+            if end < first || end >= count {
+                break;
+            }
+            let on = |i: usize| flags[i] & 0x01 != 0;
+            let size = end - first + 1;
+            let nth = |k: usize| first + k % size;
+            // Start on a point of the curve: the first one that is, or
+            // half-way between two control points.
+            let start_at = (0..size).find(|k| on(nth(*k)));
+            let (start, begin) = match start_at {
+                Some(k) => (point(nth(k)), k + 1),
+                None => (middle(point(nth(size - 1)), point(nth(0))), 0),
+            };
+            out.push(OutlineStep::Move(start.0, start.1));
+            let mut control: Option<(f32, f32)> = None;
+            for k in begin..begin + size - usize::from(start_at.is_some()) {
+                let (here, here_on) = (point(nth(k)), on(nth(k)));
+                match (control, here_on) {
+                    (None, true) => out.push(OutlineStep::Line(here.0, here.1)),
+                    (None, false) => control = Some(here),
+                    (Some(c), true) => {
+                        out.push(OutlineStep::Quad(c.0, c.1, here.0, here.1));
+                        control = None;
+                    }
+                    // Two control points in a row: the curve passes
+                    // half-way between them.
+                    (Some(c), false) => {
+                        let between = middle(c, here);
+                        out.push(OutlineStep::Quad(c.0, c.1, between.0, between.1));
+                        control = Some(here);
+                    }
+                }
+            }
+            if let Some(c) = control {
+                out.push(OutlineStep::Quad(c.0, c.1, start.0, start.1));
+            }
+            out.push(OutlineStep::Close);
+            first = end + 1;
+        }
     }
 
     /// A font file holding only the outlines of `glyphs` (and of what
@@ -687,6 +870,19 @@ mod tests {
         // Not fonts.
         assert!(TtfFont::parse(Arc::from(&b"OTTO\0\0\0\0"[..]), 0).is_none());
         assert!(TtfFont::parse(Arc::from(&b""[..]), 0).is_none());
+    }
+
+    #[test]
+    fn outlines_of_simple_and_composite_glyphs() {
+        use OutlineStep::{Close, Line, Move};
+        let font = TtfFont::parse(tiny_font().into(), 0).unwrap();
+        let triangle = [Move(0.0, 0.0), Line(500.0, 0.0), Line(250.0, 700.0), Close];
+        assert_eq!(font.outline(1), triangle);
+        // The composite: the triangle, then the box.
+        let both = font.outline(2);
+        assert_eq!(both[..4], triangle);
+        assert_eq!(both[4..], [Move(0.0, 0.0), Line(500.0, 0.0), Line(500.0, 700.0), Line(0.0, 700.0), Close]);
+        assert!(font.outline(99).is_empty());
     }
 
     #[test]

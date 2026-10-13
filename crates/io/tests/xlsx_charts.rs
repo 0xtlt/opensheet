@@ -1369,8 +1369,13 @@ const CONTENT: &[(&str, &[&str])] = &[
             "a:custGeom|a:prstGeom",
             "a:noFill|a:solidFill|a:gradFill|a:pattFill",
             "a:ln",
+            "a:effectLst",
         ],
     ),
+    ("a:effectLst", &["a:glow", "a:outerShdw", "a:softEdge"]),
+    ("a:glow", &["a:srgbClr|a:schemeClr|a:prstClr"]),
+    ("a:outerShdw", &["a:srgbClr|a:schemeClr|a:prstClr"]),
+    ("a:prstClr", &["a:alpha"]),
     (
         "a:ln",
         &[
@@ -2093,7 +2098,8 @@ fn charts_from_other_applications() {
         columns.chart_area,
         ShapeFormat {
             fill: Fill::None,
-            border: Line::default()
+            border: Line::default(),
+            ..ShapeFormat::default()
         }
     );
     assert_eq!(
@@ -2103,7 +2109,8 @@ fn charts_from_other_applications() {
             border: Line {
                 shown: Some(true),
                 ..Line::default()
-            }
+            },
+            ..ShapeFormat::default()
         }
     );
     let data = wb.chart_data(0, columns);
@@ -2720,6 +2727,7 @@ fn optioned() -> Vec<(&'static str, Chart)> {
             width: Some(2.0),
             dash: Dash::LongDash,
         },
+        ..ShapeFormat::default()
     };
     c.plot_area = ShapeFormat {
         fill: Fill::Solid(Color(0xDDEBF7)),
@@ -2729,6 +2737,7 @@ fn optioned() -> Vec<(&'static str, Chart)> {
             width: Some(1.0),
             dash: Dash::SquareDot,
         },
+        ..ShapeFormat::default()
     };
     out.push((
         "Axis titles, scale 0-30 by 10, minor gridlines,\nred and green bars, title over the plot",
@@ -4711,6 +4720,41 @@ fn round_charts_and_bars() {
 }
 
 #[test]
+fn shadows_and_glows_of_the_areas() {
+    use opensheet_engine::drawing::{Effects, Glow, ShadowPreset};
+    let mut c = plain(ChartKind::Column);
+    c.plot_area.fill = Fill::Solid(Color(0xF2F2F2));
+    c.plot_area.effects = Effects {
+        shadow: Some(ShadowPreset::BottomRight.shadow()),
+        ..Effects::default()
+    };
+    c.chart_area.effects = Effects {
+        glow: Some(Glow {
+            color: Color(0x4472C4),
+            transparency: 0.6,
+            radius: 8.0,
+        }),
+        ..Effects::default()
+    };
+    let mut sample = data_workbook();
+    sample.add_chart(1, c.clone()).unwrap();
+    keep("chart-effects.xlsx", &to_bytes(&sample));
+    let (parts, read) = written(vec![c.clone()]);
+    assert_same_content("effects", &c, &read[0]);
+    assert_eq!(read[0].plot_area.effects, c.plot_area.effects);
+    assert_eq!(read[0].chart_area.effects, c.chart_area.effects);
+    let xml = &parts[0];
+    assert_schema_order("chart1.xml", xml);
+    // As in a shape: after the line, the shadow Excel calls "Offset:
+    // Bottom Right" and a glow of 8 points.
+    assert!(
+        xml.contains("</a:ln><a:effectLst><a:outerShdw blurRad=\"50800\" dist=\"38100\" dir=\"2700000\" algn=\"tl\" rotWithShape=\"0\"><a:srgbClr val=\"000000\"><a:alpha val=\"40000\"/></a:srgbClr></a:outerShdw></a:effectLst></c:spPr></c:plotArea>"),
+        "{xml}"
+    );
+    assert!(xml.contains("<a:effectLst><a:glow rad=\"101600\"><a:srgbClr val=\"4472C4\"><a:alpha val=\"40000\"/></a:srgbClr></a:glow></a:effectLst></c:spPr><c:txPr>"), "{xml}");
+}
+
+#[test]
 fn title_legend_and_areas() {
     let mut c = plain(ChartKind::Column);
     c.title = ChartTitle::Auto;
@@ -4727,6 +4771,7 @@ fn title_legend_and_areas() {
             width: Some(2.5),
             dash: Dash::LongDashDotDot,
         },
+        ..ShapeFormat::default()
     };
     c.plot_area = ShapeFormat {
         fill: Fill::Solid(Color(0xFFFFFF)),
@@ -4734,6 +4779,7 @@ fn title_legend_and_areas() {
             shown: Some(true),
             ..Line::default()
         },
+        ..ShapeFormat::default()
     };
     let mut bare = plain(ChartKind::Line);
     bare.title = ChartTitle::None;
@@ -4745,6 +4791,7 @@ fn title_legend_and_areas() {
             shown: Some(false),
             ..Line::default()
         },
+        ..ShapeFormat::default()
     };
     let parts = assert_round_trip(vec![c, bare]);
     let xml = &parts[0];
@@ -4772,6 +4819,7 @@ fn title_legend_and_areas() {
             width: Some(0.75),
             dash: Dash::Solid,
         },
+        ..ShapeFormat::default()
     };
     c.plot_area = ShapeFormat {
         fill: Fill::None,
@@ -4781,6 +4829,7 @@ fn title_legend_and_areas() {
             width: Some(3.0),
             dash: Dash::Dash,
         },
+        ..ShapeFormat::default()
     };
     let (_, read) = written(vec![c]);
     let mut expected = plain(ChartKind::Column);

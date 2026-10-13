@@ -107,6 +107,9 @@ struct ObjectsUi {
     /// "Snap to Grid": objects are moved and sized from cell edge to cell
     /// edge.
     snap: bool,
+    /// "Snap to Shape": the edges of the other objects count as lines of
+    /// the grid too.
+    snap_shape: bool,
 }
 
 /// The zone that covers the cells while "Select Objects" is on.
@@ -455,11 +458,46 @@ impl ExcelApp {
     pub fn toggle_snap_to_grid(&mut self, cx: &mut Context<Self>) {
         let ui = self.ext_mut::<ObjectsUi>();
         ui.snap = !ui.snap;
+        // Snap to Shape works on the grid: it goes with it.
+        ui.snap_shape &= ui.snap;
         cx.notify();
     }
 
+    pub fn snap_to_shape(&self) -> bool {
+        self.ext::<ObjectsUi>().is_some_and(|ui| ui.snap_shape)
+    }
+
+    /// "Snap to Shape": the grid objects snap to gains the lines that run
+    /// through the edges of the other objects. As in Excel, turning it on
+    /// turns Snap to Grid on.
+    pub fn toggle_snap_to_shape(&mut self, cx: &mut Context<Self>) {
+        let ui = self.ext_mut::<ObjectsUi>();
+        ui.snap_shape = !ui.snap_shape;
+        ui.snap |= ui.snap_shape;
+        cx.notify();
+    }
+
+    /// The lines through the edges of the objects that are not selected:
+    /// where their left and right sides are, and their tops and bottoms.
+    fn shape_lines(&self) -> (Vec<f64>, Vec<f64>) {
+        let (mut across, mut down) = (Vec::new(), Vec::new());
+        let Some(layout) = self.current_layout() else {
+            return (across, down);
+        };
+        for (id, object) in features::objects(self, self.sheet) {
+            if self.is_object_selected(id) {
+                continue;
+            }
+            let (x, y) = corner(&layout, &object.place);
+            across.extend([x, x + object.place.size.0 as f64]);
+            down.extend([y, y + object.place.size.1 as f64]);
+        }
+        (across, down)
+    }
+
     /// With "Snap to Grid" on, the nearest cell corner to a point of the
-    /// sheet (each coordinate on its own); else the point.
+    /// sheet (each coordinate on its own); with "Snap to Shape" too, an
+    /// edge of another object when one is nearer; else the point.
     pub(crate) fn snapped(&self, x: f64, y: f64) -> (f64, f64) {
         if !self.snap_to_grid() {
             return (x, y);
@@ -468,10 +506,18 @@ impl ExcelApp {
         let ((row, col), (dx, dy)) = sheet.corner_at(x.max(0.0), y.max(0.0));
         let (x0, y0) = sheet.corner_point(((row, col), (0.0, 0.0)));
         let (x1, y1) = sheet.corner_point(((row + 1, col + 1), (0.0, 0.0)));
-        (
+        let on_grid = (
             if (dx as f64) < (x1 - x0) / 2.0 { x0 } else { x1 },
             if (dy as f64) < (y1 - y0) / 2.0 { y0 } else { y1 },
-        )
+        );
+        if !self.snap_to_shape() {
+            return on_grid;
+        }
+        let (across, down) = self.shape_lines();
+        let nearest = |to: f64, grid: f64, lines: &[f64]| {
+            lines.iter().copied().fold(grid, |best, line| if (line - to).abs() < (best - to).abs() { line } else { best })
+        };
+        (nearest(x, on_grid.0, &across), nearest(y, on_grid.1, &down))
     }
 
     /// The object or handle under a point of the grid element; the last
@@ -590,7 +636,20 @@ impl ExcelApp {
         let z = self.zoom as f64;
         let x = origin.0 + (at.0 - start.0) as f64 / z;
         let y = origin.1 + (at.1 - start.1) as f64 / z;
-        let (x, y) = self.snapped(x, y);
+        let (free_x, free_y) = (x, y);
+        let (mut x, mut y) = self.snapped(x, y);
+        if self.snap_to_shape() {
+            // The far edges of the object snap as well as its corner:
+            // whichever has less far to go wins.
+            let (w, h) = (size.0 as f64, size.1 as f64);
+            let (far_x, far_y) = self.snapped(free_x + w, free_y + h);
+            if (far_x - w - free_x).abs() < (x - free_x).abs() {
+                x = far_x - w;
+            }
+            if (far_y - h - free_y).abs() < (y - free_y).abs() {
+                y = far_y - h;
+            }
+        }
         let others: Vec<(ObjectId, Box4)> = self
             .ext::<ObjectsUi>()
             .map(|ui| ui.origins.iter().filter(|(other, _)| *other != id).cloned().collect())

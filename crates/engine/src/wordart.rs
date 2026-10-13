@@ -12,8 +12,10 @@
 //! `effects` then hold the look of the first run, for whoever shows a text
 //! in one look only.
 //!
-//! Not modelled: gradient and pattern fills of letters, glow, reflection,
-//! bevels and the warped text of Transform.
+//! The letters of a shape can also be warped as a whole (Transform, see
+//! `textwarp.rs`): that is kept in `Shape::warp`.
+//!
+//! Not modelled: pattern fills of letters, glow and bevels.
 
 use crate::drawing::{Shape, ShapeTool, TextAlign, TextAnchor};
 use crate::style::{Color, Font, ThemeSlot};
@@ -61,6 +63,141 @@ impl TextShadow {
     }
 }
 
+/// The most colours a gradient of letters keeps (Excel's own gradients
+/// have up to four; a file with more keeps the first and the last ones).
+pub const MAX_GRADIENT_STOPS: usize = 6;
+
+/// One colour of a gradient and where it is, from 0 (start) to 1 (end).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GradientStop {
+    pub at: f32,
+    pub color: Color,
+}
+
+/// Which way a gradient runs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GradientKind {
+    /// Along a line: degrees clockwise from "left to right" (`ang` of
+    /// `a:lin`); 90 runs from top to bottom.
+    Linear(f32),
+    /// From the middle outwards (`a:path path="circle"`).
+    FromCentre,
+}
+
+/// A gradient the letters are filled with (`a:gradFill` of a run), in
+/// place of their one colour. It spans the whole text of the shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextGradient {
+    stops: [GradientStop; MAX_GRADIENT_STOPS],
+    count: u8,
+    pub kind: GradientKind,
+}
+
+impl TextGradient {
+    /// A gradient through some colours; `None` with fewer than two.
+    /// Stops are put in order; of too many, those in the middle go.
+    pub fn new(kind: GradientKind, stops: &[GradientStop]) -> Option<TextGradient> {
+        let mut sorted: Vec<GradientStop> = stops.iter().copied().filter(|stop| stop.at.is_finite()).collect();
+        if sorted.len() < 2 {
+            return None;
+        }
+        sorted.sort_by(|a, b| a.at.total_cmp(&b.at));
+        while sorted.len() > MAX_GRADIENT_STOPS {
+            sorted.remove(sorted.len() / 2);
+        }
+        let mut kept = [sorted[0]; MAX_GRADIENT_STOPS];
+        for (slot, stop) in kept.iter_mut().zip(&sorted) {
+            *slot = GradientStop {
+                at: stop.at.clamp(0.0, 1.0),
+                color: stop.color,
+            };
+        }
+        Some(TextGradient {
+            stops: kept,
+            count: sorted.len() as u8,
+            kind,
+        })
+    }
+
+    /// From one colour to another.
+    pub fn between(from: Color, to: Color, kind: GradientKind) -> TextGradient {
+        let stops = [GradientStop { at: 0.0, color: from }, GradientStop { at: 1.0, color: to }];
+        // The slots that are not used hold the first stop, as in `new`.
+        TextGradient {
+            stops: [stops[0], stops[1], stops[0], stops[0], stops[0], stops[0]],
+            count: 2,
+            kind,
+        }
+    }
+
+    pub fn stops(&self) -> &[GradientStop] {
+        &self.stops[..self.count as usize]
+    }
+
+    /// Change the colours, keeping where they are.
+    pub fn recolor(&mut self, change: &dyn Fn(Color) -> Color) {
+        for stop in &mut self.stops {
+            stop.color = change(stop.color);
+        }
+    }
+
+    /// The colour a fraction of the way through the gradient (0xRRGGBB).
+    pub fn color_at(&self, at: f32) -> Color {
+        let stops = self.stops();
+        let after = stops.iter().position(|stop| stop.at >= at).unwrap_or(stops.len());
+        if after == 0 {
+            return stops[0].color.plain();
+        }
+        if after == stops.len() {
+            return stops[after - 1].color.plain();
+        }
+        let (a, b) = (stops[after - 1], stops[after]);
+        let t = if b.at > a.at { (at - a.at) / (b.at - a.at) } else { 0.0 };
+        let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+        Color::rgb(mix(a.color.r(), b.color.r()), mix(a.color.g(), b.color.g()), mix(a.color.b(), b.color.b()))
+    }
+}
+
+/// A reflection under letters (`a:reflection` of a run): the text upside
+/// down under its baseline, fading out downwards.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextReflection {
+    /// How blurred it is, in points.
+    pub blur: f32,
+    /// How opaque it is where it starts, 0 to 1 (`stA`).
+    pub opacity: f32,
+    /// How much of the height of the letters it shows before it has
+    /// faded out, 0 to 1 (`endPos`).
+    pub reach: f32,
+    /// How far under the letters it starts, in points.
+    pub distance: f32,
+}
+
+impl TextReflection {
+    /// The nine entries of Excel's Reflection Variations: tight, half
+    /// and full, each touching the text, 4 points and 8 points away.
+    pub const PRESETS: [TextReflection; 9] = [
+        TextReflection::preset(0.52, 0.35, 0.0),
+        TextReflection::preset(0.52, 0.55, 0.0),
+        TextReflection::preset(0.52, 0.90, 0.0),
+        TextReflection::preset(0.50, 0.385, 4.0),
+        TextReflection::preset(0.50, 0.555, 4.0),
+        TextReflection::preset(0.50, 0.90, 4.0),
+        TextReflection::preset(0.50, 0.40, 8.0),
+        TextReflection::preset(0.50, 0.58, 8.0),
+        TextReflection::preset(0.50, 0.90, 8.0),
+    ];
+
+    const fn preset(opacity: f32, reach: f32, distance: f32) -> TextReflection {
+        TextReflection {
+            blur: 0.5,
+            opacity,
+            reach,
+            distance,
+        }
+    }
+}
+
 /// What letters have besides their font and colour.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TextEffects {
@@ -68,6 +205,10 @@ pub struct TextEffects {
     pub hollow: bool,
     pub outline: Option<TextOutline>,
     pub shadow: Option<TextShadow>,
+    /// The letters are filled with a gradient; the colour of the font is
+    /// then its first colour, for whoever draws one colour only.
+    pub gradient: Option<TextGradient>,
+    pub reflection: Option<TextReflection>,
 }
 
 impl TextEffects {
@@ -108,7 +249,8 @@ impl Shape {
         out
     }
 
-    /// True when a letter of the text has an outline, a shadow or no fill.
+    /// True when a letter of the text has an outline, a shadow, a
+    /// gradient, a reflection or no fill.
     pub fn has_text_effects(&self) -> bool {
         !self.effects.is_plain() || self.runs.iter().any(|run| !run.effects.is_plain())
     }
@@ -298,6 +440,7 @@ impl WordArtStyle {
                 hollow: false,
                 outline,
                 shadow,
+                ..TextEffects::default()
             },
         )
     }

@@ -438,6 +438,11 @@ fn paint_shape_text(wb: &Workbook, shape: &Shape, w: f64, h: f64, canvas: &mut C
     );
     let size = shape.font.size_pt() as f64 * PX_PER_PT;
     let default = wb.styles.get(StyleId(0)).font.name.clone();
+    // Warped text, and letters with an outline, a shadow, a gradient or
+    // a reflection, are printed as the outlines the screen shows.
+    if crate::features::drawings::print_shape_letters(shape, &default, w, h, canvas) {
+        return;
+    }
     let family: &str = if shape.font.name.is_empty() {
         &default
     } else {

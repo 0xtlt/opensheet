@@ -475,6 +475,17 @@ fn drag_grip(
         }
         // The marks of a picture being cropped have a drag of their own.
         Grip::Crop(_) | Grip::Pan => {}
+        Grip::Warp(handle) => {
+            let placed = paint::placed_frame(layout, &app.wb.sheets[sheet], frame, (rotation, flips.0, flips.1), pane);
+            let warp = app.wb.drawing(sheet, id).and_then(|drawing| paint::dragged_warp(drawing, &placed, layout.zoom, handle, (ev.x, ev.y)));
+            if let Some(warp) = warp {
+                app.wb.update_drawing(sheet, id, |drawing| {
+                    if let Some(shape) = drawing.as_shape_mut() {
+                        shape.warp = Some(warp);
+                    }
+                });
+            }
+        }
         Grip::Rotate => {
             let placed = paint::placed_frame(layout, &app.wb.sheets[sheet], frame, (rotation, flips.0, flips.1), pane);
             let angle = geometry::drag_angle(placed.centre(), (ev.x, ev.y), shift);
@@ -514,6 +525,7 @@ pub(super) fn mouse_up(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, window:
             if changed {
                 let label = match grip {
                     Grip::Rotate => t("Rotate Object", "Faire pivoter l'objet"),
+                    Grip::Warp(_) => t("Transform", "Transformer"),
                     _ => t("Size Object", "Dimensionner l'objet"),
                 };
                 app.commit(label, cx);

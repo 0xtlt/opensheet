@@ -409,7 +409,7 @@ fn shadow_alignment(shadow: &Shadow) -> &'static str {
 
 /// `<a:effectLst>`: the glow, the shadow and the soft edges of a drawing,
 /// in the order of the schema. Nothing for a drawing without effects.
-fn push_effects(x: &mut String, effects: &Effects) {
+pub(crate) fn push_effects(x: &mut String, effects: &Effects) {
     if effects.is_none() {
         return;
     }
@@ -1200,7 +1200,7 @@ fn parse_color_alpha<'a>(
 }
 
 /// `<a:effectLst>`: the effects the engine draws; the others are left.
-fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Effects {
+pub(crate) fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Effects {
     let mut effects = Effects::default();
     let points = |t: &Tag, name: &str| {
         let emu = t.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(0.0);
@@ -1862,6 +1862,7 @@ fn parse_shape<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawObjec
         runs: Vec::new(),
         wrap: true,
         adjust,
+        warp: None,
         math: None,
     };
     text.into_shape(&mut shape, style.text);

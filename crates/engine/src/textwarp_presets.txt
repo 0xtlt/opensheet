@@ -1,0 +1,811 @@
+textPlain
+a adj val 50000
+g a pin 30000 adj 70000
+g mid */ a w 100000
+g midDir +- mid 0 hc
+g dl +- mid 0 l
+g dr +- r 0 mid
+g dl2 */ dl 2 1
+g dr2 */ dr 2 1
+g dx ?: midDir dr2 dl2
+g xr +- l dx 0
+g xl +- r 0 dx
+g tlx ?: midDir l xl
+g trx ?: midDir xr r
+g blx ?: midDir xl l
+g brx ?: midDir r xr
+x adj 30000 70000 - - - mid b
+p M tlx t L trx t
+p M blx b L brx b
+
+textStop
+a adj val 25000
+g a pin 14286 adj 50000
+g dx */ w 1 3
+g dy */ a h 100000
+g x1 +- l dx 0
+g x2 +- r 0 dx
+g y1 +- t dy 0
+g y2 +- b 0 dy
+x - - - adj 14286 50000 l dy
+p M l y1 L x1 t L x2 t L r y1
+p M l y2 L x1 b L x2 b L r y2
+
+textTriangle
+a adj val 50000
+g a pin 0 adj 100000
+g y */ a h 100000
+x - - - adj 0 100000 l y
+p M l y L hc t L r y
+p M l b L r b
+
+textCurveUp
+a adj val 45977
+g a pin 0 adj 56338
+g dy */ a h 100000
+g gd1 */ dy 3 4
+g gd2 */ dy 5 4
+g gd3 */ dy 3 8
+g gd4 */ dy 1 8
+g gd5 +- h 0 gd3
+g gd6 +- gd4 h 0
+g y0 +- t dy 0
+g y1 +- t gd1 0
+g y2 +- t gd2 0
+g y3 +- t gd3 0
+g y4 +- t gd4 0
+g y5 +- t gd5 0
+g y6 +- t gd6 0
+g x1 +- l wd3 0
+g x2 +- r 0 wd3
+x - - - adj 0 56338 l y0
+p M l y0 C x1 y2 x2 y1 r t
+p M l y5 C x1 y6 x2 y6 r y5
+
+textCanDown
+a adj val 14286
+g a pin 0 adj 33333
+g dy */ a h 100000
+g y0 +- t dy 0
+g y1 +- b 0 dy
+g ncd2 */ cd2 -1 1
+x - - - adj 0 33333 hc y0
+p M l t A wd2 dy cd2 ncd2
+p M l y1 A wd2 dy cd2 ncd2
+
+textWave1
+a adj1 val 12500
+a adj2 val 0
+g a1 pin 0 adj1 20000
+g a2 pin -10000 adj2 10000
+g y1 */ h a1 100000
+g dy2 */ y1 10 3
+g y2 +- y1 0 dy2
+g y3 +- y1 dy2 0
+g y4 +- b 0 y1
+g y5 +- y4 0 dy2
+g y6 +- y4 dy2 0
+g of */ w a2 100000
+g of2 */ w a2 50000
+g x1 abs of
+g dx2 ?: of2 0 of2
+g x2 +- l 0 dx2
+g dx5 ?: of2 of2 0
+g x5 +- r 0 dx5
+g dx3 +/ dx2 x5 3
+g x3 +- x2 dx3 0
+g x4 +/ x3 x5 2
+g x6 +- l dx5 0
+g x10 +- r dx2 0
+g x7 +- x6 dx3 0
+g x8 +/ x7 x10 2
+g x9 +- r 0 x1
+g xAdj +- hc of 0
+x - - - adj1 0 20000 l y1
+x adj2 -10000 10000 - - - xAdj b
+p M x2 y1 C x3 y2 x4 y3 x5 y1
+p M x6 y4 C x7 y5 x8 y6 x10 y4
+
+textDoubleWave1
+a adj1 val 6250
+a adj2 val 0
+g a1 pin 0 adj1 12500
+g a2 pin -10000 adj2 10000
+g y1 */ h a1 100000
+g dy2 */ y1 10 3
+g y2 +- y1 0 dy2
+g y3 +- y1 dy2 0
+g y4 +- b 0 y1
+g y5 +- y4 0 dy2
+g y6 +- y4 dy2 0
+g of */ w a2 100000
+g of2 */ w a2 50000
+g x1 abs of
+g dx2 ?: of2 0 of2
+g x2 +- l 0 dx2
+g dx8 ?: of2 of2 0
+g x8 +- r 0 dx8
+g dx3 +/ dx2 x8 6
+g x3 +- x2 dx3 0
+g dx4 +/ dx2 x8 3
+g x4 +- x2 dx4 0
+g x5 +/ x2 x8 2
+g x6 +- x5 dx3 0
+g x7 +/ x6 x8 2
+g x9 +- l dx8 0
+g x15 +- r dx2 0
+g x10 +- x9 dx3 0
+g x11 +- x9 dx4 0
+g x12 +/ x9 x15 2
+g x13 +- x12 dx3 0
+g x14 +/ x13 x15 2
+g x16 +- r 0 x1
+g xAdj +- hc of 0
+x - - - adj1 0 12500 l y1
+x adj2 -10000 10000 - - - xAdj b
+p M x2 y1 C x3 y2 x4 y3 x5 y1 C x6 y2 x7 y3 x8 y1
+p M x9 y4 C x10 y5 x11 y6 x12 y4 C x13 y5 x14 y6 x15 y4
+
+textDeflate
+a adj val 18750
+g a pin 0 adj 37500
+g dy */ a ss 100000
+g gd0 */ dy 4 3
+g gd1 +- h 0 gd0
+g adjY +- t dy 0
+g y0 +- t gd0 0
+g y1 +- t gd1 0
+g x0 +- l wd3 0
+g x1 +- r 0 wd3
+x - - - adj 0 37500 hc adjY
+p M l t C x0 y0 x1 y0 r t
+p M l b C x0 y1 x1 y1 r b
+
+textDeflateBottom
+a adj val 50000
+g a pin 6250 adj 100000
+g dy */ a ss 100000
+g dy2 +- h 0 dy
+g y1 +- t dy 0
+g cp +- y1 0 dy2
+x - - - adj 6250 100000 hc y1
+p M l t L r t
+p M l b Q hc cp r b
+
+textFadeUp
+a adj val 33333
+g a pin 0 adj 49999
+g dx */ a w 100000
+g x1 +- l dx 0
+g x2 +- r 0 dx
+x adj 0 49999 - - - x1 t
+p M x1 t L x2 t
+p M l b L r b
+
+textSlantUp
+a adj val 55555
+g a pin 0 adj 71431
+g dy */ a h 100000
+g y1 +- t dy 0
+g y2 +- b 0 dy
+x - - - adj 0 71431 l y1
+p M l y1 L r t
+p M l b L r y2
+
+textCascadeUp
+a adj val 44444
+g a pin 28570 adj 100000
+g dy */ a h 100000
+g y1 +- t dy 0
+g dy2 +- h 0 dy
+g dy3 */ dy2 1 4
+g y2 +- t dy3 0
+x - - - adj 28570 100000 r y1
+p M l y2 L r t
+p M l b L r y1
+
+textArchUp
+a adj val cd2
+g adval pin 0 adj 21599999
+g v1 +- 10800000 0 adval
+g v2 +- 32400000 0 adval
+g end ?: v1 v1 v2
+g w1 +- 5400000 0 adval
+g w2 +- 16200000 0 adval
+g d1 +- end 0 adval
+g d2 +- 21600000 d1 0
+g c2 ?: w2 d1 d2
+g c1 ?: v1 d2 c2
+g swAng ?: w1 d1 c1
+g wt1 sin wd2 adj
+g ht1 cos hd2 adj
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+o adj 0 21599999 - - - x1 y1
+p M x1 y1 A wd2 hd2 adval swAng
+
+textArchDown
+a adj val 0
+g adval pin 0 adj 21599999
+g v1 +- 10800000 0 adval
+g v2 +- 32400000 0 adval
+g nv1 +- 0 0 v1
+g stAng ?: nv1 v2 v1
+g w1 +- 5400000 0 adval
+g w2 +- 16200000 0 adval
+g d1 +- adval 0 stAng
+g d2 +- d1 0 21600000
+g v3 +- 0 0 10800000
+g c2 ?: w2 d1 d2
+g c1 ?: v1 d2 c2
+g c0 ?: w1 d1 c1
+g swAng ?: stAng c0 v3
+g wt1 sin wd2 adj
+g ht1 cos hd2 adj
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+g wt2 sin wd2 stAng
+g ht2 cos hd2 stAng
+g dx2 cat2 wd2 ht2 wt2
+g dy2 sat2 hd2 ht2 wt2
+g x2 +- hc dx2 0
+g y2 +- vc dy2 0
+o adj 0 21599999 - - - x1 y1
+p M x2 y2 A wd2 hd2 stAng swAng
+
+textCircle
+a adj val 10800000
+g adval pin 0 adj 21599999
+g d0 +- adval 0 10800000
+g d1 +- 10800000 0 adval
+g d2 +- 21600000 0 adval
+g d3 ?: d1 d1 10799999
+g d4 ?: d0 d2 d3
+g swAng */ d4 2 1
+g wt1 sin wd2 adj
+g ht1 cos hd2 adj
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+o adj 0 21599999 - - - x1 y1
+p M x1 y1 A wd2 hd2 adval swAng
+
+textButton
+a adj val 10800000
+g adval pin 0 adj 21599999
+g bot +- 5400000 0 adval
+g lef +- 10800000 0 adval
+g top +- 16200000 0 adval
+g rig +- 21600000 0 adval
+g c3 ?: top adval 0
+g c2 ?: lef 10800000 c3
+g c1 ?: bot rig c2
+g stAng ?: adval c1 0
+g w1 +- 21600000 0 stAng
+g stAngB ?: stAng w1 0
+g td1 */ bot 2 1
+g td2 */ top 2 1
+g ntd2 +- 0 0 td2
+g w2 +- 0 0 10800000
+g c6 ?: top ntd2 w2
+g c5 ?: lef 10800000 c6
+g c4 ?: bot td1 c5
+g v1 ?: adval c4 10800000
+g swAngT +- 0 0 v1
+g stT ?: lef stAngB stAng
+g stB ?: lef stAng stAngB
+g swT ?: lef v1 swAngT
+g swB ?: lef swAngT v1
+g wt1 sin wd2 stT
+g ht1 cos hd2 stT
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+g wt2 sin wd2 stB
+g ht2 cos hd2 stB
+g dx2 cat2 wd2 ht2 wt2
+g dy2 sat2 hd2 ht2 wt2
+g x2 +- hc dx2 0
+g y2 +- vc dy2 0
+g wt3 sin wd2 adj
+g ht3 cos hd2 adj
+g dx3 cat2 wd2 ht3 wt3
+g dy3 sat2 hd2 ht3 wt3
+g x3 +- hc dx3 0
+g y3 +- vc dy3 0
+o adj 0 21599999 - - - x3 y3
+p M x1 y1 A wd2 hd2 stT swT
+p M l vc L r vc
+p M x2 y2 A wd2 hd2 stB swB
+
+textTriangleInverted
+a adj val 50000
+g a pin 0 adj 100000
+g y */ a h 100000
+x - - - adj 0 100000 l y
+p M l t L r t
+p M l y L hc b L r y
+
+textChevron
+a adj val 25000
+g a pin 0 adj 50000
+g y */ a h 100000
+g y1 +- t b y
+x - - - adj 0 50000 l y
+p M l y L hc t L r y
+p M l b L hc y1 L r b
+
+textChevronInverted
+a adj val 75000
+g a pin 50000 adj 100000
+g y */ a h 100000
+g y1 +- b 0 y
+x - - - adj 50000 100000 l y
+p M l t L hc y1 L r t
+p M l y L hc b L r y
+
+textRingInside
+a adj val 60000
+g a pin 50000 adj 99000
+g dy */ a h 100000
+g y +- t dy 0
+g r */ dy 1 2
+g y1 +- t r 0
+g y2 +- b 0 r
+x - - - adj 50000 99000 hc y
+p M l y1 A wd2 r 10800000 21599999
+p M l y2 A wd2 r 10800000 21599999
+
+textRingOutside
+a adj val 60000
+g a pin 50000 adj 99000
+g dy */ a h 100000
+g y +- t dy 0
+g r */ dy 1 2
+g y1 +- t r 0
+g y2 +- b 0 r
+x - - - adj 50000 99000 hc y
+p M l y1 A wd2 r 10800000 -21599999
+p M l y2 A wd2 r 10800000 -21599999
+
+textCurveDown
+a adj val 45977
+g a pin 0 adj 56338
+g dy */ a h 100000
+g gd1 */ dy 3 4
+g gd2 */ dy 5 4
+g gd3 */ dy 3 8
+g gd4 */ dy 1 8
+g gd5 +- h 0 gd3
+g gd6 +- gd4 h 0
+g y0 +- t dy 0
+g y1 +- t gd1 0
+g y2 +- t gd2 0
+g y3 +- t gd3 0
+g y4 +- t gd4 0
+g y5 +- t gd5 0
+g y6 +- t gd6 0
+g x1 +- l wd3 0
+g x2 +- r 0 wd3
+x - - - adj 0 56338 r y0
+p M l t C x1 y1 x2 y2 r y0
+p M l y5 C x1 y6 x2 y6 r y5
+
+textCascadeDown
+a adj val 44444
+g a pin 28570 adj 100000
+g dy */ a h 100000
+g y1 +- t dy 0
+g dy2 +- h 0 dy
+g dy3 */ dy2 1 4
+g y2 +- t dy3 0
+x - - - adj 28570 100000 l y1
+p M l t L r y2
+p M l y1 L r b
+
+textCanUp
+a adj val 85714
+g a pin 66667 adj 100000
+g dy1 */ a h 100000
+g dy +- h 0 dy1
+g y0 +- t dy1 0
+g y1 +- t dy 0
+x - - - adj 66667 100000 hc y0
+p M l y1 A wd2 dy cd2 cd2
+p M l b A wd2 dy cd2 cd2
+
+textSlantDown
+a adj val 44445
+g a pin 28569 adj 100000
+g dy */ a h 100000
+g y1 +- t dy 0
+g y2 +- b 0 dy
+x - - - adj 28569 100000 l y1
+p M l t L r y2
+p M l y1 L r b
+
+textFadeDown
+a adj val 33333
+g a pin 0 adj 49999
+g dx */ a w 100000
+g x1 +- l dx 0
+g x2 +- r 0 dx
+x adj 0 49999 - - - x1 b
+p M l t L r t
+p M x1 b L x2 b
+
+textFadeLeft
+a adj val 33333
+g a pin 0 adj 49999
+g dy */ a h 100000
+g y1 +- t dy 0
+g y2 +- b 0 dy
+x - - - adj 0 49999 l y1
+p M l y1 L r t
+p M l y2 L r b
+
+textFadeRight
+a adj val 33333
+g a pin 0 adj 49999
+g dy */ a h 100000
+g y1 +- t dy 0
+g y2 +- b 0 dy
+x - - - adj 0 49999 r y1
+p M l t L r y1
+p M l b L r y2
+
+textWave2
+a adj1 val 12500
+a adj2 val 0
+g a1 pin 0 adj1 20000
+g a2 pin -10000 adj2 10000
+g y1 */ h a1 100000
+g dy2 */ y1 10 3
+g y2 +- y1 0 dy2
+g y3 +- y1 dy2 0
+g y4 +- b 0 y1
+g y5 +- y4 0 dy2
+g y6 +- y4 dy2 0
+g of */ w a2 100000
+g of2 */ w a2 50000
+g x1 abs of
+g dx2 ?: of2 0 of2
+g x2 +- l 0 dx2
+g dx5 ?: of2 of2 0
+g x5 +- r 0 dx5
+g dx3 +/ dx2 x5 3
+g x3 +- x2 dx3 0
+g x4 +/ x3 x5 2
+g x6 +- l dx5 0
+g x10 +- r dx2 0
+g x7 +- x6 dx3 0
+g x8 +/ x7 x10 2
+g x9 +- r 0 x1
+g xAdj +- hc of 0
+x - - - adj1 0 20000 l y1
+x adj2 -10000 10000 - - - xAdj b
+p M x2 y1 C x3 y3 x4 y2 x5 y1
+p M x6 y4 C x7 y6 x8 y5 x10 y4
+
+textWave4
+a adj1 val 6250
+a adj2 val 0
+g a1 pin 0 adj1 12500
+g a2 pin -10000 adj2 10000
+g y1 */ h a1 100000
+g dy2 */ y1 10 3
+g y2 +- y1 0 dy2
+g y3 +- y1 dy2 0
+g y4 +- b 0 y1
+g y5 +- y4 0 dy2
+g y6 +- y4 dy2 0
+g of */ w a2 100000
+g of2 */ w a2 50000
+g x1 abs of
+g dx2 ?: of2 0 of2
+g x2 +- l 0 dx2
+g dx8 ?: of2 of2 0
+g x8 +- r 0 dx8
+g dx3 +/ dx2 x8 6
+g x3 +- x2 dx3 0
+g dx4 +/ dx2 x8 3
+g x4 +- x2 dx4 0
+g x5 +/ x2 x8 2
+g x6 +- x5 dx3 0
+g x7 +/ x6 x8 2
+g x9 +- l dx8 0
+g x15 +- r dx2 0
+g x10 +- x9 dx3 0
+g x11 +- x9 dx4 0
+g x12 +/ x9 x15 2
+g x13 +- x12 dx3 0
+g x14 +/ x13 x15 2
+g x16 +- r 0 x1
+g xAdj +- hc of 0
+x - - - adj1 0 12500 l y1
+x adj2 -10000 10000 - - - xAdj b
+p M x2 y1 C x3 y3 x4 y2 x5 y1 C x6 y3 x7 y2 x8 y1
+p M x9 y4 C x10 y6 x11 y5 x12 y4 C x13 y6 x14 y5 x15 y4
+
+textInflate
+a adj val 18750
+g a pin 0 adj 20000
+g dy */ a h 100000
+g gd */ dy 1 3
+g gd0 +- 0 0 gd
+g gd1 +- h 0 gd0
+g ty +- t dy 0
+g by +- b 0 dy
+g y0 +- t gd0 0
+g y1 +- t gd1 0
+g x0 +- l wd3 0
+g x1 +- r 0 wd3
+x - - - adj 0 20000 l ty
+p M l ty C x0 y0 x1 y0 r ty
+p M l by C x0 y1 x1 y1 r by
+
+textInflateBottom
+a adj val 60000
+g a pin 60000 adj 100000
+g dy */ a h 100000
+g ty +- t dy 0
+x - - - adj 60000 100000 l ty
+p M l t L r t
+p M l ty Q hc b r ty
+
+textInflateTop
+a adj val 40000
+g a pin 0 adj 50000
+g dy */ a h 100000
+g ty +- t dy 0
+x - - - adj 0 50000 l ty
+p M l ty Q hc t r ty
+p M l b L r b
+
+textDeflateTop
+a adj val 50000
+g a pin 0 adj 93750
+g dy */ a h 100000
+g y1 +- t dy 0
+g cp +- y1 dy 0
+x - - - adj 0 93750 hc y1
+p M l t Q hc cp r t
+p M l b L r b
+
+textDeflateInflate
+a adj val 35000
+g a pin 5000 adj 95000
+g dy */ a h 100000
+g del */ h 5 100
+g dh1 */ h 45 100
+g dh2 */ h 55 100
+g yh +- dy 0 del
+g yl +- dy del 0
+g y3 +- yh yh dh1
+g y4 +- yl yl dh2
+x - - - adj 5000 95000 hc dy
+p M l t L r t
+p M l dh1 Q hc y3 r dh1
+p M l dh2 Q hc y4 r dh2
+p M l b L r b
+
+textDeflateInflateDeflate
+a adj val 25000
+g a pin 3000 adj 47000
+g dy */ a h 100000
+g del */ h 3 100
+g ey1 */ h 30 100
+g ey2 */ h 36 100
+g ey3 */ h 63 100
+g ey4 */ h 70 100
+g by +- b 0 dy
+g yh1 +- dy 0 del
+g yl1 +- dy del 0
+g yh2 +- by 0 del
+g yl2 +- by del 0
+g y1 +- yh1 yh1 ey1
+g y2 +- yl1 yl1 ey2
+g y3 +- yh2 yh2 ey3
+g y4 +- yl2 yl2 ey4
+x - - - adj 3000 47000 hc dy
+p M l t L r t
+p M l ey1 Q hc y1 r ey1
+p M l ey2 Q hc y2 r ey2
+p M l ey3 Q hc y3 r ey3
+p M l ey4 Q hc y4 r ey4
+p M l b L r b
+
+textArchUpPour
+a adj1 val cd2
+a adj2 val 50000
+g adval pin 0 adj1 21599999
+g v1 +- 10800000 0 adval
+g v2 +- 32400000 0 adval
+g end ?: v1 v1 v2
+g w1 +- 5400000 0 adval
+g w2 +- 16200000 0 adval
+g d1 +- end 0 adval
+g d2 +- 21600000 d1 0
+g c2 ?: w2 d1 d2
+g c1 ?: v1 d2 c2
+g swAng ?: w1 d1 c1
+g wt1 sin wd2 adval
+g ht1 cos hd2 adval
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+g adval2 pin 0 adj2 99000
+g ratio */ adval2 1 100000
+g iwd2 */ wd2 ratio 1
+g ihd2 */ hd2 ratio 1
+g wt2 sin iwd2 adval
+g ht2 cos ihd2 adval
+g dx2 cat2 iwd2 ht2 wt2
+g dy2 sat2 ihd2 ht2 wt2
+g x2 +- hc dx2 0
+g y2 +- vc dy2 0
+o adj1 0 21599999 adj2 0 100000 x2 y2
+p M x1 y1 A wd2 hd2 adval swAng
+p M x2 y2 A iwd2 ihd2 adval swAng
+
+textArchDownPour
+a adj1 val 0
+a adj2 val 25000
+g adval pin 0 adj1 21599999
+g v1 +- 10800000 0 adval
+g v2 +- 32400000 0 adval
+g nv1 +- 0 0 v1
+g stAng ?: nv1 v2 v1
+g w1 +- 5400000 0 adval
+g w2 +- 16200000 0 adval
+g d1 +- adval 0 stAng
+g d2 +- d1 0 21600000
+g v3 +- 0 0 10800000
+g c2 ?: w2 d1 d2
+g c1 ?: v1 d2 c2
+g c0 ?: w1 d1 c1
+g swAng ?: stAng c0 v3
+g wt1 sin wd2 stAng
+g ht1 cos hd2 stAng
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+g adval2 pin 0 adj2 99000
+g ratio */ adval2 1 100000
+g iwd2 */ wd2 ratio 1
+g ihd2 */ hd2 ratio 1
+g wt2 sin iwd2 adval
+g ht2 cos ihd2 adval
+g dx2 cat2 iwd2 ht2 wt2
+g dy2 sat2 ihd2 ht2 wt2
+g x2 +- hc dx2 0
+g y2 +- vc dy2 0
+g wt3 sin iwd2 stAng
+g ht3 cos ihd2 stAng
+g dx3 cat2 iwd2 ht3 wt3
+g dy3 sat2 ihd2 ht3 wt3
+g x3 +- hc dx3 0
+g y3 +- vc dy3 0
+o adj1 0 21599999 adj2 0 100000 x2 y2
+p M x3 y3 A iwd2 ihd2 stAng swAng
+p M x1 y1 A wd2 hd2 stAng swAng
+
+textCirclePour
+a adj1 val cd2
+a adj2 val 50000
+g adval pin 0 adj1 21599999
+g d0 +- adval 0 10800000
+g d1 +- 10800000 0 adval
+g d2 +- 21600000 0 adval
+g d3 ?: d1 d1 10799999
+g d4 ?: d0 d2 d3
+g swAng */ d4 2 1
+g wt1 sin wd2 adval
+g ht1 cos hd2 adval
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+g adval2 pin 0 adj2 99000
+g ratio */ adval2 1 100000
+g iwd2 */ wd2 ratio 1
+g ihd2 */ hd2 ratio 1
+g wt2 sin iwd2 adval
+g ht2 cos ihd2 adval
+g dx2 cat2 iwd2 ht2 wt2
+g dy2 sat2 ihd2 ht2 wt2
+g x2 +- hc dx2 0
+g y2 +- vc dy2 0
+o adj1 0 21599999 adj2 0 100000 x2 y2
+p M x1 y1 A wd2 hd2 adval swAng
+p M x2 y2 A iwd2 ihd2 adval swAng
+
+textButtonPour
+a adj1 val cd2
+a adj2 val 50000
+g adval pin 0 adj1 21599999
+g bot +- 5400000 0 adval
+g lef +- 10800000 0 adval
+g top +- 16200000 0 adval
+g rig +- 21600000 0 adval
+g c3 ?: top adval 0
+g c2 ?: lef 10800000 c3
+g c1 ?: bot rig c2
+g stAng ?: adval c1 0
+g w1 +- 21600000 0 stAng
+g stAngB ?: stAng w1 0
+g td1 */ bot 2 1
+g td2 */ top 2 1
+g ntd2 +- 0 0 td2
+g w2 +- 0 0 10800000
+g c6 ?: top ntd2 w2
+g c5 ?: lef 10800000 c6
+g c4 ?: bot td1 c5
+g v1 ?: adval c4 10800000
+g swAngT +- 0 0 v1
+g stT ?: lef stAngB stAng
+g stB ?: lef stAng stAngB
+g swT ?: lef v1 swAngT
+g swB ?: lef swAngT v1
+g wt1 sin wd2 stT
+g ht1 cos hd2 stT
+g dx1 cat2 wd2 ht1 wt1
+g dy1 sat2 hd2 ht1 wt1
+g x1 +- hc dx1 0
+g y1 +- vc dy1 0
+g wt6 sin wd2 stB
+g ht6 cos hd2 stB
+g dx6 cat2 wd2 ht6 wt6
+g dy6 sat2 hd2 ht6 wt6
+g x6 +- hc dx6 0
+g y6 +- vc dy6 0
+g adval2 pin 40000 adj2 99000
+g ratio */ adval2 1 100000
+g iwd2 */ wd2 ratio 1
+g ihd2 */ hd2 ratio 1
+g wt2 sin iwd2 stT
+g ht2 cos ihd2 stT
+g dx2 cat2 iwd2 ht2 wt2
+g dy2 sat2 ihd2 ht2 wt2
+g x2 +- hc dx2 0
+g y2 +- vc dy2 0
+g wt5 sin iwd2 stB
+g ht5 cos ihd2 stB
+g dx5 cat2 iwd2 ht5 wt5
+g dy5 sat2 ihd2 ht5 wt5
+g x5 +- hc dx5 0
+g y5 +- vc dy5 0
+g d1 +- hd2 0 ihd2
+g d12 */ d1 1 2
+g yu +- vc 0 d12
+g yd +- vc d12 0
+g v1 */ d12 d12 1
+g v2 */ ihd2 ihd2 1
+g v3 */ v1 1 v2
+g v4 +- 1 0 v3
+g v5 */ iwd2 iwd2 1
+g v6 */ v4 v5 1
+g v7 sqrt v6
+g xl +- hc 0 v7
+g xr +- hc v7 0
+g wtadj sin iwd2 adj1
+g htadj cos ihd2 adj1
+g dxadj cat2 iwd2 htadj wtadj
+g dyadj sat2 ihd2 htadj wtadj
+g xadj +- hc dxadj 0
+g yadj +- vc dyadj 0
+o adj1 0 21599999 adj2 0 100000 xadj yadj
+p M x1 y1 A wd2 hd2 stT swT
+p M x2 y2 A iwd2 ihd2 stT swT
+p M xl yu L xr yu
+p M xl yd L xr yd
+p M x5 y5 A iwd2 ihd2 stB swB
+p M x6 y6 A wd2 hd2 stB swB

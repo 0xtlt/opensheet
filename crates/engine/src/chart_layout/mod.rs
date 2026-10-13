@@ -597,6 +597,58 @@ impl Painter<'_> {
         });
     }
 
+    /// The glow and the shadow of a rectangle of the chart, drawn under
+    /// it. There is no blur to draw with: a soft edge is made of a few
+    /// rectangles of growing size, each letting most of what is under
+    /// it show.
+    pub fn rect_effects(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, effects: &crate::drawing::Effects) {
+        const LAYERS: usize = 6;
+        let points = 96.0 / 72.0 * self.z;
+        let (x0, x1, y0, y1) = (x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1));
+        let layer = |out: &mut Vec<Prim>, grow: f32, dx: f32, dy: f32, ink: Ink| {
+            let (w, h) = (x1 - x0 + 2.0 * grow, y1 - y0 + 2.0 * grow);
+            if w > 0.0 && h > 0.0 && ink.opacity > 0.0 {
+                out.push(Prim::Rect {
+                    x: x0 - grow + dx,
+                    y: y0 - grow + dy,
+                    w,
+                    h,
+                    fill: Some(ink),
+                    stroke: None,
+                });
+            }
+        };
+        if let Some(glow) = &effects.glow {
+            let reach = glow.radius.max(0.0) * points;
+            let opacity = (1.0 - glow.transparency).clamp(0.0, 1.0) / LAYERS as f32 * 1.5;
+            for i in (1..=LAYERS).rev() {
+                let ink = Ink {
+                    color: glow.color,
+                    opacity: opacity.min(1.0),
+                };
+                layer(&mut self.out, reach * i as f32 / LAYERS as f32, 0.0, 0.0, ink);
+            }
+        }
+        if let Some(shadow) = &effects.shadow {
+            let (sin, cos) = shadow.angle.to_radians().sin_cos();
+            let distance = shadow.distance.max(0.0) * points;
+            let blur = shadow.blur.max(0.0) * points;
+            // The shadow as large as asked, about the middle of the box.
+            let larger = (shadow.size - 1.0) * (x1 - x0).min(y1 - y0) / 2.0;
+            let opacity = (1.0 - shadow.transparency).clamp(0.0, 1.0);
+            let layers = if blur > 0.0 { LAYERS } else { 1 };
+            for i in (0..layers).rev() {
+                // From the blur outside the edge to as much inside it.
+                let spread = if layers > 1 { blur * (2.0 * i as f32 / (layers - 1) as f32 - 1.0) / 2.0 } else { 0.0 };
+                let ink = Ink {
+                    color: shadow.color,
+                    opacity: opacity / layers as f32,
+                };
+                layer(&mut self.out, larger + spread, distance * cos, distance * sin, ink);
+            }
+        }
+    }
+
     pub fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, stroke: Stroke) {
         self.out.push(Prim::Line { x0, y0, x1, y1, stroke });
     }
@@ -902,6 +954,7 @@ impl Painter<'_> {
             width: if chart.chart_area.border.width.is_none() { 1.0 } else { s.width },
             ..s
         });
+        self.rect_effects(0.0, 0.0, w, h, &chart.chart_area.effects);
         self.rect_styled(0.0, 0.0, w, h, area_fill, frame);
 
         let pad = (10.0 * z).round();
