@@ -572,13 +572,13 @@ impl ExcelApp {
 
     pub fn render_ribbon(&mut self, window: &mut Window, cx: &mut Cx) -> impl IntoElement {
         let width = f32::from(window.viewport_size().width);
-        self.ribbon_level = if width >= 1730.0 {
+        self.ribbon_level = if width >= 1752.0 {
             0
-        } else if width >= 1580.0 {
+        } else if width >= 1602.0 {
             1
-        } else if width >= 1510.0 {
+        } else if width >= 1532.0 {
             2
-        } else if width >= 1290.0 {
+        } else if width >= 1312.0 {
             3
         } else {
             4
@@ -767,7 +767,8 @@ impl ExcelApp {
             t("Font", "Police"),
             rows(vec![
                 row(vec![
-                    self.combo("rb-font", font_name, 138.0, t("Font", "Police"), cx, |this, window, cx| {
+                    // Wide enough for "Aptos Narrow (Corps)", the name of the theme's body font.
+                    self.combo("rb-font", font_name, 160.0, t("Font", "Police"), cx, |this, window, cx| {
                         this.open_font_menu(window, cx)
                     }),
                     self.combo("rb-size", size_text, 50.0, t("Font Size", "Taille de police"), cx, |this, window, cx| {
