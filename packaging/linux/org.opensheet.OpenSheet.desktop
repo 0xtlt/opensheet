@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=OpenSheet
+GenericName=Spreadsheet
+GenericName[fr]=Tableur
+GenericName[es]=Hoja de cálculo
+GenericName[de]=Tabellenkalkulation
+GenericName[it]=Foglio di calcolo
+Comment=Open, edit and save spreadsheets
+Comment[fr]=Ouvrir, modifier et enregistrer des classeurs
+Comment[es]=Abrir, editar y guardar hojas de cálculo
+Comment[de]=Tabellen öffnen, bearbeiten und speichern
+Comment[it]=Aprire, modificare e salvare fogli di calcolo
+Exec=opensheet %F
+Icon=org.opensheet.OpenSheet
+Terminal=false
+Categories=Office;Spreadsheet;
+Keywords=spreadsheet;workbook;excel;xlsx;csv;
+MimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.ms-excel.sheet.macroEnabled.12;application/vnd.openxmlformats-officedocument.spreadsheetml.template;application/vnd.ms-excel.template.macroEnabled.12;text/csv;text/tab-separated-values;
+StartupWMClass=org.opensheet.OpenSheet

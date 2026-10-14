@@ -31,6 +31,58 @@ raw-window-handle = "0.6"
 # last libc that has it until GPUI moves on.
 libc = "=0.2.189"
 
+[target.'cfg(windows)'.build-dependencies]
+# The icon and version details of opensheet.exe (build.rs).
+winresource = { version = "=0.1.31", default-features = false }
+
 [dev-dependencies]
 # The headless window of GPUI, to drive the interface in tests.
 gpui = { version = "0.2.2", features = ["test-support"] }
+
+# Linux packages, made by the release workflow with `cargo deb` and `cargo generate-rpm`.
+[package.metadata.deb]
+maintainer = "Thomas <31560900+0xtlt@users.noreply.github.com>"
+copyright = "The OpenSheet contributors"
+extended-description = """\
+An open-source spreadsheet with the interface and behaviour of Excel: \
+.xlsx, .xlsm and .csv workbooks, formulas, tables, PivotTables, charts \
+and Office Scripts, in English, French, Spanish, German and Italian."""
+section = "editors"
+priority = "optional"
+# GPUI loads Vulkan and xkbcommon-x11 at run time: the automatic list misses them.
+depends = "$auto, libvulkan1, libxkbcommon-x11-0"
+assets = [
+  ["target/release/opensheet", "usr/bin/", "755"],
+  ["../../packaging/linux/org.opensheet.OpenSheet.desktop", "usr/share/applications/", "644"],
+  ["../../packaging/linux/org.opensheet.OpenSheet.metainfo.xml", "usr/share/metainfo/", "644"],
+  ["../../packaging/linux/icons/hicolor/16x16/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/16x16/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/24x24/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/24x24/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/32x32/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/32x32/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/48x48/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/48x48/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/64x64/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/64x64/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/128x128/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/128x128/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/256x256/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/512x512/apps/org.opensheet.OpenSheet.png", "usr/share/icons/hicolor/512x512/apps/", "644"],
+  ["../../packaging/linux/icons/hicolor/scalable/apps/org.opensheet.OpenSheet.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+]
+
+[package.metadata.generate-rpm]
+summary = "An open-source spreadsheet with the interface of Excel"
+assets = [
+  { source = "target/release/opensheet", dest = "/usr/bin/opensheet", mode = "755" },
+  { source = "../../packaging/linux/org.opensheet.OpenSheet.desktop", dest = "/usr/share/applications/org.opensheet.OpenSheet.desktop", mode = "644" },
+  { source = "../../packaging/linux/org.opensheet.OpenSheet.metainfo.xml", dest = "/usr/share/metainfo/org.opensheet.OpenSheet.metainfo.xml", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/16x16/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/16x16/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/24x24/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/24x24/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/32x32/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/32x32/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/48x48/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/48x48/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/64x64/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/64x64/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/128x128/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/128x128/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/256x256/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/256x256/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/512x512/apps/org.opensheet.OpenSheet.png", dest = "/usr/share/icons/hicolor/512x512/apps/org.opensheet.OpenSheet.png", mode = "644" },
+  { source = "../../packaging/linux/icons/hicolor/scalable/apps/org.opensheet.OpenSheet.svg", dest = "/usr/share/icons/hicolor/scalable/apps/org.opensheet.OpenSheet.svg", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+vulkan-loader = "*"
+libxkbcommon-x11 = "*"

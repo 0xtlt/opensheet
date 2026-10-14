@@ -1,11 +1,16 @@
 name: Release
 
 # Pushing a tag `vX.Y.Z` tests the code, builds OpenSheet for every platform and publishes a
-# GitHub release with one archive per platform and their checksums. The release says what
-# CHANGELOG.md says of that version.
+# GitHub release with an installer per platform (a disk image on macOS, a setup program on
+# Windows, .deb and .rpm packages on Linux), portable archives, their checksums and build
+# provenance attestations. The release says what CHANGELOG.md says of that version.
 #
-# Running the workflow by hand ("Run workflow") does the same without publishing: the archives
+# Running the workflow by hand ("Run workflow") does the same without publishing: the files
 # are kept as artifacts of the run. Use it to try the builds before tagging.
+#
+# Signing: with the secrets MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, APPLE_API_KEY,
+# APPLE_API_KEY_ID and APPLE_API_ISSUER, the macOS app is signed and notarized
+# (packaging/macos/package.sh says what each one is). Without them it is signed ad hoc.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
@@ -108,6 +113,12 @@ jobs:
       - name: Metal toolchain
         if: runner.os == 'macOS'
         run: xcrun -f metal > /dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+      - name: Packaging tools
+        if: runner.os == 'Linux'
+        run: cargo install --locked cargo-deb@3.8.0 cargo-generate-rpm@0.21.0
+      - name: Packaging tools
+        if: runner.os == 'Windows'
+        run: choco install innosetup --no-progress -y
 
       - name: Build
         run: cargo build --release --locked -p opensheet --target "$TARGET"
@@ -124,16 +135,64 @@ jobs:
           head -3 demo.csv
 
       - name: Package
+        if: runner.os != 'Windows'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          mkdir dist
+          mkdir -p dist
           if [ "$RUNNER_OS" = "macOS" ]; then
             scripts/bundle.sh release "$TARGET"
-            ditto -c -k --keepParent "target/$TARGET/release/OpenSheet.app" "dist/opensheet-$TARGET.zip"
-          elif [ "$RUNNER_OS" = "Windows" ]; then
-            (cd "target/$TARGET/release" && 7z a -tzip "../../../dist/opensheet-$TARGET.zip" opensheet.exe)
+            packaging/macos/package.sh "$TARGET"
           else
             tar -czf "dist/opensheet-$TARGET.tar.gz" -C "target/$TARGET/release" opensheet
+            cargo deb -p opensheet --target "$TARGET" --no-build --output "dist/opensheet-$TARGET.deb"
+            cargo generate-rpm -p crates/app --target "$TARGET" --output "dist/opensheet-$TARGET.rpm"
           fi
+
+      # The setup program, and the bare executable in a zip for those who cannot install.
+      - name: Package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $version = (cargo metadata --no-deps --locked --format-version 1 | ConvertFrom-Json).packages |
+            Where-Object name -eq opensheet | ForEach-Object version
+          $arch = if ($env:TARGET -like "aarch64-*") { "arm64" } else { "x64compatible" }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$version" "/DTarget=$env:TARGET" "/DArch=$arch" packaging\windows\opensheet.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path "target\$env:TARGET\release\opensheet.exe" -DestinationPath "dist\opensheet-$env:TARGET.zip"
+
+      # The installers install what they should, where the runner can run it.
+      - name: Try the installer
+        if: matrix.smoke && runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y "./dist/opensheet-$TARGET.deb"
+          opensheet --version
+          desktop-file-validate /usr/share/applications/org.opensheet.OpenSheet.desktop || true
+          rpm -qlp "dist/opensheet-$TARGET.rpm" 2> /dev/null || true
+      - name: Try the installer
+        if: matrix.smoke && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Start-Process "dist\opensheet-$env:TARGET-setup.exe" -Wait -PassThru `
+            -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/NORESTART"
+          if ($setup.ExitCode -ne 0) { exit $setup.ExitCode }
+          $run = Start-Process "$env:LOCALAPPDATA\Programs\OpenSheet\opensheet.exe" -ArgumentList "--version" `
+            -Wait -PassThru -NoNewWindow -RedirectStandardOutput version.txt
+          Get-Content version.txt
+          if ($run.ExitCode -ne 0) { exit $run.ExitCode }
+          Get-ItemProperty "HKCU:\Software\Classes\.xlsx\OpenWithProgids" | Out-Host
+      - name: Try the installer
+        if: matrix.smoke && runner.os == 'macOS'
+        run: |
+          hdiutil attach "dist/opensheet-$TARGET.dmg" -mountpoint /tmp/opensheet-dmg -nobrowse
+          /tmp/opensheet-dmg/OpenSheet.app/Contents/MacOS/opensheet --version
+          codesign --verify --deep --strict /tmp/opensheet-dmg/OpenSheet.app
+          hdiutil detach /tmp/opensheet-dmg
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -149,6 +208,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Build provenance: `gh attestation verify <file> --repo 0xtlt/opensheet`.
+      id-token: write
+      attestations: write
     steps:
       # For the changelog.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,6 +225,10 @@ jobs:
         run: |
           sha256sum opensheet-* > SHA256SUMS
           cat SHA256SUMS
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/opensheet-*
 
       - name: Publish
         env:

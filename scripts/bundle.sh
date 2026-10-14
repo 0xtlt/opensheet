@@ -23,6 +23,9 @@ cp "$BIN" "$APP/Contents/MacOS/opensheet"
 "$ROOT/scripts/build_translate_helper.sh" "$PROFILE" "$TARGET" >/dev/null
 HELPER="$DIR/opensheet-translate"
 if [ -x "$HELPER" ]; then cp "$HELPER" "$APP/Contents/MacOS/opensheet-translate"; fi
+# The icon: Assets.car for macOS 26 and later, AppIcon.icns before
+# (packaging/icon/build.sh makes both).
+cp "$ROOT/packaging/macos/Assets.car" "$ROOT/packaging/macos/AppIcon.icns" "$APP/Contents/Resources/"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -33,6 +36,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>opensheet</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>

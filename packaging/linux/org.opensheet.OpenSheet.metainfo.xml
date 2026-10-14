@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.opensheet.OpenSheet</id>
+  <name>OpenSheet</name>
+  <summary>An open-source spreadsheet with the interface of Excel</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <description>
+    <p>
+      OpenSheet opens, edits and saves .xlsx, .xlsm and .csv workbooks with the ribbon,
+      dialogs and keyboard shortcuts of Excel: formulas, tables, PivotTables, charts,
+      conditional formatting, Office Scripts. Its interface and formulas are in English,
+      French, Spanish, German and Italian.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.opensheet.OpenSheet.desktop</launchable>
+  <url type="homepage">https://github.com/0xtlt/opensheet</url>
+  <url type="bugtracker">https://github.com/0xtlt/opensheet/issues</url>
+  <developer id="org.opensheet">
+    <name>The OpenSheet contributors</name>
+  </developer>
+  <categories>
+    <category>Office</category>
+    <category>Spreadsheet</category>
+  </categories>
+  <provides>
+    <binary>opensheet</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

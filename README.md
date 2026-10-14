@@ -25,20 +25,30 @@ The complete inventory, feature by feature, with what is partial or missing, is 
 
 ## Download
 
-Each [release](https://github.com/0xtlt/opensheet/releases) has an archive per platform, its checksum in `SHA256SUMS`, and what changed in that version ([CHANGELOG.md](CHANGELOG.md)).
+Each [release](https://github.com/0xtlt/opensheet/releases) has an installer per platform, portable archives, their checksums in `SHA256SUMS`, and what changed in that version ([CHANGELOG.md](CHANGELOG.md)).
 
-| System | Archive |
-| --- | --- |
-| macOS, Apple silicon | `opensheet-aarch64-apple-darwin.zip` |
-| macOS, Intel | `opensheet-x86_64-apple-darwin.zip` |
-| Windows, x86-64 | `opensheet-x86_64-pc-windows-msvc.zip` |
-| Windows, ARM | `opensheet-aarch64-pc-windows-msvc.zip` |
-| Linux, x86-64 | `opensheet-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux, ARM | `opensheet-aarch64-unknown-linux-gnu.tar.gz` |
+| System | Installer | Portable |
+| --- | --- | --- |
+| macOS, Apple silicon | `opensheet-aarch64-apple-darwin.dmg` | |
+| macOS, Intel | `opensheet-x86_64-apple-darwin.dmg` | |
+| Windows, x86-64 | `opensheet-x86_64-pc-windows-msvc-setup.exe` | `opensheet-x86_64-pc-windows-msvc.zip` |
+| Windows, ARM | `opensheet-aarch64-pc-windows-msvc-setup.exe` | `opensheet-aarch64-pc-windows-msvc.zip` |
+| Linux, x86-64 | `opensheet-x86_64-unknown-linux-gnu.deb` / `.rpm` | `opensheet-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux, ARM | `opensheet-aarch64-unknown-linux-gnu.deb` / `.rpm` | `opensheet-aarch64-unknown-linux-gnu.tar.gz` |
 
-- **macOS**: the app is not signed yet. After unzipping, right-click `OpenSheet.app` ▸ *Open* the first time, or run `xattr -dr com.apple.quarantine OpenSheet.app`.
-- **Windows**: run `opensheet.exe`. SmartScreen may warn about an unknown publisher.
-- **Linux**: run `./opensheet` (X11 or Wayland, with Vulkan drivers installed).
+- **macOS**: open the disk image and drag OpenSheet onto Applications. Until the app is signed by a Developer ID, right-click it ▸ *Open* the first time.
+- **Windows**: run the setup program. It installs for your account without administrator rights (or for all users if you choose), adds OpenSheet to the Start menu, and offers to open spreadsheets with it. SmartScreen may warn about an unknown publisher until the installer is signed.
+- **Linux**: `sudo apt install ./opensheet-…-linux-gnu.deb` (Debian, Ubuntu) or `sudo dnf install ./opensheet-…-linux-gnu.rpm` (Fedora, openSUSE). It needs X11 or Wayland and Vulkan drivers.
+
+Every file comes with a build provenance attestation: `gh attestation verify <file> --repo 0xtlt/opensheet` checks that it was built by this repository's release workflow.
+
+### Opening spreadsheets with OpenSheet
+
+The installers declare the files OpenSheet opens: `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv` and `.tsv`.
+
+- **macOS**: select a file in the Finder ▸ *File* ▸ *Get Info* ▸ *Open with*: OpenSheet ▸ *Change All…*.
+- **Windows**: the installer's "Open spreadsheets with OpenSheet" option; otherwise right-click a file ▸ *Open with* ▸ *Choose another app* ▸ OpenSheet ▸ *Always*.
+- **Linux**: your file manager's *Open With* ▸ *Set as default*, or `xdg-mime default org.opensheet.OpenSheet.desktop text/csv`.
 
 ## Build from source
 
@@ -55,7 +65,7 @@ cargo run -p opensheet --release -- book.xlsx    # open a file
 cargo run -p opensheet --release -- book.xlsx --export book.csv   # convert without a window
 ```
 
-On macOS, `cargo build -p opensheet --release && scripts/bundle.sh release` makes `target/release/OpenSheet.app`.
+On macOS, `cargo build -p opensheet --release && scripts/bundle.sh release` makes `target/release/OpenSheet.app`. The icon's sources are in `packaging/icon/` (`packaging/icon/build.sh` regenerates the files of every platform).
 
 ### Language and fonts
 
@@ -90,7 +100,7 @@ About 2,000 tests, including headless interface tests that drive the real window
 
 ## Releases
 
-Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag is the crate's version and that `CHANGELOG.md` has a section for it, runs the tests, builds every platform (with a smoke test of each executable where the runner can run it), and publishes the release with that changelog section. Running the workflow by hand does the same without publishing. `mise run release:notes 0.1.0` prints what a release will say.
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag is the crate's version and that `CHANGELOG.md` has a section for it, runs the tests, builds every platform and its installers (installing them where the runner can), and publishes the release with that changelog section. With the Apple secrets described in `packaging/macos/package.sh`, the macOS app is signed and notarized. Running the workflow by hand does the same without publishing. `mise run release:notes 0.1.0` prints what a release will say.
 
 ## Contributing
 
