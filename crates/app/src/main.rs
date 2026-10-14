@@ -238,6 +238,10 @@ fn export(input: Option<&str>, demo: bool, output: &str) -> Result<(), String> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("opensheet {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let demo = args.iter().any(|a| a == "--demo");
     // `--widgets`: open the gallery of the dialog toolkit at start.
     let gallery = args.iter().any(|a| a == "--widgets");

@@ -1,0 +1,52 @@
+# Changelog
+
+What changed in each version of OpenSheet, for someone who uses it. The section of a version
+is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
+
+## 0.1.0 - 2026-10-14
+
+The first public version: an open-source spreadsheet with the interface and behaviour of
+Microsoft Excel, written in Rust with GPUI, in English, French, Spanish, German and Italian.
+
+### Install
+
+- **macOS**: unzip `opensheet-aarch64-apple-darwin.zip` (Apple silicon) or
+  `opensheet-x86_64-apple-darwin.zip` (Intel) and move `OpenSheet.app` to Applications. The
+  app is not signed yet: right-click it ▸ *Open* the first time, or run
+  `xattr -dr com.apple.quarantine OpenSheet.app`.
+- **Windows**: unzip `opensheet-x86_64-pc-windows-msvc.zip` (or the `aarch64` one for ARM)
+  and run `opensheet.exe`. SmartScreen may warn about an unknown publisher.
+- **Linux**: unpack `opensheet-x86_64-unknown-linux-gnu.tar.gz` (or the `aarch64` one) and run
+  `./opensheet`. It needs X11 or Wayland and Vulkan drivers.
+- `SHA256SUMS` lists the checksum of every archive.
+
+OpenSheet is developed and tested on macOS. The Windows and Linux builds come from the same
+code and pass the same build, but have not been tried by hand yet: reports are welcome.
+
+### What it does
+
+- **Excel's interface**: the ribbon with its contextual tabs, folding as Excel's does when the
+  window narrows, Excel's dialogs, side panes, context menus, status bar and shortcuts.
+- **Calculation**: 337 functions, dynamic arrays, defined names, 3-D and structured
+  references, recalculation of only what a change reaches, manual mode, iterative calculation
+  and the formula auditing tools.
+- **Data**: tables, sort and filter, conditional formatting, data validation, PivotTables
+  with slicers, timelines and PivotCharts, What-If Analysis, Flash Fill, Text to Columns,
+  Consolidate, outline and subtotals, Get Data from text files, the web, workbooks, JSON and
+  XML.
+- **Charts and objects**: charts and their formatting, sparklines, pictures with styles,
+  effects and artistic effects, shapes, WordArt with Excel's 40 text transforms, SmartArt,
+  icons, equations, ink, and form controls.
+- **Review and sharing**: comments with @mentions, notes, spelling, thesaurus, translation,
+  the accessibility checker, and the protection of sheets, ranges and workbooks.
+- **Automation**: Office Scripts in TypeScript, with a Code Editor that completes and checks
+  the `ExcelScript` object model and an action recorder. The VBA projects of `.xlsm` files are
+  kept byte for byte and can be read, never run.
+- **Files**: `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv` and `.tsv`; a file saved by OpenSheet
+  opens in Excel without repair. Printing to PDF, to a printer, or to Preview on macOS.
+- **Five languages** for the interface and the formulas: `=SUM(A1:A3,1.5)` in English is
+  `=SOMME(A1:A3;1,5)` in French, and a workbook typed in one language opens in another.
+
+What is partial or missing is listed, feature by feature, in the
+[feature guide](https://github.com/0xtlt/opensheet/blob/main/docs/fonctionnalites.md#ce-qui-manque)
+(French).

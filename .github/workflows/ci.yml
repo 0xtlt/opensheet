@@ -10,23 +10,27 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   test:
     name: Build and test (macOS)
     runs-on: macos-latest
-    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+      # GPUI compiles its Metal shaders; recent Xcodes download that compiler on demand.
       - name: Metal toolchain
-        run: xcrun -f metal >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+        run: xcrun -f metal > /dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
       - name: Build
-        run: cargo build -p opensheet --locked
-      - name: Tests
+        run: cargo build --locked -p opensheet
+      - name: Test
         run: cargo test --locked -p opensheet_engine -p opensheet_io -p opensheet_print -p opensheet_script -p opensheet
-      - name: Translations
+      - name: Check the translations
         run: python3 scripts/check_i18n.py

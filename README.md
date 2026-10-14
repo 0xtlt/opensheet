@@ -25,7 +25,16 @@ The complete inventory, feature by feature, with what is partial or missing, is 
 
 ## Download
 
-Builds for macOS (Apple silicon), Windows (x86-64) and Linux (x86-64) are attached to each [release](https://github.com/0xtlt/opensheet/releases).
+Each [release](https://github.com/0xtlt/opensheet/releases) has an archive per platform, its checksum in `SHA256SUMS`, and what changed in that version ([CHANGELOG.md](CHANGELOG.md)).
+
+| System | Archive |
+| --- | --- |
+| macOS, Apple silicon | `opensheet-aarch64-apple-darwin.zip` |
+| macOS, Intel | `opensheet-x86_64-apple-darwin.zip` |
+| Windows, x86-64 | `opensheet-x86_64-pc-windows-msvc.zip` |
+| Windows, ARM | `opensheet-aarch64-pc-windows-msvc.zip` |
+| Linux, x86-64 | `opensheet-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux, ARM | `opensheet-aarch64-unknown-linux-gnu.tar.gz` |
 
 - **macOS**: the app is not signed yet. After unzipping, right-click `OpenSheet.app` ▸ *Open* the first time, or run `xattr -dr com.apple.quarantine OpenSheet.app`.
 - **Windows**: run `opensheet.exe`. SmartScreen may warn about an unknown publisher.
@@ -33,7 +42,7 @@ Builds for macOS (Apple silicon), Windows (x86-64) and Linux (x86-64) are attach
 
 ## Build from source
 
-Requirements: a recent stable [Rust](https://rustup.rs/) toolchain (edition 2024).
+Requirements: the [Rust](https://rustup.rs/) toolchain pinned in `mise.toml` (with [mise](https://mise.jdx.dev/): `mise install`, then `mise run run`, `mise run test`…).
 
 - **macOS**: Xcode or its Command Line Tools (GPUI compiles its Metal shaders with `xcrun metal`).
 - **Linux** (Debian/Ubuntu): `sudo apt install pkg-config clang libfontconfig-dev libfreetype-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev libasound2-dev`
@@ -78,6 +87,10 @@ python3 scripts/check_i18n.py    # every interface string is translated in es, d
 ```
 
 About 2,000 tests, including headless interface tests that drive the real window (keys, clicks, dialogs) and round-trip tests of every file format feature.
+
+## Releases
+
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag is the crate's version and that `CHANGELOG.md` has a section for it, runs the tests, builds every platform (with a smoke test of each executable where the runner can run it), and publishes the release with that changelog section. Running the workflow by hand does the same without publishing. `mise run release:notes 0.1.0` prints what a release will say.
 
 ## Contributing
 

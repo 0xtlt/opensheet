@@ -1,41 +1,104 @@
 name: Release
 
-# A tag "v*" builds OpenSheet for macOS, Windows and Linux and publishes the
-# archives as a GitHub release. Run by hand, it only builds them and keeps
-# them as workflow artifacts.
+# Pushing a tag `vX.Y.Z` tests the code, builds OpenSheet for every platform and publishes a
+# GitHub release with one archive per platform and their checksums. The release says what
+# CHANGELOG.md says of that version.
+#
+# Running the workflow by hand ("Run workflow") does the same without publishing: the archives
+# are kept as artifacts of the run. Use it to try the builds before tagging.
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 env:
   CARGO_TERM_COLOR: always
-  VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+  CARGO_INCREMENTAL: "0"
 
 jobs:
+  test:
+    name: Test
+    # The test suite drives the interface headlessly and is checked on macOS.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+
+      - name: Check that the tag is the version of the crate
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(cargo metadata --no-deps --locked --format-version 1 \
+            | jq -r '.packages[] | select(.name == "opensheet") | .version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error file=Cargo.toml::the tag $GITHUB_REF_NAME does not match the version $version"
+            exit 1
+          fi
+
+      # Before anything is built: its section is what the release will say.
+      - name: Check that the changelog has the version
+        if: github.ref_type == 'tag'
+        run: |
+          if ! tools/release/notes.sh "$GITHUB_REF_NAME"; then
+            echo "::error file=CHANGELOG.md::the changelog has no section for $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      # GPUI compiles its Metal shaders; recent Xcodes download that compiler on demand.
+      - name: Metal toolchain
+        run: xcrun -f metal > /dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+
+      - name: Test
+        run: cargo test --locked -p opensheet_engine -p opensheet_io -p opensheet_print -p opensheet_script -p opensheet
+
+      - name: Check the translations
+        run: python3 scripts/check_i18n.py
+
   build:
-    name: Build (${{ matrix.name }})
+    name: Build ${{ matrix.target }}
+    needs: test
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: macOS
+          - target: aarch64-apple-darwin
             os: macos-latest
-          - name: Linux
+            smoke: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          # GPUI links the system's windowing libraries (Wayland, X11, Vulkan): Linux is built
+          # natively, on an x86-64 and an ARM runner.
+          - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
-          - name: Windows
+            smoke: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            smoke: true
+          - target: x86_64-pc-windows-msvc
             os: windows-latest
+            smoke: true
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+    env:
+      TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          targets: ${{ matrix.target }}
 
-      - name: Linux dependencies
+      - name: Linux libraries
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
@@ -44,54 +107,82 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev
       - name: Metal toolchain
         if: runner.os == 'macOS'
-        run: xcrun -f metal >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+        run: xcrun -f metal > /dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
 
       - name: Build
-        run: cargo build -p opensheet --release --locked
+        run: cargo build --release --locked -p opensheet --target "$TARGET"
 
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
+      # Only where the runner can execute what it built. `--export` converts a workbook
+      # without opening a window.
+      - name: Smoke test
+        if: matrix.smoke
         run: |
-          scripts/bundle.sh release
-          mkdir -p dist
-          ditto -c -k --keepParent target/release/OpenSheet.app "dist/OpenSheet-$VERSION-macos-arm64.zip"
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p dist/OpenSheet
-          cp target/release/opensheet README.md LICENSE-MIT LICENSE-APACHE dist/OpenSheet/
-          tar -C dist -czf "dist/OpenSheet-$VERSION-linux-x86_64.tar.gz" OpenSheet
-          rm -rf dist/OpenSheet
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist/OpenSheet | Out-Null
-          Copy-Item target/release/opensheet.exe, README.md, LICENSE-MIT, LICENSE-APACHE dist/OpenSheet/
-          Compress-Archive -Path dist/OpenSheet -DestinationPath "dist/OpenSheet-$env:VERSION-windows-x86_64.zip"
-          Remove-Item -Recurse dist/OpenSheet
+          opensheet="target/$TARGET/release/opensheet"
+          "$opensheet" --version
+          "$opensheet" --demo --export demo.xlsx
+          "$opensheet" demo.xlsx --export demo.csv
+          head -3 demo.csv
 
-      - uses: actions/upload-artifact@v4
+      - name: Package
+        run: |
+          mkdir dist
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            scripts/bundle.sh release "$TARGET"
+            ditto -c -k --keepParent "target/$TARGET/release/OpenSheet.app" "dist/opensheet-$TARGET.zip"
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            (cd "target/$TARGET/release" && 7z a -tzip "../../../dist/opensheet-$TARGET.zip" opensheet.exe)
+          else
+            tar -czf "dist/opensheet-$TARGET.tar.gz" -C "target/$TARGET/release" opensheet
+          fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: OpenSheet-${{ matrix.name }}
+          name: opensheet-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
+          retention-days: 7
 
-  publish:
+  release:
     name: Publish the release
-    if: github.ref_type == 'tag'
     needs: build
-    runs-on: ubuntu-24.04
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      # For the changelog.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
+          pattern: opensheet-*
           merge-multiple: true
-      - name: Create the release
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum opensheet-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "OpenSheet $GITHUB_REF_NAME" \
-            --notes-file .github/release-notes.md
+          # A re-run of a release that already exists replaces its files.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            exit 0
+          fi
+          # `v1.2.0-rc.1` and the like are prereleases.
+          flags=()
+          case "$TAG" in *-*) flags+=(--prerelease) ;; esac
+          # What the changelog says of the version, then the link to the commits that GitHub
+          # writes. Without pull requests, that link is all GitHub has to say.
+          {
+            tools/release/notes.sh "$TAG"
+            echo
+            gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" dist/* --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --title "$TAG" "${flags[@]}"

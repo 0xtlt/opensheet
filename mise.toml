@@ -1,0 +1,27 @@
+# Toolchain + tasks for OpenSheet. Run `mise install` once, then `mise run <task>`.
+[tools]
+rust = { version = "1.98.1", components = "clippy,rustfmt" }
+
+[tasks.run]
+description = "Run OpenSheet on its sample workbook"
+run = "cargo run --release -p opensheet -- --demo"
+
+[tasks.build]
+description = "Build the opensheet binary (release)"
+run = "cargo build --release -p opensheet"
+
+[tasks.bundle]
+description = "Build OpenSheet.app (macOS) into target/release"
+depends = ["build"]
+run = "scripts/bundle.sh release"
+
+[tasks.test]
+description = "Run the whole test suite and check the translations"
+run = [
+  "cargo test -p opensheet_engine -p opensheet_io -p opensheet_print -p opensheet_script -p opensheet",
+  "python3 scripts/check_i18n.py",
+]
+
+[tasks."release:notes"]
+description = "Print what the GitHub release of a version will say: its section of CHANGELOG.md"
+run = "tools/release/notes.sh"
