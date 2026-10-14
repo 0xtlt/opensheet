@@ -3,7 +3,7 @@
 What changed in each version of OpenSheet, for someone who uses it. The section of a version
 is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
-## Unreleased
+## 0.2.0 - 2026-10-14
 
 - **The language follows the system**: the interface and the formulas take the first of your
   preferred languages that OpenSheet speaks (else English); the language entries of the
@@ -23,6 +23,8 @@ is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
   `.deb` and `.rpm` packages on Linux with a menu entry and the file types. The portable
   archives stay. Every file comes with a build provenance attestation
   (`gh attestation verify <file> --repo 0xtlt/opensheet`).
+- **Homebrew**: `brew install 0xtlt/tap/opensheet` installs the app, and the `opensheet`
+  command for the terminal.
 - **An icon**: a sheet of cells with a selected cell, drawn for the Liquid Glass of macOS 26
   and for earlier macOS, Windows and Linux.
 - On Windows, no console window opens behind OpenSheet any more.

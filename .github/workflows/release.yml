@@ -257,3 +257,17 @@ jobs:
             gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$TAG" --jq .body
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" dist/* --verify-tag --notes-file "$RUNNER_TEMP/notes.md" --title "$TAG" "${flags[@]}"
+
+  # The cask of the Homebrew tap (`brew install 0xtlt/tap/opensheet`), with a token that can
+  # write to 0xtlt/homebrew-tap in the secret HOMEBREW_TAP_TOKEN; without it, a warning.
+  homebrew:
+    name: Update the Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Update Casks/opensheet.rb
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: tools/release/update-homebrew-tap.sh
