@@ -3,6 +3,13 @@
 What changed in each version of OpenSheet, for someone who uses it. The section of a version
 is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
+## 0.2.1 - 2026-10-14
+
+- **A merged cell keeps its fill**: the white that hides the gridlines inside a merged area was
+  painted over its fill, so a white title on a coloured merged row could not be seen.
+- A workbook whose A1 is merged opens with the whole merged area selected, as in Excel.
+- **The icon turns indigo**, with a cyan selection.
+
 ## 0.2.0 - 2026-10-14
 
 - **The language follows the system**: the interface and the formulas take the first of your

@@ -899,8 +899,9 @@ impl<'a> PaneCtx<'a> {
         for m in &merges {
             let (x0, y0, x1, y1) = layout.rect_px(*m);
             cells.push((m.r0, m.c0, (x0, y0, x1, y1), sheet.style_id_at(m.r0, m.c0)));
-            // A merged area hides the gridlines inside it.
-            erasers.push(solid(layout, x0, y0, x1 - self.hair, y1 - self.hair, c(theme::GRID_BG)));
+            // A merged area hides the gridlines inside it: painted over the
+            // gridlines, under the fill of the area.
+            items.push(solid(layout, x0, y0, x1 - self.hair, y1 - self.hair, c(theme::GRID_BG)));
         }
 
         // Text from the nearest non-blank cell left of the pane may overflow
@@ -1631,4 +1632,84 @@ pub fn autofit_col_width(wb: &Workbook, sheet: usize, col: u32, fonts: &FontReso
         any = true;
     }
     any.then(|| (max_w + 9.0).ceil().clamp(12.0, 1800.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::ExcelApp;
+    use gpui::{Modifiers, TestAppContext, point};
+    use opensheet_engine::Color;
+
+    /// A merged area with a fill keeps it: the white that hides the
+    /// gridlines inside the area lies under the fill, not over it (a title
+    /// in white on a coloured merged row was invisible).
+    #[gpui::test]
+    fn a_merged_area_keeps_its_fill(cx: &mut TestAppContext) {
+        let (app, cx) = cx.add_window_view(ExcelApp::new);
+        app.update(cx, |app, cx| {
+            let mut style = Style::default();
+            style.fill = Some(Color(0x7B4B8A));
+            style.font.color = Some(Color(0xFFFFFF));
+            let id = app.wb.styles.intern(style);
+            app.wb.set_value(0, 0, 0, Value::text("Title"));
+            for col in 0..5 {
+                app.wb.set_style_id(0, 0, col, id);
+            }
+            app.wb.sheets[0].merges.push(Rect::new(0, 0, 0, 4));
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.simulate_mouse_move(point(px(2.), px(2.)), None, Modifiers::none());
+        let colors = app.update_in(cx, |app, window, _| {
+            let layout = app.current_layout().expect("the grid was drawn");
+            let ts = window.text_system().clone();
+            let input = SceneInput {
+                app,
+                wb: &app.wb,
+                sheet: 0,
+                selection: app.sel(),
+                fonts: &app.fonts,
+                marquee: None,
+                fill_preview: None,
+                ref_highlights: &[],
+                show_fill_handle: false,
+                content_w: 2000.0,
+                content_h: 2000.0,
+                hot_scrollbar: 0,
+                scale: 1.0,
+            };
+            // The middle of the merged area (column C of row 1).
+            let x = layout.col_x(2) + layout.col_w(2) / 2.0;
+            let y = layout.row_y(0) + layout.row_h(0) / 2.0;
+            let spot = layout.to_window(x, y);
+            build_scene(&input, &layout, &ts)
+                .layers
+                .iter()
+                .flat_map(|layer| layer.items.iter())
+                .filter_map(|item| match item {
+                    Draw::Quad(quad) if quad.bounds.contains(&spot) => Some(quad.background),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        });
+        let fill: gpui::Background = theme::engine_color(Color(0x7B4B8A)).into();
+        let white: gpui::Background = c(theme::GRID_BG).into();
+        let fill_at = colors.iter().position(|b| *b == fill).expect("the fill is painted");
+        assert!(!colors[fill_at..].contains(&white), "nothing white over the fill");
+    }
+
+    /// A workbook whose A1 is merged opens with the whole merged area
+    /// selected, as Excel shows it.
+    #[gpui::test]
+    fn a_merged_a1_is_selected_whole(cx: &mut TestAppContext) {
+        let (app, cx) = cx.add_window_view(ExcelApp::new);
+        app.update(cx, |app, cx| {
+            let mut wb = opensheet_engine::Workbook::new(app.wb.locale);
+            wb.sheets[0].merges.push(Rect::new(0, 0, 0, 4));
+            app.set_workbook(wb, None, "Book".into(), cx);
+            assert_eq!(app.sel().ranges, vec![Rect::new(0, 0, 0, 4)]);
+            assert_eq!(app.sel().active, (0, 0));
+        });
+    }
 }

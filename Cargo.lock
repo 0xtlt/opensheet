@@ -3909,7 +3909,7 @@ dependencies = [
 
 [[package]]
 name = "opensheet"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "futures",
  "gpui",
@@ -3928,14 +3928,14 @@ dependencies = [
 
 [[package]]
 name = "opensheet_engine"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
 ]
 
 [[package]]
 name = "opensheet_io"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "opensheet_engine",
  "quick-xml",
@@ -3945,7 +3945,7 @@ dependencies = [
 
 [[package]]
 name = "opensheet_print"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "flate2",
@@ -3955,7 +3955,7 @@ dependencies = [
 
 [[package]]
 name = "opensheet_script"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "opensheet_engine",
  "oxc",

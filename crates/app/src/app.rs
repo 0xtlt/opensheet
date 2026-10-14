@@ -561,6 +561,12 @@ impl ExcelApp {
     /// Replace the workbook (New / Open).
     pub fn set_workbook(&mut self, wb: Workbook, path: Option<PathBuf>, title: String, cx: &mut Context<Self>) {
         self.views = wb.sheets.iter().map(|_| SheetView::default()).collect();
+        // A1 inside a merged area selects the whole area, as a click on it.
+        for (view, sheet) in self.views.iter_mut().zip(&wb.sheets) {
+            if let Some(merge) = sheet.merges.iter().find(|m| m.contains(0, 0)) {
+                view.sel.ranges = vec![*merge];
+            }
+        }
         self.wb = wb;
         features::preferences::apply_to_workbook(&mut self.wb);
         self.path = path;
