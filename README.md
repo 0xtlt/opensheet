@@ -100,7 +100,7 @@ About 2,000 tests, including headless interface tests that drive the real window
 
 ## Releases
 
-Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag is the crate's version and that `CHANGELOG.md` has a section for it, runs the tests, builds every platform and its installers (installing them where the runner can), and publishes the release with that changelog section. With the Apple secrets described in `packaging/macos/package.sh`, the macOS app is signed and notarized. Running the workflow by hand does the same without publishing. `mise run release:notes 0.1.0` prints what a release will say.
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks that the tag is the crate's version and that `CHANGELOG.md` has a section for it, runs the tests, builds every platform and its installers (installing them where the runner can), and publishes the release with that changelog section. With the Apple secrets listed at the top of the workflow, the macOS app is signed and notarized. Running the workflow by hand does the same without publishing. `mise run release:notes 0.1.0` prints what a release will say.
 
 ## Contributing
 

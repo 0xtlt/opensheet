@@ -8,10 +8,10 @@ name: Release
 # Running the workflow by hand ("Run workflow") does the same without publishing: the files
 # are kept as artifacts of the run. Use it to try the builds before tagging.
 #
-# Signing: with the secrets MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD, APPLE_ID,
-# APPLE_ID_PASSWORD and APPLE_TEAM_ID (or an App Store Connect API key instead of the Apple ID),
-# the macOS app is signed and notarized; packaging/macos/package.sh says what each one is.
-# Without them it is signed ad hoc.
+# Signing: with the secrets CERTIFICATE_BASE64 and CERTIFICATE_PASSWORD (a Developer ID
+# Application certificate), APPLE_ID, APPLE_ID_PASSWORD and APPLE_TEAM_ID (or an App Store
+# Connect API key instead of the Apple ID), the macOS app is signed and notarized;
+# packaging/macos/package.sh says what each one is. Without them it is signed ad hoc.
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
@@ -138,8 +138,8 @@ jobs:
       - name: Package
         if: runner.os != 'Windows'
         env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_CERTIFICATE: ${{ secrets.CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
