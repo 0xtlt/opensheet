@@ -110,7 +110,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config clang libasound2-dev libfontconfig-dev \
             libfreetype-dev libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev
+            libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev \
+            desktop-file-utils
       - name: Metal toolchain
         if: runner.os == 'macOS'
         run: xcrun -f metal > /dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
@@ -176,7 +177,7 @@ jobs:
         run: |
           sudo apt-get install -y "./dist/opensheet-$TARGET.deb"
           opensheet --version
-          desktop-file-validate /usr/share/applications/org.opensheet.OpenSheet.desktop || true
+          desktop-file-validate /usr/share/applications/org.opensheet.OpenSheet.desktop
           rpm -qlp "dist/opensheet-$TARGET.rpm" 2> /dev/null || true
       - name: Try the installer
         if: matrix.smoke && runner.os == 'Windows'

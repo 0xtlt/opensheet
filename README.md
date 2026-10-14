@@ -36,7 +36,7 @@ Each [release](https://github.com/0xtlt/opensheet/releases) has an installer per
 | Linux, x86-64 | `opensheet-x86_64-unknown-linux-gnu.deb` / `.rpm` | `opensheet-x86_64-unknown-linux-gnu.tar.gz` |
 | Linux, ARM | `opensheet-aarch64-unknown-linux-gnu.deb` / `.rpm` | `opensheet-aarch64-unknown-linux-gnu.tar.gz` |
 
-- **macOS**: open the disk image and drag OpenSheet onto Applications. Until the app is signed by a Developer ID, right-click it ▸ *Open* the first time.
+- **macOS**: open the disk image and drag OpenSheet onto Applications. The app is signed and notarized by Apple.
 - **Windows**: run the setup program. It installs for your account without administrator rights (or for all users if you choose), adds OpenSheet to the Start menu, and offers to open spreadsheets with it. SmartScreen may warn about an unknown publisher until the installer is signed.
 - **Linux**: `sudo apt install ./opensheet-…-linux-gnu.deb` (Debian, Ubuntu) or `sudo dnf install ./opensheet-…-linux-gnu.rpm` (Fedora, openSUSE). It needs X11 or Wayland and Vulkan drivers.
 
