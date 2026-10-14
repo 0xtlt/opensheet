@@ -8,7 +8,12 @@
 # ad-hoc signature and macOS asks for right-click ▸ Open the first time.
 #   MACOS_CERTIFICATE           the .p12 of a "Developer ID Application" certificate, in base64
 #   MACOS_CERTIFICATE_PASSWORD  the password of that .p12
-#   APPLE_API_KEY               an App Store Connect API key (the text of its .p8), to notarize
+# and, to notarize, either an Apple ID:
+#   APPLE_ID                    the Apple ID of a member of the team
+#   APPLE_ID_PASSWORD           an app-specific password of that Apple ID (appleid.apple.com)
+#   APPLE_TEAM_ID               the team's ID
+# or an App Store Connect API key:
+#   APPLE_API_KEY               the text of its .p8
 #   APPLE_API_KEY_ID            the key's ID
 #   APPLE_API_ISSUER            the issuer ID shown above the keys in App Store Connect
 set -e
@@ -61,20 +66,26 @@ done
 
 if [ -n "$IDENTITY" ]; then
   codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+  # The credentials of notarytool, as the positional parameters.
+  set --
   if [ -n "$APPLE_API_KEY" ]; then
     printf '%s\n' "$APPLE_API_KEY" > "$WORK/key.p8"
-    xcrun notarytool submit "$DMG" --key "$WORK/key.p8" --key-id "$APPLE_API_KEY_ID" \
-      --issuer "$APPLE_API_ISSUER" --wait --timeout 30m --output-format json > "$WORK/notary.json" || true
+    set -- --key "$WORK/key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER"
+  elif [ -n "$APPLE_ID" ]; then
+    set -- --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID"
+  fi
+  if [ $# -gt 0 ]; then
+    xcrun notarytool submit "$DMG" "$@" --wait --timeout 30m --output-format json > "$WORK/notary.json" || true
     cat "$WORK/notary.json"; echo
     if [ "$(plutil -extract status raw -o - "$WORK/notary.json" 2>/dev/null)" != "Accepted" ]; then
       id="$(plutil -extract id raw -o - "$WORK/notary.json" 2>/dev/null || true)"
-      [ -n "$id" ] && xcrun notarytool log "$id" --key "$WORK/key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER"
+      [ -n "$id" ] && xcrun notarytool log "$id" "$@"
       echo "notarization failed" >&2
       exit 1
     fi
     xcrun stapler staple "$DMG"
   else
-    echo "no APPLE_API_KEY: signed but not notarized"
+    echo "no APPLE_ID nor APPLE_API_KEY: signed but not notarized"
   fi
 fi
 echo "$DMG"
