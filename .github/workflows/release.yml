@@ -1,0 +1,97 @@
+name: Release
+
+# A tag "v*" builds OpenSheet for macOS, Windows and Linux and publishes the
+# archives as a GitHub release. Run by hand, it only builds them and keeps
+# them as workflow artifacts.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Linux
+            os: ubuntu-24.04
+          - name: Windows
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config clang libasound2-dev libfontconfig-dev \
+            libfreetype-dev libwayland-dev libx11-dev libx11-xcb-dev libxcb1-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libvulkan-dev libssl-dev libzstd-dev
+      - name: Metal toolchain
+        if: runner.os == 'macOS'
+        run: xcrun -f metal >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+
+      - name: Build
+        run: cargo build -p opensheet --release --locked
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          scripts/bundle.sh release
+          mkdir -p dist
+          ditto -c -k --keepParent target/release/OpenSheet.app "dist/OpenSheet-$VERSION-macos-arm64.zip"
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/OpenSheet
+          cp target/release/opensheet README.md LICENSE-MIT LICENSE-APACHE dist/OpenSheet/
+          tar -C dist -czf "dist/OpenSheet-$VERSION-linux-x86_64.tar.gz" OpenSheet
+          rm -rf dist/OpenSheet
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/OpenSheet | Out-Null
+          Copy-Item target/release/opensheet.exe, README.md, LICENSE-MIT, LICENSE-APACHE dist/OpenSheet/
+          Compress-Archive -Path dist/OpenSheet -DestinationPath "dist/OpenSheet-$env:VERSION-windows-x86_64.zip"
+          Remove-Item -Recurse dist/OpenSheet
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenSheet-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "OpenSheet $GITHUB_REF_NAME" \
+            --notes-file .github/release-notes.md

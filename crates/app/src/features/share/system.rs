@@ -26,9 +26,14 @@ pub trait System {
     fn os_version(&self) -> String;
 }
 
-#[cfg(not(test))]
+#[cfg(all(target_os = "macos", not(test)))]
 pub fn system() -> Rc<dyn System> {
     Rc::new(mac::Mac)
+}
+
+#[cfg(all(not(target_os = "macos"), not(test)))]
+pub fn system() -> Rc<dyn System> {
+    Rc::new(other::Other)
 }
 
 #[cfg(test)]
@@ -36,8 +41,35 @@ pub fn system() -> Rc<dyn System> {
     Rc::new(fake::Fake)
 }
 
+/// Systems without a share sheet: the copy is made, and the message says
+/// where it is so that it can be attached by hand.
+#[cfg(all(not(target_os = "macos"), not(test)))]
+mod other {
+    use super::{Item, System};
+    use gpui::{App, Bounds, Pixels, Window};
+
+    pub struct Other;
+
+    impl System for Other {
+        fn share(&self, items: &[Item], _: Bounds<Pixels>, _: &mut Window, _: &mut App) -> Result<(), String> {
+            let files: Vec<String> = items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::File(path) => Some(path.display().to_string()),
+                    Item::Text(_) => None,
+                })
+                .collect();
+            Err(format!("This system has no share sheet. The copy is here: {}", files.join(", ")))
+        }
+
+        fn os_version(&self) -> String {
+            std::env::consts::OS.to_string()
+        }
+    }
+}
+
 // The macros of `objc` test a `cfg` this crate does not declare.
-#[cfg(not(test))]
+#[cfg(all(target_os = "macos", not(test)))]
 #[allow(unexpected_cfgs)]
 mod mac {
     use super::{Item, System};

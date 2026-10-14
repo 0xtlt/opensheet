@@ -312,8 +312,7 @@ fn file() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("OPENSHEET_SETTINGS") {
         return Some(PathBuf::from(path));
     }
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join("Library/Application Support/OpenSheet/settings"))
+    Some(crate::paths::app_data()?.join("settings"))
 }
 
 fn load() -> Settings {

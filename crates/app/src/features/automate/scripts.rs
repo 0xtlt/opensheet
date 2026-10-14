@@ -53,8 +53,7 @@ pub(crate) fn default_folder() -> PathBuf {
     }
     #[cfg(not(test))]
     {
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        home.join("Library/Application Support/OpenSheet/Scripts")
+        crate::paths::app_data().unwrap_or_else(|| std::env::temp_dir().join("OpenSheet")).join("Scripts")
     }
 }
 

@@ -1,11 +1,11 @@
 //! What the Help pane shows: OpenSheet's own documentation, read from the
-//! project's `README.md` at build time (its sections "Ce qui fonctionne"
-//! and "Ce qui manque", which exist in French only), and what a search
-//! finds in it. Nothing here is written twice: when the README changes,
-//! so does the help.
+//! project's French guide `docs/fonctionnalites.md` at build time (its
+//! sections "Ce qui fonctionne" and "Ce qui manque"), and what a search
+//! finds in it. Nothing here is written twice: when the guide changes, so
+//! does the help.
 
-/// The README of the project, as it was when the application was built.
-const README: &str = include_str!("../../../../../README.md");
+/// The guide of the project, as it was when the application was built.
+const README: &str = include_str!("../../../../../docs/fonctionnalites.md");
 
 /// The sections of the README that are the help, as their headings read.
 pub(crate) const SECTIONS: [&str; 2] = ["Ce qui fonctionne", "Ce qui manque"];

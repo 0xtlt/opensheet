@@ -4,6 +4,7 @@ description = "Printing for OpenSheet: page rendering, font embedding and PDF ou
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 opensheet_engine = { path = "../engine" }

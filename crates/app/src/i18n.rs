@@ -126,8 +126,7 @@ pub fn labelled(label: &str, value: impl std::fmt::Display) -> String {
 }
 
 fn preference_file() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join("Library/Application Support/OpenSheet/language"))
+    Some(crate::paths::app_data()?.join("language"))
 }
 
 /// Remember the language chosen in the app.

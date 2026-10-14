@@ -4,6 +4,7 @@ description = "Spreadsheet calculation engine: formulas, functions, number forma
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 chrono = "0.4"

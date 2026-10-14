@@ -4,6 +4,7 @@ description = "An open-source spreadsheet with a familiar ribbon interface, buil
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 opensheet_engine = { path = "../engine" }

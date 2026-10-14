@@ -10,6 +10,7 @@ mod i18n;
 mod i18n_tables;
 mod icons;
 mod objects;
+mod paths;
 mod ribbon;
 mod ribbon_fold;
 mod shell;
