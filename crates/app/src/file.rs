@@ -3,7 +3,7 @@
 use crate::app::ExcelApp;
 use crate::shell::Alert;
 use crate::i18n::t;
-use gpui::{Context, PathPromptOptions, PromptLevel, Window};
+use gpui::{App, Context, PathPromptOptions, PromptLevel, Window, WindowHandle};
 use std::path::PathBuf;
 
 fn file_title(path: &std::path::Path) -> String {
@@ -164,8 +164,33 @@ impl ExcelApp {
         }
     }
 
-    /// Quit, after confirmation when there are unsaved changes.
+    /// Quit, after confirmation for each window with unsaved changes (this
+    /// one first, then the others brought to the front one by one).
     pub fn request_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.confirm_discard(window, cx, |_, _, cx| cx.quit());
+        let this = window.window_handle().window_id();
+        let others: Vec<WindowHandle<ExcelApp>> = cx
+            .windows()
+            .into_iter()
+            .filter(|w| w.window_id() != this)
+            .filter_map(|w| w.downcast())
+            .collect();
+        self.confirm_discard(window, cx, move |_, _, cx| quit_after_asking(others, cx));
     }
+}
+
+/// Ask about the next of these windows with unsaved changes; quit once
+/// none is left. Cancel in any of them stops it all.
+fn quit_after_asking(mut windows: Vec<WindowHandle<ExcelApp>>, cx: &mut App) {
+    while let Some(handle) = windows.pop() {
+        if handle.read(cx).is_ok_and(|app| app.wb.modified) {
+            handle
+                .update(cx, move |app, window, cx| {
+                    window.activate_window();
+                    app.confirm_discard(window, cx, move |_, _, cx| quit_after_asking(windows, cx));
+                })
+                .ok();
+            return;
+        }
+    }
+    cx.quit();
 }

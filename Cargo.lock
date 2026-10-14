@@ -3911,6 +3911,7 @@ dependencies = [
 name = "opensheet"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "gpui",
  "image",
  "libc",
@@ -3920,6 +3921,7 @@ dependencies = [
  "opensheet_print",
  "opensheet_script",
  "raw-window-handle",
+ "sys-locale",
  "unicode-segmentation",
  "winresource",
 ]

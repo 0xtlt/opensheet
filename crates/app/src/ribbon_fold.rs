@@ -40,12 +40,16 @@
 //! builds it (same commands, same state, same fields), handed over here
 //! ([`next_group`] returns where to put it) and painted by [`panel_layer`]
 //! over the rest of the window.
+//!
+//! Each window has its own ribbon: what is kept here is kept per window,
+//! for the one being drawn or clicked ([`enter`]).
 
 use crate::app::ExcelApp;
 use crate::theme::{self, c};
 use crate::view::icon;
 use gpui::{
-    AnyElement, AvailableSpace, Bounds, MouseButton, Pixels, WeakEntity, Window, canvas, div, point, prelude::*, px, size,
+    AnyElement, AvailableSpace, Bounds, MouseButton, Pixels, WeakEntity, Window, WindowId, canvas, div, point, prelude::*,
+    px, size,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -260,11 +264,25 @@ struct State {
 }
 
 thread_local! {
-    static STATE: RefCell<State> = RefCell::new(State::default());
+    static STATES: RefCell<HashMap<Option<WindowId>, State>> = RefCell::new(HashMap::new());
+    /// The window whose ribbon is being drawn or clicked.
+    static WINDOW: Cell<Option<WindowId>> = const { Cell::new(None) };
+}
+
+/// What follows concerns the ribbon of this window: said when it is drawn
+/// and by the events of its ribbon.
+pub fn enter(window: &Window) {
+    WINDOW.with(|current| current.set(Some(window.window_handle().window_id())));
+}
+
+/// Forget a window that closed.
+pub fn forget(window: WindowId) {
+    STATES.with(|states| states.borrow_mut().remove(&Some(window)));
 }
 
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
-    STATE.with(|state| f(&mut state.borrow_mut()))
+    let window = WINDOW.with(Cell::get);
+    STATES.with(|states| f(states.borrow_mut().entry(window).or_default()))
 }
 
 /// What the last layout of the ribbon came to.
@@ -451,6 +469,7 @@ pub fn show_panel(group: impl IntoElement) {
         .child(group)
         // A press anywhere else closes it, as it closes a menu.
         .on_mouse_down_out(|_, window, _| {
+            enter(window);
             with(|state| {
                 if let Some((_, group)) = state.open.take() {
                     state.closed = Some((group, Instant::now()));
@@ -462,6 +481,7 @@ pub fn show_panel(group: impl IntoElement) {
         // unless the click opened a menu or went into a field.
         .on_mouse_up(MouseButton::Left, |_, window, cx| {
             window.defer(cx, |window, cx| {
+                enter(window);
                 let app = with(|state| state.app.clone()).and_then(|app| app.upgrade());
                 let stays = app.is_some_and(|app| {
                     let app = app.read(cx);
@@ -519,12 +539,19 @@ pub fn folded_button(label: &'static str, slot: &Slot) -> gpui::Stateful<gpui::D
         // Where the drop-down hangs from.
         .when(open, |d| {
             d.child(
-                canvas(|bounds, _, _| with(|state| state.button = Some(bounds)), |_, _, _, _| {})
+                canvas(
+                    |bounds, window, _| {
+                        enter(window);
+                        with(|state| state.button = Some(bounds))
+                    },
+                    |_, _, _, _| {},
+                )
                     .absolute()
                     .size_full(),
             )
         })
         .on_click(move |_, window, _| {
+            enter(window);
             toggle_group(index);
             window.refresh();
         })
@@ -578,6 +605,7 @@ fn build(
 pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl IntoElement {
     canvas(
         move |bounds: Bounds<Pixels>, window, cx| {
+            enter(window);
             let height = bounds.size.height;
             let mut plan = with(|state| {
                 state.app = Some(app.clone());
@@ -717,6 +745,7 @@ fn last_fit_width(available: f32) -> f32 {
 pub fn panel_layer() -> impl IntoElement {
     canvas(
         |_, window, cx| {
+            enter(window);
             let (panel, button) = with(|state| (state.panel.take(), state.button));
             let (mut panel, button) = (panel?, button?);
             let space = size(AvailableSpace::MinContent, AvailableSpace::MinContent);

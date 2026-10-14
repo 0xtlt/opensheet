@@ -61,15 +61,15 @@ Requirements: the [Rust](https://rustup.rs/) toolchain pinned in `mise.toml` (wi
 ```bash
 cargo run -p opensheet --release                 # empty workbook
 cargo run -p opensheet --release -- --demo       # sample data
-cargo run -p opensheet --release -- book.xlsx    # open a file
+cargo run -p opensheet --release -- book.xlsx    # open a file (several: a window each)
 cargo run -p opensheet --release -- book.xlsx --export book.csv   # convert without a window
 ```
 
-On macOS, `cargo build -p opensheet --release && scripts/bundle.sh release` makes `target/release/OpenSheet.app`. The icon's sources are in `packaging/icon/` (`packaging/icon/build.sh` regenerates the files of every platform).
+On macOS, `cargo build -p opensheet --release && scripts/bundle.sh release` makes `target/release/OpenSheet.app`. It opens `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv` and `.tsv` files from the Finder (double-click once it is the default app, *Open With*, or a drop on its Dock icon). As in Excel, each workbook has its own window, and a file opens in the untouched Book1 when there is one. The icon's sources are in `packaging/icon/` (`packaging/icon/build.sh` regenerates the files of every platform).
 
 ### Language and fonts
 
-- The interface starts in the system's language; change it at the bottom of the **File** menu, or force it with `OPENSHEET_LANG=en` (`fr`, `es`, `de`, `it`).
+- The interface and the formulas follow the system's language: the first of your preferred languages that OpenSheet speaks, else English. On macOS, OpenSheet can have a language of its own in System Settings ▸ General ▸ Language & Region ▸ Applications. `OPENSHEET_LANG=en` (`fr`, `es`, `de`, `it`) still forces one.
 - Excel's default font is Aptos Narrow, which is not a system font. Without it OpenSheet uses a close system font. Install Aptos (a free download from Microsoft) for the exact look, or, if Microsoft Office is installed, launch with `OPENSHEET_OFFICE_FONTS=1` to load its fonts at run time (nothing is copied or redistributed).
 
 ## Architecture
