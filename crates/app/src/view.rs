@@ -1298,6 +1298,8 @@ impl ExcelApp {
 impl Render for ExcelApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         window.set_window_title(&format!("{} — OpenSheet", self.title));
+        // The ribbon drawn from now on is this window's.
+        crate::ribbon_fold::enter(window);
         // The pickers of this window offer the theme colours of its workbook.
         theme::set_document_theme(self.wb.theme_arc());
         let titlebar = self.render_titlebar(window, cx).into_any_element();

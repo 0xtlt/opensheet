@@ -18,7 +18,7 @@ Avec des données d'exemple :
 cargo run -p opensheet --release -- --demo
 ```
 
-Ouvrir un fichier :
+Ouvrir un fichier (plusieurs fichiers : une fenêtre chacun) :
 
 ```bash
 cargo run -p opensheet --release -- chemin/vers/classeur.xlsx
@@ -36,14 +36,16 @@ Créer une vraie application macOS (`target/release/OpenSheet.app`) :
 cargo build -p opensheet --release && scripts/bundle.sh release
 ```
 
+L'application ouvre depuis le Finder (double-clic si elle est l'application par défaut, *Ouvrir avec*, dépôt sur son icône du Dock) les fichiers `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv` et `.tsv`. Comme dans Excel, chaque classeur a sa fenêtre, et un fichier prend la place du Classeur1 encore vierge s'il y en a un.
+
 Prérequis : Rust stable récent et Xcode (GPUI compile ses shaders Metal). Développé et testé sur macOS.
 
 ### Langues
 
 Cinq langues : français, anglais, espagnol, allemand, italien. L'interface **et** les formules suivent la langue choisie : `=SOMME(A1:A3;1,5)` en français, `=SUM(A1:A3,1.5)` en anglais, `=SUMME(A1:A3;1,5)` en allemand, `=SUMA(…)` en espagnol, `=SOMMA(…)` en italien — avec les séparateurs, les valeurs `VRAI` / `WAHR` / `VERDADERO`, les erreurs (`#VALEUR!`, `#WERT!`, `#¡VALOR!`) et les formats de date de chaque langue.
 
-- Au démarrage, la langue du système est utilisée.
-- Pour en changer : menu **Fichier**, en bas. Le choix est mémorisé.
+- La langue est celle du système : la première des langues préférées que parle OpenSheet, sinon l'anglais.
+- Sur macOS, OpenSheet peut avoir sa propre langue : Réglages Système ▸ Général ▸ Langue et région ▸ Applications.
 - Pour forcer une langue au lancement : `OPENSHEET_LANG=de` (ou `fr`, `en`, `es`, `it`).
 
 Les formules sont enregistrées sous forme canonique : un classeur saisi en français s'affiche en allemand sans rien perdre.

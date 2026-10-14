@@ -8,7 +8,6 @@
 use crate::i18n_tables;
 use opensheet_engine::Locale;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -34,19 +33,17 @@ impl Lang {
         }
     }
 
-    /// Language for a tag such as "fr", "de-DE" or "es_ES.UTF-8".
+    /// Language for a tag such as "fr", "de-CH", "es_ES.UTF-8" or
+    /// "zh-Hans-CN" (none): its first subtag, whatever the separators of
+    /// the system (BCP 47 for macOS and Windows, POSIX for Linux).
     pub fn from_code(code: &str) -> Option<Lang> {
-        let lower = code.trim().to_lowercase();
-        Lang::ALL.into_iter().find(|l| lower.starts_with(l.code()))
+        let primary = code.trim().split(['-', '_', '.', '@']).next()?.to_lowercase();
+        Lang::ALL.into_iter().find(|l| primary == l.code())
     }
 
     /// The matching calculation locale (formula names, separators, formats).
     pub fn locale(self) -> &'static Locale {
         Locale::by_id(self.code())
-    }
-
-    pub fn display_name(self) -> &'static str {
-        self.locale().display_name
     }
 }
 
@@ -125,48 +122,51 @@ pub fn labelled(label: &str, value: impl std::fmt::Display) -> String {
     }
 }
 
-fn preference_file() -> Option<PathBuf> {
-    Some(crate::paths::app_data()?.join("language"))
+/// The first language of a list in order of preference that the interface
+/// speaks.
+fn first_supported<S: AsRef<str>>(tags: impl IntoIterator<Item = S>) -> Option<Lang> {
+    tags.into_iter().find_map(|tag| Lang::from_code(tag.as_ref()))
 }
 
-/// Remember the language chosen in the app.
-pub fn save_preference(lang: Lang) {
-    if let Some(path) = preference_file() {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let _ = std::fs::write(path, lang.code());
-    }
-}
-
-/// Language to start in: `OPENSHEET_LANG`, else the one chosen in the app,
-/// else the first supported system language, else English.
+/// Language to start in: `OPENSHEET_LANG`, else the first supported one of
+/// the system's preferred languages, else English. On macOS the list is the
+/// one System Settings ▸ General ▸ Language & Region gives, OpenSheet's own
+/// language (Applications) first when one is set; on Windows the user's
+/// interface languages; elsewhere `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and
+/// `LANG`.
 pub fn detect() -> Lang {
     if let Some(lang) = std::env::var("OPENSHEET_LANG").ok().and_then(|v| Lang::from_code(&v)) {
         return lang;
     }
-    if let Some(lang) = preference_file()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| Lang::from_code(&s))
-    {
-        return lang;
+    first_supported(sys_locale::get_locales()).unwrap_or(Lang::En)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tags_of_every_system_name_their_language() {
+        assert_eq!(Lang::from_code("fr"), Some(Lang::Fr));
+        assert_eq!(Lang::from_code("fr-FR"), Some(Lang::Fr));
+        assert_eq!(Lang::from_code("fr_FR.UTF-8"), Some(Lang::Fr));
+        assert_eq!(Lang::from_code("de-CH"), Some(Lang::De));
+        assert_eq!(Lang::from_code("es-419"), Some(Lang::Es));
+        assert_eq!(Lang::from_code("it_IT@euro"), Some(Lang::It));
+        assert_eq!(Lang::from_code(" EN-gb "), Some(Lang::En));
+        assert_eq!(Lang::from_code("zh-Hans-CN"), None);
+        // Languages whose code begins like a supported one.
+        assert_eq!(Lang::from_code("frr-DE"), None);
+        assert_eq!(Lang::from_code("dsb"), None);
+        assert_eq!(Lang::from_code("C"), None);
+        assert_eq!(Lang::from_code(""), None);
     }
-    // macOS: preferred languages, in order.
-    if let Ok(out) = std::process::Command::new("defaults")
-        .args(["read", "-g", "AppleLanguages"])
-        .output()
-    {
-        let text = String::from_utf8_lossy(&out.stdout);
-        for tag in text.split('"').skip(1).step_by(2) {
-            if let Some(lang) = Lang::from_code(tag) {
-                return lang;
-            }
-        }
+
+    #[test]
+    fn the_first_supported_preferred_language_wins() {
+        assert_eq!(first_supported(["zh-Hans-CN", "de-CH", "fr-FR"]), Some(Lang::De));
+        assert_eq!(first_supported(["ja-JP", "pt-BR"]), None);
+        assert_eq!(first_supported(Vec::<String>::new()), None);
+        assert_eq!(first_supported(["en-US", "fr-FR"]), Some(Lang::En));
     }
-    for var in ["LC_ALL", "LC_MESSAGES", "LANG"] {
-        if let Some(lang) = std::env::var(var).ok().and_then(|v| Lang::from_code(&v)) {
-            return lang;
-        }
-    }
-    Lang::En
 }

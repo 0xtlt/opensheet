@@ -1,7 +1,7 @@
 //! The settings of the application: what Preferences changes and what is
 //! not kept in a workbook (the gallery of pens of the Draw tab). They are
 //! read once, when first asked for, and written at every change, to a text
-//! file of `name = value` lines next to the language choice
+//! file of `name = value` lines
 //! (`~/Library/Application Support/OpenSheet/settings`; the environment
 //! variable `OPENSHEET_SETTINGS` names another file).
 //!
@@ -14,8 +14,8 @@ use opensheet_engine::theme::{ThemeColors, ThemeFonts};
 use std::cell::RefCell;
 use std::path::PathBuf;
 
-/// Everything the application remembers between launches, apart from the
-/// language (`i18n.rs`).
+/// Everything the application remembers between launches. (The language
+/// is the system's: `i18n.rs`.)
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     // ---- General

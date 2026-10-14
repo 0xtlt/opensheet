@@ -1,5 +1,5 @@
 //! Where the application keeps what lasts between launches (settings,
-//! language, scripts): the folder each system gives an application for
+//! scripts): the folder each system gives an application for
 //! its own data.
 
 use std::path::PathBuf;

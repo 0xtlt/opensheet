@@ -12,10 +12,17 @@ opensheet_io = { path = "../io" }
 opensheet_print = { path = "../print" }
 opensheet_script = { path = "../script" }
 gpui = "0.2.2"
+# The channel that carries the files the system asks to open (GPUI's own
+# dependency).
+futures = "0.3"
 # The crate GPUI decodes pictures with (already built for it): its bitmap
 # type is what `gpui::RenderImage` is made from.
 image = "0.25"
 unicode-segmentation = "1"
+# The languages the user prefers, as the system lists them (CoreFoundation on
+# macOS, which honours the language chosen for OpenSheet alone; the user's
+# interface languages on Windows; LANGUAGE / LC_* / LANG elsewhere).
+sys-locale = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The Objective-C runtime GPUI already links: for the system spelling

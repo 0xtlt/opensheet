@@ -728,22 +728,6 @@ impl ExcelApp {
         });
     }
 
-    /// Switch the interface and formula language.
-    pub fn set_language(&mut self, lang: crate::i18n::Lang, cx: &mut Context<Self>) {
-        if self.editing.is_some() {
-            return;
-        }
-        crate::i18n::set_lang(lang);
-        crate::i18n::save_preference(lang);
-        // Formulas are stored canonically, so only their spelling changes.
-        self.wb.locale = lang.locale();
-        self.wb.recalc();
-        self.find_input
-            .update(cx, |input, _| input.placeholder = t("Find", "Rechercher").into());
-        crate::set_menus(cx);
-        self.refresh(cx);
-    }
-
     pub fn set_status(&mut self, msg: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.status_message = Some(msg.into());
         cx.notify();
@@ -3581,6 +3565,7 @@ impl ExcelApp {
             return;
         }
         // The drop-down of a folded ribbon group.
+        crate::ribbon_fold::enter(window);
         if crate::ribbon_fold::close_panel() {
             cx.notify();
             return;

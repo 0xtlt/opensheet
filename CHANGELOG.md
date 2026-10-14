@@ -3,6 +3,21 @@
 What changed in each version of OpenSheet, for someone who uses it. The section of a version
 is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
+## Unreleased
+
+- **The language follows the system**: the interface and the formulas take the first of your
+  preferred languages that OpenSheet speaks (else English); the language entries of the
+  **File** menu are gone. On macOS, OpenSheet can have a language of its own in System
+  Settings ▸ General ▸ Language & Region ▸ Applications. `OPENSHEET_LANG` still forces one.
+- **Open from the Finder**: on macOS, double-clicking a spreadsheet (once OpenSheet is its
+  default app), *Open With* or a drop on the Dock icon opens it, whether OpenSheet is running
+  or not. `.xlsx`, `.xlsm`, `.xltx`, `.xltm`, `.csv` and `.tsv` files are declared to the
+  system, which knows them even on a Mac without Excel.
+- **One window per workbook**, as in Excel: a file opens in the untouched Book1 when there is
+  one, otherwise in a new window brought to the front; a file already open brings its window
+  forward. On Windows and Linux, several files given on the command line open in a window
+  each. Quitting asks about every window with unsaved changes.
+
 ## 0.1.0 - 2026-10-14
 
 The first public version: an open-source spreadsheet with the interface and behaviour of

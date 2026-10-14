@@ -1,6 +1,7 @@
 //! OpenSheet — an open-source spreadsheet built with Rust and GPUI.
 
 mod app;
+mod app_windows;
 mod chart_view;
 mod demo;
 mod features;
@@ -20,10 +21,8 @@ mod view;
 mod widgets;
 
 use app::*;
-use gpui::{
-    App, Application, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds, WindowOptions, point,
-    prelude::*, px, size,
-};
+use futures::StreamExt;
+use gpui::{App, Application, KeyBinding, Menu, MenuItem};
 use i18n::t;
 
 fn bind_keys(cx: &mut App) {
@@ -236,6 +235,15 @@ fn export(input: Option<&str>, demo: bool, output: &str) -> Result<(), String> {
     opensheet_io::save(&wb, 0, std::path::Path::new(output)).map_err(|e| e.to_string())
 }
 
+/// Started by the system from an application bundle (macOS: the Finder,
+/// the Dock, `open`), which brings the application to the front itself, or
+/// leaves it behind when asked to (`open -g`). Started from a terminal, the
+/// application has to come forward on its own.
+fn launched_from_bundle() -> bool {
+    cfg!(target_os = "macos")
+        && std::env::current_exe().is_ok_and(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS/"))
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--version" || a == "-V") {
@@ -246,15 +254,19 @@ fn main() {
     // `--widgets`: open the gallery of the dialog toolkit at start.
     let gallery = args.iter().any(|a| a == "--widgets");
     let export_to = args.iter().position(|a| a == "--export").and_then(|i| args.get(i + 1)).cloned();
-    let file_arg = args
+    // The files to open: how Windows and Linux pass the ones the user
+    // double-clicked (each opens in a window of its own).
+    let file_args: Vec<std::path::PathBuf> = args
         .iter()
         .enumerate()
-        .find(|(i, a)| !a.starts_with("--") && (*i == 0 || args[i - 1] != "--export"))
-        .map(|(_, a)| a.clone());
+        .filter(|(i, a)| !a.starts_with("--") && (*i == 0 || args[i - 1] != "--export"))
+        .map(|(_, a)| std::path::PathBuf::from(a))
+        .collect();
 
     if let Some(output) = export_to {
         i18n::set_lang(i18n::detect());
-        match export(file_arg.as_deref(), demo, &output) {
+        let input = file_args.first().and_then(|p| p.to_str());
+        match export(input, demo, &output) {
             Ok(()) => println!("{output}"),
             Err(err) => {
                 eprintln!("opensheet: {err}");
@@ -264,7 +276,15 @@ fn main() {
         return;
     }
 
-    Application::new().with_assets(icons::Assets).run(move |cx: &mut App| {
+    let app = Application::new().with_assets(icons::Assets);
+    // macOS sends the files opened from the Finder or dropped on the Dock as
+    // URLs: before the windows exist when they launched the application,
+    // at any time after when it runs already.
+    let (urls_sender, mut urls) = futures::channel::mpsc::unbounded::<Vec<String>>();
+    app.on_open_urls(move |list| {
+        let _ = urls_sender.unbounded_send(list);
+    });
+    app.run(move |cx: &mut App| {
         i18n::set_lang(i18n::detect());
         load_office_fonts(cx);
         bind_keys(cx);
@@ -277,46 +297,34 @@ fn main() {
         })
         .detach();
 
-        // `OPENSHEET_WINDOW=1000x700`: another size at start, to look at
-        // the ribbon in a narrow window.
-        let (width, height) = std::env::var("OPENSHEET_WINDOW")
-            .ok()
-            .and_then(|v| {
-                let (w, h) = v.split_once('x')?;
-                Some((w.parse::<f32>().ok()?, h.parse::<f32>().ok()?))
-            })
-            .filter(|(w, h)| *w >= 640.0 && *h >= 420.0)
-            .unwrap_or((1440.0, 900.0));
-        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
-        let file_arg = file_arg.clone();
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("OpenSheet".into()),
-                    appears_transparent: true,
-                    traffic_light_position: Some(point(px(13.), px(12.))),
-                }),
-                window_min_size: Some(size(px(640.), px(420.))),
-                ..Default::default()
-            },
-            move |window, cx| {
-                cx.new(|cx| {
-                    let mut app = ExcelApp::new(window, cx);
-                    if demo {
-                        demo::fill(&mut app, cx);
-                    }
-                    if let Some(path) = &file_arg {
-                        app.load_path(std::path::PathBuf::from(path), cx);
-                    }
-                    if gallery {
-                        widgets::gallery::open(&mut app, window, cx);
-                    }
-                    app
-                })
-            },
-        )
-        .unwrap();
-        cx.activate(true);
+        // The files of the command line and those the launch brought.
+        let mut paths = file_args;
+        while let Ok(list) = urls.try_recv() {
+            paths.extend(app_windows::paths_of_urls(&list));
+        }
+        // Book1, unless files take its place.
+        if paths.is_empty() || demo || gallery {
+            app_windows::open_window(cx, move |app, window, cx| {
+                if demo {
+                    demo::fill(app, cx);
+                }
+                if gallery {
+                    widgets::gallery::open(app, window, cx);
+                }
+            });
+        }
+        app_windows::open_paths(paths, cx);
+        cx.spawn(async move |cx| {
+            while let Some(list) = urls.next().await {
+                let paths = app_windows::paths_of_urls(&list);
+                if cx.update(|cx| app_windows::open_paths(paths, cx)).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+        if !launched_from_bundle() {
+            cx.activate(true);
+        }
     });
 }

@@ -730,16 +730,7 @@ impl ExcelApp {
             MenuEntry::separator(),
             MenuEntry::command(page::Cmd::Print, self).shortcut("⌘P"),
             features::share::file_menu_entry(self),
-            MenuEntry::separator(),
         ];
-        let mut entries = entries;
-        // Language of the interface and of formulas.
-        let current = crate::i18n::lang();
-        for lang in crate::i18n::Lang::ALL {
-            entries.push(
-                MenuEntry::new(lang.display_name(), move |a, _, cx| a.set_language(lang, cx)).checked(lang == current),
-            );
-        }
         self.open_menu("file-tab", entries, 230.0, window, cx);
     }
 
