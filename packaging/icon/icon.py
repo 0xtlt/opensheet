@@ -1,4 +1,4 @@
-"""Draws the OpenSheet icon as SVG: a sheet of cells on an indigo tile, one cell
+"""Draws the OpenSheet icon as SVG: a sheet of cells on a green tile, one cell
 selected with its fill handle. Coordinates are those of the whole tile
 (0..1024); the macOS variant insets it on Apple's 824-point grid.
 
@@ -6,9 +6,9 @@ selected with its fill handle. Coordinates are those of the whole tile
 """
 import sys
 
-TOP, BOTTOM = "#8b8cff", "#3b2fc9"
-SELECTION = "#22e1ff"
-SELECTED_FILL = "#dff9ff"
+TOP, BOTTOM = "#2fd16b", "#0d4f2c"
+SELECTION = "#ffd23f"
+SELECTED_FILL = "#fff6d1"
 
 
 def svg(body):

@@ -3,6 +3,10 @@
 What changed in each version of OpenSheet, for someone who uses it. The section of a version
 is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
+## 0.2.2 - 2026-10-15
+
+- **The icon turns green**: a forest-green tile with a yellow selection.
+
 ## 0.2.1 - 2026-10-14
 
 - **A merged cell keeps its fill**: the white that hides the gridlines inside a merged area was
