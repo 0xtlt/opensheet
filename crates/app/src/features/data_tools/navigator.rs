@@ -55,6 +55,14 @@ impl WebDialog {
         // The dialog goes away first: what the address gives, or why it
         // gave nothing, is shown over the sheet.
         self.modal.close(window, cx);
+        // From Web is the web fetch. A file URL or a path is not fetched;
+        // local files are imported from the file dialog.
+        if !sources::is_remote(&address) {
+            let error = if sources::names_a_file(&address) { sources::FetchError::LocalFile } else { sources::FetchError::BadAddress };
+            let message = import::fetch_message(error, &address);
+            self.modal.update_app(cx, |app, cx| warn(app, message, cx));
+            return;
+        }
         self.modal.update_app(cx, |app, cx| import::open_address(app, address, replaces, window, cx));
     }
 }

@@ -1037,7 +1037,7 @@ fn get_data_from_web_then_refresh(cx: &mut TestAppContext) {
     assert_eq!(modal_count(&app, cx), 1);
     assert_eq!(value(&app, cx, "A2"), text("Cid"));
     // The page is gone.
-    server.set("/sales", super::sources::test_server::Answer { status: 404, content_type: "text/html", body: Vec::new(), location: None });
+    server.set("/sales", super::sources::test_server::Answer { status: 404, content_type: "text/html", body: Vec::new(), location: None, encoding: None });
     run(&app, cx, Cmd::RefreshAll);
     assert!(alert_text(&app, cx).contains("404"), "{}", alert_text(&app, cx));
     assert_eq!(modal_count(&app, cx), 1);
@@ -1070,6 +1070,14 @@ fn get_data_from_web_refusals_and_text(cx: &mut TestAppContext) {
     assert_eq!(modal_count(&app, cx), 1);
     // An empty address keeps the dialog.
     from_web(&app, cx, "  ");
+    assert_eq!(modal_count(&app, cx), 1);
+    assert!(app.update(cx, |app, _| app.wb.sheets[0].text_imports.is_empty()));
+    // A local file is not a web address, as a URL or as a path.
+    from_web(&app, cx, "file:///etc/passwd");
+    assert!(alert_text(&app, cx).contains("local file"), "{}", alert_text(&app, cx));
+    assert_eq!(modal_count(&app, cx), 1);
+    from_web(&app, cx, "/etc/passwd");
+    assert!(alert_text(&app, cx).contains("local file"), "{}", alert_text(&app, cx));
     assert_eq!(modal_count(&app, cx), 1);
     assert!(app.update(cx, |app, _| app.wb.sheets[0].text_imports.is_empty()));
 
@@ -1296,4 +1304,93 @@ fn edit_query_and_refresh_on_open(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(value(&app, cx, "A1"), text("Carte"));
+}
+
+#[gpui::test]
+fn interval_refresh_waits_for_consent(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let server = Server::start();
+    server.set("/a", page("text/html", &sales_page(&[("Ann", "3")])));
+    from_web(&app, cx, &server.url("/a"));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    // The interval is the workbook's, not something just switched on in
+    // Connection Properties, so opening asks before any clock starts.
+    edit(&app, cx, |wb| wb.update_import(1, 0, |import| import.props.refresh_minutes = 1));
+    let bytes = app.update(cx, |app, _| opensheet_io::write_xlsx(&app.wb, std::io::Cursor::new(Vec::new())).unwrap().into_inner());
+    let reopen = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        let wb = opensheet_io::read_xlsx(std::io::Cursor::new(bytes.clone()), opensheet_engine::Locale::en()).unwrap();
+        app.update(cx, |app, cx| app.set_workbook(wb, None, "Opened".into(), cx));
+        redraw(cx);
+        redraw(cx);
+    };
+    server.set("/a", page("text/html", &sales_page(&[("Zed", "0")]).replace("Menu", "Carte")));
+    reopen(&app, cx);
+    assert!(alert_text(&app, cx).contains("connects to an external data source"), "{}", alert_text(&app, cx));
+    assert!(app.update(cx, |app, _| app.ext::<import::Watch>().is_none_or(|watch| !watch.timer_running())));
+    app.update_in(cx, |app, window, cx| import::minute_passed(app, window, cx));
+    // Decline: the timer stays stopped, and a minute changes nothing.
+    cx.simulate_keystrokes("escape");
+    redraw(cx);
+    assert!(!modal_open(&app, cx));
+    assert!(app.update(cx, |app, _| app.ext::<import::Watch>().is_some_and(|watch| !watch.timer_running())));
+    redraw(cx);
+    assert!(!alert_text(&app, cx).contains("external data source"));
+    app.update(cx, |app, cx| {
+        app.sheet = 1;
+        cx.notify();
+    });
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    app.update_in(cx, |app, window, cx| import::minute_passed(app, window, cx));
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    // Refresh by hand still reads the address.
+    run(&app, cx, Cmd::RefreshAll);
+    assert_eq!(value(&app, cx, "A1"), text("Carte"));
+
+    // Opened again, and agreed to: the clock runs, and the next minute refreshes.
+    server.set("/a", page("text/html", &sales_page(&[("Bea", "1")]).replace("Menu", "Plat")));
+    reopen(&app, cx);
+    assert!(alert_text(&app, cx).contains("connects to an external data source"));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert!(app.update(cx, |app, _| app.ext::<import::Watch>().is_some_and(|watch| watch.timer_running())));
+    app.update(cx, |app, cx| {
+        app.sheet = 1;
+        cx.notify();
+    });
+    // Agreeing does not refresh at once; the interval does, a minute later.
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    app.update_in(cx, |app, window, cx| import::minute_passed(app, window, cx));
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A1"), text("Plat"));
+}
+
+#[gpui::test]
+fn workbook_web_query_does_not_read_a_local_file(cx: &mut TestAppContext) {
+    let (app, cx) = open(cx);
+    let server = Server::start();
+    server.set("/a", page("text/html", &sales_page(&[("Ann", "3")])));
+    from_web(&app, cx, &server.url("/a"));
+    cx.simulate_keystrokes("enter");
+    redraw(cx);
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    let secret = text_file("secret", "TOP-SECRET\n");
+    // As a workbook would: the web query's address is a local file the
+    // user never picked. Refresh must not read it.
+    edit(&app, cx, |wb| {
+        wb.update_import(1, 0, |import| import.path = super::sources::file_url(&secret));
+    });
+    run(&app, cx, Cmd::RefreshAll);
+    assert!(alert_text(&app, cx).contains("local file"), "{}", alert_text(&app, cx));
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    assert_eq!(modal_count(&app, cx), 1);
+    edit(&app, cx, |wb| {
+        wb.update_import(1, 0, |import| import.path = secret.to_string_lossy().into_owned());
+    });
+    run(&app, cx, Cmd::RefreshAll);
+    assert!(alert_text(&app, cx).contains("local file"), "{}", alert_text(&app, cx));
+    assert_eq!(value(&app, cx, "A1"), text("Menu"));
+    std::fs::remove_dir_all(secret.parent().unwrap()).ok();
 }
