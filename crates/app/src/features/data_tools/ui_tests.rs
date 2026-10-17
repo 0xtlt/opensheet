@@ -1037,7 +1037,7 @@ fn get_data_from_web_then_refresh(cx: &mut TestAppContext) {
     assert_eq!(modal_count(&app, cx), 1);
     assert_eq!(value(&app, cx, "A2"), text("Cid"));
     // The page is gone.
-    server.set("/sales", super::sources::test_server::Answer { status: 404, content_type: "text/html", body: Vec::new(), location: None });
+    server.set("/sales", super::sources::test_server::Answer { status: 404, content_type: "text/html", body: Vec::new(), location: None, encoding: None });
     run(&app, cx, Cmd::RefreshAll);
     assert!(alert_text(&app, cx).contains("404"), "{}", alert_text(&app, cx));
     assert_eq!(modal_count(&app, cx), 1);

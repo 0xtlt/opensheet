@@ -23,6 +23,14 @@ unicode-segmentation = "1"
 # macOS, which honours the language chosen for OpenSheet alone; the user's
 # interface languages on Windows; LANGUAGE / LC_* / LANG elsewhere).
 sys-locale = "0.3"
+# Blocking HTTP/1.1 for web queries. Synchronous, so `fetch` can run on
+# GPUI's background executor without a second async runtime, and rustls
+# (already linked for GPUI) rather than GPUI's async `zed-reqwest` fork,
+# which does not enable gzip, brotli or deflate. `flate2` inflates the
+# deflate coding ureq itself does not; `url` joins a relative redirect.
+ureq = { version = "3", default-features = false, features = ["rustls", "gzip", "brotli"] }
+flate2 = "1"
+url = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The Objective-C runtime GPUI already links: for the system spelling
@@ -45,6 +53,8 @@ winresource = { version = "=0.1.31", default-features = false }
 [dev-dependencies]
 # The headless window of GPUI, to drive the interface in tests.
 gpui = { version = "0.2.2", features = ["test-support"] }
+# Encodes brotli in the fetch tests. The application only decompresses it.
+brotli = "8"
 
 # Linux packages, made by the release workflow with `cargo deb` and `cargo generate-rpm`.
 [package.metadata.deb]
