@@ -159,7 +159,9 @@ pub(super) fn set_path(app: &mut ExcelApp, query: &QueryRef, path: &std::path::P
         Some(_) => sources::file_url(path),
         None => path.to_string_lossy().into_owned(),
     };
-    app.wb.update_import(sheet, index, |import| import.path = address);
+    app.wb.update_import(sheet, index, |import| import.path = address.clone());
+    // The user picked this file. A web query may read it again this session.
+    import::remember_chosen_file(app, &address);
     app.commit(t("Change File Path", "Modifier le chemin d’accès au fichier"), cx);
 }
 
@@ -356,15 +358,22 @@ impl PropertiesDialog {
 /// Give a query its edited name and properties, in one undo step.
 fn apply(app: &mut ExcelApp, query: &QueryRef, edited: TextImport, cx: &mut Cx) {
     let Some((sheet, index)) = query.find(app) else { return };
+    let previous_minutes = app.wb.sheets[sheet].text_imports[index].props.refresh_minutes;
     if app.wb.sheets[sheet].text_imports[index] == edited {
         return;
     }
+    let minutes = edited.props.refresh_minutes;
     app.wb.update_import(sheet, index, |import| {
         // Where the data is may have moved while the dialog was open.
         let range = import.range;
         *import = edited;
         import.range = range;
     });
+    // Turning "Refresh every" on here is the user asking for the clock.
+    // A workbook that arrived with an interval still has to be agreed to.
+    if minutes > 0 && minutes != previous_minutes {
+        import::consent_to_timer(app);
+    }
     app.commit(t("Connection Properties", "Propriétés de connexion"), cx);
 }
 

@@ -1,13 +1,21 @@
 //! Where external data comes from: fetching the bytes of an address and
 //! reading them as the tables the Navigator offers.
 //!
-//! An address is a path, a `file://` URL or an `http(s)://` URL. Files
-//! are read directly. The web is reached through the system's
-//! `/usr/bin/curl`, run as a child process: it costs no dependency and
-//! no build time, and it uses the certificates and the proxy settings of
-//! macOS, which a Rust HTTP client would have to be taught. Fetching
-//! blocks: callers run [`fetch`] off the window thread for anything
-//! remote, and only when the user asked (an address typed, a refresh).
+//! A web address is an `http://` or `https://` URL. It is fetched with
+//! the system's `/usr/bin/curl`, run as a child process: it costs no
+//! dependency and no build time, and it uses the certificates and the
+//! proxy settings of macOS, which a Rust HTTP client would have to be
+//! taught. curl may use only those two protocols, and the same limit
+//! applies when a server redirects. Fetching blocks: callers run
+//! [`fetch`] off the window thread, and only after the user has asked
+//! (an address typed, a refresh) or agreed to a schedule the workbook
+//! itself requested.
+//!
+//! A `file://` URL or a bare path is not a web address, and [`fetch`]
+//! refuses it. Local files are read by [`read_local`] when the user
+//! imports one — text, JSON, XML or a workbook — or refreshes a text
+//! import. A web query that arrived in a workbook cannot point this
+//! reader at a file on the machine.
 
 use opensheet_engine::external::{Datum, QueryItem, SourceFormat, SourceTable, html_tables, json_tables, sniff, xml_tables};
 use opensheet_engine::{Locale, Value, Workbook};
@@ -40,12 +48,21 @@ pub(super) enum FetchError {
     Status(u32),
     Timeout,
     TooLarge,
+    /// A `file://` URL or a path, which a web query is not allowed to open.
+    LocalFile,
 }
 
 /// Whether an address is on the web rather than on this machine.
 pub(super) fn is_remote(address: &str) -> bool {
     let lower = address.trim_start().to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://")
+}
+
+/// Whether an address names a file on this machine: a `file:` URL, in
+/// any case, or a path that carries no scheme.
+pub(super) fn names_a_file(address: &str) -> bool {
+    let address = address.trim();
+    local_path(address).is_some() || address.to_ascii_lowercase().starts_with("file:")
 }
 
 /// The file an address names, when it names one: a `file://` URL or a
@@ -104,22 +121,32 @@ fn curl() -> PathBuf {
     PathBuf::from("/usr/bin/curl")
 }
 
-/// Get what an address holds. Blocks until it is there, at most
-/// [`TIMEOUT`] seconds for the web.
+/// Read a file the user named: a `file://` URL or a plain path.
+pub(super) fn read_local(address: &str) -> Result<Fetched, FetchError> {
+    let Some(path) = local_path(address) else {
+        return Err(FetchError::BadAddress);
+    };
+    let size = std::fs::metadata(&path).map_err(|_| FetchError::Missing)?.len();
+    if size > SIZE_LIMIT {
+        return Err(FetchError::TooLarge);
+    }
+    let bytes = std::fs::read(&path).map_err(|_| FetchError::Missing)?;
+    Ok(Fetched { bytes, content_type: None })
+}
+
+/// Get what a web address holds. Blocks until it is there, at most
+/// [`TIMEOUT`] seconds. A file URL or a path is refused: those are not
+/// fetched, they are read with [`read_local`] when the user asked for a file.
 pub(super) fn fetch(address: &str) -> Result<Fetched, FetchError> {
-    if let Some(path) = local_path(address) {
-        let size = std::fs::metadata(&path).map_err(|_| FetchError::Missing)?.len();
-        if size > SIZE_LIMIT {
-            return Err(FetchError::TooLarge);
-        }
-        let bytes = std::fs::read(&path).map_err(|_| FetchError::Missing)?;
-        return Ok(Fetched { bytes, content_type: None });
+    if names_a_file(address) {
+        return Err(FetchError::LocalFile);
     }
     if !is_remote(address) || address.chars().any(|ch| ch.is_control() || ch == ' ') {
         return Err(FetchError::BadAddress);
     }
     let mut child = Command::new(curl())
         .args(["--silent", "--show-error", "--location", "--max-redirs", "10", "--compressed"])
+        // No other protocol, on the address itself or on a redirection.
         .args(["--proto", "=http,https", "--proto-redir", "=http,https"])
         .args(["--connect-timeout", "10", "--max-time", &TIMEOUT.to_string(), "--max-filesize", &SIZE_LIMIT.to_string()])
         // The status and the type of the answer, apart from its body.
@@ -391,7 +418,40 @@ mod tests {
         // Only the web and files; nothing that could be read as an option.
         assert_eq!(fetch("ftp://127.0.0.1/x").err(), Some(FetchError::BadAddress));
         assert_eq!(fetch("http://127.0.0.1/a b").err(), Some(FetchError::BadAddress));
-        assert_eq!(fetch("/nowhere/at/all.csv").err(), Some(FetchError::Missing));
+        // https is handed to curl; nothing is listening on this port.
+        assert_eq!(fetch("https://127.0.0.1:1/nope").err(), Some(FetchError::NoConnection));
+        // A redirection may not leave http(s). curl refuses file://.
+        server.set(
+            "/to-file",
+            Answer {
+                status: 302,
+                content_type: "text/plain",
+                body: Vec::new(),
+                location: Some("file:///etc/passwd".into()),
+            },
+        );
+        assert_eq!(fetch(&server.url("/to-file")).err(), Some(FetchError::BadAddress));
+    }
+
+    #[test]
+    fn web_fetch_refuses_local_files() {
+        let dir = std::env::temp_dir().join(format!("opensheet-fetch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("secret.txt");
+        std::fs::write(&path, b"TOP-SECRET").unwrap();
+        let url = file_url(&path);
+        assert!(names_a_file(&url) && names_a_file(path.to_str().unwrap()) && names_a_file("FILE:///etc/passwd"));
+        assert!(!names_a_file("https://example.test/a") && !names_a_file("ftp://127.0.0.1/x"));
+        // The web fetch never opens the file, whatever way it is written.
+        assert_eq!(fetch(&url).err(), Some(FetchError::LocalFile));
+        assert_eq!(fetch(path.to_str().unwrap()).err(), Some(FetchError::LocalFile));
+        assert_eq!(fetch("file://localhost/etc/passwd").err(), Some(FetchError::LocalFile));
+        assert_eq!(fetch("FILE:///etc/passwd").err(), Some(FetchError::LocalFile));
+        assert_eq!(fetch("/nowhere/at/all.csv").err(), Some(FetchError::LocalFile));
+        // The file import still reads a path the caller named.
+        assert_eq!(read_local(&url).unwrap().bytes, b"TOP-SECRET");
+        assert_eq!(read_local("/nowhere/at/all.csv").err(), Some(FetchError::Missing));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

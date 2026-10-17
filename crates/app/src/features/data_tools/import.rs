@@ -22,7 +22,7 @@ use opensheet_engine::Rect;
 use opensheet_engine::external::{SourceTable, WebQuery, pick};
 use opensheet_engine::protect::Action;
 use opensheet_engine::text_columns::{TextColumnsError, TextImport};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn import_label() -> &'static str {
     t("Import Data", "Importer des données")
@@ -60,6 +60,10 @@ pub(super) fn fetch_message(error: FetchError, address: &str) -> String {
         FetchError::Status(_) => t("Unable to open |0. The Internet site reports an error. (HTTP |1)", "Impossible d'ouvrir |0. Le site Internet signale une erreur. (HTTP |1)"),
         FetchError::Timeout => t("Unable to open |0. The server did not answer in time.", "Impossible d'ouvrir |0. Le serveur n'a pas répondu à temps."),
         FetchError::TooLarge => t("Unable to open |0. The data is too large.", "Impossible d'ouvrir |0. Les données sont trop volumineuses."),
+        FetchError::LocalFile => t(
+            "Unable to open |0. A web query cannot open a local file. Use an http or https address.",
+            "Impossible d'ouvrir |0. Une requête sur le web ne peut pas ouvrir un fichier local. Indiquez une adresse http ou https.",
+        ),
     };
     let code = match error {
         FetchError::Status(code) => code.to_string(),
@@ -75,8 +79,8 @@ fn no_data() -> &'static str {
     )
 }
 
-/// Fetch an address and hand what it gave to `then`: at once for what
-/// is on this machine, later and off the window thread for the web.
+/// Fetch an address and hand what it gave to `then`: at once for a file
+/// the caller named, later and off the window thread for the web.
 pub(super) fn with_fetched(
     app: &mut ExcelApp,
     address: String,
@@ -85,7 +89,16 @@ pub(super) fn with_fetched(
     then: impl FnOnce(&mut ExcelApp, Result<Fetched, FetchError>, &mut Window, &mut Cx) + 'static,
 ) {
     if !sources::is_remote(&address) {
-        let fetched = sources::fetch(&address);
+        // A file the caller just named (the file dialog, or a test). A
+        // web query stored in a workbook never arrives here.
+        let fetched = if sources::local_path(&address).is_some() {
+            remember_chosen_file(app, &address);
+            sources::read_local(&address)
+        } else if sources::names_a_file(&address) {
+            Err(FetchError::LocalFile)
+        } else {
+            Err(FetchError::BadAddress)
+        };
         then(app, fetched, window, cx);
         return;
     }
@@ -451,7 +464,15 @@ pub(super) fn refresh_queries(app: &mut ExcelApp, queries: Vec<(usize, usize)>, 
             remote.extend(QueryRef::of(app, sheet, index).map(|query| (query, import.path)));
             continue;
         }
-        let outcome = sources::fetch(&import.path).map_err(Failed::Fetch).and_then(|fetched| apply(app, sheet, index, &fetched, window));
+        // A text import re-reads its file. A web query may read a local
+        // file only when the user picked that file in this session; a
+        // path that came in with the workbook is refused.
+        let loaded = if import.web.is_some() && !user_chose_file(app, &import.path) {
+            Err(if sources::names_a_file(&import.path) { FetchError::LocalFile } else { FetchError::BadAddress })
+        } else {
+            sources::read_local(&import.path)
+        };
+        let outcome = loaded.map_err(Failed::Fetch).and_then(|fetched| apply(app, sheet, index, &fetched, window));
         match outcome {
             Ok(rect) if sheet == app.sheet => written.push(rect),
             Ok(_) => {}
@@ -562,53 +583,111 @@ pub(super) fn web_query(address: String, web: WebQuery) -> TextImport {
 // ------------------------------------------------- refreshing by itself
 
 /// What the queries of the open workbook need watched: the question
-/// asked once when a file wants refreshing as it opens, and the clock of
+/// asked once when a file wants to refresh on its own, and the clock of
 /// "Refresh every n minutes".
 #[derive(Default)]
 pub(super) struct Watch {
-    /// Whether the queries that refresh on opening were dealt with.
+    /// Whether this workbook's own schedule was already considered.
     opened: bool,
+    /// `Some(true)` after the user agreed, or turned the interval on
+    /// themselves. `Some(false)` when they declined.
+    consented: Option<bool>,
+    /// Local files the user picked in this session. A web query may read
+    /// one of these; a path that arrived only inside the workbook may not.
+    chosen: Vec<PathBuf>,
     /// Minutes since each query that refreshes by itself last did.
     waited: Vec<(QueryRef, u32)>,
     clock: Option<Task<()>>,
 }
 
-/// Called whenever the window is drawn: cheap unless a query asks for
-/// something. Nothing is fetched here without the user having said so —
-/// when opening a file, Excel's question comes first.
-pub(super) fn watch(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let first = app.ext::<Watch>().is_none_or(|watch| !watch.opened);
-    let timed = app.wb.sheets.iter().any(|sheet| sheet.text_imports.iter().any(|import| import.props.refresh_minutes > 0));
-    if !first && (!timed || app.ext::<Watch>().is_some_and(|watch| watch.clock.is_some())) {
-        return;
-    }
-    app.ext_mut::<Watch>().opened = true;
-    if first {
-        let on_open: Vec<(usize, usize)> =
-            all_queries(app).into_iter().filter(|(sheet, index)| app.wb.sheets[*sheet].text_imports[*index].props.refresh_on_open).collect();
-        if !on_open.is_empty() {
-            // Not while the window is being drawn.
-            cx.spawn_in(window, async move |this, cx| {
-                this.update_in(cx, |app, _, cx| ask_to_refresh(app, cx)).ok();
-            })
-            .detach();
-        }
-    }
-    if timed {
-        let clock = cx.spawn_in(window, async move |this, cx| {
-            loop {
-                cx.background_executor().timer(std::time::Duration::from_secs(60)).await;
-                if this.update_in(cx, minute_passed).is_err() {
-                    break;
-                }
-            }
-        });
-        app.ext_mut::<Watch>().clock = Some(clock);
+#[cfg(test)]
+impl Watch {
+    pub(super) fn timer_running(&self) -> bool {
+        self.clock.is_some()
     }
 }
 
-/// A file that refreshes its queries on opening: Excel asks first, since
-/// the addresses are the file's and not the user's.
+/// The user picked `address` (the file dialog, or From JSON / XML /
+/// Workbook). Remember it for this workbook only.
+pub(super) fn remember_chosen_file(app: &mut ExcelApp, address: &str) {
+    let Some(path) = sources::local_path(address) else { return };
+    let chosen = &mut app.ext_mut::<Watch>().chosen;
+    if !chosen.contains(&path) {
+        chosen.push(path);
+    }
+}
+
+fn user_chose_file(app: &ExcelApp, address: &str) -> bool {
+    let Some(path) = sources::local_path(address) else { return false };
+    app.ext::<Watch>().is_some_and(|watch| watch.chosen.iter().any(|known| known == &path))
+}
+
+/// Connection Properties just turned "Refresh every" on, which is the
+/// user's own request: the next draw may start the clock.
+pub(super) fn consent_to_timer(app: &mut ExcelApp) {
+    app.ext_mut::<Watch>().consented = Some(true);
+}
+
+fn refreshes_on_a_timer(app: &ExcelApp) -> bool {
+    app.wb.sheets.iter().any(|sheet| sheet.text_imports.iter().any(|import| import.props.refresh_minutes > 0))
+}
+
+fn wants_a_refresh_on_open(app: &ExcelApp) -> bool {
+    app.wb.sheets.iter().any(|sheet| sheet.text_imports.iter().any(|import| import.props.refresh_on_open))
+}
+
+/// Called whenever the window is drawn: cheap unless a query asks for
+/// something. A workbook that wants to refresh on opening, or on its own
+/// interval, is asked once. The clock starts only after an agreement;
+/// declining leaves it stopped, and Refresh still works by hand.
+pub(super) fn watch(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    let first = app.ext::<Watch>().is_none_or(|watch| !watch.opened);
+    let timed = refreshes_on_a_timer(app);
+    if !first {
+        // The user has since turned the interval on in Connection Properties.
+        if timed && app.ext::<Watch>().and_then(|watch| watch.consented) == Some(true) {
+            start_clock(app, window, cx);
+        }
+        return;
+    }
+    app.ext_mut::<Watch>().opened = true;
+    if !wants_a_refresh_on_open(app) && !timed {
+        return;
+    }
+    // Already agreed in this session (they edited the properties before
+    // the first draw): start, and do not ask a second time.
+    if app.ext::<Watch>().and_then(|watch| watch.consented) == Some(true) {
+        start_clock(app, window, cx);
+        return;
+    }
+    // Not while the window is being drawn.
+    cx.spawn_in(window, async move |this, cx| {
+        this.update_in(cx, |app, _, cx| ask_to_refresh(app, cx)).ok();
+    })
+    .detach();
+}
+
+fn start_clock(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    if !refreshes_on_a_timer(app) || app.ext::<Watch>().is_some_and(|watch| watch.clock.is_some()) {
+        return;
+    }
+    if app.ext::<Watch>().and_then(|watch| watch.consented) != Some(true) {
+        return;
+    }
+    let clock = cx.spawn_in(window, async move |this, cx| {
+        loop {
+            cx.background_executor().timer(std::time::Duration::from_secs(60)).await;
+            if this.update_in(cx, minute_passed).is_err() {
+                break;
+            }
+        }
+    });
+    app.ext_mut::<Watch>().clock = Some(clock);
+}
+
+/// A file that wants to refresh its queries by itself: Excel asks first,
+/// since the addresses are the file's and not the user's. One question
+/// covers both "when opening the file" and "every n minutes".
 fn ask_to_refresh(app: &mut ExcelApp, cx: &mut Cx) {
     let message = format!(
         "{}\n\n{}",
@@ -621,17 +700,25 @@ fn ask_to_refresh(app: &mut ExcelApp, cx: &mut Cx) {
     let alert = Alert::new("OpenSheet", message)
         .warning()
         .button(t("OK", "OK"), |app, window, cx| {
+            app.ext_mut::<Watch>().consented = Some(true);
             let queries = all_queries(app).into_iter().filter(|(sheet, index)| app.wb.sheets[*sheet].text_imports[*index].props.refresh_on_open).collect();
             if let Some(task) = refresh_queries(app, queries, t("Refresh", "Actualiser"), window, cx) {
                 task.detach();
             }
+            start_clock(app, window, cx);
         })
-        .close_button(t("Cancel", "Annuler"));
+        .button(t("Cancel", "Annuler"), |app, _, _| {
+            app.ext_mut::<Watch>().consented = Some(false);
+        });
     app.alert(alert, cx);
 }
 
 /// A minute went by: the queries whose time has come are refreshed.
+/// Nothing happens until the user has agreed to this workbook's schedule.
 pub(super) fn minute_passed(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    if app.ext::<Watch>().and_then(|watch| watch.consented) != Some(true) {
+        return;
+    }
     let mut due = Vec::new();
     let mut waited = Vec::new();
     for (sheet, index) in all_queries(app) {
