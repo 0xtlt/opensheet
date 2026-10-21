@@ -63,15 +63,29 @@ fn modal_open(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> bool {
 }
 
 fn row_levels(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, lo: u32, hi: u32) -> Vec<u8> {
-    app.update(cx, |app, _| (lo..=hi).map(|r| app.wb.sheets[app.sheet].outline.rows.level(r)).collect())
+    app.update(cx, |app, _| {
+        (lo..=hi)
+            .map(|r| app.wb.sheets[app.sheet].outline.rows.level(r))
+            .collect()
+    })
 }
 
 fn col_levels(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, lo: u32, hi: u32) -> Vec<u8> {
-    app.update(cx, |app, _| (lo..=hi).map(|c| app.wb.sheets[app.sheet].outline.cols.level(c)).collect())
+    app.update(cx, |app, _| {
+        (lo..=hi)
+            .map(|c| app.wb.sheets[app.sheet].outline.cols.level(c))
+            .collect()
+    })
 }
 
 fn hidden_rows(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<u32> {
-    app.update(cx, |app, _| app.wb.sheets[app.sheet].hidden_rows.iter().copied().collect())
+    app.update(cx, |app, _| {
+        app.wb.sheets[app.sheet]
+            .hidden_rows
+            .iter()
+            .copied()
+            .collect()
+    })
 }
 
 fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<String> {
@@ -84,7 +98,11 @@ fn text(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> Strin
 }
 
 /// The middle of the zone the margin painted for `hit`, in the window.
-fn zone_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, wanted: impl Fn(&Hit) -> bool) -> Point<Pixels> {
+fn zone_of(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    wanted: impl Fn(&Hit) -> bool,
+) -> Point<Pixels> {
     app.update(cx, |app, _| {
         let zone = app
             .zones
@@ -93,7 +111,10 @@ fn zone_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, wanted: impl Fn(&
             .find(|zone| zone.payload::<Hit>().is_some_and(&wanted))
             .expect("the symbol is painted");
         let layout = app.current_layout().unwrap();
-        layout.to_window((zone.bounds.0 + zone.bounds.2) / 2.0, (zone.bounds.1 + zone.bounds.3) / 2.0)
+        layout.to_window(
+            (zone.bounds.0 + zone.bounds.2) / 2.0,
+            (zone.bounds.1 + zone.bounds.3) / 2.0,
+        )
     })
 }
 
@@ -127,7 +148,10 @@ fn whole_rows_group_at_once_and_with_the_keys(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-z cmd-z cmd-z");
     redraw(cx);
     assert_eq!(row_levels(&app, cx, 0, 4), [0, 0, 0, 0, 0]);
-    assert_eq!(app.update(cx, |app, _| app.current_layout().unwrap().margin_w), 0.0);
+    assert_eq!(
+        app.update(cx, |app, _| app.current_layout().unwrap().margin_w),
+        0.0
+    );
     // Whole columns likewise.
     select(&app, cx, cols(2, 3));
     cx.simulate_keystrokes("cmd-shift-k");
@@ -150,7 +174,11 @@ fn cells_ask_rows_or_columns(cx: &mut TestAppContext) {
     assert!(!modal_open(&app, cx));
     assert_eq!(row_levels(&app, cx, 0, 4), [0, 1, 1, 1, 0]);
     // Columns, chosen in the dialog.
-    let dialog = app.update_in(cx, |app, window, cx| group_selection(app, false, window, cx)).expect("the dialog opens");
+    let dialog = app
+        .update_in(cx, |app, window, cx| {
+            group_selection(app, false, window, cx)
+        })
+        .expect("the dialog opens");
     redraw(cx);
     dialog.update(cx, |dialog, cx| dialog.choose(Axis::Cols, cx));
     redraw(cx);
@@ -176,7 +204,11 @@ fn cells_ask_rows_or_columns(cx: &mut TestAppContext) {
 fn the_margin_folds_and_unfolds(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     nested(&app, cx);
-    let inner = Group { level: 2, first: 1, last: 3 };
+    let inner = Group {
+        level: 2,
+        first: 1,
+        last: 3,
+    };
     // The − button of the first inner group.
     let button = zone_of(&app, cx, |hit| *hit == Hit::Fold(Axis::Rows, inner, true));
     click(cx, button);
@@ -233,8 +265,13 @@ fn detail_commands_and_the_symbols_switch(cx: &mut TestAppContext) {
     // Ctrl+8 takes the margin away and brings it back.
     cx.simulate_keystrokes("ctrl-8");
     redraw(cx);
-    assert_eq!(app.update(cx, |app, _| app.current_layout().unwrap().margin_w), 0.0);
-    assert!(app.update(cx, |app, _| app.zones.iter().all(|zone| zone.payload::<Hit>().is_none())));
+    assert_eq!(
+        app.update(cx, |app, _| app.current_layout().unwrap().margin_w),
+        0.0
+    );
+    assert!(app.update(cx, |app, _| {
+        app.zones.iter().all(|zone| zone.payload::<Hit>().is_none())
+    }));
     cx.simulate_keystrokes("ctrl-8");
     redraw(cx);
     assert!(app.update(cx, |app, _| app.current_layout().unwrap().margin_w) > 0.0);
@@ -255,7 +292,10 @@ fn auto_outline_and_the_settings(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     redraw(cx);
     edit(&app, cx, |wb| {
-        for (row, entry) in ["Sales", "1", "2", "=SUM(A2:A3)", "4", "5", "=SUM(A5:A6)"].iter().enumerate() {
+        for (row, entry) in ["Sales", "1", "2", "=SUM(A2:A3)", "4", "5", "=SUM(A5:A6)"]
+            .iter()
+            .enumerate()
+        {
             wb.set_cell_text(0, row as u32, 0, entry).unwrap();
         }
     });
@@ -273,7 +313,9 @@ fn auto_outline_and_the_settings(cx: &mut TestAppContext) {
     redraw(cx);
     assert_eq!(row_levels(&app, cx, 0, 3), [0, 1, 1, 0]);
     // Settings: summaries above.
-    let dialog = app.update_in(cx, |app, window, cx| dialogs::open_settings(app, window, cx));
+    let dialog = app.update_in(cx, |app, window, cx| {
+        dialogs::open_settings(app, window, cx)
+    });
     redraw(cx);
     dialog.update(cx, |dialog, cx| dialog.set(false, true, cx));
     redraw(cx);
@@ -293,9 +335,15 @@ fn a_protected_sheet_keeps_its_outline(cx: &mut TestAppContext) {
     edit(&app, cx, |wb| {
         wb.protect_sheet(0, SheetProtection::default(), "");
     });
-    assert!(app.update(cx, |app, _| !Cmd::Group.enabled(app) && !Cmd::Subtotal.enabled(app) && !Cmd::ClearOutline.enabled(app)));
+    assert!(app.update(cx, |app, _| !Cmd::Group.enabled(app)
+        && !Cmd::Subtotal.enabled(app)
+        && !Cmd::ClearOutline.enabled(app)));
     // A click on a button is answered by the message of protected sheets.
-    let inner = Group { level: 2, first: 1, last: 3 };
+    let inner = Group {
+        level: 2,
+        first: 1,
+        last: 3,
+    };
     let button = zone_of(&app, cx, |hit| *hit == Hit::Fold(Axis::Rows, inner, true));
     click(cx, button);
     assert!(modal_open(&app, cx));
@@ -352,7 +400,9 @@ fn subtotal_dialog_adds_and_removes(cx: &mut TestAppContext) {
 
     // Another function on another column, by the dialog's controls.
     select(&app, cx, cells("A2"));
-    let dialog = app.update_in(cx, |app, window, cx| subtotal::open(app, window, cx)).expect("the dialog opens");
+    let dialog = app
+        .update_in(cx, |app, window, cx| subtotal::open(app, window, cx))
+        .expect("the dialog opens");
     redraw(cx);
     dialog.update(cx, |dialog, cx| {
         assert_eq!(dialog.spec.columns, [2]);
@@ -368,7 +418,9 @@ fn subtotal_dialog_adds_and_removes(cx: &mut TestAppContext) {
     assert_eq!(text(&app, cx, "C4"), "");
 
     // Remove All.
-    let dialog = app.update_in(cx, |app, window, cx| subtotal::open(app, window, cx)).expect("the dialog opens");
+    let dialog = app
+        .update_in(cx, |app, window, cx| subtotal::open(app, window, cx))
+        .expect("the dialog opens");
     redraw(cx);
     dialog.update_in(cx, |dialog, window, cx| dialog.remove_all(window, cx));
     redraw(cx);
@@ -384,7 +436,9 @@ fn subtotal_refuses_tables_and_empty_requests(cx: &mut TestAppContext) {
     list(&app, cx);
     // No column ticked: Excel's message, and nothing changes.
     select(&app, cx, cells("A2"));
-    let dialog = app.update_in(cx, |app, window, cx| subtotal::open(app, window, cx)).expect("the dialog opens");
+    let dialog = app
+        .update_in(cx, |app, window, cx| subtotal::open(app, window, cx))
+        .expect("the dialog opens");
     redraw(cx);
     dialog.update(cx, |dialog, cx| dialog.tick(2, false, cx));
     dialog.update_in(cx, |dialog, window, cx| dialog.ok(&(), window, cx));
@@ -393,7 +447,8 @@ fn subtotal_refuses_tables_and_empty_requests(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(text(&app, cx, "A4"), "South");
-    assert!(!app.update(cx, |app, _| app.wb.can_undo() && app.wb.undo_label() == Some("Subtotal")));
+    assert!(!app.update(cx, |app, _| app.wb.can_undo()
+        && app.wb.undo_label() == Some("Subtotal")));
     // A lone cell is no list.
     select(&app, cx, cells("H20"));
     run(&app, cx, Cmd::Subtotal);
@@ -403,7 +458,8 @@ fn subtotal_refuses_tables_and_empty_requests(cx: &mut TestAppContext) {
     assert!(!modal_open(&app, cx));
     // Inside a table the command is greyed out.
     edit(&app, cx, |wb| {
-        wb.add_table(0, Rect::parse("A1:C5").unwrap(), true).unwrap();
+        wb.add_table(0, Rect::parse("A1:C5").unwrap(), true)
+            .unwrap();
     });
     select(&app, cx, cells("B3"));
     assert!(!app.update(cx, |app, _| Cmd::Subtotal.enabled(app)));

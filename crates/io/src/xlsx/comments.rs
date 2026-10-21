@@ -27,7 +27,8 @@ use super::read::{Package, Rel, relationships};
 use super::write::{MAX_COL_WIDTH_PX, MAX_ROW_HEIGHT_PT, NS_DOC_REL, NS_MAIN, push_number, push_t};
 use super::xml::{Event, Reader, Tag, XML_DECL, decode_cell_text, push_attr, push_cell_text};
 use opensheet_engine::comment::{
-    Comment, Mention, NOTE_SIZE, Note, NoteBox, NoteRun, Person, Post, Thread, time_from_iso, time_to_iso,
+    Comment, Mention, NOTE_SIZE, Note, NoteBox, NoteRun, Person, Post, Thread, time_from_iso,
+    time_to_iso,
 };
 use opensheet_engine::drawing::Frame;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, cell_name, parse_cell_name};
@@ -208,7 +209,12 @@ fn vml_xml(shapes: &[Shape], first_block: usize) -> String {
 /// [`vml_xml`] followed by the shapes of the form controls of the sheet
 /// (`controls`, `control_count` of them, see `control.rs`), which share
 /// the drawing and its blocks of ids.
-fn vml_xml_with(shapes: &[Shape], first_block: usize, controls: &str, control_count: usize) -> String {
+fn vml_xml_with(
+    shapes: &[Shape],
+    first_block: usize,
+    controls: &str,
+    control_count: usize,
+) -> String {
     let mut x = String::from(
         "<xml xmlns:v=\"urn:schemas-microsoft-com:vml\" xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:x=\"urn:schemas-microsoft-com:office:excel\">",
     );
@@ -312,7 +318,8 @@ fn push_run(x: &mut String, run: &NoteRun) {
 /// How many UTF-16 units the first `bytes` bytes of a text take: files
 /// count the places of mentions that way.
 fn utf16_len(text: &str, bytes: usize) -> usize {
-    text.get(..bytes).map_or(0, |head| head.encode_utf16().count())
+    text.get(..bytes)
+        .map_or(0, |head| head.encode_utf16().count())
 }
 
 /// The byte offset of the character that starts `units` UTF-16 units into
@@ -472,7 +479,12 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
         extras.add_part(
             format!("xl/drawings/vmlDrawing{vml_parts}.vml"),
             None,
-            vml_xml_with(&shapes, next_block, &super::control::vml_shapes(wb, index), controls),
+            vml_xml_with(
+                &shapes,
+                next_block,
+                &super::control::vml_shapes(wb, index),
+                controls,
+            ),
         );
         extras.relate_sheet(
             index,
@@ -633,8 +645,13 @@ fn parse_threads(xml: &str, persons: &HashMap<String, Person>) -> Vec<((u32, u32
                             Event::Open(c) if c.name == "mentions" && !c.empty => loop {
                                 match r.next() {
                                     Event::Open(m) if m.name == "mention" => {
-                                        let who = m.attr("mentionpersonId").map(|v| v.trim().to_uppercase());
-                                        let number = |name: &str| m.attr(name).and_then(|v| v.trim().parse::<usize>().ok());
+                                        let who = m
+                                            .attr("mentionpersonId")
+                                            .map(|v| v.trim().to_uppercase());
+                                        let number = |name: &str| {
+                                            m.attr(name)
+                                                .and_then(|v| v.trim().parse::<usize>().ok())
+                                        };
                                         if let (Some(person), Some(start), Some(length)) = (
                                             who.and_then(|id| persons.get(&id)),
                                             number("startIndex"),

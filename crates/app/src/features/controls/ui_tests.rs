@@ -41,7 +41,13 @@ fn open(cx: &mut TestAppContext) -> (Entity<ExcelApp>, &mut VisualTestContext) {
 }
 
 /// Put a control on the sheet without the mouse.
-fn add(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, kind: ControlKind, at: (u32, u32), edit: impl FnOnce(&mut FormControl)) -> u32 {
+fn add(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    kind: ControlKind,
+    at: (u32, u32),
+    edit: impl FnOnce(&mut FormControl),
+) -> u32 {
     let id = app.update(cx, |app, cx| {
         let mut control = FormControl::new(kind);
         control.anchor = at;
@@ -55,15 +61,39 @@ fn add(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, kind: ControlKind, at
 }
 
 /// A point of a control as it was painted: fractions of its box.
-fn at(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, fx: f32, fy: f32) -> Point<Pixels> {
+fn at(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    id: u32,
+    fx: f32,
+    fy: f32,
+) -> Point<Pixels> {
     redraw(cx);
     app.update(cx, |app, _| {
-        let rect = app.zones.iter().find_map(|zone| zone.payload::<ControlZone>().filter(|hit| hit.id == id).map(|hit| hit.rect)).expect("the control was painted");
-        app.current_layout().unwrap().to_window(rect.0 + (rect.2 - rect.0) * fx, rect.1 + (rect.3 - rect.1) * fy)
+        let rect = app
+            .zones
+            .iter()
+            .find_map(|zone| {
+                zone.payload::<ControlZone>()
+                    .filter(|hit| hit.id == id)
+                    .map(|hit| hit.rect)
+            })
+            .expect("the control was painted");
+        app.current_layout().unwrap().to_window(
+            rect.0 + (rect.2 - rect.0) * fx,
+            rect.1 + (rect.3 - rect.1) * fy,
+        )
     })
 }
 
-fn click(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, fx: f32, fy: f32, modifiers: Modifiers) {
+fn click(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    id: u32,
+    fx: f32,
+    fy: f32,
+    modifiers: Modifiers,
+) {
     let point = at(app, cx, id, fx, fy);
     cx.simulate_click(point, modifiers);
     cx.run_until_parked();
@@ -74,7 +104,10 @@ fn cell(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, row: u32, col: u32) 
 }
 
 fn shown(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> FormControl {
-    app.update(cx, |app, _| app.wb.control_state(0, app.wb.sheets[0].control(id).unwrap()))
+    app.update(cx, |app, _| {
+        app.wb
+            .control_state(0, app.wb.sheets[0].control(id).unwrap())
+    })
 }
 
 fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<String> {
@@ -89,7 +122,14 @@ fn object(id: u32) -> features::ObjectId {
 fn the_developer_tab_draws_controls_with_the_mouse(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     // The tab is shown when Preferences ▸ View asks for it.
-    let tabs = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| -> Vec<&'static str> { app.update(cx, |app, _| features::context_tabs(app).into_iter().map(|(_, tab)| tab.id).collect()) };
+    let tabs = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| -> Vec<&'static str> {
+        app.update(cx, |app, _| {
+            features::context_tabs(app)
+                .into_iter()
+                .map(|(_, tab)| tab.id)
+                .collect()
+        })
+    };
     assert!(!tabs(&app, cx).contains(&TAB));
     preferences::settings::update(|settings| settings.developer_tab = true);
     assert!(tabs(&app, cx).contains(&TAB));
@@ -102,13 +142,19 @@ fn the_developer_tab_draws_controls_with_the_mouse(cx: &mut TestAppContext) {
     });
     redraw(cx);
     // Check Box, then a drag on the cells.
-    app.update_in(cx, |app, window, cx| app.run_command(Cmd::CheckBox, window, cx));
-    assert!(app.update(cx, |app, _| Cmd::CheckBox.checked(app) && !Cmd::Button.checked(app)));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(Cmd::CheckBox, window, cx)
+    });
+    assert!(app.update(cx, |app, _| Cmd::CheckBox.checked(app)
+        && !Cmd::Button.checked(app)));
     redraw(cx);
     let (from, to) = app.update(cx, |app, _| {
         let layout = app.current_layout().unwrap();
         let (x, y) = (layout.col_x(2) + 4.0, layout.row_y(3) + 2.0);
-        (layout.to_window(x, y), layout.to_window(x + 120.0, y + 24.0))
+        (
+            layout.to_window(x, y),
+            layout.to_window(x + 120.0, y + 24.0),
+        )
     });
     cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
@@ -116,16 +162,24 @@ fn the_developer_tab_draws_controls_with_the_mouse(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let id = app.update(cx, |app, _| {
         let control = &app.wb.sheets[0].controls[0];
-        assert_eq!((control.kind, control.name.as_str(), control.text.as_str()), (ControlKind::CheckBox, "Check Box 1", "Check Box 1"));
+        assert_eq!(
+            (control.kind, control.name.as_str(), control.text.as_str()),
+            (ControlKind::CheckBox, "Check Box 1", "Check Box 1")
+        );
         assert_eq!((control.anchor, control.offset), ((3, 2), (4.0, 2.0)));
         assert_eq!(control.size, (120.0, 24.0));
-        assert!(app.is_object_selected(object(control.id)), "the new control is selected");
+        assert!(
+            app.is_object_selected(object(control.id)),
+            "the new control is selected"
+        );
         assert!(!Cmd::CheckBox.checked(app), "the tool is put down");
         assert_eq!(app.wb.undo_label(), Some("Insert Control"));
         control.id
     });
     // A click draws a control of the usual size; Escape puts the tool down.
-    app.update_in(cx, |app, window, cx| app.run_command(Cmd::ScrollBar, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(Cmd::ScrollBar, window, cx)
+    });
     redraw(cx);
     let spot = app.update(cx, |app, _| {
         let layout = app.current_layout().unwrap();
@@ -135,7 +189,13 @@ fn the_developer_tab_draws_controls_with_the_mouse(cx: &mut TestAppContext) {
     cx.run_until_parked();
     app.update(cx, |app, _| {
         let bar = &app.wb.sheets[0].controls[1];
-        assert_eq!((bar.kind, bar.size), (ControlKind::ScrollBar, ControlKind::ScrollBar.default_size()));
+        assert_eq!(
+            (bar.kind, bar.size),
+            (
+                ControlKind::ScrollBar,
+                ControlKind::ScrollBar.default_size()
+            )
+        );
     });
     app.update_in(cx, |app, window, cx| {
         app.run_command(Cmd::Label, window, cx);
@@ -156,13 +216,18 @@ fn the_developer_tab_draws_controls_with_the_mouse(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_click_works_a_control_and_a_control_click_selects_it(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    let check = add(&app, cx, ControlKind::CheckBox, (1, 1), |c| c.link = Some(range("$A$1")));
+    let check = add(&app, cx, ControlKind::CheckBox, (1, 1), |c| {
+        c.link = Some(range("$A$1"))
+    });
     // A plain click ticks the box and writes its cell, as one undo step.
     click(&app, cx, check, 0.5, 0.5, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 0), Value::Bool(true));
     assert_eq!(shown(&app, cx, check).checked, CheckState::Checked);
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Check Box"));
-    assert!(app.update(cx, |app, _| app.object_sel.is_none()), "working a control does not select it");
+    assert!(
+        app.update(cx, |app, _| app.object_sel.is_none()),
+        "working a control does not select it"
+    );
     click(&app, cx, check, 0.5, 0.5, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 0), Value::Bool(false));
     app.update(cx, |app, cx| {
@@ -180,7 +245,11 @@ fn a_click_works_a_control_and_a_control_click_selects_it(cx: &mut TestAppContex
     click(&app, cx, check, 0.5, 0.5, Modifiers::control());
     assert!(app.update(cx, |app, _| app.is_object_selected(object(check))));
     click(&app, cx, check, 0.5, 0.5, Modifiers::none());
-    assert_eq!(cell(&app, cx, 0, 0), Value::Bool(false), "a selected control is not worked");
+    assert_eq!(
+        cell(&app, cx, 0, 0),
+        Value::Bool(false),
+        "a selected control is not worked"
+    );
     // Selected, it is dragged like any object.
     let (from, to) = (at(&app, cx, check, 0.5, 0.5), at(&app, cx, check, 0.5, 3.5));
     cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
@@ -188,7 +257,10 @@ fn a_click_works_a_control_and_a_control_click_selects_it(cx: &mut TestAppContex
     cx.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
     cx.run_until_parked();
     app.update(cx, |app, _| {
-        assert!(app.wb.sheets[0].control(check).unwrap().anchor.0 > 1, "moved down");
+        assert!(
+            app.wb.sheets[0].control(check).unwrap().anchor.0 > 1,
+            "moved down"
+        );
         assert_eq!(app.wb.undo_label(), Some("Move Object"));
     });
     // A click on a cell lets go of it; the next click works it again.
@@ -202,20 +274,28 @@ fn a_click_works_a_control_and_a_control_click_selects_it(cx: &mut TestAppContex
     });
     click(&app, cx, check, 0.5, 0.5, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 0), Value::Bool(true));
-    assert!(app.update(cx, |app, _| app.modal_open()), "the message of the protected sheet");
+    assert!(
+        app.update(cx, |app, _| app.modal_open()),
+        "the message of the protected sheet"
+    );
 }
 
 #[gpui::test]
 fn option_buttons_lists_spin_buttons_and_scroll_bars(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    let first = add(&app, cx, ControlKind::OptionButton, (1, 1), |c| c.link = Some(range("$A$1")));
+    let first = add(&app, cx, ControlKind::OptionButton, (1, 1), |c| {
+        c.link = Some(range("$A$1"))
+    });
     let second = add(&app, cx, ControlKind::OptionButton, (2, 1), |_| {});
     click(&app, cx, second, 0.5, 0.5, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 0), Value::Number(2.0));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Option Button"));
     click(&app, cx, first, 0.5, 0.5, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 0), Value::Number(1.0));
-    assert!(shown(&app, cx, first).checked == CheckState::Checked && shown(&app, cx, second).checked == CheckState::Unchecked);
+    assert!(
+        shown(&app, cx, first).checked == CheckState::Checked
+            && shown(&app, cx, second).checked == CheckState::Unchecked
+    );
 
     // A list box: a click on its second line.
     let list = add(&app, cx, ControlKind::ListBox, (4, 1), |c| {
@@ -240,7 +320,10 @@ fn option_buttons_lists_spin_buttons_and_scroll_bars(cx: &mut TestAppContext) {
         let Some(PopupKind::Menu(entries)) = app.popup.as_ref().map(|popup| &popup.kind) else {
             panic!("the list of the combo box");
         };
-        let labels: Vec<String> = entries.iter().map(|entry| entry.label.to_string()).collect();
+        let labels: Vec<String> = entries
+            .iter()
+            .map(|entry| entry.label.to_string())
+            .collect();
         assert_eq!(labels, ["Red", "Green", "Blue"]);
         let pick = entries[2].action.clone().unwrap();
         app.popup = None;
@@ -258,20 +341,30 @@ fn option_buttons_lists_spin_buttons_and_scroll_bars(cx: &mut TestAppContext) {
     click(&app, cx, spin, 0.5, 0.25, Modifiers::none());
     click(&app, cx, spin, 0.5, 0.25, Modifiers::none());
     click(&app, cx, spin, 0.5, 0.25, Modifiers::none());
-    assert_eq!(cell(&app, cx, 0, 1), Value::Number(12.0), "kept under the maximum");
+    assert_eq!(
+        cell(&app, cx, 0, 1),
+        Value::Number(12.0),
+        "kept under the maximum"
+    );
     click(&app, cx, spin, 0.5, 0.75, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 1), Value::Number(7.0));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Spin Button"));
 
     // A scroll bar: its arrows step, its track turns a page, its thumb drags.
-    let bar = add(&app, cx, ControlKind::ScrollBar, (1, 6), |c| c.link = Some(range("$C$1")));
+    let bar = add(&app, cx, ControlKind::ScrollBar, (1, 6), |c| {
+        c.link = Some(range("$C$1"))
+    });
     click(&app, cx, bar, 0.5, 0.98, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 2), Value::Number(1.0));
     click(&app, cx, bar, 0.5, 0.8, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 2), Value::Number(11.0), "a page down");
     click(&app, cx, bar, 0.5, 0.02, Modifiers::none());
     assert_eq!(cell(&app, cx, 0, 2), Value::Number(10.0));
-    let (from, middle, to) = (at(&app, cx, bar, 0.5, 0.26), at(&app, cx, bar, 0.5, 0.5), at(&app, cx, bar, 0.5, 0.9));
+    let (from, middle, to) = (
+        at(&app, cx, bar, 0.5, 0.26),
+        at(&app, cx, bar, 0.5, 0.5),
+        at(&app, cx, bar, 0.5, 0.9),
+    );
     cx.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_move(middle, Some(MouseButton::Left), Modifiers::none());
     cx.simulate_mouse_move(to, Some(MouseButton::Left), Modifiers::none());
@@ -293,7 +386,9 @@ fn option_buttons_lists_spin_buttons_and_scroll_bars(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_button_assigned_to_a_macro_says_macros_are_not_run(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    let button = add(&app, cx, ControlKind::Button, (1, 1), |c| c.macro_name = Some("[0]!FormatReport".to_string()));
+    let button = add(&app, cx, ControlKind::Button, (1, 1), |c| {
+        c.macro_name = Some("[0]!FormatReport".to_string())
+    });
     click(&app, cx, button, 0.5, 0.5, Modifiers::none());
     app.update_in(cx, |app, window, cx| {
         assert!(app.modal_open(), "the message of the Macro dialog");
@@ -311,17 +406,20 @@ fn format_control_assign_macro_and_edit_text(cx: &mut TestAppContext) {
     use opensheet_io::vba::{ModuleKind, build_project};
     let (app, cx) = open(cx);
     let bar = add(&app, cx, ControlKind::ScrollBar, (1, 1), |_| {});
-    let open_format = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32| -> Entity<FormatDialog> {
-        app.update_in(cx, |app, window, cx| {
-            app.select_object(Some(object(id)), cx);
-            assert!(Cmd::FormatControl.enabled(app));
-            dialogs::open_format(app, window, cx).expect("the dialog opens")
-        })
-    };
+    let open_format =
+        |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32| -> Entity<FormatDialog> {
+            app.update_in(cx, |app, window, cx| {
+                app.select_object(Some(object(id)), cx);
+                assert!(Cmd::FormatControl.enabled(app));
+                dialogs::open_format(app, window, cx).expect("the dialog opens")
+            })
+        };
     // The Control tab of a scroll bar: values and the linked cell.
     let dialog = open_format(&app, cx, bar);
     redraw(cx);
-    let set = |field: &Entity<crate::text_input::TextInput>, cx: &mut VisualTestContext, text: &str| field.update(cx, |field, cx| field.set_text(text, cx));
+    let set = |field: &Entity<crate::text_input::TextInput>,
+               cx: &mut VisualTestContext,
+               text: &str| field.update(cx, |field, cx| field.set_text(text, cx));
     let fields = dialog.update(cx, |d, _| (d.numbers.clone(), d.link.clone()));
     for (field, text) in fields.0.iter().zip(["40", "10", "90", "5", "20"]) {
         set(field, cx, text);
@@ -337,10 +435,31 @@ fn format_control_assign_macro_and_edit_text(cx: &mut TestAppContext) {
     app.update(cx, |app, _| {
         assert!(!app.modal_open());
         let control = app.wb.sheets[0].control(bar).unwrap();
-        assert_eq!((control.value, control.min, control.max, control.inc, control.page), (40, 10, 90, 5, 20));
-        assert_eq!(control.link.as_ref().map(RefExpr::to_text).as_deref(), Some("$B$2"));
-        assert!(control.shaded && !control.print && !control.move_with_cells && !control.size_with_cells);
-        assert_eq!(app.wb.value_at(0, 1, 1), Value::Number(40.0), "the value goes to the cell");
+        assert_eq!(
+            (
+                control.value,
+                control.min,
+                control.max,
+                control.inc,
+                control.page
+            ),
+            (40, 10, 90, 5, 20)
+        );
+        assert_eq!(
+            control.link.as_ref().map(RefExpr::to_text).as_deref(),
+            Some("$B$2")
+        );
+        assert!(
+            control.shaded
+                && !control.print
+                && !control.move_with_cells
+                && !control.size_with_cells
+        );
+        assert_eq!(
+            app.wb.value_at(0, 1, 1),
+            Value::Number(40.0),
+            "the value goes to the cell"
+        );
         assert_eq!(app.wb.undo_label(), Some("Format Control"));
     });
     // A number out of range, or a link that is no reference, keeps the dialog open.
@@ -348,22 +467,33 @@ fn format_control_assign_macro_and_edit_text(cx: &mut TestAppContext) {
     let fields = dialog.update(cx, |d, _| (d.numbers.clone(), d.link.clone()));
     set(&fields.0[2], cx, "40000");
     dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
-    assert!(app.update(cx, |app, _| app.wb.sheets[0].control(bar).unwrap().max == 90 && app.modal_open()));
+    assert!(
+        app.update(cx, |app, _| app.wb.sheets[0].control(bar).unwrap().max
+            == 90
+            && app.modal_open())
+    );
     app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
     set(&fields.0[2], cx, "90");
     set(&fields.1, cx, "not a cell");
     dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
-    assert!(app.update(cx, |app, _| app.wb.sheets[0].control(bar).unwrap().link.is_some()));
+    assert!(app.update(cx, |app, _| {
+        app.wb.sheets[0].control(bar).unwrap().link.is_some()
+    }));
     app.update_in(cx, |app, window, cx| {
         app.close_modal(window, cx);
         app.close_modal(window, cx);
     });
     // A check box: Mixed writes #N/A; a combo box: its range and lines.
-    let check = add(&app, cx, ControlKind::CheckBox, (8, 1), |c| c.link = Some(range("$A$1")));
+    let check = add(&app, cx, ControlKind::CheckBox, (8, 1), |c| {
+        c.link = Some(range("$A$1"))
+    });
     let dialog = open_format(&app, cx, check);
     dialog.update(cx, |d, _| d.checked = CheckState::Mixed);
     dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
-    assert_eq!(cell(&app, cx, 0, 0), Value::Error(opensheet_engine::ErrorKind::NA));
+    assert_eq!(
+        cell(&app, cx, 0, 0),
+        Value::Error(opensheet_engine::ErrorKind::NA)
+    );
     let combo = add(&app, cx, ControlKind::ComboBox, (10, 1), |_| {});
     let dialog = open_format(&app, cx, combo);
     let (input, lines) = dialog.update(cx, |d, _| (d.input.clone(), d.drop_lines.clone()));
@@ -372,14 +502,21 @@ fn format_control_assign_macro_and_edit_text(cx: &mut TestAppContext) {
     dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
     app.update(cx, |app, _| {
         let control = app.wb.sheets[0].control(combo).unwrap();
-        assert_eq!(control.input.as_ref().map(RefExpr::to_text).as_deref(), Some("$H$2:$H$4"));
+        assert_eq!(
+            control.input.as_ref().map(RefExpr::to_text).as_deref(),
+            Some("$H$2:$H$4")
+        );
         assert_eq!(control.drop_lines, 3);
     });
 
     // Assign Macro lists the macros of the workbook and stores the name.
     let button = add(&app, cx, ControlKind::Button, (14, 1), |_| {});
     app.update(cx, |app, _| {
-        let project = build_project(&[("Module1", ModuleKind::Standard, "Sub FormatReport()\nEnd Sub\n\nSub ClearReport()\nEnd Sub\n")]);
+        let project = build_project(&[(
+            "Module1",
+            ModuleKind::Standard,
+            "Sub FormatReport()\nEnd Sub\n\nSub ClearReport()\nEnd Sub\n",
+        )]);
         app.wb.vba.project = Some(opensheet_engine::vba::VbaProject {
             bin: project.into(),
             signatures: Vec::new(),
@@ -389,27 +526,60 @@ fn format_control_assign_macro_and_edit_text(cx: &mut TestAppContext) {
         app.select_object(Some(object(button)), cx);
         dialogs::open_assign_macro(app, window, cx).unwrap()
     });
-    assert_eq!(dialog.update(cx, |d, _| d.macros.clone()), ["ClearReport", "FormatReport"]);
-    dialog.update(cx, |d, cx| d.name.update(cx, |field, cx| field.set_text("FormatReport", cx)));
+    assert_eq!(
+        dialog.update(cx, |d, _| d.macros.clone()),
+        ["ClearReport", "FormatReport"]
+    );
+    dialog.update(cx, |d, cx| {
+        d.name
+            .update(cx, |field, cx| field.set_text("FormatReport", cx))
+    });
     dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
     app.update(cx, |app, _| {
-        assert_eq!(app.wb.sheets[0].control(button).unwrap().macro_name.as_deref(), Some("[0]!FormatReport"));
+        assert_eq!(
+            app.wb.sheets[0]
+                .control(button)
+                .unwrap()
+                .macro_name
+                .as_deref(),
+            Some("[0]!FormatReport")
+        );
         assert_eq!(app.wb.undo_label(), Some("Assign Macro"));
     });
     // Edit Text.
-    let dialog: Entity<TextDialog> = app.update_in(cx, |app, window, cx| dialogs::open_edit_text(app, window, cx).unwrap());
-    dialog.update(cx, |d, cx| d.text.update(cx, |field, cx| field.set_text("Format the report", cx)));
+    let dialog: Entity<TextDialog> = app.update_in(cx, |app, window, cx| {
+        dialogs::open_edit_text(app, window, cx).unwrap()
+    });
+    dialog.update(cx, |d, cx| {
+        d.text
+            .update(cx, |field, cx| field.set_text("Format the report", cx))
+    });
     dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
     app.update(cx, |app, _| {
-        assert_eq!(app.wb.sheets[0].control(button).unwrap().text, "Format the report");
+        assert_eq!(
+            app.wb.sheets[0].control(button).unwrap().text,
+            "Format the report"
+        );
         // The commands of a control are those of its context menu.
         let mut menu = ContextMenu::default();
         Controls.context_menu(app, &MenuTarget::Object(object(button)), &mut menu);
-        let labels: Vec<String> = menu.build().iter().filter(|entry| !entry.separator).map(|entry| entry.label.to_string()).collect();
-        assert_eq!(labels, ["Edit Text", "Assign Macro...", "Format Control..."]);
+        let labels: Vec<String> = menu
+            .build()
+            .iter()
+            .filter(|entry| !entry.separator)
+            .map(|entry| entry.label.to_string())
+            .collect();
+        assert_eq!(
+            labels,
+            ["Edit Text", "Assign Macro...", "Format Control..."]
+        );
         // Nothing of this is offered for another object.
         let mut other = ContextMenu::default();
-        Controls.context_menu(app, &MenuTarget::Object(object_id(&charts::Charts, 1)), &mut other);
+        Controls.context_menu(
+            app,
+            &MenuTarget::Object(object_id(&charts::Charts, 1)),
+            &mut other,
+        );
         assert!(other.build().is_empty());
     });
     // A scroll bar has no caption to edit.

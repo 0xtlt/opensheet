@@ -82,12 +82,39 @@ fn words(locale: &Locale) -> Words {
     match locale.id {
         "fr" => Words {
             value_first: false,
-            group: ["Total", "Nombre", "Moyenne", "Max", "Min", "Produit", "Nombre", "Écartype", "Écartypep", "Var", "Varp"],
-            grand: ["Total général", "Nbval", "Moyenne", "Max", "Min", "Produit", "Nbval", "Écartype", "Écartypep", "Var", "Varp"],
+            group: [
+                "Total",
+                "Nombre",
+                "Moyenne",
+                "Max",
+                "Min",
+                "Produit",
+                "Nombre",
+                "Écartype",
+                "Écartypep",
+                "Var",
+                "Varp",
+            ],
+            grand: [
+                "Total général",
+                "Nbval",
+                "Moyenne",
+                "Max",
+                "Min",
+                "Produit",
+                "Nbval",
+                "Écartype",
+                "Écartypep",
+                "Var",
+                "Varp",
+            ],
         },
         "es" => Words {
             value_first: false,
-            group: ["Total", "Cuenta", "Promedio", "Máx", "Mín", "Producto", "Cuenta", "Desvest", "Desvestp", "Var", "Varp"],
+            group: [
+                "Total", "Cuenta", "Promedio", "Máx", "Mín", "Producto", "Cuenta", "Desvest",
+                "Desvestp", "Var", "Varp",
+            ],
             grand: [
                 "Total general",
                 "Cuenta general",
@@ -162,7 +189,10 @@ fn words(locale: &Locale) -> Words {
         },
         _ => Words {
             value_first: true,
-            group: ["Total", "Count", "Average", "Max", "Min", "Product", "Count", "StdDev", "StdDevp", "Var", "Varp"],
+            group: [
+                "Total", "Count", "Average", "Max", "Min", "Product", "Count", "StdDev", "StdDevp",
+                "Var", "Varp",
+            ],
             grand: [
                 "Grand Total",
                 "Grand Count",
@@ -184,7 +214,11 @@ fn words(locale: &Locale) -> Words {
 pub fn group_label(value: &str, function: SubtotalFn, locale: &Locale) -> String {
     let w = words(locale);
     let word = w.group[function.index()];
-    let joined = if w.value_first { format!("{value} {word}") } else { format!("{word} {value}") };
+    let joined = if w.value_first {
+        format!("{value} {word}")
+    } else {
+        format!("{word} {value}")
+    };
     joined.trim().to_string()
 }
 
@@ -224,8 +258,15 @@ pub enum SubtotalError {
 
 /// `SUBTOTAL(code, cells)`.
 fn subtotal_formula(function: SubtotalFn, cells: Rect) -> Expr {
-    let range = if cells.is_single() { RefExpr::cell(cells.r0, cells.c0) } else { RefExpr::range(cells) };
-    Expr::Func(Arc::from("SUBTOTAL"), vec![Expr::Number(function.code() as f64), Expr::Ref(range)])
+    let range = if cells.is_single() {
+        RefExpr::cell(cells.r0, cells.c0)
+    } else {
+        RefExpr::range(cells)
+    };
+    Expr::Func(
+        Arc::from("SUBTOTAL"),
+        vec![Expr::Number(function.code() as f64), Expr::Ref(range)],
+    )
 }
 
 /// The cells a formula that is a call to `SUBTOTAL` reads, when it is one.
@@ -255,8 +296,17 @@ impl Workbook {
             return Err(SubtotalError::InTable);
         }
         let list = self.current_region(sheet, row, col);
-        if list.rows() < 2 || self.sheets[sheet].tables.iter().any(|t| t.range.intersects(&list)) {
-            return Err(if list.rows() < 2 { SubtotalError::NoList } else { SubtotalError::InTable });
+        if list.rows() < 2
+            || self.sheets[sheet]
+                .tables
+                .iter()
+                .any(|t| t.range.intersects(&list))
+        {
+            return Err(if list.rows() < 2 {
+                SubtotalError::NoList
+            } else {
+                SubtotalError::InTable
+            });
         }
         Ok(list)
     }
@@ -289,7 +339,11 @@ impl Workbook {
             return list;
         }
         self.snapshot();
-        let rows: Vec<u32> = self.subtotal_rows(sheet, list).into_iter().map(|(row, _)| row).collect();
+        let rows: Vec<u32> = self
+            .subtotal_rows(sheet, list)
+            .into_iter()
+            .map(|(row, _)| row)
+            .collect();
         let sh = &mut self.sheets[sheet];
         // Past the list too: a grand total leaves its mark on the row
         // after it.
@@ -310,19 +364,35 @@ impl Workbook {
 
     /// Data > Subtotal on `list` (labels in its first row). Returns the
     /// list with its new rows. One undo step with the caller's `commit`.
-    pub fn subtotal(&mut self, sheet: usize, list: Rect, spec: &SubtotalSpec) -> Result<Rect, SubtotalError> {
+    pub fn subtotal(
+        &mut self,
+        sheet: usize,
+        list: Rect,
+        spec: &SubtotalSpec,
+    ) -> Result<Rect, SubtotalError> {
         let inside = |col: u32| col >= list.c0 && col <= list.c1;
         if sheet >= self.sheets.len() || list.rows() < 2 {
             return Err(SubtotalError::NoList);
         }
-        if self.sheets[sheet].tables.iter().any(|t| t.range.intersects(&list)) {
+        if self.sheets[sheet]
+            .tables
+            .iter()
+            .any(|t| t.range.intersects(&list))
+        {
             return Err(SubtotalError::InTable);
         }
-        if spec.columns.is_empty() || !spec.columns.iter().copied().all(inside) || !inside(spec.group_by) {
+        if spec.columns.is_empty()
+            || !spec.columns.iter().copied().all(inside)
+            || !inside(spec.group_by)
+        {
             return Err(SubtotalError::NoColumns);
         }
         self.snapshot();
-        let list = if spec.replace { self.remove_subtotals(sheet, list) } else { list };
+        let list = if spec.replace {
+            self.remove_subtotals(sheet, list)
+        } else {
+            list
+        };
         if list.rows() < 2 {
             return Err(SubtotalError::NoList);
         }
@@ -365,10 +435,14 @@ impl Workbook {
 
         // Where the grand total goes: at the end of the list (at its top
         // when summaries are above), beside those already there.
-        let whole = |read: &Option<(u32, u32)>| read.is_some_and(|(a, b)| a <= first + 1 && b + 1 >= last);
+        let whole =
+            |read: &Option<(u32, u32)>| read.is_some_and(|(a, b)| a <= first + 1 && b + 1 >= last);
         let below = spec.summary_below;
         let grand_at = if below {
-            existing.iter().find(|(_, read)| whole(read)).map_or(last + 1, |(row, _)| *row)
+            existing
+                .iter()
+                .find(|(_, read)| whole(read))
+                .map_or(last + 1, |(row, _)| *row)
         } else {
             first
         };
@@ -410,18 +484,41 @@ impl Workbook {
                 wb.update_style(sheet, Rect::cell(row, col), &|s| s.font.bold = true);
             }
             for &col in &spec.columns {
-                wb.set_formula(sheet, row, col, subtotal_formula(spec.function, Rect::new(cells.0, col, cells.1, col)));
+                wb.set_formula(
+                    sheet,
+                    row,
+                    col,
+                    subtotal_formula(spec.function, Rect::new(cells.0, col, cells.1, col)),
+                );
             }
         };
         for (row, a, b, label) in &placed {
-            write(self, *row, group_label(label, spec.function, locale), (*a, *b));
+            write(
+                self,
+                *row,
+                group_label(label, spec.function, locale),
+                (*a, *b),
+            );
         }
-        let all = if below { (first, grand_row - 1) } else { (grand_row + 1, end) };
-        write(self, grand_row, grand_label(spec.function, locale).to_string(), all);
+        let all = if below {
+            (first, grand_row - 1)
+        } else {
+            (grand_row + 1, end)
+        };
+        write(
+            self,
+            grand_row,
+            grand_label(spec.function, locale).to_string(),
+            all,
+        );
 
         // The outline: details one level under their subtotal, the grand
         // total over everything.
-        let (details, totals) = if detail_level == 0 { (2, 1) } else { (detail_level + 1, detail_level) };
+        let (details, totals) = if detail_level == 0 {
+            (2, 1)
+        } else {
+            (detail_level + 1, detail_level)
+        };
         let mut levels: Vec<(u32, u32, u8)> = Vec::new();
         for (row, a, b, _) in &placed {
             levels.push((*a, *b, details));
@@ -433,7 +530,11 @@ impl Workbook {
 
         // A page break before each group but the first.
         if spec.page_breaks {
-            let breaks: Vec<u32> = placed.iter().skip(1).map(|(row, a, _, _)| if below { *a } else { *row }).collect();
+            let breaks: Vec<u32> = placed
+                .iter()
+                .skip(1)
+                .map(|(row, a, _, _)| if below { *a } else { *row })
+                .collect();
             self.update_page_setup(sheet, |p| p.row_breaks.extend(breaks));
         }
         Ok(Rect::new(list.r0, list.c0, end, list.c1))
@@ -445,7 +546,9 @@ impl Workbook {
 fn same_group(a: &Value, b: &Value) -> bool {
     match (a.is_empty(), b.is_empty()) {
         (true, true) => true,
-        (false, false) => sort_order(a, b, false) == Ordering::Equal && !matches!(a, Value::Error(_)),
+        (false, false) => {
+            sort_order(a, b, false) == Ordering::Equal && !matches!(a, Value::Error(_))
+        }
         _ => false,
     }
 }
@@ -503,7 +606,9 @@ mod tests {
     }
 
     fn levels(wb: &Workbook, lo: u32, hi: u32) -> Vec<u8> {
-        (lo..=hi).map(|r| wb.sheets[0].outline.rows.level(r)).collect()
+        (lo..=hi)
+            .map(|r| wb.sheets[0].outline.rows.level(r))
+            .collect()
     }
 
     #[test]
@@ -517,10 +622,19 @@ mod tests {
         assert_eq!(formula(&wb, "D5"), "=SUBTOTAL(9,D2:D4)");
         assert_eq!(formula(&wb, "C5"), "=SUBTOTAL(9,C2:C4)");
         assert_eq!(text(&wb, "D5"), "60");
-        assert_eq!((text(&wb, "A8"), formula(&wb, "D8")), ("South Total".into(), "=SUBTOTAL(9,D6:D7)".into()));
+        assert_eq!(
+            (text(&wb, "A8"), formula(&wb, "D8")),
+            ("South Total".into(), "=SUBTOTAL(9,D6:D7)".into())
+        );
         // A group of one row reads one cell.
-        assert_eq!((text(&wb, "A10"), formula(&wb, "D10")), ("West Total".into(), "=SUBTOTAL(9,D9)".into()));
-        assert_eq!((text(&wb, "A11"), formula(&wb, "D11")), ("Grand Total".into(), "=SUBTOTAL(9,D2:D10)".into()));
+        assert_eq!(
+            (text(&wb, "A10"), formula(&wb, "D10")),
+            ("West Total".into(), "=SUBTOTAL(9,D9)".into())
+        );
+        assert_eq!(
+            (text(&wb, "A11"), formula(&wb, "D11")),
+            ("Grand Total".into(), "=SUBTOTAL(9,D2:D10)".into())
+        );
         assert_eq!(text(&wb, "D11"), "210");
         assert!(wb.style_at(0, 4, 0).font.bold && !wb.style_at(0, 4, 3).font.bold);
         // The outline of levels 1-2-3.
@@ -547,7 +661,10 @@ mod tests {
         assert_eq!(list, rect("A1:D11"));
         assert_eq!(wb.subtotal(0, list, &again).unwrap(), rect("A1:D11"));
         wb.commit("Subtotal");
-        assert_eq!((text(&wb, "A5"), formula(&wb, "D5")), ("North Average".into(), "=SUBTOTAL(1,D2:D4)".into()));
+        assert_eq!(
+            (text(&wb, "A5"), formula(&wb, "D5")),
+            ("North Average".into(), "=SUBTOTAL(1,D2:D4)".into())
+        );
         assert_eq!(text(&wb, "A11"), "Grand Average");
         assert_eq!(levels(&wb, 0, 11), [0, 2, 2, 2, 1, 2, 2, 1, 2, 1, 0, 0]);
 
@@ -575,13 +692,19 @@ mod tests {
         wb.commit("Subtotal");
         // Three rows in the North group, each an item of its own.
         assert_eq!(done, rect("A1:D18"));
-        assert_eq!((text(&wb, "B3"), formula(&wb, "D3")), ("a Count".into(), "=SUBTOTAL(3,D2)".into()));
+        assert_eq!(
+            (text(&wb, "B3"), formula(&wb, "D3")),
+            ("a Count".into(), "=SUBTOTAL(3,D2)".into())
+        );
         assert_eq!(text(&wb, "A8"), "North Total");
         // Its formula grew with the rows added inside its group.
         assert_eq!(formula(&wb, "D8"), "=SUBTOTAL(9,D2:D6)");
         assert_eq!(levels(&wb, 1, 7), [3, 2, 3, 2, 3, 2, 1]);
         // The new grand row comes before the one that was there.
-        assert_eq!((text(&wb, "B17"), text(&wb, "A18")), ("Grand Count".into(), "Grand Total".into()));
+        assert_eq!(
+            (text(&wb, "B17"), text(&wb, "A18")),
+            ("Grand Count".into(), "Grand Total".into())
+        );
         assert_eq!(formula(&wb, "D17"), "=SUBTOTAL(3,D2:D16)");
         assert_eq!(wb.remove_subtotals(0, done), rect("A1:D7"));
     }
@@ -594,17 +717,37 @@ mod tests {
             page_breaks: true,
             ..spec(&[3])
         };
-        assert_eq!(wb.subtotal(0, rect("A1:D7"), &above).unwrap(), rect("A1:D11"));
+        assert_eq!(
+            wb.subtotal(0, rect("A1:D7"), &above).unwrap(),
+            rect("A1:D11")
+        );
         wb.commit("Subtotal");
-        assert_eq!((text(&wb, "A2"), formula(&wb, "D2")), ("Grand Total".into(), "=SUBTOTAL(9,D3:D11)".into()));
-        assert_eq!((text(&wb, "A3"), formula(&wb, "D3")), ("North Total".into(), "=SUBTOTAL(9,D4:D6)".into()));
-        assert_eq!((text(&wb, "A7"), formula(&wb, "D7")), ("South Total".into(), "=SUBTOTAL(9,D8:D9)".into()));
+        assert_eq!(
+            (text(&wb, "A2"), formula(&wb, "D2")),
+            ("Grand Total".into(), "=SUBTOTAL(9,D3:D11)".into())
+        );
+        assert_eq!(
+            (text(&wb, "A3"), formula(&wb, "D3")),
+            ("North Total".into(), "=SUBTOTAL(9,D4:D6)".into())
+        );
+        assert_eq!(
+            (text(&wb, "A7"), formula(&wb, "D7")),
+            ("South Total".into(), "=SUBTOTAL(9,D8:D9)".into())
+        );
         assert_eq!(levels(&wb, 0, 10), [0, 0, 1, 2, 2, 2, 1, 2, 2, 1, 2]);
         assert!(!wb.sheets[0].outline.summary_below);
         let north = wb.sheets[0].outline.rows.group_at(3, 2).unwrap();
         assert_eq!(wb.sheets[0].outline_summary(Axis::Rows, &north), Some(2));
         // A break above each group after the first.
-        assert_eq!(wb.sheets[0].page.row_breaks.iter().copied().collect::<Vec<_>>(), [6, 9]);
+        assert_eq!(
+            wb.sheets[0]
+                .page
+                .row_breaks
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [6, 9]
+        );
         wb.remove_subtotals(0, rect("A1:D11"));
         assert!(wb.sheets[0].page.row_breaks.is_empty());
     }
@@ -614,19 +757,40 @@ mod tests {
         let mut wb = list(Locale::fr());
         wb.subtotal(0, rect("A1:D7"), &spec(&[3])).unwrap();
         wb.commit("Sous-total");
-        assert_eq!((text(&wb, "A5"), text(&wb, "A11")), ("Total North".into(), "Total général".into()));
+        assert_eq!(
+            (text(&wb, "A5"), text(&wb, "A11")),
+            ("Total North".into(), "Total général".into())
+        );
         assert_eq!(formula(&wb, "D5"), "=SOUS.TOTAL(9;D2:D4)");
-        assert_eq!(group_label("Nord", SubtotalFn::Sum, Locale::de()), "Nord Ergebnis");
-        assert_eq!(group_label("Nord", SubtotalFn::Average, Locale::es()), "Promedio Nord");
-        assert_eq!(group_label("Nord", SubtotalFn::Count, Locale::it()), "Nord Conteggio");
+        assert_eq!(
+            group_label("Nord", SubtotalFn::Sum, Locale::de()),
+            "Nord Ergebnis"
+        );
+        assert_eq!(
+            group_label("Nord", SubtotalFn::Average, Locale::es()),
+            "Promedio Nord"
+        );
+        assert_eq!(
+            group_label("Nord", SubtotalFn::Count, Locale::it()),
+            "Nord Conteggio"
+        );
         assert_eq!(grand_label(SubtotalFn::Max, Locale::de()), "Gesamtmaximum");
 
         let mut wb = list(Locale::en());
-        assert_eq!(wb.subtotal(0, rect("A1:D7"), &spec(&[])), Err(SubtotalError::NoColumns));
-        assert_eq!(wb.subtotal(0, rect("A1:D7"), &spec(&[9])), Err(SubtotalError::NoColumns));
+        assert_eq!(
+            wb.subtotal(0, rect("A1:D7"), &spec(&[])),
+            Err(SubtotalError::NoColumns)
+        );
+        assert_eq!(
+            wb.subtotal(0, rect("A1:D7"), &spec(&[9])),
+            Err(SubtotalError::NoColumns)
+        );
         assert_eq!(wb.subtotal_list(0, 20, 20), Err(SubtotalError::NoList));
         wb.add_table(0, rect("A1:D7"), true).unwrap();
         assert_eq!(wb.subtotal_list(0, 2, 1), Err(SubtotalError::InTable));
-        assert_eq!(wb.subtotal(0, rect("A1:D7"), &spec(&[3])), Err(SubtotalError::InTable));
+        assert_eq!(
+            wb.subtotal(0, rect("A1:D7"), &spec(&[3])),
+            Err(SubtotalError::InTable)
+        );
     }
 }

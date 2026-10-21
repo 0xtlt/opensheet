@@ -22,8 +22,9 @@ mod paint;
 mod ui_tests;
 
 use super::{
-    Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, ObjectInfo, ObjectVerb, PaintLayer,
-    Painter, Placement, ZMove, Zone, ZoneEvent, ZoneResponse, automate, object_id, preferences,
+    Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, ObjectInfo,
+    ObjectVerb, PaintLayer, Painter, Placement, ZMove, Zone, ZoneEvent, ZoneResponse, automate,
+    object_id, preferences,
 };
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
 use crate::i18n::t;
@@ -169,7 +170,9 @@ struct Canvas;
 
 /// The control that is selected, when one is and nothing else.
 pub(crate) fn selected(app: &ExcelApp) -> Option<&FormControl> {
-    let id = app.object_sel.filter(|id| id.owner == super::index_of(&Controls))?;
+    let id = app
+        .object_sel
+        .filter(|id| id.owner == super::index_of(&Controls))?;
     app.wb.sheets[app.sheet].control(id.id)
 }
 
@@ -190,7 +193,9 @@ pub(crate) fn kind_label(kind: ControlKind) -> &'static str {
 
 /// The first line a list box shows.
 pub(crate) fn list_top(app: &ExcelApp, id: u32) -> u32 {
-    app.ext::<ControlsUi>().and_then(|ui| ui.list_top.get(&id).copied()).unwrap_or(0)
+    app.ext::<ControlsUi>()
+        .and_then(|ui| ui.list_top.get(&id).copied())
+        .unwrap_or(0)
 }
 
 /// The part of a control that is held down, if any.
@@ -217,7 +222,11 @@ fn arm(app: &mut ExcelApp, kind: ControlKind, window: &mut Window, cx: &mut Cx) 
     app.popup = None;
     let ui = app.ext_mut::<ControlsUi>();
     // The button that is down puts the tool back.
-    ui.tool = if ui.tool == Some(kind) { None } else { Some(kind) };
+    ui.tool = if ui.tool == Some(kind) {
+        None
+    } else {
+        Some(kind)
+    };
     ui.press = None;
     window.focus(&app.grid_focus);
     cx.notify();
@@ -238,7 +247,14 @@ fn disarm(app: &mut ExcelApp, cx: &mut Cx) -> bool {
 /// Put a new control of `kind` on the sheet, in the box dragged out on
 /// the grid element (a click gives it the size Excel does), select it,
 /// and ask for the macro of a button as Excel does.
-pub(crate) fn insert(app: &mut ExcelApp, kind: ControlKind, start: (f32, f32), end: (f32, f32), window: &mut Window, cx: &mut Cx) -> Option<u32> {
+pub(crate) fn insert(
+    app: &mut ExcelApp,
+    kind: ControlKind,
+    start: (f32, f32),
+    end: (f32, f32),
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<u32> {
     let layout = app.current_layout()?;
     let z = layout.zoom;
     let (x0, y0) = (start.0.min(end.0), start.1.min(end.1));
@@ -251,7 +267,10 @@ pub(crate) fn insert(app: &mut ExcelApp, kind: ControlKind, start: (f32, f32), e
     }
     let (row, col) = (layout.row_at(y0), layout.col_at(x0));
     control.anchor = (row, col);
-    control.offset = (((x0 - layout.col_x(col)) / z).max(0.0), ((y0 - layout.row_y(row)) / z).max(0.0));
+    control.offset = (
+        ((x0 - layout.col_x(col)) / z).max(0.0),
+        ((y0 - layout.row_y(row)) / z).max(0.0),
+    );
     let sheet = app.sheet;
     let id = app.wb.add_control(sheet, control)?;
     app.commit(t("Insert Control", "Insérer un contrôle"), cx);
@@ -272,7 +291,9 @@ fn work_label(kind: ControlKind) -> &'static str {
 /// True when the cell the control is linked to may be written.
 fn may_write_link(app: &mut ExcelApp, control: &FormControl, cx: &mut Cx) -> bool {
     match app.wb.control_link(app.sheet, control) {
-        Some((sheet, row, col)) if sheet == app.sheet => app.may(Intent::EditCells(Rect::cell(row, col)), cx),
+        Some((sheet, row, col)) if sheet == app.sheet => {
+            app.may(Intent::EditCells(Rect::cell(row, col)), cx)
+        }
         _ => true,
     }
 }
@@ -298,12 +319,24 @@ pub(crate) fn click(app: &mut ExcelApp, id: u32, cx: &mut Cx) {
                 return;
             }
             let now = app.wb.control_state(sheet, &control).checked;
-            let next = if now == CheckState::Checked { CheckState::Unchecked } else { CheckState::Checked };
+            let next = if now == CheckState::Checked {
+                CheckState::Unchecked
+            } else {
+                CheckState::Checked
+            };
             app.wb.set_control_checked(id, next);
             app.commit(work_label(control.kind), cx);
         }
         ControlKind::OptionButton => {
-            let linked = app.wb.sheets[sheet].option_group(id).into_iter().find_map(|member| app.wb.sheets[sheet].control(member).filter(|c| c.link.is_some()).cloned());
+            let linked = app.wb.sheets[sheet]
+                .option_group(id)
+                .into_iter()
+                .find_map(|member| {
+                    app.wb.sheets[sheet]
+                        .control(member)
+                        .filter(|c| c.link.is_some())
+                        .cloned()
+                });
             if linked.is_some_and(|linked| !may_write_link(app, &linked, cx)) {
                 return;
             }
@@ -365,7 +398,10 @@ fn open_combo(app: &mut ExcelApp, hit: &ControlZone, cx: &mut Cx) {
         .control_items(sheet, control)
         .into_iter()
         .enumerate()
-        .map(|(k, item)| MenuEntry::new(item, move |app, _, cx| choose(app, id, k as u32 + 1, cx)).checked(now.selected == k as u32 + 1))
+        .map(|(k, item)| {
+            MenuEntry::new(item, move |app, _, cx| choose(app, id, k as u32 + 1, cx))
+                .checked(now.selected == k as u32 + 1)
+        })
         .collect();
     if entries.is_empty() {
         return;
@@ -375,7 +411,14 @@ fn open_combo(app: &mut ExcelApp, hit: &ControlZone, cx: &mut Cx) {
     };
     let lines = control.drop_lines.clamp(1, 30) as f32;
     let width = ((hit.rect.2 - hit.rect.0).max(80.0)).min(480.0);
-    app.popup = Some(Popup::new(PopupKind::Menu(entries), layout.to_window(hit.rect.0, hit.rect.3), width).max_height(lines * 26.0 + 10.0));
+    app.popup = Some(
+        Popup::new(
+            PopupKind::Menu(entries),
+            layout.to_window(hit.rect.0, hit.rect.3),
+            width,
+        )
+        .max_height(lines * 26.0 + 10.0),
+    );
     cx.notify();
 }
 
@@ -391,7 +434,13 @@ fn press(app: &mut ExcelApp, hit: &ControlZone, ev: &ZoneEvent, cx: &mut Cx) -> 
     }
     app.popup = None;
     let now = app.wb.control_state(sheet, &control);
-    let geometry = paint::Geometry::of(&now, hit.rect, hit.zoom, app.wb.control_items(sheet, &control).len() as u32, list_top(app, hit.id));
+    let geometry = paint::Geometry::of(
+        &now,
+        hit.rect,
+        hit.zoom,
+        app.wb.control_items(sheet, &control).len() as u32,
+        list_top(app, hit.id),
+    );
     let part = geometry.part_at(ev.x, ev.y);
     let id = hit.id;
     match part {
@@ -416,7 +465,11 @@ fn press(app: &mut ExcelApp, hit: &ControlZone, ev: &ZoneEvent, cx: &mut Cx) -> 
             };
             // The upper arrow of a spin button adds, the upper arrow of a
             // scroll bar takes away.
-            let delta = if control.kind == ControlKind::SpinButton { -delta } else { delta };
+            let delta = if control.kind == ControlKind::SpinButton {
+                -delta
+            } else {
+                delta
+            };
             set_value(app, id, stepped(&control, now.value, delta), true, cx);
             ZoneResponse::Handled
         }
@@ -450,9 +503,19 @@ impl Feature for Controls {
         }]
     }
 
-    fn render_tab(&self, app: &mut ExcelApp, _tab: &'static str, _window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn render_tab(
+        &self,
+        app: &mut ExcelApp,
+        _tab: &'static str,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         vec![
-            group(t("Code", "Code"), row(vec![app.cmd_large("dev-macros", Cmd::Macros, false, cx)])).into_any_element(),
+            group(
+                t("Code", "Code"),
+                row(vec![app.cmd_large("dev-macros", Cmd::Macros, false, cx)]),
+            )
+            .into_any_element(),
             group(
                 t("Form Controls", "Contrôles de formulaire"),
                 row(vec![
@@ -500,14 +563,35 @@ impl Feature for Controls {
             return;
         };
         if let Some(Press::Draw { start, end }) = ui.press {
-            let (x0, y0, x1, y1) = (start.0.min(end.0), start.1.min(end.1), start.0.max(end.0), start.1.max(end.1));
+            let (x0, y0, x1, y1) = (
+                start.0.min(end.0),
+                start.1.min(end.1),
+                start.0.max(end.0),
+                start.1.max(end.1),
+            );
             p.frame(x0, y0, x1, y1, 1.0, crate::theme::c(0x595959));
         }
         let layout = p.layout;
-        p.zone((layout.header_w, layout.header_h, layout.width(), layout.height()), Canvas).cursor(CursorStyle::Crosshair);
+        p.zone(
+            (
+                layout.header_w,
+                layout.header_h,
+                layout.width(),
+                layout.height(),
+            ),
+            Canvas,
+        )
+        .cursor(CursorStyle::Crosshair);
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         let armed = app.ext::<ControlsUi>().and_then(|ui| ui.tool).is_some();
         let hit = zone.payload::<ControlZone>();
         if zone.payload::<Canvas>().is_none() && hit.is_none() {
@@ -530,7 +614,10 @@ impl Feature for Controls {
         };
         // The other buttons, ⌃, ⌘ and ⇧ select the control; once selected
         // it is an object like any other.
-        let selecting = ev.button != MouseButton::Left || ev.modifiers.control || ev.modifiers.platform || ev.modifiers.shift;
+        let selecting = ev.button != MouseButton::Left
+            || ev.modifiers.control
+            || ev.modifiers.platform
+            || ev.modifiers.shift;
         if selecting || app.is_object_selected(object_id(self, hit.id)) || app.object_pointer() {
             return ZoneResponse::Ignored;
         }
@@ -542,16 +629,29 @@ impl Feature for Controls {
         response
     }
 
-    fn zone_drag(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+    fn zone_drag(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) {
         let Some(press) = app.ext::<ControlsUi>().and_then(|ui| ui.press) else {
             return;
         };
         match press {
             Press::Draw { start, .. } => {
-                app.ext_mut::<ControlsUi>().press = Some(Press::Draw { start, end: (ev.x, ev.y) });
+                app.ext_mut::<ControlsUi>().press = Some(Press::Draw {
+                    start,
+                    end: (ev.x, ev.y),
+                });
             }
             Press::Thumb(id, grabbed) => {
-                let (Some(hit), Some(control)) = (zone.payload::<ControlZone>(), app.wb.sheets[app.sheet].control(id).cloned()) else {
+                let (Some(hit), Some(control)) = (
+                    zone.payload::<ControlZone>(),
+                    app.wb.sheets[app.sheet].control(id).cloned(),
+                ) else {
                     return;
                 };
                 let now = app.wb.control_state(app.sheet, &control);
@@ -564,7 +664,14 @@ impl Feature for Controls {
         cx.notify();
     }
 
-    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+    fn zone_mouse_up(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) {
         let Some(press) = app.ext_mut::<ControlsUi>().press.take() else {
             return;
         };
@@ -591,18 +698,29 @@ impl Feature for Controls {
     }
 
     /// The wheel over a list box turns its lines.
-    fn zone_scroll(&self, app: &mut ExcelApp, zone: &Zone, delta: (f32, f32), _cx: &mut Cx) -> bool {
+    fn zone_scroll(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        delta: (f32, f32),
+        _cx: &mut Cx,
+    ) -> bool {
         let Some(hit) = zone.payload::<ControlZone>() else {
             return false;
         };
-        let Some(control) = app.wb.sheets[app.sheet].control(hit.id).filter(|c| c.kind == ControlKind::ListBox) else {
+        let Some(control) = app.wb.sheets[app.sheet]
+            .control(hit.id)
+            .filter(|c| c.kind == ControlKind::ListBox)
+        else {
             return false;
         };
         let lines = app.wb.control_items(app.sheet, control).len() as u32;
         let shown = paint::Geometry::of(control, hit.rect, hit.zoom, lines, 0).lines_shown();
         let hidden = lines.saturating_sub(shown);
         let top = list_top(app, hit.id) as i64 + if delta.1 < 0.0 { 1 } else { -1 };
-        app.ext_mut::<ControlsUi>().list_top.insert(hit.id, top.clamp(0, hidden as i64) as u32);
+        app.ext_mut::<ControlsUi>()
+            .list_top
+            .insert(hit.id, top.clamp(0, hidden as i64) as u32);
         true
     }
 
@@ -613,11 +731,17 @@ impl Feature for Controls {
         if id.owner != super::index_of(self) {
             return;
         }
-        if app.wb.sheets[app.sheet].control(id.id).is_some_and(|control| control.kind.has_text()) {
+        if app.wb.sheets[app.sheet]
+            .control(id.id)
+            .is_some_and(|control| control.kind.has_text())
+        {
             menu.add(MenuSection::Edit, MenuEntry::command(Cmd::EditText, app));
         }
         menu.add(MenuSection::Data, MenuEntry::command(Cmd::AssignMacro, app));
-        menu.add(MenuSection::Format, MenuEntry::command(Cmd::FormatControl, app));
+        menu.add(
+            MenuSection::Format,
+            MenuEntry::command(Cmd::FormatControl, app),
+        );
     }
 
     fn objects(&self, app: &ExcelApp, sheet: usize) -> Vec<ObjectInfo> {
@@ -668,7 +792,12 @@ impl Feature for Controls {
         Some(Rc::new(control))
     }
 
-    fn paste_object(&self, app: &mut ExcelApp, data: &dyn Any, at: ((u32, u32), (f32, f32))) -> Option<u32> {
+    fn paste_object(
+        &self,
+        app: &mut ExcelApp,
+        data: &dyn Any,
+        at: ((u32, u32), (f32, f32)),
+    ) -> Option<u32> {
         let mut control = data.downcast_ref::<FormControl>()?.clone();
         (control.anchor, control.offset) = at;
         // The copy is a control of its own, under a name of its own.
@@ -696,7 +825,14 @@ impl Feature for Controls {
     }
 
     /// A double click on a selected control opens its format.
-    fn object_double_click(&self, app: &mut ExcelApp, _id: u32, _ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+    fn object_double_click(
+        &self,
+        app: &mut ExcelApp,
+        _id: u32,
+        _ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) {
         dialogs::open_format(app, window, cx);
     }
 

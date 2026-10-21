@@ -13,7 +13,11 @@ impl PivotTable {
         let mut keep = vec![true; cache.rows];
         let mut drop_hidden = |f: usize, visible: &dyn Fn(u32, &Value) -> bool| {
             let items = cache.items(f);
-            let shown: Vec<bool> = items.iter().enumerate().map(|(x, v)| visible(x as u32, v)).collect();
+            let shown: Vec<bool> = items
+                .iter()
+                .enumerate()
+                .map(|(x, v)| visible(x as u32, v))
+                .collect();
             if shown.iter().all(|v| *v) {
                 return;
             }
@@ -27,7 +31,12 @@ impl PivotTable {
             match page.and_then(|p| p.item) {
                 Some(only) => drop_hidden(f, &|x, _| x == only),
                 None if applies => {
-                    let hidden: Vec<u32> = self.fields[f].items.iter().filter(|it| it.hidden).map(|it| it.x).collect();
+                    let hidden: Vec<u32> = self.fields[f]
+                        .items
+                        .iter()
+                        .filter(|it| it.hidden)
+                        .map(|it| it.x)
+                        .collect();
                     if !hidden.is_empty() {
                         drop_hidden(f, &|x, _| !hidden.contains(&x));
                     }
@@ -36,7 +45,10 @@ impl PivotTable {
             }
             for filter in self.filters.iter().filter(|x| x.field == f) {
                 if let FilterKind::Date { start, end } = filter.kind {
-                    drop_hidden(f, &|_, v| matches!(v, Value::Number(n) if n.floor() >= start && n.floor() <= end));
+                    drop_hidden(
+                        f,
+                        &|_, v| matches!(v, Value::Number(n) if n.floor() >= start && n.floor() <= end),
+                    );
                 }
             }
         }

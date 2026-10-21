@@ -26,7 +26,9 @@ pub fn parse_range(text: &str, locale: &Locale, own_sheet: &str) -> Option<RefEx
     if text.is_empty() {
         return None;
     }
-    let expr = parser::parse_formula(text, locale).or_else(|_| parser::parse_formula(text, Locale::en())).ok()?;
+    let expr = parser::parse_formula(text, locale)
+        .or_else(|_| parser::parse_formula(text, Locale::en()))
+        .ok()?;
     let mut range = match expr {
         Expr::Ref(range) => range,
         Expr::Paren(inner) => match *inner {
@@ -80,7 +82,12 @@ pub fn series_name_text(name: &SeriesName) -> String {
 /// The block of cells the series of a chart come from, when they are
 /// exactly what Excel would make of one block; otherwise the range is
 /// "too complex to be displayed".
-pub fn data_range(app: &ExcelApp, own_sheet: usize, kind: ChartKind, series: &[Series]) -> Option<String> {
+pub fn data_range(
+    app: &ExcelApp,
+    own_sheet: usize,
+    kind: ChartKind,
+    series: &[Series],
+) -> Option<String> {
     let first = series.first()?;
     let sheet_name = first.values.sheet.clone();
     let mut block = first.values.rect();
@@ -107,12 +114,19 @@ pub fn data_range(app: &ExcelApp, own_sheet: usize, kind: ChartKind, series: &[S
     let same = |rebuilt: &Chart| {
         let alike = |a: &Series, b: &Series| {
             a.values.rect() == b.values.rect()
-                && a.categories.as_ref().map(RefExpr::rect) == b.categories.as_ref().map(RefExpr::rect)
-                && a.bubble_sizes.as_ref().map(RefExpr::rect) == b.bubble_sizes.as_ref().map(RefExpr::rect)
+                && a.categories.as_ref().map(RefExpr::rect)
+                    == b.categories.as_ref().map(RefExpr::rect)
+                && a.bubble_sizes.as_ref().map(RefExpr::rect)
+                    == b.bubble_sizes.as_ref().map(RefExpr::rect)
         };
-        rebuilt.series.len() == series.len() && series.iter().all(|ours| rebuilt.series.iter().any(|theirs| alike(ours, theirs)))
+        rebuilt.series.len() == series.len()
+            && series
+                .iter()
+                .all(|ours| rebuilt.series.iter().any(|theirs| alike(ours, theirs)))
     };
-    let fits = [Some(false), Some(true)].into_iter().any(|by_rows| same(&app.wb.chart_from_block(sheet, block, kind, by_rows)));
+    let fits = [Some(false), Some(true)]
+        .into_iter()
+        .any(|by_rows| same(&app.wb.chart_from_block(sheet, block, kind, by_rows)));
     fits.then(|| RefStyle::formula().format(block, &app.wb.sheets[sheet].name))
 }
 
@@ -175,7 +189,11 @@ impl SelectData {
         };
         let (kind, own) = (self.kind, self.sheet);
         let rebuilt = self.modal.read_app(cx, |app| {
-            let sheet = range.sheet.as_deref().and_then(|name| app.wb.sheet_index(name)).unwrap_or(own);
+            let sheet = range
+                .sheet
+                .as_deref()
+                .and_then(|name| app.wb.sheet_index(name))
+                .unwrap_or(own);
             app.wb.chart_from_range(sheet, range.rect(), kind).series
         });
         if let Some(series) = rebuilt.filter(|s| !s.is_empty()) {
@@ -215,7 +233,11 @@ impl SelectData {
     fn switch(&mut self, cx: &mut Context<Self>) {
         let mut chart = self.chart();
         let sheet = self.sheet;
-        if self.modal.read_app(cx, |app| chart.switch_row_column(&app.wb, sheet)) == Some(true) {
+        if self
+            .modal
+            .read_app(cx, |app| chart.switch_row_column(&app.wb, sheet))
+            == Some(true)
+        {
             self.series = chart.series;
             self.selected = (!self.series.is_empty()).then_some(0);
             self.show_range(cx);
@@ -227,13 +249,20 @@ impl SelectData {
         let series = index.and_then(|i| self.series.get(i).cloned());
         let (kind, own_sheet, locale) = (self.kind, self.own_sheet.clone(), self.locale);
         self.modal.update_app(cx, |app, cx| {
-            app.open_modal(window, cx, move |modal, _, cx| EditSeries::new(modal, parent, index, series, kind, own_sheet, locale, cx));
+            app.open_modal(window, cx, move |modal, _, cx| {
+                EditSeries::new(modal, parent, index, series, kind, own_sheet, locale, cx)
+            });
         });
     }
 
     fn edit_labels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let parent = cx.weak_entity();
-        let current = self.series.iter().find_map(|s| s.categories.as_ref()).map(range_text).unwrap_or_default();
+        let current = self
+            .series
+            .iter()
+            .find_map(|s| s.categories.as_ref())
+            .map(range_text)
+            .unwrap_or_default();
         let (own_sheet, locale) = (self.own_sheet.clone(), self.locale);
         self.modal.update_app(cx, |app, cx| {
             app.open_modal(window, cx, move |modal, _, cx| AxisLabels {
@@ -250,14 +279,22 @@ impl SelectData {
         let parent = cx.weak_entity();
         let blanks = self.blanks;
         self.modal.update_app(cx, |app, cx| {
-            app.open_modal(window, cx, move |modal, _, _| EmptyCells { modal, parent, blanks });
+            app.open_modal(window, cx, move |modal, _, _| EmptyCells {
+                modal,
+                parent,
+                blanks,
+            });
         });
     }
 
     fn remove(&mut self, cx: &mut Context<Self>) {
         if let Some(i) = self.selected.filter(|i| *i < self.series.len()) {
             self.series.remove(i);
-            self.selected = if self.series.is_empty() { None } else { Some(i.min(self.series.len() - 1)) };
+            self.selected = if self.series.is_empty() {
+                None
+            } else {
+                Some(i.min(self.series.len() - 1))
+            };
             self.show_range(cx);
         }
     }
@@ -276,11 +313,15 @@ impl SelectData {
         let (series, blanks) = (self.series.clone(), self.blanks);
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
-            app.edit_chart(t("Select Data", "Sélectionner des données"), cx, move |c| {
-                c.series = series;
-                c.blanks = blanks;
-                c.legend_hidden.clear();
-            });
+            app.edit_chart(
+                t("Select Data", "Sélectionner des données"),
+                cx,
+                move |c| {
+                    c.series = series;
+                    c.blanks = blanks;
+                    c.legend_hidden.clear();
+                },
+            );
         });
     }
 }
@@ -289,14 +330,24 @@ impl Render for SelectData {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_range(cx);
         let (chart, sheet) = (self.chart(), self.sheet);
-        let data = self.modal.read_app(cx, |app| app.wb.chart_data(sheet, &chart)).unwrap_or_default();
-        let names: Vec<SharedString> = (0..self.series.len()).map(|i| series_name(&data, i).into()).collect();
+        let data = self
+            .modal
+            .read_app(cx, |app| app.wb.chart_data(sheet, &chart))
+            .unwrap_or_default();
+        let names: Vec<SharedString> = (0..self.series.len())
+            .map(|i| series_name(&data, i).into())
+            .collect();
         let xy = self.kind.is_xy();
         let labels: Vec<SharedString> = if xy {
-            data.x_values.iter().map(|x| x.map(|x| x.to_string()).unwrap_or_default().into()).collect()
+            data.x_values
+                .iter()
+                .map(|x| x.map(|x| x.to_string()).unwrap_or_default().into())
+                .collect()
         } else {
             // Labels on several levels read outer level first ("2024 Q1").
-            (0..data.categories.len()).map(|k| data.category_name(k).into()).collect()
+            (0..data.categories.len())
+                .map(|k| data.category_name(k).into())
+                .collect()
         };
         let complex = self.applied.is_empty() && !self.series.is_empty();
         let has = self.selected.is_some();
@@ -418,12 +469,21 @@ impl EditSeries {
         cx: &mut Context<Self>,
     ) -> Self {
         let text = |range: Option<&RefExpr>| range.map(range_text).unwrap_or_default();
-        let field = |text: String, cx: &mut Context<Self>| modal.ref_input(RefStyle::formula(), text, cx);
+        let field =
+            |text: String, cx: &mut Context<Self>| modal.ref_input(RefStyle::formula(), text, cx);
         EditSeries {
-            name: field(base.as_ref().map(|s| series_name_text(&s.name)).unwrap_or_default(), cx),
+            name: field(
+                base.as_ref()
+                    .map(|s| series_name_text(&s.name))
+                    .unwrap_or_default(),
+                cx,
+            ),
             x: field(text(base.as_ref().and_then(|s| s.categories.as_ref())), cx),
             values: field(text(base.as_ref().map(|s| &s.values)), cx),
-            sizes: field(text(base.as_ref().and_then(|s| s.bubble_sizes.as_ref())), cx),
+            sizes: field(
+                text(base.as_ref().and_then(|s| s.bubble_sizes.as_ref())),
+                cx,
+            ),
             modal,
             parent,
             index,
@@ -435,19 +495,27 @@ impl EditSeries {
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let read = |field: &Entity<TextInput>, cx: &Context<Self>| field.read(cx).text().to_string();
+        let read =
+            |field: &Entity<TextInput>, cx: &Context<Self>| field.read(cx).text().to_string();
         let range = |text: &str| parse_range(text, self.locale, &self.own_sheet);
         let Some(values) = range(&read(&self.values, cx)) else {
             self.modal.update_app(cx, |app, cx| {
                 app.alert(
-                    Alert::new("OpenSheet", t("Reference is not valid.", "La référence n'est pas valide.")).warning(),
+                    Alert::new(
+                        "OpenSheet",
+                        t("Reference is not valid.", "La référence n'est pas valide."),
+                    )
+                    .warning(),
                     cx,
                 );
             });
             return;
         };
         let xy = self.kind.is_xy();
-        let mut series = self.base.clone().unwrap_or_else(|| Series::new(values.clone()));
+        let mut series = self
+            .base
+            .clone()
+            .unwrap_or_else(|| Series::new(values.clone()));
         series.values = values;
         series.name = parse_series_name(&read(&self.name, cx), self.locale, &self.own_sheet);
         if xy {
@@ -465,7 +533,8 @@ impl EditSeries {
                     _ => {
                         // A new series shares the categories of the others.
                         if !xy && series.categories.is_none() {
-                            series.categories = parent.series.iter().find_map(|s| s.categories.clone());
+                            series.categories =
+                                parent.series.iter().find_map(|s| s.categories.clone());
                         }
                         parent.series.push(series);
                         parent.selected = Some(parent.series.len() - 1);
@@ -481,19 +550,38 @@ impl Render for EditSeries {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let xy = self.kind.is_xy();
         let field = |label: &'static str, input: &Entity<TextInput>| {
-            div().flex().flex_col().gap(px(3.)).child(widgets::label(label)).child(div().flex().child(RefEdit::new(input, &self.modal)))
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .child(widgets::label(label))
+                .child(div().flex().child(RefEdit::new(input, &self.modal)))
         };
         widgets::dialog(&self.modal, t("Edit Series", "Modifier la série"))
             .width(340.0)
             .on_ok(cx.listener(Self::ok))
             .child(field(t("Series name:", "Nom de la série :"), &self.name))
             .when(xy, |d| {
-                d.child(field(t("Series X values:", "Valeurs de la série des abscisses X :"), &self.x))
-                    .child(field(t("Series Y values:", "Valeurs de la série des ordonnées Y :"), &self.values))
+                d.child(field(
+                    t("Series X values:", "Valeurs de la série des abscisses X :"),
+                    &self.x,
+                ))
+                .child(field(
+                    t("Series Y values:", "Valeurs de la série des ordonnées Y :"),
+                    &self.values,
+                ))
             })
-            .when(!xy, |d| d.child(field(t("Series values:", "Valeurs de la série :"), &self.values)))
+            .when(!xy, |d| {
+                d.child(field(
+                    t("Series values:", "Valeurs de la série :"),
+                    &self.values,
+                ))
+            })
             .when(self.kind.family() == Family::Bubble, |d| {
-                d.child(field(t("Series bubble size:", "Taille des bulles de la série :"), &self.sizes))
+                d.child(field(
+                    t("Series bubble size:", "Taille des bulles de la série :"),
+                    &self.sizes,
+                ))
             })
             .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -530,7 +618,10 @@ impl Render for AxisLabels {
         widgets::dialog(&self.modal, t("Axis Labels", "Étiquettes des axes"))
             .width(320.0)
             .on_ok(cx.listener(Self::ok))
-            .child(widgets::label(t("Axis label range:", "Plage d'étiquettes des axes :")))
+            .child(widgets::label(t(
+                "Axis label range:",
+                "Plage d'étiquettes des axes :",
+            )))
             .child(div().flex().child(RefEdit::new(&self.range, &self.modal)))
             .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -564,37 +655,66 @@ impl Render for EmptyCells {
         let options: Vec<SharedString> = vec![
             t("Gaps", "Intervalles").into(),
             t("Zero", "Valeur zéro").into(),
-            t("Connect data points with line", "Relier les points de données par une courbe").into(),
+            t(
+                "Connect data points with line",
+                "Relier les points de données par une courbe",
+            )
+            .into(),
         ];
-        widgets::dialog(&self.modal, t("Hidden and Empty Cell Settings", "Paramètres des cellules masquées et vides"))
-            .width(400.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(12.))
-                    .child(widgets::label(t("Show empty cells as:", "Afficher les cellules vides en tant que :")))
-                    .child(
-                        RadioGroup::new("blanks", options, BLANKS.iter().position(|b| *b == self.blanks)).on_change(cx.listener(
-                            |this, ix: &usize, _, cx| {
-                                this.blanks = BLANKS[*ix];
-                                cx.notify();
-                            },
-                        )),
-                    ),
+        widgets::dialog(
+            &self.modal,
+            t(
+                "Hidden and Empty Cell Settings",
+                "Paramètres des cellules masquées et vides",
+            ),
+        )
+        .width(400.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(
+            div()
+                .flex()
+                .gap(px(12.))
+                .child(widgets::label(t(
+                    "Show empty cells as:",
+                    "Afficher les cellules vides en tant que :",
+                )))
+                .child(
+                    RadioGroup::new(
+                        "blanks",
+                        options,
+                        BLANKS.iter().position(|b| *b == self.blanks),
+                    )
+                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                        this.blanks = BLANKS[*ix];
+                        cx.notify();
+                    })),
+                ),
+        )
+        // What the engine always does: errors are gaps, hidden cells
+        // are plotted.
+        .child(
+            Checkbox::new(
+                "na",
+                t(
+                    "Show #N/A as an empty cell",
+                    "Afficher #N/A en tant que cellule vide",
+                ),
+                true,
             )
-            // What the engine always does: errors are gaps, hidden cells
-            // are plotted.
-            .child(Checkbox::new("na", t("Show #N/A as an empty cell", "Afficher #N/A en tant que cellule vide"), true).disabled(true))
-            .child(
-                Checkbox::new(
-                    "hidden",
-                    t("Show data in hidden rows and columns", "Afficher les données des lignes et colonnes masquées"),
-                    true,
-                )
-                .disabled(true),
+            .disabled(true),
+        )
+        .child(
+            Checkbox::new(
+                "hidden",
+                t(
+                    "Show data in hidden rows and columns",
+                    "Afficher les données des lignes et colonnes masquées",
+                ),
+                true,
             )
-            .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
+            .disabled(true),
+        )
+        .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
@@ -611,7 +731,12 @@ pub(crate) fn open_move_chart(app: &mut ExcelApp, window: &mut Window, cx: &mut 
     let Some(chart) = app.selected_chart().map(|c| c.id) else {
         return;
     };
-    let sheets = app.wb.sheets.iter().map(|s| SharedString::from(s.name.to_string())).collect();
+    let sheets = app
+        .wb
+        .sheets
+        .iter()
+        .map(|s| SharedString::from(s.name.to_string()))
+        .collect();
     let target = app.sheet;
     app.open_modal(window, cx, move |modal, _, _| MoveChart {
         modal,
@@ -655,7 +780,8 @@ impl MoveChart {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let (chart, target) = (self.chart, self.target);
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| move_chart(app, chart, target, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| move_chart(app, chart, target, window, cx));
     }
 }
 
@@ -669,13 +795,24 @@ impl Render for MoveChart {
                 "Choisissez l'emplacement du graphique :",
             )))
             // Chart sheets do not exist here: the choice is shown, greyed out.
-            .child(RadioGroup::new("new-sheet", vec![t("New sheet:", "Nouvelle feuille :").into()], None).disabled(true))
+            .child(
+                RadioGroup::new(
+                    "new-sheet",
+                    vec![t("New sheet:", "Nouvelle feuille :").into()],
+                    None,
+                )
+                .disabled(true),
+            )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(10.))
-                    .child(RadioGroup::new("object-in", vec![t("Object in:", "Objet dans :").into()], Some(0)))
+                    .child(RadioGroup::new(
+                        "object-in",
+                        vec![t("Object in:", "Objet dans :").into()],
+                        Some(0),
+                    ))
                     .child(
                         Select::new("sheet", self.sheets.clone(), Some(self.target))
                             .width(220.0)
@@ -703,12 +840,20 @@ mod tests {
     }
 
     /// A window with three months of two regions and a chart of them.
-    fn open(cx: &mut TestAppContext, kind: ChartKind) -> (Entity<ExcelApp>, &mut VisualTestContext) {
+    fn open(
+        cx: &mut TestAppContext,
+        kind: ChartKind,
+    ) -> (Entity<ExcelApp>, &mut VisualTestContext) {
         set_lang(Lang::En);
         cx.update(crate::bind_keys);
         let (app, cx) = cx.add_window_view(ExcelApp::new);
         app.update_in(cx, |app, window, cx| {
-            let rows = [["Month", "North", "South"], ["Jan", "12", "8"], ["Feb", "15", "11"], ["Mar", "9", "14"]];
+            let rows = [
+                ["Month", "North", "South"],
+                ["Jan", "12", "8"],
+                ["Feb", "15", "11"],
+                ["Mar", "9", "14"],
+            ];
             for (r, row) in rows.iter().enumerate() {
                 for (c, text) in row.iter().enumerate() {
                     let _ = app.wb.set_cell_text(0, r as u32, c as u32, text);
@@ -723,15 +868,27 @@ mod tests {
     }
 
     fn chart(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Chart {
-        app.update(cx, |app, _| app.wb.sheets.iter().flat_map(|s| s.charts.iter()).next().cloned().expect("a chart"))
+        app.update(cx, |app, _| {
+            app.wb
+                .sheets
+                .iter()
+                .flat_map(|s| s.charts.iter())
+                .next()
+                .cloned()
+                .expect("a chart")
+        })
     }
 
     #[gpui::test]
     fn select_data_edits_a_copy_until_ok(cx: &mut TestAppContext) {
         let (app, cx) = open(cx, ChartKind::Column);
-        let dialog = app.update_in(cx, |app, window, cx| open_dialog(app, window, cx)).expect("the dialog");
+        let dialog = app
+            .update_in(cx, |app, window, cx| open_dialog(app, window, cx))
+            .expect("the dialog");
         redraw(cx);
-        let range = |cx: &mut VisualTestContext| dialog.read_with(cx, |d, cx| d.range.read(cx).text().to_string());
+        let range = |cx: &mut VisualTestContext| {
+            dialog.read_with(cx, |d, cx| d.range.read(cx).text().to_string())
+        };
         assert_eq!(range(cx), "=Sheet1!$A$1:$C$4");
         // Moving a series keeps the range; removing one makes it the rest.
         dialog.update(cx, |d, cx| d.shift(true, cx));
@@ -745,7 +902,10 @@ mod tests {
         assert_eq!(dialog.read_with(cx, |d, _| d.series.len()), 1);
         assert_eq!(range(cx), "=Sheet1!$A$1:$B$4");
         // A range typed in the field replaces every series.
-        dialog.update(cx, |d, cx| d.range.update(cx, |input, cx| input.set_text("=Sheet1!$A$1:$C$3", cx)));
+        dialog.update(cx, |d, cx| {
+            d.range
+                .update(cx, |input, cx| input.set_text("=Sheet1!$A$1:$C$3", cx))
+        });
         redraw(cx);
         let series = dialog.read_with(cx, |d, _| d.series.clone());
         assert_eq!(series.len(), 2);
@@ -753,11 +913,17 @@ mod tests {
         // Switch Row/Column: one series per month.
         dialog.update(cx, |d, cx| d.switch(cx));
         assert_eq!(dialog.read_with(cx, |d, _| d.series.len()), 2);
-        assert_eq!(dialog.read_with(cx, |d, _| d.series[0].values.to_text()), "Sheet1!$B$2:$C$2");
+        assert_eq!(
+            dialog.read_with(cx, |d, _| d.series[0].values.to_text()),
+            "Sheet1!$B$2:$C$2"
+        );
         dialog.update(cx, |d, cx| d.switch(cx));
         // Nothing reached the chart yet.
         assert_eq!(chart(&app, cx).series.len(), 2);
-        assert_eq!(chart(&app, cx).series[0].values.to_text(), "Sheet1!$B$2:$B$4");
+        assert_eq!(
+            chart(&app, cx).series[0].values.to_text(),
+            "Sheet1!$B$2:$B$4"
+        );
         dialog.update(cx, |d, _| d.blanks = BlanksAs::Span);
         dialog.update_in(cx, |d, window, cx| d.ok(&(), window, cx));
         redraw(cx);
@@ -773,24 +939,42 @@ mod tests {
     #[gpui::test]
     fn edit_series_and_axis_labels_write_into_the_dialog(cx: &mut TestAppContext) {
         let (app, cx) = open(cx, ChartKind::Column);
-        let dialog = app.update_in(cx, |app, window, cx| open_dialog(app, window, cx)).expect("the dialog");
+        let dialog = app
+            .update_in(cx, |app, window, cx| open_dialog(app, window, cx))
+            .expect("the dialog");
         let parent = dialog.downgrade();
         let edit = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, index: Option<usize>| {
             let base = index.and_then(|i| dialog.read_with(cx, |d, _| d.series.get(i).cloned()));
             let parent = parent.clone();
             app.update_in(cx, |app, window, cx| {
                 app.open_modal(window, cx, move |modal, _, cx| {
-                    EditSeries::new(modal, parent, index, base, ChartKind::Column, "Sheet1".into(), Locale::en(), cx)
+                    EditSeries::new(
+                        modal,
+                        parent,
+                        index,
+                        base,
+                        ChartKind::Column,
+                        "Sheet1".into(),
+                        Locale::en(),
+                        cx,
+                    )
                 })
             })
         };
         // Edit: the fields show the series; a new name and new values.
         let series = edit(&app, cx, Some(1));
         redraw(cx);
-        assert_eq!(series.read_with(cx, |s, cx| s.name.read(cx).text().to_string()), "=Sheet1!$C$1");
-        assert_eq!(series.read_with(cx, |s, cx| s.values.read(cx).text().to_string()), "=Sheet1!$C$2:$C$4");
+        assert_eq!(
+            series.read_with(cx, |s, cx| s.name.read(cx).text().to_string()),
+            "=Sheet1!$C$1"
+        );
+        assert_eq!(
+            series.read_with(cx, |s, cx| s.values.read(cx).text().to_string()),
+            "=Sheet1!$C$2:$C$4"
+        );
         series.update(cx, |s, cx| {
-            s.name.update(cx, |input, cx| input.set_text("South (est.)", cx));
+            s.name
+                .update(cx, |input, cx| input.set_text("South (est.)", cx));
             s.values.update(cx, |input, cx| input.set_text("c2:c3", cx));
         });
         series.update_in(cx, |s, window, cx| s.ok(&(), window, cx));
@@ -802,7 +986,10 @@ mod tests {
         added.update_in(cx, |s, window, cx| s.ok(&(), window, cx));
         assert_eq!(dialog.read_with(cx, |d, _| d.series.len()), 2);
         app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
-        added.update(cx, |s, cx| s.values.update(cx, |input, cx| input.set_text("=Sheet1!$B$2:$B$4", cx)));
+        added.update(cx, |s, cx| {
+            s.values
+                .update(cx, |input, cx| input.set_text("=Sheet1!$B$2:$B$4", cx))
+        });
         added.update_in(cx, |s, window, cx| s.ok(&(), window, cx));
         let series = dialog.read_with(cx, |d, _| d.series.clone());
         assert_eq!(series.len(), 3);
@@ -822,7 +1009,12 @@ mod tests {
         });
         labels.update_in(cx, |l, window, cx| l.ok(&(), window, cx));
         let series = dialog.read_with(cx, |d, _| d.series.clone());
-        assert!(series.iter().all(|s| s.categories.as_ref().map(RefExpr::to_text).as_deref() == Some("Sheet1!$A$2:$A$3")));
+        assert!(
+            series
+                .iter()
+                .all(|s| s.categories.as_ref().map(RefExpr::to_text).as_deref()
+                    == Some("Sheet1!$A$2:$A$3"))
+        );
     }
 
     #[gpui::test]
@@ -842,7 +1034,10 @@ mod tests {
             // It shows on its new sheet, selected, plotting the same cells.
             assert_eq!(app.sheet, 1);
             assert_eq!(app.selected_chart().map(|c| c.id), Some(id));
-            assert_eq!(app.wb.chart_data(1, &app.wb.sheets[1].charts[0]).series[0].values, vec![Some(12.0), Some(15.0), Some(9.0)]);
+            assert_eq!(
+                app.wb.chart_data(1, &app.wb.sheets[1].charts[0]).series[0].values,
+                vec![Some(12.0), Some(15.0), Some(9.0)]
+            );
             assert_eq!(app.wb.undo_label(), Some("Move Chart"));
         });
         cx.simulate_keystrokes("escape cmd-z");
@@ -858,7 +1053,12 @@ mod tests {
         let range = parse_range("b2:c4", en, "Sheet1").unwrap();
         assert_eq!(range_text(&range), "=Sheet1!$B$2:$C$4");
         assert_eq!(range.rect(), Rect::new(1, 1, 3, 2));
-        assert_eq!(parse_range("='My data'!A1", en, "Sheet1").unwrap().to_text(), "'My data'!$A$1");
+        assert_eq!(
+            parse_range("='My data'!A1", en, "Sheet1")
+                .unwrap()
+                .to_text(),
+            "'My data'!$A$1"
+        );
         assert!(parse_range("", en, "Sheet1").is_none());
         assert!(parse_range("=SUM(A1:A3)", en, "Sheet1").is_none());
         assert!(parse_range("hello world", en, "Sheet1").is_none());
@@ -868,13 +1068,22 @@ mod tests {
     fn series_names_are_cells_or_text() {
         let en = Locale::en();
         assert_eq!(parse_series_name("", en, "Sheet1"), SeriesName::None);
-        assert_eq!(parse_series_name("Sales", en, "Sheet1"), SeriesName::Text("Sales".into()));
-        assert_eq!(parse_series_name("=\"Net \"\"sales\"\"\"", en, "Sheet1"), SeriesName::Text("Net \"sales\"".into()));
+        assert_eq!(
+            parse_series_name("Sales", en, "Sheet1"),
+            SeriesName::Text("Sales".into())
+        );
+        assert_eq!(
+            parse_series_name("=\"Net \"\"sales\"\"\"", en, "Sheet1"),
+            SeriesName::Text("Net \"sales\"".into())
+        );
         let cell = parse_series_name("=Sheet1!$B$1", en, "Sheet1");
         assert_eq!(series_name_text(&cell), "=Sheet1!$B$1");
         // What a field shows reads back as the same name.
         for name in [SeriesName::None, SeriesName::Text("Q\"1".into()), cell] {
-            assert_eq!(parse_series_name(&series_name_text(&name), en, "Sheet1"), name);
+            assert_eq!(
+                parse_series_name(&series_name_text(&name), en, "Sheet1"),
+                name
+            );
         }
     }
 }

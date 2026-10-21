@@ -138,7 +138,10 @@ pub(crate) fn set_menus(cx: &mut App) {
         Menu {
             name: "OpenSheet".into(),
             items: vec![
-                MenuItem::action(t("Preferences…", "Préférences…"), features::preferences::OpenPreferences),
+                MenuItem::action(
+                    t("Preferences…", "Préférences…"),
+                    features::preferences::OpenPreferences,
+                ),
                 MenuItem::separator(),
                 MenuItem::action(t("Quit OpenSheet", "Quitter OpenSheet"), Quit),
             ],
@@ -166,7 +169,10 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Copy", "Copier"), Copy),
                 MenuItem::action(t("Paste", "Coller"), Paste),
                 MenuItem::action(t("Paste Values", "Coller les valeurs"), PasteValues),
-                MenuItem::action(t("Paste Special…", "Collage spécial…"), features::edit_tools::PasteSpecialDialog),
+                MenuItem::action(
+                    t("Paste Special…", "Collage spécial…"),
+                    features::edit_tools::PasteSpecialDialog,
+                ),
                 MenuItem::separator(),
                 MenuItem::action(t("Select All", "Sélectionner tout"), SelectAll),
                 MenuItem::action(t("Find…", "Rechercher…"), Find),
@@ -184,7 +190,10 @@ pub(crate) fn set_menus(cx: &mut App) {
                 MenuItem::action(t("Zoom Out", "Zoom arrière"), ZoomOut),
                 MenuItem::action(t("Actual Size", "Taille réelle"), ZoomReset),
                 MenuItem::separator(),
-                MenuItem::action(t("Custom Views…", "Affichages personnalisés…"), features::custom_views::CustomViewsDialog),
+                MenuItem::action(
+                    t("Custom Views…", "Affichages personnalisés…"),
+                    features::custom_views::CustomViewsDialog,
+                ),
                 MenuItem::action(t("Macros…", "Macros…"), features::automate::ViewMacros),
             ],
         },
@@ -197,7 +206,10 @@ pub(crate) fn set_menus(cx: &mut App) {
 /// in Excel. Nothing is copied or redistributed; without it, cells fall back
 /// to a system font of similar proportions.
 fn load_office_fonts(cx: &mut App) {
-    if std::env::var("OPENSHEET_OFFICE_FONTS").map(|v| v != "1").unwrap_or(true) {
+    if std::env::var("OPENSHEET_OFFICE_FONTS")
+        .map(|v| v != "1")
+        .unwrap_or(true)
+    {
         return;
     }
     let mut fonts: Vec<std::borrow::Cow<'static, [u8]>> = Vec::new();
@@ -208,7 +220,8 @@ fn load_office_fonts(cx: &mut App) {
         };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_lowercase();
-            if (name.starts_with("aptos") || name.starts_with("calibri")) && name.ends_with(".ttf") {
+            if (name.starts_with("aptos") || name.starts_with("calibri")) && name.ends_with(".ttf")
+            {
                 if let Ok(bytes) = std::fs::read(entry.path()) {
                     fonts.push(bytes.into());
                 }
@@ -229,7 +242,9 @@ fn load_office_fonts(cx: &mut App) {
 fn export(input: Option<&str>, demo: bool, output: &str) -> Result<(), String> {
     let locale = i18n::lang().locale();
     let mut wb = match input {
-        Some(path) => opensheet_io::load(std::path::Path::new(path), locale).map_err(|e| e.to_string())?,
+        Some(path) => {
+            opensheet_io::load(std::path::Path::new(path), locale).map_err(|e| e.to_string())?
+        }
         None => opensheet_engine::Workbook::new(locale),
     };
     if demo {
@@ -244,7 +259,8 @@ fn export(input: Option<&str>, demo: bool, output: &str) -> Result<(), String> {
 /// application has to come forward on its own.
 fn launched_from_bundle() -> bool {
     cfg!(target_os = "macos")
-        && std::env::current_exe().is_ok_and(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS/"))
+        && std::env::current_exe()
+            .is_ok_and(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS/"))
 }
 
 /// Windows: a release build has no console of its own, so `--version` and
@@ -261,7 +277,10 @@ fn attach_console() {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     #[cfg(windows)]
-    if args.iter().any(|a| matches!(a.as_str(), "--version" | "-V" | "--export")) {
+    if args
+        .iter()
+        .any(|a| matches!(a.as_str(), "--version" | "-V" | "--export"))
+    {
         attach_console();
     }
     if args.iter().any(|a| a == "--version" || a == "-V") {
@@ -271,7 +290,11 @@ fn main() {
     let demo = args.iter().any(|a| a == "--demo");
     // `--widgets`: open the gallery of the dialog toolkit at start.
     let gallery = args.iter().any(|a| a == "--widgets");
-    let export_to = args.iter().position(|a| a == "--export").and_then(|i| args.get(i + 1)).cloned();
+    let export_to = args
+        .iter()
+        .position(|a| a == "--export")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
     // The files to open: how Windows and Linux pass the ones the user
     // double-clicked (each opens in a window of its own).
     let file_args: Vec<std::path::PathBuf> = args

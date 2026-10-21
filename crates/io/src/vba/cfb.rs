@@ -76,24 +76,40 @@ impl<'a> Compound<'a> {
 
         // The sectors holding the allocation table: 109 are named in the
         // header, the others in a chain of sectors of their own.
-        let mut fat_sectors: Vec<u32> = (0..109).filter_map(|i| u32_at(bytes, 0x4C + 4 * i)).filter(|s| *s < FAT_SECTOR).collect();
+        let mut fat_sectors: Vec<u32> = (0..109)
+            .filter_map(|i| u32_at(bytes, 0x4C + 4 * i))
+            .filter(|s| *s < FAT_SECTOR)
+            .collect();
         let mut next = u32_at(bytes, 0x44).ok_or_else(damaged)?;
         let mut seen = HashSet::new();
         while next < FAT_SECTOR && seen.insert(next) {
             let sector = file.sector(next).ok_or_else(damaged)?;
             let per = sector_size / 4 - 1;
-            fat_sectors.extend((0..per).filter_map(|i| u32_at(sector, 4 * i)).filter(|s| *s < FAT_SECTOR));
+            fat_sectors.extend(
+                (0..per)
+                    .filter_map(|i| u32_at(sector, 4 * i))
+                    .filter(|s| *s < FAT_SECTOR),
+            );
             next = u32_at(sector, 4 * per).ok_or_else(damaged)?;
         }
         for sector in fat_sectors {
             let sector = file.sector(sector).ok_or_else(damaged)?;
-            file.fat.extend(sector.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])));
+            file.fat.extend(
+                sector
+                    .chunks_exact(4)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+            );
         }
 
-        let directory = file.chain(u32_at(bytes, 0x30).ok_or_else(damaged)?, None).ok_or_else(damaged)?;
+        let directory = file
+            .chain(u32_at(bytes, 0x30).ok_or_else(damaged)?, None)
+            .ok_or_else(damaged)?;
         for raw in directory.chunks_exact(128).take(MAX_ENTRIES) {
             let name_len = (u16_at(raw, 0x40).unwrap_or(0) as usize).min(64);
-            let units: Vec<u16> = raw[..name_len.saturating_sub(2)].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let units: Vec<u16> = raw[..name_len.saturating_sub(2)]
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
             let mut size = u64::from_le_bytes(raw[0x78..0x80].try_into().map_err(|_| damaged())?);
             if sector_shift == 9 {
                 // Version 3 files only use the low half of the size.
@@ -109,18 +125,32 @@ impl<'a> Compound<'a> {
                 size,
             });
         }
-        let root = file.entries.first().filter(|e| e.kind == KIND_ROOT).ok_or_else(damaged)?.clone();
+        let root = file
+            .entries
+            .first()
+            .filter(|e| e.kind == KIND_ROOT)
+            .ok_or_else(damaged)?
+            .clone();
 
-        let mini_fat = file.chain(u32_at(bytes, 0x3C).ok_or_else(damaged)?, None).ok_or_else(damaged)?;
-        file.mini_fat = mini_fat.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+        let mini_fat = file
+            .chain(u32_at(bytes, 0x3C).ok_or_else(damaged)?, None)
+            .ok_or_else(damaged)?;
+        file.mini_fat = mini_fat
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
         if root.size > 0 {
-            file.mini = file.chain(root.start, Some(root.size as usize)).ok_or_else(damaged)?;
+            file.mini = file
+                .chain(root.start, Some(root.size as usize))
+                .ok_or_else(damaged)?;
         }
         Ok(file)
     }
 
     fn sector(&self, number: u32) -> Option<&'a [u8]> {
-        let start = (number as usize).checked_add(1)?.checked_mul(self.sector_size)?;
+        let start = (number as usize)
+            .checked_add(1)?
+            .checked_mul(self.sector_size)?;
         self.bytes.get(start..start.checked_add(self.sector_size)?)
     }
 
@@ -191,7 +221,10 @@ impl<'a> Compound<'a> {
     fn find(&self, path: &[&str]) -> Option<usize> {
         let mut at = 0;
         for name in path {
-            at = self.children(at).into_iter().find(|id| self.entries[*id].name.eq_ignore_ascii_case(name))?;
+            at = self
+                .children(at)
+                .into_iter()
+                .find(|id| self.entries[*id].name.eq_ignore_ascii_case(name))?;
         }
         Some(at)
     }
@@ -219,8 +252,13 @@ impl<'a> Compound<'a> {
         let Some(storage) = self.find(path) else {
             return Vec::new();
         };
-        let mut names: Vec<String> =
-            self.children(storage).into_iter().map(|id| &self.entries[id]).filter(|e| e.kind == KIND_STREAM).map(|e| e.name.clone()).collect();
+        let mut names: Vec<String> = self
+            .children(storage)
+            .into_iter()
+            .map(|id| &self.entries[id])
+            .filter(|e| e.kind == KIND_STREAM)
+            .map(|e| e.name.clone())
+            .collect();
         names.sort();
         names
     }
@@ -256,7 +294,10 @@ struct NewEntry {
 /// The order of the entries of a storage: shorter names first, then by
 /// their upper-case letters.
 fn name_order(a: &str, b: &str) -> std::cmp::Ordering {
-    let (a16, b16): (Vec<u16>, Vec<u16>) = (a.to_uppercase().encode_utf16().collect(), b.to_uppercase().encode_utf16().collect());
+    let (a16, b16): (Vec<u16>, Vec<u16>) = (
+        a.to_uppercase().encode_utf16().collect(),
+        b.to_uppercase().encode_utf16().collect(),
+    );
     a16.len().cmp(&b16.len()).then(a16.cmp(&b16))
 }
 
@@ -362,14 +403,22 @@ pub(crate) fn write(nodes: Vec<Node>) -> Vec<u8> {
     let directory_sectors = sectors_of(entries.len() * 128);
     let mini_fat_sectors = sectors_of(mini_fat.len() * 4);
     let mini_sectors = sectors_of(mini.len());
-    let large: Vec<usize> = (0..entries.len()).filter(|id| entries[*id].kind == KIND_STREAM && entries[*id].data.len() >= MINI_CUTOFF).collect();
-    let large_sectors: usize = large.iter().map(|id| sectors_of(entries[*id].data.len())).sum();
+    let large: Vec<usize> = (0..entries.len())
+        .filter(|id| entries[*id].kind == KIND_STREAM && entries[*id].data.len() >= MINI_CUTOFF)
+        .collect();
+    let large_sectors: usize = large
+        .iter()
+        .map(|id| sectors_of(entries[*id].data.len()))
+        .sum();
     let others = directory_sectors + mini_fat_sectors + mini_sectors + large_sectors;
     let mut fat_sectors = 1;
     while (fat_sectors + others) > fat_sectors * (SECTOR / 4) {
         fat_sectors += 1;
     }
-    assert!(fat_sectors <= 109, "too large for a compound file without a chain of table sectors");
+    assert!(
+        fat_sectors <= 109,
+        "too large for a compound file without a chain of table sectors"
+    );
 
     let mut fat: Vec<u32> = vec![FAT_SECTOR; fat_sectors];
     let chain = |fat: &mut Vec<u32>, count: usize| -> u32 {
@@ -407,7 +456,11 @@ pub(crate) fn write(nodes: Vec<Node>) -> Vec<u8> {
     out.extend_from_slice(&END_OF_CHAIN.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     for i in 0..109u32 {
-        let sector = if (i as usize) < fat_sectors { i } else { FREE_SECTOR };
+        let sector = if (i as usize) < fat_sectors {
+            i
+        } else {
+            FREE_SECTOR
+        };
         out.extend_from_slice(&sector.to_le_bytes());
     }
     debug_assert_eq!(out.len(), SECTOR);
@@ -428,9 +481,17 @@ pub(crate) fn write(nodes: Vec<Node>) -> Vec<u8> {
         raw[0x44..0x48].copy_from_slice(&entry.left.to_le_bytes());
         raw[0x48..0x4C].copy_from_slice(&entry.right.to_le_bytes());
         raw[0x4C..0x50].copy_from_slice(&entry.child.to_le_bytes());
-        let start = if entry.kind == KIND_STORAGE { 0 } else { starts[id] };
+        let start = if entry.kind == KIND_STORAGE {
+            0
+        } else {
+            starts[id]
+        };
         raw[0x74..0x78].copy_from_slice(&start.to_le_bytes());
-        let size = if id == 0 { mini.len() } else { entry.data.len() };
+        let size = if id == 0 {
+            mini.len()
+        } else {
+            entry.data.len()
+        };
         raw[0x78..0x80].copy_from_slice(&(size as u64).to_le_bytes());
         out.extend_from_slice(&raw);
     }
@@ -462,17 +523,24 @@ mod tests {
     use super::*;
 
     fn bytes(len: usize, seed: u8) -> Vec<u8> {
-        (0..len).map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed)).collect()
+        (0..len)
+            .map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed))
+            .collect()
     }
 
     #[test]
     fn what_is_written_is_read_back() {
         // Small and large streams, an empty one, a storage in a storage,
         // and enough entries for a tree of several levels.
-        let mut inner: Vec<Node> = (0..11).map(|i| Node::Stream(format!("Module{i}"), bytes(100 + 700 * i, i as u8))).collect();
+        let mut inner: Vec<Node> = (0..11)
+            .map(|i| Node::Stream(format!("Module{i}"), bytes(100 + 700 * i, i as u8)))
+            .collect();
         inner.push(Node::Stream("dir".to_string(), bytes(5000, 7)));
         inner.push(Node::Stream("empty".to_string(), Vec::new()));
-        inner.push(Node::Storage("Forms".to_string(), vec![Node::Stream("f".to_string(), bytes(64, 1))]));
+        inner.push(Node::Storage(
+            "Forms".to_string(),
+            vec![Node::Stream("f".to_string(), bytes(64, 1))],
+        ));
         let file = write(vec![
             Node::Stream("PROJECT".to_string(), bytes(300, 3)),
             Node::Stream("PROJECTwm".to_string(), bytes(4096, 4)),
@@ -486,7 +554,11 @@ mod tests {
         assert_eq!(read.stream(&["VBA", "empty"]), Some(Vec::new()));
         assert_eq!(read.stream(&["VBA", "Forms", "f"]), Some(bytes(64, 1)));
         for i in 0..11 {
-            assert_eq!(read.stream(&["VBA", &format!("Module{i}")]), Some(bytes(100 + 700 * i, i as u8)), "Module{i}");
+            assert_eq!(
+                read.stream(&["VBA", &format!("Module{i}")]),
+                Some(bytes(100 + 700 * i, i as u8)),
+                "Module{i}"
+            );
         }
         assert_eq!(read.stream_names(&["VBA"]).len(), 13);
         // A storage is not a stream, and what is not there is not found.
@@ -497,7 +569,9 @@ mod tests {
     #[test]
     fn the_tree_of_a_storage_is_a_red_black_tree() {
         for count in 1..40u32 {
-            let nodes: Vec<Node> = (0..count).map(|i| Node::Stream(format!("s{i:02}"), vec![1])).collect();
+            let nodes: Vec<Node> = (0..count)
+                .map(|i| Node::Stream(format!("s{i:02}"), vec![1]))
+                .collect();
             let mut entries = vec![NewEntry {
                 name: "Root Entry".to_string(),
                 kind: KIND_ROOT,
@@ -510,7 +584,13 @@ mod tests {
             let root = add(&mut entries, nodes);
             // Every path to a leaf crosses as many black entries, no red
             // entry has a red child, names are in order.
-            fn check(entries: &[NewEntry], id: u32, parent_red: bool, lo: Option<&str>, hi: Option<&str>) -> u32 {
+            fn check(
+                entries: &[NewEntry],
+                id: u32,
+                parent_red: bool,
+                lo: Option<&str>,
+                hi: Option<&str>,
+            ) -> u32 {
                 if id == NO_STREAM {
                     return 1;
                 }
@@ -540,7 +620,12 @@ mod tests {
         assert_eq!(Compound::parse(&circle).unwrap().stream(&["a"]), None);
         // A file cut short.
         let cut = &file[..file.len() - 1024];
-        assert!(Compound::parse(cut).map(|c| c.stream(&["a"])).unwrap_or(None).is_none());
+        assert!(
+            Compound::parse(cut)
+                .map(|c| c.stream(&["a"]))
+                .unwrap_or(None)
+                .is_none()
+        );
         // Any byte changed: no panic.
         for at in (0..file.len()).step_by(7) {
             let mut bad = file.clone();

@@ -11,7 +11,12 @@ use opensheet_script::{Context, Outcome};
 /// A list with a header row in A1:C4 of the first sheet.
 fn workbook() -> Workbook {
     let mut wb = Workbook::new(Locale::en());
-    let rows = [["Region", "Units", "Revenue"], ["West", "140", "2800"], ["North", "120", "2400"], ["South", "85", "1700"]];
+    let rows = [
+        ["Region", "Units", "Revenue"],
+        ["West", "140", "2800"],
+        ["North", "120", "2400"],
+        ["South", "85", "1700"],
+    ];
     for (r, row) in rows.iter().enumerate() {
         for (c, text) in row.iter().enumerate() {
             wb.set_cell_text(0, r as u32, c as u32, text).unwrap();
@@ -23,7 +28,10 @@ fn workbook() -> Workbook {
 
 /// Run a sample as the window does: a snapshot, the script, one undo step.
 fn run(id: &str, wb: &mut Workbook, selection: Rect) -> Outcome {
-    let sample = SAMPLES.iter().find(|sample| sample.id == id).expect("a sample");
+    let sample = SAMPLES
+        .iter()
+        .find(|sample| sample.id == id)
+        .expect("a sample");
     assert_eq!(opensheet_script::check(sample.body), Vec::new(), "{id}");
     let context = Context {
         active_sheet: 0,
@@ -62,7 +70,10 @@ fn the_header_row_is_formatted() {
 
     // An empty sheet: a word in the output, no error.
     let mut empty = Workbook::new(Locale::en());
-    assert_eq!(logged(&run("header", &mut empty, Rect::cell(0, 0))), ["The sheet is empty."]);
+    assert_eq!(
+        logged(&run("header", &mut empty, Rect::cell(0, 0))),
+        ["The sheet is empty."]
+    );
 }
 
 #[test]
@@ -90,7 +101,14 @@ fn a_table_is_made_and_sorted() {
     assert_eq!((table.range.r0, table.range.c0, table.range.c1), (0, 0, 2));
     // Sorted on the first column, A to Z.
     let regions: Vec<Value> = (1..4).map(|row| wb.value_at(0, row, 0)).collect();
-    assert_eq!(regions, [Value::Text("North".into()), Value::Text("South".into()), Value::Text("West".into())]);
+    assert_eq!(
+        regions,
+        [
+            Value::Text("North".into()),
+            Value::Text("South".into()),
+            Value::Text("West".into())
+        ]
+    );
     assert_eq!(wb.value_at(0, 1, 1), Value::Number(120.0));
 
     // Filtered on its last column: some rows show, some do not.
@@ -116,7 +134,11 @@ fn hidden_rows_and_columns_are_shown_on_every_sheet() {
     wb.commit("hide");
     let outcome = run("unhide", &mut wb, Rect::cell(0, 0));
     for sheet in &wb.sheets {
-        assert!(sheet.hidden_rows.is_empty() && sheet.hidden_cols.is_empty(), "{}", sheet.name);
+        assert!(
+            sheet.hidden_rows.is_empty() && sheet.hidden_cols.is_empty(),
+            "{}",
+            sheet.name
+        );
     }
     assert_eq!(logged(&outcome), ["Rows and columns shown on 2 sheet(s)."]);
 }
@@ -132,8 +154,19 @@ fn a_summary_sheet_lists_the_others() {
     let summary = wb.sheet_index("Summary").expect("the summary sheet");
     assert_eq!(outcome.activated, Some(summary));
     let row = |r: u32| -> Vec<Value> { (0..4).map(|c| wb.value_at(summary, r, c)).collect() };
-    assert_eq!(row(0), ["Sheet", "Used range", "Rows", "Columns"].map(|text| Value::Text(text.into())));
-    assert_eq!(row(1), [Value::Text("Sheet1".into()), Value::Text("Sheet1!A1:C4".into()), Value::Number(4.0), Value::Number(3.0)]);
+    assert_eq!(
+        row(0),
+        ["Sheet", "Used range", "Rows", "Columns"].map(|text| Value::Text(text.into()))
+    );
+    assert_eq!(
+        row(1),
+        [
+            Value::Text("Sheet1".into()),
+            Value::Text("Sheet1!A1:C4".into()),
+            Value::Number(4.0),
+            Value::Number(3.0)
+        ]
+    );
     assert_eq!(row(2)[2..], [Value::Number(1.0), Value::Number(1.0)]);
     // An empty sheet is listed with no range.
     assert_eq!(row(3)[2..], [Value::Number(0.0), Value::Number(0.0)]);
@@ -151,7 +184,9 @@ fn cells_above_the_average_are_filled() {
     let mut wb = workbook();
     // Units: 140, 120, 85 — the average is 115.
     let outcome = run("average", &mut wb, Rect::new(1, 1, 3, 1));
-    let filled: Vec<bool> = (1..4).map(|row| wb.style_at(0, row, 1).fill.map(|color| color.value()) == Some(0xC6EFCE)).collect();
+    let filled: Vec<bool> = (1..4)
+        .map(|row| wb.style_at(0, row, 1).fill.map(|color| color.value()) == Some(0xC6EFCE))
+        .collect();
     assert_eq!(filled, [true, true, false]);
     assert_eq!(logged(&outcome), ["Average: 115. Cells above it: 2."]);
 

@@ -24,10 +24,9 @@ pub use crate::widgets::text_area::bind_keys;
 use self::card::{Beside, CommentCard};
 use self::notes::{BoxDrag, BoxView, Grip, ShownBox};
 use self::pane::CommentsPane;
-use crate::widgets::text_area::{AreaEvent, TextArea};
 use super::{
-    Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PaintLayer, Painter, StatusItem, Zone,
-    ZoneEvent, ZoneResponse,
+    Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PaintLayer, Painter,
+    StatusItem, Zone, ZoneEvent, ZoneResponse,
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{GridLayout, pt_to_px};
@@ -35,9 +34,10 @@ use crate::i18n::t;
 use crate::shell::Alert;
 use crate::text_input as line;
 use crate::theme::{self, c};
+use crate::widgets::text_area::{AreaEvent, TextArea};
 use gpui::{
-    AnyElement, CursorStyle, Entity, FocusHandle, Focusable, MouseButton, MouseDownEvent, Pixels, Point, Subscription,
-    Task, Window, div, prelude::*, px,
+    AnyElement, CursorStyle, Entity, FocusHandle, Focusable, MouseButton, MouseDownEvent, Pixels,
+    Point, Subscription, Task, Window, div, prelude::*, px,
 };
 use opensheet_engine::comment::{self, Comment, CommentKind, Mention, Note, Person, Post};
 use opensheet_engine::refs::cell_name;
@@ -102,7 +102,8 @@ impl Command for Cmd {
             Cmd::Reply | Cmd::DeleteComment => here == Some(CommentKind::Thread),
             Cmd::Delete => {
                 let ranges = &app.sel().ranges;
-                let inside = |(row, col): &(u32, u32)| ranges.iter().any(|range| range.contains(*row, *col));
+                let inside =
+                    |(row, col): &(u32, u32)| ranges.iter().any(|range| range.contains(*row, *col));
                 app.wb.sheets[app.sheet].comments.keys().any(inside)
             }
             Cmd::Previous | Cmd::Next => any(CommentKind::Thread),
@@ -136,7 +137,11 @@ impl Command for Cmd {
                     .into_iter()
                     .map(|cmd| {
                         let entry = MenuEntry::command(cmd, app);
-                        if matches!(cmd, Cmd::NewNote | Cmd::EditNote) { entry.shortcut("⇧F2") } else { entry }
+                        if matches!(cmd, Cmd::NewNote | Cmd::EditNote) {
+                            entry.shortcut("⇧F2")
+                        } else {
+                            entry
+                        }
                     })
                     .collect();
                 app.open_command_menu(entries, 240.0, window, cx);
@@ -191,12 +196,18 @@ impl Command for Cmd {
                 let (title, text) = comment::convert_question(app.wb.locale);
                 app.alert(
                     Alert::new(title, text)
-                        .button(t("Convert all notes", "Convertir toutes les notes"), move |app, _, cx| {
-                            finish_note_edit(app, cx);
-                            if may_edit(app, cx) && app.wb.convert_notes_to_comments(sheet, comment::now_utc()) > 0 {
-                                app.commit(Cmd::ConvertToComments.label(), cx);
-                            }
-                        })
+                        .button(
+                            t("Convert all notes", "Convertir toutes les notes"),
+                            move |app, _, cx| {
+                                finish_note_edit(app, cx);
+                                if may_edit(app, cx)
+                                    && app.wb.convert_notes_to_comments(sheet, comment::now_utc())
+                                        > 0
+                                {
+                                    app.commit(Cmd::ConvertToComments.label(), cx);
+                                }
+                            },
+                        )
                         .close_button(t("Cancel", "Annuler")),
                     cx,
                 );
@@ -210,7 +221,11 @@ impl Command for Cmd {
 /// What the Notes button of the Review tab lists: New Note becomes Edit
 /// Note on a cell that has one.
 fn notes_menu(here: Option<CommentKind>) -> Vec<Cmd> {
-    let first = if here == Some(CommentKind::Note) { Cmd::EditNote } else { Cmd::NewNote };
+    let first = if here == Some(CommentKind::Note) {
+        Cmd::EditNote
+    } else {
+        Cmd::NewNote
+    };
     vec![
         first,
         Cmd::PreviousNote,
@@ -226,7 +241,12 @@ fn notes_menu(here: Option<CommentKind>) -> Vec<Cmd> {
 fn cell_menu(here: Option<CommentKind>) -> &'static [Cmd] {
     match here {
         None => &[Cmd::NewComment, Cmd::NewNote],
-        Some(CommentKind::Note) => &[Cmd::NewComment, Cmd::EditNote, Cmd::DeleteNote, Cmd::ShowHideNote],
+        Some(CommentKind::Note) => &[
+            Cmd::NewComment,
+            Cmd::EditNote,
+            Cmd::DeleteNote,
+            Cmd::ShowHideNote,
+        ],
         Some(CommentKind::Thread) => &[Cmd::Reply, Cmd::DeleteComment],
     }
 }
@@ -238,7 +258,9 @@ pub(self) fn user_name() -> &'static str {
     // for the life of the application: there are as many as were typed.
     if let Some(name) = super::preferences::user_name() {
         static TYPED: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
-        let mut typed = TYPED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut typed = TYPED
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         return match typed.iter().find(|known| **known == name) {
             Some(known) => known,
             None => {
@@ -390,7 +412,11 @@ impl Ui {
     /// What decides which note boxes show on a sheet.
     fn box_view(&self, sheet: usize) -> BoxView {
         BoxView {
-            editing: self.note_edit.as_ref().filter(|edit| edit.sheet == sheet).map(|edit| edit.cell),
+            editing: self
+                .note_edit
+                .as_ref()
+                .filter(|edit| edit.sheet == sheet)
+                .map(|edit| edit.cell),
             selected: self.note_sel,
             peeked: self.hover.shown().into_iter().chain(self.visited).collect(),
             drag: self.drag,
@@ -407,7 +433,10 @@ impl Ui {
 
 /// The note boxes that show on the current sheet.
 fn boxes(app: &ExcelApp, layout: &GridLayout) -> Vec<ShownBox> {
-    let view = app.ext::<Ui>().map(|ui| ui.box_view(app.sheet)).unwrap_or_default();
+    let view = app
+        .ext::<Ui>()
+        .map(|ui| ui.box_view(app.sheet))
+        .unwrap_or_default();
     notes::shown_boxes(&app.wb.sheets[app.sheet], layout, &view)
 }
 
@@ -416,7 +445,13 @@ fn boxes(app: &ExcelApp, layout: &GridLayout) -> Vec<ShownBox> {
 /// Open the box of the note of a cell for typing, the cursor at its end
 /// or under `at` (a point of the window). A new note starts with the name
 /// of its author.
-fn edit_note(app: &mut ExcelApp, cell: (u32, u32), at: Option<Point<Pixels>>, window: &mut Window, cx: &mut Cx) {
+fn edit_note(
+    app: &mut ExcelApp,
+    cell: (u32, u32),
+    at: Option<Point<Pixels>>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if app.is_editing() && !app.commit_edit(None, window, cx) {
         return;
     }
@@ -443,15 +478,20 @@ fn edit_note(app: &mut ExcelApp, cell: (u32, u32), at: Option<Point<Pixels>>, wi
         }
         area
     });
-    let subscription = cx.subscribe_in(&area, window, |app, _, event: &AreaEvent, window, cx| match event {
-        // Escape keeps what was typed, as it does in Excel.
-        AreaEvent::Escape => {
-            finish_note_edit(app, cx);
-            window.focus(&app.grid_focus);
-        }
-        AreaEvent::Blurred => finish_note_edit(app, cx),
-        _ => {}
-    });
+    let subscription =
+        cx.subscribe_in(
+            &area,
+            window,
+            |app, _, event: &AreaEvent, window, cx| match event {
+                // Escape keeps what was typed, as it does in Excel.
+                AreaEvent::Escape => {
+                    finish_note_edit(app, cx);
+                    window.focus(&app.grid_focus);
+                }
+                AreaEvent::Blurred => finish_note_edit(app, cx),
+                _ => {}
+            },
+        );
     window.focus(&area.focus_handle(cx));
     let ui = app.ext_mut::<Ui>();
     ui.note_edit = Some(NoteEdit {
@@ -490,12 +530,24 @@ fn store_note(
 
 /// Store the note being typed, if any, in one undo step.
 fn finish_note_edit(app: &mut ExcelApp, cx: &mut Cx) {
-    let Some(edit) = app.ext::<Ui>().is_some().then(|| app.ext_mut::<Ui>().note_edit.take()).flatten() else {
+    let Some(edit) = app
+        .ext::<Ui>()
+        .is_some()
+        .then(|| app.ext_mut::<Ui>().note_edit.take())
+        .flatten()
+    else {
         return;
     };
     let text = edit.area.read(cx).text().to_string();
     app.ext_mut::<Ui>().orphans.push(edit.area.focus_handle(cx));
-    if let Some(label) = store_note(&mut app.wb, edit.sheet, edit.cell, user_name(), edit.original.as_deref(), &text) {
+    if let Some(label) = store_note(
+        &mut app.wb,
+        edit.sheet,
+        edit.cell,
+        user_name(),
+        edit.original.as_deref(),
+        &text,
+    ) {
         app.commit(label, cx);
     }
     cx.notify();
@@ -505,20 +557,34 @@ fn finish_note_edit(app: &mut ExcelApp, cx: &mut Cx) {
 /// (Delete removes the note, the arrows move the box).
 fn select_box(app: &mut ExcelApp, cell: (u32, u32), window: &mut Window, cx: &mut Cx) {
     let ui = app.ext_mut::<Ui>();
-    let handle = ui.box_focus.get_or_insert_with(|| cx.focus_handle()).clone();
+    let handle = ui
+        .box_focus
+        .get_or_insert_with(|| cx.focus_handle())
+        .clone();
     ui.note_sel = Some(cell);
     window.focus(&handle);
     cx.notify();
 }
 
 /// A press on the border of a note box or on one of its handles.
-fn start_drag(app: &mut ExcelApp, cell: (u32, u32), grip: Grip, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+fn start_drag(
+    app: &mut ExcelApp,
+    cell: (u32, u32),
+    grip: Grip,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     // A box whose text is being typed keeps that text, then is selected.
     finish_note_edit(app, cx);
     if !may_edit(app, cx) {
         return;
     }
-    let Some(note) = app.wb.comment_at(app.sheet, cell.0, cell.1).and_then(Comment::as_note) else {
+    let Some(note) = app
+        .wb
+        .comment_at(app.sheet, cell.0, cell.1)
+        .and_then(Comment::as_note)
+    else {
         return;
     };
     let stays = note.visible;
@@ -570,12 +636,21 @@ fn nudge_box(app: &mut ExcelApp, dx: f64, dy: f64, cx: &mut Cx) {
 /// Write a post on a cell: the comment that starts its thread when it has
 /// none, else a reply. Returns the name of the undo step when it was
 /// written (not on a note, nor on a resolved thread).
-fn write_post(wb: &mut Workbook, sheet: usize, cell: (u32, u32), post: Post) -> Option<&'static str> {
+fn write_post(
+    wb: &mut Workbook,
+    sheet: usize,
+    cell: (u32, u32),
+    post: Post,
+) -> Option<&'static str> {
     let (row, col) = cell;
     match wb.comment_at(sheet, row, col).map(Comment::kind) {
-        Some(CommentKind::Thread) => wb.add_reply_post(sheet, row, col, post).then_some(t("Reply", "Répondre")),
+        Some(CommentKind::Thread) => wb
+            .add_reply_post(sheet, row, col, post)
+            .then_some(t("Reply", "Répondre")),
         Some(CommentKind::Note) => None,
-        None => wb.add_comment_post(sheet, row, col, post).then_some(Cmd::NewComment.label()),
+        None => wb
+            .add_comment_post(sheet, row, col, post)
+            .then_some(Cmd::NewComment.label()),
     }
 }
 
@@ -592,7 +667,8 @@ pub(self) fn post(
     if !may_edit(app, cx) {
         return false;
     }
-    let post = Post::new(&Person::new(user_name()), comment::now_utc(), text).with_mentions(mentions);
+    let post =
+        Post::new(&Person::new(user_name()), comment::now_utc(), text).with_mentions(mentions);
     let label = write_post(&mut app.wb, sheet, cell, post);
     if let Some(label) = label {
         app.commit(label, cx);
@@ -610,14 +686,23 @@ pub(self) fn edit_post(
     mentions: Vec<Mention>,
     cx: &mut Cx,
 ) -> bool {
-    let done = may_edit(app, cx) && app.wb.edit_comment_mentions(sheet, cell.0, cell.1, reply, text, mentions);
+    let done = may_edit(app, cx)
+        && app
+            .wb
+            .edit_comment_mentions(sheet, cell.0, cell.1, reply, text, mentions);
     if done {
         app.commit(t("Edit Comment", "Modifier le commentaire"), cx);
     }
     done
 }
 
-pub(self) fn delete_reply(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), reply: usize, cx: &mut Cx) {
+pub(self) fn delete_reply(
+    app: &mut ExcelApp,
+    sheet: usize,
+    cell: (u32, u32),
+    reply: usize,
+    cx: &mut Cx,
+) {
     if may_edit(app, cx) && app.wb.delete_reply(sheet, cell.0, cell.1, reply) {
         app.commit(Cmd::DeleteComment.label(), cx);
     }
@@ -630,7 +715,13 @@ pub(self) fn delete_thread(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), c
 }
 
 /// Resolve a thread, or reopen it.
-pub(self) fn resolve(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), resolved: bool, cx: &mut Cx) {
+pub(self) fn resolve(
+    app: &mut ExcelApp,
+    sheet: usize,
+    cell: (u32, u32),
+    resolved: bool,
+    cx: &mut Cx,
+) {
     if may_edit(app, cx) && app.wb.set_comment_resolved(sheet, cell.0, cell.1, resolved) {
         let label = if resolved {
             t("Resolve thread", "Résoudre la conversation")
@@ -644,7 +735,11 @@ pub(self) fn resolve(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), resolve
 /// Put away the card floating beside a cell.
 pub(self) fn close_card(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), cx: &mut Cx) {
     let ui = app.ext_mut::<Ui>();
-    if ui.card.as_ref().is_some_and(|card| (card.sheet, card.cell) == (sheet, cell)) {
+    if ui
+        .card
+        .as_ref()
+        .is_some_and(|card| (card.sheet, card.cell) == (sheet, cell))
+    {
         ui.drop_card(cx);
         ui.hover = Peek::default();
         cx.notify();
@@ -654,7 +749,11 @@ pub(self) fn close_card(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), cx: 
 /// A press on the card that only showed under the pointer: it stays.
 pub(self) fn pin_card(app: &mut ExcelApp, sheet: usize, cell: (u32, u32), cx: &mut Cx) {
     let ui = app.ext_mut::<Ui>();
-    if let Some(card) = ui.card.as_mut().filter(|card| (card.sheet, card.cell) == (sheet, cell)) {
+    if let Some(card) = ui
+        .card
+        .as_mut()
+        .filter(|card| (card.sheet, card.cell) == (sheet, cell))
+    {
         card.pinned = true;
         ui.leave_timer = None;
         cx.notify();
@@ -707,7 +806,11 @@ fn open_card(app: &mut ExcelApp, cell: (u32, u32), write: bool, window: &mut Win
     let ui = app.ext_mut::<Ui>();
     ui.rest_timer = None;
     ui.leave_timer = None;
-    let view = match ui.card.as_ref().filter(|card| (card.sheet, card.cell) == (sheet, cell)) {
+    let view = match ui
+        .card
+        .as_ref()
+        .filter(|card| (card.sheet, card.cell) == (sheet, cell))
+    {
         Some(card) => card.view.clone(),
         None => cx.new(|cx| CommentCard::new(weak, sheet, cell, false, window, cx)),
     };
@@ -746,17 +849,27 @@ fn write_comment(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
         app.alert(
             Alert::new("OpenSheet", question)
                 .warning()
-                .button(t("Return to comment", "Revenir au commentaire"), move |app, window, cx| {
-                    app.switch_sheet(draft_sheet, window, cx);
-                    app.select_cell(draft_cell.0, draft_cell.1, cx);
-                    if let Some(view) = app.ext::<Ui>().and_then(|ui| ui.card.as_ref()).map(|card| card.view.clone()) {
-                        view.update(cx, |card, cx| card.focus_input(window, cx));
-                    }
-                })
-                .button(t("Discard comment", "Abandonner le commentaire"), |app, window, cx| {
-                    app.ext_mut::<Ui>().drop_card(cx);
-                    write_comment(app, window, cx);
-                }),
+                .button(
+                    t("Return to comment", "Revenir au commentaire"),
+                    move |app, window, cx| {
+                        app.switch_sheet(draft_sheet, window, cx);
+                        app.select_cell(draft_cell.0, draft_cell.1, cx);
+                        if let Some(view) = app
+                            .ext::<Ui>()
+                            .and_then(|ui| ui.card.as_ref())
+                            .map(|card| card.view.clone())
+                        {
+                            view.update(cx, |card, cx| card.focus_input(window, cx));
+                        }
+                    },
+                )
+                .button(
+                    t("Discard comment", "Abandonner le commentaire"),
+                    |app, window, cx| {
+                        app.ext_mut::<Ui>().drop_card(cx);
+                        write_comment(app, window, cx);
+                    },
+                ),
             cx,
         );
         return;
@@ -773,7 +886,14 @@ fn write_comment(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
                 Alert::new(t("Convert?", "Convertir ?"), text)
                     .button(t("Convert", "Convertir"), move |app, window, cx| {
                         finish_note_edit(app, cx);
-                        if may_edit(app, cx) && app.wb.convert_note_to_comment(sheet, cell.0, cell.1, comment::now_utc()) {
+                        if may_edit(app, cx)
+                            && app.wb.convert_note_to_comment(
+                                sheet,
+                                cell.0,
+                                cell.1,
+                                comment::now_utc(),
+                            )
+                        {
                             app.commit(Cmd::ConvertToComments.label(), cx);
                             if (app.sheet, app.active()) == (sheet, cell) {
                                 open_card(app, cell, true, window, cx);
@@ -831,7 +951,12 @@ fn go(app: &mut ExcelApp, kind: CommentKind, forward: bool, window: &mut Window,
                 Alert::new("OpenSheet", question)
                     .button(t("OK", "OK"), move |app, window, cx| {
                         // The workbook may have changed behind the question.
-                        if app.wb.comment_at(target.0, target.1, target.2).map(Comment::kind) == Some(kind) {
+                        if app
+                            .wb
+                            .comment_at(target.0, target.1, target.2)
+                            .map(Comment::kind)
+                            == Some(kind)
+                        {
                             visit(app, target, kind, window, cx);
                         }
                     })
@@ -857,9 +982,15 @@ enum Step {
 
 fn step(wb: &Workbook, from: (usize, u32, u32), kind: CommentKind, forward: bool) -> Step {
     let (found, other_end) = if forward {
-        (wb.next_comment(from, Some(kind)), wb.first_comment(Some(kind)))
+        (
+            wb.next_comment(from, Some(kind)),
+            wb.first_comment(Some(kind)),
+        )
     } else {
-        (wb.previous_comment(from, Some(kind)), wb.last_comment(Some(kind)))
+        (
+            wb.previous_comment(from, Some(kind)),
+            wb.last_comment(Some(kind)),
+        )
     };
     match (found, other_end) {
         (Some(target), _) => Step::To(target),
@@ -869,7 +1000,13 @@ fn step(wb: &Workbook, from: (usize, u32, u32), kind: CommentKind, forward: bool
 }
 
 /// Select an annotated cell and show what it carries.
-fn visit(app: &mut ExcelApp, target: (usize, u32, u32), kind: CommentKind, window: &mut Window, cx: &mut Cx) {
+fn visit(
+    app: &mut ExcelApp,
+    target: (usize, u32, u32),
+    kind: CommentKind,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let (sheet, row, col) = target;
     app.switch_sheet(sheet, window, cx);
     if app.sheet != sheet {
@@ -975,7 +1112,10 @@ fn paint_marks(p: &mut Painter) {
         .map(|merge| merge.r0)
         .min()
         .map_or(visible.r0, |row| row.min(visible.r0));
-    for ((row, col), comment) in sheet.comments.range((first_row, 0)..=(visible.r1, u32::MAX)) {
+    for ((row, col), comment) in sheet
+        .comments
+        .range((first_row, 0)..=(visible.r1, u32::MAX))
+    {
         let area = sheet.merge_at(*row, *col).unwrap_or(Rect::cell(*row, *col));
         if !area.intersects(&visible) {
             continue;
@@ -1027,7 +1167,10 @@ fn status_text(cell: &str, comment: &Comment) -> String {
         Comment::Thread(thread) => (
             match thread.replies.len() {
                 0 => t("Cell |0 commented by |1", "Cellule |0 commentée par |1"),
-                1 => t("Cell |0 commented by |1 (1 reply)", "Cellule |0 commentée par |1 (1 réponse)"),
+                1 => t(
+                    "Cell |0 commented by |1 (1 reply)",
+                    "Cellule |0 commentée par |1 (1 réponse)",
+                ),
                 _ => t(
                     "Cell |0 commented by |1 (|2 replies)",
                     "Cellule |0 commentée par |1 (|2 réponses)",
@@ -1060,10 +1203,19 @@ fn tidy(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     // A box stays selected while it has the keyboard. (A press on a zone
     // hands the keyboard to the grid for the time of the drag; the box
     // gets it back at the release.)
-    let has_keys = ui.drag.is_some() || ui.box_focus.as_ref().is_some_and(|handle| handle.is_focused(window));
-    let gone_sel = ui.note_sel.is_some_and(|cell| !is(cell, CommentKind::Note) || !has_keys);
+    let has_keys = ui.drag.is_some()
+        || ui
+            .box_focus
+            .as_ref()
+            .is_some_and(|handle| handle.is_focused(window));
+    let gone_sel = ui
+        .note_sel
+        .is_some_and(|cell| !is(cell, CommentKind::Note) || !has_keys);
     let gone_visit = ui.visited.is_some_and(|cell| !is(cell, CommentKind::Note));
-    let gone_hover = ui.hover.cell.is_some_and(|cell| kind_at(app, sheet, cell).is_none());
+    let gone_hover = ui
+        .hover
+        .cell
+        .is_some_and(|cell| kind_at(app, sheet, cell).is_none());
     if !(gone_card || gone_sel || gone_visit || gone_hover || !ui.orphans.is_empty()) {
         return;
     }
@@ -1082,7 +1234,9 @@ fn tidy(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
         ui.hover = Peek::default();
         ui.rest_timer = None;
     }
-    let stranded = std::mem::take(&mut ui.orphans).iter().any(|handle| handle.is_focused(window));
+    let stranded = std::mem::take(&mut ui.orphans)
+        .iter()
+        .any(|handle| handle.is_focused(window));
     if stranded {
         window.focus(&app.grid_focus);
     }
@@ -1090,9 +1244,15 @@ fn tidy(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 
 /// The text box laid over the note box whose text is being typed.
 fn note_editor(app: &mut ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<AnyElement> {
-    let edit = app.ext::<Ui>()?.note_edit.as_ref().filter(|edit| edit.sheet == app.sheet)?;
+    let edit = app
+        .ext::<Ui>()?
+        .note_edit
+        .as_ref()
+        .filter(|edit| edit.sheet == app.sheet)?;
     let (cell, area) = (edit.cell, edit.area.clone());
-    let shown = boxes(app, layout).into_iter().find(|shown| shown.cell == cell)?;
+    let shown = boxes(app, layout)
+        .into_iter()
+        .find(|shown| shown.cell == cell)?;
     let z = layout.zoom;
     let (x0, y0, x1, y1) = shown.rect;
     let inner = (
@@ -1123,7 +1283,9 @@ fn note_editor(app: &mut ExcelApp, layout: &GridLayout, cx: &mut Cx) -> Option<A
             })
             // A press anywhere else finishes the note, also where nothing
             // takes the keyboard (the ribbon).
-            .on_mouse_down_out(cx.listener(|app, _: &MouseDownEvent, _, cx| finish_note_edit(app, cx)))
+            .on_mouse_down_out(
+                cx.listener(|app, _: &MouseDownEvent, _, cx| finish_note_edit(app, cx)),
+            )
             .child(
                 div()
                     .absolute()
@@ -1167,8 +1329,12 @@ fn box_keys(app: &mut ExcelApp, cx: &mut Cx) -> Option<AnyElement> {
                 delete(app, cx);
                 window.focus(&app.grid_focus);
             }))
-            .on_action(cx.listener(|app, _: &line::Escape, window, _| window.focus(&app.grid_focus)))
-            .on_action(cx.listener(move |app, _: &line::Enter, window, cx| edit_note(app, cell, None, window, cx)))
+            .on_action(
+                cx.listener(|app, _: &line::Escape, window, _| window.focus(&app.grid_focus)),
+            )
+            .on_action(cx.listener(move |app, _: &line::Enter, window, cx| {
+                edit_note(app, cell, None, window, cx)
+            }))
             .on_action(cx.listener(|app, _: &line::Left, _, cx| nudge_box(app, -1.0, 0.0, cx)))
             .on_action(cx.listener(|app, _: &line::Right, _, cx| nudge_box(app, 1.0, 0.0, cx)))
             .on_action(cx.listener(|app, _: &line::Up, _, cx| nudge_box(app, 0.0, -1.0, cx)))
@@ -1179,7 +1345,12 @@ fn box_keys(app: &mut ExcelApp, cx: &mut Cx) -> Option<AnyElement> {
 
 /// The comment card beside its cell: the one a click or a command
 /// opened, or the one of the comment the pointer rests on.
-fn floating_card(app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Option<AnyElement> {
+fn floating_card(
+    app: &mut ExcelApp,
+    layout: &GridLayout,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<AnyElement> {
     if app.pane_open(PANE) || app.is_editing() {
         return None;
     }
@@ -1187,9 +1358,13 @@ fn floating_card(app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, c
     let ui = app.ext::<Ui>()?;
     // The comment the pointer rests on shows its card, in place of the
     // card of another cell unless words are being written there.
-    let rested = ui.hover.shown().filter(|cell| kind_at(app, sheet, *cell) == Some(CommentKind::Thread));
+    let rested = ui
+        .hover
+        .shown()
+        .filter(|cell| kind_at(app, sheet, *cell) == Some(CommentKind::Thread));
     let makes_way = |card: &OpenCard| {
-        rested.is_some_and(|cell| (card.sheet, card.cell) != (sheet, cell)) && !card.view.read(cx).has_draft(cx)
+        rested.is_some_and(|cell| (card.sheet, card.cell) != (sheet, cell))
+            && !card.view.read(cx).has_draft(cx)
     };
     if let Some(cell) = rested.filter(|_| ui.card.as_ref().is_none_or(makes_way)) {
         let weak = cx.weak_entity();
@@ -1204,7 +1379,11 @@ fn floating_card(app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, c
             pointer_inside: false,
         });
     }
-    let card = app.ext::<Ui>()?.card.as_ref().filter(|card| card.sheet == sheet)?;
+    let card = app
+        .ext::<Ui>()?
+        .card
+        .as_ref()
+        .filter(|card| card.sheet == sheet)?;
     let (x0, y0, x1, y1) = notes::cell_px(layout, &app.wb.sheets[sheet], card.cell);
     let area = (
         layout.header_w,
@@ -1237,7 +1416,13 @@ impl Feature for Comments {
         }
     }
 
-    fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        layout: &GridLayout,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         tidy(app, window, cx);
         [
             note_editor(app, layout, cx),
@@ -1249,7 +1434,14 @@ impl Feature for Comments {
         .collect()
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         let Some(spot) = zone.payload::<Spot>() else {
             return ZoneResponse::Ignored;
         };
@@ -1258,7 +1450,8 @@ impl Feature for Comments {
             // The press goes on to the cell; a plain click on a comment
             // also opens its card at once, and keeps it open.
             Spot::Cell(row, col) => {
-                let plain = left && !ev.modifiers.shift && !ev.modifiers.platform && !ev.modifiers.control;
+                let plain =
+                    left && !ev.modifiers.shift && !ev.modifiers.platform && !ev.modifiers.control;
                 let thread = kind_at(app, app.sheet, (row, col)) == Some(CommentKind::Thread);
                 if plain && thread && !app.is_editing() && !app.pane_open(PANE) {
                     if ev.click_count == 1 {
@@ -1288,18 +1481,35 @@ impl Feature for Comments {
         }
     }
 
-    fn zone_drag(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) {
+    fn zone_drag(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) {
         if zone.payload::<Spot>().is_none() {
             return;
         }
         let z = app.zoom as f64;
         if let Some(drag) = &mut app.ext_mut::<Ui>().drag {
-            let (dx, dy) = ((ev.x - drag.start.0) as f64 / z, (ev.y - drag.start.1) as f64 / z);
+            let (dx, dy) = (
+                (ev.x - drag.start.0) as f64 / z,
+                (ev.y - drag.start.1) as f64 / z,
+            );
             drag.current = notes::dragged(drag.origin, drag.grip, dx, dy);
         }
     }
 
-    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, _ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+    fn zone_mouse_up(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        _ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) {
         if zone.payload::<Spot>().is_none() {
             return;
         }
@@ -1312,7 +1522,11 @@ impl Feature for Comments {
             window.focus(handle);
         }
         let (row, col) = drag.cell;
-        if drag.current != drag.origin && app.wb.set_note_frame(app.sheet, row, col, Some(drag.current)) {
+        if drag.current != drag.origin
+            && app
+                .wb
+                .set_note_frame(app.sheet, row, col, Some(drag.current))
+        {
             let label = match drag.grip {
                 Grip::Move => t("Move Object", "Déplacer l'objet"),
                 Grip::Handle(_) => t("Size Object", "Dimensionner l'objet"),
@@ -1342,11 +1556,9 @@ impl Feature for Comments {
         ui.drag = None;
         // A card goes with the selection, unless it holds words that
         // were not posted yet.
-        if ui
-            .card
-            .as_ref()
-            .is_some_and(|card| (card.sheet, card.cell) != here && !card.view.read(cx).has_draft(cx))
-        {
+        if ui.card.as_ref().is_some_and(|card| {
+            (card.sheet, card.cell) != here && !card.view.read(cx).has_draft(cx)
+        }) {
             ui.drop_card(cx);
         }
         if let Some(pane) = ui.pane.clone().filter(|_| pane) {
@@ -1395,10 +1607,18 @@ mod tests {
         // A note is edited, deleted, shown; a comment on it converts it.
         assert_eq!(
             cell_menu(Some(CommentKind::Note)),
-            [Cmd::NewComment, Cmd::EditNote, Cmd::DeleteNote, Cmd::ShowHideNote]
+            [
+                Cmd::NewComment,
+                Cmd::EditNote,
+                Cmd::DeleteNote,
+                Cmd::ShowHideNote
+            ]
         );
         // A comment is answered or deleted, and takes no note.
-        assert_eq!(cell_menu(Some(CommentKind::Thread)), [Cmd::Reply, Cmd::DeleteComment]);
+        assert_eq!(
+            cell_menu(Some(CommentKind::Thread)),
+            [Cmd::Reply, Cmd::DeleteComment]
+        );
 
         assert_eq!(notes_menu(None)[0], Cmd::NewNote);
         assert_eq!(notes_menu(Some(CommentKind::Thread))[0], Cmd::NewNote);
@@ -1474,24 +1694,46 @@ mod tests {
         let template = Note::template("Ada");
         // A new note is stored even when nothing was added to the name of
         // its author, as Excel does.
-        assert_eq!(store_note(&mut wb, 0, (1, 1), "Ada", None, &template), Some("New Note"));
+        assert_eq!(
+            store_note(&mut wb, 0, (1, 1), "Ada", None, &template),
+            Some("New Note")
+        );
         wb.commit("New Note");
         let note = wb.comment_at(0, 1, 1).unwrap().as_note().unwrap();
-        assert_eq!((note.author.as_str(), note.text().as_str()), ("Ada", "Ada:\n"));
+        assert_eq!(
+            (note.author.as_str(), note.text().as_str()),
+            ("Ada", "Ada:\n")
+        );
         assert!(note.runs[0].font.bold);
         // Leaving the box without a change stores nothing.
-        assert_eq!(store_note(&mut wb, 0, (1, 1), "Bob", Some(&template), &template), None);
+        assert_eq!(
+            store_note(&mut wb, 0, (1, 1), "Bob", Some(&template), &template),
+            None
+        );
         assert!(!wb.commit("nothing"));
         // Another person's edit keeps the author of the note.
         assert_eq!(
-            store_note(&mut wb, 0, (1, 1), "Bob", Some(&template), "Ada:\nCheck this."),
+            store_note(
+                &mut wb,
+                0,
+                (1, 1),
+                "Bob",
+                Some(&template),
+                "Ada:\nCheck this."
+            ),
             Some("Edit Note")
         );
         wb.commit("Edit Note");
         let note = wb.comment_at(0, 1, 1).unwrap().as_note().unwrap();
-        assert_eq!((note.author.as_str(), note.text().as_str()), ("Ada", "Ada:\nCheck this."));
+        assert_eq!(
+            (note.author.as_str(), note.text().as_str()),
+            ("Ada", "Ada:\nCheck this.")
+        );
         wb.undo();
-        assert_eq!(wb.comment_at(0, 1, 1).unwrap().as_note().unwrap().text(), "Ada:\n");
+        assert_eq!(
+            wb.comment_at(0, 1, 1).unwrap().as_note().unwrap().text(),
+            "Ada:\n"
+        );
         wb.undo();
         assert!(wb.comment_at(0, 1, 1).is_none());
         // A cell that has a comment takes no note.
@@ -1503,28 +1745,87 @@ mod tests {
     #[test]
     fn posting_starts_a_thread_then_replies_to_it() {
         let mut wb = book();
-        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Ada"), 45_000.25, "Is this right?")), Some("New Comment"));
+        assert_eq!(
+            write_post(
+                &mut wb,
+                0,
+                (2, 0),
+                Post::new(&Person::new("Ada"), 45_000.25, "Is this right?")
+            ),
+            Some("New Comment")
+        );
         wb.commit("New Comment");
-        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Bob"), 45_000.5, "Yes.")), Some("Reply"));
+        assert_eq!(
+            write_post(
+                &mut wb,
+                0,
+                (2, 0),
+                Post::new(&Person::new("Bob"), 45_000.5, "Yes.")
+            ),
+            Some("Reply")
+        );
         wb.commit("Reply");
         let thread = wb.comment_at(0, 2, 0).unwrap().as_thread().unwrap();
-        assert_eq!((thread.first.author.name.as_str(), thread.first.text.as_str()), ("Ada", "Is this right?"));
+        assert_eq!(
+            (
+                thread.first.author.name.as_str(),
+                thread.first.text.as_str()
+            ),
+            ("Ada", "Is this right?")
+        );
         assert_eq!(thread.replies.len(), 1);
-        assert_eq!((thread.replies[0].author.name.as_str(), thread.replies[0].time), ("Bob", 45_000.5));
+        assert_eq!(
+            (
+                thread.replies[0].author.name.as_str(),
+                thread.replies[0].time
+            ),
+            ("Bob", 45_000.5)
+        );
         // Each post is its own undo step.
         wb.undo();
-        assert!(wb.comment_at(0, 2, 0).unwrap().as_thread().unwrap().replies.is_empty());
+        assert!(
+            wb.comment_at(0, 2, 0)
+                .unwrap()
+                .as_thread()
+                .unwrap()
+                .replies
+                .is_empty()
+        );
         wb.redo();
         // A resolved thread takes no reply until it is reopened; a note none at all.
         wb.set_comment_resolved(0, 2, 0, true);
         wb.commit("resolve");
-        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Cy"), 45_001.0, "Late")), None);
+        assert_eq!(
+            write_post(
+                &mut wb,
+                0,
+                (2, 0),
+                Post::new(&Person::new("Cy"), 45_001.0, "Late")
+            ),
+            None
+        );
         wb.set_comment_resolved(0, 2, 0, false);
         wb.commit("reopen");
-        assert_eq!(write_post(&mut wb, 0, (2, 0), Post::new(&Person::new("Cy"), 45_001.0, "Late")), Some("Reply"));
+        assert_eq!(
+            write_post(
+                &mut wb,
+                0,
+                (2, 0),
+                Post::new(&Person::new("Cy"), 45_001.0, "Late")
+            ),
+            Some("Reply")
+        );
         wb.set_note(0, 5, 0, "Ada", "a note");
         wb.commit("note");
-        assert_eq!(write_post(&mut wb, 0, (5, 0), Post::new(&Person::new("Cy"), 45_001.0, "On a note")), None);
+        assert_eq!(
+            write_post(
+                &mut wb,
+                0,
+                (5, 0),
+                Post::new(&Person::new("Cy"), 45_001.0, "On a note")
+            ),
+            None
+        );
     }
 
     #[test]
@@ -1570,7 +1871,10 @@ mod tests {
             replies: Vec::new(),
             resolved: false,
         };
-        assert_eq!(status_text("C3", &Comment::Thread(thread.clone())), "Cell C3 commented by Bob");
+        assert_eq!(
+            status_text("C3", &Comment::Thread(thread.clone())),
+            "Cell C3 commented by Bob"
+        );
         thread.replies.push(post("Ada"));
         assert_eq!(
             status_text("C3", &Comment::Thread(thread.clone())),

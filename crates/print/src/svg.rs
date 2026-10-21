@@ -16,7 +16,11 @@ fn num(value: f64) -> String {
     }
     let text = format!("{value:.3}");
     let text = text.trim_end_matches('0').trim_end_matches('.');
-    if text.is_empty() || text == "-0" { "0".to_string() } else { text.to_string() }
+    if text.is_empty() || text == "-0" {
+        "0".to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 fn escape(text: &str) -> String {
@@ -41,7 +45,16 @@ fn path_data(path: &Path) -> String {
             Segment::MoveTo(x, y) => write!(d, "M{} {}", num(x), num(y)),
             Segment::LineTo(x, y) => write!(d, "L{} {}", num(x), num(y)),
             Segment::CurveTo(x1, y1, x2, y2, x, y) => {
-                write!(d, "C{} {} {} {} {} {}", num(x1), num(y1), num(x2), num(y2), num(x), num(y))
+                write!(
+                    d,
+                    "C{} {} {} {} {} {}",
+                    num(x1),
+                    num(y1),
+                    num(x2),
+                    num(y2),
+                    num(x),
+                    num(y)
+                )
             }
             Segment::Close => write!(d, "Z"),
         }
@@ -54,7 +67,12 @@ fn path_data(path: &Path) -> String {
 fn paint(attribute: &str, paint: &Paint) -> String {
     let mut out = format!(" {attribute}=\"#{:06X}\"", paint.color.value() & 0xFF_FFFF);
     if paint.opacity < 1.0 {
-        write!(out, " {attribute}-opacity=\"{}\"", num(paint.opacity as f64)).ok();
+        write!(
+            out,
+            " {attribute}-opacity=\"{}\"",
+            num(paint.opacity as f64)
+        )
+        .ok();
     }
     out
 }
@@ -64,7 +82,9 @@ const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 fn base64(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
-        let group = (chunk[0] as u32) << 16 | (*chunk.get(1).unwrap_or(&0) as u32) << 8 | *chunk.get(2).unwrap_or(&0) as u32;
+        let group = (chunk[0] as u32) << 16
+            | (*chunk.get(1).unwrap_or(&0) as u32) << 8
+            | *chunk.get(2).unwrap_or(&0) as u32;
         for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
             if i <= chunk.len() {
                 out.push(BASE64[(group >> shift & 63) as usize] as char);
@@ -81,7 +101,11 @@ fn crc32(bytes: &[u8]) -> u32 {
     for byte in bytes {
         crc ^= *byte as u32;
         for _ in 0..8 {
-            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
         }
     }
     !crc
@@ -96,7 +120,13 @@ pub fn png_file(width: u32, height: u32, rgba: &[u8], per_inch: Option<f64>) -> 
 }
 
 /// A PNG file of raw pixels, `channels` bytes each, rows from the top.
-fn png(width: u32, height: u32, channels: usize, data: &[u8], per_inch: Option<f64>) -> Option<Vec<u8>> {
+fn png(
+    width: u32,
+    height: u32,
+    channels: usize,
+    data: &[u8],
+    per_inch: Option<f64>,
+) -> Option<Vec<u8>> {
     let stride = width as usize * channels;
     if stride == 0 || data.len() < stride * height as usize {
         return None;
@@ -191,8 +221,17 @@ pub fn scene_svg(scene: &Scene, pixels: (f64, f64)) -> String {
                 write!(out, "<g transform=\"matrix({})\">", numbers.join(" ")).ok();
                 *open.last_mut().expect("the outermost level") += 1;
             }
-            Op::Fill { path, paint: colour } => {
-                write!(out, "<path d=\"{}\"{}/>", path_data(path), paint("fill", colour)).ok();
+            Op::Fill {
+                path,
+                paint: colour,
+            } => {
+                write!(
+                    out,
+                    "<path d=\"{}\"{}/>",
+                    path_data(path),
+                    paint("fill", colour)
+                )
+                .ok();
             }
             Op::Stroke { path, stroke } => {
                 write!(
@@ -242,7 +281,13 @@ pub fn scene_svg(scene: &Scene, pixels: (f64, f64)) -> String {
                 if face.italic() {
                     out.push_str(" font-style=\"italic\"");
                 }
-                write!(out, "{} xml:space=\"preserve\">{}</text>", paint("fill", colour), escape(text)).ok();
+                write!(
+                    out,
+                    "{} xml:space=\"preserve\">{}</text>",
+                    paint("fill", colour),
+                    escape(text)
+                )
+                .ok();
             }
             Op::Image { image, rect } => {
                 if let Some(address) = data_uri(image) {
@@ -276,7 +321,11 @@ fn num_precise(value: f64) -> String {
     }
     let text = format!("{value:.6}");
     let text = text.trim_end_matches('0').trim_end_matches('.');
-    if text.is_empty() || text == "-0" { "0".to_string() } else { text.to_string() }
+    if text.is_empty() || text == "-0" {
+        "0".to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -319,7 +368,13 @@ mod tests {
         canvas.save();
         canvas.clip_rect(RectF::new(0.0, 0.0, 30.0, 15.0));
         canvas.translate(2.0, 3.0);
-        canvas.line(0.0, 0.0, 10.0, 0.0, Stroke::solid(Paint::translucent(Color::BLACK, 0.5), 0.5).dashed(&[2.0, 1.0]));
+        canvas.line(
+            0.0,
+            0.0,
+            10.0,
+            0.0,
+            Stroke::solid(Paint::translucent(Color::BLACK, 0.5), 0.5).dashed(&[2.0, 1.0]),
+        );
         let style = TextStyle {
             family: "Arial",
             bold: true,
@@ -340,7 +395,9 @@ mod tests {
         assert!(svg.contains("<clipPath id=\"c1\"><rect x=\"0\" y=\"0\" width=\"30\" height=\"15\"/></clipPath><g clip-path=\"url(#c1)\">"));
         assert!(svg.contains("<g transform=\"matrix(1 0 0 1 2 3)\">"));
         assert!(svg.contains("stroke=\"#000000\" stroke-opacity=\"0.5\" stroke-width=\"0.5\" stroke-dasharray=\"2 1\""));
-        assert!(svg.contains("font-weight=\"bold\" fill=\"#112233\" xml:space=\"preserve\">a &lt; b &amp; c</text>"));
+        assert!(svg.contains(
+            "font-weight=\"bold\" fill=\"#112233\" xml:space=\"preserve\">a &lt; b &amp; c</text>"
+        ));
         assert!(svg.contains("href=\"data:image/png;base64,iVBORw0KGgo"));
         // The clip and the transformation end with their `Restore`,
         // before the image.

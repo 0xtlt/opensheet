@@ -56,7 +56,9 @@ impl PenKind {
     }
 
     pub fn from_file_name(name: &str) -> Option<PenKind> {
-        PenKind::ALL.into_iter().find(|kind| kind.file_name() == name)
+        PenKind::ALL
+            .into_iter()
+            .find(|kind| kind.file_name() == name)
     }
 }
 
@@ -100,14 +102,25 @@ impl Ink {
     /// corner of A1), and the frame it takes there. `None` without points.
     /// The frame is that of the points: the thickness of the line hangs
     /// over it.
-    pub fn through(kind: PenKind, color: Color, width: f32, sheet_points: &[(f64, f64)]) -> Option<(Ink, Frame)> {
+    pub fn through(
+        kind: PenKind,
+        color: Color,
+        width: f32,
+        sheet_points: &[(f64, f64)],
+    ) -> Option<(Ink, Frame)> {
         let first = *sheet_points.first()?;
         let (mut x0, mut y0, mut x1, mut y1) = (first.0, first.1, first.0, first.1);
         for (x, y) in sheet_points {
             (x0, y0, x1, y1) = (x0.min(*x), y0.min(*y), x1.max(*x), y1.max(*y));
         }
-        let extent = (((x1 - x0) as f32).max(MIN_EXTENT), ((y1 - y0) as f32).max(MIN_EXTENT));
-        let points: Vec<Pt> = sheet_points.iter().map(|(x, y)| ((x - x0) as f32, (y - y0) as f32)).collect();
+        let extent = (
+            ((x1 - x0) as f32).max(MIN_EXTENT),
+            ((y1 - y0) as f32).max(MIN_EXTENT),
+        );
+        let points: Vec<Pt> = sheet_points
+            .iter()
+            .map(|(x, y)| ((x - x0) as f32, (y - y0) as f32))
+            .collect();
         let ink = Ink {
             id: 0,
             name: String::new(),
@@ -126,14 +139,20 @@ impl Ink {
 
     /// The points stretched to a frame of the given size.
     pub fn points_in(&self, size: (f32, f32)) -> Vec<Pt> {
-        let (sx, sy) = (size.0 / self.extent.0.max(MIN_EXTENT), size.1 / self.extent.1.max(MIN_EXTENT));
+        let (sx, sy) = (
+            size.0 / self.extent.0.max(MIN_EXTENT),
+            size.1 / self.extent.1.max(MIN_EXTENT),
+        );
         self.points.iter().map(|(x, y)| (x * sx, y * sy)).collect()
     }
 
     /// The thickness of the line in a frame of the given size: it grows
     /// with the stroke, as in Excel.
     pub fn width_in(&self, size: (f32, f32)) -> f32 {
-        let (sx, sy) = (size.0 / self.extent.0.max(MIN_EXTENT), size.1 / self.extent.1.max(MIN_EXTENT));
+        let (sx, sy) = (
+            size.0 / self.extent.0.max(MIN_EXTENT),
+            size.1 / self.extent.1.max(MIN_EXTENT),
+        );
         // A straight stroke has one side of no real size: the other says
         // how much it grew.
         let flat = (self.extent.0 <= MIN_EXTENT, self.extent.1 <= MIN_EXTENT);
@@ -156,7 +175,11 @@ fn distance(a: (f64, f64), b: (f64, f64)) -> f64 {
 pub fn segment_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let length = dx * dx + dy * dy;
-    let along = if length > 0.0 { (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / length).clamp(0.0, 1.0) } else { 0.0 };
+    let along = if length > 0.0 {
+        (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / length).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     distance(p, (a.0 + along * dx, a.1 + along * dy))
 }
 
@@ -165,7 +188,10 @@ pub fn path_distance(p: (f64, f64), points: &[(f64, f64)]) -> f64 {
     match points {
         [] => f64::INFINITY,
         [only] => distance(p, *only),
-        _ => points.windows(2).map(|w| segment_distance(p, w[0], w[1])).fold(f64::INFINITY, f64::min),
+        _ => points
+            .windows(2)
+            .map(|w| segment_distance(p, w[0], w[1]))
+            .fold(f64::INFINITY, f64::min),
     }
 }
 
@@ -178,7 +204,8 @@ pub fn in_polygon(p: (f64, f64), polygon: &[(f64, f64)]) -> bool {
     };
     for current in polygon {
         if (current.1 > p.1) != (previous.1 > p.1) {
-            let x = current.0 + (p.1 - current.1) / (previous.1 - current.1) * (previous.0 - current.0);
+            let x =
+                current.0 + (p.1 - current.1) / (previous.1 - current.1) * (previous.0 - current.0);
             if p.0 < x {
                 inside = !inside;
             }
@@ -220,7 +247,11 @@ pub fn simplify(points: &[(f64, f64)], tolerance: f64) -> Vec<(f64, f64)> {
             spans.push((farthest.1, last));
         }
     }
-    points.iter().zip(keep).filter_map(|(p, kept)| kept.then_some(*p)).collect()
+    points
+        .iter()
+        .zip(keep)
+        .filter_map(|(p, kept)| kept.then_some(*p))
+        .collect()
 }
 
 /// What the mouse gave, cleaned for keeping: the jitter of the hand is
@@ -234,7 +265,10 @@ pub fn smooth(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let mut out = Vec::with_capacity(points.len());
     out.push(points[0]);
     for w in points.windows(3) {
-        out.push(((w[0].0 + 6.0 * w[1].0 + w[2].0) / 8.0, (w[0].1 + 6.0 * w[1].1 + w[2].1) / 8.0));
+        out.push((
+            (w[0].0 + 6.0 * w[1].0 + w[2].0) / 8.0,
+            (w[0].1 + 6.0 * w[1].1 + w[2].1) / 8.0,
+        ));
     }
     out.push(points[points.len() - 1]);
     simplify(&out, 0.35)
@@ -254,7 +288,10 @@ pub fn curve(points: &[Pt], steps: usize) -> Vec<Pt> {
             let t = step as f32 / steps as f32;
             let (t2, t3) = (t * t, t * t * t);
             let blend = |a: f32, b: f32, c: f32, d: f32| {
-                0.5 * (2.0 * b + (c - a) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2 + (3.0 * b - a - 3.0 * c + d) * t3)
+                0.5 * (2.0 * b
+                    + (c - a) * t
+                    + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2
+                    + (3.0 * b - a - 3.0 * c + d) * t3)
             };
             out.push((blend(p0.0, p1.0, p2.0, p3.0), blend(p0.1, p1.1, p2.1, p3.1)));
         }
@@ -269,17 +306,31 @@ pub fn curve(points: &[Pt], steps: usize) -> Vec<Pt> {
 /// those of the stroke: points of the sheet.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Recognised {
-    Line { from: (f64, f64), to: (f64, f64) },
+    Line {
+        from: (f64, f64),
+        to: (f64, f64),
+    },
     /// The arrowhead is at `to`.
-    Arrow { from: (f64, f64), to: (f64, f64) },
+    Arrow {
+        from: (f64, f64),
+        to: (f64, f64),
+    },
     Rectangle(Frame),
     Ellipse(Frame),
     /// An isosceles triangle; `flip_v`: it points down.
-    Triangle { frame: Frame, flip_v: bool },
+    Triangle {
+        frame: Frame,
+        flip_v: bool,
+    },
 }
 
 fn bounds(points: &[(f64, f64)]) -> Frame {
-    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let (mut x0, mut y0, mut x1, mut y1) = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
     for (x, y) in points {
         (x0, y0, x1, y1) = (x0.min(*x), y0.min(*y), x1.max(*x), y1.max(*y));
     }
@@ -357,14 +408,21 @@ fn corners_of(points: &[(f64, f64)], diagonal: f64) -> Vec<(f64, f64)> {
         .enumerate()
         .max_by(|a, b| distance(*a.1, centre).total_cmp(&distance(*b.1, centre)))
         .map_or(0, |(i, _)| i);
-    let mut outline: Vec<(f64, f64)> = points[start..].iter().chain(&points[..start]).copied().collect();
+    let mut outline: Vec<(f64, f64)> = points[start..]
+        .iter()
+        .chain(&points[..start])
+        .copied()
+        .collect();
     outline.push(outline[0]);
     let mut rough = simplify(&outline, 0.09 * diagonal);
     rough.pop();
     // Two corners almost on each other are one (where the stroke closes).
     let mut corners: Vec<(f64, f64)> = Vec::new();
     for corner in rough {
-        if corners.iter().all(|c| distance(*c, corner) > 0.15 * diagonal) {
+        if corners
+            .iter()
+            .all(|c| distance(*c, corner) > 0.15 * diagonal)
+        {
             corners.push(corner);
         }
     }
@@ -389,9 +447,15 @@ fn roundness(points: &[(f64, f64)], frame: &Frame) -> f64 {
 fn recognise_open(points: &[(f64, f64)], diagonal: f64) -> Option<Recognised> {
     let (first, last) = (points[0], points[points.len() - 1]);
     let chord = distance(first, last);
-    let straight = points.iter().map(|p| segment_distance(*p, first, last)).fold(0.0, f64::max);
+    let straight = points
+        .iter()
+        .map(|p| segment_distance(*p, first, last))
+        .fold(0.0, f64::max);
     if chord > 0.0 && straight < (0.07 * chord).max(3.0) && path_length(points) < 1.2 * chord {
-        return Some(Recognised::Line { from: first, to: last });
+        return Some(Recognised::Line {
+            from: first,
+            to: last,
+        });
     }
     // The shaft is the first long straight run; everything after its end
     // stays close to that end.
@@ -401,14 +465,29 @@ fn recognise_open(points: &[(f64, f64)], diagonal: f64) -> Option<Recognised> {
     if rough.len() < 3 || shaft < 0.6 * diagonal {
         return None;
     }
-    let head = rough[2..].iter().map(|p| distance(*p, tip)).fold(0.0, f64::max);
-    (head < 0.45 * shaft).then_some(Recognised::Arrow { from: first, to: tip })
+    let head = rough[2..]
+        .iter()
+        .map(|p| distance(*p, tip))
+        .fold(0.0, f64::max);
+    (head < 0.45 * shaft).then_some(Recognised::Arrow {
+        from: first,
+        to: tip,
+    })
 }
 
 // ---- on the sheet ----------------------------------------------------------
 
 fn ink_name(locale: &Locale) -> &'static str {
-    localized(locale, ["Ink", "Encre", "Entrada de lápiz", "Freihand", "Input penna"])
+    localized(
+        locale,
+        [
+            "Ink",
+            "Encre",
+            "Entrada de lápiz",
+            "Freihand",
+            "Input penna",
+        ],
+    )
 }
 
 impl Sheet {
@@ -425,7 +504,10 @@ impl Sheet {
     /// The two corners of a stroke as a file writes them.
     pub fn ink_corners(&self, ink: &Ink) -> (Corner, Corner) {
         let frame = self.ink_frame(ink);
-        (self.corner_at(frame.x, frame.y), self.corner_at(frame.x + frame.width, frame.y + frame.height))
+        (
+            self.corner_at(frame.x, frame.y),
+            self.corner_at(frame.x + frame.width, frame.y + frame.height),
+        )
     }
 
     /// The points of a stroke on the sheet (pixels at 100 % from the
@@ -443,7 +525,10 @@ impl Sheet {
     fn settle_ink(&self, ink: &mut Ink, frame: Frame) {
         let clean = |v: f64| if v.is_finite() { v.max(0.0) } else { 0.0 };
         (ink.anchor, ink.offset) = self.corner_at(clean(frame.x), clean(frame.y));
-        ink.size = ((clean(frame.width) as f32).max(MIN_EXTENT), (clean(frame.height) as f32).max(MIN_EXTENT));
+        ink.size = (
+            (clean(frame.width) as f32).max(MIN_EXTENT),
+            (clean(frame.height) as f32).max(MIN_EXTENT),
+        );
     }
 
     /// The strokes within `reach` pixels of a point of the sheet, topmost
@@ -454,8 +539,13 @@ impl Sheet {
             .rev()
             .filter(|ink| {
                 let frame = self.ink_frame(ink);
-                let room = reach + ink.width_in((frame.width as f32, frame.height as f32)) as f64 / 2.0;
-                if x < frame.x - room || y < frame.y - room || x > frame.x + frame.width + room || y > frame.y + frame.height + room {
+                let room =
+                    reach + ink.width_in((frame.width as f32, frame.height as f32)) as f64 / 2.0;
+                if x < frame.x - room
+                    || y < frame.y - room
+                    || x > frame.x + frame.width + room
+                    || y > frame.y + frame.height + room
+                {
                     return false;
                 }
                 path_distance((x, y), &self.ink_points(ink)) <= room
@@ -481,7 +571,11 @@ impl Sheet {
         let mut number = self.inks.len() + 1;
         loop {
             let name = format!("{base} {number}");
-            if !self.inks.iter().any(|ink| ink.name.eq_ignore_ascii_case(&name)) {
+            if !self
+                .inks
+                .iter()
+                .any(|ink| ink.name.eq_ignore_ascii_case(&name))
+            {
                 return name;
             }
             number += 1;
@@ -491,7 +585,12 @@ impl Sheet {
 
 impl Workbook {
     fn next_ink_id(&self) -> u32 {
-        self.sheets.iter().flat_map(|s| s.inks.iter().map(|ink| ink.id)).max().unwrap_or(0) + 1
+        self.sheets
+            .iter()
+            .flat_map(|s| s.inks.iter().map(|ink| ink.id))
+            .max()
+            .unwrap_or(0)
+            + 1
     }
 
     /// Add a stroke on top of the others, at `frame` on the sheet; returns
@@ -515,7 +614,14 @@ impl Workbook {
     }
 
     /// Draw a stroke through points of the sheet with a pen.
-    pub fn draw_ink(&mut self, sheet: usize, kind: PenKind, color: Color, width: f32, points: &[(f64, f64)]) -> Option<u32> {
+    pub fn draw_ink(
+        &mut self,
+        sheet: usize,
+        kind: PenKind,
+        color: Color,
+        width: f32,
+        points: &[(f64, f64)],
+    ) -> Option<u32> {
         let (ink, frame) = Ink::through(kind, color, width, points)?;
         self.add_ink(sheet, ink, frame)
     }
@@ -527,7 +633,10 @@ impl Workbook {
     /// Where a stroke is on its sheet.
     pub fn ink_frame(&self, sheet: usize, id: u32) -> Option<Frame> {
         let sh = self.sheets.get(sheet)?;
-        sh.inks.iter().find(|ink| ink.id == id).map(|ink| sh.ink_frame(ink))
+        sh.inks
+            .iter()
+            .find(|ink| ink.id == id)
+            .map(|ink| sh.ink_frame(ink))
     }
 
     pub fn remove_ink(&mut self, sheet: usize, id: u32) -> bool {
@@ -541,7 +650,11 @@ impl Workbook {
 
     /// Move and / or resize a stroke to a frame on the sheet.
     pub fn set_ink_frame(&mut self, sheet: usize, id: u32, frame: Frame) -> bool {
-        let Some(index) = self.sheets.get(sheet).and_then(|sh| sh.inks.iter().position(|ink| ink.id == id)) else {
+        let Some(index) = self
+            .sheets
+            .get(sheet)
+            .and_then(|sh| sh.inks.iter().position(|ink| ink.id == id))
+        else {
             return false;
         };
         self.snapshot();
@@ -606,9 +719,25 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     };
     for ink in &mut sheet.inks {
         if row_axis {
-            (ink.anchor.0, ink.offset.1) = moved_corner(ink.anchor.0, ink.offset.1, false, insert, at, count, MAX_ROWS);
+            (ink.anchor.0, ink.offset.1) = moved_corner(
+                ink.anchor.0,
+                ink.offset.1,
+                false,
+                insert,
+                at,
+                count,
+                MAX_ROWS,
+            );
         } else {
-            (ink.anchor.1, ink.offset.0) = moved_corner(ink.anchor.1, ink.offset.0, false, insert, at, count, MAX_COLS);
+            (ink.anchor.1, ink.offset.0) = moved_corner(
+                ink.anchor.1,
+                ink.offset.0,
+                false,
+                insert,
+                at,
+                count,
+                MAX_COLS,
+            );
         }
     }
 }
@@ -637,14 +766,19 @@ mod tests {
     #[test]
     fn a_stroke_is_placed_where_it_was_drawn() {
         let mut wb = wb();
-        let id = wb.draw_ink(0, PenKind::Pen, Color(0xFF0000), 2.0, &zigzag()).unwrap();
+        let id = wb
+            .draw_ink(0, PenKind::Pen, Color(0xFF0000), 2.0, &zigzag())
+            .unwrap();
         wb.commit("Ink");
         let ink = wb.ink(0, id).unwrap();
         assert_eq!(ink.name, "Ink 1");
         assert_eq!(ink.extent, (90.0, 30.0));
         assert_eq!(&ink.points[..2], &[(0.0, 0.0), (30.0, 30.0)]);
         let frame = wb.ink_frame(0, id).unwrap();
-        assert_eq!((frame.x, frame.y, frame.width, frame.height), (100.0, 50.0, 90.0, 30.0));
+        assert_eq!(
+            (frame.x, frame.y, frame.width, frame.height),
+            (100.0, 50.0, 90.0, 30.0)
+        );
         // The points on the sheet are those that were drawn.
         assert_eq!(wb.sheets[0].ink_points(ink), zigzag());
         // Undo takes it away, redo brings it back.
@@ -657,14 +791,22 @@ mod tests {
     #[test]
     fn a_stroke_follows_its_cell_and_keeps_its_size() {
         let mut wb = wb();
-        let id = wb.draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag()).unwrap();
+        let id = wb
+            .draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag())
+            .unwrap();
         wb.commit("Ink");
         let before = wb.ink_frame(0, id).unwrap();
-        let (row_h, col_w) = (wb.sheets[0].default_row_height as f64, wb.sheets[0].default_col_width as f64);
+        let (row_h, col_w) = (
+            wb.sheets[0].default_row_height as f64,
+            wb.sheets[0].default_col_width as f64,
+        );
         wb.insert_rows(0, 0, 2);
         wb.insert_cols(0, 0, 1);
         let after = wb.ink_frame(0, id).unwrap();
-        assert_eq!((after.x, after.y), (before.x + col_w, before.y + 2.0 * row_h));
+        assert_eq!(
+            (after.x, after.y),
+            (before.x + col_w, before.y + 2.0 * row_h)
+        );
         assert_eq!((after.width, after.height), (before.width, before.height));
         // Widening a column before it pushes it; widening one under it
         // does not stretch it.
@@ -678,7 +820,9 @@ mod tests {
     #[test]
     fn resizing_stretches_the_points_and_the_line() {
         let mut wb = wb();
-        let id = wb.draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag()).unwrap();
+        let id = wb
+            .draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag())
+            .unwrap();
         assert!(wb.set_ink_frame(0, id, Frame::new(10.0, 20.0, 180.0, 60.0)));
         wb.commit("Size Object");
         let ink = wb.ink(0, id).unwrap();
@@ -692,9 +836,17 @@ mod tests {
     #[test]
     fn the_eraser_and_the_lasso_find_strokes() {
         let mut wb = wb();
-        let a = wb.draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag()).unwrap();
+        let a = wb
+            .draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag())
+            .unwrap();
         let b = wb
-            .draw_ink(0, PenKind::Highlighter, Color(0xFFFF00), 12.0, &[(100.0, 200.0), (200.0, 200.0)])
+            .draw_ink(
+                0,
+                PenKind::Highlighter,
+                Color(0xFFFF00),
+                12.0,
+                &[(100.0, 200.0), (200.0, 200.0)],
+            )
             .unwrap();
         let sheet = &wb.sheets[0];
         // On the first stroke, between two of its points.
@@ -716,8 +868,12 @@ mod tests {
     #[test]
     fn strokes_are_restacked_and_copied_with_their_sheet() {
         let mut wb = wb();
-        let a = wb.draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag()).unwrap();
-        let b = wb.draw_ink(0, PenKind::Pencil, Color::BLACK, 1.0, &zigzag()).unwrap();
+        let a = wb
+            .draw_ink(0, PenKind::Pen, Color::BLACK, 2.0, &zigzag())
+            .unwrap();
+        let b = wb
+            .draw_ink(0, PenKind::Pencil, Color::BLACK, 1.0, &zigzag())
+            .unwrap();
         assert!(wb.reorder_ink(0, a, ZOrder::BringToFront));
         assert!(!wb.reorder_ink(0, a, ZOrder::BringForward));
         let order: Vec<u32> = wb.sheets[0].inks.iter().map(|ink| ink.id).collect();
@@ -728,25 +884,35 @@ mod tests {
         assert_eq!(ids.len(), 2);
         assert!(ids.iter().all(|id| *id != a && *id != b));
         // The copies share the points of the originals.
-        assert!(Arc::ptr_eq(&wb.sheets[0].inks[0].points, &wb.sheets[1].inks[0].points));
+        assert!(Arc::ptr_eq(
+            &wb.sheets[0].inks[0].points,
+            &wb.sheets[1].inks[0].points
+        ));
     }
 
     #[test]
     fn smoothing_keeps_the_ends_and_the_shape() {
         // A straight line with a hand's jitter becomes a few points.
-        let shaky: Vec<(f64, f64)> = (0..100).map(|i| (i as f64, if i % 2 == 0 { 0.2 } else { -0.2 })).collect();
+        let shaky: Vec<(f64, f64)> = (0..100)
+            .map(|i| (i as f64, if i % 2 == 0 { 0.2 } else { -0.2 }))
+            .collect();
         let clean = smooth(&shaky);
         assert!(clean.len() <= 4, "{} points left", clean.len());
         assert_eq!((clean[0], clean[clean.len() - 1]), (shaky[0], shaky[99]));
         // A corner survives.
-        let corner: Vec<(f64, f64)> =
-            (0..=50).map(|i| (i as f64, 0.0)).chain((1..=50).map(|i| (50.0, i as f64))).collect();
+        let corner: Vec<(f64, f64)> = (0..=50)
+            .map(|i| (i as f64, 0.0))
+            .chain((1..=50).map(|i| (50.0, i as f64)))
+            .collect();
         let kept = smooth(&corner);
         assert!(kept.iter().any(|p| distance(*p, (50.0, 0.0)) < 1.5));
         // The curve drawn through points passes through each of them.
         let through = curve(&[(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)], 4);
         assert_eq!(through.len(), 9);
-        assert_eq!((through[0], through[4], through[8]), ((0.0, 0.0), (10.0, 10.0), (20.0, 0.0)));
+        assert_eq!(
+            (through[0], through[4], through[8]),
+            ((0.0, 0.0), (10.0, 10.0), (20.0, 0.0))
+        );
     }
 
     /// Points along the outline through `corners`, a few pixels apart and
@@ -758,7 +924,10 @@ mod tests {
             for i in 0..steps {
                 let t = i as f64 / steps as f64;
                 let wobble = ((out.len() * 7) % 5) as f64 * 0.5 - 1.0;
-                out.push((w[0].0 + (w[1].0 - w[0].0) * t + wobble, w[0].1 + (w[1].1 - w[0].1) * t - wobble));
+                out.push((
+                    w[0].0 + (w[1].0 - w[0].0) * t + wobble,
+                    w[0].1 + (w[1].1 - w[0].1) * t - wobble,
+                ));
             }
         }
         out.push(corners[corners.len() - 1]);
@@ -767,39 +936,97 @@ mod tests {
 
     #[test]
     fn ink_to_shape_tells_the_shapes_apart() {
-        let rectangle = drawn(&[(100.0, 100.0), (300.0, 104.0), (297.0, 220.0), (102.0, 216.0), (101.0, 103.0)]);
+        let rectangle = drawn(&[
+            (100.0, 100.0),
+            (300.0, 104.0),
+            (297.0, 220.0),
+            (102.0, 216.0),
+            (101.0, 103.0),
+        ]);
         match recognise(&rectangle) {
             Some(Recognised::Rectangle(frame)) => {
-                assert!((frame.x - 100.0).abs() < 4.0 && (frame.width - 200.0).abs() < 8.0, "{frame:?}")
+                assert!(
+                    (frame.x - 100.0).abs() < 4.0 && (frame.width - 200.0).abs() < 8.0,
+                    "{frame:?}"
+                )
             }
             other => panic!("rectangle seen as {other:?}"),
         }
         let ellipse: Vec<(f64, f64)> = (0..=60)
             .map(|i| {
                 let a = i as f64 / 60.0 * std::f64::consts::TAU;
-                (200.0 + 90.0 * a.cos() + (i % 3) as f64, 150.0 + 50.0 * a.sin())
+                (
+                    200.0 + 90.0 * a.cos() + (i % 3) as f64,
+                    150.0 + 50.0 * a.sin(),
+                )
             })
             .collect();
-        assert!(matches!(recognise(&ellipse), Some(Recognised::Ellipse(_))), "{:?}", recognise(&ellipse));
-        let triangle = drawn(&[(200.0, 100.0), (290.0, 240.0), (110.0, 238.0), (198.0, 102.0)]);
-        assert!(matches!(recognise(&triangle), Some(Recognised::Triangle { flip_v: false, .. })), "{:?}", recognise(&triangle));
-        let down = drawn(&[(110.0, 100.0), (290.0, 102.0), (200.0, 240.0), (112.0, 101.0)]);
-        assert!(matches!(recognise(&down), Some(Recognised::Triangle { flip_v: true, .. })), "{:?}", recognise(&down));
+        assert!(
+            matches!(recognise(&ellipse), Some(Recognised::Ellipse(_))),
+            "{:?}",
+            recognise(&ellipse)
+        );
+        let triangle = drawn(&[
+            (200.0, 100.0),
+            (290.0, 240.0),
+            (110.0, 238.0),
+            (198.0, 102.0),
+        ]);
+        assert!(
+            matches!(
+                recognise(&triangle),
+                Some(Recognised::Triangle { flip_v: false, .. })
+            ),
+            "{:?}",
+            recognise(&triangle)
+        );
+        let down = drawn(&[
+            (110.0, 100.0),
+            (290.0, 102.0),
+            (200.0, 240.0),
+            (112.0, 101.0),
+        ]);
+        assert!(
+            matches!(
+                recognise(&down),
+                Some(Recognised::Triangle { flip_v: true, .. })
+            ),
+            "{:?}",
+            recognise(&down)
+        );
         let line = drawn(&[(50.0, 50.0), (250.0, 120.0)]);
         match recognise(&line) {
-            Some(Recognised::Line { from, to }) => assert_eq!((from, to), (line[0], (250.0, 120.0))),
+            Some(Recognised::Line { from, to }) => {
+                assert_eq!((from, to), (line[0], (250.0, 120.0)))
+            }
             other => panic!("line seen as {other:?}"),
         }
         // A shaft, then the pen comes back to draw the two sides of the head.
-        let arrow = drawn(&[(50.0, 100.0), (250.0, 100.0), (225.0, 85.0), (250.0, 100.0), (225.0, 115.0)]);
+        let arrow = drawn(&[
+            (50.0, 100.0),
+            (250.0, 100.0),
+            (225.0, 85.0),
+            (250.0, 100.0),
+            (225.0, 115.0),
+        ]);
         match recognise(&arrow) {
             Some(Recognised::Arrow { from, to }) => {
-                assert!(distance(from, (50.0, 100.0)) < 3.0 && distance(to, (250.0, 100.0)) < 6.0, "{from:?} {to:?}")
+                assert!(
+                    distance(from, (50.0, 100.0)) < 3.0 && distance(to, (250.0, 100.0)) < 6.0,
+                    "{from:?} {to:?}"
+                )
             }
             other => panic!("arrow seen as {other:?}"),
         }
         // A scribble and a dot are left as ink.
-        let scribble = drawn(&[(0.0, 0.0), (80.0, 60.0), (10.0, 70.0), (90.0, 5.0), (40.0, 90.0), (120.0, 40.0)]);
+        let scribble = drawn(&[
+            (0.0, 0.0),
+            (80.0, 60.0),
+            (10.0, 70.0),
+            (90.0, 5.0),
+            (40.0, 90.0),
+            (120.0, 40.0),
+        ]);
         assert_eq!(recognise(&scribble), None);
         assert_eq!(recognise(&[(5.0, 5.0), (6.0, 6.0)]), None);
     }

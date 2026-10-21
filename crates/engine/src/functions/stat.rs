@@ -1,8 +1,7 @@
 //! Statistical functions.
 
 use super::criteria::{
-    Grid, if_function, ifs_args, ifs_function, lift, matrix, opt_number, scan,
-    with_criteria,
+    Grid, if_function, ifs_args, ifs_function, lift, matrix, opt_number, scan, with_criteria,
 };
 use super::math::{Rounding, combin, factorial, number, round_to, snap15};
 use super::{Category, FunctionDef, Kind, VAR};
@@ -128,7 +127,11 @@ pub(super) fn percentile(sorted: &[f64], k: f64, exclusive: bool) -> R<f64> {
     let i = pos.floor() as usize;
     // The fraction keeps only the digits `pos` really has (15 in all), so
     // that 89999.1 leaves 0.1 and not 0.10000000000582.
-    let int_digits = if pos >= 1.0 { pos.log10().floor() as i32 + 1 } else { 0 };
+    let int_digits = if pos >= 1.0 {
+        pos.log10().floor() as i32 + 1
+    } else {
+        0
+    };
     let frac = round_to(pos - pos.floor(), 15 - int_digits, Rounding::HalfAway);
     Ok(if frac == 0.0 || i + 1 >= n {
         sorted[i.min(n - 1)]
@@ -215,7 +218,9 @@ fn sorted_numbers(ctx: &EvalCtx, arg: &Expr) -> R<Vec<f64>> {
 }
 
 fn column(values: Vec<f64>) -> Value {
-    Value::array(Array::column(values.into_iter().map(Value::Number).collect()))
+    Value::array(Array::column(
+        values.into_iter().map(Value::Number).collect(),
+    ))
 }
 
 // ---- averages, counts, extremes ---------------------------------------------------
@@ -295,7 +300,9 @@ fn f_countblank(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
             _ => true,
         })
         .count();
-    Ok(Value::Number(r.rows() as f64 * r.cols() as f64 - filled as f64))
+    Ok(Value::Number(
+        r.rows() as f64 * r.cols() as f64 - filled as f64,
+    ))
 }
 
 fn count_matches(ranges: &[Grid], criteria: &[super::criteria::Criteria]) -> R<Value> {
@@ -306,7 +313,9 @@ fn count_matches(ranges: &[Grid], criteria: &[super::criteria::Criteria]) -> R<V
 
 fn f_countif(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     let ranges = [Grid::eval(ctx, &args[0])?];
-    with_criteria(ctx, &[args.get(1)], |criteria| count_matches(&ranges, criteria))
+    with_criteria(ctx, &[args.get(1)], |criteria| {
+        count_matches(&ranges, criteria)
+    })
 }
 
 fn f_countifs(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
@@ -865,7 +874,10 @@ fn fit(y: &[f64], xs: &[Vec<f64>], with_const: bool) -> Fit {
     let slopes: Vec<f64> = (0..k)
         .map(|i| {
             if active[i] {
-                (0..k).filter(|j| active[*j]).map(|j| inv[i * k + j] * b[j]).sum()
+                (0..k)
+                    .filter(|j| active[*j])
+                    .map(|j| inv[i * k + j] * b[j])
+                    .sum()
             } else {
                 0.0
             }
@@ -888,7 +900,13 @@ fn fit(y: &[f64], xs: &[Vec<f64>], with_const: bool) -> Fit {
     let df = n as f64 - used - if with_const { 1.0 } else { 0.0 };
     let s2 = if df > 0.0 { ss_resid / df } else { f64::NAN };
     let se = (0..k)
-        .map(|i| if active[i] { (s2 * inv[i * k + i]).sqrt() } else { 0.0 })
+        .map(|i| {
+            if active[i] {
+                (s2 * inv[i * k + i]).sqrt()
+            } else {
+                0.0
+            }
+        })
         .collect();
     let se_intercept = if with_const {
         let mut q = 1.0 / n as f64;
@@ -906,7 +924,11 @@ fn fit(y: &[f64], xs: &[Vec<f64>], with_const: bool) -> Fit {
         intercept,
         se,
         se_intercept,
-        r2: if ss_total == 0.0 { 1.0 } else { ss_reg / ss_total },
+        r2: if ss_total == 0.0 {
+            1.0
+        } else {
+            ss_reg / ss_total
+        },
         se_y: s2.sqrt(),
         f: (ss_reg / used) / s2,
         df,
@@ -1052,7 +1074,11 @@ fn ln_gamma(x: f64) -> f64 {
 /// Γ(x); NaN at the poles (0 and the negative integers).
 fn gamma(x: f64) -> f64 {
     if x.fract() == 0.0 {
-        return if x <= 0.0 { f64::NAN } else { factorial(x - 1.0) };
+        return if x <= 0.0 {
+            f64::NAN
+        } else {
+            factorial(x - 1.0)
+        };
     }
     if x < 0.5 {
         return PI / ((PI * x).sin() * gamma(1.0 - x));
@@ -1184,7 +1210,11 @@ fn erfc_pos(x: f64) -> f64 {
 /// Standard normal cumulative distribution `(P(Z <= z), P(Z > z))`.
 fn norm_cdf_both(z: f64) -> (f64, f64) {
     let tail = 0.5 * erfc_pos(z.abs() / std::f64::consts::SQRT_2);
-    if z <= 0.0 { (tail, 1.0 - tail) } else { (1.0 - tail, tail) }
+    if z <= 0.0 {
+        (tail, 1.0 - tail)
+    } else {
+        (1.0 - tail, tail)
+    }
 }
 
 fn norm_cdf(z: f64) -> f64 {
@@ -1278,7 +1308,11 @@ fn norm_inv(p: f64) -> f64 {
     // Polish against the CDF, measuring the error on the tail side so that
     // no precision is lost near 1.
     let (lower, upper) = norm_cdf_both(x);
-    let err = if x <= 0.0 { lower - p } else { (1.0 - p) - upper };
+    let err = if x <= 0.0 {
+        lower - p
+    } else {
+        (1.0 - p) - upper
+    };
     let density = norm_pdf(x);
     if density > 0.0 && err.is_finite() {
         let u = err / density;
@@ -1309,7 +1343,11 @@ fn f_norm_dist(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
         return Err(ErrorKind::Num);
     }
     let z = (x - mean) / sd;
-    number(if cumulative { norm_cdf(z) } else { norm_pdf(z) / sd })
+    number(if cumulative {
+        norm_cdf(z)
+    } else {
+        norm_pdf(z) / sd
+    })
 }
 
 fn f_norm_inv(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
@@ -1402,7 +1440,11 @@ fn f_poisson_dist(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
         return Err(ErrorKind::Num);
     }
     if mean == 0.0 {
-        return Ok(Value::Number(if cumulative || x == 0.0 { 1.0 } else { 0.0 }));
+        return Ok(Value::Number(if cumulative || x == 0.0 {
+            1.0
+        } else {
+            0.0
+        }));
     }
     if !cumulative {
         // The direct formula is exact for small arguments; logarithms
@@ -1698,16 +1740,28 @@ mod tests {
         assert_eq!(calc_num(&mut w, "AVERAGE(A1:A6)"), 2.5);
         assert_eq!(calc_num(&mut w, "AVERAGE(A:A)"), 2.5);
         assert_eq!(calc_num(&mut w, "AVERAGE(A1:A6,10)"), 5.0);
-        assert_eq!(calc(&mut w, "AVERAGE(A2:A5)"), Value::Error(ErrorKind::Div0));
+        assert_eq!(
+            calc(&mut w, "AVERAGE(A2:A5)"),
+            Value::Error(ErrorKind::Div0)
+        );
         assert_eq!(calc(&mut w, "AVERAGE(A4)"), Value::Error(ErrorKind::Div0));
-        assert_eq!(calc(&mut w, "AVERAGE(C1:C9)"), Value::Error(ErrorKind::Div0));
+        assert_eq!(
+            calc(&mut w, "AVERAGE(C1:C9)"),
+            Value::Error(ErrorKind::Div0)
+        );
         let mut w = mixed();
         assert_eq!(calc(&mut w, "AVERAGE(A1:A7)"), Value::Error(ErrorKind::NA));
     }
 
     #[test]
     fn averagea_maxa_mina() {
-        let mut w = wb(&[("A1", "10"), ("A2", "7"), ("A3", "9"), ("A4", "2"), ("A5", "Not available")]);
+        let mut w = wb(&[
+            ("A1", "10"),
+            ("A2", "7"),
+            ("A3", "9"),
+            ("A4", "2"),
+            ("A5", "Not available"),
+        ]);
         assert_eq!(calc_num(&mut w, "AVERAGEA(A1:A5)"), 5.6);
         assert_eq!(calc_num(&mut w, "AVERAGEA(A1:A4,A6)"), 7.0);
         assert_eq!(calc_num(&mut w, "AVERAGE(A1:A5)"), 7.0);
@@ -1715,13 +1769,24 @@ mod tests {
         assert_eq!(calc_num(&mut w, "MIN(A1:A5)"), 2.0);
         assert_eq!(calc_num(&mut w, "MAXA(A1:A5)"), 10.0);
         assert_eq!(calc_num(&mut w, "AVERAGEA(A5)"), 0.0);
-        let mut w = wb(&[("A1", "0.2"), ("A2", "0.5"), ("A3", "TRUE"), ("B1", "-3"), ("B2", "FALSE")]);
+        let mut w = wb(&[
+            ("A1", "0.2"),
+            ("A2", "0.5"),
+            ("A3", "TRUE"),
+            ("B1", "-3"),
+            ("B2", "FALSE"),
+        ]);
         assert_eq!(calc_num(&mut w, "MAXA(A1:A3)"), 1.0);
         assert_eq!(calc_num(&mut w, "MAX(A1:A3)"), 0.5);
         assert_eq!(calc_num(&mut w, "MINA(A1:A3)"), 0.2);
         assert_eq!(calc_num(&mut w, "MAXA(B1:B2)"), 0.0);
         assert_eq!(calc_num(&mut w, "MAX(B1:B2)"), -3.0);
-        near(calc_num(&mut w, "AVERAGEA(A1:A3)"), 1.7 / 3.0, 1e-12, "AVERAGEA");
+        near(
+            calc_num(&mut w, "AVERAGEA(A1:A3)"),
+            1.7 / 3.0,
+            1e-12,
+            "AVERAGEA",
+        );
         assert_eq!(num("AVERAGEA(TRUE,3)"), 2.0);
         assert_eq!(num("AVERAGEA(\"4\",2)"), 3.0);
         assert_eq!(err("AVERAGEA(\"x\",2)"), ErrorKind::Value);
@@ -1771,17 +1836,41 @@ mod tests {
         let mut w = property();
         assert_eq!(calc_num(&mut w, "AVERAGEIF(B2:B5,\"<23000\")"), 14000.0);
         assert_eq!(calc_num(&mut w, "AVERAGEIF(A2:A5,\"<250000\")"), 150000.0);
-        assert_eq!(calc(&mut w, "AVERAGEIF(A2:A5,\"<95000\")"), Value::Error(ErrorKind::Div0));
-        assert_eq!(calc_num(&mut w, "AVERAGEIF(A2:A5,\">250000\",B2:B5)"), 24500.0);
+        assert_eq!(
+            calc(&mut w, "AVERAGEIF(A2:A5,\"<95000\")"),
+            Value::Error(ErrorKind::Div0)
+        );
+        assert_eq!(
+            calc_num(&mut w, "AVERAGEIF(A2:A5,\">250000\",B2:B5)"),
+            24500.0
+        );
         assert_eq!(calc_num(&mut w, "AVERAGEIF(C2:C5,\"east\",B2:B5)"), 14000.0);
         assert_eq!(calc_num(&mut w, "AVERAGEIF(C2:C5,\"<>east\",B2)"), 21000.0);
         assert_eq!(calc_num(&mut w, "AVERAGEIF(C:C,\"*t\",A:A)"), 200000.0);
         // Matching cells without numbers are skipped.
-        assert_eq!(calc(&mut w, "AVERAGEIF(B2:B5,\">0\",C2:C5)"), Value::Error(ErrorKind::Div0));
-        assert_eq!(calc_num(&mut w, "AVERAGEIFS(B2:B5,C2:C5,\"east\",A2:A5,\">150000\")"), 21000.0);
-        assert_eq!(calc_num(&mut w, "AVERAGEIFS(B2:B5,A2:A5,\">=200000\",A2:A5,\"<=300000\")"), 17500.0);
-        assert_eq!(calc(&mut w, "AVERAGEIFS(B2:B5,C2:C5,\"south\")"), Value::Error(ErrorKind::Div0));
-        assert_eq!(calc(&mut w, "AVERAGEIFS(B2:B5,C2:C4,\"east\")"), Value::Error(ErrorKind::Value));
+        assert_eq!(
+            calc(&mut w, "AVERAGEIF(B2:B5,\">0\",C2:C5)"),
+            Value::Error(ErrorKind::Div0)
+        );
+        assert_eq!(
+            calc_num(&mut w, "AVERAGEIFS(B2:B5,C2:C5,\"east\",A2:A5,\">150000\")"),
+            21000.0
+        );
+        assert_eq!(
+            calc_num(
+                &mut w,
+                "AVERAGEIFS(B2:B5,A2:A5,\">=200000\",A2:A5,\"<=300000\")"
+            ),
+            17500.0
+        );
+        assert_eq!(
+            calc(&mut w, "AVERAGEIFS(B2:B5,C2:C5,\"south\")"),
+            Value::Error(ErrorKind::Div0)
+        );
+        assert_eq!(
+            calc(&mut w, "AVERAGEIFS(B2:B5,C2:C4,\"east\")"),
+            Value::Error(ErrorKind::Value)
+        );
     }
 
     #[test]
@@ -1802,7 +1891,10 @@ mod tests {
         assert_eq!(calc_num(&mut w, "COUNTIF(A2:A5,A2)+COUNTIF(A2:A5,A3)"), 3.0);
         assert_eq!(calc_num(&mut w, "COUNTIF(B2:B5,\">55\")"), 2.0);
         assert_eq!(calc_num(&mut w, "COUNTIF(B2:B5,\"<>\"&B4)"), 3.0);
-        assert_eq!(calc_num(&mut w, "COUNTIF(B2:B5,\">=32\")-COUNTIF(B2:B5,\">85\")"), 3.0);
+        assert_eq!(
+            calc_num(&mut w, "COUNTIF(B2:B5,\">=32\")-COUNTIF(B2:B5,\">85\")"),
+            3.0
+        );
         assert_eq!(calc_num(&mut w, "COUNTIF(A2:A5,\"*\")"), 4.0);
         assert_eq!(calc_num(&mut w, "COUNTIF(A2:A5,\"?????es\")"), 2.0);
         assert_eq!(calc_num(&mut w, "COUNTIF(A2:A5,\"*es\")"), 4.0);
@@ -1847,14 +1939,38 @@ mod tests {
     fn countifs() {
         let mut w = property();
         assert_eq!(calc_num(&mut w, "COUNTIFS(C2:C5,\"east\")"), 2.0);
-        assert_eq!(calc_num(&mut w, "COUNTIFS(C2:C5,\"east\",A2:A5,\">150000\")"), 1.0);
-        assert_eq!(calc_num(&mut w, "COUNTIFS(A2:A5,\">100000\",B2:B5,\"<28000\")"), 2.0);
-        assert_eq!(calc_num(&mut w, "COUNTIFS(A2:A5,\">100000\",A2:A5,\"<400000\",C2:C5,\"w*\")"), 1.0);
-        assert_eq!(calc_num(&mut w, "COUNTIFS(A:A,\">100000\",C:C,\"<>west\")"), 2.0);
+        assert_eq!(
+            calc_num(&mut w, "COUNTIFS(C2:C5,\"east\",A2:A5,\">150000\")"),
+            1.0
+        );
+        assert_eq!(
+            calc_num(&mut w, "COUNTIFS(A2:A5,\">100000\",B2:B5,\"<28000\")"),
+            2.0
+        );
+        assert_eq!(
+            calc_num(
+                &mut w,
+                "COUNTIFS(A2:A5,\">100000\",A2:A5,\"<400000\",C2:C5,\"w*\")"
+            ),
+            1.0
+        );
+        assert_eq!(
+            calc_num(&mut w, "COUNTIFS(A:A,\">100000\",C:C,\"<>west\")"),
+            2.0
+        );
         assert_eq!(calc_num(&mut w, "COUNTIFS(A1:A6,\"\",B1:B6,\"\")"), 2.0);
-        assert_eq!(calc(&mut w, "COUNTIFS(A2:A5,\">1\",B2:B4,\">1\")"), Value::Error(ErrorKind::Value));
-        assert_eq!(calc(&mut w, "COUNTIFS(A2:A5,\">1\",B2:B5)"), Value::Error(ErrorKind::Value));
-        assert_eq!(calc(&mut w, "COUNTIFS(A2:A5,\">1\",B2:C3,\">1\")"), Value::Error(ErrorKind::Value));
+        assert_eq!(
+            calc(&mut w, "COUNTIFS(A2:A5,\">1\",B2:B4,\">1\")"),
+            Value::Error(ErrorKind::Value)
+        );
+        assert_eq!(
+            calc(&mut w, "COUNTIFS(A2:A5,\">1\",B2:B5)"),
+            Value::Error(ErrorKind::Value)
+        );
+        assert_eq!(
+            calc(&mut w, "COUNTIFS(A2:A5,\">1\",B2:C3,\">1\")"),
+            Value::Error(ErrorKind::Value)
+        );
     }
 
     #[test]
@@ -1862,13 +1978,19 @@ mod tests {
         let mut w = property();
         assert_eq!(calc_num(&mut w, "MAXIFS(B2:B5,C2:C5,\"east\")"), 21000.0);
         assert_eq!(calc_num(&mut w, "MINIFS(B2:B5,C2:C5,\"east\")"), 7000.0);
-        assert_eq!(calc_num(&mut w, "MAXIFS(B2:B5,A2:A5,\"<400000\",C2:C5,\"<>east\")"), 14000.0);
+        assert_eq!(
+            calc_num(&mut w, "MAXIFS(B2:B5,A2:A5,\"<400000\",C2:C5,\"<>east\")"),
+            14000.0
+        );
         assert_eq!(calc_num(&mut w, "MINIFS(A2:A5,B2:B5,\">7000\")"), 200000.0);
         assert_eq!(calc_num(&mut w, "MAXIFS(B:B,C:C,\"north\")"), 28000.0);
         // No match gives 0.
         assert_eq!(calc_num(&mut w, "MAXIFS(B2:B5,C2:C5,\"south\")"), 0.0);
         assert_eq!(calc_num(&mut w, "MINIFS(B2:B5,C2:C5,\"south\")"), 0.0);
-        assert_eq!(calc(&mut w, "MAXIFS(B2:B5,C2:C4,\"east\")"), Value::Error(ErrorKind::Value));
+        assert_eq!(
+            calc(&mut w, "MAXIFS(B2:B5,C2:C4,\"east\")"),
+            Value::Error(ErrorKind::Value)
+        );
     }
 
     #[test]
@@ -1917,12 +2039,27 @@ mod tests {
         assert_eq!(err("VAR.P(C1:C3)"), ErrorKind::Div0);
         // 1, 2, "x", TRUE: text and booleans count only for the A variants.
         let mut w = wb(&[("A1", "1"), ("A2", "2"), ("A3", "x"), ("A4", "TRUE")]);
-        near(calc_num(&mut w, "STDEV(A1:A4)"), std::f64::consts::FRAC_1_SQRT_2, 1e-12, "STDEV");
+        near(
+            calc_num(&mut w, "STDEV(A1:A4)"),
+            std::f64::consts::FRAC_1_SQRT_2,
+            1e-12,
+            "STDEV",
+        );
         assert_eq!(calc_num(&mut w, "STDEVP(A1:A4)"), 0.5);
         assert_eq!(calc_num(&mut w, "VAR(A1:A4)"), 0.5);
         assert_eq!(calc_num(&mut w, "VARP(A1:A4)"), 0.25);
-        near(calc_num(&mut w, "STDEVA(A1:A4)"), 0.816496580927726, 1e-12, "STDEVA");
-        near(calc_num(&mut w, "STDEVPA(A1:A4)"), std::f64::consts::FRAC_1_SQRT_2, 1e-12, "STDEVPA");
+        near(
+            calc_num(&mut w, "STDEVA(A1:A4)"),
+            0.816496580927726,
+            1e-12,
+            "STDEVA",
+        );
+        near(
+            calc_num(&mut w, "STDEVPA(A1:A4)"),
+            std::f64::consts::FRAC_1_SQRT_2,
+            1e-12,
+            "STDEVPA",
+        );
         near(calc_num(&mut w, "VARA(A1:A4)"), 2.0 / 3.0, 1e-12, "VARA");
         assert_eq!(calc_num(&mut w, "VARPA(A1:A4)"), 0.5);
     }
@@ -1942,7 +2079,10 @@ mod tests {
         assert_eq!(err("LARGE({1,#N/A,3},1)"), ErrorKind::NA);
         // An array of ranks gives an array of results.
         assert_eq!(num("SUM(LARGE({3,4,5,2,3,4,5,6,4,7},{1,2,3}))"), 18.0);
-        assert_eq!(spill_nums("SMALL({9,7,8},{1;2;3})", 3, 1), vec![vec![7.0], vec![8.0], vec![9.0]]);
+        assert_eq!(
+            spill_nums("SMALL({9,7,8},{1;2;3})", 3, 1),
+            vec![vec![7.0], vec![8.0], vec![9.0]]
+        );
         let mut w = mixed_clean();
         assert_eq!(calc_num(&mut w, "LARGE(A1:A6,1)"), 4.0);
         assert_eq!(calc_num(&mut w, "SMALL(A:A,2)"), 4.0);
@@ -1951,7 +2091,14 @@ mod tests {
 
     #[test]
     fn rank() {
-        let mut w = wb(&[("A1", "7"), ("A2", "3.5"), ("A3", "3.5"), ("A4", "1"), ("A5", "2"), ("A6", "x")]);
+        let mut w = wb(&[
+            ("A1", "7"),
+            ("A2", "3.5"),
+            ("A3", "3.5"),
+            ("A4", "1"),
+            ("A5", "2"),
+            ("A6", "x"),
+        ]);
         assert_eq!(calc_num(&mut w, "RANK(A2,A1:A5,1)"), 3.0);
         assert_eq!(calc_num(&mut w, "RANK(A1,A1:A5,1)"), 5.0);
         assert_eq!(calc_num(&mut w, "RANK(A1,A1:A6)"), 1.0);
@@ -1963,7 +2110,10 @@ mod tests {
         assert_eq!(calc_num(&mut w, "RANK.AVG(3.5,A1:A5,1)"), 3.5);
         assert_eq!(calc_num(&mut w, "RANK.AVG(7,A1:A5)"), 1.0);
         assert_eq!(calc(&mut w, "RANK(4,A1:A5)"), Value::Error(ErrorKind::NA));
-        assert_eq!(calc(&mut w, "RANK(\"x\",A1:A5)"), Value::Error(ErrorKind::Value));
+        assert_eq!(
+            calc(&mut w, "RANK(\"x\",A1:A5)"),
+            Value::Error(ErrorKind::Value)
+        );
         assert_eq!(calc_num(&mut w, "SUM(RANK(A1:A5,A1:A5))"), 14.0);
         assert_eq!(num("RANK.AVG(94,{89,88,92,101,94,97,95})"), 4.0);
     }
@@ -1987,9 +2137,15 @@ mod tests {
         assert_eq!(num("PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},0.25)"), 2.5);
         assert_eq!(num("PERCENTILE.EXC({1,2,3,4},0.5)"), 2.5);
         assert_eq!(err("PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},0)"), ErrorKind::Num);
-        assert_eq!(err("PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},0.01)"), ErrorKind::Num);
+        assert_eq!(
+            err("PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},0.01)"),
+            ErrorKind::Num
+        );
         assert_eq!(err("PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},1)"), ErrorKind::Num);
-        assert_eq!(err("PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},0.95)"), ErrorKind::Num);
+        assert_eq!(
+            err("PERCENTILE.EXC({1,2,3,6,6,6,7,8,9},0.95)"),
+            ErrorKind::Num
+        );
         assert_eq!(num("QUARTILE({1,2,4,7,8,9,10,12},1)"), 3.5);
         assert_eq!(num("QUARTILE.INC({1,2,4,7,8,9,10,12},3)"), 9.25);
         assert_eq!(num("QUARTILE({1,2,4,7,8,9,10,12},0)"), 1.0);
@@ -1998,11 +2154,26 @@ mod tests {
         assert_eq!(num("QUARTILE({1,2,4,7,8,9,10,12},1.9)"), 3.5);
         assert_eq!(err("QUARTILE({1,2,4,7,8,9,10,12},5)"), ErrorKind::Num);
         assert_eq!(err("QUARTILE({1,2,4,7,8,9,10,12},-1)"), ErrorKind::Num);
-        assert_eq!(num("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},1)"), 15.0);
-        assert_eq!(num("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},2)"), 40.0);
-        assert_eq!(num("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},3)"), 43.0);
-        assert_eq!(err("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},0)"), ErrorKind::Num);
-        assert_eq!(err("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},4)"), ErrorKind::Num);
+        assert_eq!(
+            num("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},1)"),
+            15.0
+        );
+        assert_eq!(
+            num("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},2)"),
+            40.0
+        );
+        assert_eq!(
+            num("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},3)"),
+            43.0
+        );
+        assert_eq!(
+            err("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},0)"),
+            ErrorKind::Num
+        );
+        assert_eq!(
+            err("QUARTILE.EXC({6,7,15,36,39,40,41,42,43,47,49},4)"),
+            ErrorKind::Num
+        );
         assert_eq!(num("SUM(QUARTILE({1,2,4,7,8,9,10,12},{0,4}))"), 13.0);
     }
 
@@ -2042,7 +2213,13 @@ mod tests {
             vec![vec![2.0], vec![2.0], vec![0.0], vec![2.0]]
         );
         assert_eq!(num("SUM(FREQUENCY({1,2,3,\"x\"},{2}))"), 3.0);
-        let mut w = wb(&[("A1", "1"), ("A2", "5"), ("A3", "x"), ("A4", "9"), ("B1", "4")]);
+        let mut w = wb(&[
+            ("A1", "1"),
+            ("A2", "5"),
+            ("A3", "x"),
+            ("A4", "9"),
+            ("B1", "4"),
+        ]);
         assert_eq!(calc_num(&mut w, "SUM(FREQUENCY(A1:A5,B1:B2))"), 3.0);
     }
 
@@ -2052,7 +2229,10 @@ mod tests {
         close("PEARSON({9,7,5,3,1},{10,6,1,5,3})", 0.6993786061802354);
         assert_eq!(num("CORREL({1,2,3},{2,4,6})"), 1.0);
         assert_eq!(num("CORREL({1,2,3},{6,4,2})"), -1.0);
-        assert_eq!(num("CORREL({1,2,3,4},{2;4;6;9})"), num("CORREL({1,2,3,4},{2,4,6,9})"));
+        assert_eq!(
+            num("CORREL({1,2,3,4},{2;4;6;9})"),
+            num("CORREL({1,2,3,4},{2,4,6,9})")
+        );
         assert_eq!(err("CORREL({1,2,3},{1,2})"), ErrorKind::NA);
         assert_eq!(err("CORREL({1,1,1},{1,2,3})"), ErrorKind::Div0);
         assert_eq!(err("CORREL({1,\"a\"},{\"b\",2})"), ErrorKind::Div0);
@@ -2079,9 +2259,17 @@ mod tests {
             ("B5", "15"),
             ("B6", "17"),
         ]);
-        near(calc_num(&mut w, "CORREL(A1:A6,B1:B6)"), 0.9970544855015815, 1e-12, "CORREL");
+        near(
+            calc_num(&mut w, "CORREL(A1:A6,B1:B6)"),
+            0.9970544855015815,
+            1e-12,
+            "CORREL",
+        );
         near(calc_num(&mut w, "COVAR(A1:A6,B1:B6)"), 5.2, 1e-12, "COVAR");
-        assert_eq!(calc(&mut w, "CORREL(A1:A6,B1:B5)"), Value::Error(ErrorKind::NA));
+        assert_eq!(
+            calc(&mut w, "CORREL(A1:A6,B1:B5)"),
+            Value::Error(ErrorKind::NA)
+        );
     }
 
     #[test]
@@ -2091,8 +2279,14 @@ mod tests {
         close(&format!("INTERCEPT({y},{x})"), 3.1666666666666665);
         close(&format!("STEYX({y},{x})"), 3.305718950210041);
         close("INTERCEPT({2,3,9,1,8},{6,5,11,7,5})", 0.04838709677419306);
-        close("FORECAST(30,{6,7,9,15,21},{20,28,31,38,40})", 10.607253086419755);
-        close("FORECAST.LINEAR(30,{6,7,9,15,21},{20,28,31,38,40})", 10.607253086419755);
+        close(
+            "FORECAST(30,{6,7,9,15,21},{20,28,31,38,40})",
+            10.607253086419755,
+        );
+        close(
+            "FORECAST.LINEAR(30,{6,7,9,15,21},{20,28,31,38,40})",
+            10.607253086419755,
+        );
         assert_eq!(num("SLOPE({3,5,7},{1,2,3})"), 2.0);
         assert_eq!(num("INTERCEPT({3,5,7},{1,2,3})"), 1.0);
         assert_eq!(num("STEYX({3,5,7},{1,2,3})"), 0.0);
@@ -2106,10 +2300,19 @@ mod tests {
 
     #[test]
     fn linest() {
-        assert_eq!(spill_nums("LINEST({1,9,5,7},{0,4,2,3})", 1, 2), vec![vec![2.0, 1.0]]);
+        assert_eq!(
+            spill_nums("LINEST({1,9,5,7},{0,4,2,3})", 1, 2),
+            vec![vec![2.0, 1.0]]
+        );
         assert_eq!(spill_nums("LINEST({3,5,7})", 1, 2), vec![vec![2.0, 1.0]]);
-        assert_eq!(spill_nums("LINEST({1;9;5;7},{0;4;2;3})", 1, 2), vec![vec![2.0, 1.0]]);
-        assert_eq!(spill_nums("LINEST({2,4,6},{1,2,3},FALSE)", 1, 2), vec![vec![2.0, 0.0]]);
+        assert_eq!(
+            spill_nums("LINEST({1;9;5;7},{0;4;2;3})", 1, 2),
+            vec![vec![2.0, 1.0]]
+        );
+        assert_eq!(
+            spill_nums("LINEST({2,4,6},{1,2,3},FALSE)", 1, 2),
+            vec![vec![2.0, 0.0]]
+        );
         assert_eq!(err("LINEST({1,2,3},{1,2})"), ErrorKind::Ref);
         assert_eq!(err("LINEST({1,\"a\",3},{1,2,3})"), ErrorKind::Value);
         // Full statistics.
@@ -2232,7 +2435,10 @@ mod tests {
         close("TREND({3,5,7},{1,2,3},10)", 21.0);
         let t = spill_nums("TREND({3;5;7},{1;2;3},{4,5;6,7})", 2, 2);
         near(t[1][1], 15.0, 1e-12, "trend");
-        let (y, x) = ("{33100,47300,69000,102000,150000,220000}", "{11,12,13,14,15,16}");
+        let (y, x) = (
+            "{33100,47300,69000,102000,150000,220000}",
+            "{11,12,13,14,15,16}",
+        );
         let g = spill_nums(&format!("GROWTH({y},{x},{{17,18}})"), 1, 2);
         near(g[0][0], 320196.7183634738, 1e-9, "growth");
         near(g[0][1], 468536.05418404966, 1e-9, "growth");
@@ -2304,7 +2510,10 @@ mod tests {
             (5.0, 0.9999997133484281),
         ] {
             near(norm_cdf(z), expected, 1e-13, &format!("norm_cdf({z})"));
-            assert!((norm_cdf(z) - expected).abs() <= 1e-13 * expected, "norm_cdf({z}) relative");
+            assert!(
+                (norm_cdf(z) - expected).abs() <= 1e-13 * expected,
+                "norm_cdf({z}) relative"
+            );
         }
         for (p, expected) in [
             (1e-300, -37.0470962993612),
@@ -2340,9 +2549,24 @@ mod tests {
         assert!(gamma(171.7).is_infinite());
         assert!(gamma(-2.0).is_nan());
         // P(a, x) + Q(a, x) = 1, and known values.
-        near(inc_gamma(1.0, 2.0).0, 1.0 - (-2.0f64).exp(), 1e-13, "inc_gamma");
-        near(inc_gamma(3.0, 5.0).1, 0.12465201948308113, 1e-13, "inc_gamma");
-        near(inc_gamma(2501.0, 2400.0).1, 0.979362325026836, 1e-10, "inc_gamma");
+        near(
+            inc_gamma(1.0, 2.0).0,
+            1.0 - (-2.0f64).exp(),
+            1e-13,
+            "inc_gamma",
+        );
+        near(
+            inc_gamma(3.0, 5.0).1,
+            0.12465201948308113,
+            1e-13,
+            "inc_gamma",
+        );
+        near(
+            inc_gamma(2501.0, 2400.0).1,
+            0.979362325026836,
+            1e-10,
+            "inc_gamma",
+        );
         near(inc_beta(1.0, 1.0, 0.3), 0.3, 1e-13, "inc_beta");
         near(inc_beta(2.0, 3.0, 0.5), 0.6875, 1e-13, "inc_beta");
         near(inc_beta(4.0, 7.0, 0.5), 0.828125, 1e-13, "inc_beta");
@@ -2413,7 +2637,12 @@ mod tests {
         close("POISSON.DIST(170,150,FALSE)", 0.0085223577140306);
         close("POISSON.DIST(1000,1000,FALSE)", 0.012614611348721499);
         close("POISSON.DIST(3,0.5,FALSE)", 0.012636055410679864);
-        near(num("POISSON.DIST(170,699,FALSE)") / 1.3442963875025884e-127, 1.0, 1e-9, "POISSON tail");
+        near(
+            num("POISSON.DIST(170,699,FALSE)") / 1.3442963875025884e-127,
+            1.0,
+            1e-9,
+            "POISSON tail",
+        );
         close("POISSON.DIST(700,720,TRUE)", 0.23459448446916364);
         close("POISSON.DIST(2500,2400,TRUE)", 0.979362325026836);
         assert_eq!(num("POISSON.DIST(0,0,FALSE)"), 1.0);

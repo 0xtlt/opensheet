@@ -16,10 +16,12 @@ use crate::i18n::t;
 use crate::theme::{self, c};
 use crate::widgets::{icon, tooltip};
 use gpui::{
-    AnyElement, Bounds, Context, FontWeight, MouseButton, Pixels, Point, SharedString, WeakEntity, Window, canvas,
-    div, fill, point, prelude::*, px, size,
+    AnyElement, Bounds, Context, FontWeight, MouseButton, Pixels, Point, SharedString, WeakEntity,
+    Window, canvas, div, fill, point, prelude::*, px, size,
 };
-use opensheet_engine::condfmt::{BarColor, CondFormat, DataBar, IconRule, IconSet, Rule, ScalePreset};
+use opensheet_engine::condfmt::{
+    BarColor, CondFormat, DataBar, IconRule, IconSet, Rule, ScalePreset,
+};
 use opensheet_engine::style::{Color, StylePatch};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -89,7 +91,10 @@ pub fn toggle(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let showing = showing(app);
     let state = app.ext_mut::<Ui>();
     let was_open = state.menu.take().is_some();
-    let just_closed = state.menu_closed.take().is_some_and(|at| at.elapsed() < Duration::from_millis(500));
+    let just_closed = state
+        .menu_closed
+        .take()
+        .is_some_and(|at| at.elapsed() < Duration::from_millis(500));
     if was_open || just_closed {
         end_preview(app, cx);
         if showing {
@@ -97,7 +102,10 @@ pub fn toggle(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
         }
         return;
     }
-    let pos = match app.command_anchor.and_then(|anchor| app.anchors.borrow().get(anchor).copied()) {
+    let pos = match app
+        .command_anchor
+        .and_then(|anchor| app.anchors.borrow().get(anchor).copied())
+    {
         Some(bounds) => point(bounds.left(), bounds.bottom() + px(2.)),
         None => window.mouse_position(),
     };
@@ -142,8 +150,14 @@ pub fn notice_closed(app: &mut ExcelApp, cx: &mut Cx) {
 /// Wide enough for the longest entry in the current language.
 fn main_width() -> f32 {
     let longest = [
-        t("Highlight Cells Rules", "Règles de mise en surbrillance des cellules"),
-        t("Top/Bottom Rules", "Règles des valeurs de plage haute/basse"),
+        t(
+            "Highlight Cells Rules",
+            "Règles de mise en surbrillance des cellules",
+        ),
+        t(
+            "Top/Bottom Rules",
+            "Règles des valeurs de plage haute/basse",
+        ),
     ]
     .iter()
     .map(|label| label.chars().count())
@@ -154,7 +168,11 @@ fn main_width() -> f32 {
 
 /// Width of a submenu of plain entries.
 fn text_width(commands: &[Cmd]) -> f32 {
-    let longest = commands.iter().map(|cmd| cmd.label().chars().count()).max().unwrap_or(0);
+    let longest = commands
+        .iter()
+        .map(|cmd| cmd.label().chars().count())
+        .max()
+        .unwrap_or(0);
     (longest as f32 * 6.6 + 70.0).clamp(190.0, 400.0)
 }
 
@@ -175,7 +193,12 @@ const TOP_BOTTOM: [Cmd; 6] = [
     Cmd::AboveAverage,
     Cmd::BelowAverage,
 ];
-const CLEAR: [Cmd; 4] = [Cmd::ClearSelected, Cmd::ClearSheet, Cmd::ClearTable, Cmd::ClearPivot];
+const CLEAR: [Cmd; 4] = [
+    Cmd::ClearSelected,
+    Cmd::ClearSheet,
+    Cmd::ClearTable,
+    Cmd::ClearPivot,
+];
 
 impl Sub {
     /// Width and height of the submenu.
@@ -184,11 +207,23 @@ impl Sub {
         match self {
             Sub::Highlight => (text_width(&HIGHLIGHT), 2.0 * PAD + 7.0 * ROW_TALL + more),
             Sub::TopBottom => (text_width(&TOP_BOTTOM), 2.0 * PAD + 6.0 * ROW_TALL + more),
-            Sub::DataBars => (3.0 * (THUMB + 4.0) + 2.0 * PAD + 8.0, 2.0 * PAD + 2.0 * HEADING + 4.0 * (THUMB + 4.0) + more),
-            Sub::ColorScales => (4.0 * (THUMB + 4.0) + 2.0 * PAD + 8.0, 2.0 * PAD + 3.0 * (THUMB + 4.0) + more),
+            Sub::DataBars => (
+                3.0 * (THUMB + 4.0) + 2.0 * PAD + 8.0,
+                2.0 * PAD + 2.0 * HEADING + 4.0 * (THUMB + 4.0) + more,
+            ),
+            Sub::ColorScales => (
+                4.0 * (THUMB + 4.0) + 2.0 * PAD + 8.0,
+                2.0 * PAD + 3.0 * (THUMB + 4.0) + more,
+            ),
             Sub::IconSets => {
-                let rows: usize = words::set_groups().iter().map(|(_, count)| count.div_ceil(2)).sum();
-                (2.0 * SET_COL + 2.0 * PAD + 8.0, 2.0 * PAD + 4.0 * HEADING + rows as f32 * SET_ROW + more)
+                let rows: usize = words::set_groups()
+                    .iter()
+                    .map(|(_, count)| count.div_ceil(2))
+                    .sum();
+                (
+                    2.0 * SET_COL + 2.0 * PAD + 8.0,
+                    2.0 * PAD + 4.0 * HEADING + rows as f32 * SET_ROW + more,
+                )
             }
             Sub::Clear => (text_width(&CLEAR), 2.0 * PAD + 4.0 * ROW),
         }
@@ -287,7 +322,10 @@ fn scale_thumbnail(colors: Vec<Color>) -> AnyElement {
         let (x, y) = (bounds.origin.x, bounds.origin.y);
         for (i, color) in rows.iter().enumerate() {
             let top = y + px(1.0 + i as f32 * 8.0);
-            out.push(Draw::Quad(fill(Bounds::new(point(x + px(1.), top), size(px(24.), px(7.))), c(color.value()))));
+            out.push(Draw::Quad(fill(
+                Bounds::new(point(x + px(1.), top), size(px(24.), px(7.))),
+                c(color.value()),
+            )));
         }
     })
 }
@@ -309,7 +347,8 @@ impl MenuView {
         let (view, pos) = (cx.entity(), self.pos);
         self.app_mut(cx, |app, cx| {
             if app.popup.is_none() && !app.modal_open() {
-                app.popup = Some(Popup::new(PopupKind::View(view.into()), pos, 0.0).max_height(600.0));
+                app.popup =
+                    Some(Popup::new(PopupKind::View(view.into()), pos, 0.0).max_height(600.0));
                 cx.notify();
             }
         });
@@ -327,7 +366,9 @@ impl MenuView {
                     if app.is_editing() && !app.commit_edit(None, window, cx) {
                         return;
                     }
-                    if let (Some(rule), true) = (gallery.rule(), app.may_all(Intent::FormatCells, cx)) {
+                    if let (Some(rule), true) =
+                        (gallery.rule(), app.may_all(Intent::FormatCells, cx))
+                    {
                         add_rule(app, rule, StylePatch::default(), cx);
                     }
                 }
@@ -341,7 +382,9 @@ impl MenuView {
         if over {
             self.trying = Some(act);
             self.app_mut(cx, |app, cx| {
-                let rule = act.rule().map(|rule| CondFormat::new(app.sel().ranges.clone(), rule));
+                let rule = act
+                    .rule()
+                    .map(|rule| CondFormat::new(app.sel().ranges.clone(), rule));
                 preview(app, rule, cx);
             });
         } else if self.trying == Some(act) {
@@ -383,28 +426,42 @@ impl MenuView {
             .gap(px(8.))
             .rounded(px(4.))
             .text_size(px(12.5))
-            .text_color(c(if enabled { theme::TEXT } else { theme::TEXT_DISABLED }))
+            .text_color(c(if enabled {
+                theme::TEXT
+            } else {
+                theme::TEXT_DISABLED
+            }))
             .when(open, |d| d.bg(c(theme::HOVER)))
             .when(enabled, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-            .child(div().w(px(28.)).flex_none().flex().justify_center().children(picture))
+            .child(
+                div()
+                    .w(px(28.))
+                    .flex_none()
+                    .flex()
+                    .justify_center()
+                    .children(picture),
+            )
             .child(div().flex_1().truncate().child(label))
             .when_some(sub, |d, sub| {
-                d.child(icon("chevron-right", 10.0, theme::TEXT_MUTED)).child(
-                    canvas(
-                        move |bounds, _, _| {
-                            rows.borrow_mut().insert(sub, bounds);
-                        },
-                        |_, _, _, _| {},
+                d.child(icon("chevron-right", 10.0, theme::TEXT_MUTED))
+                    .child(
+                        canvas(
+                            move |bounds, _, _| {
+                                rows.borrow_mut().insert(sub, bounds);
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
                     )
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full(),
-                )
             })
             // Resting on an entry of the main panel opens its submenu and
             // closes the one that was open.
-            .when(main, |d| d.on_mouse_move(cx.listener(move |this, _, _, cx| this.set_open(sub, cx))))
+            .when(main, |d| {
+                d.on_mouse_move(cx.listener(move |this, _, _, cx| this.set_open(sub, cx)))
+            })
             .on_click(cx.listener(move |this, _, window, cx| {
                 if !enabled {
                     return;
@@ -474,11 +531,26 @@ impl MenuView {
     fn more(&self, cmd: Cmd, cx: &mut Context<Self>) -> Vec<AnyElement> {
         vec![
             Self::separator(),
-            self.entry(900, None, cmd.label(), None, Some(Act::Run(cmd)), true, ROW, false, cx),
+            self.entry(
+                900,
+                None,
+                cmd.label(),
+                None,
+                Some(Act::Run(cmd)),
+                true,
+                ROW,
+                false,
+                cx,
+            ),
         ]
     }
 
-    fn command_rows(&self, commands: &[Cmd], height: f32, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn command_rows(
+        &self,
+        commands: &[Cmd],
+        height: f32,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let app = self.app.upgrade();
         commands
             .iter()
@@ -491,7 +563,17 @@ impl MenuView {
                 };
                 let sign = command_sign(*cmd);
                 let picture = (!sign.is_empty()).then(|| sign_tile(sign));
-                self.entry(100 + i, picture, cmd.label(), None, Some(Act::Run(*cmd)), enabled, height, false, cx)
+                self.entry(
+                    100 + i,
+                    picture,
+                    cmd.label(),
+                    None,
+                    Some(Act::Run(*cmd)),
+                    enabled,
+                    height,
+                    false,
+                    cx,
+                )
             })
             .collect()
     }
@@ -502,7 +584,13 @@ impl MenuView {
             let mut cells = cells.into_iter().peekable();
             while cells.peek().is_some() {
                 let row: Vec<AnyElement> = cells.by_ref().take(columns).collect();
-                rows.push(div().px(px(PAD + 4.0)).flex().children(row).into_any_element());
+                rows.push(
+                    div()
+                        .px(px(PAD + 4.0))
+                        .flex()
+                        .children(row)
+                        .into_any_element(),
+                );
             }
             rows
         };
@@ -581,7 +669,15 @@ impl MenuView {
                                 .w(px(SET_COL - 12.0))
                                 .child(draw::set_picture(*set, 16.0, 3.0))
                                 .into_any_element();
-                            self.thumbnail(200 + i, SET_COL, SET_ROW, picture, words::set_name(*set), Act::Icons(*set), cx)
+                            self.thumbnail(
+                                200 + i,
+                                SET_COL,
+                                SET_ROW,
+                                picture,
+                                words::set_name(*set),
+                                Act::Icons(*set),
+                                cx,
+                            )
                         })
                         .collect();
                     out.extend(grid(cells, 2));
@@ -620,12 +716,16 @@ impl Render for MenuView {
                 draw::icon(*which, x + 9.0, y + 1.0 + i as f32 * 8.5, 7.5, out);
             }
         });
-        let small = |name: &'static str| Some(icon(name, 16.0, theme::TEXT_MUTED).into_any_element());
+        let small =
+            |name: &'static str| Some(icon(name, 16.0, theme::TEXT_MUTED).into_any_element());
         let main: Vec<AnyElement> = vec![
             self.entry(
                 0,
                 Some(sign_tile("≤")),
-                t("Highlight Cells Rules", "Règles de mise en surbrillance des cellules"),
+                t(
+                    "Highlight Cells Rules",
+                    "Règles de mise en surbrillance des cellules",
+                ),
                 Some(Sub::Highlight),
                 None,
                 true,
@@ -636,7 +736,10 @@ impl Render for MenuView {
             self.entry(
                 1,
                 Some(sign_tile("10")),
-                t("Top/Bottom Rules", "Règles des valeurs de plage haute/basse"),
+                t(
+                    "Top/Bottom Rules",
+                    "Règles des valeurs de plage haute/basse",
+                ),
                 Some(Sub::TopBottom),
                 None,
                 true,
@@ -645,7 +748,17 @@ impl Render for MenuView {
                 cx,
             ),
             Self::separator(),
-            self.entry(2, Some(bars), t("Data Bars", "Barres de données"), Some(Sub::DataBars), None, true, ROW_TALL, true, cx),
+            self.entry(
+                2,
+                Some(bars),
+                t("Data Bars", "Barres de données"),
+                Some(Sub::DataBars),
+                None,
+                true,
+                ROW_TALL,
+                true,
+                cx,
+            ),
             self.entry(
                 3,
                 Some(scales),
@@ -657,9 +770,29 @@ impl Render for MenuView {
                 true,
                 cx,
             ),
-            self.entry(4, Some(icons), t("Icon Sets", "Jeux d'icônes"), Some(Sub::IconSets), None, true, ROW_TALL, true, cx),
+            self.entry(
+                4,
+                Some(icons),
+                t("Icon Sets", "Jeux d'icônes"),
+                Some(Sub::IconSets),
+                None,
+                true,
+                ROW_TALL,
+                true,
+                cx,
+            ),
             Self::separator(),
-            self.entry(5, small("condfmt-new"), Cmd::NewRule.label(), None, Some(Act::Run(Cmd::NewRule)), true, ROW, true, cx),
+            self.entry(
+                5,
+                small("condfmt-new"),
+                Cmd::NewRule.label(),
+                None,
+                Some(Act::Run(Cmd::NewRule)),
+                true,
+                ROW,
+                true,
+                cx,
+            ),
             self.entry(
                 6,
                 small("condfmt-clear"),
@@ -671,7 +804,17 @@ impl Render for MenuView {
                 true,
                 cx,
             ),
-            self.entry(7, small("condfmt-manage"), Cmd::Manage.label(), None, Some(Act::Run(Cmd::Manage)), true, ROW, true, cx),
+            self.entry(
+                7,
+                small("condfmt-manage"),
+                Cmd::Manage.label(),
+                None,
+                Some(Act::Run(Cmd::Manage)),
+                true,
+                ROW,
+                true,
+                cx,
+            ),
         ];
 
         // The open submenu hangs beside its entry: to the right while
@@ -682,7 +825,11 @@ impl Render for MenuView {
             let (width, height) = sub.size();
             let viewport = window.viewport_size();
             let fits_right = panel.right() + px(width + 8.0) <= viewport.width;
-            let left = if fits_right || panel.left() < px(width + 8.0) { px(self.width + 2.0) } else { px(-width - 4.0) };
+            let left = if fits_right || panel.left() < px(width + 8.0) {
+                px(self.width + 2.0)
+            } else {
+                px(-width - 4.0)
+            };
             let lowest = viewport.height - px(height + 8.0) - panel.top();
             let top = (row.top() - panel.top() - px(PAD + 1.0)).min(lowest);
             Some(
@@ -730,10 +877,18 @@ mod tests {
 
     #[test]
     fn every_gallery_thumbnail_makes_its_rule() {
-        assert!(matches!(Act::Bar(BarColor::Red, true).rule(), Some(Rule::DataBar(bar)) if bar.gradient));
-        assert!(matches!(Act::Bar(BarColor::Red, false).rule(), Some(Rule::DataBar(bar)) if bar.border.is_none()));
-        assert!(matches!(Act::Scale(ScalePreset::WhiteRed).rule(), Some(Rule::ColorScale(scale)) if scale.stops.len() == 2));
-        assert!(matches!(Act::Icons(IconSet::FiveBoxes).rule(), Some(Rule::IconSet(icons)) if icons.thresholds.len() == 5));
+        assert!(
+            matches!(Act::Bar(BarColor::Red, true).rule(), Some(Rule::DataBar(bar)) if bar.gradient)
+        );
+        assert!(
+            matches!(Act::Bar(BarColor::Red, false).rule(), Some(Rule::DataBar(bar)) if bar.border.is_none())
+        );
+        assert!(
+            matches!(Act::Scale(ScalePreset::WhiteRed).rule(), Some(Rule::ColorScale(scale)) if scale.stops.len() == 2)
+        );
+        assert!(
+            matches!(Act::Icons(IconSet::FiveBoxes).rule(), Some(Rule::IconSet(icons)) if icons.thresholds.len() == 5)
+        );
         assert_eq!(Act::Run(Cmd::NewRule).rule(), None);
     }
 
@@ -743,10 +898,17 @@ mod tests {
         assert_eq!(ScalePreset::ALL.len(), 12);
         assert_eq!(IconSet::ALL.len(), 20);
         // Every submenu has a size, the icon sets being the tallest.
-        let heights: Vec<f32> = [Sub::Highlight, Sub::TopBottom, Sub::DataBars, Sub::ColorScales, Sub::IconSets, Sub::Clear]
-            .iter()
-            .map(|sub| sub.size().1)
-            .collect();
+        let heights: Vec<f32> = [
+            Sub::Highlight,
+            Sub::TopBottom,
+            Sub::DataBars,
+            Sub::ColorScales,
+            Sub::IconSets,
+            Sub::Clear,
+        ]
+        .iter()
+        .map(|sub| sub.size().1)
+        .collect();
         assert!(heights.iter().all(|h| *h > 100.0));
         assert_eq!(heights.iter().copied().fold(0.0, f32::max), heights[4]);
     }

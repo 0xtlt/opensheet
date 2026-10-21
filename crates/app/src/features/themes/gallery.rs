@@ -2,14 +2,19 @@
 //! colour sets and the menu of font pairs. Each entry is drawn from what
 //! it would give the workbook: its colours, its fonts.
 
-use super::{Cmd, ThemesUi, color_choices, custom_sets, current_theme, font_choices, gallery_themes, set_colors, set_fonts, set_theme, shown_name};
+use super::{
+    Cmd, ThemesUi, color_choices, current_theme, custom_sets, font_choices, gallery_themes,
+    set_colors, set_fonts, set_theme, shown_name,
+};
 use crate::app::ExcelApp;
 use crate::features::{Command, Cx};
 use crate::grid::FontResolver;
 use crate::i18n::t;
 use crate::theme::{self, c};
 use crate::view::tooltip;
-use gpui::{AnyElement, Context, FontWeight, SharedString, WeakEntity, Window, div, point, prelude::*, px};
+use gpui::{
+    AnyElement, Context, FontWeight, SharedString, WeakEntity, Window, div, point, prelude::*, px,
+};
 use opensheet_engine::style::ThemeSlot;
 use opensheet_engine::theme::{Theme, ThemeColors, ThemeFonts};
 use std::rc::Rc;
@@ -39,9 +44,14 @@ struct Gallery {
 
 /// Open a drop-down under the control that asked for it.
 pub(super) fn open(app: &mut ExcelApp, kind: Kind, window: &mut Window, cx: &mut Cx) {
-    let anchor = app.command_anchor.and_then(|id| app.anchors.borrow().get(id).copied());
+    let anchor = app
+        .command_anchor
+        .and_then(|id| app.anchors.borrow().get(id).copied());
     let position = match anchor {
-        Some(bounds) => point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)),
+        Some(bounds) => point(
+            bounds.origin.x,
+            bounds.origin.y + bounds.size.height + px(2.),
+        ),
         None => window.mouse_position(),
     };
     let custom = Rc::new(custom_sets());
@@ -73,17 +83,25 @@ fn heading(text: &'static str) -> AnyElement {
 
 /// The colours a set is shown with, side by side.
 pub(super) fn swatch_strip(colors: &ThemeColors, size: f32) -> gpui::Div {
-    div().flex().flex_none().border_1().border_color(c(theme::BORDER_STRONG)).children(
-        colors
-            .swatches()
-            .into_iter()
-            .map(move |rgb| div().w(px(size)).h(px(size)).bg(c(rgb))),
-    )
+    div()
+        .flex()
+        .flex_none()
+        .border_1()
+        .border_color(c(theme::BORDER_STRONG))
+        .children(
+            colors
+                .swatches()
+                .into_iter()
+                .map(move |rgb| div().w(px(size)).h(px(size)).bg(c(rgb))),
+        )
 }
 
 impl Gallery {
     /// Run something on the application once the drop-down is closed.
-    fn pick(&self, action: impl Fn(&mut ExcelApp, &mut Cx) + 'static) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static {
+    fn pick(
+        &self,
+        action: impl Fn(&mut ExcelApp, &mut Cx) + 'static,
+    ) -> impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static {
         let app = self.app.clone();
         move |_, window, cx| {
             app.update(cx, |app, cx| {
@@ -137,7 +155,11 @@ impl Gallery {
             .items_center()
             .gap(px(2.))
             .border_1()
-            .border_color(if current { c(theme::ACCENT) } else { gpui::transparent_black() })
+            .border_color(if current {
+                c(theme::ACCENT)
+            } else {
+                gpui::transparent_black()
+            })
             .rounded(px(3.))
             .when(current, |d| d.bg(c(theme::ACCENT_LIGHT)))
             .hover(|s| s.bg(c(theme::HOVER)).border_color(c(theme::TEXT_MUTED)))
@@ -164,12 +186,7 @@ impl Gallery {
                                     .text_color(c(theme.rgb(ThemeSlot::Dark1)))
                                     .child("Aa"),
                             )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .h(px(18.))
-                                    .bg(c(theme.rgb(ThemeSlot::Dark2))),
-                            ),
+                            .child(div().flex_1().h(px(18.)).bg(c(theme.rgb(ThemeSlot::Dark2)))),
                     )
                     .child(
                         div()
@@ -235,14 +252,23 @@ impl Gallery {
         for (index, choice) in choices.into_iter().enumerate() {
             if last_group != Some(choice.custom) {
                 last_group = Some(choice.custom);
-                body.push(heading(if choice.custom { t("Custom", "Personnalisé") } else { "Office" }));
+                body.push(heading(if choice.custom {
+                    t("Custom", "Personnalisé")
+                } else {
+                    "Office"
+                }));
             }
             let colors = choice.colors.clone();
             body.push(
                 self.line(index, choice.current, 24.0)
                     .debug_selector(|| format!("colors:{}", choice.colors.name))
                     .child(swatch_strip(&choice.colors, 13.0))
-                    .child(div().flex_1().truncate().child(shown_name(&choice.colors.name)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .truncate()
+                            .child(shown_name(&choice.colors.name)),
+                    )
                     .on_click(self.pick(move |app, cx| set_colors(app, colors.clone(), cx)))
                     .into_any_element(),
             );
@@ -257,10 +283,17 @@ impl Gallery {
         for (index, choice) in choices.into_iter().enumerate() {
             if last_group != Some(choice.custom) {
                 last_group = Some(choice.custom);
-                body.push(heading(if choice.custom { t("Custom", "Personnalisé") } else { "Office" }));
+                body.push(heading(if choice.custom {
+                    t("Custom", "Personnalisé")
+                } else {
+                    "Office"
+                }));
             }
             let fonts: ThemeFonts = choice.fonts.clone();
-            let (major, minor) = (self.fonts.resolve(&fonts.major), self.fonts.resolve(&fonts.minor));
+            let (major, minor) = (
+                self.fonts.resolve(&fonts.major),
+                self.fonts.resolve(&fonts.minor),
+            );
             body.push(
                 self.line(index, choice.current, 50.0)
                     .debug_selector(|| format!("fonts:{}", choice.fonts.name))
@@ -291,8 +324,20 @@ impl Gallery {
                                     .truncate()
                                     .child(shown_name(&fonts.name)),
                             )
-                            .child(div().font_family(major).text_size(px(13.5)).truncate().child(fonts.major.to_string()))
-                            .child(div().font_family(minor).text_size(px(11.5)).truncate().child(fonts.minor.to_string())),
+                            .child(
+                                div()
+                                    .font_family(major)
+                                    .text_size(px(13.5))
+                                    .truncate()
+                                    .child(fonts.major.to_string()),
+                            )
+                            .child(
+                                div()
+                                    .font_family(minor)
+                                    .text_size(px(11.5))
+                                    .truncate()
+                                    .child(fonts.minor.to_string()),
+                            ),
                     )
                     .on_click(self.pick(move |app, cx| set_fonts(app, fonts.clone(), cx)))
                     .into_any_element(),
@@ -306,7 +351,11 @@ impl Render for Gallery {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         // The entries scroll; the commands under them stay in sight.
         let (body, commands, width) = match self.kind {
-            Kind::Themes => (self.themes(), vec![Cmd::Browse, Cmd::SaveCurrent], PER_ROW as f32 * (ITEM_W + 2.0) + 28.0),
+            Kind::Themes => (
+                self.themes(),
+                vec![Cmd::Browse, Cmd::SaveCurrent],
+                PER_ROW as f32 * (ITEM_W + 2.0) + 28.0,
+            ),
             Kind::Colors => (self.colors(), vec![Cmd::CustomizeColors], 290.0),
             Kind::Fonts => (self.fonts(), vec![Cmd::CustomizeFonts], 290.0),
         };

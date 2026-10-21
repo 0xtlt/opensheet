@@ -23,9 +23,21 @@ fn redraw(cx: &mut VisualTestContext) {
 }
 
 /// Add a shape of the gallery in a frame of the sheet.
-fn add(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, tool: ShapeTool, frame: (f64, f64, f64, f64)) -> u32 {
+fn add(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    tool: ShapeTool,
+    frame: (f64, f64, f64, f64),
+) -> u32 {
     let id = app.update(cx, |app, cx| {
-        let id = app.wb.add_shape(app.sheet, tool, Frame::new(frame.0, frame.1, frame.2, frame.3)).expect("a shape");
+        let id = app
+            .wb
+            .add_shape(
+                app.sheet,
+                tool,
+                Frame::new(frame.0, frame.1, frame.2, frame.3),
+            )
+            .expect("a shape");
         app.commit("setup", cx);
         id
     });
@@ -33,7 +45,12 @@ fn add(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, tool: ShapeTool, fram
     id
 }
 
-fn change(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, f: impl FnOnce(&mut Drawing)) {
+fn change(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    id: u32,
+    f: impl FnOnce(&mut Drawing),
+) {
     app.update(cx, |app, cx| {
         app.wb.update_drawing(app.sheet, id, f);
         app.commit("setup", cx);
@@ -45,16 +62,29 @@ fn change(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32, f: impl F
 fn frame(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> (i64, i64, i64, i64) {
     app.update(cx, |app, _| {
         let frame = app.wb.drawing_frame(app.sheet, id).expect("the drawing");
-        (frame.x.round() as i64, frame.y.round() as i64, frame.width.round() as i64, frame.height.round() as i64)
+        (
+            frame.x.round() as i64,
+            frame.y.round() as i64,
+            frame.width.round() as i64,
+            frame.height.round() as i64,
+        )
     })
 }
 
 fn drawing(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> Drawing {
-    app.update(cx, |app, _| app.wb.drawing(app.sheet, id).expect("the drawing").clone())
+    app.update(cx, |app, _| {
+        app.wb.drawing(app.sheet, id).expect("the drawing").clone()
+    })
 }
 
 fn ids(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<u32> {
-    app.update(cx, |app, _| app.wb.sheets[app.sheet].drawings.iter().map(|d| d.id).collect())
+    app.update(cx, |app, _| {
+        app.wb.sheets[app.sheet]
+            .drawings
+            .iter()
+            .map(|d| d.id)
+            .collect()
+    })
 }
 
 fn selection(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<u32> {
@@ -78,7 +108,10 @@ fn grip(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, wanted: Grip) -> Poi
         let pane = *paint::panes(&layout).last().expect("a pane");
         let drawing = selected(app).expect("a selected drawing");
         let placed = paint::placed(&layout, &app.wb.sheets[app.sheet], drawing, &pane);
-        let (_, at) = paint::grips(drawing, &placed).into_iter().find(|(grip, _)| *grip == wanted).expect("the handle");
+        let (_, at) = paint::grips(drawing, &placed)
+            .into_iter()
+            .find(|(grip, _)| *grip == wanted)
+            .expect("the handle");
         layout.to_window(at.0, at.1)
     })
 }
@@ -89,7 +122,12 @@ fn click(cx: &mut VisualTestContext, at: Point<Pixels>) {
 }
 
 /// Press at `from`, move to `to` in two steps, release.
-fn drag_with(cx: &mut VisualTestContext, from: Point<Pixels>, to: Point<Pixels>, modifiers: Modifiers) {
+fn drag_with(
+    cx: &mut VisualTestContext,
+    from: Point<Pixels>,
+    to: Point<Pixels>,
+    modifiers: Modifiers,
+) {
     let middle = point((from.x + to.x) / 2.0, (from.y + to.y) / 2.0);
     cx.simulate_mouse_down(from, MouseButton::Left, modifiers);
     cx.simulate_mouse_move(middle, MouseButton::Left, modifiers);
@@ -118,9 +156,13 @@ fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Stri
 
 /// A small PNG file.
 fn png(width: u32, height: u32) -> Vec<u8> {
-    let pixels = image::RgbaImage::from_raw(width, height, vec![128; (width * height * 4) as usize]).expect("pixels");
+    let pixels =
+        image::RgbaImage::from_raw(width, height, vec![128; (width * height * 4) as usize])
+            .expect("pixels");
     let mut file = std::io::Cursor::new(Vec::new());
-    image::DynamicImage::ImageRgba8(pixels).write_to(&mut file, image::ImageFormat::Png).expect("a PNG");
+    image::DynamicImage::ImageRgba8(pixels)
+        .write_to(&mut file, image::ImageFormat::Png)
+        .expect("a PNG");
     file.into_inner()
 }
 
@@ -136,7 +178,9 @@ fn a_click_selects_what_is_drawn_there(cx: &mut TestAppContext) {
     let at = on_sheet(&app, cx, 150.0, 100.0);
     click(cx, at);
     assert_eq!(selection(&app, cx), Some(rectangle));
-    app.update(cx, |app, _| assert_eq!(Drawings.context_tabs(app)[0].id, SHAPE_TAB));
+    app.update(cx, |app, _| {
+        assert_eq!(Drawings.context_tabs(app)[0].id, SHAPE_TAB)
+    });
     // A line is taken along its length; the rest of its frame is cells.
     let at = on_sheet(&app, cx, 380.0, 80.0);
     click(cx, at);
@@ -188,22 +232,34 @@ fn the_topmost_drawing_is_taken_and_the_order_can_change(cx: &mut TestAppContext
 fn dragging_moves_and_the_handles_resize(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     let id = add(&app, cx, ShapeTool::Rectangle, (100.0, 60.0, 120.0, 80.0));
-    let (from, to) = (on_sheet(&app, cx, 150.0, 100.0), on_sheet(&app, cx, 190.0, 130.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 150.0, 100.0),
+        on_sheet(&app, cx, 190.0, 130.0),
+    );
     drag(cx, from, to);
     assert_eq!(selection(&app, cx), Some(id));
     assert_eq!(frame(&app, cx, id), (140, 90, 120, 80));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Move Object"));
     // The bottom-right handle: the top-left corner stays.
-    let (from, to) = (grip(&app, cx, Grip::Resize(4)), on_sheet(&app, cx, 300.0, 200.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::Resize(4)),
+        on_sheet(&app, cx, 300.0, 200.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, id), (140, 90, 160, 110));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Size Object"));
     // The left handle moves the left side only.
-    let (from, to) = (grip(&app, cx, Grip::Resize(7)), on_sheet(&app, cx, 100.0, 300.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::Resize(7)),
+        on_sheet(&app, cx, 100.0, 300.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, id), (100, 90, 200, 110));
     // Shift keeps the proportions from a corner.
-    let (from, to) = (grip(&app, cx, Grip::Resize(4)), on_sheet(&app, cx, 400.0, 205.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::Resize(4)),
+        on_sheet(&app, cx, 400.0, 205.0),
+    );
     drag_with(cx, from, to, Modifiers::shift());
     assert_eq!(frame(&app, cx, id), (100, 90, 300, 165));
     // One undo per gesture.
@@ -218,7 +274,10 @@ fn the_round_handle_turns_and_a_turned_shape_resizes_along_itself(cx: &mut TestA
     let centre = on_sheet(&app, cx, 250.0, 130.0);
     click(cx, centre);
     // Drag the handle from above the shape to its right: a quarter turn.
-    let (from, to) = (grip(&app, cx, Grip::Rotate), on_sheet(&app, cx, 330.0, 130.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::Rotate),
+        on_sheet(&app, cx, 330.0, 130.0),
+    );
     drag(cx, from, to);
     assert_eq!(drawing(&app, cx, id).rotation, 90.0);
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Rotate Object"));
@@ -233,7 +292,10 @@ fn the_round_handle_turns_and_a_turned_shape_resizes_along_itself(cx: &mut TestA
     assert_eq!((resized.2, resized.3), (140, 60));
     assert_eq!(resized.1, 120);
     // Shift snaps the turn to fifteen degrees.
-    let (from, to) = (grip(&app, cx, Grip::Rotate), on_sheet(&app, cx, 200.0, 148.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::Rotate),
+        on_sheet(&app, cx, 200.0, 148.0),
+    );
     drag_with(cx, from, to, Modifiers::shift());
     assert_eq!(drawing(&app, cx, id).rotation % 15.0, 0.0);
 }
@@ -246,13 +308,19 @@ fn a_line_is_resized_by_its_two_ends(cx: &mut TestAppContext) {
     click(cx, middle);
     assert_eq!(selection(&app, cx), Some(id));
     // The end goes up and left of the start: the frame flips both ways.
-    let (from, to) = (grip(&app, cx, Grip::LineEnd(true)), on_sheet(&app, cx, 60.0, 40.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::LineEnd(true)),
+        on_sheet(&app, cx, 60.0, 40.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, id), (60, 40, 40, 60));
     let line = drawing(&app, cx, id);
     assert_eq!((line.flip_h, line.flip_v), (true, true));
     // The start follows its own handle; the end stays.
-    let (from, to) = (grip(&app, cx, Grip::LineEnd(false)), on_sheet(&app, cx, 20.0, 40.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::LineEnd(false)),
+        on_sheet(&app, cx, 20.0, 40.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, id), (20, 40, 40, 0));
     let line = drawing(&app, cx, id);
@@ -294,7 +362,10 @@ fn keys_nudge_delete_copy_and_paste(cx: &mut TestAppContext) {
 fn a_shape_is_drawn_by_dragging(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     take(&app, cx, ShapeTool::Ellipse);
-    let (from, to) = (on_sheet(&app, cx, 100.0, 80.0), on_sheet(&app, cx, 260.0, 180.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 100.0, 80.0),
+        on_sheet(&app, cx, 260.0, 180.0),
+    );
     drag(cx, from, to);
     let all = ids(&app, cx);
     assert_eq!(all.len(), 1);
@@ -308,7 +379,10 @@ fn a_shape_is_drawn_by_dragging(cx: &mut TestAppContext) {
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Insert Shape"));
     // Shift draws a square; dragging up and left works too.
     take(&app, cx, ShapeTool::Rectangle);
-    let (from, to) = (on_sheet(&app, cx, 500.0, 300.0), on_sheet(&app, cx, 440.0, 270.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 500.0, 300.0),
+        on_sheet(&app, cx, 440.0, 270.0),
+    );
     drag_with(cx, from, to, Modifiers::shift());
     let square = *ids(&app, cx).last().unwrap();
     assert_eq!(frame(&app, cx, square), (440, 240, 60, 60));
@@ -320,7 +394,10 @@ fn a_shape_is_drawn_by_dragging(cx: &mut TestAppContext) {
     assert_eq!(frame(&app, cx, arrow), (300, 400, 96, 48));
     // A line remembers the way it was drawn.
     take(&app, cx, ShapeTool::Arrow);
-    let (from, to) = (on_sheet(&app, cx, 700.0, 200.0), on_sheet(&app, cx, 620.0, 260.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 700.0, 200.0),
+        on_sheet(&app, cx, 620.0, 260.0),
+    );
     drag(cx, from, to);
     let last = *ids(&app, cx).last().unwrap();
     let line = drawing(&app, cx, last);
@@ -344,7 +421,9 @@ fn escape_puts_the_tool_down(cx: &mut TestAppContext) {
 fn pictures_come_in_at_their_size_on_the_active_cell(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     app.update(cx, |app, cx| app.select_cell(3, 2, cx));
-    app.update(cx, |app, cx| tool::insert_pictures(app, vec![png(120, 40), png(30, 30)], None, cx));
+    app.update(cx, |app, cx| {
+        tool::insert_pictures(app, vec![png(120, 40), png(30, 30)], None, cx)
+    });
     redraw(cx);
     let all = ids(&app, cx);
     assert_eq!(all.len(), 2);
@@ -355,7 +434,10 @@ fn pictures_come_in_at_their_size_on_the_active_cell(cx: &mut TestAppContext) {
     app.update(cx, |app, _| assert_eq!(app.context_tab, Some(PICTURE_TAB)));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Insert Picture"));
     // A corner keeps the proportions of a picture.
-    let (from, to) = (grip(&app, cx, Grip::Resize(4)), on_sheet(&app, cx, 204.0, 110.0));
+    let (from, to) = (
+        grip(&app, cx, Grip::Resize(4)),
+        on_sheet(&app, cx, 204.0, 110.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, all[1]), (144, 76, 60, 60));
     // Turned, flipped, resized... and back as it came in.
@@ -368,7 +450,9 @@ fn pictures_come_in_at_their_size_on_the_active_cell(cx: &mut TestAppContext) {
     assert_eq!((reset.rotation, reset.flip_h), (0.0, false));
     assert_eq!(frame(&app, cx, all[1]), (144, 76, 30, 30));
     // What is no picture is left out.
-    app.update(cx, |app, cx| tool::insert_pictures(app, vec![b"not a picture".to_vec()], None, cx));
+    app.update(cx, |app, cx| {
+        tool::insert_pictures(app, vec![b"not a picture".to_vec()], None, cx)
+    });
     assert_eq!(ids(&app, cx).len(), 2);
 }
 
@@ -389,16 +473,24 @@ fn typing_with_a_shape_selected_writes_in_it(cx: &mut TestAppContext) {
     // Escape keeps the text and the shape stays selected.
     cx.simulate_keystrokes("escape");
     assert_eq!(app.update(cx, |app, _| editing_text(app)), None);
-    assert_eq!(drawing(&app, cx, id).as_shape().unwrap().text, "Total\n2026");
+    assert_eq!(
+        drawing(&app, cx, id).as_shape().unwrap().text,
+        "Total\n2026"
+    );
     assert_eq!(selection(&app, cx), Some(id));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Typing"));
     // No cell took the keys.
-    app.update(cx, |app, _| assert!(!app.is_editing() && app.wb.sheets[0].cells.is_empty()));
+    app.update(cx, |app, _| {
+        assert!(!app.is_editing() && app.wb.sheets[0].cells.is_empty())
+    });
     // Typing again goes on after what is there; a click on a cell ends it.
     cx.simulate_input("!");
     let cell = on_sheet(&app, cx, 500.0, 300.0);
     click(cx, cell);
-    assert_eq!(drawing(&app, cx, id).as_shape().unwrap().text, "Total\n2026!");
+    assert_eq!(
+        drawing(&app, cx, id).as_shape().unwrap().text,
+        "Total\n2026!"
+    );
     assert_eq!(selection(&app, cx), None);
     // A double click edits too; a line holds no text.
     cx.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
@@ -426,7 +518,10 @@ fn typing_with_a_shape_selected_writes_in_it(cx: &mut TestAppContext) {
 fn a_text_box_is_typed_in_as_soon_as_it_is_drawn(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     run(&app, cx, Cmd::TextBox);
-    let (from, to) = (on_sheet(&app, cx, 100.0, 80.0), on_sheet(&app, cx, 260.0, 140.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 100.0, 80.0),
+        on_sheet(&app, cx, 260.0, 140.0),
+    );
     drag(cx, from, to);
     let id = ids(&app, cx)[0];
     assert_eq!(app.update(cx, |app, _| editing_text(app)), Some(id));
@@ -478,7 +573,13 @@ fn drawings_follow_zoom_scrolling_and_frozen_panes(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     let moved = on_sheet(&app, cx, 300.0, 140.0);
     let layout = app.update(cx, |app, _| app.current_layout().unwrap());
-    assert_eq!(layout.local(moved), (layout.header_w + 300.0 - 64.0, layout.header_h + 140.0 - 40.0));
+    assert_eq!(
+        layout.local(moved),
+        (
+            layout.header_w + 300.0 - 64.0,
+            layout.header_h + 140.0 - 40.0
+        )
+    );
     click(cx, moved);
     assert_eq!(selection(&app, cx), Some(id));
 }
@@ -487,7 +588,11 @@ fn drawings_follow_zoom_scrolling_and_frozen_panes(cx: &mut TestAppContext) {
 fn drawings_show_in_the_page_views(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     let id = add(&app, cx, ShapeTool::Rectangle, (200.0, 100.0, 120.0, 80.0));
-    for mode in [ViewMode::PageLayout, ViewMode::PageBreakPreview, ViewMode::Normal] {
+    for mode in [
+        ViewMode::PageLayout,
+        ViewMode::PageBreakPreview,
+        ViewMode::Normal,
+    ] {
         app.update(cx, |app, cx| app.set_view_mode(mode, cx));
         redraw(cx);
         cx.simulate_keystrokes("escape");
@@ -495,7 +600,9 @@ fn drawings_show_in_the_page_views(cx: &mut TestAppContext) {
         let at = on_sheet(&app, cx, 260.0, 140.0);
         click(cx, at);
         assert_eq!(selection(&app, cx), Some(id), "{mode:?}");
-        let extent = app.update(cx, |app, _| Drawings.object_extent(app, id, &app.current_layout().unwrap()));
+        let extent = app.update(cx, |app, _| {
+            Drawings.object_extent(app, id, &app.current_layout().unwrap())
+        });
         assert!(extent.is_some_and(|extent| extent.2 > extent.0), "{mode:?}");
     }
 }
@@ -529,7 +636,10 @@ fn a_protected_sheet_keeps_its_locked_drawings(cx: &mut TestAppContext) {
     });
     redraw(cx);
     // The locked one does not move, is not deleted, takes no text.
-    let (from, to) = (on_sheet(&app, cx, 150.0, 100.0), on_sheet(&app, cx, 190.0, 130.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 150.0, 100.0),
+        on_sheet(&app, cx, 190.0, 130.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, locked), (100, 60, 120, 80));
     cx.simulate_keystrokes("backspace");
@@ -548,16 +658,23 @@ fn a_protected_sheet_keeps_its_locked_drawings(cx: &mut TestAppContext) {
         app.close_modal(window, cx);
     });
     // The one that was unlocked beforehand still moves.
-    let (from, to) = (on_sheet(&app, cx, 350.0, 100.0), on_sheet(&app, cx, 390.0, 130.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 350.0, 100.0),
+        on_sheet(&app, cx, 390.0, 130.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, free), (340, 90, 120, 80));
     // With "Edit objects" allowed, the locked one moves again.
     app.update(cx, |app, _| {
-        app.wb.protect_sheet(0, SheetProtection::allowing(&[Permission::EditObjects]), "");
+        app.wb
+            .protect_sheet(0, SheetProtection::allowing(&[Permission::EditObjects]), "");
     });
     redraw(cx);
     cx.simulate_keystrokes("escape");
-    let (from, to) = (on_sheet(&app, cx, 150.0, 100.0), on_sheet(&app, cx, 190.0, 130.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 150.0, 100.0),
+        on_sheet(&app, cx, 190.0, 130.0),
+    );
     drag(cx, from, to);
     assert_eq!(frame(&app, cx, locked), (140, 90, 120, 80));
 }
@@ -567,31 +684,64 @@ fn the_tabs_and_the_menu_follow_what_is_selected(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     let shape = add(&app, cx, ShapeTool::Rectangle, (100.0, 60.0, 120.0, 80.0));
     let line = add(&app, cx, ShapeTool::Line, (300.0, 60.0, 100.0, 0.0));
-    app.update(cx, |app, cx| tool::insert_pictures(app, vec![png(40, 40)], Some((100.0, 300.0)), cx));
+    app.update(cx, |app, cx| {
+        tool::insert_pictures(app, vec![png(40, 40)], Some((100.0, 300.0)), cx)
+    });
     redraw(cx);
     let entries = |app: &ExcelApp, id: u32| -> Vec<String> {
         let mut menu = ContextMenu::default();
-        Drawings.context_menu(app, &MenuTarget::Object(object_id(&Drawings, id)), &mut menu);
-        menu.build().into_iter().filter(|entry| !entry.separator).map(|entry| entry.label.to_string()).collect()
+        Drawings.context_menu(
+            app,
+            &MenuTarget::Object(object_id(&Drawings, id)),
+            &mut menu,
+        );
+        menu.build()
+            .into_iter()
+            .filter(|entry| !entry.separator)
+            .map(|entry| entry.label.to_string())
+            .collect()
     };
     let picture = selection(&app, cx).unwrap();
     app.update(cx, |app, _| {
         assert_eq!(Drawings.context_tabs(app)[0].id, PICTURE_TAB);
-        assert!(Cmd::ResetPicture.enabled(app) && !Cmd::ShapeFill.enabled(app) && !Cmd::EditText.enabled(app));
-        assert_eq!(entries(app, picture), vec!["View Alt Text…", "Size and Properties…", "Format Picture…"]);
+        assert!(
+            Cmd::ResetPicture.enabled(app)
+                && !Cmd::ShapeFill.enabled(app)
+                && !Cmd::EditText.enabled(app)
+        );
+        assert_eq!(
+            entries(app, picture),
+            vec!["View Alt Text…", "Size and Properties…", "Format Picture…"]
+        );
         assert_eq!(
             entries(app, shape),
-            vec!["Edit Text", "View Alt Text…", "Size and Properties…", "Format Shape…"]
+            vec![
+                "Edit Text",
+                "View Alt Text…",
+                "Size and Properties…",
+                "Format Shape…"
+            ]
         );
-        assert_eq!(entries(app, line), vec!["View Alt Text…", "Size and Properties…", "Format Shape…"]);
+        assert_eq!(
+            entries(app, line),
+            vec!["View Alt Text…", "Size and Properties…", "Format Shape…"]
+        );
     });
     let at = on_sheet(&app, cx, 150.0, 100.0);
     click(cx, at);
     app.update(cx, |app, _| {
         assert_eq!(Drawings.context_tabs(app)[0].id, SHAPE_TAB);
-        assert!(Cmd::ShapeFill.enabled(app) && Cmd::EditText.enabled(app) && !Cmd::ResetPicture.enabled(app));
+        assert!(
+            Cmd::ShapeFill.enabled(app)
+                && Cmd::EditText.enabled(app)
+                && !Cmd::ResetPicture.enabled(app)
+        );
         // One object: nothing to group, align or let go.
-        assert!(Cmd::Group.enabled(app) && !Cmd::GroupObjects.enabled(app) && !Cmd::Ungroup.enabled(app));
+        assert!(
+            Cmd::Group.enabled(app)
+                && !Cmd::GroupObjects.enabled(app)
+                && !Cmd::Ungroup.enabled(app)
+        );
         assert!(!Cmd::AlignLeft.enabled(app) && !Cmd::DistributeHorizontally.enabled(app));
     });
     // The commands of the tab change the selected shape.
@@ -613,7 +763,9 @@ fn the_panes_and_the_drop_downs_open_on_the_selected_drawing(cx: &mut TestAppCon
     let at = on_sheet(&app, cx, 150.0, 100.0);
     click(cx, at);
     let open_panes = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
-        app.update(cx, |app, _| [pane::FORMAT, pane::ALT_TEXT, pane::SELECTION].map(|id| app.pane_open(id)))
+        app.update(cx, |app, _| {
+            [pane::FORMAT, pane::ALT_TEXT, pane::SELECTION].map(|id| app.pane_open(id))
+        })
     };
     // The Format pane, on either page, then the Selection pane.
     run(&app, cx, Cmd::FormatShape);
@@ -624,25 +776,55 @@ fn the_panes_and_the_drop_downs_open_on_the_selected_drawing(cx: &mut TestAppCon
     run(&app, cx, Cmd::SelectionPane);
     assert_eq!(open_panes(&app, cx), [true, false, false]);
     // Every drop-down of the tab opens and is drawn.
-    for cmd in [Cmd::ShapeFill, Cmd::ShapeOutline, Cmd::TextFill, Cmd::Shapes] {
+    for cmd in [
+        Cmd::ShapeFill,
+        Cmd::ShapeOutline,
+        Cmd::TextFill,
+        Cmd::Shapes,
+    ] {
         run(&app, cx, cmd);
         app.update(cx, |app, cx| {
-            assert!(matches!(app.popup.as_ref().map(|popup| &popup.kind), Some(crate::app::PopupKind::View(_))), "{cmd:?}");
+            assert!(
+                matches!(
+                    app.popup.as_ref().map(|popup| &popup.kind),
+                    Some(crate::app::PopupKind::View(_))
+                ),
+                "{cmd:?}"
+            );
             app.popup = None;
             cx.notify();
         });
     }
-    for cmd in [Cmd::Rotate, Cmd::Align, Cmd::Group, Cmd::ShapeEffects, Cmd::EditShape, Cmd::Pictures] {
+    for cmd in [
+        Cmd::Rotate,
+        Cmd::Align,
+        Cmd::Group,
+        Cmd::ShapeEffects,
+        Cmd::EditShape,
+        Cmd::Pictures,
+    ] {
         run(&app, cx, cmd);
         app.update(cx, |app, cx| {
-            assert!(matches!(app.popup.as_ref().map(|popup| &popup.kind), Some(crate::app::PopupKind::Menu(_))), "{cmd:?}");
+            assert!(
+                matches!(
+                    app.popup.as_ref().map(|popup| &popup.kind),
+                    Some(crate::app::PopupKind::Menu(_))
+                ),
+                "{cmd:?}"
+            );
             app.popup = None;
             cx.notify();
         });
     }
     // What is not available says so.
     run(&app, cx, Cmd::ShapeStyles);
-    app.update(cx, |app, _| assert!(app.status_message.as_ref().is_some_and(|message| message.contains(Cmd::ShapeStyles.label()))));
+    app.update(cx, |app, _| {
+        assert!(
+            app.status_message
+                .as_ref()
+                .is_some_and(|message| message.contains(Cmd::ShapeStyles.label()))
+        )
+    });
     // A description typed in the Alt Text pane is kept when the selection
     // goes elsewhere, as one undo step.
     run(&app, cx, Cmd::AltText);
@@ -654,11 +836,17 @@ fn the_panes_and_the_drop_downs_open_on_the_selected_drawing(cx: &mut TestAppCon
     assert_eq!(drawing(&app, cx, shape).alt_text, "A blue box");
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Alt Text"));
     // The panes stay open with nothing selected, and follow a picture.
-    app.update(cx, |app, cx| tool::insert_pictures(app, vec![png(40, 40)], Some((300.0, 300.0)), cx));
+    app.update(cx, |app, cx| {
+        tool::insert_pictures(app, vec![png(40, 40)], Some((300.0, 300.0)), cx)
+    });
     redraw(cx);
     run(&app, cx, Cmd::FormatPicture);
     app.update(cx, |app, _| {
-        let title = app.panes.iter().find(|pane| pane.id == pane::FORMAT).map(|pane| pane.title.to_string());
+        let title = app
+            .panes
+            .iter()
+            .find(|pane| pane.id == pane::FORMAT)
+            .map(|pane| pane.title.to_string());
         assert_eq!(title.as_deref(), Some("Format Picture"));
     });
 }
@@ -688,13 +876,27 @@ fn shift_click_at(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, x: f64, y:
     redraw(cx);
 }
 
-fn drag_at(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, from: (f64, f64), to: (f64, f64), modifiers: Modifiers) {
-    let (from, to) = (on_sheet(app, cx, from.0, from.1), on_sheet(app, cx, to.0, to.1));
+fn drag_at(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    from: (f64, f64),
+    to: (f64, f64),
+    modifiers: Modifiers,
+) {
+    let (from, to) = (
+        on_sheet(app, cx, from.0, from.1),
+        on_sheet(app, cx, to.0, to.1),
+    );
     drag_with(cx, from, to, modifiers);
 }
 
 /// A chart of nothing, at a place of the sheet.
-fn add_chart(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, at: (f32, f32), size: (f32, f32)) -> u32 {
+fn add_chart(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    at: (f32, f32),
+    size: (f32, f32),
+) -> u32 {
     use opensheet_engine::chart::{Chart, ChartKind};
     let id = app.update(cx, |app, cx| {
         let chart = Chart {
@@ -718,10 +920,18 @@ fn charts_and_shapes_share_one_stacking_order(cx: &mut TestAppContext) {
     let under = add(&app, cx, ShapeTool::Rectangle, (100.0, 60.0, 200.0, 150.0));
     let chart = add_chart(&app, cx, (150.0, 100.0), (300.0, 200.0));
     let over = add(&app, cx, ShapeTool::Ellipse, (200.0, 150.0, 100.0, 80.0));
-    let stack = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.wb.object_stack(app.sheet));
-    let (r, c, e) = (ObjectRef::Drawing(under), ObjectRef::Chart(chart), ObjectRef::Drawing(over));
+    let stack = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| app.wb.object_stack(app.sheet))
+    };
+    let (r, c, e) = (
+        ObjectRef::Drawing(under),
+        ObjectRef::Chart(chart),
+        ObjectRef::Drawing(over),
+    );
     assert_eq!(stack(&app, cx), vec![r, c, e]);
-    let lead = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.object_sel);
+    let lead = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| app.object_sel)
+    };
     // Where the three overlap, the ellipse is taken; where only the
     // rectangle and the chart do, the chart: it lies over the rectangle.
     let all = on_sheet(&app, cx, 250.0, 190.0);
@@ -762,7 +972,11 @@ fn several_objects_are_selected_moved_and_deleted_together(cx: &mut TestAppConte
     let a = add(&app, cx, ShapeTool::Rectangle, (100.0, 60.0, 100.0, 60.0));
     let b = add(&app, cx, ShapeTool::Ellipse, (300.0, 60.0, 80.0, 80.0));
     let c = add(&app, cx, ShapeTool::Rectangle, (100.0, 240.0, 60.0, 40.0));
-    let (at_a, at_b, at_c) = (on_sheet(&app, cx, 150.0, 90.0), on_sheet(&app, cx, 340.0, 100.0), on_sheet(&app, cx, 130.0, 260.0));
+    let (at_a, at_b, at_c) = (
+        on_sheet(&app, cx, 150.0, 90.0),
+        on_sheet(&app, cx, 340.0, 100.0),
+        on_sheet(&app, cx, 130.0, 260.0),
+    );
     click(cx, at_a);
     cx.simulate_click(at_b, shift());
     redraw(cx);
@@ -779,33 +993,56 @@ fn several_objects_are_selected_moved_and_deleted_together(cx: &mut TestAppConte
     assert_eq!(selected_all(&app, cx), vec![b, a]);
     // Dragging one moves both, as one step.
     drag(cx, at_a, point(at_a.x + px(40.), at_a.y + px(30.)));
-    assert_eq!((frame(&app, cx, a), frame(&app, cx, b)), ((140, 90, 100, 60), (340, 90, 80, 80)));
+    assert_eq!(
+        (frame(&app, cx, a), frame(&app, cx, b)),
+        ((140, 90, 100, 60), (340, 90, 80, 80))
+    );
     assert_eq!(frame(&app, cx, c), (100, 240, 60, 40));
     assert_eq!(selected_all(&app, cx), vec![a, b]);
     app.update(cx, |app, cx| app.undo(cx));
-    assert_eq!((frame(&app, cx, a), frame(&app, cx, b)), ((100, 60, 100, 60), (300, 60, 80, 80)));
+    assert_eq!(
+        (frame(&app, cx, a), frame(&app, cx, b)),
+        ((100, 60, 100, 60), (300, 60, 80, 80))
+    );
     // The arrow keys too.
     cx.simulate_keystrokes("right down");
-    assert_eq!((frame(&app, cx, a), frame(&app, cx, b)), ((101, 61, 100, 60), (301, 61, 80, 80)));
+    assert_eq!(
+        (frame(&app, cx, a), frame(&app, cx, b)),
+        ((101, 61, 100, 60), (301, 61, 80, 80))
+    );
     // A handle of one resizes both by the same proportion, each from its
     // own corner: half as wide again, twice as high.
     let corner = grip(&app, cx, Grip::Resize(4));
     drag(cx, corner, point(corner.x + px(50.), corner.y + px(60.)));
-    assert_eq!((frame(&app, cx, a), frame(&app, cx, b)), ((101, 61, 150, 120), (301, 61, 120, 160)));
+    assert_eq!(
+        (frame(&app, cx, a), frame(&app, cx, b)),
+        ((101, 61, 150, 120), (301, 61, 120, 160))
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Size Object"));
     app.update(cx, |app, cx| app.undo(cx));
     // The round handle turns both.
     let round = grip(&app, cx, Grip::Rotate);
     let centre = on_sheet(&app, cx, 151.0, 91.0);
     drag(cx, round, point(centre.x + px(100.), centre.y));
-    assert_eq!((drawing(&app, cx, a).rotation, drawing(&app, cx, b).rotation), (90.0, 90.0));
+    assert_eq!(
+        (drawing(&app, cx, a).rotation, drawing(&app, cx, b).rotation),
+        (90.0, 90.0)
+    );
     app.update(cx, |app, cx| app.undo(cx));
     // A fill goes to every selected shape.
-    app.update(cx, |app, cx| tabs::set_fill(app, Some(opensheet_engine::Color(0xFF0000)), cx));
+    app.update(cx, |app, cx| {
+        tabs::set_fill(app, Some(opensheet_engine::Color(0xFF0000)), cx)
+    });
     for id in [a, b] {
-        assert_eq!(drawing(&app, cx, id).as_shape().unwrap().fill, Some(opensheet_engine::Color(0xFF0000)));
+        assert_eq!(
+            drawing(&app, cx, id).as_shape().unwrap().fill,
+            Some(opensheet_engine::Color(0xFF0000))
+        );
     }
-    assert_ne!(drawing(&app, cx, c).as_shape().unwrap().fill, Some(opensheet_engine::Color(0xFF0000)));
+    assert_ne!(
+        drawing(&app, cx, c).as_shape().unwrap().fill,
+        Some(opensheet_engine::Color(0xFF0000))
+    );
     // ⌘A with an object selected: every object of the sheet.
     cx.simulate_keystrokes("cmd-a");
     assert_eq!(selected_all(&app, cx).len(), 3);
@@ -817,8 +1054,15 @@ fn several_objects_are_selected_moved_and_deleted_together(cx: &mut TestAppConte
     assert_eq!(copies.len(), 3);
     assert!(copies.iter().all(|id| ![a, b, c].contains(id)));
     let (fa, fb) = (frame(&app, cx, a), frame(&app, cx, b));
-    let moved: Vec<(i64, i64)> = copies.iter().map(|id| frame(&app, cx, *id)).map(|f| (f.0, f.1)).collect();
-    assert!(moved.contains(&(fa.0 + 16, fa.1 + 16)) && moved.contains(&(fb.0 + 16, fb.1 + 16)), "{moved:?}");
+    let moved: Vec<(i64, i64)> = copies
+        .iter()
+        .map(|id| frame(&app, cx, *id))
+        .map(|f| (f.0, f.1))
+        .collect();
+    assert!(
+        moved.contains(&(fa.0 + 16, fa.1 + 16)) && moved.contains(&(fb.0 + 16, fb.1 + 16)),
+        "{moved:?}"
+    );
     assert_eq!(ids(&app, cx).len(), 6);
     app.update(cx, |app, cx| app.undo(cx));
     assert_eq!(ids(&app, cx).len(), 3);
@@ -841,12 +1085,17 @@ fn select_objects_drags_a_rectangle_and_go_to_special_takes_all(cx: &mut TestApp
     let b = add(&app, cx, ShapeTool::Ellipse, (300.0, 60.0, 80.0, 80.0));
     let c = add(&app, cx, ShapeTool::Rectangle, (100.0, 240.0, 60.0, 40.0));
     // Without the mode, a drag over the cells selects cells.
-    let (from, to) = (on_sheet(&app, cx, 80.0, 40.0), on_sheet(&app, cx, 400.0, 160.0));
+    let (from, to) = (
+        on_sheet(&app, cx, 80.0, 40.0),
+        on_sheet(&app, cx, 400.0, 160.0),
+    );
     drag(cx, from, to);
     assert!(selected_all(&app, cx).is_empty());
     let cells = app.update(cx, |app, _| app.sel().current());
     assert!(!cells.is_single());
-    app.update_in(cx, |app, window, cx| app.run_command(crate::features::edit_tools::Cmd::SelectObjects, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(crate::features::edit_tools::Cmd::SelectObjects, window, cx)
+    });
     redraw(cx);
     assert!(app.update(cx, |app, _| app.object_pointer()));
     // The rectangle holds the two shapes of the first row whole.
@@ -871,7 +1120,9 @@ fn select_objects_drags_a_rectangle_and_go_to_special_takes_all(cx: &mut TestApp
     cx.simulate_keystrokes("escape");
     assert!(!app.update(cx, |app, _| app.object_pointer()));
     // Go To Special ▸ Objects.
-    app.update(cx, |app, cx| crate::features::misc::select_special(app, crate::features::misc::Special::Objects, cx));
+    app.update(cx, |app, cx| {
+        crate::features::misc::select_special(app, crate::features::misc::Special::Objects, cx)
+    });
     assert_eq!(selected_all(&app, cx).len(), 3);
 }
 
@@ -888,7 +1139,11 @@ fn align_distribute_and_snap(cx: &mut TestAppContext) {
     };
     select(&app, cx, &[a, b]);
     app.update(cx, |app, _| {
-        assert!(Cmd::AlignLeft.enabled(app) && Cmd::AlignMiddle.enabled(app) && !Cmd::DistributeHorizontally.enabled(app));
+        assert!(
+            Cmd::AlignLeft.enabled(app)
+                && Cmd::AlignMiddle.enabled(app)
+                && !Cmd::DistributeHorizontally.enabled(app)
+        );
     });
     run(&app, cx, Cmd::AlignTop);
     assert_eq!((frame(&app, cx, a).1, frame(&app, cx, b).1), (60, 60));
@@ -899,15 +1154,32 @@ fn align_distribute_and_snap(cx: &mut TestAppContext) {
         app.undo(cx);
         app.undo(cx);
     });
-    assert_eq!((frame(&app, cx, a), frame(&app, cx, b)), ((100, 60, 100, 60), (300, 100, 80, 80)));
+    assert_eq!(
+        (frame(&app, cx, a), frame(&app, cx, b)),
+        ((100, 60, 100, 60), (300, 100, 80, 80))
+    );
     // Three: the middle one goes half way between the gaps.
     select(&app, cx, &[a, b, c]);
     run(&app, cx, Cmd::DistributeHorizontally);
     // From 100 to 660, 240 taken: two gaps of 160.
-    assert_eq!((frame(&app, cx, a).0, frame(&app, cx, b).0, frame(&app, cx, c).0), (100, 360, 600));
+    assert_eq!(
+        (
+            frame(&app, cx, a).0,
+            frame(&app, cx, b).0,
+            frame(&app, cx, c).0
+        ),
+        (100, 360, 600)
+    );
     run(&app, cx, Cmd::AlignMiddle);
     // The box runs from 60 to 280: its middle is 170.
-    assert_eq!((frame(&app, cx, a).1, frame(&app, cx, b).1, frame(&app, cx, c).1), (140, 130, 150));
+    assert_eq!(
+        (
+            frame(&app, cx, a).1,
+            frame(&app, cx, b).1,
+            frame(&app, cx, c).1
+        ),
+        (140, 130, 150)
+    );
     // Snap to Grid: a dragged object lands on a cell corner.
     select(&app, cx, &[a]);
     run(&app, cx, Cmd::SnapToGrid);
@@ -915,7 +1187,9 @@ fn align_distribute_and_snap(cx: &mut TestAppContext) {
     let at = on_sheet(&app, cx, 150.0, 170.0);
     drag(cx, at, point(at.x + px(33.), at.y + px(7.)));
     let moved = frame(&app, cx, a);
-    let corner = app.update(cx, |app, _| app.wb.sheets[app.sheet].corner_at(moved.0 as f64, moved.1 as f64));
+    let corner = app.update(cx, |app, _| {
+        app.wb.sheets[app.sheet].corner_at(moved.0 as f64, moved.1 as f64)
+    });
     assert_eq!(corner.1, (0.0, 0.0), "{moved:?}");
     assert_ne!((moved.0, moved.1), (100, 140));
 }
@@ -928,7 +1202,13 @@ fn group_ungroup_and_regroup(cx: &mut TestAppContext) {
     click_at(&app, cx, 150.0, 90.0);
     app.update(cx, |app, _| assert!(!Cmd::GroupObjects.enabled(app)));
     shift_click_at(&app, cx, 340.0, 140.0);
-    app.update(cx, |app, _| assert!(Cmd::GroupObjects.enabled(app) && !Cmd::Ungroup.enabled(app) && !Cmd::Regroup.enabled(app)));
+    app.update(cx, |app, _| {
+        assert!(
+            Cmd::GroupObjects.enabled(app)
+                && !Cmd::Ungroup.enabled(app)
+                && !Cmd::Regroup.enabled(app)
+        )
+    });
     run(&app, cx, Cmd::GroupObjects);
     let group = selection(&app, cx).expect("the group is selected");
     assert_eq!(ids(&app, cx), vec![group]);
@@ -936,7 +1216,11 @@ fn group_ungroup_and_regroup(cx: &mut TestAppContext) {
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Group Objects"));
     app.update(cx, |app, _| {
         assert_eq!(Drawings.context_tabs(app)[0].id, SHAPE_TAB);
-        assert!(Cmd::Ungroup.enabled(app) && !Cmd::GroupObjects.enabled(app) && Cmd::ShapeFill.enabled(app));
+        assert!(
+            Cmd::Ungroup.enabled(app)
+                && !Cmd::GroupObjects.enabled(app)
+                && Cmd::ShapeFill.enabled(app)
+        );
     });
     // A click on a member takes the group; dragging moves it whole.
     app.update(cx, |app, cx| app.deselect_object(cx));
@@ -948,22 +1232,35 @@ fn group_ungroup_and_regroup(cx: &mut TestAppContext) {
     click_at(&app, cx, 250.0, 70.0);
     assert_eq!(selection(&app, cx), None);
     click(cx, on_member);
-    drag(cx, on_member, point(on_member.x + px(20.), on_member.y + px(10.)));
+    drag(
+        cx,
+        on_member,
+        point(on_member.x + px(20.), on_member.y + px(10.)),
+    );
     assert_eq!(frame(&app, cx, group), (120, 70, 280, 120));
     // Its corner resizes it and what it holds.
     let corner = grip(&app, cx, Grip::Resize(4));
     drag(cx, corner, point(corner.x + px(280.), corner.y));
     assert_eq!(frame(&app, cx, group), (120, 70, 560, 120));
     // A fill goes to the shapes in the group.
-    app.update(cx, |app, cx| tabs::set_fill(app, Some(opensheet_engine::Color(0x00FF00)), cx));
+    app.update(cx, |app, cx| {
+        tabs::set_fill(app, Some(opensheet_engine::Color(0x00FF00)), cx)
+    });
     let members = drawing(&app, cx, group).as_group().unwrap().members.clone();
-    assert!(members.iter().all(|m| m.as_shape().unwrap().fill == Some(opensheet_engine::Color(0x00FF00))));
+    assert!(
+        members
+            .iter()
+            .all(|m| m.as_shape().unwrap().fill == Some(opensheet_engine::Color(0x00FF00)))
+    );
     // Ungroup: the members are back, twice as wide, both selected.
     run(&app, cx, Cmd::Ungroup);
     let mut freed = selected_all(&app, cx);
     freed.sort();
     assert_eq!(freed, vec![a, b]);
-    assert_eq!((frame(&app, cx, a), frame(&app, cx, b)), ((120, 70, 200, 60), (520, 110, 160, 80)));
+    assert_eq!(
+        (frame(&app, cx, a), frame(&app, cx, b)),
+        ((120, 70, 200, 60), (520, 110, 160, 80))
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Ungroup Objects"));
     // Regroup with one of them selected.
     click_at(&app, cx, 150.0, 90.0);
@@ -976,11 +1273,18 @@ fn group_ungroup_and_regroup(cx: &mut TestAppContext) {
     for _ in 0..6 {
         app.update(cx, |app, cx| app.undo(cx));
     }
-    assert_eq!((frame(&app, cx, a), frame(&app, cx, b)), ((100, 60, 100, 60), (300, 100, 80, 80)));
+    assert_eq!(
+        (frame(&app, cx, a), frame(&app, cx, b)),
+        ((100, 60, 100, 60), (300, 100, 80, 80))
+    );
     // A chart stays out of groups.
     let chart = add_chart(&app, cx, (500.0, 300.0), (200.0, 150.0));
     app.update(cx, |app, cx| {
-        let ids = [object_id(&Drawings, a), object_id(&Drawings, b), crate::objects::object_of(opensheet_engine::drawing::ObjectRef::Chart(chart))];
+        let ids = [
+            object_id(&Drawings, a),
+            object_id(&Drawings, b),
+            crate::objects::object_of(opensheet_engine::drawing::ObjectRef::Chart(chart)),
+        ];
         app.select_objects(&ids, cx);
         assert!(!Cmd::GroupObjects.enabled(app));
         // But they are arranged together.
@@ -1008,22 +1312,38 @@ fn the_selection_pane_lists_renames_hides_and_restacks(cx: &mut TestAppContext) 
     // The one on top first.
     assert_eq!(
         rows(&app, cx),
-        vec![("Oval 3".to_string(), false, false), ("Chart 2".to_string(), false, false), ("Rectangle 1".to_string(), false, true)]
+        vec![
+            ("Oval 3".to_string(), false, false),
+            ("Chart 2".to_string(), false, false),
+            ("Rectangle 1".to_string(), false, true)
+        ]
     );
-    let (ra, rc, rb) = (ObjectRef::Drawing(a), ObjectRef::Chart(chart), ObjectRef::Drawing(b));
+    let (ra, rc, rb) = (
+        ObjectRef::Drawing(a),
+        ObjectRef::Chart(chart),
+        ObjectRef::Drawing(b),
+    );
     // Dragged onto the top row, the rectangle goes on top.
     app.update(cx, |app, cx| pane::move_in_stack(app, ra, rb, cx));
     redraw(cx);
-    assert_eq!(app.update(cx, |app, _| app.wb.object_stack(app.sheet)), vec![rc, rb, ra]);
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.object_stack(app.sheet)),
+        vec![rc, rb, ra]
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Change Order"));
     // And back under the chart.
     app.update(cx, |app, cx| pane::move_in_stack(app, ra, rc, cx));
-    assert_eq!(app.update(cx, |app, _| app.wb.object_stack(app.sheet)), vec![ra, rc, rb]);
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.object_stack(app.sheet)),
+        vec![ra, rc, rb]
+    );
     // Hide All, Show All; a hidden object leaves the selection.
     app.update(cx, |app, cx| pane::set_hidden(app, &[ra, rc, rb], true, cx));
     redraw(cx);
     assert!(rows(&app, cx).iter().all(|row| row.1 && !row.2));
-    assert!(app.update(cx, |app, _| crate::features::objects(app, app.sheet).is_empty()));
+    assert!(app.update(cx, |app, _| {
+        crate::features::objects(app, app.sheet).is_empty()
+    }));
     app.update(cx, |app, cx| app.undo(cx));
     assert!(rows(&app, cx).iter().all(|row| !row.1));
     // A name typed in the pane.
@@ -1039,13 +1359,20 @@ fn the_selection_pane_lists_renames_hides_and_restacks(cx: &mut TestAppContext) 
 
 /// Insert a picture 200 x 100 at (100, 100) and select it.
 fn add_picture(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> u32 {
-    app.update(cx, |app, cx| tool::insert_pictures(app, vec![png(200, 100)], Some((100.0, 100.0)), cx));
+    app.update(cx, |app, cx| {
+        tool::insert_pictures(app, vec![png(200, 100)], Some((100.0, 100.0)), cx)
+    });
     redraw(cx);
     selection(app, cx).expect("the picture")
 }
 
 fn crop_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> [i32; 4] {
-    drawing(app, cx, id).as_picture().expect("a picture").adjust.crop.map(|v| (v * 1000.0).round() as i32)
+    drawing(app, cx, id)
+        .as_picture()
+        .expect("a picture")
+        .adjust
+        .crop
+        .map(|v| (v * 1000.0).round() as i32)
 }
 
 #[gpui::test]
@@ -1080,7 +1407,9 @@ fn a_picture_is_cropped_by_its_marks(cx: &mut TestAppContext) {
     let menu = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
         run(app, cx, Cmd::Crop);
         app.update(cx, |app, cx| {
-            let Some(crate::app::PopupKind::Menu(entries)) = app.popup.take().map(|popup| popup.kind) else {
+            let Some(crate::app::PopupKind::Menu(entries)) =
+                app.popup.take().map(|popup| popup.kind)
+            else {
                 panic!("the Crop menu");
             };
             cx.notify();
@@ -1088,10 +1417,21 @@ fn a_picture_is_cropped_by_its_marks(cx: &mut TestAppContext) {
         })
     };
     let entries = menu(&app, cx);
-    let labels: Vec<String> = entries.iter().filter(|entry| !entry.separator).map(|entry| entry.label.to_string()).collect();
-    assert_eq!(labels, ["Crop", "Crop to Shape", "Aspect Ratio", "Fill", "Fit"]);
+    let labels: Vec<String> = entries
+        .iter()
+        .filter(|entry| !entry.separator)
+        .map(|entry| entry.label.to_string())
+        .collect();
+    assert_eq!(
+        labels,
+        ["Crop", "Crop to Shape", "Aspect Ratio", "Fill", "Fit"]
+    );
     let ratios = entries[2].submenu.clone().expect("the ratios");
-    let square = ratios.iter().find(|entry| entry.label.as_ref() == "1:1").and_then(|entry| entry.action.clone()).expect("1:1");
+    let square = ratios
+        .iter()
+        .find(|entry| entry.label.as_ref() == "1:1")
+        .and_then(|entry| entry.action.clone())
+        .expect("1:1");
     app.update_in(cx, |app, window, cx| square(app, window, cx));
     redraw(cx);
     let cropped = frame(&app, cx, id);
@@ -1100,10 +1440,17 @@ fn a_picture_is_cropped_by_its_marks(cx: &mut TestAppContext) {
     assert_eq!(app.update(cx, |app, _| cropping(app)), Some(id));
     // Crop to Shape.
     let shapes = entries[1].submenu.clone().expect("the shapes");
-    let oval = shapes.iter().find(|entry| entry.label.as_ref() == "Oval").and_then(|entry| entry.action.clone()).expect("Oval");
+    let oval = shapes
+        .iter()
+        .find(|entry| entry.label.as_ref() == "Oval")
+        .and_then(|entry| entry.action.clone())
+        .expect("Oval");
     app.update_in(cx, |app, window, cx| oval(app, window, cx));
     redraw(cx);
-    assert_eq!(drawing(&app, cx, id).as_picture().unwrap().adjust.shape, ShapePreset::Ellipse);
+    assert_eq!(
+        drawing(&app, cx, id).as_picture().unwrap().adjust.shape,
+        ShapePreset::Ellipse
+    );
     // Fit: the whole image in the square frame, room above and below.
     run(&app, cx, Cmd::CropFit);
     assert_eq!(crop_of(&app, cx, id), [0, -500, 0, -500]);
@@ -1112,7 +1459,10 @@ fn a_picture_is_cropped_by_its_marks(cx: &mut TestAppContext) {
     assert_eq!(crop_of(&app, cx, id), [0, 0, 0, 0]);
     let reset = frame(&app, cx, id);
     assert_eq!((reset.2, reset.3), (w, h));
-    assert_eq!(drawing(&app, cx, id).as_picture().unwrap().adjust, PictureAdjust::default());
+    assert_eq!(
+        drawing(&app, cx, id).as_picture().unwrap().adjust,
+        PictureAdjust::default()
+    );
     assert_eq!(app.update(cx, |app, _| cropping(app)), None);
 }
 
@@ -1121,21 +1471,34 @@ fn corrections_colours_transparency_and_effects(cx: &mut TestAppContext) {
     use opensheet_engine::drawing::{Recolor, Shadow, ShadowPreset};
     let (app, cx) = open(cx);
     let id = add_picture(&app, cx);
-    let adjust_of = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| drawing(app, cx, id).as_picture().unwrap().adjust;
+    let adjust_of = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        drawing(app, cx, id).as_picture().unwrap().adjust
+    };
     // Every menu of the tab opens, and its entries do what they say.
     let pick = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cmd: Cmd, path: &[&str]| {
         run(app, cx, cmd);
         let mut entries = app.update(cx, |app, cx| {
-            let Some(crate::app::PopupKind::Menu(entries)) = app.popup.take().map(|popup| popup.kind) else {
+            let Some(crate::app::PopupKind::Menu(entries)) =
+                app.popup.take().map(|popup| popup.kind)
+            else {
                 panic!("the menu of {cmd:?}");
             };
             cx.notify();
             entries
         });
         for (depth, label) in path.iter().enumerate() {
-            let entry = entries.iter().find(|entry| entry.label.as_ref() == *label).unwrap_or_else(|| {
-                panic!("{label} among {:?}", entries.iter().map(|e| e.label.to_string()).collect::<Vec<_>>())
-            });
+            let entry = entries
+                .iter()
+                .find(|entry| entry.label.as_ref() == *label)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{label} among {:?}",
+                        entries
+                            .iter()
+                            .map(|e| e.label.to_string())
+                            .collect::<Vec<_>>()
+                    )
+                });
             if depth + 1 == path.len() {
                 let action = entry.action.clone().expect("an action");
                 app.update_in(cx, |app, window, cx| action(app, window, cx));
@@ -1147,27 +1510,57 @@ fn corrections_colours_transparency_and_effects(cx: &mut TestAppContext) {
     };
     pick(&app, cx, Cmd::Transparency, &["Transparency: 30%"]);
     assert_eq!(adjust_of(&app, cx).transparency, 0.3);
-    assert_eq!(undo_label(&app, cx).as_deref(), Some("Picture Transparency"));
-    pick(&app, cx, Cmd::Corrections, &["Brightness", "Brightness: +20%"]);
+    assert_eq!(
+        undo_label(&app, cx).as_deref(),
+        Some("Picture Transparency")
+    );
+    pick(
+        &app,
+        cx,
+        Cmd::Corrections,
+        &["Brightness", "Brightness: +20%"],
+    );
     pick(&app, cx, Cmd::Corrections, &["Contrast", "Contrast: -40%"]);
-    assert_eq!((adjust_of(&app, cx).brightness, adjust_of(&app, cx).contrast), (0.2, -0.4));
+    assert_eq!(
+        (adjust_of(&app, cx).brightness, adjust_of(&app, cx).contrast),
+        (0.2, -0.4)
+    );
     pick(&app, cx, Cmd::Color, &["Saturation", "Saturation: 200%"]);
     pick(&app, cx, Cmd::Color, &["Color Tone", "Temperature: 4700 K"]);
     pick(&app, cx, Cmd::Color, &["Recolor", "Grayscale"]);
     let now = adjust_of(&app, cx);
-    assert_eq!((now.saturation, now.temperature, now.recolor), (2.0, 4700.0, Recolor::Grayscale));
+    assert_eq!(
+        (now.saturation, now.temperature, now.recolor),
+        (2.0, 4700.0, Recolor::Grayscale)
+    );
     // The picture is drawn with all of it, and without.
     redraw(cx);
-    pick(&app, cx, Cmd::PictureEffects, &["Shadow", "Offset: Bottom Right"]);
-    assert_eq!(drawing(&app, cx, id).effects.shadow, Some(Shadow::default()));
+    pick(
+        &app,
+        cx,
+        Cmd::PictureEffects,
+        &["Shadow", "Offset: Bottom Right"],
+    );
+    assert_eq!(
+        drawing(&app, cx, id).effects.shadow,
+        Some(Shadow::default())
+    );
     pick(&app, cx, Cmd::PictureEffects, &["Glow", "8 pt", "Accent 2"]);
     let glow = drawing(&app, cx, id).effects.glow.expect("a glow");
-    assert_eq!((glow.radius, glow.color.value()), (8.0, app.update(cx, |app, _| app.wb.theme().chart_color(1).value())));
+    assert_eq!(
+        (glow.radius, glow.color.value()),
+        (
+            8.0,
+            app.update(cx, |app, _| app.wb.theme().chart_color(1).value())
+        )
+    );
     pick(&app, cx, Cmd::PictureEffects, &["Soft Edges", "5 pt"]);
     assert_eq!(drawing(&app, cx, id).effects.soft_edge, 5.0);
     redraw(cx);
     // The pane: its pages for a picture, and a number typed there.
-    app.update_in(cx, |app, window, cx| pane::open_format(app, pane::Section::Effects, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        pane::open_format(app, pane::Section::Effects, window, cx)
+    });
     redraw(cx);
     app.update(cx, |app, cx| {
         pane::Look::ShadowDistance.set(app, 12.0, cx);
@@ -1183,7 +1576,9 @@ fn corrections_colours_transparency_and_effects(cx: &mut TestAppContext) {
     assert_eq!(changed.effects.glow, None);
     assert_eq!(changed.as_picture().unwrap().adjust.transparency, 0.55);
     assert_eq!(pane::Look::ShadowDistance.of(&changed), Some(12.0));
-    app.update_in(cx, |app, window, cx| pane::open_format(app, pane::Section::Picture, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        pane::open_format(app, pane::Section::Picture, window, cx)
+    });
     redraw(cx);
     // Reset Picture keeps the size, undoes the rest.
     run(&app, cx, Cmd::ResetPictureOnly);
@@ -1195,16 +1590,30 @@ fn corrections_colours_transparency_and_effects(cx: &mut TestAppContext) {
     // hands them to its members.
     let a = add(&app, cx, ShapeTool::Rectangle, (400.0, 60.0, 100.0, 60.0));
     let b = add(&app, cx, ShapeTool::Arrow, (400.0, 200.0, 100.0, 60.0));
-    app.update(cx, |app, cx| app.select_objects(&[object_id(&Drawings, a), object_id(&Drawings, b)], cx));
+    app.update(cx, |app, cx| {
+        app.select_objects(&[object_id(&Drawings, a), object_id(&Drawings, b)], cx)
+    });
     pick(&app, cx, Cmd::ShapeEffects, &["Shadow", "Offset: Top"]);
     for shape in [a, b] {
-        assert_eq!(drawing(&app, cx, shape).effects.shadow, Some(ShadowPreset::Top.shadow()));
+        assert_eq!(
+            drawing(&app, cx, shape).effects.shadow,
+            Some(ShadowPreset::Top.shadow())
+        );
     }
     run(&app, cx, Cmd::GroupObjects);
     pick(&app, cx, Cmd::ShapeEffects, &["Shadow", "No Shadow"]);
     let group = selection(&app, cx).unwrap();
-    assert!(drawing(&app, cx, group).as_group().unwrap().members.iter().all(|m| m.effects.shadow.is_none()));
-    app.update_in(cx, |app, window, cx| pane::open_format(app, pane::Section::Effects, window, cx));
+    assert!(
+        drawing(&app, cx, group)
+            .as_group()
+            .unwrap()
+            .members
+            .iter()
+            .all(|m| m.effects.shadow.is_none())
+    );
+    app.update_in(cx, |app, window, cx| {
+        pane::open_format(app, pane::Section::Effects, window, cx)
+    });
     redraw(cx);
 }
 
@@ -1215,14 +1624,25 @@ fn the_format_pane_follows_the_kind_of_object(cx: &mut TestAppContext) {
     let shape = add(&app, cx, ShapeTool::Rectangle, (100.0, 60.0, 100.0, 60.0));
     let chart = add_chart(&app, cx, (300.0, 60.0), (300.0, 200.0));
     let open_panes = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
-        app.update(cx, |app, _| (app.pane_open(chart_format::PANE), app.pane_open(pane::FORMAT)))
+        app.update(cx, |app, _| {
+            (
+                app.pane_open(chart_format::PANE),
+                app.pane_open(pane::FORMAT),
+            )
+        })
     };
     let title = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
-        app.update(cx, |app, _| app.panes.get(app.active_pane).map(|pane| pane.title.to_string()))
+        app.update(cx, |app, _| {
+            app.panes
+                .get(app.active_pane)
+                .map(|pane| pane.title.to_string())
+        })
     };
     // The pane of the chart, opened on the chart.
     click_at(&app, cx, 450.0, 160.0);
-    app.update_in(cx, |app, window, cx| chart_format::open_pane(app, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        chart_format::open_pane(app, window, cx)
+    });
     redraw(cx);
     assert_eq!(open_panes(&app, cx), (true, false));
     // A shape is selected: the pane is the shape's, with its pages.
@@ -1236,7 +1656,10 @@ fn the_format_pane_follows_the_kind_of_object(cx: &mut TestAppContext) {
     assert_eq!(title(&app, cx).as_deref(), Some("Format Picture"));
     // And back to the chart.
     click_at(&app, cx, 450.0, 220.0);
-    assert_eq!(app.update(cx, |app, _| app.selected_chart().map(|c| c.id)), Some(chart));
+    assert_eq!(
+        app.update(cx, |app, _| app.selected_chart().map(|c| c.id)),
+        Some(chart)
+    );
     assert_eq!(open_panes(&app, cx), (true, false));
     // With nothing selected the pane stays as it is.
     click_at(&app, cx, 700.0, 400.0);
@@ -1255,7 +1678,10 @@ fn crop_chosen_in_its_menu_shows_the_marks(cx: &mut TestAppContext) {
         point(panel.origin.x + px(40.), panel.origin.y + px(18.))
     });
     click(cx, entry);
-    assert!(app.update(cx, |app, _| app.popup.is_none()), "the menu closes");
+    assert!(
+        app.update(cx, |app, _| app.popup.is_none()),
+        "the menu closes"
+    );
     assert_eq!(app.update(cx, |app, _| cropping(app)), Some(id));
     assert_eq!(selection(&app, cx), Some(id));
 }

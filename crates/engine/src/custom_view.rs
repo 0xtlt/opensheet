@@ -171,13 +171,19 @@ impl Workbook {
     /// The view of that name (names differ by more than case).
     pub fn custom_view(&self, name: &str) -> Option<ViewInfo> {
         let wanted = name.trim().to_lowercase();
-        self.custom_views().into_iter().find(|view| view.name.to_lowercase() == wanted)
+        self.custom_views()
+            .into_iter()
+            .find(|view| view.name.to_lowercase() == wanted)
     }
 
     /// An identifier no view of the workbook has. It only has to be
     /// unique in the file: it is made from the views there are.
     fn new_view_guid(&self, name: &str) -> String {
-        let taken: Vec<String> = self.custom_views().into_iter().map(|view| view.guid).collect();
+        let taken: Vec<String> = self
+            .custom_views()
+            .into_iter()
+            .map(|view| view.guid)
+            .collect();
         // FNV-1a over the name, then a counter until the identifier is free.
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         for byte in name.bytes().chain(self.generation.to_le_bytes()) {
@@ -185,7 +191,10 @@ impl Workbook {
         }
         let mut salt = taken.len() as u64;
         loop {
-            let (a, b) = (hash, hash.rotate_left(29) ^ salt.wrapping_mul(0x9e37_79b9_7f4a_7c15));
+            let (a, b) = (
+                hash,
+                hash.rotate_left(29) ^ salt.wrapping_mul(0x9e37_79b9_7f4a_7c15),
+            );
             let guid = format!(
                 "{{{:08X}-{:04X}-4{:03X}-{:04X}-{:012X}}}",
                 (a >> 32) as u32,
@@ -270,7 +279,12 @@ impl Workbook {
         let mut shown = Vec::new();
         for index in 0..self.sheets.len() {
             let sheet = &mut self.sheets[index];
-            let Some(part) = sheet.custom_views.iter().find(|part| part.guid == view.guid).cloned() else {
+            let Some(part) = sheet
+                .custom_views
+                .iter()
+                .find(|part| part.guid == view.guid)
+                .cloned()
+            else {
                 continue;
             };
             sheet.frozen_rows = part.window.frozen_rows;
@@ -319,7 +333,19 @@ mod tests {
         let mut wb = Workbook::new(Locale::en());
         wb.add_sheet(1);
         for row in 0..6 {
-            wb.set_cell_text(0, row, 0, if row == 0 { "Name" } else if row % 2 == 0 { "a" } else { "b" }).unwrap();
+            wb.set_cell_text(
+                0,
+                row,
+                0,
+                if row == 0 {
+                    "Name"
+                } else if row % 2 == 0 {
+                    "a"
+                } else {
+                    "b"
+                },
+            )
+            .unwrap();
         }
         wb.commit("setup");
         wb
@@ -348,7 +374,14 @@ mod tests {
         wb.commit("Custom View");
         let views = wb.custom_views();
         assert_eq!(views.len(), 1);
-        assert_eq!((views[0].name.as_str(), views[0].print_settings, views[0].hidden_settings), ("Narrow", true, true));
+        assert_eq!(
+            (
+                views[0].name.as_str(),
+                views[0].print_settings,
+                views[0].hidden_settings
+            ),
+            ("Narrow", true, true)
+        );
         assert!(is_guid(&views[0].guid), "{}", views[0].guid);
         // Everything changes...
         wb.snapshot();
@@ -364,9 +397,19 @@ mod tests {
         wb.commit("Custom View");
         let sheet = &wb.sheets[0];
         assert!(sheet.hidden_rows.contains(&3) && sheet.hidden_cols.contains(&2));
-        assert_eq!((sheet.frozen_rows, sheet.show_gridlines, sheet.page.orientation), (1, false, Orientation::Landscape));
+        assert_eq!(
+            (
+                sheet.frozen_rows,
+                sheet.show_gridlines,
+                sheet.page.orientation
+            ),
+            (1, false, Orientation::Landscape)
+        );
         assert_eq!(shown.len(), 2);
-        assert_eq!((shown[0].1.zoom, shown[0].1.active, shown[0].1.selected), (150, (4, 1), true));
+        assert_eq!(
+            (shown[0].1.zoom, shown[0].1.active, shown[0].1.selected),
+            (150, (4, 1), true)
+        );
         assert_eq!(shown[0].1.frozen_rows, 1);
         // Showing a view is one undo step.
         assert!(wb.undo());
@@ -381,7 +424,8 @@ mod tests {
         wb.sheets[0].hidden_rows.insert(2);
         wb.sheets[0].page.orientation = Orientation::Landscape;
         wb.commit("setup");
-        wb.add_custom_view("Window only", false, false, &windows(&wb)).unwrap();
+        wb.add_custom_view("Window only", false, false, &windows(&wb))
+            .unwrap();
         wb.commit("Custom View");
         wb.snapshot();
         wb.sheets[0].hidden_rows.clear();
@@ -406,31 +450,54 @@ mod tests {
         wb.commit("Filter");
         let filtered = wb.sheets[0].filtered_rows.clone();
         assert_eq!(filtered.len(), 3);
-        wb.add_custom_view("Only a", false, true, &windows(&wb)).unwrap();
+        wb.add_custom_view("Only a", false, true, &windows(&wb))
+            .unwrap();
         wb.commit("Custom View");
         wb.remove_auto_filter(0);
         wb.commit("Filter");
         assert!(wb.sheets[0].filtered_rows.is_empty());
         wb.show_custom_view("Only a").unwrap();
         wb.commit("Custom View");
-        assert!(wb.sheets[0].auto_filter.as_ref().is_some_and(AutoFilter::is_filtered));
+        assert!(
+            wb.sheets[0]
+                .auto_filter
+                .as_ref()
+                .is_some_and(AutoFilter::is_filtered)
+        );
         assert_eq!(wb.sheets[0].filtered_rows, filtered);
     }
 
     #[test]
     fn views_are_replaced_deleted_and_refused() {
         let mut wb = workbook();
-        assert_eq!(wb.add_custom_view("  ", true, true, &windows(&wb)), Err(ViewError::NoName));
-        assert_eq!(wb.add_custom_view("One", true, true, &[]), Err(ViewError::Sheets));
-        wb.add_custom_view("One", true, true, &windows(&wb)).unwrap();
-        wb.add_custom_view("Two", false, true, &windows(&wb)).unwrap();
+        assert_eq!(
+            wb.add_custom_view("  ", true, true, &windows(&wb)),
+            Err(ViewError::NoName)
+        );
+        assert_eq!(
+            wb.add_custom_view("One", true, true, &[]),
+            Err(ViewError::Sheets)
+        );
+        wb.add_custom_view("One", true, true, &windows(&wb))
+            .unwrap();
+        wb.add_custom_view("Two", false, true, &windows(&wb))
+            .unwrap();
         // The same name again, in another case: the view is replaced and
         // goes to the end.
-        wb.add_custom_view("ONE", false, false, &windows(&wb)).unwrap();
+        wb.add_custom_view("ONE", false, false, &windows(&wb))
+            .unwrap();
         wb.commit("Custom View");
-        let names: Vec<String> = wb.custom_views().into_iter().map(|view| view.name).collect();
+        let names: Vec<String> = wb
+            .custom_views()
+            .into_iter()
+            .map(|view| view.name)
+            .collect();
         assert_eq!(names, vec!["Two", "ONE"]);
-        let guids: Vec<String> = wb.custom_views().into_iter().map(|view| view.guid).collect();
+        let guids: Vec<String> = wb
+            .custom_views()
+            .into_iter()
+            .map(|view| view.guid)
+            .collect();
         assert_ne!(guids[0], guids[1]);
         assert!(wb.delete_custom_view("two"));
         assert!(!wb.delete_custom_view("two"));
@@ -443,12 +510,21 @@ mod tests {
         wb.add_sheet(2);
         wb.duplicate_sheet(0);
         wb.commit("sheets");
-        assert_eq!(wb.sheets.iter().filter(|sheet| !sheet.custom_views.is_empty()).count(), 2);
+        assert_eq!(
+            wb.sheets
+                .iter()
+                .filter(|sheet| !sheet.custom_views.is_empty())
+                .count(),
+            2
+        );
         let shown = wb.show_custom_view("Two").unwrap();
         assert_eq!(shown.len(), 2);
         // With a table in the workbook there are no custom views.
         wb.add_table(0, Rect::new(0, 0, 5, 0), true).unwrap();
         assert!(!wb.custom_views_available());
-        assert_eq!(wb.add_custom_view("Three", true, true, &windows(&wb)), Err(ViewError::Tables));
+        assert_eq!(
+            wb.add_custom_view("Three", true, true, &windows(&wb)),
+            Err(ViewError::Tables)
+        );
     }
 }

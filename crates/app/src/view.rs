@@ -9,9 +9,9 @@ use crate::i18n::t;
 use crate::icons::icon_path;
 use crate::theme::{self, c, ca};
 use gpui::{
-    AnyElement, AnyView, App, Context, DispatchPhase, ElementInputHandler, FontWeight, HitboxBehavior, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollWheelEvent, SharedString, Stateful, TextRun, Window, anchored,
-    canvas, deferred, div, prelude::*, px, svg,
+    AnyElement, AnyView, App, Context, DispatchPhase, ElementInputHandler, FontWeight,
+    HitboxBehavior, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollWheelEvent,
+    SharedString, Stateful, TextRun, Window, anchored, canvas, deferred, div, prelude::*, px, svg,
 };
 use opensheet_engine::Rect;
 use opensheet_engine::refs::MAX_COLS;
@@ -36,7 +36,9 @@ impl Render for Tooltip {
     }
 }
 
-pub fn tooltip(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+pub fn tooltip(
+    text: impl Into<SharedString>,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
     let text: SharedString = text.into();
     move |_, cx| cx.new(|_| Tooltip(text.clone())).into()
 }
@@ -81,7 +83,11 @@ impl ExcelApp {
             .justify_center()
             .rounded(px(4.))
             .when(enabled, |d| d.hover(|s| s.bg(c(theme::TITLEBAR_HOVER))))
-            .child(icon(icon_name, 16.0, if enabled { 0xFFFFFF } else { 0x7FBF9B }))
+            .child(icon(
+                icon_name,
+                16.0,
+                if enabled { 0xFFFFFF } else { 0x7FBF9B },
+            ))
             .tooltip(tooltip(tip))
             .on_click(cx.listener(move |this, _, window, cx| {
                 if enabled {
@@ -90,12 +96,12 @@ impl ExcelApp {
             }))
     }
 
-    fn render_titlebar(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let title = format!(
-            "{}{}",
-            self.title,
-            if self.wb.modified { "" } else { "" }
-        );
+    fn render_titlebar(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let title = format!("{}{}", self.title, if self.wb.modified { "" } else { "" });
         div()
             .id("titlebar")
             .h(px(theme::TITLEBAR_H))
@@ -144,18 +150,15 @@ impl ExcelApp {
                         |this, _, cx| this.redo(cx),
                     ))
                     .child(div().pl_3().font_weight(FontWeight::MEDIUM).child(title))
-                    .child(
-                        div()
-                            .pl_1()
-                            .text_color(ca(0xFFFFFF, 0.75))
-                            .child(if self.wb.modified {
-                                t("— Edited", "— Modifié")
-                            } else if self.path.is_some() {
-                                t("— Saved", "— Enregistré")
-                            } else {
-                                ""
-                            }),
-                    ),
+                    .child(div().pl_1().text_color(ca(0xFFFFFF, 0.75)).child(
+                        if self.wb.modified {
+                            t("— Edited", "— Modifié")
+                        } else if self.path.is_some() {
+                            t("— Saved", "— Enregistré")
+                        } else {
+                            ""
+                        },
+                    )),
             )
             .child(
                 div()
@@ -175,18 +178,24 @@ impl ExcelApp {
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_find(window, cx))),
             )
             .child(
-                div().flex_1().flex().items_center().justify_end().pr_3().child(
-                    div()
-                        .size(px(26.))
-                        .rounded_full()
-                        .bg(ca(0xFFFFFF, 0.22))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_size(px(11.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child("OS"),
-                ),
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .pr_3()
+                    .child(
+                        div()
+                            .size(px(26.))
+                            .rounded_full()
+                            .bg(ca(0xFFFFFF, 0.22))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("OS"),
+                    ),
             )
     }
 
@@ -236,34 +245,60 @@ impl ExcelApp {
                             .hover(|s| s.bg(c(theme::HOVER)))
                             .child(icon("chevron-down", 12.0, theme::TEXT_MUTED))
                             .on_click(cx.listener(|this, _, window, cx| {
-                                features::Command::run(features::names::Cmd::NameBoxList, this, window, cx)
+                                features::Command::run(
+                                    features::names::Cmd::NameBoxList,
+                                    this,
+                                    window,
+                                    cx,
+                                )
                             })),
                     )
                     .child(self.anchor("name-box")),
             )
             .child(
-                small("fb-cancel", "close", if editing { 0xC42B1C } else { theme::TEXT_DISABLED })
-                    .tooltip(tooltip(t("Cancel (Esc)", "Annuler (Échap)")))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.is_editing() {
-                            this.cancel_edit(window, cx)
-                        }
-                    })),
+                small(
+                    "fb-cancel",
+                    "close",
+                    if editing {
+                        0xC42B1C
+                    } else {
+                        theme::TEXT_DISABLED
+                    },
+                )
+                .tooltip(tooltip(t("Cancel (Esc)", "Annuler (Échap)")))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    if this.is_editing() {
+                        this.cancel_edit(window, cx)
+                    }
+                })),
             )
             .child(
-                small("fb-enter", "check", if editing { theme::ACCENT } else { theme::TEXT_DISABLED })
-                    .tooltip(tooltip(t("Enter", "Entrer")))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.is_editing() {
-                            this.commit_edit(None, window, cx);
-                        }
-                    })),
+                small(
+                    "fb-enter",
+                    "check",
+                    if editing {
+                        theme::ACCENT
+                    } else {
+                        theme::TEXT_DISABLED
+                    },
+                )
+                .tooltip(tooltip(t("Enter", "Entrer")))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    if this.is_editing() {
+                        this.commit_edit(None, window, cx);
+                    }
+                })),
             )
             .child(
                 small("fb-fx", "function", theme::TEXT_MUTED)
                     .tooltip(tooltip(t("Insert Function", "Insérer une fonction")))
                     .on_click(cx.listener(|this, _, window, cx| {
-                        features::Command::run(features::misc::Cmd::InsertFunction, this, window, cx)
+                        features::Command::run(
+                            features::misc::Cmd::InsertFunction,
+                            this,
+                            window,
+                            cx,
+                        )
                     })),
             )
             .child(
@@ -284,17 +319,27 @@ impl ExcelApp {
             )
     }
 
-    fn render_cell_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn render_cell_editor(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let edit = self.editing.as_ref()?;
         if edit.sheet != self.sheet {
             return None;
         }
         let layout = self.layout.as_ref().map(|l| self.make_layout(l.bounds))?;
         let sheet = &self.wb.sheets[self.sheet];
-        let rect = sheet.merge_at(edit.row, edit.col).unwrap_or(Rect::cell(edit.row, edit.col));
+        let rect = sheet
+            .merge_at(edit.row, edit.col)
+            .unwrap_or(Rect::cell(edit.row, edit.col));
         let (x0, y0, x1, y1) = layout.rect_px(rect);
         // As drawn: with the table style and conditional formats applied.
-        let style = self.wb.display(self.sheet, edit.row, edit.col).style.into_owned();
+        let style = self
+            .wb
+            .display(self.sheet, edit.row, edit.col)
+            .style
+            .into_owned();
         let font_px = (pt_to_px(style.font.size_pt()) * self.zoom).max(1.0);
         let line_h = (font_px * 1.22).round();
         let font = grid::cell_font(&style, &self.fonts);
@@ -349,7 +394,11 @@ impl ExcelApp {
         let backdrop_w = if covers_content { width } else { cell_w };
         let h = (y1 - y0 - 1.0).max(line_h + 1.0);
         let bg = style.fill.map(theme::engine_color).unwrap_or(c(0xFFFFFF));
-        let color = style.font.color.map(theme::engine_color).unwrap_or(c(0x000000));
+        let color = style
+            .font
+            .color
+            .map(theme::engine_color)
+            .unwrap_or(c(0x000000));
         Some(
             div()
                 .absolute()
@@ -496,7 +545,11 @@ impl ExcelApp {
                             fonts: &app.fonts,
                             marquee,
                             fill_preview: app.fill_preview(),
-                            ref_highlights: if app.is_editing() { &app.ref_highlights } else { &[] },
+                            ref_highlights: if app.is_editing() {
+                                &app.ref_highlights
+                            } else {
+                                &[]
+                            },
                             show_fill_handle: !app.is_editing() && app.object_sel.is_none(),
                             content_w,
                             content_h,
@@ -508,7 +561,11 @@ impl ExcelApp {
                         (hitbox, layout, scene, cursor)
                     },
                     move |bounds, (hitbox, layout, scene, cursor), window, cx| {
-                        window.handle_input(&grid_focus, ElementInputHandler::new(bounds, entity.clone()), cx);
+                        window.handle_input(
+                            &grid_focus,
+                            ElementInputHandler::new(bounds, entity.clone()),
+                            cx,
+                        );
                         grid::paint_layers(scene.layers, window, cx);
                         window.set_cursor_style(cursor, &hitbox);
                         entity.update(cx, |app, _| {
@@ -521,7 +578,8 @@ impl ExcelApp {
                             let hitbox = hitbox.clone();
                             move |ev: &MouseDownEvent, phase, window, cx| {
                                 if phase == DispatchPhase::Bubble && hitbox.is_hovered(window) {
-                                    entity.update(cx, |app, cx| app.grid_mouse_down(ev, window, cx));
+                                    entity
+                                        .update(cx, |app, cx| app.grid_mouse_down(ev, window, cx));
                                 }
                             }
                         });
@@ -534,7 +592,8 @@ impl ExcelApp {
                                 }
                                 let dragging = entity.read(cx).is_dragging();
                                 if dragging || hitbox.is_hovered(window) {
-                                    entity.update(cx, |app, cx| app.grid_mouse_move(ev, window, cx));
+                                    entity
+                                        .update(cx, |app, cx| app.grid_mouse_move(ev, window, cx));
                                 } else {
                                     entity.update(cx, |app, cx| app.clear_hover(cx));
                                 }
@@ -543,10 +602,13 @@ impl ExcelApp {
                         window.on_mouse_event({
                             let entity = entity.clone();
                             move |ev: &MouseUpEvent, phase, window, cx| {
-                                if phase == DispatchPhase::Bubble && ev.button == MouseButton::Left {
+                                if phase == DispatchPhase::Bubble && ev.button == MouseButton::Left
+                                {
                                     let dragging = entity.read(cx).is_dragging();
                                     if dragging {
-                                        entity.update(cx, |app, cx| app.grid_mouse_up(ev, window, cx));
+                                        entity.update(cx, |app, cx| {
+                                            app.grid_mouse_up(ev, window, cx)
+                                        });
                                     }
                                 }
                             }
@@ -555,7 +617,9 @@ impl ExcelApp {
                             let entity = entity.clone();
                             let hitbox = hitbox.clone();
                             move |ev: &ScrollWheelEvent, phase, window, cx| {
-                                if phase == DispatchPhase::Bubble && hitbox.should_handle_scroll(window) {
+                                if phase == DispatchPhase::Bubble
+                                    && hitbox.should_handle_scroll(window)
+                                {
                                     entity.update(cx, |app, cx| app.grid_scroll(ev, window, cx));
                                 }
                             }
@@ -577,7 +641,10 @@ impl ExcelApp {
             let sheet = &self.wb.sheets[i];
             let active = i == self.sheet;
             let renaming = self.renaming_sheet == Some(i);
-            let underline = sheet.tab_color.map(theme::engine_color).unwrap_or(c(theme::ACCENT));
+            let underline = sheet
+                .tab_color
+                .map(theme::engine_color)
+                .unwrap_or(c(theme::ACCENT));
             let tab = div()
                 .id(("sheet-tab", i))
                 .h_full()
@@ -654,14 +721,18 @@ impl ExcelApp {
                     .items_center()
                     .px_2()
                     .gap_1()
-                    .child(nav("tabs-prev", "chevron-left").on_click(cx.listener(|this, _, window, cx| {
-                        let i = features::sheets::neighbour(this, false);
-                        this.switch_sheet(i, window, cx)
-                    })))
-                    .child(nav("tabs-next", "chevron-right").on_click(cx.listener(|this, _, window, cx| {
-                        let i = features::sheets::neighbour(this, true);
-                        this.switch_sheet(i, window, cx)
-                    }))),
+                    .child(nav("tabs-prev", "chevron-left").on_click(cx.listener(
+                        |this, _, window, cx| {
+                            let i = features::sheets::neighbour(this, false);
+                            this.switch_sheet(i, window, cx)
+                        },
+                    )))
+                    .child(nav("tabs-next", "chevron-right").on_click(cx.listener(
+                        |this, _, window, cx| {
+                            let i = features::sheets::neighbour(this, true);
+                            this.switch_sheet(i, window, cx)
+                        },
+                    ))),
             )
             .child(div().h_full().flex().items_center().children(tabs))
             .child(
@@ -674,7 +745,12 @@ impl ExcelApp {
             .child(div().flex_1())
     }
 
-    pub(crate) fn open_sheet_menu(&mut self, index: usize, pos: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+    pub(crate) fn open_sheet_menu(
+        &mut self,
+        index: usize,
+        pos: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         // Tabs are counted, not sheets: hidden sheets are stepped over.
         let only = self.wb.visible_sheet_count() <= 1;
         let before = self.wb.next_visible_sheet(index, false);
@@ -683,13 +759,18 @@ impl ExcelApp {
         let mut add = |section: MenuSection, entry: MenuEntry| menu.add(section, entry);
         add(
             MenuSection::Edit,
-            MenuEntry::new(t("Insert Sheet", "Insérer une feuille"), |a, _, cx| a.add_sheet(cx)).icon("plus"),
+            MenuEntry::new(t("Insert Sheet", "Insérer une feuille"), |a, _, cx| {
+                a.add_sheet(cx)
+            })
+            .icon("plus"),
         );
         add(
             MenuSection::Edit,
-            MenuEntry::new(t("Delete", "Supprimer"), move |a, _, cx| a.delete_sheet(index, cx))
-                .icon("trash")
-                .disabled(only),
+            MenuEntry::new(t("Delete", "Supprimer"), move |a, _, cx| {
+                a.delete_sheet(index, cx)
+            })
+            .icon("trash")
+            .disabled(only),
         );
         add(
             MenuSection::Edit,
@@ -699,27 +780,41 @@ impl ExcelApp {
         );
         add(
             MenuSection::Edit,
-            MenuEntry::new(t("Duplicate", "Dupliquer"), move |a, _, cx| a.duplicate_sheet(index, cx)).icon("copy"),
+            MenuEntry::new(t("Duplicate", "Dupliquer"), move |a, _, cx| {
+                a.duplicate_sheet(index, cx)
+            })
+            .icon("copy"),
         );
         let move_sheet = |label: &'static str, to: usize, disabled: bool| {
-            MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
-                if to < a.wb.sheets.len() && a.may(Intent::MoveSheet, cx) {
-                    a.wb.move_sheet(index, to);
-                    let view = a.views.remove(index);
-                    a.views.insert(to, view);
-                    a.sheet = to;
-                    a.commit(t("Move Sheet", "Déplacer la feuille"), cx);
-                }
-            })
+            MenuEntry::new(
+                label,
+                move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
+                    if to < a.wb.sheets.len() && a.may(Intent::MoveSheet, cx) {
+                        a.wb.move_sheet(index, to);
+                        let view = a.views.remove(index);
+                        a.views.insert(to, view);
+                        a.sheet = to;
+                        a.commit(t("Move Sheet", "Déplacer la feuille"), cx);
+                    }
+                },
+            )
             .disabled(disabled)
         };
         add(
             MenuSection::Data,
-            move_sheet(t("Move Left", "Déplacer vers la gauche"), before.unwrap_or(index), before.is_none()),
+            move_sheet(
+                t("Move Left", "Déplacer vers la gauche"),
+                before.unwrap_or(index),
+                before.is_none(),
+            ),
         );
         add(
             MenuSection::Data,
-            move_sheet(t("Move Right", "Déplacer vers la droite"), after.unwrap_or(index), after.is_none()),
+            move_sheet(
+                t("Move Right", "Déplacer vers la droite"),
+                after.unwrap_or(index),
+                after.is_none(),
+            ),
         );
         add(
             MenuSection::Format,
@@ -755,7 +850,10 @@ impl ExcelApp {
             }
             stat_items.push(
                 div()
-                    .child(crate::i18n::labelled(t("Count", "Nb (non vides)"), stats.count))
+                    .child(crate::i18n::labelled(
+                        t("Count", "Nb (non vides)"),
+                        stats.count,
+                    ))
                     .into_any_element(),
             );
             if stats.numeric_count > 0 {
@@ -775,21 +873,22 @@ impl ExcelApp {
             slider_w / 2.0 + (zoom - 1.0) / 3.0 * (slider_w / 2.0)
         };
         let current_mode = self.view_mode();
-        let view_btn = |name: &'static str, label: &'static str, mode: ViewMode, cx: &mut Context<Self>| {
-            let on = mode == current_mode;
-            div()
-                .id(name)
-                .size(px(20.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(3.))
-                .when(on, |d| d.bg(c(theme::TOGGLED)))
-                .when(!on, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                .child(icon(name, 14.0, theme::TEXT_MUTED))
-                .tooltip(tooltip(label))
-                .on_click(cx.listener(move |this, _, _, cx| this.set_view_mode(mode, cx)))
-        };
+        let view_btn =
+            |name: &'static str, label: &'static str, mode: ViewMode, cx: &mut Context<Self>| {
+                let on = mode == current_mode;
+                div()
+                    .id(name)
+                    .size(px(20.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(3.))
+                    .when(on, |d| d.bg(c(theme::TOGGLED)))
+                    .when(!on, |d| d.hover(|s| s.bg(c(theme::HOVER))))
+                    .child(icon(name, 14.0, theme::TEXT_MUTED))
+                    .tooltip(tooltip(label))
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_view_mode(mode, cx)))
+            };
         // What the features have to say (records found by a filter, the
         // page count of the Page Layout view).
         let feature_items: Vec<AnyElement> = features::status_items(self)
@@ -802,9 +901,9 @@ impl ExcelApp {
                     .child(item.text)
                     .when_some(item.tooltip, |d, tip| d.tooltip(tooltip(tip)))
                     .when_some(action, |d, action| {
-                        d.rounded(px(3.))
-                            .hover(|s| s.bg(c(theme::HOVER)))
-                            .on_click(cx.listener(move |this, _, window, cx| action(this, window, cx)))
+                        d.rounded(px(3.)).hover(|s| s.bg(c(theme::HOVER))).on_click(
+                            cx.listener(move |this, _, window, cx| action(this, window, cx)),
+                        )
                     })
                     .into_any_element()
             })
@@ -835,7 +934,9 @@ impl ExcelApp {
             .text_color(c(theme::TEXT_MUTED))
             .child(div().child(mode))
             .children(feature_items)
-            .when_some(self.status_message.clone(), |d, msg| d.child(div().child(msg)))
+            .when_some(self.status_message.clone(), |d, msg| {
+                d.child(div().child(msg))
+            })
             .child(div().flex_1())
             .children(stat_items)
             .child(
@@ -843,7 +944,12 @@ impl ExcelApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(view_btn("view-normal", t("Normal", "Normal"), ViewMode::Normal, cx))
+                    .child(view_btn(
+                        "view-normal",
+                        t("Normal", "Normal"),
+                        ViewMode::Normal,
+                        cx,
+                    ))
                     .child(view_btn(
                         "view-layout",
                         crate::i18n::t_ctx("view", "Page Layout", "Mise en page"),
@@ -862,10 +968,12 @@ impl ExcelApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(zoom_btn("zoom-out", "minus").on_click(cx.listener(|this, _, _, cx| {
-                        let z = ((this.zoom * 10.0).ceil() - 1.0) / 10.0;
-                        this.set_zoom(z, cx)
-                    })))
+                    .child(
+                        zoom_btn("zoom-out", "minus").on_click(cx.listener(|this, _, _, cx| {
+                            let z = ((this.zoom * 10.0).ceil() - 1.0) / 10.0;
+                            this.set_zoom(z, cx)
+                        })),
+                    )
                     .child(
                         div()
                             .id("zoom-slider")
@@ -903,10 +1011,12 @@ impl ExcelApp {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                                    let Some(b) = this.anchors.borrow().get("zoom-slider").copied() else {
+                                    let Some(b) = this.anchors.borrow().get("zoom-slider").copied()
+                                    else {
                                         return;
                                     };
-                                    let x = f32::from(ev.position.x - b.origin.x).clamp(0.0, slider_w);
+                                    let x =
+                                        f32::from(ev.position.x - b.origin.x).clamp(0.0, slider_w);
                                     let half = slider_w / 2.0;
                                     let z = if x <= half {
                                         0.1 + x / half * 0.9
@@ -917,10 +1027,12 @@ impl ExcelApp {
                                 }),
                             ),
                     )
-                    .child(zoom_btn("zoom-in", "plus").on_click(cx.listener(|this, _, _, cx| {
-                        let z = ((this.zoom * 10.0).floor() + 1.0) / 10.0;
-                        this.set_zoom(z, cx)
-                    })))
+                    .child(
+                        zoom_btn("zoom-in", "plus").on_click(cx.listener(|this, _, _, cx| {
+                            let z = ((this.zoom * 10.0).floor() + 1.0) / 10.0;
+                            this.set_zoom(z, cx)
+                        })),
+                    )
                     .child(
                         div()
                             .id("zoom-label")
@@ -984,7 +1096,13 @@ impl ExcelApp {
     }
 
     /// One level of an open menu.
-    fn render_menu_panel(&self, entries: &[MenuEntry], level: usize, popup: &Popup, cx: &mut Context<Self>) -> AnyElement {
+    fn render_menu_panel(
+        &self,
+        entries: &[MenuEntry],
+        level: usize,
+        popup: &Popup,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let open = popup.open_path.get(level).copied();
         let mut items: Vec<AnyElement> = Vec::new();
         for (i, entry) in entries.iter().enumerate() {
@@ -1002,7 +1120,11 @@ impl ExcelApp {
             let action = entry.action.clone();
             let disabled = entry.disabled;
             let has_submenu = entry.submenu.is_some() && !disabled;
-            let fg = if disabled { theme::TEXT_DISABLED } else { theme::TEXT };
+            let fg = if disabled {
+                theme::TEXT_DISABLED
+            } else {
+                theme::TEXT
+            };
             let geometry = popup.geometry.clone();
             items.push(
                 div()
@@ -1024,28 +1146,51 @@ impl ExcelApp {
                             .w(px(18.))
                             .flex()
                             .justify_center()
-                            .when(entry.checked, |d| d.child(icon("check", 14.0, theme::ACCENT)))
+                            .when(entry.checked, |d| {
+                                d.child(icon("check", 14.0, theme::ACCENT))
+                            })
                             .when_some(entry.icon.filter(|_| !entry.checked), |d, name| {
-                                d.child(icon(name, 14.0, if disabled { theme::TEXT_DISABLED } else { theme::TEXT_MUTED }))
+                                d.child(icon(
+                                    name,
+                                    14.0,
+                                    if disabled {
+                                        theme::TEXT_DISABLED
+                                    } else {
+                                        theme::TEXT_MUTED
+                                    },
+                                ))
                             }),
                     )
                     .child(div().flex_1().truncate().child(entry.label.clone()))
                     .when_some(entry.shortcut, |d, s| {
-                        d.child(div().text_color(c(theme::TEXT_MUTED)).text_size(px(11.5)).child(s))
+                        d.child(
+                            div()
+                                .text_color(c(theme::TEXT_MUTED))
+                                .text_size(px(11.5))
+                                .child(s),
+                        )
                     })
                     .when(entry.submenu.is_some(), |d| {
-                        d.child(icon("chevron-right", 10.0, if disabled { theme::TEXT_DISABLED } else { theme::TEXT_MUTED }))
-                            // Where its submenu hangs.
-                            .child(
-                                canvas(
-                                    move |bounds, _, _| {
-                                        geometry.borrow_mut().items.insert((level, i), bounds);
-                                    },
-                                    |_, _, _, _| {},
-                                )
-                                .absolute()
-                                .size_full(),
+                        d.child(icon(
+                            "chevron-right",
+                            10.0,
+                            if disabled {
+                                theme::TEXT_DISABLED
+                            } else {
+                                theme::TEXT_MUTED
+                            },
+                        ))
+                        // Where its submenu hangs.
+                        .child(
+                            canvas(
+                                move |bounds, _, _| {
+                                    geometry.borrow_mut().items.insert((level, i), bounds);
+                                },
+                                |_, _, _, _| {},
                             )
+                            .absolute()
+                            .size_full(),
+                        )
                     })
                     // Resting on an entry opens its submenu and closes
                     // those of its siblings.
@@ -1078,11 +1223,22 @@ impl ExcelApp {
 
     /// A press outside a panel of the pop-up closes it, unless it lands on
     /// another of its panels.
-    fn popup_press_outside(&mut self, position: gpui::Point<gpui::Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+    fn popup_press_outside(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(popup) = &self.popup else {
             return;
         };
-        if popup.geometry.borrow().panels.iter().any(|panel| panel.contains(&position)) {
+        if popup
+            .geometry
+            .borrow()
+            .panels
+            .iter()
+            .any(|panel| panel.contains(&position))
+        {
             return;
         }
         // A press on the control the pop-up hangs from is left to that
@@ -1102,7 +1258,13 @@ impl ExcelApp {
     }
 
     /// The frame of a floating panel that records where it was painted.
-    fn popup_panel(&self, level: usize, width: f32, popup: &Popup, cx: &mut Context<Self>) -> Stateful<gpui::Div> {
+    fn popup_panel(
+        &self,
+        level: usize,
+        width: f32,
+        popup: &Popup,
+        cx: &mut Context<Self>,
+    ) -> Stateful<gpui::Div> {
         let geometry = popup.geometry.clone();
         div()
             .id(("popup", level))
@@ -1144,7 +1306,11 @@ impl ExcelApp {
             PopupKind::View(_) => return None,
             PopupKind::Menu(entries) => {
                 // The menu, then one panel per open submenu.
-                popup.geometry.borrow_mut().panels.truncate(popup.open_path.len() + 1);
+                popup
+                    .geometry
+                    .borrow_mut()
+                    .panels
+                    .truncate(popup.open_path.len() + 1);
                 let mut level_entries: &[MenuEntry] = entries;
                 let mut position = popup.pos;
                 let mut width = popup.width;
@@ -1162,15 +1328,22 @@ impl ExcelApp {
                     let Some(index) = popup.open_path.get(level).copied() else {
                         break;
                     };
-                    let Some(children) = level_entries.get(index).and_then(|e| e.submenu.as_deref()) else {
+                    let Some(children) =
+                        level_entries.get(index).and_then(|e| e.submenu.as_deref())
+                    else {
                         break;
                     };
-                    let Some(item) = popup.geometry.borrow().items.get(&(level, index)).copied() else {
+                    let Some(item) = popup.geometry.borrow().items.get(&(level, index)).copied()
+                    else {
                         break;
                     };
                     position = gpui::point(item.right() + px(2.), item.top() - px(5.));
                     // Wide enough for the longest label.
-                    let longest = children.iter().map(|e| e.label.chars().count()).max().unwrap_or(0);
+                    let longest = children
+                        .iter()
+                        .map(|e| e.label.chars().count())
+                        .max()
+                        .unwrap_or(0);
                     width = (longest as f32 * 7.2 + 70.0).clamp(170.0, 380.0);
                     level_entries = children;
                 }
@@ -1185,7 +1358,9 @@ impl ExcelApp {
                         .border_1()
                         .border_color(c(0xD0D0D0))
                         .hover(|s| s.border_color(c(0xF2994A)))
-                        .on_click(cx.listener(move |this, _, _, cx| this.pick_color(target, Some(color), cx)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.pick_color(target, Some(color), cx)
+                        }))
                 };
                 let label = |text: &'static str| {
                     div()
@@ -1202,49 +1377,58 @@ impl ExcelApp {
                         div()
                             .flex()
                             .gap(px(2.))
-                            .children(row.into_iter().enumerate().map(|(col, color)| swatch(at * 10 + col, color, cx)))
+                            .children(
+                                row.into_iter()
+                                    .enumerate()
+                                    .map(|(col, color)| swatch(at * 10 + col, color, cx)),
+                            )
                             .into_any_element()
                     })
                     .collect();
-                let body = div()
-                    .p_2()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .child(
-                        div()
-                            .id("palette-none")
-                            .h(px(26.))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_1()
-                            .rounded(px(4.))
-                            .hover(|s| s.bg(c(theme::HOVER)))
-                            .text_size(px(12.5))
-                            .child(
-                                div()
-                                    .size(px(16.))
-                                    .border_1()
-                                    .border_color(c(theme::BORDER_STRONG))
-                                    .bg(c(0xFFFFFF)),
-                            )
-                            .child(match target {
-                                ColorTarget::Font => t("Automatic", "Automatique"),
-                                ColorTarget::Fill => t("No Fill", "Aucun remplissage"),
-                                ColorTarget::Tab => t("No Color", "Aucune couleur"),
-                            })
-                            .on_click(cx.listener(move |this, _, _, cx| this.pick_color(target, None, cx))),
-                    )
-                    .child(label(t("Theme Colors", "Couleurs du thème")))
-                    .children(theme_rows)
-                    .child(label(t("Standard Colors", "Couleurs standard")))
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(2.))
-                            .children(theme::PALETTE_STANDARD.iter().enumerate().map(|(col, rgb)| swatch(60 + col, Color(*rgb), cx))),
-                    );
+                let body =
+                    div()
+                        .p_2()
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.))
+                        .child(
+                            div()
+                                .id("palette-none")
+                                .h(px(26.))
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_1()
+                                .rounded(px(4.))
+                                .hover(|s| s.bg(c(theme::HOVER)))
+                                .text_size(px(12.5))
+                                .child(
+                                    div()
+                                        .size(px(16.))
+                                        .border_1()
+                                        .border_color(c(theme::BORDER_STRONG))
+                                        .bg(c(0xFFFFFF)),
+                                )
+                                .child(match target {
+                                    ColorTarget::Font => t("Automatic", "Automatique"),
+                                    ColorTarget::Fill => t("No Fill", "Aucun remplissage"),
+                                    ColorTarget::Tab => t("No Color", "Aucune couleur"),
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.pick_color(target, None, cx)
+                                })),
+                        )
+                        .child(label(t("Theme Colors", "Couleurs du thème")))
+                        .children(theme_rows)
+                        .child(label(t("Standard Colors", "Couleurs standard")))
+                        .child(
+                            div().flex().gap(px(2.)).children(
+                                theme::PALETTE_STANDARD
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(col, rgb)| swatch(60 + col, Color(*rgb), cx)),
+                            ),
+                        );
                 panels.push(
                     anchored()
                         .position(popup.pos)
@@ -1254,7 +1438,11 @@ impl ExcelApp {
                 );
             }
         }
-        Some(deferred(div().children(panels)).with_priority(1).into_any_element())
+        Some(
+            deferred(div().children(panels))
+                .with_priority(1)
+                .into_any_element(),
+        )
     }
 
     /// The drop-down of a feature (`open_popup_view`). It is not deferred
@@ -1285,9 +1473,19 @@ impl ExcelApp {
                         .on_action(|_: &crate::widgets::FocusPrev, window, _| window.focus_prev())
                         .on_action(|_: &crate::text_input::Tab, window, _| window.focus_next())
                         .on_action(|_: &crate::text_input::ShiftTab, window, _| window.focus_prev())
-                        .on_action(cx.listener(|this, _: &crate::widgets::Dismiss, window, cx| this.close_popup(window, cx)))
-                        .on_action(cx.listener(|this, _: &crate::text_input::Escape, window, cx| this.close_popup(window, cx)))
-                        .on_mouse_down_out(cx.listener(|this, _, window, cx| this.close_popup(window, cx)))
+                        .on_action(
+                            cx.listener(|this, _: &crate::widgets::Dismiss, window, cx| {
+                                this.close_popup(window, cx)
+                            }),
+                        )
+                        .on_action(cx.listener(
+                            |this, _: &crate::text_input::Escape, window, cx| {
+                                this.close_popup(window, cx)
+                            },
+                        ))
+                        .on_mouse_down_out(
+                            cx.listener(|this, _, window, cx| this.close_popup(window, cx)),
+                        )
                         .child(view.clone()),
                 )
                 .into_any_element(),
@@ -1314,7 +1512,9 @@ impl Render for ExcelApp {
         let pane = self.render_panes(cx);
         let sheet_tabs = self.render_sheet_tabs(cx).into_any_element();
         let status = self.render_status_bar(cx).into_any_element();
-        let find = self.show_find.then(|| self.render_find_bar(cx).into_any_element());
+        let find = self
+            .show_find
+            .then(|| self.render_find_bar(cx).into_any_element());
         let popup = self.render_popup(cx);
         let popup_view = self.render_popup_view(cx);
         let modals = self.render_modals(window, cx);
@@ -1331,7 +1531,11 @@ impl Render for ExcelApp {
             .bg(c(theme::CHROME_BG))
             .text_color(c(theme::TEXT))
             .text_size(px(12.))
-            .key_context(if modal { "WorkbookBehindDialog" } else { "Workbook" })
+            .key_context(if modal {
+                "WorkbookBehindDialog"
+            } else {
+                "Workbook"
+            })
             // A new press starts with a clean slate: this capture listener runs
             // before the pop-up's own "mouse down outside" handler, so the
             // flag only ever describes the press in progress.
@@ -1344,10 +1548,15 @@ impl Render for ExcelApp {
                     this.pane_resize = None;
                 }),
             )
-            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.pane_resize_move(ev, cx)))
+            .on_mouse_move(
+                cx.listener(|this, ev: &MouseMoveEvent, _, cx| this.pane_resize_move(ev, cx)),
+            )
             .when(!modal, |d| {
                 let d = features::automate::key_actions(features::outline::key_actions(d, cx), cx);
-                let d = features::data_tools::key_actions(features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx), cx);
+                let d = features::data_tools::key_actions(
+                    features::edit_tools::key_actions(features::misc::key_actions(d, cx), cx),
+                    cx,
+                );
                 let d = features::proofing::key_actions(d, cx);
                 let d = features::help::key_actions(features::share::key_actions(d, cx), cx);
                 features::preferences::key_actions(features::custom_views::key_actions(d, cx), cx)
@@ -1371,10 +1580,16 @@ impl Render for ExcelApp {
                     .on_action(cx.listener(Self::on_new_comment))
                     .on_action(cx.listener(Self::on_name_manager))
                     .on_action(cx.listener(Self::on_insert_link))
-                    .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, window, cx)))
-                    .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, window, cx)))
+                    .on_action(
+                        cx.listener(|this, _: &Save, window, cx| this.save(false, window, cx)),
+                    )
+                    .on_action(
+                        cx.listener(|this, _: &SaveAs, window, cx| this.save(true, window, cx)),
+                    )
                     .on_action(cx.listener(|this, _: &Open, window, cx| this.open(window, cx)))
-                    .on_action(cx.listener(|this, _: &NewWorkbook, window, cx| this.new_workbook(window, cx)))
+                    .on_action(cx.listener(|this, _: &NewWorkbook, window, cx| {
+                        this.new_workbook(window, cx)
+                    }))
             })
             .on_action(cx.listener(|this, _: &Quit, window, cx| this.request_quit(window, cx)))
             // A press reported outside the window never comes from a real
@@ -1407,7 +1622,15 @@ impl Render for ExcelApp {
                     .min_h(px(0.))
                     .w_full()
                     .flex()
-                    .child(div().flex_1().min_w(px(0.)).h_full().flex().flex_col().child(grid))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .h_full()
+                            .flex()
+                            .flex_col()
+                            .child(grid),
+                    )
                     .children(pane),
             )
             // Preferences ▸ View can take the sheet tabs away.

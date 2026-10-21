@@ -6,7 +6,9 @@ use serde_json::{Value as J, json};
 use opensheet_engine::locale::Locale;
 use opensheet_engine::protect::Action;
 use opensheet_engine::refs::Rect;
-use opensheet_engine::validation::{AlertStyle, Operator, SelectionValidation, Validation, ValidationKind};
+use opensheet_engine::validation::{
+    AlertStyle, Operator, SelectionValidation, Validation, ValidationKind,
+};
 
 use super::areas::{areas_object, rects_of_cells};
 use super::util::{absolute_address, range_from, this_range};
@@ -98,7 +100,10 @@ fn typed(h: &Host, call: &Call, value: Option<&J>) -> Res<String> {
 }
 
 fn text_field(of: &J, key: &str) -> String {
-    of.get(key).and_then(J::as_str).unwrap_or_default().to_string()
+    of.get(key)
+        .and_then(J::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 pub(super) const DATA_VALIDATION: ApiClass = class!("DataValidation", "The data validation of a range: what may be entered in its cells, the message shown when one is selected and the alert shown for a wrong entry.", {

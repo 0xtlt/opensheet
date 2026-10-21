@@ -33,15 +33,28 @@ fn function_names() -> Vec<SharedString> {
 
 /// The list Subtotal works on: the selection when it is a block of
 /// several rows, else the cells around the active cell.
-pub(super) fn list_for(wb: &Workbook, sheet: usize, selection: Rect, active: (u32, u32)) -> Result<Rect, SubtotalError> {
+pub(super) fn list_for(
+    wb: &Workbook,
+    sheet: usize,
+    selection: Rect,
+    active: (u32, u32),
+) -> Result<Rect, SubtotalError> {
     if selection.is_single() {
         return wb.subtotal_list(sheet, active.0, active.1);
     }
-    if wb.sheets[sheet].tables.iter().any(|table| table.range.intersects(&selection)) {
+    if wb.sheets[sheet]
+        .tables
+        .iter()
+        .any(|table| table.range.intersects(&selection))
+    {
         return Err(SubtotalError::InTable);
     }
     let list = wb.clamp_to_used(sheet, selection);
-    if list.rows() < 2 { Err(SubtotalError::NoList) } else { Ok(list) }
+    if list.rows() < 2 {
+        Err(SubtotalError::NoList)
+    } else {
+        Ok(list)
+    }
 }
 
 /// The labels of the list's columns; a column without one is named after
@@ -63,10 +76,15 @@ pub(super) fn column_names(wb: &Workbook, sheet: usize, list: Rect) -> Vec<Share
 /// column at each change in the first one, a sum when that column holds
 /// numbers and a count otherwise.
 pub(super) fn proposal(wb: &Workbook, sheet: usize, list: Rect) -> SubtotalSpec {
-    let numbers = (list.r0 + 1..=list.r1).any(|row| matches!(wb.value_at(sheet, row, list.c1), Value::Number(_)));
+    let numbers = (list.r0 + 1..=list.r1)
+        .any(|row| matches!(wb.value_at(sheet, row, list.c1), Value::Number(_)));
     SubtotalSpec {
         group_by: list.c0,
-        function: if numbers { SubtotalFn::Sum } else { SubtotalFn::Count },
+        function: if numbers {
+            SubtotalFn::Sum
+        } else {
+            SubtotalFn::Count
+        },
         columns: vec![list.c1],
         replace: true,
         page_breaks: false,
@@ -88,7 +106,11 @@ fn refusal(error: SubtotalError) -> &'static str {
 }
 
 /// Data > Subtotal: select the list and open the dialog on it.
-pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<Entity<SubtotalDialog>> {
+pub(super) fn open(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<SubtotalDialog>> {
     if !app.may(Intent::ChangeSheet, cx) {
         return None;
     }
@@ -103,12 +125,14 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Opti
     app.select_rect(list, cx);
     let columns = column_names(&app.wb, sheet, list);
     let spec = proposal(&app.wb, sheet, list);
-    Some(app.open_modal(window, cx, move |modal, _, _| SubtotalDialog {
-        modal,
-        list,
-        columns,
-        spec,
-    }))
+    Some(
+        app.open_modal(window, cx, move |modal, _, _| SubtotalDialog {
+            modal,
+            list,
+            columns,
+            spec,
+        }),
+    )
 }
 
 pub(super) struct SubtotalDialog {
@@ -174,10 +198,18 @@ impl Render for SubtotalDialog {
         let function = SubtotalFn::ALL.iter().position(|f| *f == spec.function);
         let ticks = self.columns.iter().enumerate().map(|(index, name)| {
             let col = first + index as u32;
-            Checkbox::new(("subtotal-column", index), name.clone(), spec.columns.contains(&col))
-                .on_change(cx.listener(move |this, on: &bool, _, cx| this.tick(col, *on, cx)))
+            Checkbox::new(
+                ("subtotal-column", index),
+                name.clone(),
+                spec.columns.contains(&col),
+            )
+            .on_change(cx.listener(move |this, on: &bool, _, cx| this.tick(col, *on, cx)))
         });
-        let option = |id: &'static str, text: &'static str, on: bool, set: fn(&mut SubtotalSpec, bool), cx: &mut Context<Self>| {
+        let option = |id: &'static str,
+                      text: &'static str,
+                      on: bool,
+                      set: fn(&mut SubtotalSpec, bool),
+                      cx: &mut Context<Self>| {
             Checkbox::new(id, text, on).on_change(cx.listener(move |this, on: &bool, _, cx| {
                 let on = *on;
                 this.edit(cx, |spec| set(spec, on));
@@ -188,12 +220,16 @@ impl Render for SubtotalDialog {
             .on_ok(cx.listener(Self::ok))
             .child(label(t("At each change in:", "À chaque changement de :")))
             .child(
-                Select::new("subtotal-group-by", self.columns.clone(), Some((spec.group_by - first) as usize))
-                    .width(300.0)
-                    .on_change(cx.listener(move |this, index: &usize, _, cx| {
-                        let col = first + *index as u32;
-                        this.edit(cx, |spec| spec.group_by = col);
-                    })),
+                Select::new(
+                    "subtotal-group-by",
+                    self.columns.clone(),
+                    Some((spec.group_by - first) as usize),
+                )
+                .width(300.0)
+                .on_change(cx.listener(move |this, index: &usize, _, cx| {
+                    let col = first + *index as u32;
+                    this.edit(cx, |spec| spec.group_by = col);
+                })),
             )
             .child(label(t("Use function:", "Utiliser la fonction :")))
             .child(
@@ -210,18 +246,33 @@ impl Render for SubtotalDialog {
                     .border_1()
                     .border_color(crate::theme::c(crate::theme::BORDER_STRONG))
                     .px(px(6.))
-                    .child(ScrollArea::new("subtotal-columns", 96.0).child(div().flex().flex_col().gap(px(2.)).py(px(4.)).children(ticks))),
+                    .child(
+                        ScrollArea::new("subtotal-columns", 96.0).child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.))
+                                .py(px(4.))
+                                .children(ticks),
+                        ),
+                    ),
             )
             .child(option(
                 "subtotal-replace",
-                t("Replace current subtotals", "Remplacer les sous-totaux existants"),
+                t(
+                    "Replace current subtotals",
+                    "Remplacer les sous-totaux existants",
+                ),
                 spec.replace,
                 |spec, on| spec.replace = on,
                 cx,
             ))
             .child(option(
                 "subtotal-breaks",
-                t("Page break between groups", "Saut de page entre les groupes"),
+                t(
+                    "Page break between groups",
+                    "Saut de page entre les groupes",
+                ),
                 spec.page_breaks,
                 |spec, on| spec.page_breaks = on,
                 cx,
@@ -240,8 +291,9 @@ impl Render for SubtotalDialog {
                     .items_center()
                     .gap(px(8.))
                     .child(
-                        Button::new("subtotal-remove", t("Remove All", "Supprimer tout"))
-                            .on_click(cx.listener(|this, _, window, cx| this.remove_all(window, cx))),
+                        Button::new("subtotal-remove", t("Remove All", "Supprimer tout")).on_click(
+                            cx.listener(|this, _, window, cx| this.remove_all(window, cx)),
+                        ),
                     )
                     .child(div().flex_1())
                     .child(ok_cancel(&self.modal, cx.listener(Self::ok))),

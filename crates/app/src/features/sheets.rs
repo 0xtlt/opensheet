@@ -68,11 +68,19 @@ impl Feature for Sheets {
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
         if matches!(target, MenuTarget::SheetTab(_)) {
             let entry = |label: &'static str, cmd: Cmd| {
-                MenuEntry::new(label, move |a: &mut ExcelApp, window: &mut Window, cx: &mut Cx| cmd.run(a, window, cx))
-                    .disabled(!cmd.enabled(app))
+                MenuEntry::new(
+                    label,
+                    move |a: &mut ExcelApp, window: &mut Window, cx: &mut Cx| {
+                        cmd.run(a, window, cx)
+                    },
+                )
+                .disabled(!cmd.enabled(app))
             };
             menu.add(MenuSection::Format, entry(t("Hide", "Masquer"), Cmd::Hide));
-            menu.add(MenuSection::Format, entry(t("Unhide…", "Afficher…"), Cmd::Unhide));
+            menu.add(
+                MenuSection::Format,
+                entry(t("Unhide…", "Afficher…"), Cmd::Unhide),
+            );
         }
     }
 }
@@ -91,13 +99,17 @@ pub(crate) fn hidden_sheets(app: &ExcelApp) -> Vec<(usize, String)> {
 
 /// The sheets that have a tab, in the order of the tabs.
 pub(crate) fn tabs(app: &ExcelApp) -> Vec<usize> {
-    (0..app.wb.sheets.len()).filter(|index| app.wb.sheets[*index].is_visible()).collect()
+    (0..app.wb.sheets.len())
+        .filter(|index| app.wb.sheets[*index].is_visible())
+        .collect()
 }
 
 /// The tab next to the sheet in front: the one after it or the one
 /// before it, the sheet itself at either end of the strip.
 pub(crate) fn neighbour(app: &ExcelApp, forward: bool) -> usize {
-    app.wb.next_visible_sheet(app.sheet, forward).unwrap_or(app.sheet)
+    app.wb
+        .next_visible_sheet(app.sheet, forward)
+        .unwrap_or(app.sheet)
 }
 
 /// Excel's refusal to hide or delete the last sheet that has a tab.
@@ -115,7 +127,10 @@ pub(crate) fn hide(app: &mut ExcelApp, index: usize, cx: &mut Cx) -> bool {
         return false;
     }
     if !app.wb.set_sheet_visibility(index, SheetVisibility::Hidden) {
-        app.alert(Alert::new("OpenSheet", last_visible_message()).warning(), cx);
+        app.alert(
+            Alert::new("OpenSheet", last_visible_message()).warning(),
+            cx,
+        );
         return false;
     }
     app.deselect_object(cx);
@@ -131,7 +146,8 @@ pub(crate) fn unhide(app: &mut ExcelApp, sheets: &[usize], cx: &mut Cx) -> bool 
         return false;
     }
     for index in sheets {
-        app.wb.set_sheet_visibility(*index, SheetVisibility::Visible);
+        app.wb
+            .set_sheet_visibility(*index, SheetVisibility::Visible);
     }
     app.deselect_object(cx);
     app.sheet = sheets[0].min(app.wb.sheets.len() - 1);
@@ -153,25 +169,42 @@ impl UnhideDialog {
     fn new(modal: Modal, sheets: Vec<(usize, String)>) -> Self {
         UnhideDialog {
             modal,
-            selected: if sheets.is_empty() { Vec::new() } else { vec![0] },
+            selected: if sheets.is_empty() {
+                Vec::new()
+            } else {
+                vec![0]
+            },
             sheets,
         }
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let chosen: Vec<usize> = self.selected.iter().filter_map(|row| self.sheets.get(*row)).map(|(index, _)| *index).collect();
+        let chosen: Vec<usize> = self
+            .selected
+            .iter()
+            .filter_map(|row| self.sheets.get(*row))
+            .map(|(index, _)| *index)
+            .collect();
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| unhide(app, &chosen, cx));
+        self.modal
+            .update_app(cx, |app, cx| unhide(app, &chosen, cx));
     }
 }
 
 impl Render for UnhideDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let items: Vec<SharedString> = self.sheets.iter().map(|(_, name)| SharedString::from(name.clone())).collect();
+        let items: Vec<SharedString> = self
+            .sheets
+            .iter()
+            .map(|(_, name)| SharedString::from(name.clone()))
+            .collect();
         dialog(&self.modal, t("Unhide", "Afficher"))
             .width(300.0)
             .on_ok(cx.listener(Self::ok))
-            .child(label(t("Unhide one or more sheets:", "Afficher une ou plusieurs feuilles :")))
+            .child(label(t(
+                "Unhide one or more sheets:",
+                "Afficher une ou plusieurs feuilles :",
+            )))
             .child(
                 ListBox::multi("unhide-list", items, self.selected.clone())
                     .height(180.0)

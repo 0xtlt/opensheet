@@ -21,7 +21,9 @@ impl PreferencesWindow {
     /// Where the word typed in "Replace:" stands in the list.
     fn replacement_at(&self, cx: &Context<Self>) -> Option<usize> {
         let from = self.replace_from.read(cx).text().trim().to_string();
-        self.replacements().iter().position(|(known, _)| *known == from)
+        self.replacements()
+            .iter()
+            .position(|(known, _)| *known == from)
     }
 
     /// Add, or Replace: list the word typed with what replaces it. The
@@ -57,8 +59,10 @@ impl PreferencesWindow {
         let Some((from, to)) = self.replacements().into_iter().nth(at) else {
             return;
         };
-        self.replace_from.update(cx, |field, cx| field.set_text(from, cx));
-        self.replace_with.update(cx, |field, cx| field.set_text(to, cx));
+        self.replace_from
+            .update(cx, |field, cx| field.set_text(from, cx));
+        self.replace_with
+            .update(cx, |field, cx| field.set_text(to, cx));
         cx.notify();
     }
 
@@ -70,8 +74,15 @@ impl PreferencesWindow {
         let to = self.replace_with.read(cx).text().trim().to_string();
         let same = at.is_some_and(|at| list[at].1 == to);
         let can_add = s.replace_text && !from.is_empty() && !to.is_empty() && from != to && !same;
-        let add_label = if at.is_some() { t("Replace", "Remplacer") } else { t("Add", "Ajouter") };
-        let names: Vec<SharedString> = list.iter().map(|(from, _)| SharedString::from(from.clone())).collect();
+        let add_label = if at.is_some() {
+            t("Replace", "Remplacer")
+        } else {
+            t("Add", "Ajouter")
+        };
+        let names: Vec<SharedString> = list
+            .iter()
+            .map(|(from, _)| SharedString::from(from.clone()))
+            .collect();
         let rows = list.clone();
         let boxes = div()
             .flex()
@@ -89,21 +100,30 @@ impl PreferencesWindow {
             ))
             .child(self.check(
                 "prefs-ac-capitals",
-                t("Correct TWo INitial CApitals", "Supprimer la 2e majuscule d’un mot"),
+                t(
+                    "Correct TWo INitial CApitals",
+                    "Supprimer la 2e majuscule d’un mot",
+                ),
                 s.correct_two_capitals,
                 cx,
                 |this, on, _, cx| this.set(cx, |settings| settings.correct_two_capitals = on),
             ))
             .child(self.check(
                 "prefs-ac-sentences",
-                t("Capitalize first letter of sentences", "Majuscule en début de phrase"),
+                t(
+                    "Capitalize first letter of sentences",
+                    "Majuscule en début de phrase",
+                ),
                 s.capitalize_sentences,
                 cx,
                 |this, on, _, cx| this.set(cx, |settings| settings.capitalize_sentences = on),
             ))
             .child(self.check(
                 "prefs-ac-days",
-                t("Capitalize names of days", "Majuscules aux jours de la semaine"),
+                t(
+                    "Capitalize names of days",
+                    "Majuscules aux jours de la semaine",
+                ),
                 s.capitalize_days,
                 cx,
                 |this, on, _, cx| this.set(cx, |settings| settings.capitalize_days = on),
@@ -115,7 +135,15 @@ impl PreferencesWindow {
                 cx,
                 |this, on, _, cx| this.set(cx, |settings| settings.replace_text = on),
             ));
-        let column = |title: &'static str, width: f32, field: TextField| div().flex().flex_col().gap(px(3.)).w(px(width)).child(label(title)).child(field.width(width));
+        let column = |title: &'static str, width: f32, field: TextField| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .w(px(width))
+                .child(label(title))
+                .child(field.width(width))
+        };
         div()
             .flex()
             .flex_col()
@@ -126,8 +154,16 @@ impl PreferencesWindow {
                     .flex()
                     .gap(px(8.))
                     .pl(px(20.))
-                    .child(column(t("Replace:", "Remplacer\u{a0}:"), FROM_W, TextField::new(&self.replace_from)))
-                    .child(column(t("With:", "Par\u{a0}:"), WITH_W, TextField::new(&self.replace_with))),
+                    .child(column(
+                        t("Replace:", "Remplacer\u{a0}:"),
+                        FROM_W,
+                        TextField::new(&self.replace_from),
+                    ))
+                    .child(column(
+                        t("With:", "Par\u{a0}:"),
+                        WITH_W,
+                        TextField::new(&self.replace_with),
+                    )),
             )
             .child(
                 div().pl(px(20.)).child(
@@ -138,11 +174,19 @@ impl PreferencesWindow {
                             let (from, to) = &rows[index];
                             div()
                                 .flex()
-                                .child(div().w(px(FROM_W)).flex_none().truncate().child(from.clone()))
+                                .child(
+                                    div()
+                                        .w(px(FROM_W))
+                                        .flex_none()
+                                        .truncate()
+                                        .child(from.clone()),
+                                )
                                 .child(div().flex_1().truncate().child(to.clone()))
                                 .into_any_element()
                         })
-                        .on_change(cx.listener(|this, at: &usize, _, cx| this.show_replacement(*at, cx))),
+                        .on_change(
+                            cx.listener(|this, at: &usize, _, cx| this.show_replacement(*at, cx)),
+                        ),
                 ),
             )
             .child(

@@ -11,20 +11,24 @@
 //! is no script: the action is one the recorder cannot write.
 
 use super::code::{Scope, Step, color, member, number, play, points, quote, rects_of, runs_of};
-use super::compare::{Formats, Pair, content_at, differences, distance, same_chart, shown, side_by_side, validations};
+use super::compare::{
+    Formats, Pair, content_at, differences, distance, same_chart, shown, side_by_side, validations,
+};
+use opensheet_engine::chart::{Chart, ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::comment::Comment;
 use opensheet_engine::condfmt::{CellOp, Rule, operand_text};
-use opensheet_engine::protect::Permission;
-use opensheet_engine::validation::{AlertStyle, Operator, Validation, ValidationKind};
-use opensheet_engine::workbook::SheetVisibility;
-use opensheet_engine::chart::{Chart, ChartKind, ChartTitle, LegendPos};
 use opensheet_engine::filter::{AutoFilter, Criteria, CustomOp, DynamicFilter, SortState};
 use opensheet_engine::input::parse_input;
 use opensheet_engine::ops::SortOn;
+use opensheet_engine::protect::Permission;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, cell_name};
-use opensheet_engine::style::{Border, BorderStyle, Borders, HAlign, Style, StyleId, Underline, VAlign};
+use opensheet_engine::style::{
+    Border, BorderStyle, Borders, HAlign, Style, StyleId, Underline, VAlign,
+};
 use opensheet_engine::table::Table;
+use opensheet_engine::validation::{AlertStyle, Operator, Validation, ValidationKind};
 use opensheet_engine::workbook::DefinedName;
+use opensheet_engine::workbook::SheetVisibility;
 use opensheet_engine::{Color, Content, Locale, Rect, Sheet, Value, Workbook};
 use opensheet_script::Outcome;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -38,8 +42,17 @@ pub(crate) type Refit<'a> = &'a dyn Fn(&mut Workbook, &Outcome);
 const MAX_CELLS: usize = 200_000;
 
 /// Run some steps on the workbook being brought to its target.
-pub(crate) fn run(work: &mut Workbook, scope: &Scope, steps: &[Step], refit: Refit) -> Result<(), String> {
-    let front = scope.start.as_deref().and_then(|name| work.sheets.iter().position(|sheet| sheet.name == name)).unwrap_or(0);
+pub(crate) fn run(
+    work: &mut Workbook,
+    scope: &Scope,
+    steps: &[Step],
+    refit: Refit,
+) -> Result<(), String> {
+    let front = scope
+        .start
+        .as_deref()
+        .and_then(|name| work.sheets.iter().position(|sheet| sheet.name == name))
+        .unwrap_or(0);
     let outcome = play(work, front, &scope.user, steps)?;
     refit(work, &outcome);
     Ok(())
@@ -73,7 +86,12 @@ const STAGES: [Stage; 19] = [
 /// Write the steps that turn `work` into `target`, running them on
 /// `work` as they are written. `Err` says what could not be reached;
 /// `work` is then of no use.
-pub(crate) fn reach(work: &mut Workbook, target: &Workbook, scope: &mut Scope, refit: Refit) -> Result<Vec<Step>, String> {
+pub(crate) fn reach(
+    work: &mut Workbook,
+    target: &Workbook,
+    scope: &mut Scope,
+    refit: Refit,
+) -> Result<Vec<Step>, String> {
     let mut all = Vec::new();
     for round in 0..3 {
         if distance(work, target) == 0 {
@@ -85,7 +103,13 @@ pub(crate) fn reach(work: &mut Workbook, target: &Workbook, scope: &mut Scope, r
             scope.start = start;
             all.extend(steps);
         }
-        if work.sheets.len() != target.sheets.len() || work.sheets.iter().zip(&target.sheets).any(|(a, b)| a.name != b.name) {
+        if work.sheets.len() != target.sheets.len()
+            || work
+                .sheets
+                .iter()
+                .zip(&target.sheets)
+                .any(|(a, b)| a.name != b.name)
+        {
             return Err("the sheets".to_string());
         }
         for (index, stage) in STAGES.iter().enumerate() {
@@ -102,10 +126,17 @@ pub(crate) fn reach(work: &mut Workbook, target: &Workbook, scope: &mut Scope, r
         }
     }
     let left = differences(work, target);
-    if left.is_empty() { Ok(all) } else { Err(left.join("; ")) }
+    if left.is_empty() {
+        Ok(all)
+    } else {
+        Err(left.join("; "))
+    }
 }
 
-fn pairs<'a>(work: &'a Workbook, target: &'a Workbook) -> impl Iterator<Item = (&'a Sheet, &'a Sheet)> {
+fn pairs<'a>(
+    work: &'a Workbook,
+    target: &'a Workbook,
+) -> impl Iterator<Item = (&'a Sheet, &'a Sheet)> {
     work.sheets.iter().zip(&target.sheets)
 }
 
@@ -115,18 +146,42 @@ fn pairs<'a>(work: &'a Workbook, target: &'a Workbook) -> impl Iterator<Item = (
 /// colour of its tab, its gridlines and headings. Also gives the name
 /// `selectedSheet` has once the steps are run.
 fn sheets(work: &Workbook, target: &Workbook, scope: &Scope) -> (Vec<Step>, Option<String>) {
-    let old: Vec<&str> = work.sheets.iter().map(|sheet| sheet.name.as_str()).collect();
-    let new: Vec<&str> = target.sheets.iter().map(|sheet| sheet.name.as_str()).collect();
+    let old: Vec<&str> = work
+        .sheets
+        .iter()
+        .map(|sheet| sheet.name.as_str())
+        .collect();
+    let new: Vec<&str> = target
+        .sheets
+        .iter()
+        .map(|sheet| sheet.name.as_str())
+        .collect();
     let mut scope = scope.clone();
     let mut steps = Vec::new();
-    let gone: Vec<&str> = old.iter().copied().filter(|name| !new.contains(name)).collect();
-    let came: Vec<&str> = new.iter().copied().filter(|name| !old.contains(name)).collect();
+    let gone: Vec<&str> = old
+        .iter()
+        .copied()
+        .filter(|name| !new.contains(name))
+        .collect();
+    let came: Vec<&str> = new
+        .iter()
+        .copied()
+        .filter(|name| !old.contains(name))
+        .collect();
     let mut order = old.clone();
     // The sheet each sheet of the target was, when it was there.
-    let mut was: HashMap<&str, &Sheet> = work.sheets.iter().filter(|sheet| new.contains(&sheet.name.as_str())).map(|sheet| (sheet.name.as_str(), sheet)).collect();
+    let mut was: HashMap<&str, &Sheet> = work
+        .sheets
+        .iter()
+        .filter(|sheet| new.contains(&sheet.name.as_str()))
+        .map(|sheet| (sheet.name.as_str(), sheet))
+        .collect();
     // As many names gone as come: the sheets were renamed.
     for (from, to) in gone.iter().zip(&came) {
-        steps.push(Step::new(format!("Rename worksheet {from} to {to}"), format!("{}.setName({});", scope.sheet(from), quote(to))));
+        steps.push(Step::new(
+            format!("Rename worksheet {from} to {to}"),
+            format!("{}.setName({});", scope.sheet(from), quote(to)),
+        ));
         if scope.start.as_deref() == Some(*from) {
             scope.start = Some(to.to_string());
         }
@@ -138,21 +193,30 @@ fn sheets(work: &Workbook, target: &Workbook, scope: &Scope) -> (Vec<Step>, Opti
         }
     }
     for from in gone.iter().skip(came.len()) {
-        steps.push(Step::new(format!("Delete worksheet {from}"), format!("{}.delete();", scope.sheet(from))));
+        steps.push(Step::new(
+            format!("Delete worksheet {from}"),
+            format!("{}.delete();", scope.sheet(from)),
+        ));
         if scope.start.as_deref() == Some(*from) {
             scope.start = None;
         }
         order.retain(|name| name != from);
     }
     for to in came.iter().skip(gone.len()) {
-        steps.push(Step::new("Add a new worksheet", format!("workbook.addWorksheet({});", quote(to))));
+        steps.push(Step::new(
+            "Add a new worksheet",
+            format!("workbook.addWorksheet({});", quote(to)),
+        ));
         order.push(to);
     }
     for (index, want) in new.iter().enumerate() {
         if order.get(index) != Some(want) {
             order.retain(|name| name != want);
             order.insert(index.min(order.len()), want);
-            steps.push(Step::new(format!("Move worksheet {want}"), format!("{}.setPosition({index});", scope.sheet(want))));
+            steps.push(Step::new(
+                format!("Move worksheet {want}"),
+                format!("{}.setPosition({index});", scope.sheet(want)),
+            ));
         }
     }
     let blank = Sheet::new("");
@@ -162,10 +226,16 @@ fn sheets(work: &Workbook, target: &Workbook, scope: &Scope) -> (Vec<Step>, Opti
         let on = scope.on(&sheet.name);
         if before.tab_color.map(Color::value) != sheet.tab_color.map(Color::value) {
             let text = sheet.tab_color.map_or(quote(""), color);
-            steps.push(Step::new(format!("Set the tab color of {on}"), format!("{expr}.setTabColor({text});")));
+            steps.push(Step::new(
+                format!("Set the tab color of {on}"),
+                format!("{expr}.setTabColor({text});"),
+            ));
         }
         if before.show_gridlines != sheet.show_gridlines {
-            steps.push(Step::new(format!("Show gridlines on {on}: {}", sheet.show_gridlines), format!("{expr}.setShowGridlines({});", sheet.show_gridlines)));
+            steps.push(Step::new(
+                format!("Show gridlines on {on}: {}", sheet.show_gridlines),
+                format!("{expr}.setShowGridlines({});", sheet.show_gridlines),
+            ));
         }
         if before.visibility != sheet.visibility {
             let (words, name) = match sheet.visibility {
@@ -173,10 +243,16 @@ fn sheets(work: &Workbook, target: &Workbook, scope: &Scope) -> (Vec<Step>, Opti
                 SheetVisibility::Hidden => ("Hide", "hidden"),
                 SheetVisibility::VeryHidden => ("Hide", "veryHidden"),
             };
-            steps.push(Step::new(format!("{words} worksheet {}", sheet.name), format!("{expr}.setVisibility({});", member("SheetVisibility", name))));
+            steps.push(Step::new(
+                format!("{words} worksheet {}", sheet.name),
+                format!("{expr}.setVisibility({});", member("SheetVisibility", name)),
+            ));
         }
         if before.show_headers != sheet.show_headers {
-            steps.push(Step::new(format!("Show headings on {on}: {}", sheet.show_headers), format!("{expr}.setShowHeadings({});", sheet.show_headers)));
+            steps.push(Step::new(
+                format!("Show headings on {on}: {}", sheet.show_headers),
+                format!("{expr}.setShowHeadings({});", sheet.show_headers),
+            ));
         }
     }
     (steps, scope.start)
@@ -187,7 +263,15 @@ fn sheets(work: &Workbook, target: &Workbook, scope: &Scope) -> (Vec<Step>, Opti
 /// The table of `tables` that is the table `table` of the other
 /// workbook: the same number, or the same place.
 fn twin<'a>(tables: &'a [Table], table: &Table) -> Option<&'a Table> {
-    tables.iter().find(|other| other.id == table.id).or_else(|| tables.iter().find(|other| (other.range.r0, other.range.c0, other.range.c1) == (table.range.r0, table.range.c0, table.range.c1)))
+    tables
+        .iter()
+        .find(|other| other.id == table.id)
+        .or_else(|| {
+            tables.iter().find(|other| {
+                (other.range.r0, other.range.c0, other.range.c1)
+                    == (table.range.r0, table.range.c0, table.range.c1)
+            })
+        })
 }
 
 fn table_expr(name: &str) -> String {
@@ -202,20 +286,36 @@ fn undone(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         let on = scope.on(&ts.name);
         // A protection in the way of everything else, when no password
         // holds it (a script cannot know one).
-        if ws.protection.as_ref().is_some_and(|held| held.password.is_none() && ts.protection.as_ref() != Some(held)) {
-            steps.push(Step::new(format!("Unprotect worksheet {on}"), format!("{}.getProtection().unprotect();", scope.sheet(&ts.name))));
+        if ws
+            .protection
+            .as_ref()
+            .is_some_and(|held| held.password.is_none() && ts.protection.as_ref() != Some(held))
+        {
+            steps.push(Step::new(
+                format!("Unprotect worksheet {on}"),
+                format!("{}.getProtection().unprotect();", scope.sheet(&ts.name)),
+            ));
         }
         for table in &ws.tables {
             if twin(&ts.tables, table).is_none() {
-                steps.push(Step::new(format!("Convert table {} to a range", table.name), format!("{}.convertToRange();", table_expr(&table.name))));
+                steps.push(Step::new(
+                    format!("Convert table {} to a range", table.name),
+                    format!("{}.convertToRange();", table_expr(&table.name)),
+                ));
             }
         }
         if ws.auto_filter.is_some() && ts.auto_filter.is_none() {
-            steps.push(Step::new(format!("Remove the AutoFilter of {on}"), format!("{}.getAutoFilter().remove();", scope.sheet(&ts.name))));
+            steps.push(Step::new(
+                format!("Remove the AutoFilter of {on}"),
+                format!("{}.getAutoFilter().remove();", scope.sheet(&ts.name)),
+            ));
         }
         for merge in &ws.merges {
             if !ts.merges.contains(merge) {
-                steps.push(Step::new(format!("Unmerge range {} on {on}", merge.name()), format!("{}.unmerge();", scope.range(&ts.name, *merge))));
+                steps.push(Step::new(
+                    format!("Unmerge range {} on {on}", merge.name()),
+                    format!("{}.unmerge();", scope.range(&ts.name, *merge)),
+                ));
             }
         }
     }
@@ -242,13 +342,24 @@ fn new_tables(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
             // The headers were there when the cells of the first row
             // already read as the columns are named; else the table was
             // made without, and its data moved down a row.
-            let headed = table.header_row && table.columns.iter().enumerate().all(|(index, column)| plain_text(ws, range.r0, range.c0 + index as u32).as_deref() == Some(column.name.as_str()));
+            let headed = table.header_row
+                && table.columns.iter().enumerate().all(|(index, column)| {
+                    plain_text(ws, range.r0, range.c0 + index as u32).as_deref()
+                        == Some(column.name.as_str())
+                });
             if !headed && range.r1 > range.r0 {
                 range.r1 -= 1;
             }
             steps.push(Step::new(
-                format!("Add a new table at range {} on {}", range.name(), scope.on(&ts.name)),
-                format!("workbook.addTable({}, {headed});", scope.range(&ts.name, range)),
+                format!(
+                    "Add a new table at range {} on {}",
+                    range.name(),
+                    scope.on(&ts.name)
+                ),
+                format!(
+                    "workbook.addTable({}, {headed});",
+                    scope.range(&ts.name, range)
+                ),
             ));
         }
     }
@@ -265,26 +376,70 @@ fn table_options(work: &Workbook, target: &Workbook, _: &Scope) -> Vec<Step> {
             };
             let mut name = now.name.as_str();
             if now.name != table.name {
-                steps.push(Step::new(format!("Rename table {} to {}", now.name, table.name), format!("{}.setName({});", table_expr(name), quote(&table.name))));
+                steps.push(Step::new(
+                    format!("Rename table {} to {}", now.name, table.name),
+                    format!("{}.setName({});", table_expr(name), quote(&table.name)),
+                ));
                 name = &table.name;
             }
             let expr = table_expr(name);
             if now.style != table.style {
                 let style = table.style.as_deref().unwrap_or_default();
-                steps.push(Step::new(format!("Change the style of table {name}"), format!("{expr}.setPredefinedTableStyle({});", quote(style))));
+                steps.push(Step::new(
+                    format!("Change the style of table {name}"),
+                    format!("{expr}.setPredefinedTableStyle({});", quote(style)),
+                ));
             }
             let options: [(&str, &str, bool, bool); 7] = [
-                ("header row", "setShowHeaders", now.header_row, table.header_row),
-                ("total row", "setShowTotals", now.totals_row, table.totals_row),
-                ("banded rows", "setShowBandedRows", now.banded_rows, table.banded_rows),
-                ("banded columns", "setShowBandedColumns", now.banded_cols, table.banded_cols),
-                ("first column", "setHighlightFirstColumn", now.first_col, table.first_col),
-                ("last column", "setHighlightLastColumn", now.last_col, table.last_col),
-                ("filter button", "setShowFilterButton", now.auto_filter.is_some(), table.auto_filter.is_some()),
+                (
+                    "header row",
+                    "setShowHeaders",
+                    now.header_row,
+                    table.header_row,
+                ),
+                (
+                    "total row",
+                    "setShowTotals",
+                    now.totals_row,
+                    table.totals_row,
+                ),
+                (
+                    "banded rows",
+                    "setShowBandedRows",
+                    now.banded_rows,
+                    table.banded_rows,
+                ),
+                (
+                    "banded columns",
+                    "setShowBandedColumns",
+                    now.banded_cols,
+                    table.banded_cols,
+                ),
+                (
+                    "first column",
+                    "setHighlightFirstColumn",
+                    now.first_col,
+                    table.first_col,
+                ),
+                (
+                    "last column",
+                    "setHighlightLastColumn",
+                    now.last_col,
+                    table.last_col,
+                ),
+                (
+                    "filter button",
+                    "setShowFilterButton",
+                    now.auto_filter.is_some(),
+                    table.auto_filter.is_some(),
+                ),
             ];
             for (what, setter, was, is) in options {
                 if was != is {
-                    steps.push(Step::new(format!("Show the {what} of table {name}: {is}"), format!("{expr}.{setter}({is});")));
+                    steps.push(Step::new(
+                        format!("Show the {what} of table {name}: {is}"),
+                        format!("{expr}.{setter}({is});"),
+                    ));
                 }
             }
         }
@@ -301,10 +456,20 @@ fn table_sizes(work: &Workbook, target: &Workbook, _: &Scope) -> Vec<Step> {
             let Some(now) = twin(&ws.tables, table).filter(|now| now.name == table.name) else {
                 continue;
             };
-            if now.range != table.range && (now.header_row, now.totals_row) == (table.header_row, table.totals_row) {
+            if now.range != table.range
+                && (now.header_row, now.totals_row) == (table.header_row, table.totals_row)
+            {
                 steps.push(Step::new(
-                    format!("Resize table {} to range {}", table.name, table.range.name()),
-                    format!("{}.resize({});", table_expr(&table.name), quote(&table.range.name())),
+                    format!(
+                        "Resize table {} to range {}",
+                        table.name,
+                        table.range.name()
+                    ),
+                    format!(
+                        "{}.resize({});",
+                        table_expr(&table.name),
+                        quote(&table.range.name())
+                    ),
                 ));
             }
         }
@@ -326,14 +491,27 @@ fn sort_fields(sort: &SortState) -> Option<String> {
             }
             let on = match level.on {
                 SortOn::Values => String::new(),
-                SortOn::CellColor(Some(tint)) => format!(", sortOn: {}, color: {}", member("SortOn", "cellColor"), color(tint)),
-                SortOn::FontColor(Some(tint)) => format!(", sortOn: {}, color: {}", member("SortOn", "fontColor"), color(tint)),
+                SortOn::CellColor(Some(tint)) => format!(
+                    ", sortOn: {}, color: {}",
+                    member("SortOn", "cellColor"),
+                    color(tint)
+                ),
+                SortOn::FontColor(Some(tint)) => format!(
+                    ", sortOn: {}, color: {}",
+                    member("SortOn", "fontColor"),
+                    color(tint)
+                ),
                 SortOn::CellColor(None) | SortOn::FontColor(None) => return None,
             };
-            Some(format!("{{ key: {}, ascending: {}{on} }}", level.key, !level.descending))
+            Some(format!(
+                "{{ key: {}, ascending: {}{on} }}",
+                level.key, !level.descending
+            ))
         })
         .collect();
-    fields.filter(|fields| !fields.is_empty()).map(|fields| format!("[{}]", fields.join(", ")))
+    fields
+        .filter(|fields| !fields.is_empty())
+        .map(|fields| format!("[{}]", fields.join(", ")))
 }
 
 /// The sorts a filter remembers: a table or a filtered range sorted from
@@ -342,22 +520,42 @@ fn sorts(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
     let mut steps = Vec::new();
     let changed = |now: Option<&AutoFilter>, then: Option<&AutoFilter>| -> Option<SortState> {
         let (now, then) = (now?, then?);
-        (now.range == then.range && now.sort != then.sort).then(|| then.sort.clone()).flatten()
+        (now.range == then.range && now.sort != then.sort)
+            .then(|| then.sort.clone())
+            .flatten()
     };
     for (ws, ts) in pairs(work, target) {
         for table in &ts.tables {
             let Some(now) = twin(&ws.tables, table).filter(|now| now.name == table.name) else {
                 continue;
             };
-            if let Some(fields) = changed(now.auto_filter.as_ref(), table.auto_filter.as_ref()).and_then(|sort| Some((sort_fields(&sort)?, sort.case_sensitive))) {
-                steps.push(Step::new(format!("Sort table {}", table.name), format!("{}.getSort().apply({}, {});", table_expr(&table.name), fields.0, fields.1)));
+            if let Some(fields) = changed(now.auto_filter.as_ref(), table.auto_filter.as_ref())
+                .and_then(|sort| Some((sort_fields(&sort)?, sort.case_sensitive)))
+            {
+                steps.push(Step::new(
+                    format!("Sort table {}", table.name),
+                    format!(
+                        "{}.getSort().apply({}, {});",
+                        table_expr(&table.name),
+                        fields.0,
+                        fields.1
+                    ),
+                ));
             }
         }
         if let Some(sort) = changed(ws.auto_filter.as_ref(), ts.auto_filter.as_ref()) {
             if let (Some(fields), Some(filter)) = (sort_fields(&sort), &ts.auto_filter) {
                 steps.push(Step::new(
-                    format!("Sort the range {} on {}", filter.range.name(), scope.on(&ts.name)),
-                    format!("{}.getSort().apply({fields}, {}, true);", scope.range(&ts.name, filter.range), sort.case_sensitive),
+                    format!(
+                        "Sort the range {} on {}",
+                        filter.range.name(),
+                        scope.on(&ts.name)
+                    ),
+                    format!(
+                        "{}.getSort().apply({fields}, {}, true);",
+                        scope.range(&ts.name, filter.range),
+                        sort.case_sensitive
+                    ),
                 ));
             }
         }
@@ -367,27 +565,51 @@ fn sorts(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
 
 // ------------------------------------------------------------------- names
 
-fn name_steps(steps: &mut Vec<Step>, holder: &str, now: &BTreeMap<String, DefinedName>, then: &BTreeMap<String, DefinedName>) {
+fn name_steps(
+    steps: &mut Vec<Step>,
+    holder: &str,
+    now: &BTreeMap<String, DefinedName>,
+    then: &BTreeMap<String, DefinedName>,
+) {
     let en = Locale::en();
     for (key, name) in now {
         if !then.contains_key(key) {
-            steps.push(Step::new(format!("Delete the name {}", name.name), format!("{holder}.getNamedItem({}).delete();", quote(&name.name))));
+            steps.push(Step::new(
+                format!("Delete the name {}", name.name),
+                format!("{holder}.getNamedItem({}).delete();", quote(&name.name)),
+            ));
         }
     }
     for (key, name) in then {
         let formula = quote(&name.refers_to(en, 0, 0));
         match now.get(key) {
             None => {
-                let comment = if name.comment.is_empty() { String::new() } else { format!(", {}", quote(&name.comment)) };
-                steps.push(Step::new(format!("Define the name {}", name.name), format!("{holder}.addNamedItem({}, {formula}{comment});", quote(&name.name))));
+                let comment = if name.comment.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {}", quote(&name.comment))
+                };
+                steps.push(Step::new(
+                    format!("Define the name {}", name.name),
+                    format!(
+                        "{holder}.addNamedItem({}, {formula}{comment});",
+                        quote(&name.name)
+                    ),
+                ));
             }
             Some(old) => {
                 let item = format!("{holder}.getNamedItem({})", quote(&old.name));
                 if old.expr != name.expr {
-                    steps.push(Step::new(format!("Change what the name {} refers to", name.name), format!("{item}.setFormula({formula});")));
+                    steps.push(Step::new(
+                        format!("Change what the name {} refers to", name.name),
+                        format!("{item}.setFormula({formula});"),
+                    ));
                 }
                 if old.comment != name.comment {
-                    steps.push(Step::new(format!("Change the comment of the name {}", name.name), format!("{item}.setComment({});", quote(&name.comment))));
+                    steps.push(Step::new(
+                        format!("Change the comment of the name {}", name.name),
+                        format!("{item}.setComment({});", quote(&name.comment)),
+                    ));
                 }
             }
         }
@@ -412,7 +634,11 @@ fn as_typed(text: &str, verbatim: bool) -> String {
         return text.to_string();
     }
     match parse_input(text, Locale::en()) {
-        Ok(parsed) if parsed.num_fmt.is_none() && parsed.content == Content::Value(Value::text(text)) => text.to_string(),
+        Ok(parsed)
+            if parsed.num_fmt.is_none() && parsed.content == Content::Value(Value::text(text)) =>
+        {
+            text.to_string()
+        }
         _ => format!("'{text}"),
     }
 }
@@ -444,8 +670,10 @@ fn typed(content: &Content, verbatim: bool) -> String {
 /// The statement that writes the contents the target has in `rect`.
 fn write_step(work: &Workbook, ws: &Sheet, ts: &Sheet, rect: Rect, scope: &Scope) -> Step {
     let at = |row: u32, col: u32| content_at(ts, (row, col));
-    let verbatim = |row: u32, col: u32| work.styles.get(ws.style_id_at(row, col)).num_fmt.as_ref() == "@";
-    let cells = || (rect.r0..=rect.r1).flat_map(|row| (rect.c0..=rect.c1).map(move |col| (row, col)));
+    let verbatim =
+        |row: u32, col: u32| work.styles.get(ws.style_id_at(row, col)).num_fmt.as_ref() == "@";
+    let cells =
+        || (rect.r0..=rect.r1).flat_map(|row| (rect.c0..=rect.c1).map(move |col| (row, col)));
     let range = scope.range(&ts.name, rect);
     let comment = format!("Set range {} on {}", rect.name(), scope.on(&ts.name));
     let first = at(rect.r0, rect.c0);
@@ -467,12 +695,25 @@ fn write_step(work: &Workbook, ws: &Sheet, ts: &Sheet, rect: Rect, scope: &Scope
     let rows: Vec<String> = (rect.r0..=rect.r1)
         .map(|row| {
             let items: Vec<String> = (rect.c0..=rect.c1)
-                .map(|col| if formulas { quote(&typed(at(row, col), verbatim(row, col))) } else { literal(at(row, col), verbatim(row, col)) })
+                .map(|col| {
+                    if formulas {
+                        quote(&typed(at(row, col), verbatim(row, col)))
+                    } else {
+                        literal(at(row, col), verbatim(row, col))
+                    }
+                })
                 .collect();
             format!("[{}]", items.join(", "))
         })
         .collect();
-    Step::new(comment, format!("{range}.{}([{}]);", if formulas { "setFormulas" } else { "setValues" }, rows.join(", ")))
+    Step::new(
+        comment,
+        format!(
+            "{range}.{}([{}]);",
+            if formulas { "setFormulas" } else { "setValues" },
+            rows.join(", ")
+        ),
+    )
 }
 
 fn contents(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
@@ -482,7 +723,11 @@ fn contents(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         let (mut cleared, mut written) = (BTreeSet::new(), BTreeSet::new());
         for Pair { pos, contents, .. } in side_by_side(ws, ts) {
             if contents.0 != contents.1 {
-                if matches!(contents.1, Content::Empty) { cleared.insert(pos) } else { written.insert(pos) };
+                if matches!(contents.1, Content::Empty) {
+                    cleared.insert(pos)
+                } else {
+                    written.insert(pos)
+                };
             }
         }
         count += cleared.len() + written.len();
@@ -491,8 +736,16 @@ fn contents(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         }
         for rect in rects_of(&cleared) {
             steps.push(Step::new(
-                format!("Clear contents of range {} on {}", rect.name(), scope.on(&ts.name)),
-                format!("{}.clear({});", scope.range(&ts.name, rect), member("ClearApplyTo", "contents")),
+                format!(
+                    "Clear contents of range {} on {}",
+                    rect.name(),
+                    scope.on(&ts.name)
+                ),
+                format!(
+                    "{}.clear({});",
+                    scope.range(&ts.name, rect),
+                    member("ClearApplyTo", "contents")
+                ),
             ));
         }
         for rect in rects_of(&written) {
@@ -536,15 +789,53 @@ fn changes(now: &Style, then: &Style) -> Vec<Change> {
     };
     let hex = |tint: Option<Color>| format!("{:06X}", tint.map_or(0, Color::value));
     let (a, b) = (&now.font, &then.font);
-    add(0, now.num_fmt != then.num_fmt, "Set number format".to_string(), format!(".setNumberFormat({});", quote(&then.num_fmt)));
+    add(
+        0,
+        now.num_fmt != then.num_fmt,
+        "Set number format".to_string(),
+        format!(".setNumberFormat({});", quote(&then.num_fmt)),
+    );
     match then.fill {
-        Some(tint) => add(1, now.fill != then.fill, format!("Set fill color to {}", hex(Some(tint))), format!(".getFormat().getFill().setColor({});", color(tint))),
-        None => add(1, now.fill.is_some(), "Clear fill color".to_string(), ".getFormat().getFill().clear();".to_string()),
+        Some(tint) => add(
+            1,
+            now.fill != then.fill,
+            format!("Set fill color to {}", hex(Some(tint))),
+            format!(".getFormat().getFill().setColor({});", color(tint)),
+        ),
+        None => add(
+            1,
+            now.fill.is_some(),
+            "Clear fill color".to_string(),
+            ".getFormat().getFill().clear();".to_string(),
+        ),
     }
-    add(2, a.name != b.name, format!("Set font name to {}", quote(&b.name)), format!(".getFormat().getFont().setName({});", quote(&b.name)));
-    add(3, a.size != b.size, format!("Set font size to {}", number(b.size_pt() as f64)), format!(".getFormat().getFont().setSize({});", number(b.size_pt() as f64)));
-    add(4, a.bold != b.bold, format!("Set font bold to {}", b.bold), format!(".getFormat().getFont().setBold({});", b.bold));
-    add(5, a.italic != b.italic, format!("Set font italic to {}", b.italic), format!(".getFormat().getFont().setItalic({});", b.italic));
+    add(
+        2,
+        a.name != b.name,
+        format!("Set font name to {}", quote(&b.name)),
+        format!(".getFormat().getFont().setName({});", quote(&b.name)),
+    );
+    add(
+        3,
+        a.size != b.size,
+        format!("Set font size to {}", number(b.size_pt() as f64)),
+        format!(
+            ".getFormat().getFont().setSize({});",
+            number(b.size_pt() as f64)
+        ),
+    );
+    add(
+        4,
+        a.bold != b.bold,
+        format!("Set font bold to {}", b.bold),
+        format!(".getFormat().getFont().setBold({});", b.bold),
+    );
+    add(
+        5,
+        a.italic != b.italic,
+        format!("Set font italic to {}", b.italic),
+        format!(".getFormat().getFont().setItalic({});", b.italic),
+    );
     let underline = match b.underline {
         Underline::None => "none",
         Underline::Single => "single",
@@ -553,13 +844,37 @@ fn changes(now: &Style, then: &Style) -> Vec<Change> {
     add(
         6,
         a.underline != b.underline,
-        format!("Set font underline to {}", member("RangeUnderlineStyle", underline)),
-        format!(".getFormat().getFont().setUnderline({});", member("RangeUnderlineStyle", underline)),
+        format!(
+            "Set font underline to {}",
+            member("RangeUnderlineStyle", underline)
+        ),
+        format!(
+            ".getFormat().getFont().setUnderline({});",
+            member("RangeUnderlineStyle", underline)
+        ),
     );
-    add(7, a.strike != b.strike, format!("Set font strikethrough to {}", b.strike), format!(".getFormat().getFont().setStrikethrough({});", b.strike));
-    add(8, a.color != b.color, format!("Set font color to {}", hex(b.color)), format!(".getFormat().getFont().setColor({});", color(b.color.unwrap_or(Color::BLACK))));
+    add(
+        7,
+        a.strike != b.strike,
+        format!("Set font strikethrough to {}", b.strike),
+        format!(".getFormat().getFont().setStrikethrough({});", b.strike),
+    );
+    add(
+        8,
+        a.color != b.color,
+        format!("Set font color to {}", hex(b.color)),
+        format!(
+            ".getFormat().getFont().setColor({});",
+            color(b.color.unwrap_or(Color::BLACK))
+        ),
+    );
     let across = member("HorizontalAlignment", h_align(then.h_align));
-    add(9, now.h_align != then.h_align, format!("Set horizontal alignment to {across}"), format!(".getFormat().setHorizontalAlignment({across});"));
+    add(
+        9,
+        now.h_align != then.h_align,
+        format!("Set horizontal alignment to {across}"),
+        format!(".getFormat().setHorizontalAlignment({across});"),
+    );
     let upright = member(
         "VerticalAlignment",
         match then.v_align {
@@ -568,13 +883,51 @@ fn changes(now: &Style, then: &Style) -> Vec<Change> {
             VAlign::Bottom => "bottom",
         },
     );
-    add(10, now.v_align != then.v_align, format!("Set vertical alignment to {upright}"), format!(".getFormat().setVerticalAlignment({upright});"));
-    add(11, now.wrap != then.wrap, format!("Set wrap text to {}", then.wrap), format!(".getFormat().setWrapText({});", then.wrap));
-    add(12, now.shrink_to_fit != then.shrink_to_fit, format!("Set shrink to fit to {}", then.shrink_to_fit), format!(".getFormat().setShrinkToFit({});", then.shrink_to_fit));
-    add(13, now.indent != then.indent, format!("Set indent level to {}", then.indent), format!(".getFormat().setIndentLevel({});", then.indent));
-    add(14, now.rotation != then.rotation, format!("Set text orientation to {}", then.rotation), format!(".getFormat().setTextOrientation({});", then.rotation));
-    add(15, now.locked != then.locked, format!("Set locked to {}", then.locked), format!(".getFormat().getProtection().setLocked({});", then.locked));
-    add(16, now.hidden != then.hidden, format!("Set formula hidden to {}", then.hidden), format!(".getFormat().getProtection().setFormulaHidden({});", then.hidden));
+    add(
+        10,
+        now.v_align != then.v_align,
+        format!("Set vertical alignment to {upright}"),
+        format!(".getFormat().setVerticalAlignment({upright});"),
+    );
+    add(
+        11,
+        now.wrap != then.wrap,
+        format!("Set wrap text to {}", then.wrap),
+        format!(".getFormat().setWrapText({});", then.wrap),
+    );
+    add(
+        12,
+        now.shrink_to_fit != then.shrink_to_fit,
+        format!("Set shrink to fit to {}", then.shrink_to_fit),
+        format!(".getFormat().setShrinkToFit({});", then.shrink_to_fit),
+    );
+    add(
+        13,
+        now.indent != then.indent,
+        format!("Set indent level to {}", then.indent),
+        format!(".getFormat().setIndentLevel({});", then.indent),
+    );
+    add(
+        14,
+        now.rotation != then.rotation,
+        format!("Set text orientation to {}", then.rotation),
+        format!(".getFormat().setTextOrientation({});", then.rotation),
+    );
+    add(
+        15,
+        now.locked != then.locked,
+        format!("Set locked to {}", then.locked),
+        format!(".getFormat().getProtection().setLocked({});", then.locked),
+    );
+    add(
+        16,
+        now.hidden != then.hidden,
+        format!("Set formula hidden to {}", then.hidden),
+        format!(
+            ".getFormat().getProtection().setFormulaHidden({});",
+            then.hidden
+        ),
+    );
     out
 }
 
@@ -584,27 +937,38 @@ fn line_formats(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> 
     let mut formats = Formats::new(work, target);
     for (ws, ts) in pairs(work, target) {
         let on = scope.on(&ts.name);
-        let mut lines = |now: &BTreeMap<u32, StyleId>, then: &BTreeMap<u32, StyleId>, columns: bool| {
-            // Runs of lines that go from one same format to one same other.
-            let mut groups: BTreeMap<(StyleId, StyleId), Vec<u32>> = BTreeMap::new();
-            let all: BTreeSet<u32> = now.keys().chain(then.keys()).copied().collect();
-            for line in all {
-                let pair = (now.get(&line).copied().unwrap_or_default(), then.get(&line).copied().unwrap_or_default());
-                if !formats.same(pair.0, pair.1) {
-                    groups.entry(pair).or_default().push(line);
-                }
-            }
-            for ((a, b), lines) in groups {
-                let (a, b) = (shown(work.styles.get(a)), shown(target.styles.get(b)));
-                for (first, last) in runs_of(lines) {
-                    let rect = if columns { Rect::new(0, first, MAX_ROWS - 1, last) } else { Rect::new(first, 0, last, MAX_COLS - 1) };
-                    let range = scope.range(&ts.name, rect);
-                    for change in changes(&a, &b) {
-                        steps.push(Step::new(format!("{} for range {} on {on}", change.what, rect.name()), format!("{range}{}", change.call)));
+        let mut lines =
+            |now: &BTreeMap<u32, StyleId>, then: &BTreeMap<u32, StyleId>, columns: bool| {
+                // Runs of lines that go from one same format to one same other.
+                let mut groups: BTreeMap<(StyleId, StyleId), Vec<u32>> = BTreeMap::new();
+                let all: BTreeSet<u32> = now.keys().chain(then.keys()).copied().collect();
+                for line in all {
+                    let pair = (
+                        now.get(&line).copied().unwrap_or_default(),
+                        then.get(&line).copied().unwrap_or_default(),
+                    );
+                    if !formats.same(pair.0, pair.1) {
+                        groups.entry(pair).or_default().push(line);
                     }
                 }
-            }
-        };
+                for ((a, b), lines) in groups {
+                    let (a, b) = (shown(work.styles.get(a)), shown(target.styles.get(b)));
+                    for (first, last) in runs_of(lines) {
+                        let rect = if columns {
+                            Rect::new(0, first, MAX_ROWS - 1, last)
+                        } else {
+                            Rect::new(first, 0, last, MAX_COLS - 1)
+                        };
+                        let range = scope.range(&ts.name, rect);
+                        for change in changes(&a, &b) {
+                            steps.push(Step::new(
+                                format!("{} for range {} on {on}", change.what, rect.name()),
+                                format!("{range}{}", change.call),
+                            ));
+                        }
+                    }
+                }
+            };
         lines(&ws.col_styles, &ts.col_styles, true);
         lines(&ws.row_styles, &ts.row_styles, false);
     }
@@ -630,7 +994,10 @@ fn side(borders: &Borders, side: Side) -> Border {
 
 /// The statements that draw one border of a range as `line`.
 fn border_lines(range: &str, index: &str, line: Border, recolour: bool) -> Vec<String> {
-    let border = format!("{range}.getFormat().getRangeBorder({})", member("BorderIndex", index));
+    let border = format!(
+        "{range}.getFormat().getRangeBorder({})",
+        member("BorderIndex", index)
+    );
     let style = |name: &str| format!("{border}.setStyle({});", member("BorderLineStyle", name));
     let weight = |name: &str| format!("{border}.setWeight({});", member("BorderWeight", name));
     let mut lines = match line.style {
@@ -644,44 +1011,100 @@ fn border_lines(range: &str, index: &str, line: Border, recolour: bool) -> Vec<S
         BorderStyle::Double => vec![style("double")],
     };
     if recolour {
-        lines.push(format!("{border}.setColor({});", color(line.color.unwrap_or(Color::BLACK))));
+        lines.push(format!(
+            "{border}.setColor({});",
+            color(line.color.unwrap_or(Color::BLACK))
+        ));
     }
     lines
 }
 
 /// The borders of the cells of one rectangle, all of which have a border
 /// to change.
-fn border_steps(steps: &mut Vec<Step>, name: &str, rect: Rect, now: &dyn Fn(u32, u32) -> Borders, then: &dyn Fn(u32, u32) -> Borders, scope: &Scope) {
+fn border_steps(
+    steps: &mut Vec<Step>,
+    name: &str,
+    rect: Rect,
+    now: &dyn Fn(u32, u32) -> Borders,
+    then: &dyn Fn(u32, u32) -> Borders,
+    scope: &Scope,
+) {
     let on = scope.on(name);
-    let cells = |rect: Rect| (rect.r0..=rect.r1).flat_map(move |row| (rect.c0..=rect.c1).map(move |col| (row, col)));
+    let cells = |rect: Rect| {
+        (rect.r0..=rect.r1).flat_map(move |row| (rect.c0..=rect.c1).map(move |col| (row, col)))
+    };
     // A border must be coloured when it is not black, or when the line
     // it replaces was of another colour.
     let recolour = |line: Border, part: &[(Rect, Side)]| {
         line.color.is_some_and(|tint| tint.value() != 0)
-            || part.iter().any(|(rect, which)| cells(*rect).any(|(row, col)| {
-                let old = side(&now(row, col), *which);
-                !old.is_none() && old.color != line.color
-            }))
+            || part.iter().any(|(rect, which)| {
+                cells(*rect).any(|(row, col)| {
+                    let old = side(&now(row, col), *which);
+                    !old.is_none() && old.color != line.color
+                })
+            })
     };
-    let differs = |part: &[(Rect, Side)]| part.iter().any(|(rect, which)| cells(*rect).any(|(row, col)| side(&now(row, col), *which) != side(&then(row, col), *which)));
+    let differs = |part: &[(Rect, Side)]| {
+        part.iter().any(|(rect, which)| {
+            cells(*rect)
+                .any(|(row, col)| side(&now(row, col), *which) != side(&then(row, col), *which))
+        })
+    };
     let uniform = |part: &[(Rect, Side)]| -> Option<Border> {
         let (first, which) = part.first()?;
         let line = side(&then(first.r0, first.c0), *which);
-        part.iter().all(|(rect, which)| cells(*rect).all(|(row, col)| side(&then(row, col), *which) == line)).then_some(line)
+        part.iter()
+            .all(|(rect, which)| {
+                cells(*rect).all(|(row, col)| side(&then(row, col), *which) == line)
+            })
+            .then_some(line)
     };
     // The six borders a range has: when each is one same line, they are
     // written as the Borders menu and Format Cells set them.
     let mut frame: Vec<(&str, Vec<(Rect, Side)>)> = vec![
-        ("edgeTop", vec![(Rect::new(rect.r0, rect.c0, rect.r0, rect.c1), Side::Top)]),
-        ("edgeBottom", vec![(Rect::new(rect.r1, rect.c0, rect.r1, rect.c1), Side::Bottom)]),
-        ("edgeLeft", vec![(Rect::new(rect.r0, rect.c0, rect.r1, rect.c0), Side::Left)]),
-        ("edgeRight", vec![(Rect::new(rect.r0, rect.c1, rect.r1, rect.c1), Side::Right)]),
+        (
+            "edgeTop",
+            vec![(Rect::new(rect.r0, rect.c0, rect.r0, rect.c1), Side::Top)],
+        ),
+        (
+            "edgeBottom",
+            vec![(Rect::new(rect.r1, rect.c0, rect.r1, rect.c1), Side::Bottom)],
+        ),
+        (
+            "edgeLeft",
+            vec![(Rect::new(rect.r0, rect.c0, rect.r1, rect.c0), Side::Left)],
+        ),
+        (
+            "edgeRight",
+            vec![(Rect::new(rect.r0, rect.c1, rect.r1, rect.c1), Side::Right)],
+        ),
     ];
     if rect.cols() > 1 {
-        frame.push(("insideVertical", vec![(Rect::new(rect.r0, rect.c0, rect.r1, rect.c1 - 1), Side::Right), (Rect::new(rect.r0, rect.c0 + 1, rect.r1, rect.c1), Side::Left)]));
+        frame.push((
+            "insideVertical",
+            vec![
+                (
+                    Rect::new(rect.r0, rect.c0, rect.r1, rect.c1 - 1),
+                    Side::Right,
+                ),
+                (
+                    Rect::new(rect.r0, rect.c0 + 1, rect.r1, rect.c1),
+                    Side::Left,
+                ),
+            ],
+        ));
     }
     if rect.rows() > 1 {
-        frame.push(("insideHorizontal", vec![(Rect::new(rect.r0, rect.c0, rect.r1 - 1, rect.c1), Side::Bottom), (Rect::new(rect.r0 + 1, rect.c0, rect.r1, rect.c1), Side::Top)]));
+        frame.push((
+            "insideHorizontal",
+            vec![
+                (
+                    Rect::new(rect.r0, rect.c0, rect.r1 - 1, rect.c1),
+                    Side::Bottom,
+                ),
+                (Rect::new(rect.r0 + 1, rect.c0, rect.r1, rect.c1), Side::Top),
+            ],
+        ));
     }
     if frame.iter().all(|(_, part)| uniform(part).is_some()) {
         let range = scope.range(name, rect);
@@ -701,7 +1124,12 @@ fn border_steps(steps: &mut Vec<Step>, name: &str, rect: Rect, now: &dyn Fn(u32,
     }
     // Else side by side: each run of cells whose top (bottom, left, right)
     // becomes one same line.
-    for (which, index) in [(Side::Top, "edgeTop"), (Side::Bottom, "edgeBottom"), (Side::Left, "edgeLeft"), (Side::Right, "edgeRight")] {
+    for (which, index) in [
+        (Side::Top, "edgeTop"),
+        (Side::Bottom, "edgeBottom"),
+        (Side::Left, "edgeLeft"),
+        (Side::Right, "edgeRight"),
+    ] {
         let mut groups: Vec<(Border, BTreeSet<(u32, u32)>)> = Vec::new();
         for (row, col) in cells(rect) {
             let line = side(&then(row, col), which);
@@ -718,14 +1146,23 @@ fn border_steps(steps: &mut Vec<Step>, name: &str, rect: Rect, now: &dyn Fn(u32,
             for block in rects_of(&group) {
                 // An edge is one row or one column of cells.
                 let strips: Vec<Rect> = match which {
-                    Side::Top | Side::Bottom => (block.r0..=block.r1).map(|row| Rect::new(row, block.c0, row, block.c1)).collect(),
-                    Side::Left | Side::Right => (block.c0..=block.c1).map(|col| Rect::new(block.r0, col, block.r1, col)).collect(),
+                    Side::Top | Side::Bottom => (block.r0..=block.r1)
+                        .map(|row| Rect::new(row, block.c0, row, block.c1))
+                        .collect(),
+                    Side::Left | Side::Right => (block.c0..=block.c1)
+                        .map(|col| Rect::new(block.r0, col, block.r1, col))
+                        .collect(),
                 };
                 for strip in strips {
                     let part = [(strip, which)];
                     steps.push(Step {
                         comment: format!("Set border for range {} on {on}", strip.name()),
-                        lines: border_lines(&scope.range(name, strip), index, line, recolour(line, &part)),
+                        lines: border_lines(
+                            &scope.range(name, strip),
+                            index,
+                            line,
+                            recolour(line, &part),
+                        ),
                     });
                 }
             }
@@ -742,12 +1179,18 @@ fn cell_formats(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> 
         let on = scope.on(&ts.name);
         let mut groups: BTreeMap<Change, BTreeSet<(u32, u32)>> = BTreeMap::new();
         let mut bordered: BTreeSet<(u32, u32)> = BTreeSet::new();
-        for Pair { pos, styles: pair, .. } in side_by_side(ws, ts) {
+        for Pair {
+            pos, styles: pair, ..
+        } in side_by_side(ws, ts)
+        {
             if formats.same(pair.0, pair.1) {
                 continue;
             }
             let (list, borders) = known.entry(pair).or_insert_with(|| {
-                let (a, b) = (shown(work.styles.get(pair.0)), shown(target.styles.get(pair.1)));
+                let (a, b) = (
+                    shown(work.styles.get(pair.0)),
+                    shown(target.styles.get(pair.1)),
+                );
                 (changes(&a, &b), a.borders != b.borders)
             });
             for change in list.iter() {
@@ -759,7 +1202,10 @@ fn cell_formats(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> 
         }
         for (change, cells) in groups {
             for rect in rects_of(&cells) {
-                steps.push(Step::new(format!("{} for range {} on {on}", change.what, rect.name()), format!("{}{}", scope.range(&ts.name, rect), change.call)));
+                steps.push(Step::new(
+                    format!("{} for range {} on {on}", change.what, rect.name()),
+                    format!("{}{}", scope.range(&ts.name, rect), change.call),
+                ));
             }
         }
         let now = |row: u32, col: u32| shown(work.styles.get(ws.style_id_at(row, col))).borders;
@@ -776,7 +1222,10 @@ fn merges(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
     for (ws, ts) in pairs(work, target) {
         for merge in &ts.merges {
             if !ws.merges.contains(merge) {
-                steps.push(Step::new(format!("Merge range {} on {}", merge.name(), scope.on(&ts.name)), format!("{}.merge(false);", scope.range(&ts.name, *merge))));
+                steps.push(Step::new(
+                    format!("Merge range {} on {}", merge.name(), scope.on(&ts.name)),
+                    format!("{}.merge(false);", scope.range(&ts.name, *merge)),
+                ));
             }
         }
     }
@@ -794,7 +1243,10 @@ fn sizes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
             let mut groups: BTreeMap<String, Vec<u32>> = BTreeMap::new();
             let all: BTreeSet<u32> = now.keys().chain(then.keys()).copied().collect();
             for line in all {
-                let (a, b) = (now.get(&line).copied().unwrap_or(standard), then.get(&line).copied().unwrap_or(standard));
+                let (a, b) = (
+                    now.get(&line).copied().unwrap_or(standard),
+                    then.get(&line).copied().unwrap_or(standard),
+                );
                 if (a - b).abs() > 0.02 {
                     groups.entry(points(b)).or_default().push(line);
                 }
@@ -805,8 +1257,14 @@ fn sizes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
             for (first, last) in runs_of(columns) {
                 let rect = Rect::new(0, first, MAX_ROWS - 1, last);
                 steps.push(Step::new(
-                    format!("Set width of column(s) at range {} on {on} to {size}", rect.name()),
-                    format!("{}.getFormat().setColumnWidth({size});", scope.range(&ts.name, rect)),
+                    format!(
+                        "Set width of column(s) at range {} on {on} to {size}",
+                        rect.name()
+                    ),
+                    format!(
+                        "{}.getFormat().setColumnWidth({size});",
+                        scope.range(&ts.name, rect)
+                    ),
                 ));
             }
         }
@@ -814,8 +1272,14 @@ fn sizes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
             for (first, last) in runs_of(rows) {
                 let rect = Rect::new(first, 0, last, MAX_COLS - 1);
                 steps.push(Step::new(
-                    format!("Set height of row(s) at range {} on {on} to {size}", rect.name()),
-                    format!("{}.getFormat().setRowHeight({size});", scope.range(&ts.name, rect)),
+                    format!(
+                        "Set height of row(s) at range {} on {on} to {size}",
+                        rect.name()
+                    ),
+                    format!(
+                        "{}.getFormat().setRowHeight({size});",
+                        scope.range(&ts.name, rect)
+                    ),
                 ));
             }
         }
@@ -823,10 +1287,22 @@ fn sizes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         let mut hidden = |now: &BTreeSet<u32>, then: &BTreeSet<u32>, columns: bool| {
             for (hide, lines) in [(true, then.difference(now)), (false, now.difference(then))] {
                 for (first, last) in runs_of(lines.copied()) {
-                    let rect = if columns { Rect::new(0, first, MAX_ROWS - 1, last) } else { Rect::new(first, 0, last, MAX_COLS - 1) };
-                    let (what, setter) = if columns { ("column(s)", "setColumnHidden") } else { ("row(s)", "setRowHidden") };
+                    let rect = if columns {
+                        Rect::new(0, first, MAX_ROWS - 1, last)
+                    } else {
+                        Rect::new(first, 0, last, MAX_COLS - 1)
+                    };
+                    let (what, setter) = if columns {
+                        ("column(s)", "setColumnHidden")
+                    } else {
+                        ("row(s)", "setRowHidden")
+                    };
                     steps.push(Step::new(
-                        format!("{} {what} at range {} on {on}", if hide { "Hide" } else { "Unhide" }, rect.name()),
+                        format!(
+                            "{} {what} at range {} on {on}",
+                            if hide { "Hide" } else { "Unhide" },
+                            rect.name()
+                        ),
                         format!("{}.{setter}({hide});", scope.range(&ts.name, rect)),
                     ));
                 }
@@ -875,7 +1351,11 @@ fn criteria_text(criteria: &Criteria) -> Option<String> {
                     condition(second),
                     member("FilterOperator", if custom.and { "and" } else { "or" })
                 ),
-                None => format!("{{ {}, criterion1: {} }}", on("custom"), condition(&custom.first)),
+                None => format!(
+                    "{{ {}, criterion1: {} }}",
+                    on("custom"),
+                    condition(&custom.first)
+                ),
             }
         }
         Criteria::Top10(top) => {
@@ -885,10 +1365,27 @@ fn criteria_text(criteria: &Criteria) -> Option<String> {
                 (true, true) => "topPercent",
                 (false, true) => "bottomPercent",
             };
-            format!("{{ {}, criterion1: {} }}", on(kind), quote(&number(top.value)))
+            format!(
+                "{{ {}, criterion1: {} }}",
+                on(kind),
+                quote(&number(top.value))
+            )
         }
         Criteria::Dynamic(dynamic) => {
-            const MONTHS: [&str; 12] = ["January", "Februray", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const MONTHS: [&str; 12] = [
+                "January",
+                "Februray",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ];
             let name = match dynamic {
                 DynamicFilter::AboveAverage => "aboveAverage".to_string(),
                 DynamicFilter::BelowAverage => "belowAverage".to_string(),
@@ -909,11 +1406,25 @@ fn criteria_text(criteria: &Criteria) -> Option<String> {
                 DynamicFilter::NextYear => "nextYear".to_string(),
                 DynamicFilter::YearToDate => "yearToDate".to_string(),
                 DynamicFilter::Quarter(quarter) => format!("allDatesInPeriodQuarter{quarter}"),
-                DynamicFilter::Month(month) => format!("allDatesInPeriod{}", MONTHS.get(*month as usize - 1)?),
+                DynamicFilter::Month(month) => {
+                    format!("allDatesInPeriod{}", MONTHS.get(*month as usize - 1)?)
+                }
             };
-            format!("{{ {}, dynamicCriteria: {} }}", on("dynamic"), member("DynamicFilterCriteria", &name))
+            format!(
+                "{{ {}, dynamicCriteria: {} }}",
+                on("dynamic"),
+                member("DynamicFilterCriteria", &name)
+            )
         }
-        Criteria::Color(filter) => format!("{{ {}, color: {} }}", on(if filter.font { "fontColor" } else { "cellColor" }), color(filter.color?)),
+        Criteria::Color(filter) => format!(
+            "{{ {}, color: {} }}",
+            on(if filter.font {
+                "fontColor"
+            } else {
+                "cellColor"
+            }),
+            color(filter.color?)
+        ),
     })
 }
 
@@ -935,22 +1446,53 @@ fn filters(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         let on = scope.on(&ts.name);
         // The filter of the sheet.
         if let Some(filter) = &ts.auto_filter {
-            let apply = format!("{}.getAutoFilter().apply({}", scope.sheet(&ts.name), quote(&filter.range.name()));
-            let placed = ws.auto_filter.as_ref().filter(|now| now.range == filter.range);
+            let apply = format!(
+                "{}.getAutoFilter().apply({}",
+                scope.sheet(&ts.name),
+                quote(&filter.range.name())
+            );
+            let placed = ws
+                .auto_filter
+                .as_ref()
+                .filter(|now| now.range == filter.range);
             if placed.is_none() {
-                steps.push(Step::new(format!("Apply the AutoFilter on range {} of {on}", filter.range.name()), format!("{apply});")));
+                steps.push(Step::new(
+                    format!(
+                        "Apply the AutoFilter on range {} of {on}",
+                        filter.range.name()
+                    ),
+                    format!("{apply});"),
+                ));
             }
             let now = placed.map_or(&none, |now| &now.columns);
-            for column in now.keys().chain(filter.columns.keys()).copied().collect::<BTreeSet<u32>>() {
+            for column in now
+                .keys()
+                .chain(filter.columns.keys())
+                .copied()
+                .collect::<BTreeSet<u32>>()
+            {
                 match filter.columns.get(&column) {
                     Some(criteria) if now.get(&column) != Some(criteria) => {
                         if let Some(text) = criteria_text(criteria) {
-                            steps.push(Step::new(format!("Apply {} on column {} of the AutoFilter of {on}", criteria_words(criteria), column + 1), format!("{apply}, {column}, {text});")));
+                            steps.push(Step::new(
+                                format!(
+                                    "Apply {} on column {} of the AutoFilter of {on}",
+                                    criteria_words(criteria),
+                                    column + 1
+                                ),
+                                format!("{apply}, {column}, {text});"),
+                            ));
                         }
                     }
                     None => steps.push(Step::new(
-                        format!("Clear the filter of column {} of the AutoFilter of {on}", column + 1),
-                        format!("{}.getAutoFilter().clearColumnCriteria({column});", scope.sheet(&ts.name)),
+                        format!(
+                            "Clear the filter of column {} of the AutoFilter of {on}",
+                            column + 1
+                        ),
+                        format!(
+                            "{}.getAutoFilter().clearColumnCriteria({column});",
+                            scope.sheet(&ts.name)
+                        ),
                     )),
                     _ => {}
                 }
@@ -964,18 +1506,42 @@ fn filters(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
             let (Some(old), Some(new)) = (&now.auto_filter, &table.auto_filter) else {
                 continue;
             };
-            for column in old.columns.keys().chain(new.columns.keys()).copied().collect::<BTreeSet<u32>>() {
+            for column in old
+                .columns
+                .keys()
+                .chain(new.columns.keys())
+                .copied()
+                .collect::<BTreeSet<u32>>()
+            {
                 let Some(header) = table.columns.get(column as usize) else {
                     continue;
                 };
-                let filter = format!("{}.getColumnByName({}).getFilter()", table_expr(&table.name), quote(&header.name));
+                let filter = format!(
+                    "{}.getColumnByName({}).getFilter()",
+                    table_expr(&table.name),
+                    quote(&header.name)
+                );
                 match new.columns.get(&column) {
                     Some(criteria) if old.columns.get(&column) != Some(criteria) => {
                         if let Some(text) = criteria_text(criteria) {
-                            steps.push(Step::new(format!("Apply {} on column {} of table {}", criteria_words(criteria), header.name, table.name), format!("{filter}.apply({text});")));
+                            steps.push(Step::new(
+                                format!(
+                                    "Apply {} on column {} of table {}",
+                                    criteria_words(criteria),
+                                    header.name,
+                                    table.name
+                                ),
+                                format!("{filter}.apply({text});"),
+                            ));
                         }
                     }
-                    None => steps.push(Step::new(format!("Clear the filter of column {} of table {}", header.name, table.name), format!("{filter}.clear();"))),
+                    None => steps.push(Step::new(
+                        format!(
+                            "Clear the filter of column {} of table {}",
+                            header.name, table.name
+                        ),
+                        format!("{filter}.clear();"),
+                    )),
                     _ => {}
                 }
             }
@@ -995,12 +1561,24 @@ fn panes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         let on = scope.on(&ts.name);
         let panes = format!("{}.getFreezePanes()", scope.sheet(&ts.name));
         steps.push(match (ts.frozen_rows, ts.frozen_cols) {
-            (0, 0) => Step::new(format!("Unfreeze the panes of {on}"), format!("{panes}.unfreeze();")),
-            (rows, 0) => Step::new(format!("Freeze the first {rows} row(s) of {on}"), format!("{panes}.freezeRows({rows});")),
-            (0, cols) => Step::new(format!("Freeze the first {cols} column(s) of {on}"), format!("{panes}.freezeColumns({cols});")),
+            (0, 0) => Step::new(
+                format!("Unfreeze the panes of {on}"),
+                format!("{panes}.unfreeze();"),
+            ),
+            (rows, 0) => Step::new(
+                format!("Freeze the first {rows} row(s) of {on}"),
+                format!("{panes}.freezeRows({rows});"),
+            ),
+            (0, cols) => Step::new(
+                format!("Freeze the first {cols} column(s) of {on}"),
+                format!("{panes}.freezeColumns({cols});"),
+            ),
             (rows, cols) => {
                 let range = format!("A1:{}", cell_name(rows - 1, cols - 1));
-                Step::new(format!("Freeze the panes of {on} at range {range}"), format!("{panes}.freezeAt({});", quote(&range)))
+                Step::new(
+                    format!("Freeze the panes of {on} at range {range}"),
+                    format!("{panes}.freezeAt({});", quote(&range)),
+                )
             }
         });
     }
@@ -1017,7 +1595,12 @@ fn validation_rule(rule: &Validation, at: (u32, u32)) -> Option<String> {
     let key = match rule.kind {
         ValidationKind::Any => return None,
         ValidationKind::Custom => return Some(format!("{{ custom: {{ formula: {first} }} }}")),
-        ValidationKind::List => return Some(format!("{{ list: {{ inCellDropDown: {}, source: {first} }} }}", rule.in_cell_dropdown)),
+        ValidationKind::List => {
+            return Some(format!(
+                "{{ list: {{ inCellDropDown: {}, source: {first} }} }}",
+                rule.in_cell_dropdown
+            ));
+        }
         ValidationKind::Whole => "wholeNumber",
         ValidationKind::Decimal => "decimal",
         ValidationKind::Date => "date",
@@ -1034,8 +1617,15 @@ fn validation_rule(rule: &Validation, at: (u32, u32)) -> Option<String> {
         Operator::GreaterOrEqual => "greaterThanOrEqualTo",
         Operator::LessOrEqual => "lessThanOrEqualTo",
     };
-    let second = if rule.operator.has_two_operands() { format!(", formula2: {}", quote(&rule.operand2_text(at.0, at.1, en))) } else { String::new() };
-    Some(format!("{{ {key}: {{ formula1: {first}{second}, operator: {} }} }}", member("DataValidationOperator", operator)))
+    let second = if rule.operator.has_two_operands() {
+        format!(", formula2: {}", quote(&rule.operand2_text(at.0, at.1, en)))
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "{{ {key}: {{ formula1: {first}{second}, operator: {} }} }}",
+        member("DataValidationOperator", operator)
+    ))
 }
 
 /// Data validation: the ranges whose rule is no longer theirs lose it,
@@ -1051,7 +1641,13 @@ fn validation(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         let on = scope.on(&ts.name);
         for (range, rule) in &now {
             if !then.contains(&(*range, rule.clone())) {
-                steps.push(Step::new(format!("Clear data validation of range {} on {on}", range.name()), format!("{}.getDataValidation().clear();", scope.range(&ts.name, *range))));
+                steps.push(Step::new(
+                    format!("Clear data validation of range {} on {on}", range.name()),
+                    format!(
+                        "{}.getDataValidation().clear();",
+                        scope.range(&ts.name, *range)
+                    ),
+                ));
             }
         }
         for (range, rule) in &then {
@@ -1064,12 +1660,32 @@ fn validation(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
                 lines.push(format!("{validation}.setRule({text});"));
             }
             if rule.allow_blank != fresh.allow_blank {
-                lines.push(format!("{validation}.setIgnoreBlanks({});", rule.allow_blank));
+                lines.push(format!(
+                    "{validation}.setIgnoreBlanks({});",
+                    rule.allow_blank
+                ));
             }
-            if (rule.show_input, &rule.input_title, &rule.input_message) != (fresh.show_input, &fresh.input_title, &fresh.input_message) {
-                lines.push(format!("{validation}.setPrompt({{ showPrompt: {}, title: {}, message: {} }});", rule.show_input, quote(&rule.input_title), quote(&rule.input_message)));
+            if (rule.show_input, &rule.input_title, &rule.input_message)
+                != (fresh.show_input, &fresh.input_title, &fresh.input_message)
+            {
+                lines.push(format!(
+                    "{validation}.setPrompt({{ showPrompt: {}, title: {}, message: {} }});",
+                    rule.show_input,
+                    quote(&rule.input_title),
+                    quote(&rule.input_message)
+                ));
             }
-            if (rule.show_error, rule.error_style, &rule.error_title, &rule.error_message) != (fresh.show_error, fresh.error_style, &fresh.error_title, &fresh.error_message) {
+            if (
+                rule.show_error,
+                rule.error_style,
+                &rule.error_title,
+                &rule.error_message,
+            ) != (
+                fresh.show_error,
+                fresh.error_style,
+                &fresh.error_title,
+                &fresh.error_message,
+            ) {
                 let style = match rule.error_style {
                     AlertStyle::Stop => "stop",
                     AlertStyle::Warning => "warning",
@@ -1103,7 +1719,10 @@ fn conditional_formats(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec
     let mut steps = Vec::new();
     for (ws, ts) in pairs(work, target) {
         let (now, then) = (&ws.cond_formats, &ts.cond_formats);
-        let Some((added, _)) = then.split_first().filter(|(_, rest)| *rest == now.as_slice()) else {
+        let Some((added, _)) = then
+            .split_first()
+            .filter(|(_, rest)| *rest == now.as_slice())
+        else {
             continue;
         };
         let [range] = added.ranges.as_slice() else {
@@ -1125,18 +1744,39 @@ fn conditional_formats(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec
                     CellOp::GreaterOrEqual => "greaterThanOrEqual",
                     CellOp::LessOrEqual => "lessThanOrEqual",
                 };
-                let operand = |expr: &opensheet_engine::Expr| quote(&operand_text(expr, en, anchor, anchor, false));
-                let second = second.as_ref().map_or(String::new(), |second| format!(", formula2: {}", operand(second)));
+                let operand = |expr: &opensheet_engine::Expr| {
+                    quote(&operand_text(expr, en, anchor, anchor, false))
+                };
+                let second = second.as_ref().map_or(String::new(), |second| {
+                    format!(", formula2: {}", operand(second))
+                });
                 (
                     "cellValue",
                     "getCellValue()",
-                    format!(".setRule({{ formula1: {}{second}, operator: {} }});", operand(first), member("ConditionalCellValueOperator", operator)),
+                    format!(
+                        ".setRule({{ formula1: {}{second}, operator: {} }});",
+                        operand(first),
+                        member("ConditionalCellValueOperator", operator)
+                    ),
                 )
             }
-            Rule::Formula(formula) => ("custom", "getCustom()", format!(".getRule().setFormula({});", quote(&format!("={}", formula.to_text(en))))),
+            Rule::Formula(formula) => (
+                "custom",
+                "getCustom()",
+                format!(
+                    ".getRule().setFormula({});",
+                    quote(&format!("={}", formula.to_text(en)))
+                ),
+            ),
             _ => continue,
         };
-        let mut lines = vec![format!("{cells}.addConditionalFormat({});", member("ConditionalFormatType", kind)), format!("{rule}.{part}{set}")];
+        let mut lines = vec![
+            format!(
+                "{cells}.addConditionalFormat({});",
+                member("ConditionalFormatType", kind)
+            ),
+            format!("{rule}.{part}{set}"),
+        ];
         let format = format!("{rule}.{part}.getFormat()");
         if let Some(Some(fill)) = added.format.fill {
             lines.push(format!("{format}.getFill().setColor({});", color(fill)));
@@ -1168,26 +1808,45 @@ fn notes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
     for (ws, ts) in pairs(work, target) {
         let on = scope.on(&ts.name);
         let sheet = scope.sheet(&ts.name);
-        let cells: BTreeSet<(u32, u32)> = ws.comments.keys().chain(ts.comments.keys()).copied().collect();
+        let cells: BTreeSet<(u32, u32)> = ws
+            .comments
+            .keys()
+            .chain(ts.comments.keys())
+            .copied()
+            .collect();
         for cell in cells {
             let (now, then) = (ws.comments.get(&cell), ts.comments.get(&cell));
             if now == then {
                 continue;
             }
             let address = quote(&cell_name(cell.0, cell.1));
-            let (old, new) = (now.and_then(Comment::as_note), then.and_then(Comment::as_note));
+            let (old, new) = (
+                now.and_then(Comment::as_note),
+                then.and_then(Comment::as_note),
+            );
             // Only notes: a thread on either side is not for this stage.
             if now.is_some() != old.is_some() || then.is_some() != new.is_some() {
                 continue;
             }
             let note = format!("{sheet}.getNote({address})");
             match (old, new) {
-                (Some(_), None) => steps.push(Step::new(format!("Delete the note of cell {} on {on}", cell_name(cell.0, cell.1)), format!("{note}.delete();"))),
+                (Some(_), None) => steps.push(Step::new(
+                    format!(
+                        "Delete the note of cell {} on {on}",
+                        cell_name(cell.0, cell.1)
+                    ),
+                    format!("{note}.delete();"),
+                )),
                 (old, Some(new)) => {
                     let mut lines = Vec::new();
                     match old {
-                        None => lines.push(format!("{sheet}.addNote({address}, {});", quote(&new.text()))),
-                        Some(old) if old.text() != new.text() => lines.push(format!("{note}.setContent({});", quote(&new.text()))),
+                        None => lines.push(format!(
+                            "{sheet}.addNote({address}, {});",
+                            quote(&new.text())
+                        )),
+                        Some(old) if old.text() != new.text() => {
+                            lines.push(format!("{note}.setContent({});", quote(&new.text())))
+                        }
                         Some(_) => {}
                     }
                     if old.is_some_and(|old| old.visible) != new.visible {
@@ -1195,7 +1854,11 @@ fn notes(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
                     }
                     if !lines.is_empty() {
                         steps.push(Step {
-                            comment: format!("{} the note of cell {} on {on}", if old.is_none() { "Add" } else { "Change" }, cell_name(cell.0, cell.1)),
+                            comment: format!(
+                                "{} the note of cell {} on {on}",
+                                if old.is_none() { "Add" } else { "Change" },
+                                cell_name(cell.0, cell.1)
+                            ),
                             lines,
                         });
                     }
@@ -1227,11 +1890,22 @@ fn protection(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
     ];
     let mut steps = Vec::new();
     for (ws, ts) in pairs(work, target) {
-        let Some(wanted) = ts.protection.as_ref().filter(|wanted| wanted.password.is_none() && ws.protection.is_none()) else {
+        let Some(wanted) = ts
+            .protection
+            .as_ref()
+            .filter(|wanted| wanted.password.is_none() && ws.protection.is_none())
+        else {
             continue;
         };
-        let mut options: Vec<String> = OPTIONS.iter().filter(|(_, permission)| wanted.allows(*permission)).map(|(key, _)| format!("{key}: true")).collect();
-        let mode = match (wanted.allows(Permission::SelectLockedCells), wanted.allows(Permission::SelectUnlockedCells)) {
+        let mut options: Vec<String> = OPTIONS
+            .iter()
+            .filter(|(_, permission)| wanted.allows(*permission))
+            .map(|(key, _)| format!("{key}: true"))
+            .collect();
+        let mode = match (
+            wanted.allows(Permission::SelectLockedCells),
+            wanted.allows(Permission::SelectUnlockedCells),
+        ) {
             (true, true) => None,
             (false, true) => Some("unlocked"),
             (false, false) => Some("none"),
@@ -1239,10 +1913,23 @@ fn protection(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
             (true, false) => continue,
         };
         if let Some(mode) = mode {
-            options.push(format!("selectionMode: {}", member("ProtectionSelectionMode", mode)));
+            options.push(format!(
+                "selectionMode: {}",
+                member("ProtectionSelectionMode", mode)
+            ));
         }
-        let options = if options.is_empty() { String::new() } else { format!("{{ {} }}", options.join(", ")) };
-        steps.push(Step::new(format!("Protect worksheet {}", scope.on(&ts.name)), format!("{}.getProtection().protect({options});", scope.sheet(&ts.name))));
+        let options = if options.is_empty() {
+            String::new()
+        } else {
+            format!("{{ {} }}", options.join(", "))
+        };
+        steps.push(Step::new(
+            format!("Protect worksheet {}", scope.on(&ts.name)),
+            format!(
+                "{}.getProtection().protect({options});",
+                scope.sheet(&ts.name)
+            ),
+        ));
     }
     steps
 }
@@ -1261,7 +1948,10 @@ const CHART_TYPES: &[(&str, ChartKind)] = &[
     ("lineStacked100", ChartKind::PercentStackedLine),
     ("lineMarkers", ChartKind::LineMarkers),
     ("lineMarkersStacked", ChartKind::StackedLineMarkers),
-    ("lineMarkersStacked100", ChartKind::PercentStackedLineMarkers),
+    (
+        "lineMarkersStacked100",
+        ChartKind::PercentStackedLineMarkers,
+    ),
     ("_3DLine", ChartKind::Line3D),
     ("pie", ChartKind::Pie),
     ("_3DPie", ChartKind::Pie3D),
@@ -1290,7 +1980,10 @@ const CHART_TYPES: &[(&str, ChartKind)] = &[
 ];
 
 fn chart_type(kind: ChartKind) -> Option<String> {
-    CHART_TYPES.iter().find(|(_, other)| *other == kind).map(|(name, _)| member("ChartType", name))
+    CHART_TYPES
+        .iter()
+        .find(|(_, other)| *other == kind)
+        .map(|(name, _)| member("ChartType", name))
 }
 
 /// The cells a chart draws, when they are one block of its own sheet:
@@ -1299,7 +1992,11 @@ fn chart_source(sheet: &Sheet, chart: &Chart) -> Option<Rect> {
     let mut block: Option<Rect> = None;
     let mut alone = true;
     chart.clone().map_refs(&mut |reference| {
-        if reference.sheet.as_deref().is_some_and(|name| !name.eq_ignore_ascii_case(&sheet.name)) {
+        if reference
+            .sheet
+            .as_deref()
+            .is_some_and(|name| !name.eq_ignore_ascii_case(&sheet.name))
+        {
             alone = false;
         }
         let rect = reference.rect();
@@ -1315,25 +2012,48 @@ fn new_charts(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
         let on = scope.on(&ts.name);
         for chart in &ws.charts {
             if !ts.charts.iter().any(|other| other.id == chart.id) {
-                steps.push(Step::new(format!("Delete chart {} on {on}", chart.name), format!("{}.getChart({}).delete();", scope.sheet(&ts.name), quote(&chart.name))));
+                steps.push(Step::new(
+                    format!("Delete chart {} on {on}", chart.name),
+                    format!(
+                        "{}.getChart({}).delete();",
+                        scope.sheet(&ts.name),
+                        quote(&chart.name)
+                    ),
+                ));
             }
         }
         for chart in &ts.charts {
             if ws.charts.iter().any(|other| other.id == chart.id) {
                 continue;
             }
-            let (Some(kind), Some(source)) = (chart_type(chart.kind), chart_source(ts, chart)) else {
+            let (Some(kind), Some(source)) = (chart_type(chart.kind), chart_source(ts, chart))
+            else {
                 continue;
             };
             // The series run the way the chart made of the same cells has
             // them; said only when that is not the way a new chart takes.
             let by = [(None, ""), (Some(true), "rows"), (Some(false), "columns")]
                 .into_iter()
-                .find(|(by_rows, _)| target.chart_from_block(index, source, chart.kind, *by_rows).series == chart.series)
-                .map_or(String::new(), |(_, name)| if name.is_empty() { String::new() } else { format!(", {}", member("ChartSeriesBy", name)) });
+                .find(|(by_rows, _)| {
+                    target
+                        .chart_from_block(index, source, chart.kind, *by_rows)
+                        .series
+                        == chart.series
+                })
+                .map_or(String::new(), |(_, name)| {
+                    if name.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", member("ChartSeriesBy", name))
+                    }
+                });
             steps.push(Step::new(
                 format!("Insert chart on sheet {on}"),
-                format!("{}.addChart({kind}, {}{by});", scope.sheet(&ts.name), scope.range(&ts.name, source)),
+                format!(
+                    "{}.addChart({kind}, {}{by});",
+                    scope.sheet(&ts.name),
+                    scope.range(&ts.name, source)
+                ),
             ));
         }
     }
@@ -1343,10 +2063,15 @@ fn new_charts(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
 /// The chart of `charts` that is `chart`: the same number, or, for a
 /// chart a script just made, the same place in the list.
 fn chart_twin<'a>(charts: &'a [Chart], all: &[Chart], chart: &Chart) -> Option<&'a Chart> {
-    charts.iter().find(|other| other.id == chart.id).or_else(|| {
-        let place = all.iter().position(|other| other.id == chart.id)?;
-        charts.get(place).filter(|other| !all.iter().any(|known| known.id == other.id))
-    })
+    charts
+        .iter()
+        .find(|other| other.id == chart.id)
+        .or_else(|| {
+            let place = all.iter().position(|other| other.id == chart.id)?;
+            charts
+                .get(place)
+                .filter(|other| !all.iter().any(|known| known.id == other.id))
+        })
 }
 
 fn chart_options(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step> {
@@ -1363,24 +2088,49 @@ fn chart_options(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step>
             let mut name = now.name.as_str();
             let sheet = scope.sheet(&ts.name);
             if now.name != chart.name {
-                steps.push(Step::new(format!("Rename chart {} to {}", now.name, chart.name), format!("{sheet}.getChart({}).setName({});", quote(name), quote(&chart.name))));
+                steps.push(Step::new(
+                    format!("Rename chart {} to {}", now.name, chart.name),
+                    format!(
+                        "{sheet}.getChart({}).setName({});",
+                        quote(name),
+                        quote(&chart.name)
+                    ),
+                ));
                 name = &chart.name;
             }
             let expr = format!("{sheet}.getChart({})", quote(name));
             if now.kind != chart.kind {
                 if let Some(kind) = chart_type(chart.kind) {
-                    steps.push(Step::new(format!("Change the type of chart {name} on {on}"), format!("{expr}.setChartType({kind});")));
+                    steps.push(Step::new(
+                        format!("Change the type of chart {name} on {on}"),
+                        format!("{expr}.setChartType({kind});"),
+                    ));
                 }
             }
             if now.title != chart.title {
                 match &chart.title {
-                    ChartTitle::Text(text) => steps.push(Step::new(format!("Set the title of chart {name} on {on}"), format!("{expr}.getTitle().setText({});", quote(text)))),
-                    ChartTitle::None => steps.push(Step::new(format!("Hide the title of chart {name} on {on}"), format!("{expr}.getTitle().setVisible(false);"))),
-                    ChartTitle::Auto => steps.push(Step::new(format!("Show the title of chart {name} on {on}"), format!("{expr}.getTitle().setVisible(true);"))),
+                    ChartTitle::Text(text) => steps.push(Step::new(
+                        format!("Set the title of chart {name} on {on}"),
+                        format!("{expr}.getTitle().setText({});", quote(text)),
+                    )),
+                    ChartTitle::None => steps.push(Step::new(
+                        format!("Hide the title of chart {name} on {on}"),
+                        format!("{expr}.getTitle().setVisible(false);"),
+                    )),
+                    ChartTitle::Auto => steps.push(Step::new(
+                        format!("Show the title of chart {name} on {on}"),
+                        format!("{expr}.getTitle().setVisible(true);"),
+                    )),
                 }
             }
             if now.title_overlay != chart.title_overlay {
-                steps.push(Step::new(format!("Set the title of chart {name} over the plot: {}", chart.title_overlay), format!("{expr}.getTitle().setOverlay({});", chart.title_overlay)));
+                steps.push(Step::new(
+                    format!(
+                        "Set the title of chart {name} over the plot: {}",
+                        chart.title_overlay
+                    ),
+                    format!("{expr}.getTitle().setOverlay({});", chart.title_overlay),
+                ));
             }
             if now.legend != chart.legend {
                 let place = match chart.legend {
@@ -1392,22 +2142,41 @@ fn chart_options(work: &Workbook, target: &Workbook, scope: &Scope) -> Vec<Step>
                     LegendPos::TopRight => Some("corner"),
                 };
                 match place {
-                    None => steps.push(Step::new(format!("Hide the legend of chart {name} on {on}"), format!("{expr}.getLegend().setVisible(false);"))),
+                    None => steps.push(Step::new(
+                        format!("Hide the legend of chart {name} on {on}"),
+                        format!("{expr}.getLegend().setVisible(false);"),
+                    )),
                     Some(place) => steps.push(Step::new(
                         format!("Set the legend of chart {name} on {on}"),
-                        format!("{expr}.getLegend().setPosition({});", member("ChartLegendPosition", place)),
+                        format!(
+                            "{expr}.getLegend().setPosition({});",
+                            member("ChartLegendPosition", place)
+                        ),
                     )),
                 }
             }
             if now.legend_overlay != chart.legend_overlay {
-                steps.push(Step::new(format!("Set the legend of chart {name} over the plot: {}", chart.legend_overlay), format!("{expr}.getLegend().setOverlay({});", chart.legend_overlay)));
+                steps.push(Step::new(
+                    format!(
+                        "Set the legend of chart {name} over the plot: {}",
+                        chart.legend_overlay
+                    ),
+                    format!("{expr}.getLegend().setOverlay({});", chart.legend_overlay),
+                ));
             }
             // Where it is and how large, in points from the corner of
             // the sheet.
             let corner = |sheet: &Sheet, chart: &Chart| {
-                let x: f64 = (0..chart.anchor.1).map(|col| sheet.col_width(col) as f64).sum();
-                let y: f64 = (0..chart.anchor.0).map(|row| sheet.row_height(row) as f64).sum();
-                ((x + chart.offset.0 as f64) as f32, (y + chart.offset.1 as f64) as f32)
+                let x: f64 = (0..chart.anchor.1)
+                    .map(|col| sheet.col_width(col) as f64)
+                    .sum();
+                let y: f64 = (0..chart.anchor.0)
+                    .map(|row| sheet.row_height(row) as f64)
+                    .sum();
+                (
+                    (x + chart.offset.0 as f64) as f32,
+                    (y + chart.offset.1 as f64) as f32,
+                )
             };
             let (was, is) = (corner(ws, now), corner(ts, chart));
             let mut lines = Vec::new();

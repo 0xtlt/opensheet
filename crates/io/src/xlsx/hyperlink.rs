@@ -52,9 +52,17 @@ pub(crate) fn write(x: &mut String, sheet: &Sheet) {
 pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
     for (index, sheet) in wb.sheets.iter().enumerate() {
         let links = SheetLinks::of(sheet);
-        let external = sheet.hyperlinks.iter().filter(|link| !link.address.is_empty());
+        let external = sheet
+            .hyperlinks
+            .iter()
+            .filter(|link| !link.address.is_empty());
         for (link, id) in external.zip(&links.hyperlinks) {
-            extras.relate_sheet_outside(index, *id, &format!("{NS_DOC_REL}/hyperlink"), &link.address);
+            extras.relate_sheet_outside(
+                index,
+                *id,
+                &format!("{NS_DOC_REL}/hyperlink"),
+                &link.address,
+            );
         }
     }
 }
@@ -83,7 +91,12 @@ fn outside_targets(xml: &str) -> HashMap<String, String> {
 }
 
 /// Read the links of a worksheet from its XML and its relationships.
-pub(super) fn read_sheet<R: Read + Seek>(pkg: &mut Package<R>, part: &str, xml: &str, sheet: &mut Sheet) {
+pub(super) fn read_sheet<R: Read + Seek>(
+    pkg: &mut Package<R>,
+    part: &str,
+    xml: &str,
+    sheet: &mut Sheet,
+) {
     // Most sheets have none: no need to walk the cells again.
     let Some(start) = xml.find("<hyperlinks") else {
         return;
@@ -97,8 +110,13 @@ pub(super) fn read_sheet<R: Read + Seek>(pkg: &mut Package<R>, part: &str, xml: 
         match r.next() {
             Event::Open(t) if t.name == "hyperlink" => {
                 let range = t.attr("ref").and_then(|range| Rect::parse(&range));
-                let address = t.attr_local("id").and_then(|id| targets.get(id.as_ref()).cloned());
-                let location = t.attr("location").map(|l| l.into_owned()).unwrap_or_default();
+                let address = t
+                    .attr_local("id")
+                    .and_then(|id| targets.get(id.as_ref()).cloned());
+                let location = t
+                    .attr("location")
+                    .map(|l| l.into_owned())
+                    .unwrap_or_default();
                 r.skip(&t);
                 // A link without a target, or to nothing we can place, is
                 // dropped.
@@ -110,7 +128,10 @@ pub(super) fn read_sheet<R: Read + Seek>(pkg: &mut Package<R>, part: &str, xml: 
                     range,
                     address: address.unwrap_or_default(),
                     location,
-                    tooltip: t.attr("tooltip").map(|tip| tip.into_owned()).unwrap_or_default(),
+                    tooltip: t
+                        .attr("tooltip")
+                        .map(|tip| tip.into_owned())
+                        .unwrap_or_default(),
                 });
             }
             Event::Close("hyperlinks") | Event::Eof => break,

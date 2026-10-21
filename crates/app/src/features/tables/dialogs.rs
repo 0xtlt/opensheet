@@ -70,13 +70,12 @@ impl RangeField {
             let (input, handle) = (self.input.clone(), self.input.read(cx).focus_handle(cx));
             self.modal.update_app(cx, |app, cx| {
                 app.alert(
-                    Alert::new("OpenSheet", invalid_reference()).warning().button(
-                        t("OK", "OK"),
-                        move |_, window, cx| {
+                    Alert::new("OpenSheet", invalid_reference())
+                        .warning()
+                        .button(t("OK", "OK"), move |_, window, cx| {
                             window.focus(&handle);
                             input.update(cx, |input, cx| input.select_all_text(cx));
-                        },
-                    ),
+                        }),
                     cx,
                 )
             });
@@ -106,7 +105,12 @@ struct CreateTable {
 /// Insert > Table, and what follows the choice of a style in Format as
 /// Table: ask where the data is. The range offered is the selection, or
 /// the block of data around the active cell.
-pub(super) fn open_create(app: &mut ExcelApp, style: Option<Option<&'static str>>, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_create(
+    app: &mut ExcelApp,
+    style: Option<Option<&'static str>>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if app.sel().ranges.len() > 1 {
         app.alert(
             Alert::new(
@@ -130,8 +134,10 @@ pub(super) fn open_create(app: &mut ExcelApp, style: Option<Option<&'static str>
     let shown = show_on_sheet(app, range);
     app.open_modal(window, cx, move |modal, _, cx| {
         let range = RangeField::new(&modal, sheet, sheet_name, range, shown, cx);
-        cx.observe(&range.input, |this: &mut CreateTable, _, cx| this.range.show(cx))
-            .detach();
+        cx.observe(&range.input, |this: &mut CreateTable, _, cx| {
+            this.range.show(cx)
+        })
+        .detach();
         CreateTable {
             modal,
             range,
@@ -162,7 +168,11 @@ impl Render for CreateTable {
                 "Where is the data for your table?",
                 "Où se trouvent les données de votre tableau ?",
             )))
-            .child(div().flex().child(RefEdit::new(&self.range.input, &self.modal)))
+            .child(
+                div()
+                    .flex()
+                    .child(RefEdit::new(&self.range.input, &self.modal)),
+            )
             .child(
                 Checkbox::new(
                     "headers",
@@ -191,7 +201,9 @@ struct ResizeTable {
 
 /// Table Design > Resize Table.
 pub(super) fn open_resize(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let Some((table, range, headers)) = active_table(app).map(|table| (table.id, table.range, table.header_row)) else {
+    let Some((table, range, headers)) =
+        active_table(app).map(|table| (table.id, table.range, table.header_row))
+    else {
         return;
     };
     if !app.may(Intent::ChangeTable, cx) {
@@ -202,8 +214,10 @@ pub(super) fn open_resize(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) 
     let shown = show_on_sheet(app, range);
     app.open_modal(window, cx, move |modal, _, cx| {
         let range = RangeField::new(&modal, sheet, sheet_name, range, shown, cx);
-        cx.observe(&range.input, |this: &mut ResizeTable, _, cx| this.range.show(cx))
-            .detach();
+        cx.observe(&range.input, |this: &mut ResizeTable, _, cx| {
+            this.range.show(cx)
+        })
+        .detach();
         ResizeTable {
             modal,
             range,
@@ -245,7 +259,11 @@ impl Render for ResizeTable {
                 "Select the new data range for your table:",
                 "Sélectionnez la nouvelle plage de données pour votre tableau :",
             )))
-            .child(div().flex().child(RefEdit::new(&self.range.input, &self.modal)))
+            .child(
+                div()
+                    .flex()
+                    .child(RefEdit::new(&self.range.input, &self.modal)),
+            )
             .child(div().w_full().text_color(c(theme::TEXT_MUTED)).child(note))
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }

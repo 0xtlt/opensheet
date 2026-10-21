@@ -45,7 +45,12 @@ pub fn header_formulas(wb: &Workbook, sheet: usize, range: Rect) -> bool {
 pub fn drag_range(table: &Table, pointer: (u32, u32)) -> Rect {
     let range = table.range;
     let least = range.r0 + table.header_row as u32 + table.totals_row as u32;
-    Rect::new(range.r0, range.c0, pointer.0.max(least), pointer.1.max(range.c0))
+    Rect::new(
+        range.r0,
+        range.c0,
+        pointer.0.max(least),
+        pointer.1.max(range.c0),
+    )
 }
 
 /// The cells whose contents resizing a table to `new` would replace with
@@ -83,13 +88,22 @@ pub fn name_problem(wb: &Workbook, error: TableError, name: &str) -> NameProblem
 pub fn totals_choices() -> [(&'static str, TotalsFunction); 9] {
     [
         (t_ctx("totals", "None", "Aucun"), TotalsFunction::None),
-        (t_ctx("totals", "Average", "Moyenne"), TotalsFunction::Average),
+        (
+            t_ctx("totals", "Average", "Moyenne"),
+            TotalsFunction::Average,
+        ),
         (t_ctx("totals", "Count", "Nombre"), TotalsFunction::Count),
-        (t_ctx("totals", "Count Numbers", "Chiffres"), TotalsFunction::CountNums),
+        (
+            t_ctx("totals", "Count Numbers", "Chiffres"),
+            TotalsFunction::CountNums,
+        ),
         (t_ctx("totals", "Max", "Max."), TotalsFunction::Max),
         (t_ctx("totals", "Min", "Min."), TotalsFunction::Min),
         (t_ctx("totals", "Sum", "Somme"), TotalsFunction::Sum),
-        (t_ctx("totals", "StdDev", "Écartype"), TotalsFunction::StdDev),
+        (
+            t_ctx("totals", "StdDev", "Écartype"),
+            TotalsFunction::StdDev,
+        ),
         (t_ctx("totals", "Var", "Var"), TotalsFunction::Var),
     ]
 }
@@ -113,7 +127,12 @@ pub enum TabMove {
 /// of the next row, and from the last cell of the data it adds a row; rows
 /// and columns that are not shown are passed over. `None` leaves the move
 /// to the sheet.
-pub fn tab_move(wb: &Workbook, sheet: usize, active: (u32, u32), backward: bool) -> Option<TabMove> {
+pub fn tab_move(
+    wb: &Workbook,
+    sheet: usize,
+    active: (u32, u32),
+    backward: bool,
+) -> Option<TabMove> {
     let (row, col) = active;
     let table = wb.table_at(sheet, row, col)?;
     let sh = wb.sheets.get(sheet)?;
@@ -173,7 +192,9 @@ impl Reach {
     pub fn of(wb: &Workbook, sheet: usize, active: (u32, u32), selection: Rect) -> Option<Reach> {
         let table = wb.table_at(sheet, active.0, active.1)?;
         let range = table.range;
-        let hit = selection.intersection(&range).unwrap_or(Rect::cell(active.0, active.1));
+        let hit = selection
+            .intersection(&range)
+            .unwrap_or(Rect::cell(active.0, active.1));
         let data = table.data_range();
         let in_data = data.and_then(|d| d.intersection(&hit));
         let data_rows = in_data.map(|d| (d.r0, d.rows()));
@@ -195,19 +216,34 @@ impl Reach {
     /// "Table Column Data": the data cells of the columns.
     pub fn column_data(&self, table: &Table) -> Option<Rect> {
         let data = table.data_range()?;
-        Some(Rect::new(data.r0, self.cols.0, data.r1, self.cols.0 + self.cols.1 - 1))
+        Some(Rect::new(
+            data.r0,
+            self.cols.0,
+            data.r1,
+            self.cols.0 + self.cols.1 - 1,
+        ))
     }
 
     /// "Entire Table Column": the columns with their header and total.
     pub fn entire_columns(&self, table: &Table) -> Rect {
         let range = table.range;
-        Rect::new(range.r0, self.cols.0, range.r1, self.cols.0 + self.cols.1 - 1)
+        Rect::new(
+            range.r0,
+            self.cols.0,
+            range.r1,
+            self.cols.0 + self.cols.1 - 1,
+        )
     }
 
     /// "Table Row": the rows across the table.
     pub fn table_rows(&self, table: &Table) -> Rect {
         let range = table.range;
-        Rect::new(self.rows.0, range.c0, self.rows.0 + self.rows.1 - 1, range.c1)
+        Rect::new(
+            self.rows.0,
+            range.c0,
+            self.rows.0 + self.rows.1 - 1,
+            range.c1,
+        )
     }
 }
 
@@ -216,7 +252,12 @@ impl Reach {
 /// The cells a table name or a structured reference typed in the Name Box
 /// stands for, seen from the cell `active`: `Table1` is the data of the
 /// table, `Table1[#All]` all of it, `Table1[Sales]` one column...
-pub fn go_to_target(wb: &Workbook, sheet: usize, active: (u32, u32), text: &str) -> Option<Reference> {
+pub fn go_to_target(
+    wb: &Workbook,
+    sheet: usize,
+    active: (u32, u32),
+    text: &str,
+) -> Option<Reference> {
     let text = text.trim();
     let text = text.strip_prefix('=').unwrap_or(text);
     match parser::parse_formula(text, wb.locale).ok()? {
@@ -224,7 +265,9 @@ pub fn go_to_target(wb: &Workbook, sheet: usize, active: (u32, u32), text: &str)
             let (table_sheet, table) = wb.table_by_name(&name)?;
             Some(Reference::new(table_sheet, table.data_range()?))
         }
-        Expr::Table(reference) => structured::resolve(wb, &reference, sheet, active.0, active.1).ok(),
+        Expr::Table(reference) => {
+            structured::resolve(wb, &reference, sheet, active.0, active.1).ok()
+        }
         _ => None,
     }
 }
@@ -232,11 +275,18 @@ pub fn go_to_target(wb: &Workbook, sheet: usize, active: (u32, u32), text: &str)
 /// What pointing at `rect` writes in the formula being typed in the cell
 /// `from` (`None`: a cell of another sheet) when Excel writes a structured
 /// reference there (`Table1[Sales]`, `[@Sales]`) rather than `C2:C9`.
-pub fn pointed_reference(wb: &Workbook, sheet: usize, rect: Rect, from: Option<(u32, u32)>) -> Option<String> {
+pub fn pointed_reference(
+    wb: &Workbook,
+    sheet: usize,
+    rect: Rect,
+    from: Option<(u32, u32)>,
+) -> Option<String> {
     // A formula typed right beside a table belongs to it, since the table
     // grows over it: the name of the table is left out there too.
     let from = from.map(|(row, col)| match wb.table_for_entry(sheet, row, col) {
-        Some(table) if !table.contains(row, col) && table.contains(row, table.range.c1) => (row, table.range.c1),
+        Some(table) if !table.contains(row, col) && table.contains(row, table.range.c1) => {
+            (row, table.range.c1)
+        }
         _ => (row, col),
     });
     let reference = wb.structured_reference(sheet, rect, from)?;
@@ -284,7 +334,13 @@ pub fn near_tables(wb: &Workbook, sheet: usize, rect: Rect) -> bool {
     wb.sheets.get(sheet).is_some_and(|sh| {
         sh.tables.iter().any(|table| {
             let r = table.range;
-            Rect::new(r.r0, r.c0, (r.r1 + 1).min(MAX_ROWS - 1), (r.c1 + 1).min(MAX_COLS - 1)).intersects(&rect)
+            Rect::new(
+                r.r0,
+                r.c0,
+                (r.r1 + 1).min(MAX_ROWS - 1),
+                (r.c1 + 1).min(MAX_COLS - 1),
+            )
+            .intersects(&rect)
         })
     })
 }
@@ -367,10 +423,22 @@ mod tests {
 
     #[test]
     fn ranges_of_dialogs() {
-        assert_eq!(parse_range("=$A$1:$C$4", "Sheet1"), Some(Rect::new(0, 0, 3, 2)));
-        assert_eq!(parse_range(" b2:a1 ", "Sheet1"), Some(Rect::new(0, 0, 1, 1)));
-        assert_eq!(parse_range("=Sheet1!$A$1", "sheet1"), Some(Rect::cell(0, 0)));
-        assert_eq!(parse_range("='It''s'!A1:B2", "It's"), Some(Rect::new(0, 0, 1, 1)));
+        assert_eq!(
+            parse_range("=$A$1:$C$4", "Sheet1"),
+            Some(Rect::new(0, 0, 3, 2))
+        );
+        assert_eq!(
+            parse_range(" b2:a1 ", "Sheet1"),
+            Some(Rect::new(0, 0, 1, 1))
+        );
+        assert_eq!(
+            parse_range("=Sheet1!$A$1", "sheet1"),
+            Some(Rect::cell(0, 0))
+        );
+        assert_eq!(
+            parse_range("='It''s'!A1:B2", "It's"),
+            Some(Rect::new(0, 0, 1, 1))
+        );
         assert_eq!(parse_range("=Sheet2!A1:B2", "Sheet1"), None);
         assert_eq!(parse_range("Table1", "Sheet1"), None);
         assert_eq!(parse_range("", "Sheet1"), None);
@@ -393,7 +461,8 @@ mod tests {
         assert_eq!(drag_range(&table, (6, 4)), Rect::new(0, 0, 6, 4));
         // Not above the first data row, nor left of the first column.
         assert_eq!(drag_range(&table, (0, 0)), Rect::new(0, 0, 1, 0));
-        wb.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        wb.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         wb.commit("totals");
         let table = wb.table(0, id).unwrap().clone();
         assert_eq!(drag_range(&table, (0, 1)), Rect::new(0, 0, 2, 1));
@@ -404,8 +473,12 @@ mod tests {
         let (mut wb, id) = sample();
         let table = wb.table(0, id).unwrap().clone();
         // Without a totals row nothing is overwritten.
-        assert_eq!(totals_overwrite(&wb, 0, &table, Rect::new(0, 0, 2, 2)), None);
-        wb.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        assert_eq!(
+            totals_overwrite(&wb, 0, &table, Rect::new(0, 0, 2, 2)),
+            None
+        );
+        wb.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         wb.commit("totals");
         let table = wb.table(0, id).unwrap().clone();
         assert_eq!(table.range, Rect::new(0, 0, 4, 2));
@@ -415,8 +488,14 @@ mod tests {
             Some(Rect::new(3, 0, 3, 2))
         );
         // Growing over blank rows, or sideways, overwrites nothing.
-        assert_eq!(totals_overwrite(&wb, 0, &table, Rect::new(0, 0, 7, 2)), None);
-        assert_eq!(totals_overwrite(&wb, 0, &table, Rect::new(0, 0, 4, 3)), None);
+        assert_eq!(
+            totals_overwrite(&wb, 0, &table, Rect::new(0, 0, 7, 2)),
+            None
+        );
+        assert_eq!(
+            totals_overwrite(&wb, 0, &table, Rect::new(0, 0, 4, 3)),
+            None
+        );
     }
 
     #[test]
@@ -469,7 +548,8 @@ mod tests {
         assert_eq!(tab_move(&wb, 0, (3, 3), false), None);
         // With a totals row the new row comes above it, and the last cell
         // of the totals row leaves the table.
-        wb.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        wb.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         wb.commit("totals");
         assert_eq!(
             tab_move(&wb, 0, (3, 2), false),
@@ -524,7 +604,8 @@ mod tests {
         assert_eq!(reach.rows_above, None);
         assert_eq!(reach.rows, (0, 1));
         // The totals row: a row above it is a new last row of data.
-        wb.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        wb.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         wb.commit("totals");
         let reach = Reach::of(&wb, 0, (4, 0), Rect::cell(4, 0)).unwrap();
         assert_eq!(reach.data_rows, None);
@@ -544,14 +625,17 @@ mod tests {
         assert_eq!(wb.table(0, id).unwrap().range, Rect::new(0, 0, 5, 2));
         assert_eq!(wb.value_at(0, 4, 0), Value::text("Ink"));
         let reach = Reach::of(&wb, 0, (5, 2), Rect::cell(5, 2)).unwrap();
-        wb.table_insert_cols(0, id, reach.col_right.unwrap(), 1).unwrap();
-        wb.table_insert_rows(0, id, reach.row_below.unwrap(), 1).unwrap();
+        wb.table_insert_cols(0, id, reach.col_right.unwrap(), 1)
+            .unwrap();
+        wb.table_insert_rows(0, id, reach.row_below.unwrap(), 1)
+            .unwrap();
         wb.commit("grow");
         assert_eq!(wb.table(0, id).unwrap().range, Rect::new(0, 0, 6, 3));
         let reach = Reach::of(&wb, 0, (2, 0), Rect::new(2, 0, 3, 0)).unwrap();
         let (at, count) = reach.data_rows.unwrap();
         wb.table_delete_rows(0, id, at, count).unwrap();
-        wb.table_delete_cols(0, id, reach.cols.0, reach.cols.1).unwrap();
+        wb.table_delete_cols(0, id, reach.cols.0, reach.cols.1)
+            .unwrap();
         wb.commit("shrink");
         assert_eq!(wb.table(0, id).unwrap().range, Rect::new(0, 0, 4, 2));
         assert_eq!(wb.value_at(0, 0, 0), Value::text("Qty"));
@@ -561,11 +645,22 @@ mod tests {
     fn names_in_the_name_box() {
         let (mut wb, id) = sample();
         let name = wb.table(0, id).unwrap().name.clone();
-        let at = |wb: &Workbook, text: &str| go_to_target(wb, 0, (0, 0), text).map(|r| (r.sheet, r.rect));
+        let at = |wb: &Workbook, text: &str| {
+            go_to_target(wb, 0, (0, 0), text).map(|r| (r.sheet, r.rect))
+        };
         assert_eq!(at(&wb, &name), Some((0, Rect::new(1, 0, 3, 2))));
-        assert_eq!(at(&wb, &name.to_lowercase()), Some((0, Rect::new(1, 0, 3, 2))));
-        assert_eq!(at(&wb, &format!("{name}[#All]")), Some((0, Rect::new(0, 0, 3, 2))));
-        assert_eq!(at(&wb, &format!("{name}[Qty]")), Some((0, Rect::new(1, 1, 3, 1))));
+        assert_eq!(
+            at(&wb, &name.to_lowercase()),
+            Some((0, Rect::new(1, 0, 3, 2)))
+        );
+        assert_eq!(
+            at(&wb, &format!("{name}[#All]")),
+            Some((0, Rect::new(0, 0, 3, 2)))
+        );
+        assert_eq!(
+            at(&wb, &format!("{name}[Qty]")),
+            Some((0, Rect::new(1, 1, 3, 1)))
+        );
         assert_eq!(
             at(&wb, &format!("={name}[[#Headers],[Price]]")),
             Some((0, Rect::cell(0, 2)))
@@ -607,8 +702,14 @@ mod tests {
             Some(format!("{name}[@Qty]"))
         );
         // Any other single cell is a plain reference.
-        assert_eq!(pointed_reference(&wb, 0, Rect::cell(2, 1), Some((6, 6))), None);
-        assert_eq!(pointed_reference(&wb, 0, Rect::cell(9, 9), Some((6, 6))), None);
+        assert_eq!(
+            pointed_reference(&wb, 0, Rect::cell(2, 1), Some((6, 6))),
+            None
+        );
+        assert_eq!(
+            pointed_reference(&wb, 0, Rect::cell(9, 9), Some((6, 6))),
+            None
+        );
     }
 
     #[test]

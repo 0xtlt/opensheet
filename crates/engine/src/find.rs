@@ -119,7 +119,9 @@ impl Pattern {
         let mut chars = needle.chars().peekable();
         while let Some(c) = chars.next() {
             let token = match c {
-                '~' if matches!(chars.peek(), Some('*' | '?' | '~')) => Token::Char(chars.next().unwrap_or('~')),
+                '~' if matches!(chars.peek(), Some('*' | '?' | '~')) => {
+                    Token::Char(chars.next().unwrap_or('~'))
+                }
                 '?' => Token::One,
                 '*' => Token::Many,
                 c => Token::Char(c),
@@ -145,23 +147,30 @@ impl Pattern {
     fn match_from(&self, tokens: &[Token], hay: &[char], at: usize, to_end: bool) -> Option<usize> {
         match tokens.split_first() {
             None => (!to_end || at == hay.len()).then_some(at),
-            Some((Token::Many, rest)) => {
-                (at..=hay.len()).rev().find_map(|next| self.match_from(rest, hay, next, to_end))
-            }
+            Some((Token::Many, rest)) => (at..=hay.len())
+                .rev()
+                .find_map(|next| self.match_from(rest, hay, next, to_end)),
             Some((token, rest)) => {
                 let c = *hay.get(at)?;
                 let fits = match token {
                     Token::Char(p) => self.same(*p, c),
                     _ => true,
                 };
-                if fits { self.match_from(rest, hay, at + 1, to_end) } else { None }
+                if fits {
+                    self.match_from(rest, hay, at + 1, to_end)
+                } else {
+                    None
+                }
             }
         }
     }
 
     /// The first match at or after `from`, as (start, end).
     fn find(&self, hay: &[char], from: usize) -> Option<(usize, usize)> {
-        (from..=hay.len()).find_map(|start| self.match_from(&self.tokens, hay, start, false).map(|end| (start, end)))
+        (from..=hay.len()).find_map(|start| {
+            self.match_from(&self.tokens, hay, start, false)
+                .map(|end| (start, end))
+        })
     }
 
     fn is_whole(&self, hay: &[char]) -> bool {
@@ -173,7 +182,11 @@ impl Pattern {
             return false;
         }
         let hay: Vec<char> = text.chars().collect();
-        if whole_cell { self.is_whole(&hay) } else { self.find(&hay, 0).is_some() }
+        if whole_cell {
+            self.is_whole(&hay)
+        } else {
+            self.find(&hay, 0).is_some()
+        }
     }
 
     /// `text` with every match replaced; `None` when there is none.
@@ -218,7 +231,8 @@ impl Workbook {
     fn is_searched(&self, sheet: usize, row: u32, col: u32, opts: &FindOptions) -> bool {
         let sh = &self.sheets[sheet];
         !sh.filtered_rows.contains(&row)
-            && (opts.look_in == LookIn::Formulas || !(sh.hidden_rows.contains(&row) || sh.hidden_cols.contains(&col)))
+            && (opts.look_in == LookIn::Formulas
+                || !(sh.hidden_rows.contains(&row) || sh.hidden_cols.contains(&col)))
     }
 
     /// The text a search reads in a cell.
@@ -230,7 +244,11 @@ impl Workbook {
             LookIn::Comments => match self.comment_at(sheet, row, col) {
                 Some(comment) => match (comment.as_note(), comment.as_thread()) {
                     (Some(note), _) => note.text(),
-                    (_, Some(thread)) => thread.posts().map(|post| post.text.as_str()).collect::<Vec<_>>().join("\n"),
+                    (_, Some(thread)) => thread
+                        .posts()
+                        .map(|post| post.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                     _ => String::new(),
                 },
                 None => String::new(),
@@ -245,11 +263,22 @@ impl Workbook {
             return Vec::new();
         };
         let wanted = |row: u32, col: u32| {
-            (within.is_empty() || within.iter().any(|r| r.contains(row, col))) && self.is_searched(sheet, row, col, opts)
+            (within.is_empty() || within.iter().any(|r| r.contains(row, col)))
+                && self.is_searched(sheet, row, col, opts)
         };
         let mut cells: Vec<(u32, u32)> = match opts.look_in {
-            LookIn::Comments => sh.comments.keys().copied().filter(|(r, c)| wanted(*r, *c)).collect(),
-            _ => sh.cells.keys().copied().filter(|(r, c)| wanted(*r, *c)).collect(),
+            LookIn::Comments => sh
+                .comments
+                .keys()
+                .copied()
+                .filter(|(r, c)| wanted(*r, *c))
+                .collect(),
+            _ => sh
+                .cells
+                .keys()
+                .copied()
+                .filter(|(r, c)| wanted(*r, *c))
+                .collect(),
         };
         // The cells a dynamic array spills into show values of their own.
         if opts.look_in == LookIn::Values && !sh.spills.is_empty() {
@@ -273,7 +302,10 @@ impl Workbook {
     }
 
     fn place_matches(&self, place: Place, pattern: &Pattern, opts: &FindOptions) -> bool {
-        pattern.matches(&self.searched_text(place.0, place.1, place.2, opts.look_in), opts.whole_cell)
+        pattern.matches(
+            &self.searched_text(place.0, place.1, place.2, opts.look_in),
+            opts.whole_cell,
+        )
     }
 
     /// The sheets of a search in the order it visits them from `sheet`,
@@ -297,7 +329,13 @@ impl Workbook {
         if from.0 >= self.sheets.len() {
             return None;
         }
-        let key = |(row, col): (u32, u32)| if opts.by_columns { (col, row) } else { (row, col) };
+        let key = |(row, col): (u32, u32)| {
+            if opts.by_columns {
+                (col, row)
+            } else {
+                (row, col)
+            }
+        };
         let here = key((from.1, from.2));
         let sheets = self.search_sheets(search, from.0);
         // The starting sheet is walked in two parts: what comes after the
@@ -305,7 +343,10 @@ impl Workbook {
         let mut parts: Vec<Vec<Place>> = Vec::with_capacity(sheets.len() + 1);
         let mut last: Vec<Place> = Vec::new();
         for (i, (sheet, within)) in sheets.iter().enumerate() {
-            let cells = self.candidates(*sheet, opts, within).into_iter().map(|(row, col)| (*sheet, row, col));
+            let cells = self
+                .candidates(*sheet, opts, within)
+                .into_iter()
+                .map(|(row, col)| (*sheet, row, col));
             if i > 0 {
                 parts.push(cells.collect());
                 continue;
@@ -314,7 +355,11 @@ impl Workbook {
             for place in cells {
                 let k = key((place.1, place.2));
                 let is_ahead = if backward { k < here } else { k > here };
-                if is_ahead { ahead.push(place) } else { behind.push(place) }
+                if is_ahead {
+                    ahead.push(place)
+                } else {
+                    behind.push(place)
+                }
             }
             parts.push(ahead);
             last = behind;
@@ -330,7 +375,11 @@ impl Workbook {
                 .copied()
         } else {
             parts.push(last);
-            parts.iter().flatten().find(|place| self.place_matches(**place, &pattern, opts)).copied()
+            parts
+                .iter()
+                .flatten()
+                .find(|place| self.place_matches(**place, &pattern, opts))
+                .copied()
         }
     }
 
@@ -383,7 +432,11 @@ impl Workbook {
         };
         Found {
             place,
-            sheet: self.sheets.get(sheet).map(|sh| sh.name.to_string()).unwrap_or_default(),
+            sheet: self
+                .sheets
+                .get(sheet)
+                .map(|sh| sh.name.to_string())
+                .unwrap_or_default(),
             name: self.name_of_cell(place).unwrap_or_default().to_string(),
             cell: format!("${}${}", col_to_letters(col), row + 1),
             value: self.display_text(sheet, row, col).text,
@@ -392,14 +445,21 @@ impl Workbook {
     }
 
     /// Next cell after `from` (reading order, wrapping) whose text matches.
-    pub fn find_next(&self, sheet: usize, from: (u32, u32), needle: &str, opts: &FindOptions) -> Option<(u32, u32)> {
+    pub fn find_next(
+        &self,
+        sheet: usize,
+        from: (u32, u32),
+        needle: &str,
+        opts: &FindOptions,
+    ) -> Option<(u32, u32)> {
         let search = Search {
             needle,
             options: opts,
             workbook: false,
             within: &[],
         };
-        self.find_from(&search, (sheet, from.0, from.1), false).map(|(_, row, col)| (row, col))
+        self.find_from(&search, (sheet, from.0, from.1), false)
+            .map(|(_, row, col)| (row, col))
     }
 
     /// Every cell of a sheet whose text matches, in the order of the
@@ -411,7 +471,10 @@ impl Workbook {
             workbook: false,
             within: &[],
         };
-        self.find_everywhere(&search, sheet).into_iter().map(|(_, row, col)| (row, col)).collect()
+        self.find_everywhere(&search, sheet)
+            .into_iter()
+            .map(|(_, row, col)| (row, col))
+            .collect()
     }
 
     // ---- replacing ------------------------------------------------------
@@ -426,7 +489,12 @@ impl Workbook {
 
     /// What a cell would hold after the replacement, as text to enter;
     /// `None` when it does not hold the text looked for.
-    pub fn replacement_text(&self, place: Place, search: &Search, replacement: &str) -> Option<String> {
+    pub fn replacement_text(
+        &self,
+        place: Place,
+        search: &Search,
+        replacement: &str,
+    ) -> Option<String> {
         let (sheet, row, col) = place;
         let opts = Self::replace_options(search.options);
         if sheet >= self.sheets.len() || !self.is_searched(sheet, row, col, &opts) {
@@ -434,7 +502,9 @@ impl Workbook {
         }
         let pattern = Pattern::new(search.needle, opts.match_case);
         let text = self.searched_text(sheet, row, col, LookIn::Formulas);
-        pattern.replace(&text, replacement, opts.whole_cell).filter(|new| *new != text)
+        pattern
+            .replace(&text, replacement, opts.whole_cell)
+            .filter(|new| *new != text)
     }
 
     /// Whether what a cell holds may be changed (its sheet is not
@@ -450,7 +520,12 @@ impl Workbook {
 
     /// Replace the text in one cell (the Replace button). `Ok(false)` when
     /// the cell does not hold it. The caller asks about protection.
-    pub fn replace_at(&mut self, place: Place, search: &Search, replacement: &str) -> Result<bool, BrokenFormula> {
+    pub fn replace_at(
+        &mut self,
+        place: Place,
+        search: &Search,
+        replacement: &str,
+    ) -> Result<bool, BrokenFormula> {
         let Some(text) = self.replacement_text(place, search, replacement) else {
             return Ok(false);
         };
@@ -464,9 +539,17 @@ impl Workbook {
     /// search covers, starting from `sheet`. Locked cells of protected
     /// sheets are left alone and counted. When a formula would be broken
     /// nothing at all is replaced.
-    pub fn replace_everywhere(&mut self, search: &Search, sheet: usize, replacement: &str) -> Result<Replaced, BrokenFormula> {
+    pub fn replace_everywhere(
+        &mut self,
+        search: &Search,
+        sheet: usize,
+        replacement: &str,
+    ) -> Result<Replaced, BrokenFormula> {
         let opts = Self::replace_options(search.options);
-        let search = Search { options: &opts, ..*search };
+        let search = Search {
+            options: &opts,
+            ..*search
+        };
         let mut report = Replaced::default();
         let mut edits: Vec<(Place, String)> = Vec::new();
         for place in self.find_everywhere(&search, sheet) {
@@ -504,14 +587,22 @@ impl Workbook {
     /// Replace occurrences in the constants and formulas of one sheet.
     /// Returns the number of cells changed; none when a formula would be
     /// broken. Rows a filter hides are left alone, as in Excel.
-    pub fn replace_all(&mut self, sheet: usize, needle: &str, replacement: &str, opts: &FindOptions) -> usize {
+    pub fn replace_all(
+        &mut self,
+        sheet: usize,
+        needle: &str,
+        replacement: &str,
+        opts: &FindOptions,
+    ) -> usize {
         let search = Search {
             needle,
             options: opts,
             workbook: false,
             within: &[],
         };
-        self.replace_everywhere(&search, sheet, replacement).map(|done| done.cells).unwrap_or(0)
+        self.replace_everywhere(&search, sheet, replacement)
+            .map(|done| done.cells)
+            .unwrap_or(0)
     }
 }
 
@@ -576,7 +667,10 @@ mod tests {
 
     #[test]
     fn every_occurrence_in_a_text_is_replaced() {
-        assert_eq!(pattern_replace("an", "Banana", "o").as_deref(), Some("Booa"));
+        assert_eq!(
+            pattern_replace("an", "Banana", "o").as_deref(),
+            Some("Booa")
+        );
         assert_eq!(pattern_replace("AN", "Banana", "").as_deref(), Some("Ba"));
         // A star takes as much as it can.
         assert_eq!(pattern_replace("a*", "Banana", "X").as_deref(), Some("BX"));
@@ -584,20 +678,34 @@ mod tests {
         assert_eq!(pattern_replace("*", "abc", "x").as_deref(), Some("x"));
         assert_eq!(pattern_replace("z", "abc", "x"), None);
         assert_eq!(pattern_replace("é", "Été", "e").as_deref(), Some("ete"));
-        assert_eq!(Pattern::new("a?c", false).replace("abc", "new", true).as_deref(), Some("new"));
+        assert_eq!(
+            Pattern::new("a?c", false)
+                .replace("abc", "new", true)
+                .as_deref(),
+            Some("new")
+        );
         assert_eq!(Pattern::new("ab", false).replace("abc", "new", true), None);
     }
 
     #[test]
     fn find_walks_by_rows_or_by_columns_and_wraps() {
-        let w = wb(&[("A1", "x1"), ("C1", "x2"), ("A2", "x3"), ("B2", "y"), ("B3", "x4")]);
+        let w = wb(&[
+            ("A1", "x1"),
+            ("C1", "x2"),
+            ("A2", "x3"),
+            ("B2", "y"),
+            ("B3", "x4"),
+        ]);
         let rows = FindOptions::default();
         let columns = FindOptions {
             by_columns: true,
             ..Default::default()
         };
         assert_eq!(w.find_all(0, "x", &rows), cells(&["A1", "C1", "A2", "B3"]));
-        assert_eq!(w.find_all(0, "x", &columns), cells(&["A1", "A2", "B3", "C1"]));
+        assert_eq!(
+            w.find_all(0, "x", &columns),
+            cells(&["A1", "A2", "B3", "C1"])
+        );
         assert_eq!(w.find_next(0, at("A1"), "x", &rows), Some(at("C1")));
         assert_eq!(w.find_next(0, at("A1"), "x", &columns), Some(at("A2")));
         // After the last one the search comes back to the first.
@@ -656,7 +764,10 @@ mod tests {
             workbook: true,
             ..search("tea", &opts)
         };
-        assert_eq!(w.find_everywhere(&everywhere, 0), vec![(0, 0, 0), (0, 4, 1), (0, 8, 2), (1, 3, 3)]);
+        assert_eq!(
+            w.find_everywhere(&everywhere, 0),
+            vec![(0, 0, 0), (0, 4, 1), (0, 8, 2), (1, 3, 3)]
+        );
         // From the last cell of a sheet the search goes on to the next
         // sheet, and from the last sheet back to the first.
         assert_eq!(w.find_from(&everywhere, (0, 8, 2), false), Some((1, 3, 3)));
@@ -668,20 +779,40 @@ mod tests {
     fn find_all_describes_each_cell() {
         let mut w = wb(&[("A1", "12.5"), ("B4", "=A1*2"), ("C2", "tea")]);
         let total = crate::parser::parse_formula("Sheet1!$B$4", w.locale).unwrap();
-        w.add_name(crate::names::NameScope::Workbook, "Total", total, "").unwrap();
+        w.add_name(crate::names::NameScope::Workbook, "Total", total, "")
+            .unwrap();
         w.commit("setup");
         let found = w.found((0, 3, 1));
         assert_eq!(
-            (found.sheet.as_str(), found.name.as_str(), found.cell.as_str(), found.value.as_str(), found.formula.as_str()),
+            (
+                found.sheet.as_str(),
+                found.name.as_str(),
+                found.cell.as_str(),
+                found.value.as_str(),
+                found.formula.as_str()
+            ),
             ("Sheet1", "Total", "$B$4", "25", "=A1*2")
         );
         let plain = w.found((0, 1, 2));
-        assert_eq!((plain.name.as_str(), plain.cell.as_str(), plain.value.as_str(), plain.formula.as_str()), ("", "$C$2", "tea", ""));
+        assert_eq!(
+            (
+                plain.name.as_str(),
+                plain.cell.as_str(),
+                plain.value.as_str(),
+                plain.formula.as_str()
+            ),
+            ("", "$C$2", "tea", "")
+        );
     }
 
     #[test]
     fn replacing_keeps_the_typing_rules() {
-        let mut w = wb(&[("A1", "2023"), ("A2", "item 7"), ("A3", "1/2/2023"), ("A4", "=A1+7")]);
+        let mut w = wb(&[
+            ("A1", "2023"),
+            ("A2", "item 7"),
+            ("A3", "1/2/2023"),
+            ("A4", "=A1+7"),
+        ]);
         assert_eq!(w.replace_all(0, "7", "8", &FindOptions::default()), 2);
         w.commit("replace");
         assert_eq!(val(&w, "A2"), Value::text("item 8"));
@@ -714,7 +845,9 @@ mod tests {
     fn a_replacement_that_breaks_a_formula_changes_nothing() {
         let mut w = wb(&[("A1", "x)"), ("A2", "=SUM(B1:B3)")]);
         let opts = formulas();
-        let broken = w.replace_everywhere(&search(")", &opts), 0, "").unwrap_err();
+        let broken = w
+            .replace_everywhere(&search(")", &opts), 0, "")
+            .unwrap_err();
         assert_eq!(broken.place, (0, 1, 0));
         assert_eq!(broken.text, "=SUM(B1:B3");
         // Not even the constant found before the formula.
@@ -733,8 +866,16 @@ mod tests {
         w.protect_sheet(0, SheetProtection::default(), "");
         w.commit("protect");
         let opts = FindOptions::default();
-        let done = w.replace_everywhere(&search("old", &opts), 0, "new").unwrap();
-        assert_eq!(done, Replaced { cells: 2, locked: 1 });
+        let done = w
+            .replace_everywhere(&search("old", &opts), 0, "new")
+            .unwrap();
+        assert_eq!(
+            done,
+            Replaced {
+                cells: 2,
+                locked: 1
+            }
+        );
         w.commit("replace");
         assert_eq!(val(&w, "A1"), Value::text("old"));
         assert_eq!(val(&w, "B1"), Value::text("new"));
@@ -752,7 +893,10 @@ mod tests {
             workbook: true,
             ..search("cat", &opts)
         };
-        assert_eq!(w.replace_everywhere(&everywhere, 0, "dog").unwrap().cells, 2);
+        assert_eq!(
+            w.replace_everywhere(&everywhere, 0, "dog").unwrap().cells,
+            2
+        );
         w.commit("replace");
         assert_eq!(w.value_at(1, 0, 0), Value::text("dogalog"));
         assert!(w.undo());

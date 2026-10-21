@@ -95,7 +95,11 @@ fn le32(data: &[u8], at: usize) -> Option<i32> {
 /// A resolution worth believing, else the 96 of the screen.
 fn dpi(x: f32, y: f32) -> (f32, f32) {
     let sane = |v: f32| v.is_finite() && (1.0..=10_000.0).contains(&v);
-    if sane(x) && sane(y) { (x, y) } else { (96.0, 96.0) }
+    if sane(x) && sane(y) {
+        (x, y)
+    } else {
+        (96.0, 96.0)
+    }
 }
 
 fn png_info(data: &[u8]) -> Option<ImageInfo> {
@@ -170,8 +174,14 @@ fn bmp_info(data: &[u8]) -> Option<ImageInfo> {
         ((le16(data, 18)?, le16(data, 20)?), (96.0, 96.0))
     } else {
         // The height is negative when the rows run top to bottom.
-        let size = (le32(data, 18)?.unsigned_abs(), le32(data, 22)?.unsigned_abs());
-        let per_metre = (le32(data, 38).unwrap_or(0) as f32, le32(data, 42).unwrap_or(0) as f32);
+        let size = (
+            le32(data, 18)?.unsigned_abs(),
+            le32(data, 22)?.unsigned_abs(),
+        );
+        let per_metre = (
+            le32(data, 38).unwrap_or(0) as f32,
+            le32(data, 42).unwrap_or(0) as f32,
+        );
         (size, dpi(per_metre.0 * 0.0254, per_metre.1 * 0.0254))
     };
     Some(ImageInfo {
@@ -253,7 +263,9 @@ impl Picture {
     /// The formula of a linked picture as the formula bar shows it
     /// (`=$A$1:$C$4`).
     pub fn link_text(&self, locale: &Locale) -> Option<String> {
-        self.link.as_ref().map(|link| format!("={}", link.to_text(locale)))
+        self.link
+            .as_ref()
+            .map(|link| format!("={}", link.to_text(locale)))
     }
 
     /// A vector picture: an SVG document and the image that stands for
@@ -383,7 +395,10 @@ impl PictureAdjust {
             Recolor::Duotone(dark, light) => {
                 let t = luma(r, g, b);
                 let mix = |shift: u32| {
-                    let (lo, hi) = (((dark.value() >> shift) & 0xFF) as f32 / 255.0, ((light.value() >> shift) & 0xFF) as f32 / 255.0);
+                    let (lo, hi) = (
+                        ((dark.value() >> shift) & 0xFF) as f32 / 255.0,
+                        ((light.value() >> shift) & 0xFF) as f32 / 255.0,
+                    );
                     lo + (hi - lo) * t
                 };
                 (r, g, b) = (mix(16), mix(8), mix(0));
@@ -392,7 +407,11 @@ impl PictureAdjust {
         if self.saturation != 1.0 {
             let grey = luma(r, g, b);
             let s = self.saturation.max(0.0);
-            (r, g, b) = (grey + (r - grey) * s, grey + (g - grey) * s, grey + (b - grey) * s);
+            (r, g, b) = (
+                grey + (r - grey) * s,
+                grey + (g - grey) * s,
+                grey + (b - grey) * s,
+            );
         }
         if self.temperature != NEUTRAL_TEMPERATURE {
             // Warmer: more red, less blue; colder the other way. A fifth
@@ -408,11 +427,22 @@ impl PictureAdjust {
         }
         if brightness != 0.0 {
             // Towards white or towards black.
-            let lift = |v: f32| if brightness >= 0.0 { v + (1.0 - v) * brightness } else { v * (1.0 + brightness) };
+            let lift = |v: f32| {
+                if brightness >= 0.0 {
+                    v + (1.0 - v) * brightness
+                } else {
+                    v * (1.0 + brightness)
+                }
+            };
             (r, g, b) = (lift(r), lift(g), lift(b));
         }
         let alpha = a * (1.0 - self.transparency.clamp(0.0, 1.0));
-        [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0), alpha]
+        [
+            r.clamp(0.0, 1.0),
+            g.clamp(0.0, 1.0),
+            b.clamp(0.0, 1.0),
+            alpha,
+        ]
     }
 
     /// The frame the whole image would fill when the picture, cropped,
@@ -543,20 +573,77 @@ impl ShadowPreset {
                 ..Shadow::default()
             };
         }
-        Shadow { angle, ..Shadow::default() }
+        Shadow {
+            angle,
+            ..Shadow::default()
+        }
     }
 
     pub fn name(self, locale: &Locale) -> &'static str {
         let names = match self {
-            ShadowPreset::BottomRight => ["Offset: Bottom Right", "Décalage : bas à droite", "Desplazamiento: abajo derecha", "Offset: unten rechts", "Scostamento in basso a destra"],
-            ShadowPreset::Bottom => ["Offset: Bottom", "Décalage : bas", "Desplazamiento: abajo", "Offset: unten", "Scostamento in basso"],
-            ShadowPreset::BottomLeft => ["Offset: Bottom Left", "Décalage : bas à gauche", "Desplazamiento: abajo izquierda", "Offset: unten links", "Scostamento in basso a sinistra"],
-            ShadowPreset::Right => ["Offset: Right", "Décalage : droite", "Desplazamiento: derecha", "Offset: rechts", "Scostamento a destra"],
-            ShadowPreset::Center => ["Offset: Center", "Décalage : centre", "Desplazamiento: centro", "Offset: Mitte", "Scostamento al centro"],
-            ShadowPreset::Left => ["Offset: Left", "Décalage : gauche", "Desplazamiento: izquierda", "Offset: links", "Scostamento a sinistra"],
-            ShadowPreset::TopRight => ["Offset: Top Right", "Décalage : haut à droite", "Desplazamiento: arriba derecha", "Offset: oben rechts", "Scostamento in alto a destra"],
-            ShadowPreset::Top => ["Offset: Top", "Décalage : haut", "Desplazamiento: arriba", "Offset: oben", "Scostamento in alto"],
-            ShadowPreset::TopLeft => ["Offset: Top Left", "Décalage : haut à gauche", "Desplazamiento: arriba izquierda", "Offset: oben links", "Scostamento in alto a sinistra"],
+            ShadowPreset::BottomRight => [
+                "Offset: Bottom Right",
+                "Décalage : bas à droite",
+                "Desplazamiento: abajo derecha",
+                "Offset: unten rechts",
+                "Scostamento in basso a destra",
+            ],
+            ShadowPreset::Bottom => [
+                "Offset: Bottom",
+                "Décalage : bas",
+                "Desplazamiento: abajo",
+                "Offset: unten",
+                "Scostamento in basso",
+            ],
+            ShadowPreset::BottomLeft => [
+                "Offset: Bottom Left",
+                "Décalage : bas à gauche",
+                "Desplazamiento: abajo izquierda",
+                "Offset: unten links",
+                "Scostamento in basso a sinistra",
+            ],
+            ShadowPreset::Right => [
+                "Offset: Right",
+                "Décalage : droite",
+                "Desplazamiento: derecha",
+                "Offset: rechts",
+                "Scostamento a destra",
+            ],
+            ShadowPreset::Center => [
+                "Offset: Center",
+                "Décalage : centre",
+                "Desplazamiento: centro",
+                "Offset: Mitte",
+                "Scostamento al centro",
+            ],
+            ShadowPreset::Left => [
+                "Offset: Left",
+                "Décalage : gauche",
+                "Desplazamiento: izquierda",
+                "Offset: links",
+                "Scostamento a sinistra",
+            ],
+            ShadowPreset::TopRight => [
+                "Offset: Top Right",
+                "Décalage : haut à droite",
+                "Desplazamiento: arriba derecha",
+                "Offset: oben rechts",
+                "Scostamento in alto a destra",
+            ],
+            ShadowPreset::Top => [
+                "Offset: Top",
+                "Décalage : haut",
+                "Desplazamiento: arriba",
+                "Offset: oben",
+                "Scostamento in alto",
+            ],
+            ShadowPreset::TopLeft => [
+                "Offset: Top Left",
+                "Décalage : haut à gauche",
+                "Desplazamiento: arriba izquierda",
+                "Offset: oben links",
+                "Scostamento in alto a sinistra",
+            ],
         };
         localized(locale, names)
     }
@@ -705,7 +792,9 @@ impl ShapePreset {
         if name == "straightConnector1" {
             return Some(ShapePreset::Line);
         }
-        ShapePreset::ALL.into_iter().find(|p| p.ooxml_name() == name)
+        ShapePreset::ALL
+            .into_iter()
+            .find(|p| p.ooxml_name() == name)
     }
 
     /// A line has no inside: it is stroked, never filled.
@@ -736,7 +825,11 @@ impl ShapePreset {
     /// trapezoid are, as a fraction of the width of the frame. `adjust`
     /// counts in shorter sides, as files do.
     fn inset(self, width: f32, height: f32, adjust: Option<f32>) -> f32 {
-        let (default, most) = if self == ShapePreset::Chevron { (0.5, 1.0) } else { (0.25, 0.5) };
+        let (default, most) = if self == ShapePreset::Chevron {
+            (0.5, 1.0)
+        } else {
+            (0.25, 0.5)
+        };
         if width <= 0.0 {
             return most;
         }
@@ -752,7 +845,13 @@ impl ShapePreset {
             let mut path: Vec<PathCommand> = points
                 .iter()
                 .enumerate()
-                .map(|(i, (x, y))| if i == 0 { MoveTo(*x, *y) } else { LineTo(*x, *y) })
+                .map(|(i, (x, y))| {
+                    if i == 0 {
+                        MoveTo(*x, *y)
+                    } else {
+                        LineTo(*x, *y)
+                    }
+                })
                 .collect();
             path.push(Close);
             path
@@ -775,7 +874,14 @@ impl ShapePreset {
                 let rx = if width > 0.0 { cut / width } else { 0.0 };
                 let ry = if height > 0.0 { cut / height } else { 0.0 };
                 if self == ShapePreset::Snip2DiagRect {
-                    polygon(&[(rx, 0.0), (1.0, 0.0), (1.0, 1.0 - ry), (1.0 - rx, 1.0), (0.0, 1.0), (0.0, ry)])
+                    polygon(&[
+                        (rx, 0.0),
+                        (1.0, 0.0),
+                        (1.0, 1.0 - ry),
+                        (1.0 - rx, 1.0),
+                        (0.0, 1.0),
+                        (0.0, ry),
+                    ])
                 } else {
                     let (kx, ky) = (rx * (1.0 - KAPPA), ry * (1.0 - KAPPA));
                     vec![
@@ -876,7 +982,12 @@ impl ShapePreset {
                 // Points and hollows alternate; the hollows lie at 0.382
                 // of the way out, where the lines of a pentagram cross.
                 let corners: Vec<(f32, f32)> = (0..10)
-                    .map(|i| on_ellipse(162.0 - 36.0 * i as f32, if i % 2 == 0 { 1.0 } else { 0.381_96 }))
+                    .map(|i| {
+                        on_ellipse(
+                            162.0 - 36.0 * i as f32,
+                            if i % 2 == 0 { 1.0 } else { 0.381_96 },
+                        )
+                    })
                     .collect();
                 polygon(&corners)
             }
@@ -892,7 +1003,14 @@ impl ShapePreset {
             ]),
             ShapePreset::Chevron => {
                 let d = self.inset(width, height, adjust);
-                polygon(&[(0.0, 0.0), (1.0 - d, 0.0), (1.0, 0.5), (1.0 - d, 1.0), (0.0, 1.0), (d, 0.5)])
+                polygon(&[
+                    (0.0, 0.0),
+                    (1.0 - d, 0.0),
+                    (1.0, 0.5),
+                    (1.0 - d, 1.0),
+                    (0.0, 1.0),
+                    (d, 0.5),
+                ])
             }
             ShapePreset::Trapezoid => {
                 let d = self.inset(width, height, adjust);
@@ -931,10 +1049,30 @@ impl ShapePreset {
             ShapePreset::Diamond => [0.25, 0.25, 0.75, 0.75],
             ShapePreset::Pentagon => [0.190_98, 0.236_07, 0.809_02, 1.0],
             ShapePreset::Hexagon => [0.125, 0.25, 0.875, 0.75],
-            ShapePreset::RightArrow => [0.0, 0.25, 1.0 - ShapePreset::arrow_head(width, height) / 2.0, 0.75],
-            ShapePreset::LeftArrow => [ShapePreset::arrow_head(width, height) / 2.0, 0.25, 1.0, 0.75],
-            ShapePreset::UpArrow => [0.25, ShapePreset::arrow_head(height, width) / 2.0, 0.75, 1.0],
-            ShapePreset::DownArrow => [0.25, 0.0, 0.75, 1.0 - ShapePreset::arrow_head(height, width) / 2.0],
+            ShapePreset::RightArrow => [
+                0.0,
+                0.25,
+                1.0 - ShapePreset::arrow_head(width, height) / 2.0,
+                0.75,
+            ],
+            ShapePreset::LeftArrow => [
+                ShapePreset::arrow_head(width, height) / 2.0,
+                0.25,
+                1.0,
+                0.75,
+            ],
+            ShapePreset::UpArrow => [
+                0.25,
+                ShapePreset::arrow_head(height, width) / 2.0,
+                0.75,
+                1.0,
+            ],
+            ShapePreset::DownArrow => [
+                0.25,
+                0.0,
+                0.75,
+                1.0 - ShapePreset::arrow_head(height, width) / 2.0,
+            ],
             ShapePreset::Star5 => [0.309_02, 0.381_97, 0.690_98, 0.763_93],
             // Between the notch and the point; in the part of a trapezoid
             // that is as wide at the top as at the bottom, more or less.
@@ -1104,7 +1242,12 @@ pub enum TextAlign {
 }
 
 impl TextAlign {
-    pub const ALL: [TextAlign; 4] = [TextAlign::Left, TextAlign::Center, TextAlign::Right, TextAlign::Justify];
+    pub const ALL: [TextAlign; 4] = [
+        TextAlign::Left,
+        TextAlign::Center,
+        TextAlign::Right,
+        TextAlign::Justify,
+    ];
 
     pub fn ooxml_name(self) -> &'static str {
         match self {
@@ -1300,7 +1443,13 @@ impl ShapeTool {
             math: None,
         };
         if preset.is_line() {
-            let arrow = |pointed: bool| if pointed { LineEnd::Triangle } else { LineEnd::None };
+            let arrow = |pointed: bool| {
+                if pointed {
+                    LineEnd::Triangle
+                } else {
+                    LineEnd::None
+                }
+            };
             shape.fill = None;
             shape.font.color = None;
             shape.outline = Some(Outline {
@@ -1323,7 +1472,10 @@ impl ShapeTool {
     /// The size a shape gets from a single click, in pixels at 100 %.
     pub fn default_size(self) -> (f32, f32) {
         match self {
-            ShapeTool::RightArrow | ShapeTool::LeftArrow | ShapeTool::TextBox | ShapeTool::Chevron => (96.0, 48.0),
+            ShapeTool::RightArrow
+            | ShapeTool::LeftArrow
+            | ShapeTool::TextBox
+            | ShapeTool::Chevron => (96.0, 48.0),
             ShapeTool::UpArrow | ShapeTool::DownArrow => (48.0, 96.0),
             ShapeTool::Line | ShapeTool::Arrow | ShapeTool::DoubleArrow => (96.0, 0.0),
             ShapeTool::Callout => (144.0, 72.0),
@@ -1336,7 +1488,13 @@ impl ShapeTool {
         localized(
             locale,
             match self {
-                ShapeTool::Rectangle => ["Rectangle", "Rectangle", "Rectángulo", "Rechteck", "Rettangolo"],
+                ShapeTool::Rectangle => [
+                    "Rectangle",
+                    "Rectangle",
+                    "Rectángulo",
+                    "Rechteck",
+                    "Rettangolo",
+                ],
                 ShapeTool::RoundedRectangle => [
                     "Rounded Rectangle",
                     "Rectangle arrondi",
@@ -1417,9 +1575,17 @@ impl ShapeTool {
                     "Gerader pfeilförmiger Verbinder",
                     "Connettore dritto a freccia",
                 ],
-                ShapeTool::TextBox => ["TextBox", "ZoneTexte", "CuadroTexto", "Textfeld", "CasellaDiTesto"],
+                ShapeTool::TextBox => [
+                    "TextBox",
+                    "ZoneTexte",
+                    "CuadroTexto",
+                    "Textfeld",
+                    "CasellaDiTesto",
+                ],
                 ShapeTool::Chevron => ["Chevron", "Chevron", "Cheurón", "Chevron", "Gallone"],
-                ShapeTool::Trapezoid => ["Trapezoid", "Trapèze", "Trapecio", "Trapezoid", "Trapezio"],
+                ShapeTool::Trapezoid => {
+                    ["Trapezoid", "Trapèze", "Trapecio", "Trapezoid", "Trapezio"]
+                }
                 ShapeTool::Callout => [
                     "Rectangular Callout",
                     "Rectangle",
@@ -1439,7 +1605,16 @@ fn picture_name(locale: &Locale) -> &'static str {
 
 /// The name Excel gives a vector picture, before its number.
 fn graphic_name(locale: &Locale) -> &'static str {
-    localized(locale, ["Graphic", "Graphique", "Gráfico", "Grafik", "Elemento grafico"])
+    localized(
+        locale,
+        [
+            "Graphic",
+            "Graphique",
+            "Gráfico",
+            "Grafik",
+            "Elemento grafico",
+        ],
+    )
 }
 
 /// The name Excel gives a group, before its number.
@@ -1478,8 +1653,17 @@ impl Group {
     /// Where a member is when the group is in `frame`, before the group
     /// is turned or flipped (what a file says of it).
     pub fn member_frame(&self, frame: Frame, member: &Drawing) -> Frame {
-        let scale = |length: f64, extent: f32| if extent > 0.0 { length / extent as f64 } else { 1.0 };
-        let (sx, sy) = (scale(frame.width, self.extent.0), scale(frame.height, self.extent.1));
+        let scale = |length: f64, extent: f32| {
+            if extent > 0.0 {
+                length / extent as f64
+            } else {
+                1.0
+            }
+        };
+        let (sx, sy) = (
+            scale(frame.width, self.extent.0),
+            scale(frame.height, self.extent.1),
+        );
         Frame {
             x: frame.x + member.offset.0 as f64 * sx,
             y: frame.y + member.offset.1 as f64 * sy,
@@ -1518,7 +1702,11 @@ pub enum Placement {
 }
 
 impl Placement {
-    pub const ALL: [Placement; 3] = [Placement::MoveAndSize, Placement::MoveOnly, Placement::Fixed];
+    pub const ALL: [Placement; 3] = [
+        Placement::MoveAndSize,
+        Placement::MoveOnly,
+        Placement::Fixed,
+    ];
 
     pub fn ooxml_name(self) -> &'static str {
         match self {
@@ -1584,7 +1772,12 @@ pub struct Drawing {
 }
 
 impl Drawing {
-    fn new(kind: DrawingKind, size: (f32, f32), placement: Placement, lock_aspect: bool) -> Drawing {
+    fn new(
+        kind: DrawingKind,
+        size: (f32, f32),
+        placement: Placement,
+        lock_aspect: bool,
+    ) -> Drawing {
         Drawing {
             id: 0,
             name: String::new(),
@@ -1613,26 +1806,49 @@ impl Drawing {
     /// its cell without being sized with it, and keeps its proportions.
     pub fn picture(picture: Picture) -> Drawing {
         let size = picture.natural_size();
-        Drawing::new(DrawingKind::Picture(picture), size, Placement::MoveOnly, true)
+        Drawing::new(
+            DrawingKind::Picture(picture),
+            size,
+            Placement::MoveOnly,
+            true,
+        )
     }
 
     /// A shape of the given size, moved and sized with its cells.
     pub fn shape(shape: Shape, size: (f32, f32)) -> Drawing {
-        Drawing::new(DrawingKind::Shape(shape), size, Placement::MoveAndSize, false)
+        Drawing::new(
+            DrawingKind::Shape(shape),
+            size,
+            Placement::MoveAndSize,
+            false,
+        )
     }
 
     /// A SmartArt graphic of the given size, moved and sized with its
     /// cells.
     pub fn smartart(art: crate::smartart::SmartArt, size: (f32, f32)) -> Drawing {
-        Drawing::new(DrawingKind::SmartArt(art), size, Placement::MoveAndSize, false)
+        Drawing::new(
+            DrawingKind::SmartArt(art),
+            size,
+            Placement::MoveAndSize,
+            false,
+        )
     }
 
     /// A group of the given size holding `members`, whose `offset` and
     /// `size` say where each is in it (a file reader builds groups this
     /// way; on a sheet, `Workbook::group_drawings`).
     pub fn group(members: Vec<Drawing>, size: (f32, f32)) -> Drawing {
-        let group = Group { members, extent: size };
-        Drawing::new(DrawingKind::Group(group), size, Placement::MoveAndSize, false)
+        let group = Group {
+            members,
+            extent: size,
+        };
+        Drawing::new(
+            DrawingKind::Group(group),
+            size,
+            Placement::MoveAndSize,
+            false,
+        )
     }
 
     pub fn as_picture(&self) -> Option<&Picture> {
@@ -1686,7 +1902,13 @@ impl Drawing {
 
     /// Where a member of this group is when the group is in `frame`,
     /// with the rotation and the flips the group adds to its own.
-    fn member_leaf<'a>(&self, group: &Group, frame: Frame, turn: (f32, bool, bool), member: &'a Drawing) -> Leaf<'a> {
+    fn member_leaf<'a>(
+        &self,
+        group: &Group,
+        frame: Frame,
+        turn: (f32, bool, bool),
+        member: &'a Drawing,
+    ) -> Leaf<'a> {
         leaf_of(group, frame, turn, member)
     }
 }
@@ -1694,7 +1916,12 @@ impl Drawing {
 /// Where a member of a group is when the group is in `frame`, turned
 /// and flipped as `turn` says, with the rotation and the flips the group
 /// adds to the member's own.
-fn leaf_of<'a>(group: &Group, frame: Frame, turn: (f32, bool, bool), member: &'a Drawing) -> Leaf<'a> {
+fn leaf_of<'a>(
+    group: &Group,
+    frame: Frame,
+    turn: (f32, bool, bool),
+    member: &'a Drawing,
+) -> Leaf<'a> {
     let inside = group.member_frame(frame, member);
     let (width, height) = (inside.width, inside.height);
     // The middle of the member, from the middle of the group.
@@ -1736,7 +1963,10 @@ fn member_from_shown(shown: &mut Drawing, frame: Frame, turn: (f32, bool, bool))
     let (width, height) = (shown.size.0 as f64, shown.size.1 as f64);
     // The middle of the member, from the middle of the group, as it is
     // seen; then as it was before the group was turned and flipped.
-    let seen = (shown.offset.0 as f64 + width / 2.0 - frame.x - frame.width / 2.0, shown.offset.1 as f64 + height / 2.0 - frame.y - frame.height / 2.0);
+    let seen = (
+        shown.offset.0 as f64 + width / 2.0 - frame.x - frame.width / 2.0,
+        shown.offset.1 as f64 + height / 2.0 - frame.y - frame.height / 2.0,
+    );
     let (sin, cos) = (-turn.0 as f64).to_radians().sin_cos();
     let (mut dx, mut dy) = (seen.0 * cos - seen.1 * sin, seen.0 * sin + seen.1 * cos);
     let mut rotation = shown.rotation - turn.0;
@@ -1752,7 +1982,10 @@ fn member_from_shown(shown: &mut Drawing, frame: Frame, turn: (f32, bool, bool))
     }
     shown.rotation = rotation.rem_euclid(360.0);
     shown.anchor = (0, 0);
-    shown.offset = ((frame.width / 2.0 + dx - width / 2.0) as f32, (frame.height / 2.0 + dy - height / 2.0) as f32);
+    shown.offset = (
+        (frame.width / 2.0 + dx - width / 2.0) as f32,
+        (frame.height / 2.0 + dy - height / 2.0) as f32,
+    );
     shown.to = (0, 0);
     shown.to_offset = (0.0, 0.0);
     shown.z = 0;
@@ -1766,11 +1999,17 @@ fn refit_group(holder: &mut Drawing, frame: Frame) {
     let DrawingKind::Group(group) = &mut holder.kind else {
         return;
     };
-    let edge = |pick: fn(f32, f32) -> f32, start: f32, of: fn(&Drawing) -> f32| group.members.iter().map(of).fold(start, pick);
+    let edge = |pick: fn(f32, f32) -> f32, start: f32, of: fn(&Drawing) -> f32| {
+        group.members.iter().map(of).fold(start, pick)
+    };
     let left = edge(f32::min, f32::INFINITY, |member| member.offset.0);
     let top = edge(f32::min, f32::INFINITY, |member| member.offset.1);
-    let right = edge(f32::max, f32::NEG_INFINITY, |member| member.offset.0 + member.size.0);
-    let bottom = edge(f32::max, f32::NEG_INFINITY, |member| member.offset.1 + member.size.1);
+    let right = edge(f32::max, f32::NEG_INFINITY, |member| {
+        member.offset.0 + member.size.0
+    });
+    let bottom = edge(f32::max, f32::NEG_INFINITY, |member| {
+        member.offset.1 + member.size.1
+    });
     if !(left.is_finite() && top.is_finite() && right.is_finite() && bottom.is_finite()) {
         return;
     }
@@ -1790,19 +2029,34 @@ fn refit_group(holder: &mut Drawing, frame: Frame) {
         dy = -dy;
     }
     let (sin, cos) = (turn.0 as f64).to_radians().sin_cos();
-    let centre = (frame.x + frame.width / 2.0 + dx * cos - dy * sin, frame.y + frame.height / 2.0 + dx * sin + dy * cos);
+    let centre = (
+        frame.x + frame.width / 2.0 + dx * cos - dy * sin,
+        frame.y + frame.height / 2.0 + dx * sin + dy * cos,
+    );
     holder.anchor = (0, 0);
-    holder.offset = ((centre.0 - width / 2.0).max(0.0) as f32, (centre.1 - height / 2.0).max(0.0) as f32);
+    holder.offset = (
+        (centre.0 - width / 2.0).max(0.0) as f32,
+        (centre.1 - height / 2.0).max(0.0) as f32,
+    );
     holder.size = (width as f32, height as f32);
 }
 
 impl Drawing {
-    fn collect_leaves<'a>(&'a self, frame: Frame, turn: (f32, bool, bool), out: &mut Vec<Leaf<'a>>) {
+    fn collect_leaves<'a>(
+        &'a self,
+        frame: Frame,
+        turn: (f32, bool, bool),
+        out: &mut Vec<Leaf<'a>>,
+    ) {
         match &self.kind {
             DrawingKind::Group(group) => {
                 for member in group.members.iter().filter(|member| !member.hidden) {
                     let leaf = self.member_leaf(group, frame, turn, member);
-                    member.collect_leaves(leaf.frame, (leaf.rotation, leaf.flip_h, leaf.flip_v), out);
+                    member.collect_leaves(
+                        leaf.frame,
+                        (leaf.rotation, leaf.flip_h, leaf.flip_v),
+                        out,
+                    );
                 }
             }
             _ => out.push(Leaf {
@@ -1870,7 +2124,11 @@ impl Drawing {
                 // A vector picture painted in a colour of the theme: its
                 // document is repainted. (The image kept beside it is
                 // made again by whoever can draw it.)
-                if let Some(document) = picture.svg.as_deref().and_then(|document| crate::svg::rethemed(document, theme)) {
+                if let Some(document) = picture
+                    .svg
+                    .as_deref()
+                    .and_then(|document| crate::svg::rethemed(document, theme))
+                {
                     picture.svg = Some(document.into());
                 }
             }
@@ -1889,7 +2147,13 @@ impl Drawing {
     /// group every member, the groups among them counted the same way.
     pub fn object_count(&self) -> usize {
         match &self.kind {
-            DrawingKind::Group(group) => 1 + group.members.iter().map(Drawing::object_count).sum::<usize>(),
+            DrawingKind::Group(group) => {
+                1 + group
+                    .members
+                    .iter()
+                    .map(Drawing::object_count)
+                    .sum::<usize>()
+            }
             DrawingKind::SmartArt(art) => art.object_count(),
             _ => 1,
         }
@@ -1897,7 +2161,9 @@ impl Drawing {
 
     /// The largest id in the drawing: its own, or one of its members'.
     fn max_id(&self) -> u32 {
-        let members = self.as_group().map(|group| group.members.iter().map(Drawing::max_id).max().unwrap_or(0));
+        let members = self
+            .as_group()
+            .map(|group| group.members.iter().map(Drawing::max_id).max().unwrap_or(0));
         self.id.max(members.unwrap_or(0))
     }
 
@@ -1930,7 +2196,12 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Frame {
-        Frame { x, y, width, height }
+        Frame {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 }
 
@@ -1972,7 +2243,9 @@ impl Track<'_> {
     }
 
     fn own_size(&self, index: u32) -> f64 {
-        self.sizes.get(&index).map_or(self.default, |s| (*s as f64).max(0.0))
+        self.sizes
+            .get(&index)
+            .map_or(self.default, |s| (*s as f64).max(0.0))
     }
 
     fn size(&self, index: u32) -> f64 {
@@ -1994,7 +2267,10 @@ impl Track<'_> {
             .range(a..b)
             .map(|(_, s)| (*s as f64).max(0.0) - self.default)
             .sum::<f64>();
-        total -= self.hidden[0].range(a..b).map(|i| self.own_size(*i)).sum::<f64>();
+        total -= self.hidden[0]
+            .range(a..b)
+            .map(|i| self.own_size(*i))
+            .sum::<f64>();
         total -= self.hidden[1]
             .range(a..b)
             .filter(|i| !self.hidden[0].contains(i))
@@ -2017,7 +2293,11 @@ impl Track<'_> {
     pub(crate) fn locate(&self, distance: f64) -> (u32, f32) {
         let last = self.count - 1;
         let mut index = 0;
-        let mut rest = if distance.is_finite() { distance.max(0.0) } else { 0.0 };
+        let mut rest = if distance.is_finite() {
+            distance.max(0.0)
+        } else {
+            0.0
+        };
         while index < last {
             // Up to the next cell with a size of its own, all have the
             // default size: step over them at once.
@@ -2056,7 +2336,9 @@ impl Track<'_> {
     fn normalised(&self, index: u32, offset: f32) -> (u32, f32) {
         let index = index.min(self.count - 1);
         let offset = if offset.is_finite() { offset } else { 0.0 };
-        if offset >= 0.0 && (self.is_hidden(index) || (offset as f64) < self.size(index).max(f64::MIN_POSITIVE)) {
+        if offset >= 0.0
+            && (self.is_hidden(index) || (offset as f64) < self.size(index).max(f64::MIN_POSITIVE))
+        {
             (index, offset)
         } else {
             self.locate(self.span(0, index) + offset as f64)
@@ -2086,7 +2368,11 @@ impl Sheet {
     /// The group of the sheet that holds the drawing `id` as one of its
     /// members.
     pub fn holder_of(&self, id: u32) -> Option<&Drawing> {
-        self.drawings.iter().find(|holder| holder.as_group().is_some_and(|group| group.members.iter().any(|member| member.id == id)))
+        self.drawings.iter().find(|holder| {
+            holder
+                .as_group()
+                .is_some_and(|group| group.members.iter().any(|member| member.id == id))
+        })
     }
 
     /// Where a drawing shows on the sheet now, and how it is turned and
@@ -2095,12 +2381,25 @@ impl Sheet {
     pub fn shown(&self, drawing: &Drawing) -> (Frame, f32, bool, bool) {
         let member = self.holder_of(drawing.id).and_then(|holder| {
             let group = holder.as_group()?;
-            let member = group.members.iter().find(|member| member.id == drawing.id)?;
-            Some(leaf_of(group, self.drawing_frame(holder), (holder.rotation, holder.flip_h, holder.flip_v), member))
+            let member = group
+                .members
+                .iter()
+                .find(|member| member.id == drawing.id)?;
+            Some(leaf_of(
+                group,
+                self.drawing_frame(holder),
+                (holder.rotation, holder.flip_h, holder.flip_v),
+                member,
+            ))
         });
         match member {
             Some(leaf) => (leaf.frame, leaf.rotation, leaf.flip_h, leaf.flip_v),
-            None => (self.drawing_frame(drawing), drawing.rotation, drawing.flip_h, drawing.flip_v),
+            None => (
+                self.drawing_frame(drawing),
+                drawing.rotation,
+                drawing.flip_h,
+                drawing.flip_v,
+            ),
         }
     }
 
@@ -2130,9 +2429,17 @@ impl Sheet {
             let bottom = rows.position(drawing.to.0, drawing.to_offset.1);
             ((right - x).max(0.0), (bottom - y).max(0.0))
         } else {
-            (drawing.size.0.max(0.0) as f64, drawing.size.1.max(0.0) as f64)
+            (
+                drawing.size.0.max(0.0) as f64,
+                drawing.size.1.max(0.0) as f64,
+            )
         };
-        Frame { x, y, width, height }
+        Frame {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     /// Bring the placement of a drawing in order after its `anchor`,
@@ -2221,8 +2528,14 @@ impl Sheet {
         let mut number = self.drawings.len() + self.charts.len() + 1;
         loop {
             let name = format!("{base} {number}");
-            let taken = self.drawings.iter().any(|d| d.name.eq_ignore_ascii_case(&name))
-                || self.charts.iter().any(|c| c.name.eq_ignore_ascii_case(&name));
+            let taken = self
+                .drawings
+                .iter()
+                .any(|d| d.name.eq_ignore_ascii_case(&name))
+                || self
+                    .charts
+                    .iter()
+                    .any(|c| c.name.eq_ignore_ascii_case(&name));
             if !taken {
                 return name;
             }
@@ -2234,8 +2547,14 @@ impl Sheet {
     /// Those that were given a place (`z`) come in that order; the others
     /// lie above them, charts first, each list in its own order.
     pub fn object_stack(&self) -> Vec<ObjectRef> {
-        let charts = self.charts.iter().map(|chart| (chart.z, ObjectRef::Chart(chart.id)));
-        let drawings = self.drawings.iter().map(|drawing| (drawing.z, ObjectRef::Drawing(drawing.id)));
+        let charts = self
+            .charts
+            .iter()
+            .map(|chart| (chart.z, ObjectRef::Chart(chart.id)));
+        let drawings = self
+            .drawings
+            .iter()
+            .map(|drawing| (drawing.z, ObjectRef::Drawing(drawing.id)));
         let mut all: Vec<(u32, ObjectRef)> = charts.chain(drawings).collect();
         // Stable: equal places keep the order above.
         all.sort_by_key(|(z, _)| (*z == 0, *z));
@@ -2252,7 +2571,12 @@ impl Sheet {
                 stack.push(object);
             }
         }
-        let place = |object: ObjectRef| stack.iter().position(|o| *o == object).map_or(0, |i| i as u32 + 1);
+        let place = |object: ObjectRef| {
+            stack
+                .iter()
+                .position(|o| *o == object)
+                .map_or(0, |i| i as u32 + 1)
+        };
         for chart in &mut self.charts {
             chart.z = place(ObjectRef::Chart(chart.id));
         }
@@ -2308,10 +2632,16 @@ impl Workbook {
                     let tool = ShapeTool::ALL.into_iter().find(|tool| {
                         let model = tool.shape();
                         let ends = |s: &Shape| s.outline.map(|o| (o.start, o.end));
-                        model.preset == shape.preset && model.text_box == shape.text_box && ends(&model) == ends(shape)
+                        model.preset == shape.preset
+                            && model.text_box == shape.text_box
+                            && ends(&model) == ends(shape)
                     });
-                    let fallback = ShapeTool::ALL.into_iter().find(|tool| tool.preset() == shape.preset);
-                    tool.or(fallback).unwrap_or(ShapeTool::Rectangle).name(self.locale)
+                    let fallback = ShapeTool::ALL
+                        .into_iter()
+                        .find(|tool| tool.preset() == shape.preset);
+                    tool.or(fallback)
+                        .unwrap_or(ShapeTool::Rectangle)
+                        .name(self.locale)
                 }
             };
             drawing.name = sh.drawing_name(base);
@@ -2377,7 +2707,10 @@ impl Workbook {
 
     /// The group that holds a drawing as one of its members.
     pub fn group_of(&self, sheet: usize, id: u32) -> Option<u32> {
-        self.sheets.get(sheet)?.holder_of(id).map(|holder| holder.id)
+        self.sheets
+            .get(sheet)?
+            .holder_of(id)
+            .map(|holder| holder.id)
     }
 
     /// Where a drawing is on its sheet (a member of a group: where the
@@ -2391,7 +2724,11 @@ impl Workbook {
     /// of the frame of the group, and the box of the group is brought
     /// around them afterwards.
     fn update_group(&mut self, sheet: usize, id: u32, change: impl FnOnce(&mut Group)) -> bool {
-        let Some(index) = self.sheets.get(sheet).and_then(|sh| sh.drawings.iter().position(|d| d.id == id && d.as_group().is_some())) else {
+        let Some(index) = self.sheets.get(sheet).and_then(|sh| {
+            sh.drawings
+                .iter()
+                .position(|d| d.id == id && d.as_group().is_some())
+        }) else {
             return false;
         };
         self.snapshot();
@@ -2426,7 +2763,8 @@ impl Workbook {
                     return;
                 };
                 let leaf = leaf_of(group, frame, turn, &group.members[at]);
-                let (place, rotation, flips) = (leaf.frame, leaf.rotation, (leaf.flip_h, leaf.flip_v));
+                let (place, rotation, flips) =
+                    (leaf.frame, leaf.rotation, (leaf.flip_h, leaf.flip_v));
                 let mut shown = group.members[at].clone();
                 shown.anchor = (0, 0);
                 shown.offset = (place.x as f32, place.y as f32);
@@ -2471,8 +2809,14 @@ impl Workbook {
         let frames: Vec<Frame> = members.iter().map(|d| sh.drawing_frame(d)).collect();
         let left = frames.iter().map(|f| f.x).fold(f64::INFINITY, f64::min);
         let top = frames.iter().map(|f| f.y).fold(f64::INFINITY, f64::min);
-        let right = frames.iter().map(|f| f.x + f.width).fold(f64::NEG_INFINITY, f64::max);
-        let bottom = frames.iter().map(|f| f.y + f.height).fold(f64::NEG_INFINITY, f64::max);
+        let right = frames
+            .iter()
+            .map(|f| f.x + f.width)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let bottom = frames
+            .iter()
+            .map(|f| f.y + f.height)
+            .fold(f64::NEG_INFINITY, f64::max);
         let extent = ((right - left) as f32, (bottom - top) as f32);
         let held: Vec<Drawing> = members
             .iter()
@@ -2488,7 +2832,10 @@ impl Workbook {
             })
             .collect();
         let stack = sh.object_stack();
-        let topmost = members.iter().filter_map(|d| stack.iter().position(|o| *o == ObjectRef::Drawing(d.id))).max()?;
+        let topmost = members
+            .iter()
+            .filter_map(|d| stack.iter().position(|o| *o == ObjectRef::Drawing(d.id)))
+            .max()?;
         let mut group = Drawing::group(held, extent);
         group.offset = (left as f32, top as f32);
         group.name = sh.drawing_name(group_name(self.locale));
@@ -2541,7 +2888,11 @@ impl Workbook {
             drawing.rotation = leaf.rotation;
             drawing.flip_h = leaf.flip_h;
             drawing.flip_v = leaf.flip_v;
-            drawing.placement = if holder.placement == Placement::Fixed { Placement::Fixed } else { drawing.placement };
+            drawing.placement = if holder.placement == Placement::Fixed {
+                Placement::Fixed
+            } else {
+                drawing.placement
+            };
             // A group of its own keeps the places of its members: they
             // are measured in its own extent.
             freed.push(drawing);
@@ -2554,11 +2905,18 @@ impl Workbook {
         for mut drawing in freed {
             let taken = |name: &str| {
                 name.is_empty()
-                    || sh.drawings.iter().any(|d| d.name.eq_ignore_ascii_case(name))
+                    || sh
+                        .drawings
+                        .iter()
+                        .any(|d| d.name.eq_ignore_ascii_case(name))
                     || sh.charts.iter().any(|c| c.name.eq_ignore_ascii_case(name))
             };
             if taken(&drawing.name) {
-                let base = drawing.name.trim_end_matches(|c: char| c.is_ascii_digit()).trim_end().to_string();
+                let base = drawing
+                    .name
+                    .trim_end_matches(|c: char| c.is_ascii_digit())
+                    .trim_end()
+                    .to_string();
                 drawing.name = sh.drawing_name(if base.is_empty() { "Shape" } else { &base });
             }
             sh.settle_drawing(&mut drawing);
@@ -2616,7 +2974,10 @@ impl Workbook {
 
     /// The charts, pictures and shapes of a sheet, bottom-most first.
     pub fn object_stack(&self, sheet: usize) -> Vec<ObjectRef> {
-        self.sheets.get(sheet).map(Sheet::object_stack).unwrap_or_default()
+        self.sheets
+            .get(sheet)
+            .map(Sheet::object_stack)
+            .unwrap_or_default()
     }
 
     /// Move objects in the stacking order their sheet's charts, pictures
@@ -2632,7 +2993,8 @@ impl Workbook {
         let mut after = before.clone();
         match order {
             ZOrder::BringToFront | ZOrder::SendToBack => {
-                let (mut moved, rest): (Vec<ObjectRef>, Vec<ObjectRef>) = before.iter().partition(|o| moving(o));
+                let (mut moved, rest): (Vec<ObjectRef>, Vec<ObjectRef>) =
+                    before.iter().partition(|o| moving(o));
                 if order == ZOrder::BringToFront {
                     after = rest;
                     after.append(&mut moved);
@@ -2685,17 +3047,30 @@ impl Workbook {
     /// false when the name is empty or already its name.
     pub fn rename_object(&mut self, sheet: usize, object: ObjectRef, name: &str) -> bool {
         let name = name.trim();
-        if name.is_empty() || self.object_name(sheet, object).is_none_or(|current| current == name) {
+        if name.is_empty()
+            || self
+                .object_name(sheet, object)
+                .is_none_or(|current| current == name)
+        {
             return false;
         }
         match object {
-            ObjectRef::Chart(id) => self.update_chart(sheet, id, |chart| chart.name = name.to_string()),
-            ObjectRef::Drawing(id) => self.update_drawing(sheet, id, |drawing| drawing.name = name.to_string()),
+            ObjectRef::Chart(id) => {
+                self.update_chart(sheet, id, |chart| chart.name = name.to_string())
+            }
+            ObjectRef::Drawing(id) => {
+                self.update_drawing(sheet, id, |drawing| drawing.name = name.to_string())
+            }
         }
     }
 
     /// Show or hide objects. Returns false when they all are as asked.
-    pub fn set_objects_hidden(&mut self, sheet: usize, objects: &[ObjectRef], hidden: bool) -> bool {
+    pub fn set_objects_hidden(
+        &mut self,
+        sheet: usize,
+        objects: &[ObjectRef],
+        hidden: bool,
+    ) -> bool {
         let mut changed = false;
         for object in objects {
             if self.object_hidden(sheet, *object) != Some(!hidden) {
@@ -2703,7 +3078,9 @@ impl Workbook {
             }
             changed |= match *object {
                 ObjectRef::Chart(id) => self.update_chart(sheet, id, |chart| chart.hidden = hidden),
-                ObjectRef::Drawing(id) => self.update_drawing(sheet, id, |drawing| drawing.hidden = hidden),
+                ObjectRef::Drawing(id) => {
+                    self.update_drawing(sheet, id, |drawing| drawing.hidden = hidden)
+                }
             };
         }
         changed
@@ -2740,35 +3117,42 @@ impl Workbook {
         let sh = self.sheets.get(sheet)?;
         // How close to a line a click must be.
         const REACH: f64 = 4.0;
-        sh.drawings.iter().rev().filter(|drawing| !drawing.hidden).find_map(|drawing| {
-            let frame = sh.drawing_frame(drawing);
-            // The point as the unrotated drawing sees it.
-            let (cx, cy) = (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0);
-            let (sin, cos) = (-(drawing.rotation as f64)).to_radians().sin_cos();
-            let (dx, dy) = (x - cx, y - cy);
-            let (px, py) = (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
-            let hit = if drawing.is_line() {
-                let (mut x0, mut x1) = (frame.x, frame.x + frame.width);
-                let (mut y0, mut y1) = (frame.y, frame.y + frame.height);
-                if drawing.flip_h {
-                    (x0, x1) = (x1, x0);
-                }
-                if drawing.flip_v {
-                    (y0, y1) = (y1, y0);
-                }
-                let (lx, ly) = (x1 - x0, y1 - y0);
-                let length = lx * lx + ly * ly;
-                let along = if length > 0.0 {
-                    (((px - x0) * lx + (py - y0) * ly) / length).clamp(0.0, 1.0)
+        sh.drawings
+            .iter()
+            .rev()
+            .filter(|drawing| !drawing.hidden)
+            .find_map(|drawing| {
+                let frame = sh.drawing_frame(drawing);
+                // The point as the unrotated drawing sees it.
+                let (cx, cy) = (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0);
+                let (sin, cos) = (-(drawing.rotation as f64)).to_radians().sin_cos();
+                let (dx, dy) = (x - cx, y - cy);
+                let (px, py) = (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+                let hit = if drawing.is_line() {
+                    let (mut x0, mut x1) = (frame.x, frame.x + frame.width);
+                    let (mut y0, mut y1) = (frame.y, frame.y + frame.height);
+                    if drawing.flip_h {
+                        (x0, x1) = (x1, x0);
+                    }
+                    if drawing.flip_v {
+                        (y0, y1) = (y1, y0);
+                    }
+                    let (lx, ly) = (x1 - x0, y1 - y0);
+                    let length = lx * lx + ly * ly;
+                    let along = if length > 0.0 {
+                        (((px - x0) * lx + (py - y0) * ly) / length).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    (px - x0 - along * lx).hypot(py - y0 - along * ly) <= REACH
                 } else {
-                    0.0
+                    px >= frame.x
+                        && px <= frame.x + frame.width
+                        && py >= frame.y
+                        && py <= frame.y + frame.height
                 };
-                (px - x0 - along * lx).hypot(py - y0 - along * ly) <= REACH
-            } else {
-                px >= frame.x && px <= frame.x + frame.width && py >= frame.y && py <= frame.y + frame.height
-            };
-            hit.then_some(drawing.id)
-        })
+                hit.then_some(drawing.id)
+            })
     }
 }
 
@@ -2819,17 +3203,48 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
         StructuralEdit::DeleteCols { at, count } => (false, false, at, count),
     };
     let mut drawings = std::mem::take(&mut sheet.drawings);
-    for drawing in drawings.iter_mut().filter(|d| d.placement != Placement::Fixed) {
+    for drawing in drawings
+        .iter_mut()
+        .filter(|d| d.placement != Placement::Fixed)
+    {
         if row_axis {
-            (drawing.anchor.0, drawing.offset.1) =
-                moved_corner(drawing.anchor.0, drawing.offset.1, false, insert, at, count, MAX_ROWS);
-            (drawing.to.0, drawing.to_offset.1) =
-                moved_corner(drawing.to.0, drawing.to_offset.1, true, insert, at, count, MAX_ROWS);
+            (drawing.anchor.0, drawing.offset.1) = moved_corner(
+                drawing.anchor.0,
+                drawing.offset.1,
+                false,
+                insert,
+                at,
+                count,
+                MAX_ROWS,
+            );
+            (drawing.to.0, drawing.to_offset.1) = moved_corner(
+                drawing.to.0,
+                drawing.to_offset.1,
+                true,
+                insert,
+                at,
+                count,
+                MAX_ROWS,
+            );
         } else {
-            (drawing.anchor.1, drawing.offset.0) =
-                moved_corner(drawing.anchor.1, drawing.offset.0, false, insert, at, count, MAX_COLS);
-            (drawing.to.1, drawing.to_offset.0) =
-                moved_corner(drawing.to.1, drawing.to_offset.0, true, insert, at, count, MAX_COLS);
+            (drawing.anchor.1, drawing.offset.0) = moved_corner(
+                drawing.anchor.1,
+                drawing.offset.0,
+                false,
+                insert,
+                at,
+                count,
+                MAX_COLS,
+            );
+            (drawing.to.1, drawing.to_offset.0) = moved_corner(
+                drawing.to.1,
+                drawing.to_offset.0,
+                true,
+                insert,
+                at,
+                count,
+                MAX_COLS,
+            );
         }
         if drawing.placement == Placement::MoveAndSize {
             let frame = sheet.drawing_frame(drawing);
@@ -2888,7 +3303,10 @@ impl Workbook {
         let mut out = Vec::new();
         for (index, sheet) in self.sheets.iter().enumerate() {
             for drawing in &sheet.drawings {
-                if let Some(source) = drawing.as_picture().and_then(|picture| self.picture_source(index, picture)) {
+                if let Some(source) = drawing
+                    .as_picture()
+                    .and_then(|picture| self.picture_source(index, picture))
+                {
                     out.push((index, drawing.id, source));
                 }
             }
@@ -2900,12 +3318,21 @@ impl Workbook {
     /// This is not an edit of its own (the picture follows what an edit
     /// changed): nothing is recorded for undo. False when the drawing is
     /// not a linked picture or the bytes are not an image.
-    pub fn refresh_linked_picture(&mut self, sheet: usize, id: u32, image: impl Into<Arc<[u8]>>) -> bool {
+    pub fn refresh_linked_picture(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        image: impl Into<Arc<[u8]>>,
+    ) -> bool {
         let image = image.into();
         let Some(info) = image_info(&image) else {
             return false;
         };
-        let Some(drawing) = self.sheets.get_mut(sheet).and_then(|sh| sh.drawings.iter_mut().find(|d| d.id == id)) else {
+        let Some(drawing) = self
+            .sheets
+            .get_mut(sheet)
+            .and_then(|sh| sh.drawings.iter_mut().find(|d| d.id == id))
+        else {
             return false;
         };
         match &mut drawing.kind {
@@ -3023,7 +3450,10 @@ mod tests {
             (ImageFormat::Jpeg, (800, 600), (96.0, 96.0))
         );
         let info = image_info(&jpeg(1440, 720, Some(144))).unwrap();
-        assert_eq!((info.pixels, info.natural_size()), ((1440, 720), (960.0, 480.0)));
+        assert_eq!(
+            (info.pixels, info.natural_size()),
+            ((1440, 720), (960.0, 480.0))
+        );
 
         let mut gif = b"GIF89a".to_vec();
         gif.extend_from_slice(&[0x40, 0x01, 0xf0, 0x00, 0, 0, 0]);
@@ -3060,9 +3490,15 @@ mod tests {
             (Placement::MoveOnly, true, true)
         );
         let stored = picture.as_picture().unwrap();
-        assert_eq!((stored.format, stored.pixels), (ImageFormat::Png, (128, 40)));
+        assert_eq!(
+            (stored.format, stored.pixels),
+            (ImageFormat::Png, (128, 40))
+        );
         assert_eq!(&stored.data[..], &bytes[..]);
-        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 40.0, 128.0, 40.0)));
+        assert_eq!(
+            w.drawing_frame(0, id),
+            Some(Frame::new(64.0, 40.0, 128.0, 40.0))
+        );
         // The copy of a sheet shares the bytes and has ids of its own.
         let copy = w.duplicate_sheet(0).unwrap();
         w.commit("copy");
@@ -3108,7 +3544,10 @@ mod tests {
         let ends = |tool: ShapeTool| shape(tool).outline.map(|o| (o.start, o.end)).unwrap();
         assert_eq!(ends(ShapeTool::Line), (LineEnd::None, LineEnd::None));
         assert_eq!(ends(ShapeTool::Arrow), (LineEnd::None, LineEnd::Triangle));
-        assert_eq!(ends(ShapeTool::DoubleArrow), (LineEnd::Triangle, LineEnd::Triangle));
+        assert_eq!(
+            ends(ShapeTool::DoubleArrow),
+            (LineEnd::Triangle, LineEnd::Triangle)
+        );
         assert!(shape(ShapeTool::Arrow).fill.is_none());
         let text_box = shape(ShapeTool::TextBox);
         assert!(text_box.text_box && text_box.preset == ShapePreset::Rect);
@@ -3123,10 +3562,16 @@ mod tests {
             (Placement::MoveAndSize, (1, 1), (46.0, 10.0))
         );
         assert_eq!((second.to, second.to_offset), ((6, 3), (14.0, 6.0)));
-        assert_eq!(w.drawing_frame(0, ids[1]), Some(Frame::new(110.0, 30.0, 96.0, 96.0)));
+        assert_eq!(
+            w.drawing_frame(0, ids[1]),
+            Some(Frame::new(110.0, 30.0, 96.0, 96.0))
+        );
         // A shape given without a name is named after what it looks like.
         let unnamed = w
-            .add_drawing(0, Drawing::shape(ShapeTool::DoubleArrow.shape(), (50.0, 0.0)))
+            .add_drawing(
+                0,
+                Drawing::shape(ShapeTool::DoubleArrow.shape(), (50.0, 0.0)),
+            )
             .unwrap();
         assert_eq!(named_in(&w, unnamed), "Straight Arrow Connector 21");
         w.locale = Locale::de();
@@ -3196,7 +3641,10 @@ mod tests {
         assert!(w.set_drawing_frame(0, id, Frame::new(200.0, 110.0, 60.0, 25.0)));
         w.commit("move");
         let d = w.drawing(0, id).unwrap();
-        assert_eq!((d.anchor, d.offset, d.size), ((5, 3), (8.0, 10.0), (60.0, 25.0)));
+        assert_eq!(
+            (d.anchor, d.offset, d.size),
+            ((5, 3), (8.0, 10.0), (60.0, 25.0))
+        );
         assert_eq!((d.to, d.to_offset), ((6, 4), (4.0, 15.0)));
         // Setting the cell by hand works too, and offsets past the cell are carried over.
         w.update_drawing(0, id, |d| {
@@ -3213,7 +3661,10 @@ mod tests {
         );
         w.undo();
         w.undo();
-        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(0.0, 0.0, 96.0, 96.0)));
+        assert_eq!(
+            w.drawing_frame(0, id),
+            Some(Frame::new(0.0, 0.0, 96.0, 96.0))
+        );
         assert!(!w.set_drawing_frame(0, 999, Frame::new(0.0, 0.0, 1.0, 1.0)));
         assert!(!w.update_drawing(3, id, |_| {}));
         // The id cannot be changed by an update.
@@ -3251,7 +3702,13 @@ mod tests {
             .unwrap();
         let c = w.add_picture(0, png(50, 50, None), (2, 0)).unwrap();
         w.commit("three");
-        let order = |w: &Workbook| w.sheets[0].drawings.iter().map(|d| d.id).collect::<Vec<_>>();
+        let order = |w: &Workbook| {
+            w.sheets[0]
+                .drawings
+                .iter()
+                .map(|d| d.id)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(order(&w), [a, b, c]);
         assert!(w.reorder_drawing(0, a, ZOrder::BringForward));
         assert_eq!(order(&w), [b, a, c]);
@@ -3274,9 +3731,15 @@ mod tests {
         w.commit("duplicate");
         assert_eq!(order(&w), [b, c, a, copy]);
         let (original, twin) = (w.drawing(0, b).unwrap(), w.drawing(0, copy).unwrap());
-        assert_eq!((original.name.as_str(), twin.name.as_str()), ("Oval 2", "Oval 4"));
+        assert_eq!(
+            (original.name.as_str(), twin.name.as_str()),
+            ("Oval 2", "Oval 4")
+        );
         assert_eq!(twin.kind, original.kind);
-        assert_eq!(w.drawing_frame(0, copy), Some(Frame::new(36.0, 36.0, 50.0, 50.0)));
+        assert_eq!(
+            w.drawing_frame(0, copy),
+            Some(Frame::new(36.0, 36.0, 50.0, 50.0))
+        );
         assert!(w.remove_drawing(0, b));
         assert!(!w.remove_drawing(0, b));
         w.commit("remove");
@@ -3336,7 +3799,10 @@ mod tests {
         // Rows inserted in the middle stretch what is sized with them.
         w.insert_rows(0, 6, 1);
         w.commit("insert");
-        assert_eq!(frames(&w), [Frame::new(80.0, 90.0, 100.0, 80.0), lower, frame]);
+        assert_eq!(
+            frames(&w),
+            [Frame::new(80.0, 90.0, 100.0, 80.0), lower, frame]
+        );
         assert_eq!(w.drawing(0, sized).unwrap().size, (100.0, 80.0));
         // A column deleted under it takes away the part that lay there.
         w.delete_cols(0, 2, 1);
@@ -3372,12 +3838,21 @@ mod tests {
         assert_eq!(w.drawing(0, id).unwrap().to, (3, 2));
         w.insert_rows(0, 3, 4);
         w.insert_cols(0, 2, 1);
-        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 20.0, 64.0, 40.0)));
+        assert_eq!(
+            w.drawing_frame(0, id),
+            Some(Frame::new(64.0, 20.0, 64.0, 40.0))
+        );
         w.insert_rows(0, 2, 1);
-        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 20.0, 64.0, 60.0)));
+        assert_eq!(
+            w.drawing_frame(0, id),
+            Some(Frame::new(64.0, 20.0, 64.0, 60.0))
+        );
         // A drawing wholly inside deleted rows collapses onto the line, as in Excel.
         w.delete_rows(0, 0, 10);
-        assert_eq!(w.drawing_frame(0, id), Some(Frame::new(64.0, 0.0, 64.0, 0.0)));
+        assert_eq!(
+            w.drawing_frame(0, id),
+            Some(Frame::new(64.0, 0.0, 64.0, 0.0))
+        );
     }
 
     #[test]
@@ -3389,7 +3864,10 @@ mod tests {
         let mut shape = Drawing::shape(ShapeTool::Hexagon.shape(), (0.0, 0.0));
         sheet.place_drawing(&mut shape, ((1, 1), (10.0, 5.0)), ((4, 2), (20.0, 15.0)));
         assert_eq!(shape.size, (110.0, 70.0));
-        assert_eq!(sheet.drawing_frame(&shape), Frame::new(74.0, 25.0, 110.0, 70.0));
+        assert_eq!(
+            sheet.drawing_frame(&shape),
+            Frame::new(74.0, 25.0, 110.0, 70.0)
+        );
         assert_eq!(
             sheet.drawing_corners(&shape),
             (((1, 1), (10.0, 5.0)), ((4, 2), (20.0, 15.0)))
@@ -3425,7 +3903,9 @@ mod tests {
             .path(width, height)
             .into_iter()
             .filter_map(|command| match command {
-                PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => Some((x * width, y * height)),
+                PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) => {
+                    Some((x * width, y * height))
+                }
                 PathCommand::CurveTo(.., x, y) => Some((x * width, y * height)),
                 PathCommand::Close => None,
             })
@@ -3452,7 +3932,11 @@ mod tests {
                 "{preset:?} {xs:?}"
             );
             assert!(min(&ys).abs() < 1e-3, "{preset:?} {ys:?}");
-            let bottom = if preset == ShapePreset::Callout { 1.125 } else { 1.0 };
+            let bottom = if preset == ShapePreset::Callout {
+                1.125
+            } else {
+                1.0
+            };
             assert!((max(&ys) - bottom).abs() < 1e-3, "{preset:?} {ys:?}");
             let [l, t, r, b] = preset.text_rect(120.0, 80.0);
             assert!(
@@ -3469,7 +3953,10 @@ mod tests {
         let up = points(ShapePreset::UpArrow, 60.0, 300.0);
         assert!((up[3].1 - 0.0).abs() < 1e-3 && (up[1].1 - 30.0).abs() < 1e-3);
         assert_eq!(points(ShapePreset::LeftArrow, 100.0, 100.0)[3], (0.0, 50.0));
-        assert_eq!(points(ShapePreset::DownArrow, 100.0, 100.0)[3], (50.0, 100.0));
+        assert_eq!(
+            points(ShapePreset::DownArrow, 100.0, 100.0)[3],
+            (50.0, 100.0)
+        );
         // A five-pointed star: ten corners, the top point in the middle.
         let star = points(ShapePreset::Star5, 100.0, 100.0);
         assert_eq!(star.len(), 10);
@@ -3478,14 +3965,20 @@ mod tests {
         let pentagon = points(ShapePreset::Pentagon, 100.0, 100.0);
         assert_eq!(pentagon.len(), 5);
         assert!((pentagon[0].1 - 38.2).abs() < 0.1 && (pentagon[3].0 - 80.9).abs() < 0.1);
-        assert_eq!(points(ShapePreset::Line, 40.0, 30.0), [(0.0, 0.0), (40.0, 30.0)]);
+        assert_eq!(
+            points(ShapePreset::Line, 40.0, 30.0),
+            [(0.0, 0.0), (40.0, 30.0)]
+        );
         assert_eq!(ShapePreset::Ellipse.path(10.0, 10.0).len(), 6);
     }
 
     #[test]
     fn file_names() {
         for preset in ShapePreset::ALL {
-            assert_eq!(ShapePreset::from_ooxml_name(preset.ooxml_name()), Some(preset));
+            assert_eq!(
+                ShapePreset::from_ooxml_name(preset.ooxml_name()),
+                Some(preset)
+            );
         }
         assert_eq!(
             ShapePreset::from_ooxml_name("straightConnector1"),
@@ -3504,10 +3997,16 @@ mod tests {
             assert_eq!(TextAlign::from_ooxml_name(align.ooxml_name()), Some(align));
         }
         for anchor in TextAnchor::ALL {
-            assert_eq!(TextAnchor::from_ooxml_name(anchor.ooxml_name()), Some(anchor));
+            assert_eq!(
+                TextAnchor::from_ooxml_name(anchor.ooxml_name()),
+                Some(anchor)
+            );
         }
         for placement in Placement::ALL {
-            assert_eq!(Placement::from_ooxml_name(placement.ooxml_name()), Some(placement));
+            assert_eq!(
+                Placement::from_ooxml_name(placement.ooxml_name()),
+                Some(placement)
+            );
         }
         for tool in ShapeTool::ALL {
             for locale in Locale::all() {
@@ -3521,10 +4020,18 @@ mod tests {
     fn charts_and_drawings_share_one_stacking_order() {
         use crate::chart::{Chart, ChartKind};
         let mut w = wb(&[]);
-        let rect = w.add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 50.0, 50.0)).unwrap();
+        let rect = w
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 50.0, 50.0))
+            .unwrap();
         let chart = w.add_chart(0, Chart::new(ChartKind::Column)).unwrap();
-        let oval = w.add_shape(0, ShapeTool::Ellipse, Frame::new(0.0, 0.0, 50.0, 50.0)).unwrap();
-        let (r, c, o) = (ObjectRef::Drawing(rect), ObjectRef::Chart(chart), ObjectRef::Drawing(oval));
+        let oval = w
+            .add_shape(0, ShapeTool::Ellipse, Frame::new(0.0, 0.0, 50.0, 50.0))
+            .unwrap();
+        let (r, c, o) = (
+            ObjectRef::Drawing(rect),
+            ObjectRef::Chart(chart),
+            ObjectRef::Drawing(oval),
+        );
         // Each new object goes on top, whatever its kind.
         assert_eq!(w.object_stack(0), vec![r, c, o]);
         assert_eq!(w.chart(0, chart).unwrap().name, "Chart 2");
@@ -3540,20 +4047,40 @@ mod tests {
         assert!(w.reorder_objects(0, &[c, r], ZOrder::SendBackward));
         assert_eq!(w.object_stack(0), vec![c, r, o]);
         // The lists follow.
-        assert_eq!(w.sheets[0].drawings.iter().map(|d| d.id).collect::<Vec<_>>(), vec![rect, oval]);
+        assert_eq!(
+            w.sheets[0]
+                .drawings
+                .iter()
+                .map(|d| d.id)
+                .collect::<Vec<_>>(),
+            vec![rect, oval]
+        );
         // Names and visibility, whatever the kind.
         assert!(w.rename_object(0, c, "Sales"));
         assert!(!w.rename_object(0, c, " Sales ") && !w.rename_object(0, o, ""));
-        assert_eq!((w.object_name(0, c), w.object_name(0, o)), (Some("Sales"), Some("Oval 3")));
+        assert_eq!(
+            (w.object_name(0, c), w.object_name(0, o)),
+            (Some("Sales"), Some("Oval 3"))
+        );
         assert!(w.set_objects_hidden(0, &[c, o], true));
         assert!(!w.set_objects_hidden(0, &[c, o], true));
-        assert_eq!((w.object_hidden(0, c), w.object_hidden(0, r)), (Some(true), Some(false)));
+        assert_eq!(
+            (w.object_hidden(0, c), w.object_hidden(0, r)),
+            (Some(true), Some(false))
+        );
         assert_eq!(w.drawing_at(0, 5.0, 5.0), Some(rect));
         assert!(w.set_objects_hidden(0, &[c, o], false));
         w.commit("three objects");
         assert!(w.restack_objects(0, &[o, c]));
         assert_eq!(w.object_stack(0), vec![o, c, r]);
-        assert_eq!(w.sheets[0].drawings.iter().map(|d| d.id).collect::<Vec<_>>(), vec![oval, rect]);
+        assert_eq!(
+            w.sheets[0]
+                .drawings
+                .iter()
+                .map(|d| d.id)
+                .collect::<Vec<_>>(),
+            vec![oval, rect]
+        );
         assert!(!w.restack_objects(0, &[o, c, r]));
         w.commit("order");
         w.undo();
@@ -3561,38 +4088,94 @@ mod tests {
         // Objects that were never placed (an old file) lie above those
         // that were, charts first.
         let mut loose = wb(&[]);
-        let a = loose.add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 9.0, 9.0)).unwrap();
+        let a = loose
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 9.0, 9.0))
+            .unwrap();
         let k = loose.add_chart(0, Chart::new(ChartKind::Pie)).unwrap();
         for d in &mut loose.sheets[0].drawings {
             d.z = 0;
         }
         loose.sheets[0].charts[0].z = 0;
-        assert_eq!(loose.object_stack(0), vec![ObjectRef::Chart(k), ObjectRef::Drawing(a)]);
-        let b = loose.add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 9.0, 9.0)).unwrap();
-        assert_eq!(loose.object_stack(0), vec![ObjectRef::Chart(k), ObjectRef::Drawing(a), ObjectRef::Drawing(b)]);
+        assert_eq!(
+            loose.object_stack(0),
+            vec![ObjectRef::Chart(k), ObjectRef::Drawing(a)]
+        );
+        let b = loose
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 9.0, 9.0))
+            .unwrap();
+        assert_eq!(
+            loose.object_stack(0),
+            vec![
+                ObjectRef::Chart(k),
+                ObjectRef::Drawing(a),
+                ObjectRef::Drawing(b)
+            ]
+        );
     }
 
     #[test]
     fn a_member_of_a_group_is_changed_where_it_shows() {
-        let close = |a: Frame, b: Frame| (a.x - b.x).abs() < 0.01 && (a.y - b.y).abs() < 0.01 && (a.width - b.width).abs() < 0.01 && (a.height - b.height).abs() < 0.01;
+        let close = |a: Frame, b: Frame| {
+            (a.x - b.x).abs() < 0.01
+                && (a.y - b.y).abs() < 0.01
+                && (a.width - b.width).abs() < 0.01
+                && (a.height - b.height).abs() < 0.01
+        };
         let mut w = wb(&[]);
-        let a = w.add_shape(0, ShapeTool::Rectangle, Frame::new(1100.0, 1100.0, 100.0, 50.0)).unwrap();
-        let b = w.add_shape(0, ShapeTool::Ellipse, Frame::new(1250.0, 1120.0, 50.0, 80.0)).unwrap();
-        let c = w.add_shape(0, ShapeTool::Diamond, Frame::new(1150.0, 1160.0, 20.0, 20.0)).unwrap();
+        let a = w
+            .add_shape(
+                0,
+                ShapeTool::Rectangle,
+                Frame::new(1100.0, 1100.0, 100.0, 50.0),
+            )
+            .unwrap();
+        let b = w
+            .add_shape(
+                0,
+                ShapeTool::Ellipse,
+                Frame::new(1250.0, 1120.0, 50.0, 80.0),
+            )
+            .unwrap();
+        let c = w
+            .add_shape(
+                0,
+                ShapeTool::Diamond,
+                Frame::new(1150.0, 1160.0, 20.0, 20.0),
+            )
+            .unwrap();
         let group = w.group_drawings(0, &[a, b, c]).expect("a group");
         w.commit("group");
-        assert_eq!(w.drawing_frame(0, b), Some(Frame::new(1250.0, 1120.0, 50.0, 80.0)));
+        assert_eq!(
+            w.drawing_frame(0, b),
+            Some(Frame::new(1250.0, 1120.0, 50.0, 80.0))
+        );
         // Its look is changed through its id, as that of any drawing.
-        assert!(w.update_drawing(0, b, |d| d.as_shape_mut().unwrap().fill = Some(Color(0xFF0000))));
-        assert_eq!(w.drawing(0, b).unwrap().as_shape().unwrap().fill, Some(Color(0xFF0000)));
-        assert_eq!(w.drawing_frame(0, group), Some(Frame::new(1100.0, 1100.0, 200.0, 100.0)));
+        assert!(w.update_drawing(0, b, |d| d.as_shape_mut().unwrap().fill =
+            Some(Color(0xFF0000))));
+        assert_eq!(
+            w.drawing(0, b).unwrap().as_shape().unwrap().fill,
+            Some(Color(0xFF0000))
+        );
+        assert_eq!(
+            w.drawing_frame(0, group),
+            Some(Frame::new(1100.0, 1100.0, 200.0, 100.0))
+        );
         // Moved out to the right: the box of the group follows, and the
         // others stay where they were.
         assert!(w.set_drawing_frame(0, b, Frame::new(1350.0, 1090.0, 50.0, 80.0)));
         w.commit("move");
-        assert_eq!(w.drawing_frame(0, group), Some(Frame::new(1100.0, 1090.0, 300.0, 90.0)));
-        assert_eq!(w.drawing_frame(0, b), Some(Frame::new(1350.0, 1090.0, 50.0, 80.0)));
-        assert_eq!(w.drawing_frame(0, a), Some(Frame::new(1100.0, 1100.0, 100.0, 50.0)));
+        assert_eq!(
+            w.drawing_frame(0, group),
+            Some(Frame::new(1100.0, 1090.0, 300.0, 90.0))
+        );
+        assert_eq!(
+            w.drawing_frame(0, b),
+            Some(Frame::new(1350.0, 1090.0, 50.0, 80.0))
+        );
+        assert_eq!(
+            w.drawing_frame(0, a),
+            Some(Frame::new(1100.0, 1100.0, 100.0, 50.0))
+        );
         // In a group that was stretched, turned and flipped, a member
         // still goes where it is told, and comes out turned as told.
         w.set_drawing_frame(0, group, Frame::new(1100.0, 1090.0, 600.0, 90.0));
@@ -3611,16 +4194,26 @@ mod tests {
         w.commit("member");
         let (frame, turned, flip_h, _) = w.sheets[0].shown(w.drawing(0, b).unwrap());
         assert!((turned - 120.0).abs() < 0.01 && flip_h);
-        assert!(close(w.drawing_frame(0, a).unwrap(), before), "the other members stay");
+        assert!(
+            close(w.drawing_frame(0, a).unwrap(), before),
+            "the other members stay"
+        );
         // Its own rotation, in the group: what the turn of the group
         // does not account for (mirrored: it runs the other way).
-        assert!((w.drawing(0, b).unwrap().rotation - 330.0).abs() < 0.01, "{}", w.drawing(0, b).unwrap().rotation);
+        assert!(
+            (w.drawing(0, b).unwrap().rotation - 330.0).abs() < 0.01,
+            "{}",
+            w.drawing(0, b).unwrap().rotation
+        );
         let again = w.drawing_frame(0, b).unwrap();
         assert!(close(frame, again));
         w.undo();
         w.undo();
         w.undo();
-        assert_eq!(w.drawing_frame(0, b), Some(Frame::new(1250.0, 1120.0, 50.0, 80.0)));
+        assert_eq!(
+            w.drawing_frame(0, b),
+            Some(Frame::new(1250.0, 1120.0, 50.0, 80.0))
+        );
         w.redo();
         w.redo();
         w.redo();
@@ -3628,12 +4221,27 @@ mod tests {
         // last but one dissolves it.
         assert!(w.remove_drawing(0, c));
         w.commit("delete");
-        assert_eq!(w.drawing(0, group).unwrap().as_group().unwrap().members.len(), 2);
+        assert_eq!(
+            w.drawing(0, group)
+                .unwrap()
+                .as_group()
+                .unwrap()
+                .members
+                .len(),
+            2
+        );
         let kept = w.drawing_frame(0, a).unwrap();
         assert!(w.remove_drawing(0, b));
         w.commit("delete");
         assert!(w.drawing(0, group).is_none() && w.group_of(0, a).is_none());
-        assert_eq!(w.sheets[0].drawings.iter().map(|d| d.id).collect::<Vec<_>>(), vec![a]);
+        assert_eq!(
+            w.sheets[0]
+                .drawings
+                .iter()
+                .map(|d| d.id)
+                .collect::<Vec<_>>(),
+            vec![a]
+        );
         assert!(close(w.drawing_frame(0, a).unwrap(), kept));
         w.undo();
         assert_eq!(w.group_of(0, a), Some(group));
@@ -3642,32 +4250,60 @@ mod tests {
     #[test]
     fn groups_hold_their_members_and_let_them_go() {
         let mut w = wb(&[]);
-        let under = w.add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 10.0, 10.0)).unwrap();
-        let a = w.add_shape(0, ShapeTool::Rectangle, Frame::new(100.0, 100.0, 100.0, 50.0)).unwrap();
-        let between = w.add_shape(0, ShapeTool::Ellipse, Frame::new(0.0, 0.0, 10.0, 10.0)).unwrap();
-        let b = w.add_shape(0, ShapeTool::Ellipse, Frame::new(250.0, 120.0, 50.0, 80.0)).unwrap();
+        let under = w
+            .add_shape(0, ShapeTool::Rectangle, Frame::new(0.0, 0.0, 10.0, 10.0))
+            .unwrap();
+        let a = w
+            .add_shape(
+                0,
+                ShapeTool::Rectangle,
+                Frame::new(100.0, 100.0, 100.0, 50.0),
+            )
+            .unwrap();
+        let between = w
+            .add_shape(0, ShapeTool::Ellipse, Frame::new(0.0, 0.0, 10.0, 10.0))
+            .unwrap();
+        let b = w
+            .add_shape(0, ShapeTool::Ellipse, Frame::new(250.0, 120.0, 50.0, 80.0))
+            .unwrap();
         w.update_drawing(0, b, |d| d.rotation = 30.0);
         w.commit("shapes");
         assert_eq!(w.group_drawings(0, &[a]), None);
         let group = w.group_drawings(0, &[a, b]).expect("a group");
         w.commit("group");
         // The box around both, in the place of the topmost.
-        assert_eq!(w.drawing_frame(0, group), Some(Frame::new(100.0, 100.0, 200.0, 100.0)));
+        assert_eq!(
+            w.drawing_frame(0, group),
+            Some(Frame::new(100.0, 100.0, 200.0, 100.0))
+        );
         let d = |id| ObjectRef::Drawing(id);
         assert_eq!(w.object_stack(0), vec![d(under), d(between), d(group)]);
         assert_eq!(w.drawing(0, group).unwrap().name, "Group 5");
         // Its members are no longer drawings of the sheet, and are still
         // found by their ids.
         assert!(w.sheets[0].drawings.iter().all(|d| d.id != a));
-        assert_eq!((w.group_of(0, a), w.group_of(0, group), w.drawing(0, a).map(|d| d.id)), (Some(group), None, Some(a)));
+        assert_eq!(
+            (
+                w.group_of(0, a),
+                w.group_of(0, group),
+                w.drawing(0, a).map(|d| d.id)
+            ),
+            (Some(group), None, Some(a))
+        );
         let frames = |w: &Workbook| -> Vec<(u32, Frame, f32)> {
             let sh = &w.sheets[0];
             let holder = w.drawing(0, group).unwrap();
-            sh.drawing_leaves(holder).iter().map(|leaf| (leaf.drawing.id, leaf.frame, leaf.rotation)).collect()
+            sh.drawing_leaves(holder)
+                .iter()
+                .map(|leaf| (leaf.drawing.id, leaf.frame, leaf.rotation))
+                .collect()
         };
         assert_eq!(
             frames(&w),
-            vec![(a, Frame::new(100.0, 100.0, 100.0, 50.0), 0.0), (b, Frame::new(250.0, 120.0, 50.0, 80.0), 30.0)]
+            vec![
+                (a, Frame::new(100.0, 100.0, 100.0, 50.0), 0.0),
+                (b, Frame::new(250.0, 120.0, 50.0, 80.0), 30.0)
+            ]
         );
         // Twice as wide: the members stretch with it.
         w.set_drawing_frame(0, group, Frame::new(100.0, 100.0, 400.0, 100.0));
@@ -3695,7 +4331,16 @@ mod tests {
 
         // A copy has members of its own.
         let copy = w.duplicate_drawing(0, group).unwrap();
-        let ids = |w: &Workbook, id| w.drawing(0, id).unwrap().as_group().unwrap().members.iter().map(|m| m.id).collect::<Vec<_>>();
+        let ids = |w: &Workbook, id| {
+            w.drawing(0, id)
+                .unwrap()
+                .as_group()
+                .unwrap()
+                .members
+                .iter()
+                .map(|m| m.id)
+                .collect::<Vec<_>>()
+        };
         assert!(ids(&w, copy).iter().all(|id| *id > copy));
         w.remove_drawing(0, copy);
         w.commit("copy and remove");
@@ -3704,8 +4349,14 @@ mod tests {
         let freed = w.ungroup_drawing(0, group);
         assert_eq!(freed, vec![a, b]);
         assert_eq!(w.object_stack(0), vec![d(under), d(between), d(a), d(b)]);
-        assert_eq!(w.drawing_frame(0, a), Some(Frame::new(100.0, 100.0, 100.0, 50.0)));
-        assert_eq!(w.drawing_frame(0, b), Some(Frame::new(250.0, 120.0, 50.0, 80.0)));
+        assert_eq!(
+            w.drawing_frame(0, a),
+            Some(Frame::new(100.0, 100.0, 100.0, 50.0))
+        );
+        assert_eq!(
+            w.drawing_frame(0, b),
+            Some(Frame::new(250.0, 120.0, 50.0, 80.0))
+        );
         assert_eq!(w.drawing(0, b).unwrap().rotation, 30.0);
         assert!(w.ungroup_drawing(0, a).is_empty());
         w.commit("ungroup");
@@ -3717,7 +4368,10 @@ mod tests {
         let sh = &w.sheets[0];
         assert_eq!(sh.drawing_leaves(w.drawing(0, outer).unwrap()).len(), 3);
         assert_eq!(w.ungroup_drawing(0, outer), vec![between, group]);
-        assert_eq!(w.drawing_frame(0, group), Some(Frame::new(100.0, 100.0, 200.0, 100.0)));
+        assert_eq!(
+            w.drawing_frame(0, group),
+            Some(Frame::new(100.0, 100.0, 200.0, 100.0))
+        );
     }
 
     #[test]
@@ -3728,40 +4382,121 @@ mod tests {
         assert_eq!(plain.apply(pixel), pixel);
         let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-4);
         // Transparency only touches the alpha.
-        let faded = PictureAdjust { transparency: 0.25, ..plain };
+        let faded = PictureAdjust {
+            transparency: 0.25,
+            ..plain
+        };
         assert!(near(faded.apply(pixel), [0.8, 0.4, 0.2, 0.75]));
         assert!(faded.changes_pixels() && !faded.is_cropped());
         // Brightness goes towards white or black; contrast spreads about
         // mid grey.
-        assert!(near(PictureAdjust { brightness: 0.5, ..plain }.apply(pixel), [0.9, 0.7, 0.6, 1.0]));
-        assert!(near(PictureAdjust { brightness: -0.5, ..plain }.apply(pixel), [0.4, 0.2, 0.1, 1.0]));
-        assert!(near(PictureAdjust { contrast: -1.0, ..plain }.apply(pixel), [0.5, 0.5, 0.5, 1.0]));
-        assert!(near(PictureAdjust { contrast: 0.5, ..plain }.apply(pixel), [0.95, 0.35, 0.05, 1.0]));
+        assert!(near(
+            PictureAdjust {
+                brightness: 0.5,
+                ..plain
+            }
+            .apply(pixel),
+            [0.9, 0.7, 0.6, 1.0]
+        ));
+        assert!(near(
+            PictureAdjust {
+                brightness: -0.5,
+                ..plain
+            }
+            .apply(pixel),
+            [0.4, 0.2, 0.1, 1.0]
+        ));
+        assert!(near(
+            PictureAdjust {
+                contrast: -1.0,
+                ..plain
+            }
+            .apply(pixel),
+            [0.5, 0.5, 0.5, 1.0]
+        ));
+        assert!(near(
+            PictureAdjust {
+                contrast: 0.5,
+                ..plain
+            }
+            .apply(pixel),
+            [0.95, 0.35, 0.05, 1.0]
+        ));
         // No saturation and grayscale agree.
         let grey = 0.299 * 0.8 + 0.587 * 0.4 + 0.114 * 0.2;
-        assert!(near(PictureAdjust { saturation: 0.0, ..plain }.apply(pixel), [grey, grey, grey, 1.0]));
-        assert!(near(PictureAdjust { recolor: Recolor::Grayscale, ..plain }.apply(pixel), [grey, grey, grey, 1.0]));
-        assert!(near(PictureAdjust { recolor: Recolor::BlackAndWhite(0.5), ..plain }.apply(pixel), [0.0, 0.0, 0.0, 1.0]));
-        assert!(near(PictureAdjust { recolor: Recolor::BlackAndWhite(0.25), ..plain }.apply(pixel), [1.0, 1.0, 1.0, 1.0]));
+        assert!(near(
+            PictureAdjust {
+                saturation: 0.0,
+                ..plain
+            }
+            .apply(pixel),
+            [grey, grey, grey, 1.0]
+        ));
+        assert!(near(
+            PictureAdjust {
+                recolor: Recolor::Grayscale,
+                ..plain
+            }
+            .apply(pixel),
+            [grey, grey, grey, 1.0]
+        ));
+        assert!(near(
+            PictureAdjust {
+                recolor: Recolor::BlackAndWhite(0.5),
+                ..plain
+            }
+            .apply(pixel),
+            [0.0, 0.0, 0.0, 1.0]
+        ));
+        assert!(near(
+            PictureAdjust {
+                recolor: Recolor::BlackAndWhite(0.25),
+                ..plain
+            }
+            .apply(pixel),
+            [1.0, 1.0, 1.0, 1.0]
+        ));
         // Two colours: black gives the dark one, white the light one.
-        let duo = PictureAdjust { recolor: Recolor::Duotone(Color(0x102030), Color(0xF0E0D0)), ..plain };
-        assert!(near(duo.apply([0.0, 0.0, 0.0, 1.0]), [16.0 / 255.0, 32.0 / 255.0, 48.0 / 255.0, 1.0]));
-        assert!(near(duo.apply([1.0, 1.0, 1.0, 1.0]), [240.0 / 255.0, 224.0 / 255.0, 208.0 / 255.0, 1.0]));
+        let duo = PictureAdjust {
+            recolor: Recolor::Duotone(Color(0x102030), Color(0xF0E0D0)),
+            ..plain
+        };
+        assert!(near(
+            duo.apply([0.0, 0.0, 0.0, 1.0]),
+            [16.0 / 255.0, 32.0 / 255.0, 48.0 / 255.0, 1.0]
+        ));
+        assert!(near(
+            duo.apply([1.0, 1.0, 1.0, 1.0]),
+            [240.0 / 255.0, 224.0 / 255.0, 208.0 / 255.0, 1.0]
+        ));
         // Warm adds red and takes blue.
-        let warm = PictureAdjust { temperature: 11_500.0, ..plain }.apply([0.5, 0.5, 0.5, 1.0]);
+        let warm = PictureAdjust {
+            temperature: 11_500.0,
+            ..plain
+        }
+        .apply([0.5, 0.5, 0.5, 1.0]);
         assert!(warm[0] > 0.69 && warm[2] < 0.31 && warm[1] == 0.5);
 
         // A quarter cut off at the left and half at the bottom: the whole
         // image is larger than the frame, and starts before it.
-        let cropped = PictureAdjust { crop: [0.25, 0.0, 0.0, 0.5], ..plain };
+        let cropped = PictureAdjust {
+            crop: [0.25, 0.0, 0.0, 0.5],
+            ..plain
+        };
         assert!(cropped.is_cropped() && !cropped.changes_pixels());
         let frame = Frame::new(100.0, 100.0, 150.0, 50.0);
         let image = cropped.uncropped(frame);
         assert_eq!(image, Frame::new(50.0, 100.0, 200.0, 100.0));
-        assert_eq!(PictureAdjust::crop_between(image, frame), [0.25, 0.0, 0.0, 0.5]);
+        assert_eq!(
+            PictureAdjust::crop_between(image, frame),
+            [0.25, 0.0, 0.0, 0.5]
+        );
         // Dragging the frame out past the image leaves room around it.
         let wider = PictureAdjust::crop_between(image, Frame::new(40.0, 100.0, 210.0, 100.0));
-        assert!(near([wider[0], wider[1], wider[2], wider[3]], [-0.05, 0.0, 0.0, 0.0]));
+        assert!(near(
+            [wider[0], wider[1], wider[2], wider[3]],
+            [-0.05, 0.0, 0.0, 0.0]
+        ));
     }
 
     #[test]
@@ -3771,7 +4506,13 @@ mod tests {
         let centre = ShadowPreset::Center.shadow();
         assert_eq!((centre.distance, centre.size), (0.0, 1.02));
         assert!(Effects::default().is_none());
-        assert!(!Effects { soft_edge: 2.5, ..Effects::default() }.is_none());
+        assert!(
+            !Effects {
+                soft_edge: 2.5,
+                ..Effects::default()
+            }
+            .is_none()
+        );
         assert_eq!(ShadowPreset::Left.name(Locale::fr()), "Décalage : gauche");
     }
 }

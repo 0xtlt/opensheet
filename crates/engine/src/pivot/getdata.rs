@@ -30,7 +30,12 @@ fn find_item(p: &PivotTable, field: usize, wanted: &Value, locale: &Locale) -> O
 /// given (field, item) pairs. Row and column fields left out are totalled,
 /// which only works where the report shows that total. Every failure is
 /// `#REF!`, as in Excel.
-pub fn get_pivot_data(wb: &Workbook, at: (usize, u32, u32), data_field: &str, pairs: &[(String, Value)]) -> R<Value> {
+pub fn get_pivot_data(
+    wb: &Workbook,
+    at: (usize, u32, u32),
+    data_field: &str,
+    pairs: &[(String, Value)],
+) -> R<Value> {
     let missing = ErrorKind::Ref;
     let p = wb.pivot_at(at.0, at.1, at.2).ok_or(missing)?;
     let report = &*p.report;
@@ -44,7 +49,8 @@ pub fn get_pivot_data(wb: &Workbook, at: (usize, u32, u32), data_field: &str, pa
         .position(|d| same_name(&d.name, data_field))
         .or_else(by_source)
         .ok_or(missing)?;
-    let fields = |axis: &[super::AxisField]| axis.iter().filter_map(|a| a.field()).collect::<Vec<_>>();
+    let fields =
+        |axis: &[super::AxisField]| axis.iter().filter_map(|a| a.field()).collect::<Vec<_>>();
     let (row_fields, col_fields) = (fields(&p.row_fields), fields(&p.col_fields));
     let mut row_items: Vec<Option<u32>> = vec![None; row_fields.len()];
     let mut col_items: Vec<Option<u32>> = vec![None; col_fields.len()];
@@ -81,7 +87,11 @@ pub fn get_pivot_data(wb: &Workbook, at: (usize, u32, u32), data_field: &str, pa
     let col_node = node(&report.col_tree, &col_items)?;
     let find = |lines: &[Line], n: u32| {
         lines.iter().position(|l| {
-            l.values && l.kind != LineKind::Header && l.node == n && !l.is_custom() && l.data().is_none_or(|ld| ld == d)
+            l.values
+                && l.kind != LineKind::Header
+                && l.node == n
+                && !l.is_custom()
+                && l.data().is_none_or(|ld| ld == d)
         })
     };
     let r = find(&report.row_lines, row_node).ok_or(missing)? as u32;

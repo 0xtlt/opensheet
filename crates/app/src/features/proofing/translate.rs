@@ -14,7 +14,10 @@ use crate::i18n::{t, t_ctx};
 use crate::theme::{self, c};
 use crate::widgets::text_area::{AreaEvent, TextArea};
 use crate::widgets::{Button, Select, label};
-use gpui::{Context, Entity, Focusable, MouseButton, MouseDownEvent, SharedString, Subscription, Task, WeakEntity, Window, div, prelude::*, px};
+use gpui::{
+    Context, Entity, Focusable, MouseButton, MouseDownEvent, SharedString, Subscription, Task,
+    WeakEntity, Window, div, prelude::*, px,
+};
 use opensheet_engine::Rect;
 use std::sync::Arc;
 use std::time::Duration;
@@ -112,7 +115,11 @@ pub(super) fn insert(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
     }
     let sheet = app.sheet;
     // A translation is a text, whatever it looks like.
-    let typed = if text.starts_with(['=', '+', '-', '\'']) { format!("'{text}") } else { text.to_string() };
+    let typed = if text.starts_with(['=', '+', '-', '\'']) {
+        format!("'{text}")
+    } else {
+        text.to_string()
+    };
     if app.wb.set_cell_text(sheet, row, col, &typed).is_err() {
         return false;
     }
@@ -121,18 +128,26 @@ pub(super) fn insert(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
 }
 
 impl TranslatePane {
-    fn new(app: WeakEntity<ExcelApp>, translator: Arc<dyn Translator>, text: String, cx: &mut Context<Self>) -> Self {
+    fn new(
+        app: WeakEntity<ExcelApp>,
+        translator: Arc<dyn Translator>,
+        text: String,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let source = cx.new(|cx| {
             let mut area = TextArea::field(cx);
             area.max_height = Some(108.0);
             area.set_text(text.clone(), cx);
             area
         });
-        let subscription = cx.subscribe(&source, |this: &mut TranslatePane, _, event: &AreaEvent, cx| match event {
-            AreaEvent::Changed => this.translate_after(PAUSE, cx),
-            AreaEvent::Submit => this.translate_after(Duration::ZERO, cx),
-            _ => {}
-        });
+        let subscription = cx.subscribe(
+            &source,
+            |this: &mut TranslatePane, _, event: &AreaEvent, cx| match event {
+                AreaEvent::Changed => this.translate_after(PAUSE, cx),
+                AreaEvent::Submit => this.translate_after(Duration::ZERO, cx),
+                _ => {}
+            },
+        );
         let kept = settings::get();
         let mut pane = TranslatePane {
             app,
@@ -141,7 +156,11 @@ impl TranslatePane {
             from_cell: text,
             languages: None,
             from: Some(kept.translate_from).filter(|language| !language.is_empty()),
-            to: if kept.translate_to.is_empty() { crate::i18n::lang().code().to_string() } else { kept.translate_to },
+            to: if kept.translate_to.is_empty() {
+                crate::i18n::lang().code().to_string()
+            } else {
+                kept.translate_to
+            },
             state: State::Empty,
             task: None,
             _subscription: subscription,
@@ -153,7 +172,9 @@ impl TranslatePane {
     /// Ask the system what it translates, then translate what is shown.
     fn load_languages(&mut self, cx: &mut Context<Self>) {
         let translator = self.translator.clone();
-        let asked = cx.background_executor().spawn(async move { translator.languages() });
+        let asked = cx
+            .background_executor()
+            .spawn(async move { translator.languages() });
         self.task = Some(cx.spawn(async move |this, cx| {
             let answer = asked.await;
             this.update(cx, |this, cx| {
@@ -163,11 +184,20 @@ impl TranslatePane {
                 });
                 // A language kept from another Mac may not exist here.
                 if let Ok(languages) = &answer {
-                    if this.from.as_ref().is_some_and(|from| !languages.contains(from)) {
+                    if this
+                        .from
+                        .as_ref()
+                        .is_some_and(|from| !languages.contains(from))
+                    {
                         this.from = None;
                     }
                     if !languages.contains(&this.to) {
-                        this.to = languages.iter().find(|code| code.as_str() == "en").or(languages.first()).cloned().unwrap_or_default();
+                        this.to = languages
+                            .iter()
+                            .find(|code| code.as_str() == "en")
+                            .or(languages.first())
+                            .cloned()
+                            .unwrap_or_default();
                     }
                 }
                 this.languages = Some(answer);
@@ -201,7 +231,10 @@ impl TranslatePane {
                 if !pause.is_zero() {
                     cx.background_executor().timer(pause).await;
                 }
-                let answer = cx.background_executor().spawn(async move { translator.translate(&text, from.as_deref(), &to) }).await;
+                let answer = cx
+                    .background_executor()
+                    .spawn(async move { translator.translate(&text, from.as_deref(), &to) })
+                    .await;
                 this.update(cx, |this, cx| {
                     this.state = match answer {
                         Ok(translation) => State::Done(translation),
@@ -274,12 +307,21 @@ impl Render for TranslatePane {
             Some(Ok(languages)) => languages.clone(),
             _ => Vec::new(),
         };
-        let names: Vec<SharedString> = languages.iter().map(|code| system::language_name(code).into()).collect();
-        let mut from_names = vec![SharedString::from(t("Auto-Detect", "Détecter automatiquement"))];
+        let names: Vec<SharedString> = languages
+            .iter()
+            .map(|code| system::language_name(code).into())
+            .collect();
+        let mut from_names = vec![SharedString::from(t(
+            "Auto-Detect",
+            "Détecter automatiquement",
+        ))];
         from_names.extend(names.iter().cloned());
         let from_index = match &self.from {
             None => Some(0),
-            Some(from) => languages.iter().position(|code| code == from).map(|index| index + 1),
+            Some(from) => languages
+                .iter()
+                .position(|code| code == from)
+                .map(|index| index + 1),
         };
         let to_index = languages.iter().position(|code| *code == self.to);
         let unavailable = languages.is_empty();
@@ -287,17 +329,27 @@ impl Render for TranslatePane {
         let to_codes = languages.clone();
         let field = self.source.clone();
         let source_box = Self::frame()
-            .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, window, cx| {
-                window.focus(&field.read(cx).focus_handle(cx));
-                field.update(cx, |field, cx| field.caret_to_point(event.position, cx));
-            })
+            .on_mouse_down(
+                MouseButton::Left,
+                move |event: &MouseDownEvent, window, cx| {
+                    window.focus(&field.read(cx).focus_handle(cx));
+                    field.update(cx, |field, cx| field.caret_to_point(event.position, cx));
+                },
+            )
             .child(self.source.clone());
         let muted = |text: String| div().text_color(c(theme::TEXT_MUTED)).child(text);
         let (translation, detected, note) = match &self.state {
             State::Empty => (div(), None, None),
-            State::Working => (muted(t("Translating…", "Traduction en cours…").to_string()), None, None),
+            State::Working => (
+                muted(t("Translating…", "Traduction en cours…").to_string()),
+                None,
+                None,
+            ),
             State::Done(translation) => {
-                let detected = self.from.is_none().then(|| system::language_name(&translation.source));
+                let detected = self
+                    .from
+                    .is_none()
+                    .then(|| system::language_name(&translation.source));
                 (div().child(translation.text.clone()), detected, None)
             }
             State::Failed(error) => (div(), None, Some(explain(error))),
@@ -324,13 +376,17 @@ impl Render for TranslatePane {
                             .width(190.0)
                             .disabled(unavailable)
                             .on_change(cx.listener(move |this, index: &usize, _, cx| {
-                                let from = index.checked_sub(1).and_then(|index| from_codes.get(index).cloned());
+                                let from = index
+                                    .checked_sub(1)
+                                    .and_then(|index| from_codes.get(index).cloned());
                                 this.set_from(from, cx);
                             })),
                     ),
             )
             .when_some(detected, |d, language| {
-                d.child(muted(t("Detected: {}", "Langue détectée : {}").replace("{}", &language)))
+                d.child(muted(
+                    t("Detected: {}", "Langue détectée : {}").replace("{}", &language),
+                ))
             })
             .child(source_box)
             .child(
@@ -351,8 +407,15 @@ impl Render for TranslatePane {
                             })),
                     ),
             )
-            .child(Self::frame().debug_selector(|| "translation".into()).bg(c(theme::CHROME_BG)).child(translation))
-            .when_some(note, |d, note| d.child(div().text_color(c(0xA4262C)).child(note)))
+            .child(
+                Self::frame()
+                    .debug_selector(|| "translation".into())
+                    .bg(c(theme::CHROME_BG))
+                    .child(translation),
+            )
+            .when_some(note, |d, note| {
+                d.child(div().text_color(c(0xA4262C)).child(note))
+            })
             .child(
                 div().pt(px(4.)).flex().child(
                     Button::new("translate-insert", t("Insert", "Insérer"))
@@ -361,14 +424,22 @@ impl Render for TranslatePane {
                         .on_click(cx.listener(|this, _, _, cx| this.insert(cx))),
                 ),
             )
-            .child(div().pt(px(8.)).child(muted(where_languages_are().to_string())))
+            .child(
+                div()
+                    .pt(px(8.))
+                    .child(muted(where_languages_are().to_string())),
+            )
     }
 }
 
 /// Review ▸ Translate: open the pane on the text of the active cell.
 pub(super) fn open(app: &mut ExcelApp, cx: &mut Cx) {
     let text = active_cell_text(app);
-    match app.ext::<TranslateUi>().and_then(|ui| ui.pane.clone()).filter(|_| app.pane_open(PANE)) {
+    match app
+        .ext::<TranslateUi>()
+        .and_then(|ui| ui.pane.clone())
+        .filter(|_| app.pane_open(PANE))
+    {
         Some(pane) => {
             let again = pane.clone();
             cx.defer(move |cx| again.update(cx, |pane, cx| pane.follow(text, cx)));

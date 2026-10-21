@@ -32,7 +32,10 @@ pub(super) fn parse_extension<'a>(r: &mut Reader<'a>, blip: &Tag<'a>) -> Option<
         each_child(r, list, |r, extension| {
             each_child(r, extension, |r, t| {
                 if t.name == "svgBlip" {
-                    vector = t.attr_local("embed").map(|id| id.into_owned()).filter(|id| !id.is_empty());
+                    vector = t
+                        .attr_local("embed")
+                        .map(|id| id.into_owned())
+                        .filter(|id| !id.is_empty());
                 }
                 r.skip(t);
             });

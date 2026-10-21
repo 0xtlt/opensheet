@@ -26,8 +26,8 @@ mod styles;
 
 use self::actions::AutoChange;
 use super::{
-    CellEdit, Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuTarget, Painter, PendingEdit, Verdict, Zone,
-    ZoneEvent, ZoneResponse, filters, pivot,
+    CellEdit, Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuTarget, Painter,
+    PendingEdit, Verdict, Zone, ZoneEvent, ZoneResponse, filters, pivot,
 };
 use crate::app::ExcelApp;
 use crate::i18n::t;
@@ -202,7 +202,14 @@ fn create(
     add(app, sheet, range, headers, style, cx);
 }
 
-fn add(app: &mut ExcelApp, sheet: usize, range: Rect, headers: bool, style: Option<Option<&'static str>>, cx: &mut Cx) {
+fn add(
+    app: &mut ExcelApp,
+    sheet: usize,
+    range: Rect,
+    headers: bool,
+    style: Option<Option<&'static str>>,
+    cx: &mut Cx,
+) {
     match app.wb.add_table(sheet, range, headers) {
         Ok(id) => {
             if let Some(style) = style {
@@ -221,7 +228,11 @@ fn add(app: &mut ExcelApp, sheet: usize, range: Rect, headers: bool, style: Opti
             }
         }
         Err(error) => {
-            let filtered = app.wb.sheets.get(sheet).is_some_and(|sh| sh.auto_filter.is_some());
+            let filtered = app
+                .wb
+                .sheets
+                .get(sheet)
+                .is_some_and(|sh| sh.auto_filter.is_some());
             let doing = if filtered && !headers {
                 Doing::CreatingOverFilter
             } else {
@@ -235,7 +246,10 @@ fn add(app: &mut ExcelApp, sheet: usize, range: Rect, headers: bool, style: Opti
 /// Give a table another range (the Resize Table dialog, the corner
 /// handle).
 fn resize(app: &mut ExcelApp, sheet: usize, id: u32, range: Rect, cx: &mut Cx) {
-    let unchanged = app.wb.table(sheet, id).is_none_or(|table| table.range == range);
+    let unchanged = app
+        .wb
+        .table(sheet, id)
+        .is_none_or(|table| table.range == range);
     if unchanged || !app.may(Intent::ChangeTable, cx) {
         return;
     }
@@ -254,7 +268,9 @@ fn resize(app: &mut ExcelApp, sheet: usize, id: u32, range: Rect, cx: &mut Cx) {
     app.alert(
         Alert::new("OpenSheet", message)
             .warning()
-            .button(t("OK", "OK"), move |app, _, cx| apply_resize(app, sheet, id, range, cx))
+            .button(t("OK", "OK"), move |app, _, cx| {
+                apply_resize(app, sheet, id, range, cx)
+            })
             .close_button(t("Cancel", "Annuler")),
         cx,
     );
@@ -317,7 +333,10 @@ fn convert_to_range(app: &mut ExcelApp, cx: &mut Cx) {
         .warning()
         .button(t("Yes", "Oui"), move |app, _, cx| {
             if app.wb.convert_table_to_range(sheet, id) {
-                app.commit(t("Convert Table to Range", "Convertir un tableau en plage"), cx);
+                app.commit(
+                    t("Convert Table to Range", "Convertir un tableau en plage"),
+                    cx,
+                );
             }
         })
         .close_button(t("No", "Non")),
@@ -388,7 +407,10 @@ impl Command for Cmd {
         }
         if let Some(option) = self.option() {
             let label = match option {
-                TableOption::HeaderRow => t("Toggle Header Row", "Activer/Désactiver la ligne d'en-têtes"),
+                TableOption::HeaderRow => t(
+                    "Toggle Header Row",
+                    "Activer/Désactiver la ligne d'en-têtes",
+                ),
                 TableOption::TotalsRow => t("Toggle Total Row", "Afficher/Masquer la ligne Total"),
                 _ => self.label(),
             };
@@ -435,7 +457,13 @@ impl Feature for Tables {
         }
     }
 
-    fn render_tab(&self, app: &mut ExcelApp, _tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn render_tab(
+        &self,
+        app: &mut ExcelApp,
+        _tab: &'static str,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         design::groups(app, window, cx)
     }
 
@@ -454,15 +482,35 @@ impl Feature for Tables {
         sheet::zone_mouse_down(app, zone, ev, window, cx)
     }
 
-    fn zone_drag(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+    fn zone_drag(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) {
         sheet::zone_drag(app, zone, ev, cx);
     }
 
-    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, _ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+    fn zone_mouse_up(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        _ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) {
         sheet::zone_mouse_up(app, zone, cx);
     }
 
-    fn may_commit(&self, app: &mut ExcelApp, _edit: &PendingEdit, _window: &mut Window, _cx: &mut Cx) -> Verdict {
+    fn may_commit(
+        &self,
+        app: &mut ExcelApp,
+        _edit: &PendingEdit,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> Verdict {
         sheet::entry_committing(app);
         Verdict::Accept
     }

@@ -22,7 +22,9 @@ use super::write::push_range;
 use super::xml::{Event, Reader, Tag, push_text};
 use opensheet_engine::ast::write_sheet_name;
 use opensheet_engine::refs::parse_cell_name;
-use opensheet_engine::sparkline::{AxisBound, DataRef, EmptyCells, Sparkline, SparklineGroup, SparklineType};
+use opensheet_engine::sparkline::{
+    AxisBound, DataRef, EmptyCells, Sparkline, SparklineGroup, SparklineType,
+};
 use opensheet_engine::workbook::Sheet;
 use opensheet_engine::{Color, Rect};
 use std::fmt::Write as _;
@@ -34,7 +36,14 @@ const NS_XM: &str = "http://schemas.microsoft.com/office/excel/2006/main";
 /// A number as a file writes it: no exponent, no trailing zeros.
 fn number(n: f64) -> String {
     let text = format!("{n}");
-    if text.contains(['e', 'E']) { format!("{n:.15}").trim_end_matches('0').trim_end_matches('.').to_string() } else { text }
+    if text.contains(['e', 'E']) {
+        format!("{n:.15}")
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    } else {
+        text
+    }
 }
 
 /// The `<ext>` element (a child of the worksheet's `<extLst>`) holding
@@ -44,7 +53,10 @@ pub(crate) fn ext(sheet: &Sheet) -> String {
     if sheet.sparklines.is_empty() {
         return x;
     }
-    w!(x, "<ext xmlns:x14=\"{NS_X14}\" uri=\"{EXT_URI}\"><x14:sparklineGroups xmlns:xm=\"{NS_XM}\">");
+    w!(
+        x,
+        "<ext xmlns:x14=\"{NS_X14}\" uri=\"{EXT_URI}\"><x14:sparklineGroups xmlns:xm=\"{NS_XM}\">"
+    );
     for group in &sheet.sparklines {
         x.push_str("<x14:sparklineGroup");
         if let AxisBound::Custom(v) = group.max {
@@ -183,7 +195,10 @@ fn read_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Spark
     };
     let mut group = SparklineGroup::new(kind);
     let flag = |name: &str| tag.attr_bool(name).unwrap_or(false);
-    group.line_weight = tag.attr_f64("lineWeight").filter(|w| *w > 0.0).unwrap_or(0.75);
+    group.line_weight = tag
+        .attr_f64("lineWeight")
+        .filter(|w| *w > 0.0)
+        .unwrap_or(0.75);
     group.markers = flag("markers");
     group.high = flag("high");
     group.low = flag("low");
@@ -200,7 +215,9 @@ fn read_group<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Spark
     };
     let bound = |kind: &str, manual: &str| match tag.attr(kind).as_deref() {
         Some("group") => AxisBound::Group,
-        Some("custom") => tag.attr_f64(manual).map_or(AxisBound::Individual, AxisBound::Custom),
+        Some("custom") => tag
+            .attr_f64(manual)
+            .map_or(AxisBound::Individual, AxisBound::Custom),
         _ => AxisBound::Individual,
     };
     group.min = bound("minAxisType", "manualMin");

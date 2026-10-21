@@ -177,13 +177,13 @@ use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{Draw, GridLayout};
 use crate::theme::c;
 use gpui::{
-    AnyElement, BorderStyle, Bounds, ClipboardItem, Context, CursorStyle, Font, FontStyle, FontWeight, Hsla, Modifiers,
-    MouseButton, PathBuilder, Pixels, Point, ShapedLine, SharedString, TextRun, Window, WindowTextSystem, fill, px, quad,
-    size,
+    AnyElement, BorderStyle, Bounds, ClipboardItem, Context, CursorStyle, Font, FontStyle,
+    FontWeight, Hsla, Modifiers, MouseButton, PathBuilder, Pixels, Point, ShapedLine, SharedString,
+    TextRun, Window, WindowTextSystem, fill, px, quad, size,
 };
-use opensheet_engine::{Rect, Style};
 use opensheet_engine::ops::{Direction, PasteMode};
 use opensheet_engine::workbook::ClearMode;
+use opensheet_engine::{Rect, Style};
 use std::any::Any;
 use std::rc::Rc;
 
@@ -387,11 +387,23 @@ pub enum Intent {
     /// Changing the width or the visibility of columns / rows.
     FormatColumns,
     FormatRows,
-    InsertColumns { at: u32, count: u32 },
-    InsertRows { at: u32, count: u32 },
+    InsertColumns {
+        at: u32,
+        count: u32,
+    },
+    InsertRows {
+        at: u32,
+        count: u32,
+    },
     /// Deleting the columns / rows `first..=last`.
-    DeleteColumns { first: u32, last: u32 },
-    DeleteRows { first: u32, last: u32 },
+    DeleteColumns {
+        first: u32,
+        last: u32,
+    },
+    DeleteRows {
+        first: u32,
+        last: u32,
+    },
     Sort(Rect),
     /// Choosing what a filter shows with its drop-down buttons.
     UseAutoFilter,
@@ -771,7 +783,8 @@ impl<'a> Painter<'a> {
 
     /// A filled rectangle.
     pub fn rect(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla) {
-        self.items.push(Draw::Quad(fill(self.bounds(x0, y0, x1, y1), color)));
+        self.items
+            .push(Draw::Quad(fill(self.bounds(x0, y0, x1, y1), color)));
     }
 
     /// A rectangle outline drawn inside the box.
@@ -787,7 +800,16 @@ impl<'a> Painter<'a> {
     }
 
     /// A rounded, optionally outlined box.
-    pub fn rounded(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, radius: f32, background: Hsla, border: Option<Hsla>) {
+    pub fn rounded(
+        &mut self,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        radius: f32,
+        background: Hsla,
+        border: Option<Hsla>,
+    ) {
         self.items.push(Draw::Quad(quad(
             self.bounds(x0, y0, x1, y1),
             px(radius),
@@ -799,11 +821,27 @@ impl<'a> Painter<'a> {
     }
 
     /// A horizontal or vertical dashed line, `width` pixels thick.
-    pub fn dashed(&mut self, from: (f32, f32), to: (f32, f32), width: f32, dash: f32, gap: f32, color: Hsla) {
+    pub fn dashed(
+        &mut self,
+        from: (f32, f32),
+        to: (f32, f32),
+        width: f32,
+        dash: f32,
+        gap: f32,
+        color: Hsla,
+    ) {
         let horizontal = (to.1 - from.1).abs() < (to.0 - from.0).abs();
-        let (mut p, end) = if horizontal { (from.0.min(to.0), from.0.max(to.0)) } else { (from.1.min(to.1), from.1.max(to.1)) };
+        let (mut p, end) = if horizontal {
+            (from.0.min(to.0), from.0.max(to.0))
+        } else {
+            (from.1.min(to.1), from.1.max(to.1))
+        };
         // Only the part in view: a line may run down a million rows.
-        let (lo, hi) = if horizontal { (self.clip.0, self.clip.2) } else { (self.clip.1, self.clip.3) };
+        let (lo, hi) = if horizontal {
+            (self.clip.0, self.clip.2)
+        } else {
+            (self.clip.1, self.clip.3)
+        };
         if p < lo {
             p += ((lo - p) / (dash + gap)).floor() * (dash + gap);
         }
@@ -823,7 +861,10 @@ impl<'a> Painter<'a> {
         if points.len() < 3 {
             return;
         }
-        let pts: Vec<Point<Pixels>> = points.iter().map(|(x, y)| self.layout.to_window(*x, *y)).collect();
+        let pts: Vec<Point<Pixels>> = points
+            .iter()
+            .map(|(x, y)| self.layout.to_window(*x, *y))
+            .collect();
         let mut builder = PathBuilder::fill();
         builder.add_polygon(&pts, true);
         if let Ok(path) = builder.build() {
@@ -932,7 +973,11 @@ pub fn ui_font(bold: bool) -> Font {
         family: ".SystemUIFont".into(),
         features: Default::default(),
         fallbacks: None,
-        weight: if bold { FontWeight::SEMIBOLD } else { FontWeight::NORMAL },
+        weight: if bold {
+            FontWeight::SEMIBOLD
+        } else {
+            FontWeight::NORMAL
+        },
         style: FontStyle::Normal,
     }
 }
@@ -953,7 +998,13 @@ pub trait Feature: Sync + 'static {
     }
 
     /// The groups of one of this feature's contextual tabs.
-    fn render_tab(&self, _app: &mut ExcelApp, _tab: &'static str, _window: &mut Window, _cx: &mut Cx) -> Vec<AnyElement> {
+    fn render_tab(
+        &self,
+        _app: &mut ExcelApp,
+        _tab: &'static str,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         Vec::new()
     }
 
@@ -970,26 +1021,61 @@ pub trait Feature: Sync + 'static {
 
     /// Elements positioned over the grid (absolute, in grid-element
     /// coordinates), such as the box in which a note is typed.
-    fn overlay_elements(&self, _app: &mut ExcelApp, _layout: &GridLayout, _window: &mut Window, _cx: &mut Cx) -> Vec<AnyElement> {
+    fn overlay_elements(
+        &self,
+        _app: &mut ExcelApp,
+        _layout: &GridLayout,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         Vec::new()
     }
 
     /// A press on one of this feature's zones (any button; a double click
     /// arrives with `click_count == 2`).
-    fn zone_mouse_down(&self, _app: &mut ExcelApp, _zone: &Zone, _ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        _app: &mut ExcelApp,
+        _zone: &Zone,
+        _ev: &ZoneEvent,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> ZoneResponse {
         ZoneResponse::Ignored
     }
 
     /// The pointer moved during a press that answered `Capture`.
-    fn zone_drag(&self, _app: &mut ExcelApp, _zone: &Zone, _ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) {}
+    fn zone_drag(
+        &self,
+        _app: &mut ExcelApp,
+        _zone: &Zone,
+        _ev: &ZoneEvent,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) {
+    }
 
     /// The press that answered `Capture` ended.
-    fn zone_mouse_up(&self, _app: &mut ExcelApp, _zone: &Zone, _ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) {}
+    fn zone_mouse_up(
+        &self,
+        _app: &mut ExcelApp,
+        _zone: &Zone,
+        _ev: &ZoneEvent,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) {
+    }
 
     /// The wheel was turned over one of this feature's zones, by `delta`
     /// pixels (x, y; positive towards the start). True when the zone
     /// scrolled something of its own: the sheet then stays where it is.
-    fn zone_scroll(&self, _app: &mut ExcelApp, _zone: &Zone, _delta: (f32, f32), _cx: &mut Cx) -> bool {
+    fn zone_scroll(
+        &self,
+        _app: &mut ExcelApp,
+        _zone: &Zone,
+        _delta: (f32, f32),
+        _cx: &mut Cx,
+    ) -> bool {
         false
     }
 
@@ -1006,7 +1092,13 @@ pub trait Feature: Sync + 'static {
     }
 
     /// May this entry be stored in its cell?
-    fn may_commit(&self, _app: &mut ExcelApp, _edit: &PendingEdit, _window: &mut Window, _cx: &mut Cx) -> Verdict {
+    fn may_commit(
+        &self,
+        _app: &mut ExcelApp,
+        _edit: &PendingEdit,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> Verdict {
         Verdict::Accept
     }
 
@@ -1028,7 +1120,13 @@ pub trait Feature: Sync + 'static {
     /// idea of the next cell: with an arrow key, or after an entry (Tab,
     /// Enter and their Shift variants) when `entry` is set. A protected
     /// sheet walks its unlocked cells. `None`: the neighbouring cell.
-    fn next_cell(&self, _app: &ExcelApp, _from: (u32, u32), _dir: Direction, _entry: bool) -> Option<(u32, u32)> {
+    fn next_cell(
+        &self,
+        _app: &ExcelApp,
+        _from: (u32, u32),
+        _dir: Direction,
+        _entry: bool,
+    ) -> Option<(u32, u32)> {
         None
     }
 
@@ -1086,14 +1184,27 @@ pub trait Feature: Sync + 'static {
     /// Paste what [`Feature::copy_object`] returned on the current sheet
     /// with its corner at `at`; returns the id of the new object (the
     /// caller commits and selects it).
-    fn paste_object(&self, _app: &mut ExcelApp, _data: &dyn Any, _at: ((u32, u32), (f32, f32))) -> Option<u32> {
+    fn paste_object(
+        &self,
+        _app: &mut ExcelApp,
+        _data: &dyn Any,
+        _at: ((u32, u32), (f32, f32)),
+    ) -> Option<u32> {
         None
     }
 
     /// Change the stacking order (the caller commits).
     fn reorder_object(&self, _app: &mut ExcelApp, _id: u32, _mv: ZMove) {}
 
-    fn object_double_click(&self, _app: &mut ExcelApp, _id: u32, _ev: &ZoneEvent, _window: &mut Window, _cx: &mut Cx) {}
+    fn object_double_click(
+        &self,
+        _app: &mut ExcelApp,
+        _id: u32,
+        _ev: &ZoneEvent,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) {
+    }
 
     /// One of this feature's objects was selected (`Some`) or the selected
     /// one was deselected (`None`).
@@ -1110,14 +1221,26 @@ pub trait Feature: Sync + 'static {
     /// Whether a point of the grid element is on an object that does not
     /// fill its frame (a line, a rotated shape, a shape without fill).
     /// `None`: anywhere in the frame.
-    fn object_hit(&self, _app: &ExcelApp, _id: u32, _layout: &GridLayout, _x: f32, _y: f32) -> Option<bool> {
+    fn object_hit(
+        &self,
+        _app: &ExcelApp,
+        _id: u32,
+        _layout: &GridLayout,
+        _x: f32,
+        _y: f32,
+    ) -> Option<bool> {
         None
     }
 
     /// The box (x0, y0, x1, y1) an object covers on screen when it is not
     /// its frame (a rotated shape, the tail of a callout): it is drawn as
     /// long as that box shows.
-    fn object_extent(&self, _app: &ExcelApp, _id: u32, _layout: &GridLayout) -> Option<(f32, f32, f32, f32)> {
+    fn object_extent(
+        &self,
+        _app: &ExcelApp,
+        _id: u32,
+        _layout: &GridLayout,
+    ) -> Option<(f32, f32, f32, f32)> {
         None
     }
 
@@ -1131,7 +1254,14 @@ pub trait Feature: Sync + 'static {
 
     /// Text typed while one of this feature's objects is selected (a
     /// shape takes it as its text). True when the feature took it.
-    fn object_typed(&self, _app: &mut ExcelApp, _id: u32, _text: &str, _window: &mut Window, _cx: &mut Cx) -> bool {
+    fn object_typed(
+        &self,
+        _app: &mut ExcelApp,
+        _id: u32,
+        _text: &str,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> bool {
         false
     }
 
@@ -1139,7 +1269,14 @@ pub trait Feature: Sync + 'static {
     /// was run while one of this feature's objects is selected: `change`
     /// is what it does to a cell style. True when the feature applied it
     /// to the object (the text of a shape) and committed.
-    fn object_style(&self, _app: &mut ExcelApp, _id: u32, _label: &str, _change: &dyn Fn(&mut Style), _cx: &mut Cx) -> bool {
+    fn object_style(
+        &self,
+        _app: &mut ExcelApp,
+        _id: u32,
+        _label: &str,
+        _change: &dyn Fn(&mut Style),
+        _cx: &mut Cx,
+    ) -> bool {
         false
     }
 
@@ -1198,7 +1335,12 @@ pub(crate) fn guard(app: &ExcelApp, intent: &Intent) -> Option<SharedString> {
     all().iter().find_map(|f| f.guard(app, intent))
 }
 
-pub(crate) fn may_commit(app: &mut ExcelApp, edit: &PendingEdit, window: &mut Window, cx: &mut Cx) -> Verdict {
+pub(crate) fn may_commit(
+    app: &mut ExcelApp,
+    edit: &PendingEdit,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Verdict {
     for f in all() {
         if f.may_commit(app, edit, window, cx) == Verdict::Hold {
             return Verdict::Hold;
@@ -1234,8 +1376,15 @@ pub(crate) fn selection_changed(app: &mut ExcelApp, cx: &mut Cx) {
     }
 }
 
-pub(crate) fn next_cell(app: &ExcelApp, from: (u32, u32), dir: Direction, entry: bool) -> Option<(u32, u32)> {
-    all().iter().find_map(|f| f.next_cell(app, from, dir, entry))
+pub(crate) fn next_cell(
+    app: &ExcelApp,
+    from: (u32, u32),
+    dir: Direction,
+    entry: bool,
+) -> Option<(u32, u32)> {
+    all()
+        .iter()
+        .find_map(|f| f.next_cell(app, from, dir, entry))
 }
 
 pub(crate) fn context_menu(app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
@@ -1248,7 +1397,12 @@ pub(crate) fn status_items(app: &ExcelApp) -> Vec<StatusItem> {
     all().iter().flat_map(|f| f.status_items(app)).collect()
 }
 
-pub(crate) fn overlay_elements(app: &mut ExcelApp, layout: &GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+pub(crate) fn overlay_elements(
+    app: &mut ExcelApp,
+    layout: &GridLayout,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Vec<AnyElement> {
     let mut out = Vec::new();
     for f in all() {
         out.extend(f.overlay_elements(app, layout, window, cx));
@@ -1276,7 +1430,11 @@ pub(crate) fn cancel(app: &mut ExcelApp, cx: &mut Cx) -> bool {
 pub(crate) fn objects(app: &ExcelApp, sheet: usize) -> Vec<(ObjectId, ObjectInfo)> {
     let mut out = Vec::new();
     for (i, f) in all().iter().enumerate() {
-        out.extend(f.objects(app, sheet).into_iter().map(|o| (ObjectId { owner: i, id: o.id }, o)));
+        out.extend(
+            f.objects(app, sheet)
+                .into_iter()
+                .map(|o| (ObjectId { owner: i, id: o.id }, o)),
+        );
     }
     // Charts, pictures and shapes share one stacking order.
     crate::objects::stack(app, sheet, &mut out);

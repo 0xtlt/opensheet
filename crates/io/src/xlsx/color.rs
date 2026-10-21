@@ -250,8 +250,8 @@ pub(crate) fn adjust_luminance(rgb: u32, scale: f64, shift: f64) -> u32 {
 /// The names charts and shapes call the colours of a theme by, in the
 /// order cell colours number them.
 const SCHEME_NAMES: [&str; 12] = [
-    "bg1", "tx1", "bg2", "tx2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink",
-    "folHlink",
+    "bg1", "tx1", "bg2", "tx2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
+    "hlink", "folHlink",
 ];
 
 /// The colour of the theme a chart or a shape names (`<a:schemeClr>`, by
@@ -264,7 +264,12 @@ const SCHEME_NAMES: [&str; 12] = [
 /// A reference has the value cells give it (see [`apply_tint`]), which
 /// can be a unit or two away from what the plain HSL arithmetic of
 /// charts gives ([`adjust_luminance`]).
-pub(crate) fn scheme_color(palette: &Palette, part_slot: usize, scale: f64, shift: f64) -> Option<Color> {
+pub(crate) fn scheme_color(
+    palette: &Palette,
+    part_slot: usize,
+    scale: f64,
+    shift: f64,
+) -> Option<Color> {
     // A theme part has the dark colours before the light ones.
     let index = match part_slot {
         0 => 1,
@@ -291,13 +296,19 @@ pub(crate) fn scheme_color(palette: &Palette, part_slot: usize, scale: f64, shif
 pub(crate) fn push_drawing_color(x: &mut String, color: Color, alpha: Option<u32>) {
     let (open, close) = match color.theme() {
         Some(reference) => {
-            let mut open = format!("<a:schemeClr val=\"{}\"", SCHEME_NAMES[reference.slot.index()]);
+            let mut open = format!(
+                "<a:schemeClr val=\"{}\"",
+                SCHEME_NAMES[reference.slot.index()]
+            );
             // Whole tenths of a percent, as the pickers have them.
             let amount = (reference.tint.abs() * 1000.0).round() as u32 * 100;
             let adjustments = match amount {
                 0 => String::new(),
                 _ if reference.tint < 0.0 => format!("<a:lumMod val=\"{}\"/>", 100_000 - amount),
-                _ => format!("<a:lumMod val=\"{}\"/><a:lumOff val=\"{amount}\"/>", 100_000 - amount),
+                _ => format!(
+                    "<a:lumMod val=\"{}\"/><a:lumOff val=\"{amount}\"/>",
+                    100_000 - amount
+                ),
             };
             if adjustments.is_empty() && alpha.is_none() {
                 open.push_str("/>");
@@ -535,10 +546,22 @@ mod tests {
         };
         // Colours of the theme stay references, with their value.
         let themed = |s: &str| color(s).map(|c| (c.value(), c.theme().map(|t| t.slot)));
-        assert_eq!(themed("theme=\"0\""), Some((0xFFFFFF, Some(ThemeSlot::Light1))));
-        assert_eq!(themed("theme=\"1\""), Some((0x111111, Some(ThemeSlot::Dark1))));
-        assert_eq!(themed("theme=\"3\""), Some((0x0E2841, Some(ThemeSlot::Dark2))));
-        assert_eq!(themed("theme=\"4\""), Some((0x156082, Some(ThemeSlot::Accent1))));
+        assert_eq!(
+            themed("theme=\"0\""),
+            Some((0xFFFFFF, Some(ThemeSlot::Light1)))
+        );
+        assert_eq!(
+            themed("theme=\"1\""),
+            Some((0x111111, Some(ThemeSlot::Dark1)))
+        );
+        assert_eq!(
+            themed("theme=\"3\""),
+            Some((0x0E2841, Some(ThemeSlot::Dark2)))
+        );
+        assert_eq!(
+            themed("theme=\"4\""),
+            Some((0x156082, Some(ThemeSlot::Accent1)))
+        );
         let lighter = color("theme=\"4\" tint=\"0.39997558519241921\"").unwrap();
         assert_eq!(lighter.theme().unwrap().tint, 0.39997558519241921);
         assert_eq!(lighter.value(), apply_tint(0x156082, 0.39997558519241921));

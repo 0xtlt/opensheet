@@ -3,7 +3,9 @@
 //! how things look.
 
 use super::*;
-use gpui::{Entity, Modifiers, MouseButton, Pixels, Point, TestAppContext, VisualTestContext, point, px};
+use gpui::{
+    Entity, Modifiers, MouseButton, Pixels, Point, TestAppContext, VisualTestContext, point, px,
+};
 use opensheet_engine::Color;
 use opensheet_engine::drawing::ShapePreset;
 use opensheet_engine::protect::SheetProtection;
@@ -30,7 +32,9 @@ fn run(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cmd: Cmd) {
 
 /// Click a pen of the gallery.
 fn pen(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, index: usize) {
-    app.update_in(cx, |app, window, cx| tab::pen_clicked(app, index, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        tab::pen_clicked(app, index, window, cx)
+    });
     redraw(cx);
 }
 
@@ -46,7 +50,10 @@ fn on_sheet(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, x: f64, y: f64) 
 /// Press at the first point of the sheet, pass through the others,
 /// release at the last.
 fn trace(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, points: &[(f64, f64)]) {
-    let at: Vec<Point<Pixels>> = points.iter().map(|(x, y)| on_sheet(app, cx, *x, *y)).collect();
+    let at: Vec<Point<Pixels>> = points
+        .iter()
+        .map(|(x, y)| on_sheet(app, cx, *x, *y))
+        .collect();
     cx.simulate_mouse_down(at[0], MouseButton::Left, Modifiers::none());
     for p in &at[1..] {
         cx.simulate_mouse_move(*p, MouseButton::Left, Modifiers::none());
@@ -69,7 +76,10 @@ fn along(corners: &[(f64, f64)]) -> Vec<(f64, f64)> {
         let steps = ((w[1].0 - w[0].0).hypot(w[1].1 - w[0].1) / 6.0).ceil() as usize;
         for i in 0..steps {
             let t = i as f64 / steps as f64;
-            out.push((w[0].0 + (w[1].0 - w[0].0) * t, w[0].1 + (w[1].1 - w[0].1) * t));
+            out.push((
+                w[0].0 + (w[1].0 - w[0].0) * t,
+                w[0].1 + (w[1].1 - w[0].1) * t,
+            ));
         }
     }
     out.push(corners[corners.len() - 1]);
@@ -84,12 +94,19 @@ fn inks(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<Ink> {
 fn frame(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: u32) -> (i64, i64, i64, i64) {
     app.update(cx, |app, _| {
         let frame = app.wb.ink_frame(app.sheet, id).expect("the stroke");
-        (frame.x.round() as i64, frame.y.round() as i64, frame.width.round() as i64, frame.height.round() as i64)
+        (
+            frame.x.round() as i64,
+            frame.y.round() as i64,
+            frame.width.round() as i64,
+            frame.height.round() as i64,
+        )
     })
 }
 
 fn tool(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Tool {
-    app.update(cx, |app, _| app.ext::<InkUi>().map(|ui| ui.tool).unwrap_or_default())
+    app.update(cx, |app, _| {
+        app.ext::<InkUi>().map(|ui| ui.tool).unwrap_or_default()
+    })
 }
 
 fn selection(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<u32> {
@@ -105,9 +122,24 @@ fn two_strokes(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> (u32, u32)
     let ids = app.update(cx, |app, cx| {
         let a = app
             .wb
-            .draw_ink(0, PenKind::Pen, Color(0), 2.0, &[(120.0, 80.0), (150.0, 110.0), (180.0, 80.0), (210.0, 110.0)])
+            .draw_ink(
+                0,
+                PenKind::Pen,
+                Color(0),
+                2.0,
+                &[(120.0, 80.0), (150.0, 110.0), (180.0, 80.0), (210.0, 110.0)],
+            )
             .expect("a stroke");
-        let b = app.wb.draw_ink(0, PenKind::Pen, Color(0xE71224), 2.0, &[(120.0, 160.0), (220.0, 160.0)]).expect("a stroke");
+        let b = app
+            .wb
+            .draw_ink(
+                0,
+                PenKind::Pen,
+                Color(0xE71224),
+                2.0,
+                &[(120.0, 160.0), (220.0, 160.0)],
+            )
+            .expect("a stroke");
         app.commit("setup", cx);
         (a, b)
     });
@@ -120,18 +152,29 @@ fn a_pen_draws_strokes_until_it_is_put_down(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     pen(&app, cx, 1);
     assert_eq!(tool(&app, cx), Tool::Draw(1));
-    trace(&app, cx, &along(&[(100.0, 100.0), (160.0, 140.0), (220.0, 100.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[(100.0, 100.0), (160.0, 140.0), (220.0, 100.0)]),
+    );
     let drawn = inks(&app, cx);
     assert_eq!(drawn.len(), 1);
     // The second pen of the gallery is red, half a millimetre.
-    assert_eq!((drawn[0].kind, drawn[0].color), (PenKind::Pen, Color(0xE71224)));
+    assert_eq!(
+        (drawn[0].kind, drawn[0].color),
+        (PenKind::Pen, Color(0xE71224))
+    );
     assert!((drawn[0].width - 1.89).abs() < 0.01);
     // Where it was drawn; its corner lost less than a pixel to smoothing.
     let (x, y, w, h) = frame(&app, cx, drawn[0].id);
     assert_eq!((x, y, w), (100, 100, 120));
     assert!((39..=40).contains(&h), "{h}");
     // The straight runs were cleaned to a few points; the corner is kept.
-    assert!(drawn[0].points.len() < 12, "{} points", drawn[0].points.len());
+    assert!(
+        drawn[0].points.len() < 12,
+        "{} points",
+        drawn[0].points.len()
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Ink"));
     // The pen stays in hand: a second stroke, and a dot from a click.
     trace(&app, cx, &along(&[(100.0, 200.0), (200.0, 200.0)]));
@@ -157,7 +200,14 @@ fn each_pen_draws_its_kind(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     for (index, kind) in [(2, PenKind::Pencil), (3, PenKind::Highlighter)] {
         pen(&app, cx, index);
-        trace(&app, cx, &along(&[(100.0, 100.0 + 60.0 * index as f64), (260.0, 104.0 + 60.0 * index as f64)]));
+        trace(
+            &app,
+            cx,
+            &along(&[
+                (100.0, 100.0 + 60.0 * index as f64),
+                (260.0, 104.0 + 60.0 * index as f64),
+            ]),
+        );
         let last = inks(&app, cx).pop().expect("a stroke");
         assert_eq!(last.kind, kind);
     }
@@ -184,7 +234,11 @@ fn the_eraser_removes_the_strokes_it_touches(cx: &mut TestAppContext) {
     let (a, b) = two_strokes(&app, cx);
     run(&app, cx, Cmd::Eraser);
     // A drag that crosses the zigzag and then the line: both go, whole.
-    trace(&app, cx, &along(&[(100.0, 95.0), (135.0, 95.0), (170.0, 140.0), (170.0, 170.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[(100.0, 95.0), (135.0, 95.0), (170.0, 140.0), (170.0, 170.0)]),
+    );
     assert!(inks(&app, cx).is_empty());
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Eraser"));
     // One step brings both back.
@@ -204,11 +258,31 @@ fn the_lasso_selects_what_it_encloses(cx: &mut TestAppContext) {
     let (a, b) = two_strokes(&app, cx);
     run(&app, cx, Cmd::Lasso);
     // Around the zigzag only.
-    trace(&app, cx, &along(&[(100.0, 60.0), (240.0, 60.0), (240.0, 130.0), (100.0, 130.0), (100.0, 62.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[
+            (100.0, 60.0),
+            (240.0, 60.0),
+            (240.0, 130.0),
+            (100.0, 130.0),
+            (100.0, 62.0),
+        ]),
+    );
     assert_eq!(selection(&app, cx), Some(a));
     app.update(cx, |app, _| assert!(group(app).is_empty()));
     // Around both: the top one is selected, the other goes with it.
-    trace(&app, cx, &along(&[(90.0, 50.0), (260.0, 50.0), (260.0, 200.0), (90.0, 200.0), (90.0, 52.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[
+            (90.0, 50.0),
+            (260.0, 50.0),
+            (260.0, 200.0),
+            (90.0, 200.0),
+            (90.0, 52.0),
+        ]),
+    );
     assert_eq!(selection(&app, cx), Some(b));
     app.update(cx, |app, _| assert_eq!(group(app), vec![a]));
     // Dragging one of them moves both, as one step.
@@ -219,10 +293,29 @@ fn the_lasso_selects_what_it_encloses(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(frame(&app, cx, a), (120, 80, 90, 30));
     // A lasso around nothing deselects.
-    trace(&app, cx, &along(&[(400.0, 300.0), (460.0, 300.0), (460.0, 360.0), (400.0, 360.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[
+            (400.0, 300.0),
+            (460.0, 300.0),
+            (460.0, 360.0),
+            (400.0, 360.0),
+        ]),
+    );
     assert_eq!(selection(&app, cx), None);
     // Both again, and Delete removes them together.
-    trace(&app, cx, &along(&[(90.0, 50.0), (260.0, 50.0), (260.0, 200.0), (90.0, 200.0), (90.0, 52.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[
+            (90.0, 50.0),
+            (260.0, 50.0),
+            (260.0, 200.0),
+            (90.0, 200.0),
+            (90.0, 52.0),
+        ]),
+    );
     cx.simulate_keystrokes("backspace");
     assert!(inks(&app, cx).is_empty());
     cx.simulate_keystrokes("cmd-z");
@@ -264,7 +357,9 @@ fn a_stroke_is_an_object_like_any_other(cx: &mut TestAppContext) {
     trace(&app, cx, &[(251.0, 151.0), (270.0, 160.0), (341.0, 181.0)]);
     assert_eq!(frame(&app, cx, a), (161, 121, 180, 60));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Size Object"));
-    let stretched = app.update(cx, |app, _| app.wb.sheets[0].ink_points(app.wb.ink(0, a).unwrap()));
+    let stretched = app.update(cx, |app, _| {
+        app.wb.sheets[0].ink_points(app.wb.ink(0, a).unwrap())
+    });
     assert_eq!(stretched[1], (221.0, 181.0));
 }
 
@@ -274,16 +369,37 @@ fn ink_to_shape_turns_what_is_drawn_into_shapes(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::InkToShape);
     app.update(cx, |app, _| assert!(Cmd::InkToShape.checked(app)));
     pen(&app, cx, 1);
-    trace(&app, cx, &along(&[(100.0, 100.0), (300.0, 100.0), (300.0, 220.0), (100.0, 220.0), (100.0, 104.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[
+            (100.0, 100.0),
+            (300.0, 100.0),
+            (300.0, 220.0),
+            (100.0, 220.0),
+            (100.0, 104.0),
+        ]),
+    );
     assert!(inks(&app, cx).is_empty());
     let shapes = app.update(cx, |app, _| app.wb.sheets[0].drawings.clone());
     assert_eq!(shapes.len(), 1);
     let shape = shapes[0].as_shape().expect("a shape");
     assert_eq!(shape.preset, ShapePreset::Rect);
     // The outline is the pen's; nothing fills it.
-    assert_eq!((shape.fill, shape.outline.map(|o| o.color)), (None, Some(Color(0xE71224))));
+    assert_eq!(
+        (shape.fill, shape.outline.map(|o| o.color)),
+        (None, Some(Color(0xE71224)))
+    );
     let at = app.update(cx, |app, _| app.wb.drawing_frame(0, shapes[0].id).unwrap());
-    assert_eq!((at.x.round(), at.y.round(), at.width.round(), at.height.round()), (100.0, 100.0, 200.0, 120.0));
+    assert_eq!(
+        (
+            at.x.round(),
+            at.y.round(),
+            at.width.round(),
+            at.height.round()
+        ),
+        (100.0, 100.0, 200.0, 120.0)
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Ink to Shape"));
     // A line drawn right to left is a line that goes that way.
     trace(&app, cx, &along(&[(300.0, 300.0), (120.0, 260.0)]));
@@ -291,11 +407,32 @@ fn ink_to_shape_turns_what_is_drawn_into_shapes(cx: &mut TestAppContext) {
     assert_eq!(line.as_shape().map(|s| s.preset), Some(ShapePreset::Line));
     assert_eq!((line.flip_h, line.flip_v), (true, true));
     // What looks like nothing stays ink.
-    trace(&app, cx, &along(&[(400.0, 100.0), (460.0, 160.0), (410.0, 170.0), (470.0, 105.0), (440.0, 190.0), (500.0, 140.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[
+            (400.0, 100.0),
+            (460.0, 160.0),
+            (410.0, 170.0),
+            (470.0, 105.0),
+            (440.0, 190.0),
+            (500.0, 140.0),
+        ]),
+    );
     assert_eq!(inks(&app, cx).len(), 1);
     // Switched off, a rectangle stays ink too.
     run(&app, cx, Cmd::InkToShape);
-    trace(&app, cx, &along(&[(100.0, 300.0), (200.0, 300.0), (200.0, 380.0), (100.0, 380.0), (100.0, 304.0)]));
+    trace(
+        &app,
+        cx,
+        &along(&[
+            (100.0, 300.0),
+            (200.0, 300.0),
+            (200.0, 380.0),
+            (100.0, 380.0),
+            (100.0, 304.0),
+        ]),
+    );
     assert_eq!(inks(&app, cx).len(), 2);
 }
 
@@ -318,7 +455,10 @@ fn pens_are_added_changed_and_deleted(cx: &mut TestAppContext) {
     });
     trace(&app, cx, &along(&[(100.0, 100.0), (200.0, 100.0)]));
     let drawn = inks(&app, cx).pop().unwrap();
-    assert_eq!((drawn.kind, drawn.color), (PenKind::Highlighter, Color(0x00F900)));
+    assert_eq!(
+        (drawn.kind, drawn.color),
+        (PenKind::Highlighter, Color(0x00F900))
+    );
     assert!((drawn.width - 37.8).abs() < 0.01);
     // Deleting a pen before the one in hand keeps the same pen in hand.
     app.update(cx, |app, cx| tab::delete_pen(app, 0, cx));

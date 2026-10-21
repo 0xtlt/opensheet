@@ -33,7 +33,10 @@ mod styles;
 #[cfg(test)]
 mod ui_tests;
 
-use super::{CellEdit, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse, slicers};
+use super::{
+    CellEdit, Command, ContextTab, Cx, Feature, Intent, Painter, Zone, ZoneEvent, ZoneResponse,
+    slicers,
+};
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
 use crate::grid::{GridLayout, cell_font, pt_to_px};
 use crate::i18n::{t, t_ctx};
@@ -43,8 +46,8 @@ use crate::text_input::{InputEvent, TextInput};
 use crate::theme::c;
 use crate::widgets::TextField;
 use gpui::{
-    AnyElement, Entity, Focusable, Pixels, Point, SharedString, Subscription, TextRun, Window, WindowTextSystem, div,
-    prelude::*, px,
+    AnyElement, Entity, Focusable, Pixels, Point, SharedString, Subscription, TextRun, Window,
+    WindowTextSystem, div, prelude::*, px,
 };
 use logic::Target;
 use opensheet_engine::pivot::{PivotButton, PivotCell, PivotError, PivotTable, Report};
@@ -113,7 +116,9 @@ impl Command for Cmd {
     fn enabled(self, app: &ExcelApp) -> bool {
         match self {
             Cmd::Insert | Cmd::Recommended | Cmd::PivotChart => true,
-            Cmd::ChartRefresh | Cmd::ChartClear | Cmd::ChartFieldButtons => chart::chart_pivot(app).is_some(),
+            Cmd::ChartRefresh | Cmd::ChartClear | Cmd::ChartFieldButtons => {
+                chart::chart_pivot(app).is_some()
+            }
             Cmd::FieldSettings => active_target(app).is_some(),
             Cmd::ExpandField | Cmd::CollapseField => actions::drill_field(app).is_some(),
             Cmd::GroupSelection => actions::can_group(app),
@@ -150,7 +155,9 @@ impl Command for Cmd {
             // On the Insert tab the button opens Excel's list of sources;
             // from anywhere else (Table Design > Summarize with PivotTable)
             // the dialog opens at once.
-            Cmd::Insert if app.command_anchor == Some("in-pivot") => menus::insert_menu(app, window, cx),
+            Cmd::Insert if app.command_anchor == Some("in-pivot") => {
+                menus::insert_menu(app, window, cx)
+            }
             Cmd::Insert | Cmd::Recommended => create::open_create(app, window, cx),
             Cmd::CalculatedFields => calculated::menu(app, window, cx),
             // Outside a PivotTable there is nothing to chart yet: the
@@ -179,18 +186,30 @@ impl Command for Cmd {
                 });
             }
             Cmd::FieldHeaders => {
-                update_active(app, t("Field Headers", "En-têtes de champ"), window, cx, |p| {
-                    p.options.show_headers = !p.options.show_headers
-                });
+                update_active(
+                    app,
+                    t("Field Headers", "En-têtes de champ"),
+                    window,
+                    cx,
+                    |p| p.options.show_headers = !p.options.show_headers,
+                );
             }
             Cmd::Subtotals => menus::subtotals_menu(app, window, cx),
             Cmd::GrandTotals => menus::grand_totals_menu(app, window, cx),
             Cmd::ReportLayout => menus::layout_menu(app, window, cx),
             Cmd::BlankRows => menus::blank_rows_menu(app, window, cx),
-            Cmd::RowHeaders => style_option(app, self, window, cx, |s| s.row_headers = !s.row_headers),
-            Cmd::ColumnHeaders => style_option(app, self, window, cx, |s| s.col_headers = !s.col_headers),
-            Cmd::BandedRows => style_option(app, self, window, cx, |s| s.row_stripes = !s.row_stripes),
-            Cmd::BandedColumns => style_option(app, self, window, cx, |s| s.col_stripes = !s.col_stripes),
+            Cmd::RowHeaders => {
+                style_option(app, self, window, cx, |s| s.row_headers = !s.row_headers)
+            }
+            Cmd::ColumnHeaders => {
+                style_option(app, self, window, cx, |s| s.col_headers = !s.col_headers)
+            }
+            Cmd::BandedRows => {
+                style_option(app, self, window, cx, |s| s.row_stripes = !s.row_stripes)
+            }
+            Cmd::BandedColumns => {
+                style_option(app, self, window, cx, |s| s.col_stripes = !s.col_stripes)
+            }
             Cmd::Styles => styles::open_gallery(app, window, cx),
         }
     }
@@ -343,7 +362,10 @@ fn perform_in_dialog(
             Outcome::Asked
         }
         Err(err) => {
-            app.alert(Alert::new("OpenSheet", logic::error_text(&err)).warning(), cx);
+            app.alert(
+                Alert::new("OpenSheet", logic::error_text(&err)).warning(),
+                cx,
+            );
             Outcome::Refused
         }
     }
@@ -358,7 +380,11 @@ fn try_op(
     window: &mut Window,
     cx: &mut Cx,
 ) -> Result<(), PivotError> {
-    let before: Vec<(u32, Arc<Report>)> = app.wb.pivots().map(|(_, p)| (p.id, p.report.clone())).collect();
+    let before: Vec<(u32, Arc<Report>)> = app
+        .wb
+        .pivots()
+        .map(|(_, p)| (p.id, p.report.clone()))
+        .collect();
     let home = active_pivot(app).map(|p| p.id);
     match op(app, overwrite) {
         Ok(()) => {
@@ -389,7 +415,14 @@ fn ask_replace(app: &mut ExcelApp, label: &'static str, op: Op, cx: &mut Cx) {
     );
 }
 
-fn attempt(app: &mut ExcelApp, label: &'static str, op: Op, overwrite: bool, window: &mut Window, cx: &mut Cx) -> Outcome {
+fn attempt(
+    app: &mut ExcelApp,
+    label: &'static str,
+    op: Op,
+    overwrite: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Outcome {
     match try_op(app, label, &op, overwrite, window, cx) {
         Ok(()) => Outcome::Done,
         Err(PivotError::WouldOverwrite(_)) if !overwrite => {
@@ -397,7 +430,10 @@ fn attempt(app: &mut ExcelApp, label: &'static str, op: Op, overwrite: bool, win
             Outcome::Asked
         }
         Err(err) => {
-            app.alert(Alert::new("OpenSheet", logic::error_text(&err)).warning(), cx);
+            app.alert(
+                Alert::new("OpenSheet", logic::error_text(&err)).warning(),
+                cx,
+            );
             Outcome::Refused
         }
     }
@@ -416,7 +452,11 @@ fn settle(
     let rewritten: Vec<(usize, u32)> = app
         .wb
         .pivots()
-        .filter(|(_, p)| !before.iter().any(|(id, report)| *id == p.id && Arc::ptr_eq(report, &p.report)))
+        .filter(|(_, p)| {
+            !before
+                .iter()
+                .any(|(id, report)| *id == p.id && Arc::ptr_eq(report, &p.report))
+        })
         .map(|(sheet, p)| (sheet, p.id))
         .collect();
     let ts = window.text_system().clone();
@@ -429,7 +469,11 @@ fn settle(
     // A report that shrank may have left the active cell outside: Excel
     // keeps the selection in the PivotTable, and with it the field list.
     if let Some(id) = home.filter(|id| active_pivot(app).map(|p| p.id) != Some(*id)) {
-        let corner = app.wb.pivot(id).filter(|(sheet, _)| *sheet == app.sheet).and_then(|(_, p)| p.location);
+        let corner = app
+            .wb
+            .pivot(id)
+            .filter(|(sheet, _)| *sheet == app.sheet)
+            .and_then(|(_, p)| p.location);
         if let Some(body) = corner {
             app.select_cell(body.r0, body.c0, cx);
         }
@@ -452,7 +496,10 @@ fn autofit(app: &mut ExcelApp, sheet: usize, id: u32, ts: &WindowTextSystem) {
             underline: None,
             strikethrough: None,
         };
-        f32::from(ts.shape_line(text, px(pt_to_px(style.font.size_pt())), &[run], None).width)
+        f32::from(
+            ts.shape_line(text, px(pt_to_px(style.font.size_pt())), &[run], None)
+                .width,
+        )
     });
     for (col, width) in widths {
         app.wb.set_col_width(sheet, col, Some(width));
@@ -468,7 +515,9 @@ fn update(
     cx: &mut Cx,
     edit: impl Fn(&mut PivotTable) + 'static,
 ) -> Outcome {
-    perform(app, label, window, cx, move |app, overwrite| app.wb.pivot_update(id, overwrite, &edit))
+    perform(app, label, window, cx, move |app, overwrite| {
+        app.wb.pivot_update(id, overwrite, &edit)
+    })
 }
 
 /// `update` for the OK button of a dialog (see `perform_in_dialog`).
@@ -549,7 +598,12 @@ fn sync_pane(app: &mut ExcelApp, cx: &mut Cx) {
     if wanted && !open {
         let weak = cx.weak_entity();
         let view = cx.new(|cx| pane::FieldsPane::new(weak, cx));
-        app.open_pane(PANE, t("PivotTable Fields", "Champs de tableau croisé dynamique"), view, cx);
+        app.open_pane(
+            PANE,
+            t("PivotTable Fields", "Champs de tableau croisé dynamique"),
+            view,
+            cx,
+        );
         app.ext_mut::<PivotUi>().pane_shown = true;
     } else if !wanted && open {
         app.close_pane(PANE, cx);
@@ -560,7 +614,12 @@ fn sync_pane(app: &mut ExcelApp, cx: &mut Cx) {
 // ------------------------------------------------------------------- ribbon
 
 /// The text field of a name box of the ribbon, created on first use.
-fn name_box(app: &mut ExcelApp, kind: BoxKind, window: &mut Window, cx: &mut Cx) -> Entity<TextInput> {
+fn name_box(
+    app: &mut ExcelApp,
+    kind: BoxKind,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<TextInput> {
     let ui = app.ext_mut::<PivotUi>();
     let slot = match kind {
         BoxKind::PivotName => &mut ui.pivot_name,
@@ -574,9 +633,11 @@ fn name_box(app: &mut ExcelApp, kind: BoxKind, window: &mut Window, cx: &mut Cx)
         input.select_on_focus = true;
         input
     });
-    let subscription = cx.subscribe_in(&input, window, move |app, _, ev: &InputEvent, window, cx| {
-        name_box_event(app, kind, ev, window, cx)
-    });
+    let subscription = cx.subscribe_in(
+        &input,
+        window,
+        move |app, _, ev: &InputEvent, window, cx| name_box_event(app, kind, ev, window, cx),
+    );
     let ui = app.ext_mut::<PivotUi>();
     let slot = match kind {
         BoxKind::PivotName => &mut ui.pivot_name,
@@ -596,11 +657,19 @@ fn name_box_text(app: &ExcelApp, kind: BoxKind) -> String {
     };
     match kind {
         BoxKind::PivotName => pivot.name.clone(),
-        BoxKind::ActiveField => active_target(app).map(|target| logic::target_name(pivot, target)).unwrap_or_default(),
+        BoxKind::ActiveField => active_target(app)
+            .map(|target| logic::target_name(pivot, target))
+            .unwrap_or_default(),
     }
 }
 
-fn name_box_event(app: &mut ExcelApp, kind: BoxKind, ev: &InputEvent, window: &mut Window, cx: &mut Cx) {
+fn name_box_event(
+    app: &mut ExcelApp,
+    kind: BoxKind,
+    ev: &InputEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     match ev {
         InputEvent::Enter { .. } | InputEvent::Tab { .. } => {
             let ui = app.ext_mut::<PivotUi>();
@@ -608,7 +677,10 @@ fn name_box_event(app: &mut ExcelApp, kind: BoxKind, ev: &InputEvent, window: &m
                 BoxKind::PivotName => &ui.pivot_name,
                 BoxKind::ActiveField => &ui.active_field,
             };
-            let Some(text) = slot.as_ref().map(|b| b.input.read(cx).text().trim().to_string()) else {
+            let Some(text) = slot
+                .as_ref()
+                .map(|b| b.input.read(cx).text().trim().to_string())
+            else {
                 return;
             };
             window.focus(&app.grid_focus);
@@ -631,7 +703,12 @@ fn name_box_event(app: &mut ExcelApp, kind: BoxKind, ev: &InputEvent, window: &m
 
 /// A name box as the ribbon shows it: the name of what is active, unless
 /// the user is typing another one.
-fn name_box_element(app: &mut ExcelApp, kind: BoxKind, window: &mut Window, cx: &mut Cx) -> AnyElement {
+fn name_box_element(
+    app: &mut ExcelApp,
+    kind: BoxKind,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> AnyElement {
     let input = name_box(app, kind, window, cx);
     let current = name_box_text(app, kind);
     if !input.read(cx).focus_handle(cx).is_focused(window) && input.read(cx).text() != current {
@@ -641,12 +718,21 @@ fn name_box_element(app: &mut ExcelApp, kind: BoxKind, window: &mut Window, cx: 
             input.set_selection(0..0, cx);
         });
     }
-    div().px(px(2.)).child(TextField::new(&input).width(150.0)).into_any_element()
+    div()
+        .px(px(2.))
+        .child(TextField::new(&input).width(150.0))
+        .into_any_element()
 }
 
 /// The groups of the "PivotTable Analyze" tab.
 fn analyze_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-    let caption = |text: &'static str| div().px(px(4.)).whitespace_nowrap().child(text).into_any_element();
+    let caption = |text: &'static str| {
+        div()
+            .px(px(4.))
+            .whitespace_nowrap()
+            .child(text)
+            .into_any_element()
+    };
     let pivot_name = name_box_element(app, BoxKind::PivotName, window, cx);
     let active_field = name_box_element(app, BoxKind::ActiveField, window, cx);
     vec![
@@ -713,7 +799,12 @@ fn analyze_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyE
         .into_any_element(),
         group(
             t("Calculations", "Calculs"),
-            row(vec![app.cmd_large("pa-calculated", Cmd::CalculatedFields, true, cx)]),
+            row(vec![app.cmd_large(
+                "pa-calculated",
+                Cmd::CalculatedFields,
+                true,
+                cx,
+            )]),
         )
         .into_any_element(),
         group(
@@ -751,7 +842,10 @@ fn design_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
         )
         .into_any_element(),
         group(
-            t("PivotTable Style Options", "Options de style de tableau croisé dynamique"),
+            t(
+                "PivotTable Style Options",
+                "Options de style de tableau croisé dynamique",
+            ),
             div()
                 .flex()
                 .gap(px(8.))
@@ -783,7 +877,10 @@ impl Feature for Pivots {
         if chart::chart_pivot(app).is_some() {
             return vec![ContextTab {
                 id: chart::TAB,
-                title: t("PivotChart Analyze", "Analyse du graphique croisé dynamique"),
+                title: t(
+                    "PivotChart Analyze",
+                    "Analyse du graphique croisé dynamique",
+                ),
             }];
         }
         match active_pivot(app) {
@@ -801,7 +898,13 @@ impl Feature for Pivots {
         }
     }
 
-    fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn render_tab(
+        &self,
+        app: &mut ExcelApp,
+        tab: &'static str,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         if tab == chart::TAB {
             chart::tab(app, cx)
         } else if tab == DESIGN_TAB {
@@ -818,12 +921,25 @@ impl Feature for Pivots {
     /// Nothing is laid over the grid; this hook runs at every repaint with
     /// the application in hand, which is when the field list follows the
     /// active cell (after a click, an undo, a change of sheet).
-    fn overlay_elements(&self, app: &mut ExcelApp, _layout: &GridLayout, _window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        _layout: &GridLayout,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         sync_pane(app, cx);
         Vec::new()
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         if let Some(response) = chart::button_mouse_down(app, zone, ev, window, cx) {
             return response;
         }
@@ -861,7 +977,9 @@ impl Feature for Pivots {
             .collect();
         if !gone.is_empty() {
             app.wb.snapshot();
-            app.wb.sheets[edit.sheet].pivots.retain(|p| !gone.contains(&p.id));
+            app.wb.sheets[edit.sheet]
+                .pivots
+                .retain(|p| !gone.contains(&p.id));
         }
     }
 }

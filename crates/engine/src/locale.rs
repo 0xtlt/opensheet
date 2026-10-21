@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 mod names_de;
-#[cfg(test)]
-mod names_tests;
 mod names_es;
 mod names_fr;
 mod names_it;
+#[cfg(test)]
+mod names_tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DateOrder {
@@ -73,7 +73,10 @@ pub struct Locale {
     /// uppercase: a defined name may not look like such a reference.
     pub r1c1: (char, char),
     fn_pairs: &'static [(&'static str, &'static str)],
-    maps: OnceLock<(HashMap<&'static str, &'static str>, HashMap<&'static str, &'static str>)>,
+    maps: OnceLock<(
+        HashMap<&'static str, &'static str>,
+        HashMap<&'static str, &'static str>,
+    )>,
 }
 
 impl Locale {
@@ -112,7 +115,12 @@ impl Locale {
             .unwrap_or(&EN)
     }
 
-    fn maps(&self) -> &(HashMap<&'static str, &'static str>, HashMap<&'static str, &'static str>) {
+    fn maps(
+        &self,
+    ) -> &(
+        HashMap<&'static str, &'static str>,
+        HashMap<&'static str, &'static str>,
+    ) {
         self.maps.get_or_init(|| {
             let mut to_canon = HashMap::new();
             let mut to_local = HashMap::new();
@@ -268,7 +276,10 @@ impl Locale {
                     if !chars.get(i + 1).is_some_and(|n| n.is_ascii_digit()) {
                         return None;
                     }
-                    if strict && ((groups == 0 && !(1..=3).contains(&group)) || (groups > 0 && group != 3)) {
+                    if strict
+                        && ((groups == 0 && !(1..=3).contains(&group))
+                            || (groups > 0 && group != 3))
+                    {
                         return None;
                     }
                     groups += 1;
@@ -485,8 +496,6 @@ static FR: Locale = Locale {
     fn_pairs: names_fr::FUNCTIONS,
     maps: OnceLock::new(),
 };
-
-
 
 static ES: Locale = Locale {
     id: "es",

@@ -3,9 +3,9 @@
 use crate::app::ExcelApp;
 use crate::i18n::t;
 use gpui::Context;
-use opensheet_engine::{Rect, Workbook};
 use opensheet_engine::ops::BorderPreset;
 use opensheet_engine::style::{Border, Color, HAlign};
+use opensheet_engine::{Rect, Workbook};
 use std::sync::Arc;
 
 pub fn fill(app: &mut ExcelApp, cx: &mut Context<ExcelApp>) {
@@ -52,8 +52,18 @@ pub fn fill_workbook(wb: &mut Workbook) {
     }
     let total_row = rows.len() as u32 + 1;
     let _ = wb.set_cell_text(0, total_row, 0, t("Total", "Total"));
-    let _ = wb.set_cell_text(0, total_row, 2, &format!("={}(C2:C{})", f("SUM", "SOMME"), total_row));
-    let _ = wb.set_cell_text(0, total_row, 4, &format!("={}(E2:E{})", f("SUM", "SOMME"), total_row));
+    let _ = wb.set_cell_text(
+        0,
+        total_row,
+        2,
+        &format!("={}(C2:C{})", f("SUM", "SOMME"), total_row),
+    );
+    let _ = wb.set_cell_text(
+        0,
+        total_row,
+        4,
+        &format!("={}(E2:E{})", f("SUM", "SOMME"), total_row),
+    );
     let _ = wb.set_cell_text(0, total_row + 2, 0, t("Average basket", "Panier moyen"));
     let _ = wb.set_cell_text(
         0,
@@ -79,7 +89,12 @@ pub fn fill_workbook(wb: &mut Workbook) {
         0,
         total_row + 4,
         4,
-        &format!("={}(E2:E{}{}\">500\")", f("COUNTIF", "NB.SI"), total_row, sep),
+        &format!(
+            "={}(E2:E{}{}\">500\")",
+            f("COUNTIF", "NB.SI"),
+            total_row,
+            sep
+        ),
     );
 
     // Formatting.
@@ -92,16 +107,27 @@ pub fn fill_workbook(wb: &mut Workbook) {
     });
     let currency: Arc<str> = Arc::from(wb.locale.currency_format);
     let cur = currency.clone();
-    wb.update_style(0, Rect::new(1, 3, total_row + 2, 4), &move |s| s.num_fmt = cur.clone());
+    wb.update_style(0, Rect::new(1, 3, total_row + 2, 4), &move |s| {
+        s.num_fmt = cur.clone()
+    });
     let short: Arc<str> = Arc::from(wb.locale.short_date_format);
-    wb.update_style(0, Rect::new(1, 5, total_row - 1, 5), &move |s| s.num_fmt = short.clone());
+    wb.update_style(0, Rect::new(1, 5, total_row - 1, 5), &move |s| {
+        s.num_fmt = short.clone()
+    });
     wb.update_style(0, Rect::new(total_row, 0, total_row, 5), &|s| {
         s.font.bold = true;
         s.fill = Some(Color(0xE2F0E7));
     });
-    wb.apply_borders(0, Rect::new(0, 0, total_row, 5), BorderPreset::All, Border::thin());
+    wb.apply_borders(
+        0,
+        Rect::new(0, 0, total_row, 5),
+        BorderPreset::All,
+        Border::thin(),
+    );
     for r in (2..total_row).step_by(2) {
-        wb.update_style(0, Rect::new(r, 0, r, 5), &|s| s.fill = Some(Color(0xF3F9F5)));
+        wb.update_style(0, Rect::new(r, 0, r, 5), &|s| {
+            s.fill = Some(Color(0xF3F9F5))
+        });
     }
     wb.set_col_width(0, 0, Some(140.0));
     wb.set_col_width(0, 3, Some(96.0));

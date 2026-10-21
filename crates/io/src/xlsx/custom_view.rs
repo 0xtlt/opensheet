@@ -50,7 +50,11 @@ pub(crate) fn write_workbook(x: &mut String, wb: &Workbook) {
         let front = wb
             .sheets
             .iter()
-            .position(|sheet| sheet.custom_view(&view.guid).is_some_and(|part| part.window.selected))
+            .position(|sheet| {
+                sheet
+                    .custom_view(&view.guid)
+                    .is_some_and(|part| part.window.selected)
+            })
             .unwrap_or(0);
         w!(
             x,
@@ -63,7 +67,10 @@ pub(crate) fn write_workbook(x: &mut String, wb: &Workbook) {
 
 /// `Z_6F2E…_.wvu.`: what the hidden names of a view begin with.
 fn name_prefix(guid: &str) -> String {
-    format!("Z_{}_.wvu.", guid.trim_matches(['{', '}']).replace('-', "_"))
+    format!(
+        "Z_{}_.wvu.",
+        guid.trim_matches(['{', '}']).replace('-', "_")
+    )
 }
 
 /// Runs of indices as whole rows (or columns) of a sheet.
@@ -94,23 +101,43 @@ fn ranges_formula(sheet_name: &str, ranges: Vec<Rect>) -> Option<String> {
 fn names_of(sheet: &Sheet, part: &CustomSheetView) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     if let Some(hidden) = &part.hidden {
-        let lists = [("Rows", runs(&hidden.rows, true)), ("Cols", runs(&hidden.cols, false))];
+        let lists = [
+            ("Rows", runs(&hidden.rows, true)),
+            ("Cols", runs(&hidden.cols, false)),
+        ];
         for (suffix, ranges) in lists {
             out.extend(ranges_formula(&sheet.name, ranges).map(|text| (suffix, text)));
         }
-        let filter = hidden.filter.as_ref().map(|filter| vec![filter.range]).unwrap_or_default();
+        let filter = hidden
+            .filter
+            .as_ref()
+            .map(|filter| vec![filter.range])
+            .unwrap_or_default();
         out.extend(ranges_formula(&sheet.name, filter).map(|text| ("FilterData", text)));
     }
     if let Some(setup) = &part.page {
-        out.extend(setup.print_area_formula(&sheet.name).map(|text| ("PrintArea", text)));
-        out.extend(setup.print_titles_formula(&sheet.name).map(|text| ("PrintTitles", text)));
+        out.extend(
+            setup
+                .print_area_formula(&sheet.name)
+                .map(|text| ("PrintArea", text)),
+        );
+        out.extend(
+            setup
+                .print_titles_formula(&sheet.name)
+                .map(|text| ("PrintTitles", text)),
+        );
     }
     out
 }
 
 /// Whether the views need names (see [`push_names`]).
 pub(crate) fn has_names(wb: &Workbook) -> bool {
-    wb.sheets.iter().any(|sheet| sheet.custom_views.iter().any(|part| !names_of(sheet, part).is_empty()))
+    wb.sheets.iter().any(|sheet| {
+        sheet
+            .custom_views
+            .iter()
+            .any(|part| !names_of(sheet, part).is_empty())
+    })
 }
 
 /// Append the hidden names of the views (children of `<definedNames>`).
@@ -119,7 +146,10 @@ pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
         for part in &sheet.custom_views {
             let prefix = name_prefix(&part.guid);
             for (suffix, text) in names_of(sheet, part) {
-                w!(x, "<definedName name=\"{prefix}{suffix}\" localSheetId=\"{index}\" hidden=\"1\">");
+                w!(
+                    x,
+                    "<definedName name=\"{prefix}{suffix}\" localSheetId=\"{index}\" hidden=\"1\">"
+                );
                 push_text(x, &text);
                 x.push_str("</definedName>");
             }
@@ -133,12 +163,23 @@ fn push_page(x: &mut String, setup: &PageSetup) {
     let mut written = String::new();
     page::write(&mut written, setup);
     // Where each element begins; each one runs to the next.
-    let wanted = ["<rowBreaks", "<colBreaks", "<pageMargins", "<printOptions", "<pageSetup", "<headerFooter"];
+    let wanted = [
+        "<rowBreaks",
+        "<colBreaks",
+        "<pageMargins",
+        "<printOptions",
+        "<pageSetup",
+        "<headerFooter",
+    ];
     let mut starts: Vec<usize> = wanted.iter().filter_map(|tag| written.find(tag)).collect();
     starts.sort_unstable();
     for tag in wanted {
         if let Some(start) = written.find(tag) {
-            let end = starts.iter().copied().find(|other| *other > start).unwrap_or(written.len());
+            let end = starts
+                .iter()
+                .copied()
+                .find(|other| *other > start)
+                .unwrap_or(written.len());
             x.push_str(&written[start..end]);
         }
     }
@@ -177,7 +218,10 @@ pub(crate) fn write_sheet(x: &mut String, wb: &Workbook, index: usize, dxfs: &mu
         if !window.show_headers {
             x.push_str(" showRowCol=\"0\"");
         }
-        let filter = part.hidden.as_ref().and_then(|hidden| hidden.filter.as_ref());
+        let filter = part
+            .hidden
+            .as_ref()
+            .and_then(|hidden| hidden.filter.as_ref());
         if let Some(hidden) = &part.hidden {
             if filter.is_some_and(|filter| filter.is_filtered()) {
                 x.push_str(" filter=\"1\"");
@@ -195,7 +239,10 @@ pub(crate) fn write_sheet(x: &mut String, wb: &Workbook, index: usize, dxfs: &mu
         if window.mode != ViewKind::Normal {
             w!(x, " view=\"{}\"", window.mode.ooxml_name());
         }
-        let (rows, cols) = (window.frozen_rows.min(MAX_ROWS - 1), window.frozen_cols.min(MAX_COLS - 1));
+        let (rows, cols) = (
+            window.frozen_rows.min(MAX_ROWS - 1),
+            window.frozen_cols.min(MAX_COLS - 1),
+        );
         let top_left = cell_name(window.top_left.0.max(rows), window.top_left.1.max(cols));
         let frozen = rows > 0 || cols > 0;
         if !frozen && window.top_left != (0, 0) {
@@ -216,13 +263,20 @@ pub(crate) fn write_sheet(x: &mut String, wb: &Workbook, index: usize, dxfs: &mu
             if rows > 0 {
                 w!(x, " ySplit=\"{rows}\"");
             }
-            w!(x, " topLeftCell=\"{top_left}\" activePane=\"{pane}\" state=\"frozen\"/>");
+            w!(
+                x,
+                " topLeftCell=\"{top_left}\" activePane=\"{pane}\" state=\"frozen\"/>"
+            );
         }
         x.push_str("<selection");
         if frozen {
             w!(x, " pane=\"{pane}\"");
         }
-        w!(x, " activeCell=\"{}\" sqref=\"", cell_name(window.active.0, window.active.1));
+        w!(
+            x,
+            " activeCell=\"{}\" sqref=\"",
+            cell_name(window.active.0, window.active.1)
+        );
         if window.ranges.is_empty() {
             push_sqref(x, &[Rect::cell(window.active.0, window.active.1)]);
         } else {
@@ -260,7 +314,11 @@ pub(crate) struct BookView {
 /// Read a `<customWorkbookView>` (an empty element).
 pub(crate) fn read_book_view(tag: &Tag) -> Option<BookView> {
     let guid = tag.attr("guid")?.trim().to_uppercase();
-    let name: String = tag.attr("name")?.chars().filter(|c| !c.is_control()).collect();
+    let name: String = tag
+        .attr("name")?
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
     if !is_guid(&guid) || name.trim().is_empty() {
         return None;
     }
@@ -277,18 +335,32 @@ fn cell(text: &str) -> Option<(u32, u32)> {
     parse_cell_name(text.trim())
 }
 
-fn read_view<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, colors: &[DxfColors]) -> Option<CustomSheetView> {
-    let guid = tag.attr("guid").map(|guid| guid.trim().to_uppercase()).filter(|guid| is_guid(guid));
+fn read_view<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    colors: &[DxfColors],
+) -> Option<CustomSheetView> {
+    let guid = tag
+        .attr("guid")
+        .map(|guid| guid.trim().to_uppercase())
+        .filter(|guid| is_guid(guid));
     let Some(guid) = guid else {
         r.skip(tag);
         return None;
     };
     let mut window = WindowState {
-        zoom: tag.attr_u32("scale").map_or(100, |zoom| zoom.clamp(10, 400)),
+        zoom: tag
+            .attr_u32("scale")
+            .map_or(100, |zoom| zoom.clamp(10, 400)),
         show_gridlines: tag.attr_bool("showGridLines").unwrap_or(true),
         show_headers: tag.attr_bool("showRowCol").unwrap_or(true),
-        mode: tag.attr("view").map_or(ViewKind::Normal, |name| ViewKind::from_ooxml_name(&name)),
-        top_left: tag.attr("topLeftCell").and_then(|name| cell(&name)).unwrap_or((0, 0)),
+        mode: tag
+            .attr("view")
+            .map_or(ViewKind::Normal, |name| ViewKind::from_ooxml_name(&name)),
+        top_left: tag
+            .attr("topLeftCell")
+            .and_then(|name| cell(&name))
+            .unwrap_or((0, 0)),
         ..WindowState::default()
     };
     let mut hidden = HiddenState::default();
@@ -299,27 +371,43 @@ fn read_view<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, colors: &[DxfColors]) -> Opt
             match r.next() {
                 Event::Open(t) => match t.name {
                     "pane" => {
-                        let frozen = matches!(t.attr("state").as_deref(), Some("frozen" | "frozenSplit"));
+                        let frozen =
+                            matches!(t.attr("state").as_deref(), Some("frozen" | "frozenSplit"));
                         if frozen {
                             let split = |name: &str, max: u32| {
                                 let n = t.attr_f64(name).unwrap_or(0.0).round();
-                                if n >= 1.0 && n < max as f64 { n as u32 } else { 0 }
+                                if n >= 1.0 && n < max as f64 {
+                                    n as u32
+                                } else {
+                                    0
+                                }
                             };
                             window.frozen_cols = split("xSplit", MAX_COLS);
                             window.frozen_rows = split("ySplit", MAX_ROWS);
-                            if let Some(top_left) = t.attr("topLeftCell").and_then(|name| cell(&name)) {
+                            if let Some(top_left) =
+                                t.attr("topLeftCell").and_then(|name| cell(&name))
+                            {
                                 window.top_left = top_left;
                             }
                         }
                         r.skip(&t);
                     }
                     "selection" => {
-                        let ranges = t.attr("sqref").map(|text| super::validation::parse_sqref(&text)).unwrap_or_default();
+                        let ranges = t
+                            .attr("sqref")
+                            .map(|text| super::validation::parse_sqref(&text))
+                            .unwrap_or_default();
                         let active = t.attr("activeCell").and_then(|name| cell(&name));
                         // The last selection read is that of the active pane.
-                        if let Some(active) = active.or(ranges.first().map(|range| (range.r0, range.c0))) {
+                        if let Some(active) =
+                            active.or(ranges.first().map(|range| (range.r0, range.c0)))
+                        {
                             window.active = active;
-                            window.ranges = if ranges.is_empty() { vec![Rect::cell(active.0, active.1)] } else { ranges };
+                            window.ranges = if ranges.is_empty() {
+                                vec![Rect::cell(active.0, active.1)]
+                            } else {
+                                ranges
+                            };
                         }
                         r.skip(&t);
                     }
@@ -344,7 +432,12 @@ fn read_view<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, colors: &[DxfColors]) -> Opt
 
 /// Read `<customSheetViews>` of a worksheet. `colors` are the differential
 /// formats of the workbook, for filters that go by a colour.
-pub(crate) fn read_sheet<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mut Sheet, colors: &[DxfColors]) {
+pub(crate) fn read_sheet<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    sheet: &mut Sheet,
+    colors: &[DxfColors],
+) {
     if tag.empty {
         return;
     }
@@ -369,14 +462,19 @@ pub(crate) fn read_sheet<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mut Shee
 /// or not.
 pub(crate) fn read_name(name: &str, text: &str, sheet: Option<&mut Sheet>) -> bool {
     let upper = name.to_uppercase();
-    let Some((guid, suffix)) = upper.strip_prefix("Z_").and_then(|rest| rest.split_once("_.WVU.")) else {
+    let Some((guid, suffix)) = upper
+        .strip_prefix("Z_")
+        .and_then(|rest| rest.split_once("_.WVU."))
+    else {
         return false;
     };
     let guid = format!("{{{}}}", guid.replace('_', "-"));
     if !is_guid(&guid) {
         return false;
     }
-    let Some(part) = sheet.and_then(|sheet| sheet.custom_views.iter_mut().find(|part| part.guid == guid)) else {
+    let Some(part) =
+        sheet.and_then(|sheet| sheet.custom_views.iter_mut().find(|part| part.guid == guid))
+    else {
         return true;
     };
     // The text is a list of ranges, as a print area is.
@@ -390,7 +488,9 @@ pub(crate) fn read_name(name: &str, text: &str, sheet: Option<&mut Sheet>) -> bo
             if let Some(hidden) = part.hidden.as_mut() {
                 for range in ranges(&mut scratch) {
                     // A damaged name must not hide a million rows one by one.
-                    hidden.rows.extend(range.r0..=range.r1.min(range.r0.saturating_add(100_000)));
+                    hidden
+                        .rows
+                        .extend(range.r0..=range.r1.min(range.r0.saturating_add(100_000)));
                 }
             }
         }
@@ -448,13 +548,34 @@ mod tests {
     #[test]
     fn hidden_rows_are_named_as_runs() {
         let rows: BTreeSet<u32> = [2, 3, 4, 7].into_iter().collect();
-        assert_eq!(runs(&rows, true), vec![Rect::new(2, 0, 4, MAX_COLS - 1), Rect::new(7, 0, 7, MAX_COLS - 1)]);
+        assert_eq!(
+            runs(&rows, true),
+            vec![
+                Rect::new(2, 0, 4, MAX_COLS - 1),
+                Rect::new(7, 0, 7, MAX_COLS - 1)
+            ]
+        );
         let cols: BTreeSet<u32> = [0, 1, 5].into_iter().collect();
-        assert_eq!(runs(&cols, false), vec![Rect::new(0, 0, MAX_ROWS - 1, 1), Rect::new(0, 5, MAX_ROWS - 1, 5)]);
-        assert_eq!(ranges_formula("Sheet1", runs(&rows, true)).as_deref(), Some("Sheet1!$3:$5,Sheet1!$8:$8"));
-        assert_eq!(ranges_formula("My sheet", runs(&cols, false)).as_deref(), Some("'My sheet'!$A:$B,'My sheet'!$F:$F"));
+        assert_eq!(
+            runs(&cols, false),
+            vec![
+                Rect::new(0, 0, MAX_ROWS - 1, 1),
+                Rect::new(0, 5, MAX_ROWS - 1, 5)
+            ]
+        );
+        assert_eq!(
+            ranges_formula("Sheet1", runs(&rows, true)).as_deref(),
+            Some("Sheet1!$3:$5,Sheet1!$8:$8")
+        );
+        assert_eq!(
+            ranges_formula("My sheet", runs(&cols, false)).as_deref(),
+            Some("'My sheet'!$A:$B,'My sheet'!$F:$F")
+        );
         assert_eq!(ranges_formula("Sheet1", Vec::new()), None);
-        assert_eq!(name_prefix("{6F2E3C1A-0B1C-4D2E-8F30-A1B2C3D4E5F6}"), "Z_6F2E3C1A_0B1C_4D2E_8F30_A1B2C3D4E5F6_.wvu.");
+        assert_eq!(
+            name_prefix("{6F2E3C1A-0B1C-4D2E-8F30-A1B2C3D4E5F6}"),
+            "Z_6F2E3C1A_0B1C_4D2E_8F30_A1B2C3D4E5F6_.wvu."
+        );
     }
 
     #[test]

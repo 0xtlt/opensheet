@@ -11,7 +11,9 @@
 use super::system::{self, SpellChecker};
 use crate::app::ExcelApp;
 use crate::features::preferences::settings;
-use crate::features::{self, ChangeCause, Cx, Intent, charts::Charts, drawings::Drawings, object_id};
+use crate::features::{
+    self, ChangeCause, Cx, Intent, charts::Charts, drawings::Drawings, object_id,
+};
 use crate::i18n::t;
 use crate::shell::{Alert, Modal};
 use crate::text_input::TextInput;
@@ -45,7 +47,9 @@ pub(super) enum Place {
 impl Place {
     fn cell(&self) -> Option<(u32, u32)> {
         match self {
-            Place::Cell(row, col) | Place::Note(row, col) | Place::Comment(row, col, _) => Some((*row, *col)),
+            Place::Cell(row, col) | Place::Note(row, col) | Place::Comment(row, col, _) => {
+                Some((*row, *col))
+            }
             _ => None,
         }
     }
@@ -69,7 +73,11 @@ fn text_at(wb: &Workbook, sheet: usize, place: &Place) -> Option<String> {
             Content::Value(Value::Text(text)) => Some(text.to_string()),
             _ => None,
         },
-        Place::Note(row, col) => sh.comments.get(&(*row, *col))?.as_note().map(|note| note.text()),
+        Place::Note(row, col) => sh
+            .comments
+            .get(&(*row, *col))?
+            .as_note()
+            .map(|note| note.text()),
         Place::Comment(row, col, reply) => {
             let thread = sh.comments.get(&(*row, *col))?.as_thread()?;
             match reply {
@@ -77,14 +85,24 @@ fn text_at(wb: &Workbook, sheet: usize, place: &Place) -> Option<String> {
                 Some(index) => thread.replies.get(*index).map(|post| post.text.clone()),
             }
         }
-        Place::Shape(id) => wb.drawing(sheet, *id)?.as_shape().map(|shape| shape.text.clone()),
+        Place::Shape(id) => wb
+            .drawing(sheet, *id)?
+            .as_shape()
+            .map(|shape| shape.text.clone()),
         Place::ChartTitle(id) => match &wb.chart(sheet, *id)?.title {
             ChartTitle::Text(text) => Some(text.clone()),
             _ => None,
         },
         Place::Header(variant, footer) => {
             let both = &sh.page.header_footer;
-            Some(if *footer { both.footer(*variant) } else { both.header(*variant) }.to_string())
+            Some(
+                if *footer {
+                    both.footer(*variant)
+                } else {
+                    both.header(*variant)
+                }
+                .to_string(),
+            )
         }
     }
 }
@@ -99,7 +117,8 @@ fn set_text(wb: &mut Workbook, sheet: usize, place: &Place, text: &str) -> bool 
             let old = text_at(wb, sheet, place).unwrap_or_default();
             let typed = wb.edit_text(sheet, *row, *col);
             let prefix = typed.strip_suffix(old.as_str()).unwrap_or_default();
-            wb.set_cell_text(sheet, *row, *col, &format!("{prefix}{text}")).is_ok()
+            wb.set_cell_text(sheet, *row, *col, &format!("{prefix}{text}"))
+                .is_ok()
         }
         Place::Note(row, col) => wb.set_note(sheet, *row, *col, "", text),
         Place::Comment(row, col, reply) => wb.edit_comment(sheet, *row, *col, *reply, text),
@@ -108,14 +127,20 @@ fn set_text(wb: &mut Workbook, sheet: usize, place: &Place, text: &str) -> bool 
                 shape.text = text.to_string();
             }
         }),
-        Place::ChartTitle(id) => wb.update_chart(sheet, *id, |chart| chart.title = ChartTitle::Text(text.to_string())),
+        Place::ChartTitle(id) => wb.update_chart(sheet, *id, |chart| {
+            chart.title = ChartTitle::Text(text.to_string())
+        }),
         Place::Header(variant, footer) => {
             if sheet >= wb.sheets.len() {
                 return false;
             }
             wb.snapshot();
             let both = &mut wb.sheets[sheet].page.header_footer;
-            *(if *footer { both.footer_mut(*variant) } else { both.header_mut(*variant) }) = text.to_string();
+            *(if *footer {
+                both.footer_mut(*variant)
+            } else {
+                both.header_mut(*variant)
+            }) = text.to_string();
             true
         }
     }
@@ -178,7 +203,10 @@ fn shown_to_checker(wb: &Workbook, sheet: usize, place: &Place, text: &str) -> S
     match place {
         Place::Header(..) => without_codes(text),
         Place::Note(row, col) => {
-            let author = wb.comment_at(sheet, *row, *col).and_then(Comment::as_note).map(|note| format!("{}:", note.author));
+            let author = wb
+                .comment_at(sheet, *row, *col)
+                .and_then(Comment::as_note)
+                .map(|note| format!("{}:", note.author));
             match author.filter(|header| header.len() > 1 && text.starts_with(header.as_str())) {
                 Some(header) => format!("{}{}", " ".repeat(header.len()), &text[header.len()..]),
                 None => text.to_string(),
@@ -192,7 +220,8 @@ fn shown_to_checker(wb: &Workbook, sheet: usize, place: &Place, text: &str) -> S
 /// capitals and those holding a digit.
 fn passed_over(word: &str) -> bool {
     let letters: Vec<char> = word.chars().filter(|ch| ch.is_alphabetic()).collect();
-    word.chars().any(|ch| ch.is_numeric()) || (letters.len() > 1 && letters.iter().all(|ch| ch.is_uppercase()))
+    word.chars().any(|ch| ch.is_numeric())
+        || (letters.len() > 1 && letters.iter().all(|ch| ch.is_uppercase()))
 }
 
 /// Where `word` stands as a whole word in `text`, from `from` on.
@@ -281,13 +310,23 @@ impl Session {
             [range] => range.is_single() || sh.merge_at(row, col) == Some(*range),
             _ => false,
         };
-        let is_text = |cell: &opensheet_engine::workbook::Cell| matches!(cell.content, Content::Value(Value::Text(_)));
-        let text_cells = sh.cells.iter().filter(|(_, cell)| is_text(cell)).map(|(at, _)| *at);
+        let is_text = |cell: &opensheet_engine::workbook::Cell| {
+            matches!(cell.content, Content::Value(Value::Text(_)))
+        };
+        let text_cells = sh
+            .cells
+            .iter()
+            .filter(|(_, cell)| is_text(cell))
+            .map(|(at, _)| *at);
         let (mut places, mut earlier, mut scope) = (Vec::new(), Vec::new(), Vec::new());
         if one_cell {
             // The cells are kept row by row: so does the check read them.
             for at in text_cells {
-                let list = if at >= (row, col) { &mut places } else { &mut earlier };
+                let list = if at >= (row, col) {
+                    &mut places
+                } else {
+                    &mut earlier
+                };
                 list.push(Place::Cell(at.0, at.1));
             }
             for (at, comment) in &sh.comments {
@@ -295,18 +334,30 @@ impl Session {
                     Comment::Note(_) => places.push(Place::Note(at.0, at.1)),
                     Comment::Thread(thread) => {
                         places.push(Place::Comment(at.0, at.1, None));
-                        places.extend((0..thread.replies.len()).map(|reply| Place::Comment(at.0, at.1, Some(reply))));
+                        places.extend(
+                            (0..thread.replies.len())
+                                .map(|reply| Place::Comment(at.0, at.1, Some(reply))),
+                        );
                     }
                 }
             }
-            places.extend(sh.drawings.iter().filter(|drawing| drawing.as_shape().is_some()).map(|drawing| Place::Shape(drawing.id)));
+            places.extend(
+                sh.drawings
+                    .iter()
+                    .filter(|drawing| drawing.as_shape().is_some())
+                    .map(|drawing| Place::Shape(drawing.id)),
+            );
             places.extend(sh.charts.iter().map(|chart| Place::ChartTitle(chart.id)));
             for variant in [HfVariant::Odd, HfVariant::Even, HfVariant::First] {
                 places.extend([Place::Header(variant, false), Place::Header(variant, true)]);
             }
         } else {
             scope = sel.ranges.clone();
-            places.extend(text_cells.filter(|at| scope.iter().any(|range| range.contains(at.0, at.1))).map(|at| Place::Cell(at.0, at.1)));
+            places.extend(
+                text_cells
+                    .filter(|at| scope.iter().any(|range| range.contains(at.0, at.1)))
+                    .map(|at| Place::Cell(at.0, at.1)),
+            );
         }
         let languages = checker.languages();
         let kept = settings::get().spelling_language;
@@ -364,7 +415,11 @@ impl Session {
         self.current = None;
         loop {
             let Some(place) = self.places.get(self.index).cloned() else {
-                return if self.earlier.is_empty() { Step::Done } else { Step::AskWrap };
+                return if self.earlier.is_empty() {
+                    Step::Done
+                } else {
+                    Step::AskWrap
+                };
             };
             let found = text_at(&app.wb, self.sheet, &place).and_then(|text| {
                 let shown = shown_to_checker(&app.wb, self.sheet, &place, &text);
@@ -451,7 +506,11 @@ impl Session {
             return false;
         }
         let mut changed = Vec::new();
-        let last = if all { self.places.len() } else { self.index + 1 };
+        let last = if all {
+            self.places.len()
+        } else {
+            self.index + 1
+        };
         for index in self.index..last {
             let place = self.places[index].clone();
             let here = index == self.index;
@@ -464,8 +523,16 @@ impl Session {
             };
             let mut ranges = match (here, all) {
                 (true, false) => vec![issue.range.clone()],
-                (true, true) => whole_words(&shown_to_checker(&app.wb, self.sheet, &place, &text), &issue.word, issue.range.start),
-                _ => whole_words(&shown_to_checker(&app.wb, self.sheet, &place, &text), &issue.word, 0),
+                (true, true) => whole_words(
+                    &shown_to_checker(&app.wb, self.sheet, &place, &text),
+                    &issue.word,
+                    issue.range.start,
+                ),
+                _ => whole_words(
+                    &shown_to_checker(&app.wb, self.sheet, &place, &text),
+                    &issue.word,
+                    0,
+                ),
             };
             if here && !ranges.contains(&issue.range) {
                 ranges.insert(0, issue.range.clone());
@@ -555,7 +622,10 @@ pub(super) struct Spelling {
 }
 
 /// Run something on the session with the application at hand.
-fn with_session<R>(app: &mut ExcelApp, f: impl FnOnce(&mut Session, &mut ExcelApp) -> R) -> Option<R> {
+fn with_session<R>(
+    app: &mut ExcelApp,
+    f: impl FnOnce(&mut Session, &mut ExcelApp) -> R,
+) -> Option<R> {
     let mut session = app.ext_mut::<Spelling>().session.take()?;
     let result = f(&mut session, app);
     app.ext_mut::<Spelling>().session = Some(session);
@@ -566,7 +636,10 @@ fn with_session<R>(app: &mut ExcelApp, f: impl FnOnce(&mut Session, &mut ExcelAp
 pub(super) fn start(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let checker = system::spell_checker(app);
     if checker.languages().is_empty() {
-        let message = t("Cannot initialize spelling checker.", "Impossible d'initialiser le vérificateur d'orthographe.");
+        let message = t(
+            "Cannot initialize spelling checker.",
+            "Impossible d'initialiser le vérificateur d'orthographe.",
+        );
         app.alert(Alert::new("OpenSheet", message).warning(), cx);
         return;
     }
@@ -591,8 +664,11 @@ fn proceed(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
                 // itself again without being borrowed.)
                 Some((dialog, _)) => gpui::App::notify(cx, dialog.entity_id()),
                 None => {
-                    let languages = with_session(app, |session, _| session.languages()).unwrap_or_default();
-                    let dialog = app.open_modal(window, cx, |modal, _, cx| SpellingDialog::new(modal, languages, cx));
+                    let languages =
+                        with_session(app, |session, _| session.languages()).unwrap_or_default();
+                    let dialog = app.open_modal(window, cx, |modal, _, cx| {
+                        SpellingDialog::new(modal, languages, cx)
+                    });
                     let frame = dialog.read(cx).modal.focus.clone();
                     app.ext_mut::<Spelling>().dialog = Some((dialog, frame));
                 }
@@ -608,7 +684,9 @@ fn proceed(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
                     with_session(app, |session, _| session.wrap());
                     proceed(app, window, cx);
                 })
-                .button(t("No", "Non"), |app, window, cx| finish(app, true, window, cx));
+                .button(t("No", "Non"), |app, window, cx| {
+                    finish(app, true, window, cx)
+                });
             app.alert(alert, cx);
         }
         Step::Done => finish(app, true, window, cx),
@@ -623,7 +701,10 @@ fn finish(app: &mut ExcelApp, complete: bool, window: &mut Window, cx: &mut Cx) 
         app.close_modal_of(&frame, window, cx);
     }
     if complete {
-        let message = t("Spell check complete. You're good to go!", "La vérification de l'orthographe est terminée.");
+        let message = t(
+            "Spell check complete. You're good to go!",
+            "La vérification de l'orthographe est terminée.",
+        );
         app.alert(Alert::new("OpenSheet", message), cx);
     }
 }
@@ -635,7 +716,12 @@ fn show_place(app: &mut ExcelApp, cx: &mut Cx) {
     let Some((place, scoped)) = app
         .ext::<Spelling>()
         .and_then(|spelling| spelling.session.as_ref())
-        .and_then(|session| Some((session.current.as_ref()?.place.clone(), !session.scope.is_empty())))
+        .and_then(|session| {
+            Some((
+                session.current.as_ref()?.place.clone(),
+                !session.scope.is_empty(),
+            ))
+        })
     else {
         return;
     };
@@ -717,11 +803,17 @@ impl SpellingDialog {
         if typed != shown.word {
             return Some(typed);
         }
-        self.selected.and_then(|index| shown.suggestions.get(index).cloned())
+        self.selected
+            .and_then(|index| shown.suggestions.get(index).cloned())
     }
 
     /// Answer for the word shown and go on to the next.
-    fn answer(&mut self, window: &mut Window, cx: &mut Context<Self>, f: impl FnOnce(&mut Session, &mut ExcelApp, &mut Cx) -> bool) {
+    fn answer(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut Session, &mut ExcelApp, &mut Cx) -> bool,
+    ) {
         self.modal.update_app(cx, |app, cx| {
             if with_session(app, |session, app| f(session, app, cx)) == Some(true) {
                 proceed(app, window, cx);
@@ -752,17 +844,27 @@ impl SpellingDialog {
     }
 
     pub(super) fn change(&mut self, all: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(to) = self.shown(cx).and_then(|shown| self.replacement(&shown, cx)) else {
+        let Some(to) = self
+            .shown(cx)
+            .and_then(|shown| self.replacement(&shown, cx))
+        else {
             return;
         };
-        self.answer(window, cx, move |session, app, cx| session.change(app, &to, all, cx));
+        self.answer(window, cx, move |session, app, cx| {
+            session.change(app, &to, all, cx)
+        });
     }
 
     pub(super) fn undo_last(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.answer(window, cx, |session, app, cx| session.undo_last(app, cx));
     }
 
-    pub(super) fn set_language(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn set_language(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(language) = self.languages.get(index).cloned() else {
             return;
         };
@@ -774,7 +876,8 @@ impl SpellingDialog {
     }
 
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.modal.update_app(cx, |app, cx| finish(app, false, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| finish(app, false, window, cx));
     }
 
     #[cfg(test)]
@@ -793,22 +896,44 @@ impl Render for SpellingDialog {
         let shown = self.shown(cx);
         if let Some(shown) = shown.as_ref().filter(|shown| shown.serial != self.shown) {
             self.shown = shown.serial;
-            self.selected = if shown.suggestions.is_empty() { None } else { Some(0) };
+            self.selected = if shown.suggestions.is_empty() {
+                None
+            } else {
+                Some(0)
+            };
             let word = shown.word.clone();
             self.word.update(cx, |field, cx| field.set_text(word, cx));
         }
         let none = shown.is_none();
         let suggestions: Vec<SharedString> = match &shown {
-            Some(shown) if !shown.suggestions.is_empty() => shown.suggestions.iter().map(|word| SharedString::from(word.clone())).collect(),
+            Some(shown) if !shown.suggestions.is_empty() => shown
+                .suggestions
+                .iter()
+                .map(|word| SharedString::from(word.clone()))
+                .collect(),
             _ => vec![t("(No Suggestions)", "(Aucune suggestion)").into()],
         };
-        let has_suggestions = shown.as_ref().is_some_and(|shown| !shown.suggestions.is_empty());
-        let can_change = shown.as_ref().is_some_and(|shown| self.replacement(shown, cx).is_some());
+        let has_suggestions = shown
+            .as_ref()
+            .is_some_and(|shown| !shown.suggestions.is_empty());
+        let can_change = shown
+            .as_ref()
+            .is_some_and(|shown| self.replacement(shown, cx).is_some());
         let can_undo = shown.as_ref().is_some_and(|shown| shown.can_undo);
-        let language = shown.as_ref().and_then(|shown| self.languages.iter().position(|language| *language == shown.language));
-        let names: Vec<SharedString> = self.languages.iter().map(|code| system::language_name(code).into()).collect();
+        let language = shown.as_ref().and_then(|shown| {
+            self.languages
+                .iter()
+                .position(|language| *language == shown.language)
+        });
+        let names: Vec<SharedString> = self
+            .languages
+            .iter()
+            .map(|code| system::language_name(code).into())
+            .collect();
         const BUTTON: f32 = 176.0;
-        let button = |id: &'static str, text: &'static str, off: bool| Button::new(id, text).width(BUTTON).disabled(off);
+        let button = |id: &'static str, text: &'static str, off: bool| {
+            Button::new(id, text).width(BUTTON).disabled(off)
+        };
         let left = div()
             .flex()
             .flex_col()
@@ -817,21 +942,27 @@ impl Render for SpellingDialog {
             .child(TextField::new(&self.word).width(300.0))
             .child(label(t("Suggestions:", "Suggestions :")))
             .child(
-                ListBox::new("spelling-suggestions", suggestions, if has_suggestions { self.selected } else { None })
-                    .width(300.0)
-                    .height(132.0)
-                    .on_change(cx.listener(move |this, index: &usize, _, cx| {
-                        if has_suggestions {
-                            this.selected = Some(*index);
-                            cx.notify();
-                        }
-                    }))
-                    .on_activate(cx.listener(move |this, index: &usize, window, cx| {
+                ListBox::new(
+                    "spelling-suggestions",
+                    suggestions,
+                    if has_suggestions { self.selected } else { None },
+                )
+                .width(300.0)
+                .height(132.0)
+                .on_change(cx.listener(move |this, index: &usize, _, cx| {
+                    if has_suggestions {
+                        this.selected = Some(*index);
+                        cx.notify();
+                    }
+                }))
+                .on_activate(cx.listener(
+                    move |this, index: &usize, window, cx| {
                         if has_suggestions {
                             this.selected = Some(*index);
                             this.change(false, window, cx);
                         }
-                    })),
+                    },
+                )),
             )
             .child(
                 div()
@@ -842,7 +973,9 @@ impl Render for SpellingDialog {
                     .child(
                         Select::new("spelling-language", names, language)
                             .width(150.0)
-                            .on_change(cx.listener(|this, index: &usize, window, cx| this.set_language(*index, window, cx))),
+                            .on_change(cx.listener(|this, index: &usize, window, cx| {
+                                this.set_language(*index, window, cx)
+                            })),
                     ),
             );
         let right = div()
@@ -850,11 +983,25 @@ impl Render for SpellingDialog {
             .flex()
             .flex_col()
             .gap(px(6.))
-            .child(button("spelling-ignore", t("Ignore Once", "Ignorer une fois"), none).on_click(cx.listener(|this, _, window, cx| this.ignore_once(window, cx))))
-            .child(button("spelling-ignore-all", t("Ignore All", "Ignorer tout"), none).on_click(cx.listener(|this, _, window, cx| this.ignore_all(window, cx))))
             .child(
-                button("spelling-add", t("Add to Dictionary", "Ajouter au dictionnaire"), none)
-                    .on_click(cx.listener(|this, _, window, cx| this.add(window, cx))),
+                button(
+                    "spelling-ignore",
+                    t("Ignore Once", "Ignorer une fois"),
+                    none,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.ignore_once(window, cx))),
+            )
+            .child(
+                button("spelling-ignore-all", t("Ignore All", "Ignorer tout"), none)
+                    .on_click(cx.listener(|this, _, window, cx| this.ignore_all(window, cx))),
+            )
+            .child(
+                button(
+                    "spelling-add",
+                    t("Add to Dictionary", "Ajouter au dictionnaire"),
+                    none,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.add(window, cx))),
             )
             .child(div().h(px(10.)))
             .child(
@@ -863,8 +1010,12 @@ impl Render for SpellingDialog {
                     .on_click(cx.listener(|this, _, window, cx| this.change(false, window, cx))),
             )
             .child(
-                button("spelling-change-all", t("Change All", "Remplacer tout"), !can_change)
-                    .on_click(cx.listener(|this, _, window, cx| this.change(true, window, cx))),
+                button(
+                    "spelling-change-all",
+                    t("Change All", "Remplacer tout"),
+                    !can_change,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.change(true, window, cx))),
             );
         let footer = div()
             .flex()
@@ -875,7 +1026,11 @@ impl Render for SpellingDialog {
                     .disabled(!can_undo)
                     .on_click(cx.listener(|this, _, window, cx| this.undo_last(window, cx))),
             )
-            .child(Button::new("spelling-cancel", t("Cancel", "Annuler")).width(86.0).on_click(cx.listener(|this, _, window, cx| this.cancel(window, cx))));
+            .child(
+                Button::new("spelling-cancel", t("Cancel", "Annuler"))
+                    .width(86.0)
+                    .on_click(cx.listener(|this, _, window, cx| this.cancel(window, cx))),
+            );
         dialog(&self.modal, t("Spelling", "Orthographe"))
             .width(530.0)
             .on_ok(cx.listener(|this, _, window, cx| this.change(false, window, cx)))
@@ -922,7 +1077,10 @@ mod tests {
     #[test]
     fn whole_words_are_found() {
         let text = "teh cat, tehran; (teh) Teh teh";
-        let found: Vec<usize> = whole_words(text, "teh", 0).into_iter().map(|range| range.start).collect();
+        let found: Vec<usize> = whole_words(text, "teh", 0)
+            .into_iter()
+            .map(|range| range.start)
+            .collect();
         assert_eq!(found, vec![0, 18, 27]);
         assert_eq!(whole_words(text, "teh", 1).len(), 2);
         assert!(whole_words(text, "", 0).is_empty());

@@ -9,8 +9,8 @@
 
 use crate::app::ExcelApp;
 use crate::features::{Cx, StatusItem};
-use crate::shell::Alert;
 use crate::i18n::t;
+use crate::shell::Alert;
 use opensheet_engine::refs::cell_name;
 use std::rc::Rc;
 
@@ -59,7 +59,11 @@ pub fn status_items(app: &ExcelApp) -> Vec<StatusItem> {
     }
     if app.wb.circular {
         let label = t("Circular References", "Références circulaires");
-        let here = app.wb.circular_cells().iter().find(|cell| cell.0 == app.sheet);
+        let here = app
+            .wb
+            .circular_cells()
+            .iter()
+            .find(|cell| cell.0 == app.sheet);
         items.push(StatusItem::new(match here {
             // French puts a space before the colon.
             Some((_, row, col)) => format!("{label}{} {}", t(":", " :"), cell_name(*row, *col)),
@@ -124,7 +128,12 @@ mod tests {
     }
 
     fn status(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<String> {
-        app.update(cx, |app, _| status_items(app).iter().map(|item| item.text.to_string()).collect())
+        app.update(cx, |app, _| {
+            status_items(app)
+                .iter()
+                .map(|item| item.text.to_string())
+                .collect()
+        })
     }
 
     fn number(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: &str) -> Value {
@@ -205,10 +214,15 @@ mod tests {
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
         app.update_in(cx, |app, window, cx| {
-            assert_eq!(super::super::circular_cells(app), vec![("$B$2".to_string(), (0, 1, 1))]);
+            assert_eq!(
+                super::super::circular_cells(app),
+                vec![("$B$2".to_string(), (0, 1, 1))]
+            );
             // Seen from another sheet, the cell is named with its sheet.
             app.add_sheet(cx);
-            let other = (0..app.wb.sheets.len()).find(|index| app.wb.circular_cells().iter().all(|cell| cell.0 != *index)).unwrap();
+            let other = (0..app.wb.sheets.len())
+                .find(|index| app.wb.circular_cells().iter().all(|cell| cell.0 != *index))
+                .unwrap();
             app.switch_sheet(other, window, cx);
             let listed = super::super::circular_cells(app);
             assert_eq!(listed.len(), 1);

@@ -9,14 +9,20 @@ fn findings(source: &str) -> Vec<(u32, u32, String)> {
         .into_iter()
         .map(|finding| {
             assert_eq!(finding.kind, ErrorKind::Check, "{}", finding.message);
-            (finding.line.expect("a line"), finding.column.expect("a column"), finding.message)
+            (
+                finding.line.expect("a line"),
+                finding.column.expect("a column"),
+                finding.message,
+            )
         })
         .collect()
 }
 
 /// The findings of the statements of a `main`, which start at line 2.
 fn in_main(body: &str) -> Vec<(u32, u32, String)> {
-    findings(&format!("function main(workbook: ExcelScript.Workbook) {{\n{body}\n}}\n"))
+    findings(&format!(
+        "function main(workbook: ExcelScript.Workbook) {{\n{body}\n}}\n"
+    ))
 }
 
 fn silent(body: &str) {
@@ -36,7 +42,13 @@ fn every_script_of_the_tests_is_left_alone() {
             }
             let source = std::fs::read_to_string(&path).expect("a script");
             for finding in check(&source) {
-                wrong.push(format!("{}:{}:{}: {}", path.file_name().unwrap().to_string_lossy(), finding.line.unwrap_or(0), finding.column.unwrap_or(0), finding.message));
+                wrong.push(format!(
+                    "{}:{}:{}: {}",
+                    path.file_name().unwrap().to_string_lossy(),
+                    finding.line.unwrap_or(0),
+                    finding.column.unwrap_or(0),
+                    finding.message
+                ));
             }
             seen += 1;
         }
@@ -70,7 +82,10 @@ fn a_member_a_class_does_not_have_is_found_with_its_place() {
         "  const found = workbook.getWorksheets().find(s => s.getName() === \"x\");\n",
         "  found.activat();\n",
     ));
-    let places: Vec<(u32, u32, &str)> = found.iter().map(|(line, column, message)| (*line, *column, message.split(" is not").next().unwrap())).collect();
+    let places: Vec<(u32, u32, &str)> = found
+        .iter()
+        .map(|(line, column, message)| (*line, *column, message.split(" is not").next().unwrap()))
+        .collect();
     assert_eq!(
         places,
         [
@@ -98,10 +113,16 @@ fn a_member_a_class_does_not_have_is_found_with_its_place() {
         "}\n",
         "const paint = (range: ExcelScript.Range) => range.getFormat().getFil();\n",
     );
-    let places: Vec<(u32, u32)> = findings(helpers).iter().map(|(line, column, _)| (*line, *column)).collect();
+    let places: Vec<(u32, u32)> = findings(helpers)
+        .iter()
+        .map(|(line, column, _)| (*line, *column))
+        .collect();
     assert_eq!(places, [(2, 30), (5, 15), (7, 63)]);
     // `main` receives the workbook even when it does not say so.
-    assert_eq!(findings("function main(wb) {\n  wb.getSheets();\n}\n").len(), 1);
+    assert_eq!(
+        findings("function main(wb) {\n  wb.getSheets();\n}\n").len(),
+        1
+    );
 }
 
 #[test]
@@ -117,15 +138,33 @@ fn the_number_of_arguments_is_counted() {
     assert_eq!(
         found,
         [
-            (3, 9, "Worksheet.getCell takes 2 arguments, not 1".to_string()),
-            (4, 9, "Worksheet.getRange takes 0 to 1 arguments, not 2".to_string()),
+            (
+                3,
+                9,
+                "Worksheet.getCell takes 2 arguments, not 1".to_string()
+            ),
+            (
+                4,
+                9,
+                "Worksheet.getRange takes 0 to 1 arguments, not 2".to_string()
+            ),
             (5, 20, "Range.setValue takes 1 argument, not 0".to_string()),
-            (6, 9, "Worksheet.getRangeByIndexes takes 4 arguments, not 5".to_string()),
-            (7, 12, "Workbook.addWorksheet takes 0 to 1 arguments, not 2".to_string()),
+            (
+                6,
+                9,
+                "Worksheet.getRangeByIndexes takes 4 arguments, not 5".to_string()
+            ),
+            (
+                7,
+                12,
+                "Workbook.addWorksheet takes 0 to 1 arguments, not 2".to_string()
+            ),
         ]
     );
     // Arguments that are spread are not counted.
-    silent("  const at: [number, number] = [0, 0];\n  workbook.getActiveWorksheet().getCell(...at);");
+    silent(
+        "  const at: [number, number] = [0, 0];\n  workbook.getActiveWorksheet().getCell(...at);",
+    );
 }
 
 #[test]
@@ -136,10 +175,22 @@ fn enum_values_that_do_not_exist_are_found() {
         "  const c = ExcelScript.SlicerSortType.ascending;\n",
         "  const d = ExcelScript.ClearApplyTo.contents;\n",
     ));
-    let places: Vec<(u32, u32, &str)> = found.iter().map(|(line, column, message)| (*line, *column, message.split(" is not").next().unwrap())).collect();
-    assert_eq!(places, [(2, 45, "ExcelScript.HorizontalAlignment.centre"), (3, 35, "ExcelScript.ChartType.waterfall"), (4, 25, "ExcelScript.SlicerSortType")]);
+    let places: Vec<(u32, u32, &str)> = found
+        .iter()
+        .map(|(line, column, message)| (*line, *column, message.split(" is not").next().unwrap()))
+        .collect();
+    assert_eq!(
+        places,
+        [
+            (2, 45, "ExcelScript.HorizontalAlignment.centre"),
+            (3, 35, "ExcelScript.ChartType.waterfall"),
+            (4, 25, "ExcelScript.SlicerSortType")
+        ]
+    );
     // In the place of a type the namespace holds more than the table.
-    silent("  const link: ExcelScript.RangeHyperlink = { address: \"https://example.org\" };\n  let x: ExcelScript.Slicer | undefined;");
+    silent(
+        "  const link: ExcelScript.RangeHyperlink = { address: \"https://example.org\" };\n  let x: ExcelScript.Slicer | undefined;",
+    );
 }
 
 #[test]
@@ -150,25 +201,51 @@ fn where_the_type_is_not_certain_nothing_is_said() {
     silent("  const anything = JSON.parse(\"{}\");\n  anything.getRange().nope();");
     // A parameter without an annotation, here and in callbacks of arrays
     // the script made itself.
-    assert_eq!(findings("function main(workbook: ExcelScript.Workbook) {\n  helper(workbook);\n}\nfunction helper(book) {\n  book.nope();\n}\n"), Vec::new());
+    assert_eq!(
+        findings(
+            "function main(workbook: ExcelScript.Workbook) {\n  helper(workbook);\n}\nfunction helper(book) {\n  book.nope();\n}\n"
+        ),
+        Vec::new()
+    );
     silent("  const names = [\"a\"].map(name => name.nope);\n  [workbook].forEach(w => w.nope());");
     // What `filter`, `map`, `slice` and the like give.
-    silent("  const sheets = workbook.getWorksheets().filter(s => s.getName() !== \"x\");\n  sheets[0].nope();\n  sheets.forEach(s => s.nope());");
-    silent("  workbook.getWorksheets().map(s => s)[0].nope();\n  workbook.getWorksheets().slice(1).forEach(s => s.nope());");
+    silent(
+        "  const sheets = workbook.getWorksheets().filter(s => s.getName() !== \"x\");\n  sheets[0].nope();\n  sheets.forEach(s => s.nope());",
+    );
+    silent(
+        "  workbook.getWorksheets().map(s => s)[0].nope();\n  workbook.getWorksheets().slice(1).forEach(s => s.nope());",
+    );
     // A binding that is assigned again, a union, a ternary of two kinds.
-    silent("  let thing = workbook.getActiveWorksheet();\n  thing = JSON.parse(\"1\");\n  thing.nope();");
-    silent("  let either: ExcelScript.Range | ExcelScript.Table = workbook.getTables()[0];\n  either.nope();");
-    silent("  const one = Math.random() > 0.5 ? workbook.getActiveWorksheet() : workbook.getTables()[0];\n  one.nope();");
+    silent(
+        "  let thing = workbook.getActiveWorksheet();\n  thing = JSON.parse(\"1\");\n  thing.nope();",
+    );
+    silent(
+        "  let either: ExcelScript.Range | ExcelScript.Table = workbook.getTables()[0];\n  either.nope();",
+    );
+    silent(
+        "  const one = Math.random() > 0.5 ? workbook.getActiveWorksheet() : workbook.getTables()[0];\n  one.nope();",
+    );
     // Destructuring, fields of objects and of classes.
-    silent("  const { a } = { a: workbook };\n  a.nope();\n  const box = { sheet: workbook.getActiveWorksheet() };\n  box.sheet.nope();");
+    silent(
+        "  const { a } = { a: workbook };\n  a.nope();\n  const box = { sheet: workbook.getActiveWorksheet() };\n  box.sheet.nope();",
+    );
     // A name that shadows a typed one.
-    silent("  const sheet = workbook.getActiveWorksheet();\n  { const sheet = { nope() {} }; sheet.nope(); }\n  sheet.getName();");
+    silent(
+        "  const sheet = workbook.getActiveWorksheet();\n  { const sheet = { nope() {} }; sheet.nope(); }\n  sheet.getName();",
+    );
     // Asking whether a member exists is not calling it.
     silent("  if (typeof workbook.getSlicers === \"function\") { console.log(\"slicers\"); }");
     // What every object answers, and plain values a member returns.
-    silent("  workbook.toString();\n  workbook.getName().toUpperCase().nope;\n  workbook.getActiveWorksheet().getRange().getValues().length;");
+    silent(
+        "  workbook.toString();\n  workbook.getName().toUpperCase().nope;\n  workbook.getActiveWorksheet().getRange().getValues().length;",
+    );
     // A script of its own `ExcelScript`.
-    assert_eq!(findings("const ExcelScript = { Nope: { x: 1 } };\nfunction main(workbook) {\n  return ExcelScript.Nope.x;\n}\n"), Vec::new());
+    assert_eq!(
+        findings(
+            "const ExcelScript = { Nope: { x: 1 } };\nfunction main(workbook) {\n  return ExcelScript.Nope.x;\n}\n"
+        ),
+        Vec::new()
+    );
 }
 
 #[test]
@@ -186,32 +263,70 @@ fn offered(text: &str) -> (Option<String>, Vec<&'static str>, String) {
     let source = text.replacen('|', "", 1);
     let found = complete(&source, caret);
     let typed = source[found.start..caret].to_string();
-    (found.of, found.items.iter().map(|item| item.name).collect(), typed)
+    (
+        found.of,
+        found.items.iter().map(|item| item.name).collect(),
+        typed,
+    )
 }
 
 #[test]
 fn an_editor_is_told_what_can_follow_a_dot() {
     // After a chain, while the line is unfinished.
-    let (of, names, typed) = offered("function main(workbook: ExcelScript.Workbook) {\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange(\"A1\").getFo|\n}\n");
+    let (of, names, typed) = offered(
+        "function main(workbook: ExcelScript.Workbook) {\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange(\"A1\").getFo|\n}\n",
+    );
     assert_eq!((of.as_deref(), typed.as_str()), (Some("Range"), "getFo"));
-    assert!(names.contains(&"getFormat") && names.contains(&"setValues") && !names.contains(&"getRange"));
+    assert!(
+        names.contains(&"getFormat")
+            && names.contains(&"setValues")
+            && !names.contains(&"getRange")
+    );
     // Right after the dot, in the middle of a statement, after `?.`.
-    assert_eq!(offered("function main(workbook: ExcelScript.Workbook) {\n  workbook.|\n}\n").0.as_deref(), Some("Workbook"));
+    assert_eq!(
+        offered("function main(workbook: ExcelScript.Workbook) {\n  workbook.|\n}\n")
+            .0
+            .as_deref(),
+        Some("Workbook")
+    );
     assert_eq!(offered("function main(workbook: ExcelScript.Workbook) {\n  const n = workbook.getTable(\"T\")?.|.length;\n}\n").0.as_deref(), Some("Table"));
     assert_eq!(offered("function main(workbook: ExcelScript.Workbook) {\n  const total = 1 + workbook.getActiveWorksheet().get|;\n}\n").0.as_deref(), Some("Worksheet"));
     // Bindings, elements of arrays, parameters of callbacks.
     let script = "function main(workbook: ExcelScript.Workbook) {\n  for (const table of workbook.getTables()) {\n    table.getColumns().forEach(column => column.|);\n  }\n}\n";
     assert_eq!(offered(script).0.as_deref(), Some("TableColumn"));
     // The namespace and its enums.
-    let (of, names, _) = offered("function main(workbook: ExcelScript.Workbook) {\n  const a = ExcelScript.|\n}\n");
-    assert!(of.as_deref() == Some("ExcelScript") && names.contains(&"ChartType") && names.contains(&"SheetVisibility"));
-    let found = complete("function main(workbook: ExcelScript.Workbook) {\n  const a = ExcelScript.SheetVisibility.v\n}\n", 89);
+    let (of, names, _) =
+        offered("function main(workbook: ExcelScript.Workbook) {\n  const a = ExcelScript.|\n}\n");
+    assert!(
+        of.as_deref() == Some("ExcelScript")
+            && names.contains(&"ChartType")
+            && names.contains(&"SheetVisibility")
+    );
+    let found = complete(
+        "function main(workbook: ExcelScript.Workbook) {\n  const a = ExcelScript.SheetVisibility.v\n}\n",
+        89,
+    );
     assert_eq!(found.of.as_deref(), Some("ExcelScript.SheetVisibility"));
-    assert_eq!(found.items.iter().map(|item| (item.name, item.kind, item.signature.as_str())).collect::<Vec<_>>(), [
-        ("visible", CompletionKind::EnumMember, "visible = \"Visible\""),
-        ("hidden", CompletionKind::EnumMember, "hidden = \"Hidden\""),
-        ("veryHidden", CompletionKind::EnumMember, "veryHidden = \"VeryHidden\""),
-    ]);
+    assert_eq!(
+        found
+            .items
+            .iter()
+            .map(|item| (item.name, item.kind, item.signature.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "visible",
+                CompletionKind::EnumMember,
+                "visible = \"Visible\""
+            ),
+            ("hidden", CompletionKind::EnumMember, "hidden = \"Hidden\""),
+            (
+                "veryHidden",
+                CompletionKind::EnumMember,
+                "veryHidden = \"VeryHidden\""
+            ),
+        ]
+    );
     // What is not known, or not after a dot, offers nothing.
     for text in [
         "function main(workbook: ExcelScript.Workbook) {\n  const x = JSON.parse(\"1\");\n  x.|\n}\n",
@@ -225,9 +340,27 @@ fn an_editor_is_told_what_can_follow_a_dot() {
     }
     // A member as it is offered, and the members of a class by its name.
     let members = members_of("Worksheet");
-    let cell = members.iter().find(|member| member.name == "getCell").expect("getCell");
-    assert_eq!((cell.kind, cell.signature.as_str(), cell.returns.as_str()), (CompletionKind::Method, "getCell(row: number, column: number): Range", "Range"));
+    let cell = members
+        .iter()
+        .find(|member| member.name == "getCell")
+        .expect("getCell");
+    assert_eq!(
+        (cell.kind, cell.signature.as_str(), cell.returns.as_str()),
+        (
+            CompletionKind::Method,
+            "getCell(row: number, column: number): Range",
+            "Range"
+        )
+    );
     assert!(!cell.description.is_empty());
-    assert_eq!(members_of("Worksheet").len(), opensheet_script::api().iter().find(|class| class.name == "Worksheet").unwrap().members.len());
+    assert_eq!(
+        members_of("Worksheet").len(),
+        opensheet_script::api()
+            .iter()
+            .find(|class| class.name == "Worksheet")
+            .unwrap()
+            .members
+            .len()
+    );
     assert!(members_of("Nope").is_empty());
 }

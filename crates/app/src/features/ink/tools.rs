@@ -9,7 +9,9 @@
 
 use super::{Cmd, InkFeature, InkUi, Pen, Tool, group, pens, selected, stroke_id};
 use crate::app::ExcelApp;
-use crate::features::{Command, Cx, Feature, Intent, PaintLayer, Painter, Zone, ZoneEvent, ZoneResponse};
+use crate::features::{
+    Command, Cx, Feature, Intent, PaintLayer, Painter, Zone, ZoneEvent, ZoneResponse,
+};
 use crate::grid::{Draw, GridLayout};
 use crate::i18n::t;
 use crate::theme::{c, ca};
@@ -43,15 +45,24 @@ const REACH: f32 = 5.0;
 /// The point of the sheet shown at a position of the grid element.
 pub(super) fn sheet_point(layout: &GridLayout, sheet: &Sheet, x: f32, y: f32) -> (f64, f64) {
     let z = layout.zoom;
-    let (col, row) = (layout.col_at(x.max(layout.header_w)), layout.row_at(y.max(layout.header_h)));
-    let inside = (((x - layout.col_x(col)) / z).max(0.0), ((y - layout.row_y(row)) / z).max(0.0));
+    let (col, row) = (
+        layout.col_at(x.max(layout.header_w)),
+        layout.row_at(y.max(layout.header_h)),
+    );
+    let inside = (
+        ((x - layout.col_x(col)) / z).max(0.0),
+        ((y - layout.row_y(row)) / z).max(0.0),
+    );
     sheet.corner_point(((row, col), inside))
 }
 
 /// Where a point of the sheet is in the grid element.
 pub(super) fn grid_point(layout: &GridLayout, sheet: &Sheet, at: (f64, f64)) -> Pt {
     let ((row, col), (dx, dy)) = sheet.corner_at(at.0, at.1);
-    (layout.col_x(col) + dx * layout.zoom, layout.row_y(row) + dy * layout.zoom)
+    (
+        layout.col_x(col) + dx * layout.zoom,
+        layout.row_y(row) + dy * layout.zoom,
+    )
 }
 
 // --------------------------------------------------------------------- tools
@@ -103,7 +114,13 @@ fn pen_in_hand(app: &ExcelApp) -> Option<Pen> {
     }
 }
 
-pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+pub(super) fn mouse_down(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> ZoneResponse {
     if zone.payload::<Canvas>().is_none() {
         return ZoneResponse::Ignored;
     }
@@ -133,7 +150,10 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window
             }
             stop_replay(app);
             app.deselect_object(cx);
-            app.ext_mut::<InkUi>().drag = Some(Drag::Stroke { pen, points: vec![at] });
+            app.ext_mut::<InkUi>().drag = Some(Drag::Stroke {
+                pen,
+                points: vec![at],
+            });
             ZoneResponse::Capture
         }
         Tool::Eraser => {
@@ -212,7 +232,11 @@ fn finish_stroke(app: &mut ExcelApp, pen: Pen, points: &[(f64, f64)], cx: &mut C
         }
     }
     let clean = ink::smooth(points);
-    if app.wb.draw_ink(app.sheet, pen.kind, Color(pen.color), pen.width(), &clean).is_some() {
+    if app
+        .wb
+        .draw_ink(app.sheet, pen.kind, Color(pen.color), pen.width(), &clean)
+        .is_some()
+    {
         app.commit(t("Ink", "Entrée manuscrite"), cx);
     }
 }
@@ -222,8 +246,17 @@ fn finish_stroke(app: &mut ExcelApp, pen: Pen, points: &[(f64, f64)], cx: &mut C
 fn add_shape(app: &mut ExcelApp, pen: Pen, shape: Recognised) -> bool {
     let (tool, frame, flip_h, flip_v) = match shape {
         Recognised::Line { from, to } | Recognised::Arrow { from, to } => {
-            let tool = if matches!(shape, Recognised::Arrow { .. }) { ShapeTool::Arrow } else { ShapeTool::Line };
-            let frame = Frame::new(from.0.min(to.0), from.1.min(to.1), (to.0 - from.0).abs(), (to.1 - from.1).abs());
+            let tool = if matches!(shape, Recognised::Arrow { .. }) {
+                ShapeTool::Arrow
+            } else {
+                ShapeTool::Line
+            };
+            let frame = Frame::new(
+                from.0.min(to.0),
+                from.1.min(to.1),
+                (to.0 - from.0).abs(),
+                (to.1 - from.1).abs(),
+            );
             (tool, frame, to.0 < from.0, to.1 < from.1)
         }
         Recognised::Rectangle(frame) => (ShapeTool::Rectangle, frame, false, false),
@@ -234,7 +267,9 @@ fn add_shape(app: &mut ExcelApp, pen: Pen, shape: Recognised) -> bool {
     look.fill = None;
     look.font.color = None;
     // The ends of an arrow are those of the gallery's.
-    let ends = look.outline.unwrap_or_else(|| Outline::solid(Color(pen.color), 1.0));
+    let ends = look
+        .outline
+        .unwrap_or_else(|| Outline::solid(Color(pen.color), 1.0));
     look.outline = Some(Outline {
         color: Color(pen.color),
         width: pen.mm * 72.0 / 25.4,
@@ -273,11 +308,18 @@ fn on_selection(app: &ExcelApp, at: (f64, f64)) -> bool {
     let sheet = &app.wb.sheets[app.sheet];
     let mut ids = group(app);
     ids.push(first.id);
-    sheet.inks.iter().filter(|ink| ids.contains(&ink.id)).any(|ink| {
-        let frame = sheet.ink_frame(ink);
-        let room = 4.0;
-        at.0 >= frame.x - room && at.0 <= frame.x + frame.width + room && at.1 >= frame.y - room && at.1 <= frame.y + frame.height + room
-    })
+    sheet
+        .inks
+        .iter()
+        .filter(|ink| ids.contains(&ink.id))
+        .any(|ink| {
+            let frame = sheet.ink_frame(ink);
+            let room = 4.0;
+            at.0 >= frame.x - room
+                && at.0 <= frame.x + frame.width + room
+                && at.1 >= frame.y - room
+                && at.1 <= frame.y + frame.height + room
+        })
 }
 
 /// Whether a click at a point of the grid element is on a stroke: on its
@@ -294,9 +336,14 @@ pub(super) fn hits(app: &ExcelApp, id: u32, layout: &GridLayout, x: f32, y: f32)
     let chosen = selected(app).is_some_and(|first| first.id == id) || group(app).contains(&id);
     if chosen {
         let frame = sheet.ink_frame(ink);
-        return at.0 >= frame.x && at.0 <= frame.x + frame.width && at.1 >= frame.y && at.1 <= frame.y + frame.height;
+        return at.0 >= frame.x
+            && at.0 <= frame.x + frame.width
+            && at.1 >= frame.y
+            && at.1 <= frame.y + frame.height;
     }
-    sheet.inks_at(at.0, at.1, (REACH / layout.zoom) as f64).contains(&id)
+    sheet
+        .inks_at(at.0, at.1, (REACH / layout.zoom) as f64)
+        .contains(&id)
 }
 
 // ------------------------------------------------------------------ painting
@@ -365,7 +412,14 @@ pub(super) fn paint_stroke(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32))
     // The companions of the selected stroke show a frame of their own.
     if group(app).contains(&id) {
         let room = 3.0;
-        p.frame(rect.0 - room, rect.1 - room, rect.2 + room, rect.3 + room, 1.0, c(0x8A8A8A));
+        p.frame(
+            rect.0 - room,
+            rect.1 - room,
+            rect.2 + room,
+            rect.3 + room,
+            1.0,
+            c(0x8A8A8A),
+        );
     }
 }
 
@@ -374,7 +428,11 @@ pub(super) fn paint_stroke(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32))
 pub(super) fn paint_highlights(p: &mut Painter) {
     let app = p.app;
     let sheet = &app.wb.sheets[app.sheet];
-    if !sheet.inks.iter().any(|ink| ink.kind == PenKind::Highlighter) {
+    if !sheet
+        .inks
+        .iter()
+        .any(|ink| ink.kind == PenKind::Highlighter)
+    {
         return;
     }
     let alpha = match p.layer {
@@ -388,7 +446,11 @@ pub(super) fn paint_highlights(p: &mut Painter) {
         }
         let rect = crate::objects::object_rect(p.layout, &object.place);
         let half = ink.width * p.zoom();
-        if rect.2 + half < p.clip.0 || rect.0 - half > p.clip.2 || rect.3 + half < p.clip.1 || rect.1 - half > p.clip.3 {
+        if rect.2 + half < p.clip.0
+            || rect.0 - half > p.clip.2
+            || rect.3 + half < p.clip.1
+            || rect.1 - half > p.clip.3
+        {
             continue;
         }
         let (points, width) = stroke_in(ink, rect, p.zoom());
@@ -408,8 +470,18 @@ pub(super) fn paint_tool(p: &mut Painter) {
     }
     let layout = p.layout;
     let sheet = &p.app.wb.sheets[p.app.sheet];
-    let cells = (layout.header_w, layout.header_h, layout.width(), layout.height());
-    let on_grid = |points: &[(f64, f64)]| -> Vec<Pt> { points.iter().map(|at| grid_point(layout, sheet, *at)).collect() };
+    let cells = (
+        layout.header_w,
+        layout.header_h,
+        layout.width(),
+        layout.height(),
+    );
+    let on_grid = |points: &[(f64, f64)]| -> Vec<Pt> {
+        points
+            .iter()
+            .map(|at| grid_point(layout, sheet, *at))
+            .collect()
+    };
     let mut items = Vec::new();
     match &ui.drag {
         Some(Drag::Stroke { pen, points }) => {
@@ -457,7 +529,10 @@ pub(super) struct Replay {
 }
 
 fn length(points: &[Pt]) -> f32 {
-    points.windows(2).map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1)).sum()
+    points
+        .windows(2)
+        .map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1))
+        .sum()
 }
 
 /// How long a replay takes for `total` pixels of line.
@@ -577,10 +652,16 @@ mod tests {
         assert_eq!(cut(line.clone(), 1.0), line);
         assert!(cut(line.clone(), 0.0).is_empty());
         assert_eq!(cut(line.clone(), 0.125), vec![(0.0, 0.0), (5.0, 0.0)]);
-        assert_eq!(cut(line.clone(), 0.5), vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]);
+        assert_eq!(
+            cut(line.clone(), 0.5),
+            vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]
+        );
         // A dot is there as soon as its turn comes.
         assert_eq!(cut(vec![(3.0, 3.0)], 0.5), vec![(3.0, 3.0)]);
         // Short work is not rushed, long work does not drag on.
-        assert_eq!((replay_time(10.0), replay_time(1800.0), replay_time(1.0e6)), (1.2, 2.0, 8.0));
+        assert_eq!(
+            (replay_time(10.0), replay_time(1800.0), replay_time(1.0e6)),
+            (1.2, 2.0, 8.0)
+        );
     }
 }

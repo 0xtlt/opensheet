@@ -27,7 +27,10 @@ const KINDS: &[(&str, ChartKind)] = &[
     ("LineStacked100", ChartKind::PercentStackedLine),
     ("LineMarkers", ChartKind::LineMarkers),
     ("LineMarkersStacked", ChartKind::StackedLineMarkers),
-    ("LineMarkersStacked100", ChartKind::PercentStackedLineMarkers),
+    (
+        "LineMarkersStacked100",
+        ChartKind::PercentStackedLineMarkers,
+    ),
     ("3DLine", ChartKind::Line3D),
     ("Pie", ChartKind::Pie),
     ("3DPie", ChartKind::Pie3D),
@@ -57,7 +60,11 @@ const KINDS: &[(&str, ChartKind)] = &[
 
 fn kind_arg(call: &Call, index: usize) -> Res<ChartKind> {
     let name = enum_value(call, index, "ChartType")?.ok_or_else(|| call.invalid())?;
-    KINDS.iter().find(|(value, _)| *value == name).map(|(_, kind)| *kind).ok_or_else(|| call.invalid())
+    KINDS
+        .iter()
+        .find(|(value, _)| *value == name)
+        .map(|(_, kind)| *kind)
+        .ok_or_else(|| call.invalid())
 }
 
 fn chart_object(h: &Host, sheet: usize, id: u32) -> J {
@@ -65,13 +72,24 @@ fn chart_object(h: &Host, sheet: usize, id: u32) -> J {
 }
 
 pub(super) fn charts_of(h: &Host, sheet: usize) -> J {
-    J::from(h.wb.sheets[sheet].charts.iter().map(|chart| chart_object(h, sheet, chart.id)).collect::<Vec<J>>())
+    J::from(
+        h.wb.sheets[sheet]
+            .charts
+            .iter()
+            .map(|chart| chart_object(h, sheet, chart.id))
+            .collect::<Vec<J>>(),
+    )
 }
 
 pub(super) fn find(h: &Host, call: &Call, sheet: usize) -> Res<Ret> {
     let name = call.str(0)?;
-    let found = h.wb.sheets[sheet].charts.iter().find(|chart| chart.name.eq_ignore_ascii_case(name));
-    Ok(Ret::maybe(found.map(|chart| chart_object(h, sheet, chart.id))))
+    let found = h.wb.sheets[sheet]
+        .charts
+        .iter()
+        .find(|chart| chart.name.eq_ignore_ascii_case(name));
+    Ok(Ret::maybe(
+        found.map(|chart| chart_object(h, sheet, chart.id)),
+    ))
 }
 
 /// `Worksheet.addChart`: a chart of a range, placed as a new chart is.
@@ -83,9 +101,19 @@ pub(super) fn add(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
         Some("Columns") => Some(false),
         _ => None,
     };
-    h.permit(call, &Action::EditObject { sheet, locked: true })?;
+    h.permit(
+        call,
+        &Action::EditObject {
+            sheet,
+            locked: true,
+        },
+    )?;
     h.calculate();
-    let rect = if rect.is_single() { h.wb.current_region(from, rect.r0, rect.c0) } else { h.wb.clamp_to_used(from, rect) };
+    let rect = if rect.is_single() {
+        h.wb.current_region(from, rect.r0, rect.c0)
+    } else {
+        h.wb.clamp_to_used(from, rect)
+    };
     let mut chart = h.wb.chart_from_block(from, rect, kind, by_rows);
     if chart.series.is_empty() {
         return Err(call.fail("The range holds nothing to chart."));
@@ -119,7 +147,13 @@ fn read(h: &mut Host, call: &Call, get: fn(&Chart) -> J) -> Res<Ret> {
 /// Change a chart as the Chart Design and Format tabs do.
 fn change(h: &mut Host, call: &Call, f: impl FnOnce(&mut Chart)) -> Res<Ret> {
     let (sheet, chart) = this_chart(h, call)?;
-    h.permit(call, &Action::EditObject { sheet, locked: true })?;
+    h.permit(
+        call,
+        &Action::EditObject {
+            sheet,
+            locked: true,
+        },
+    )?;
     h.wb.update_chart(sheet, chart.id, f);
     Ok(Ret::Nothing)
 }

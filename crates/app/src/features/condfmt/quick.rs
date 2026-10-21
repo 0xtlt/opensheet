@@ -49,8 +49,12 @@ impl Kind {
             Kind::TopPercent => t("Top 10%", "10% des valeurs les plus élevées"),
             Kind::BottomItems => t("Bottom 10 Items", "10 valeurs les moins élevées"),
             Kind::BottomPercent => t("Bottom 10%", "10 % des valeurs les moins élevées"),
-            Kind::AboveAverage => t_ctx("rule", "Above Average", "Valeurs supérieures à la moyenne"),
-            Kind::BelowAverage => t_ctx("rule", "Below Average", "Valeurs inférieures à la moyenne"),
+            Kind::AboveAverage => {
+                t_ctx("rule", "Above Average", "Valeurs supérieures à la moyenne")
+            }
+            Kind::BelowAverage => {
+                t_ctx("rule", "Below Average", "Valeurs inférieures à la moyenne")
+            }
         }
     }
 
@@ -65,7 +69,10 @@ impl Kind {
                 "Format cells that are LESS THAN:",
                 "Mettre en forme les cellules dont le contenu est inférieur à :",
             ),
-            Kind::Between => t("Format cells that are BETWEEN:", "Mettre en forme les cellules ENTRE :"),
+            Kind::Between => t(
+                "Format cells that are BETWEEN:",
+                "Mettre en forme les cellules ENTRE :",
+            ),
             Kind::EqualTo => t(
                 "Format cells that are EQUAL TO:",
                 "Mettre en forme les cellules dont le contenu est égal à :",
@@ -103,7 +110,10 @@ impl Kind {
 
     /// The dialog asks for a count or a percentage with a spinner.
     fn ranked(self) -> bool {
-        matches!(self, Kind::TopItems | Kind::TopPercent | Kind::BottomItems | Kind::BottomPercent)
+        matches!(
+            self,
+            Kind::TopItems | Kind::TopPercent | Kind::BottomItems | Kind::BottomPercent
+        )
     }
 
     fn percent(self) -> bool {
@@ -115,14 +125,28 @@ impl Kind {
 /// numbers selected for "Greater Than" and "Less Than", the points three
 /// and seven tenths of the way through them for "Between", and what the
 /// active cell holds for "Equal To" and "Text That Contains".
-pub fn defaults(kind: Kind, wb: &Workbook, sheet: usize, ranges: &[Rect], active: (u32, u32)) -> (String, String) {
+pub fn defaults(
+    kind: Kind,
+    wb: &Workbook,
+    sheet: usize,
+    ranges: &[Rect],
+    active: (u32, u32),
+) -> (String, String) {
     let locale = wb.locale;
     let span = || number_span(wb, sheet, ranges);
     let number = |n: f64| locale.number_to_text(n);
     match kind {
-        Kind::GreaterThan | Kind::LessThan => (span().map(|(low, high)| number((low + high) / 2.0)).unwrap_or_default(), String::new()),
+        Kind::GreaterThan | Kind::LessThan => (
+            span()
+                .map(|(low, high)| number((low + high) / 2.0))
+                .unwrap_or_default(),
+            String::new(),
+        ),
         Kind::Between => match span() {
-            Some((low, high)) => (number(low + (high - low) * 0.3), number(low + (high - low) * 0.7)),
+            Some((low, high)) => (
+                number(low + (high - low) * 0.3),
+                number(low + (high - low) * 0.7),
+            ),
             None => (String::new(), String::new()),
         },
         Kind::EqualTo | Kind::TextContains => {
@@ -162,17 +186,30 @@ pub fn rule_of(
         if text.trim().is_empty() {
             return Err(invalid_value());
         }
-        parse_operand(text, locale, active, anchor).map_err(|_| t("Enter a valid formula.", "Entrez une formule valide."))
+        parse_operand(text, locale, active, anchor)
+            .map_err(|_| t("Enter a valid formula.", "Entrez une formule valide."))
     };
     let rank = |limit: u32, message: &'static str| match first.trim().parse::<u32>() {
         Ok(n) if (1..=limit).contains(&n) => Ok(n),
         _ => Err(message),
     };
     let items = || {
-        rank(1000, t("Enter a whole number between 1 and 1000.", "Entrez un nombre entier entre 1 et 1 000."))
+        rank(
+            1000,
+            t(
+                "Enter a whole number between 1 and 1000.",
+                "Entrez un nombre entier entre 1 et 1 000.",
+            ),
+        )
     };
     let percent = || {
-        rank(100, t("You must enter a number between 1 and 100.", "Vous devez entrer un nombre entre 1 et 100."))
+        rank(
+            100,
+            t(
+                "You must enter a number between 1 and 100.",
+                "Vous devez entrer un nombre entre 1 et 100.",
+            ),
+        )
     };
     Ok(match kind {
         Kind::GreaterThan => Rule::greater_than(operand(first)?),
@@ -188,7 +225,9 @@ pub fn rule_of(
                     .map_err(|_| t("Enter a valid formula.", "Entrez une formule valide."))?,
             )
         }
-        Kind::DateOccurring => Rule::date_occurring(TimePeriod::ALL[choice.min(TimePeriod::ALL.len() - 1)]),
+        Kind::DateOccurring => {
+            Rule::date_occurring(TimePeriod::ALL[choice.min(TimePeriod::ALL.len() - 1)])
+        }
         Kind::DuplicateValues if choice == 1 => Rule::UniqueValues,
         Kind::DuplicateValues => Rule::DuplicateValues,
         Kind::TopItems => Rule::top_items(items()?),
@@ -225,10 +264,13 @@ pub fn open(app: &mut ExcelApp, kind: Kind, window: &mut Window, cx: &mut Cx) {
         first,
         second,
     };
-    let view = app.open_modal(window, cx, move |modal, _, cx| Dialog::new(modal, setup, cx));
+    let view = app.open_modal(window, cx, move |modal, _, cx| {
+        Dialog::new(modal, setup, cx)
+    });
     // The rule shows on the sheet from the start, and leaves it with the
     // dialog however that is closed.
-    cx.observe_release(&view, |app, _, cx| end_preview(app, cx)).detach();
+    cx.observe_release(&view, |app, _, cx| end_preview(app, cx))
+        .detach();
     let first = view.read(cx).format_rule(cx);
     view.update(cx, |dialog, _| dialog.shown = first.clone());
     preview(app, first, cx);
@@ -268,7 +310,8 @@ impl Dialog {
         let second = modal.ref_input(style, setup.second, cx);
         // Typing, stepping and picking cells all end here.
         for input in [&first, &second] {
-            cx.observe(input, |this, _, cx| this.refresh_preview(cx)).detach();
+            cx.observe(input, |this, _, cx| this.refresh_preview(cx))
+                .detach();
         }
         Dialog {
             modal,
@@ -286,7 +329,10 @@ impl Dialog {
     }
 
     fn anchor(&self) -> (u32, u32) {
-        self.ranges.first().map(|r| (r.r0, r.c0)).unwrap_or(self.active)
+        self.ranges
+            .first()
+            .map(|r| (r.r0, r.c0))
+            .unwrap_or(self.active)
     }
 
     fn rule(&self, cx: &gpui::App) -> Result<Rule, &'static str> {
@@ -338,20 +384,23 @@ impl Dialog {
             this.refresh_preview(cx);
             cx.notify();
         });
-        self.modal
-            .update_app(cx, |app, cx| format_cells::open_partial(app, start, window, cx, chosen));
+        self.modal.update_app(cx, |app, cx| {
+            format_cells::open_partial(app, start, window, cx, chosen)
+        });
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         match self.rule(cx) {
             Ok(rule) => {
                 let format = self.patch();
-                self.modal.update_app(cx, |app, cx| add_rule(app, rule, format, cx));
+                self.modal
+                    .update_app(cx, |app, cx| add_rule(app, rule, format, cx));
                 self.modal.close(window, cx);
             }
             Err(message) => {
-                self.modal
-                    .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+                self.modal.update_app(cx, |app, cx| {
+                    app.alert(Alert::new("OpenSheet", message).warning(), cx)
+                });
             }
         }
     }
@@ -366,17 +415,20 @@ impl Render for Dialog {
             .collect();
         let format = Select::new("format", formats, Some(self.format))
             .width(320.0)
-            .on_change(cx.listener(|this, ix: &usize, window, cx| this.pick_format(*ix, window, cx)));
+            .on_change(
+                cx.listener(|this, ix: &usize, window, cx| this.pick_format(*ix, window, cx)),
+            );
         let with = t("with", "avec");
-        let choice = |options: Vec<SharedString>, width: f32, this: &Self, cx: &mut Context<Self>| {
-            Select::new("choice", options, Some(this.choice))
-                .width(width)
-                .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                    this.choice = *ix;
-                    this.refresh_preview(cx);
-                    cx.notify();
-                }))
-        };
+        let choice =
+            |options: Vec<SharedString>, width: f32, this: &Self, cx: &mut Context<Self>| {
+                Select::new("choice", options, Some(this.choice))
+                    .width(width)
+                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                        this.choice = *ix;
+                        this.refresh_preview(cx);
+                        cx.notify();
+                    }))
+            };
 
         let mut row = div().flex().items_center().gap(px(8.));
         row = match self.kind {
@@ -389,22 +441,38 @@ impl Render for Dialog {
                 .child(RefEdit::new(&self.second, &self.modal).width(130.0))
                 .child(label(with)),
             Kind::DateOccurring => {
-                let periods = TimePeriod::ALL.iter().map(|p| words::period_name(*p).into()).collect();
-                row.child(choice(periods, 200.0, self, cx)).child(label(with))
+                let periods = TimePeriod::ALL
+                    .iter()
+                    .map(|p| words::period_name(*p).into())
+                    .collect();
+                row.child(choice(periods, 200.0, self, cx))
+                    .child(label(with))
             }
             Kind::DuplicateValues => {
-                let kinds = vec![t_ctx("values", "Duplicate", "en double").into(), t("Unique", "uniques").into()];
-                row.child(choice(kinds, 110.0, self, cx)).child(label(t("values with", "avec")))
+                let kinds = vec![
+                    t_ctx("values", "Duplicate", "en double").into(),
+                    t("Unique", "uniques").into(),
+                ];
+                row.child(choice(kinds, 110.0, self, cx))
+                    .child(label(t("values with", "avec")))
             }
-            Kind::TopItems | Kind::BottomItems => row.child(NumberField::new("rank", &self.first).width(70.0)).child(label(with)),
+            Kind::TopItems | Kind::BottomItems => row
+                .child(NumberField::new("rank", &self.first).width(70.0))
+                .child(label(with)),
             Kind::TopPercent | Kind::BottomPercent => row
                 .child(NumberField::new("rank", &self.first).width(70.0))
                 .child(label(t("% with", "% avec"))),
-            Kind::AboveAverage | Kind::BelowAverage => row.child(label(t("for the selected range with", "avec"))),
+            Kind::AboveAverage | Kind::BelowAverage => {
+                row.child(label(t("for the selected range with", "avec")))
+            }
         };
 
         dialog(&self.modal, self.kind.title())
-            .width(if self.kind == Kind::Between { 690.0 } else { 600.0 })
+            .width(if self.kind == Kind::Between {
+                690.0
+            } else {
+                600.0
+            })
             .on_ok(cx.listener(Self::ok))
             .child(div().line_height(px(17.)).child(self.kind.prompt()))
             .child(row.child(format))
@@ -434,25 +502,43 @@ mod tests {
     #[test]
     fn greater_than_proposes_the_middle_of_the_numbers() {
         let wb = book(&["1", "2", "3", "4", "100"]);
-        assert_eq!(defaults(Kind::GreaterThan, &wb, 0, &column(5), (0, 0)), ("50.5".to_string(), String::new()));
-        assert_eq!(defaults(Kind::LessThan, &wb, 0, &column(5), (0, 0)).0, "50.5");
+        assert_eq!(
+            defaults(Kind::GreaterThan, &wb, 0, &column(5), (0, 0)),
+            ("50.5".to_string(), String::new())
+        );
+        assert_eq!(
+            defaults(Kind::LessThan, &wb, 0, &column(5), (0, 0)).0,
+            "50.5"
+        );
     }
 
     #[test]
     fn between_proposes_three_and_seven_tenths() {
         let wb = book(&["1", "10", "4"]);
-        assert_eq!(defaults(Kind::Between, &wb, 0, &column(3), (0, 0)), ("3.7".to_string(), "7.3".to_string()));
+        assert_eq!(
+            defaults(Kind::Between, &wb, 0, &column(3), (0, 0)),
+            ("3.7".to_string(), "7.3".to_string())
+        );
     }
 
     #[test]
     fn equal_to_and_text_propose_the_active_cell() {
         let wb = book(&["apple", "7", "pear"]);
-        assert_eq!(defaults(Kind::TextContains, &wb, 0, &column(3), (0, 0)).0, "apple");
+        assert_eq!(
+            defaults(Kind::TextContains, &wb, 0, &column(3), (0, 0)).0,
+            "apple"
+        );
         assert_eq!(defaults(Kind::EqualTo, &wb, 0, &column(3), (1, 0)).0, "7");
         // Nothing to propose from cells without numbers.
         let words = book(&["a", "b"]);
-        assert_eq!(defaults(Kind::GreaterThan, &words, 0, &column(2), (0, 0)), (String::new(), String::new()));
-        assert_eq!(defaults(Kind::TopItems, &words, 0, &column(2), (0, 0)).0, "10");
+        assert_eq!(
+            defaults(Kind::GreaterThan, &words, 0, &column(2), (0, 0)),
+            (String::new(), String::new())
+        );
+        assert_eq!(
+            defaults(Kind::TopItems, &words, 0, &column(2), (0, 0)).0,
+            "10"
+        );
     }
 
     fn make(kind: Kind, first: &str, second: &str, choice: usize) -> Result<Rule, &'static str> {
@@ -461,14 +547,21 @@ mod tests {
 
     #[test]
     fn the_value_dialogs_make_cell_rules() {
-        assert_eq!(make(Kind::GreaterThan, "5", "", 0), Ok(Rule::greater_than(Expr::Number(5.0))));
+        assert_eq!(
+            make(Kind::GreaterThan, "5", "", 0),
+            Ok(Rule::greater_than(Expr::Number(5.0)))
+        );
         assert_eq!(
             make(Kind::Between, "1", "abc", 0),
             Ok(Rule::between(Expr::Number(1.0), Expr::Text("abc".into())))
         );
         assert!(matches!(
             make(Kind::EqualTo, "=$B$1", "", 0),
-            Ok(Rule::CellIs { op: CellOp::Equal, first: Expr::Ref(_), .. })
+            Ok(Rule::CellIs {
+                op: CellOp::Equal,
+                first: Expr::Ref(_),
+                ..
+            })
         ));
         assert!(make(Kind::LessThan, "  ", "", 0).is_err());
         assert!(make(Kind::Between, "1", "", 0).is_err());
@@ -479,7 +572,16 @@ mod tests {
     fn a_picked_cell_is_stored_for_the_anchor() {
         // Typed for the active cell B3, stored for the anchor B1: the row
         // of a relative reference moves with it.
-        let rule = rule_of(Kind::GreaterThan, "=A3", "", 0, Locale::en(), (2, 1), (0, 1)).unwrap();
+        let rule = rule_of(
+            Kind::GreaterThan,
+            "=A3",
+            "",
+            0,
+            Locale::en(),
+            (2, 1),
+            (0, 1),
+        )
+        .unwrap();
         let Rule::CellIs { first, .. } = rule else {
             panic!("a cell rule");
         };
@@ -488,19 +590,40 @@ mod tests {
 
     #[test]
     fn the_list_dialogs_follow_their_choice() {
-        assert_eq!(make(Kind::DateOccurring, "", "", 0), Ok(Rule::date_occurring(TimePeriod::Yesterday)));
-        assert_eq!(make(Kind::DateOccurring, "", "", 9), Ok(Rule::date_occurring(TimePeriod::NextMonth)));
-        assert_eq!(make(Kind::DuplicateValues, "", "", 0), Ok(Rule::DuplicateValues));
-        assert_eq!(make(Kind::DuplicateValues, "", "", 1), Ok(Rule::UniqueValues));
-        assert_eq!(make(Kind::TextContains, "ab", "", 0), Ok(Rule::text_contains(Expr::Text("ab".into()))));
+        assert_eq!(
+            make(Kind::DateOccurring, "", "", 0),
+            Ok(Rule::date_occurring(TimePeriod::Yesterday))
+        );
+        assert_eq!(
+            make(Kind::DateOccurring, "", "", 9),
+            Ok(Rule::date_occurring(TimePeriod::NextMonth))
+        );
+        assert_eq!(
+            make(Kind::DuplicateValues, "", "", 0),
+            Ok(Rule::DuplicateValues)
+        );
+        assert_eq!(
+            make(Kind::DuplicateValues, "", "", 1),
+            Ok(Rule::UniqueValues)
+        );
+        assert_eq!(
+            make(Kind::TextContains, "ab", "", 0),
+            Ok(Rule::text_contains(Expr::Text("ab".into())))
+        );
         assert!(make(Kind::TextContains, "", "", 0).is_err());
-        assert_eq!(make(Kind::AboveAverage, "", "", 0), Ok(Rule::above_average()));
+        assert_eq!(
+            make(Kind::AboveAverage, "", "", 0),
+            Ok(Rule::above_average())
+        );
     }
 
     #[test]
     fn ranks_stay_within_excels_limits() {
         assert_eq!(make(Kind::TopItems, "10", "", 0), Ok(Rule::top_items(10)));
-        assert_eq!(make(Kind::BottomPercent, " 25 ", "", 0), Ok(Rule::bottom_percent(25)));
+        assert_eq!(
+            make(Kind::BottomPercent, " 25 ", "", 0),
+            Ok(Rule::bottom_percent(25))
+        );
         assert!(make(Kind::TopItems, "0", "", 0).is_err());
         assert!(make(Kind::TopItems, "1001", "", 0).is_err());
         assert!(make(Kind::TopPercent, "101", "", 0).is_err());

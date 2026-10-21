@@ -10,7 +10,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -29,9 +31,19 @@ fn sample() -> Workbook {
     }
     enter(&mut wb, 0, "A1", "0.2");
     enter(&mut wb, 2, "A1", "1000");
-    enter(&mut wb, 1, "A1", "Tax (reads the hidden sheets Rates and Secrets)");
+    enter(
+        &mut wb,
+        1,
+        "A1",
+        "Tax (reads the hidden sheets Rates and Secrets)",
+    );
     enter(&mut wb, 1, "A2", "=Rates!A1*Secrets!A1");
-    enter(&mut wb, 3, "A1", "Rates is hidden (Unhide… lists it); Secrets is very hidden (it does not)");
+    enter(
+        &mut wb,
+        3,
+        "A1",
+        "Rates is hidden (Unhide… lists it); Secrets is very hidden (it does not)",
+    );
     assert!(wb.set_sheet_visibility(0, Hidden));
     assert!(wb.set_sheet_visibility(2, VeryHidden));
     wb.commit("hidden sheets");
@@ -47,13 +59,30 @@ fn hidden_sheets_survive_a_round_trip() {
     assert_well_formed("workbook.xml", &book);
     // As Excel writes them: the state between the id and the relationship,
     // the front sheet and the first tab named when sheets before are hidden.
-    assert!(book.contains("<sheet name=\"Rates\" sheetId=\"1\" state=\"hidden\" r:id=\"rId1\"/>"), "{book}");
-    assert!(book.contains("<sheet name=\"Report\" sheetId=\"2\" r:id=\"rId2\"/>"), "{book}");
-    assert!(book.contains("<sheet name=\"Secrets\" sheetId=\"3\" state=\"veryHidden\" r:id=\"rId3\"/>"), "{book}");
-    assert!(book.contains("windowHeight=\"17600\" firstSheet=\"1\" activeTab=\"1\"/>"), "{book}");
+    assert!(
+        book.contains("<sheet name=\"Rates\" sheetId=\"1\" state=\"hidden\" r:id=\"rId1\"/>"),
+        "{book}"
+    );
+    assert!(
+        book.contains("<sheet name=\"Report\" sheetId=\"2\" r:id=\"rId2\"/>"),
+        "{book}"
+    );
+    assert!(
+        book.contains("<sheet name=\"Secrets\" sheetId=\"3\" state=\"veryHidden\" r:id=\"rId3\"/>"),
+        "{book}"
+    );
+    assert!(
+        book.contains("windowHeight=\"17600\" firstSheet=\"1\" activeTab=\"1\"/>"),
+        "{book}"
+    );
     // One sheet is selected, and it is the one in front.
-    let selected = |n: usize| part(&bytes, &format!("xl/worksheets/sheet{n}.xml")).contains("tabSelected=\"1\"");
-    assert_eq!([selected(1), selected(2), selected(3), selected(4)], [false, true, false, false]);
+    let selected = |n: usize| {
+        part(&bytes, &format!("xl/worksheets/sheet{n}.xml")).contains("tabSelected=\"1\"")
+    };
+    assert_eq!(
+        [selected(1), selected(2), selected(3), selected(4)],
+        [false, true, false, false]
+    );
 
     let back = load(&bytes);
     let states: Vec<_> = back.sheets.iter().map(|s| s.visibility).collect();
@@ -69,7 +98,10 @@ fn a_workbook_without_hidden_sheets_names_no_tab() {
     wb.add_sheet(1);
     wb.commit("two");
     let book = part(&to_bytes(&wb), "xl/workbook.xml");
-    assert!(!book.contains("state=") && !book.contains("activeTab") && !book.contains("firstSheet"), "{book}");
+    assert!(
+        !book.contains("state=") && !book.contains("activeTab") && !book.contains("firstSheet"),
+        "{book}"
+    );
 }
 
 const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -101,10 +133,15 @@ fn states_written_by_excel_are_read() {
     let wb = load(&foreign(
         r#"<sheet name="Data" sheetId="1" state="veryHidden" r:id="rId1"/><sheet name="Front" sheetId="2" state="visible" r:id="rId2"/>"#,
     ));
-    assert_eq!((wb.sheets[0].visibility, wb.sheets[1].visibility), (VeryHidden, Visible));
+    assert_eq!(
+        (wb.sheets[0].visibility, wb.sheets[1].visibility),
+        (VeryHidden, Visible)
+    );
     assert_eq!(wb.nearest_visible_sheet(0), 1);
     // An unknown state is a visible sheet.
-    let wb = load(&foreign(r#"<sheet name="A" sheetId="1" state="shy" r:id="rId1"/><sheet name="B" sheetId="2" r:id="rId2"/>"#));
+    let wb = load(&foreign(
+        r#"<sheet name="A" sheetId="1" state="shy" r:id="rId1"/><sheet name="B" sheetId="2" r:id="rId2"/>"#,
+    ));
     assert!(wb.sheets.iter().all(|s| s.is_visible()));
 }
 
@@ -113,5 +150,8 @@ fn a_file_with_nothing_visible_shows_its_first_sheet() {
     let wb = load(&foreign(
         r#"<sheet name="A" sheetId="1" state="hidden" r:id="rId1"/><sheet name="B" sheetId="2" state="veryHidden" r:id="rId2"/>"#,
     ));
-    assert_eq!((wb.sheets[0].visibility, wb.sheets[1].visibility), (Visible, VeryHidden));
+    assert_eq!(
+        (wb.sheets[0].visibility, wb.sheets[1].visibility),
+        (Visible, VeryHidden)
+    );
 }

@@ -151,7 +151,10 @@ impl SparklineGroup {
 
 /// The colours of the Office theme the styles are built from: light 1,
 /// dark 1, light 2, dark 2 and the six accents.
-const THEME: [u32; 10] = [0xFFFFFF, 0x000000, 0xE7E6E6, 0x44546A, 0x4472C4, 0xED7D31, 0xA5A5A5, 0xFFC000, 0x5B9BD5, 0x70AD47];
+const THEME: [u32; 10] = [
+    0xFFFFFF, 0x000000, 0xE7E6E6, 0x44546A, 0x4472C4, 0xED7D31, 0xA5A5A5, 0xFFC000, 0x5B9BD5,
+    0x70AD47,
+];
 
 /// A theme colour made lighter (`tint` > 0) or darker, as Excel does it:
 /// on the luminance of the colour.
@@ -167,7 +170,11 @@ fn tinted(theme: usize, tint: f64) -> Color {
     let (h, s) = if d == 0.0 {
         (0.0, 0.0)
     } else {
-        let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+        let s = if l > 0.5 {
+            d / (2.0 - max - min)
+        } else {
+            d / (max + min)
+        };
         let h = if max == r {
             ((g - b) / d).rem_euclid(6.0)
         } else if max == g {
@@ -177,8 +184,16 @@ fn tinted(theme: usize, tint: f64) -> Color {
         };
         (h / 6.0, s)
     };
-    let l = if tint < 0.0 { l * (1.0 + tint) } else { l * (1.0 - tint) + tint };
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let l = if tint < 0.0 {
+        l * (1.0 + tint)
+    } else {
+        l * (1.0 - tint) + tint
+    };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let channel = |t: f64| {
         let t = t.rem_euclid(1.0);
@@ -230,8 +245,16 @@ pub fn style(index: usize) -> SparklineColors {
             high: tinted(accent, 0.0),
             low: tinted(accent, 0.0),
         },
-        1 => all(tinted(accent, DARKER), tinted(next, 0.0), tinted(next, DARKER)),
-        2 => all(tinted(accent, 0.0), tinted(next, 0.0), tinted(accent, DARKER)),
+        1 => all(
+            tinted(accent, DARKER),
+            tinted(next, 0.0),
+            tinted(next, DARKER),
+        ),
+        2 => all(
+            tinted(accent, 0.0),
+            tinted(next, 0.0),
+            tinted(accent, DARKER),
+        ),
         3 => SparklineColors {
             series: tinted(accent, LIGHT),
             negative: tinted(0, DARK),
@@ -243,8 +266,16 @@ pub fn style(index: usize) -> SparklineColors {
             low: tinted(accent, DARK),
         },
         4 => match column {
-            0 => all(tinted(1, 0.499984740745262), tinted(1, 0.249977111117893), tinted(1, 0.249977111117893)),
-            1 => all(tinted(1, 0.34998626667073579), tinted(0, DARKER), tinted(0, DARKER)),
+            0 => all(
+                tinted(1, 0.499984740745262),
+                tinted(1, 0.249977111117893),
+                tinted(1, 0.249977111117893),
+            ),
+            1 => all(
+                tinted(1, 0.34998626667073579),
+                tinted(0, DARKER),
+                tinted(0, DARKER),
+            ),
             2 => all(Color(0x323232), Color(0xD00000), Color(0xD00000)),
             3 => all(Color(0x000000), Color(0x0070C0), Color(0x0070C0)),
             4 => all(Color(0x376092), Color(0xD00000), Color(0xD00000)),
@@ -262,12 +293,24 @@ pub fn style(index: usize) -> SparklineColors {
                 low: Color(c[6]),
             };
             match column {
-                0 => each([0x5F5F5F, 0xFFB620, 0xD70077, 0x5687C2, 0x359CEB, 0x56BE79, 0xFF5055]),
-                1 => each([0x5687C2, 0xFFB620, 0xD70077, 0x777777, 0x359CEB, 0x56BE79, 0xFF5055]),
-                2 => each([0xC6EFCE, 0xFFC7CE, 0x8CADD6, 0xFFDC47, 0xFFEB9C, 0x60D276, 0xFF5367]),
-                3 => each([0x00B050, 0xFF0000, 0x0070C0, 0xFFC000, 0xFFC000, 0x00B050, 0xFF0000]),
-                4 => each([THEME[3], THEME[9], THEME[8], THEME[4], THEME[5], THEME[6], THEME[7]]),
-                _ => each([THEME[1], THEME[9], THEME[8], THEME[4], THEME[5], THEME[6], THEME[7]]),
+                0 => each([
+                    0x5F5F5F, 0xFFB620, 0xD70077, 0x5687C2, 0x359CEB, 0x56BE79, 0xFF5055,
+                ]),
+                1 => each([
+                    0x5687C2, 0xFFB620, 0xD70077, 0x777777, 0x359CEB, 0x56BE79, 0xFF5055,
+                ]),
+                2 => each([
+                    0xC6EFCE, 0xFFC7CE, 0x8CADD6, 0xFFDC47, 0xFFEB9C, 0x60D276, 0xFF5367,
+                ]),
+                3 => each([
+                    0x00B050, 0xFF0000, 0x0070C0, 0xFFC000, 0xFFC000, 0x00B050, 0xFF0000,
+                ]),
+                4 => each([
+                    THEME[3], THEME[9], THEME[8], THEME[4], THEME[5], THEME[6], THEME[7],
+                ]),
+                _ => each([
+                    THEME[1], THEME[9], THEME[8], THEME[4], THEME[5], THEME[6], THEME[7],
+                ]),
             }
         }
     }
@@ -279,8 +322,18 @@ pub fn style(index: usize) -> SparklineColors {
 /// from its top-left corner).
 #[derive(Clone, Debug, PartialEq)]
 pub enum SparkShape {
-    Line { points: Vec<(f32, f32)>, color: Color, width: f32 },
-    Rect { x0: f32, y0: f32, x1: f32, y1: f32, color: Color },
+    Line {
+        points: Vec<(f32, f32)>,
+        color: Color,
+        width: f32,
+    },
+    Rect {
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        color: Color,
+    },
 }
 
 /// The ends of the vertical axis a whole group shares (`None`: each
@@ -294,7 +347,14 @@ pub struct SharedScale {
 /// Draw a sparkline of `group` over `values` (`None`: an empty cell) in
 /// a cell `width` by `height`; sizes that do not follow the cell (the
 /// room around the plot, line weights, markers) are multiplied by `zoom`.
-pub fn shapes(group: &SparklineGroup, values: &[Option<f64>], shared: SharedScale, width: f32, height: f32, zoom: f32) -> Vec<SparkShape> {
+pub fn shapes(
+    group: &SparklineGroup,
+    values: &[Option<f64>],
+    shared: SharedScale,
+    width: f32,
+    height: f32,
+    zoom: f32,
+) -> Vec<SparkShape> {
     shapes_at(group, values, None, shared, width, height, zoom)
 }
 
@@ -314,11 +374,19 @@ pub fn shapes_at(
     // (place along the axis, value), from left to right.
     let mut points: Vec<(f64, Option<f64>)> = match dates {
         Some(dates) => {
-            let mut dated: Vec<(f64, Option<f64>)> = values.iter().zip(dates).filter_map(|(value, date)| date.map(|date| (date, *value))).collect();
+            let mut dated: Vec<(f64, Option<f64>)> = values
+                .iter()
+                .zip(dates)
+                .filter_map(|(value, date)| date.map(|date| (date, *value)))
+                .collect();
             dated.sort_by(|a, b| a.0.total_cmp(&b.0));
             dated
         }
-        None => values.iter().enumerate().map(|(i, value)| (i as f64, *value)).collect(),
+        None => values
+            .iter()
+            .enumerate()
+            .map(|(i, value)| (i as f64, *value))
+            .collect(),
     };
     let place_min = points.first().map_or(0.0, |point| point.0);
     let place_max = points.last().map_or(0.0, |point| point.0);
@@ -331,14 +399,23 @@ pub fn shapes_at(
     let places: Vec<f64> = points.iter().map(|point| point.0).collect();
     let values: Vec<Option<f64>> = points.iter().map(|point| point.1).collect();
     // The smallest step between two places: the width of a column.
-    let step = places.windows(2).map(|pair| pair[1] - pair[0]).filter(|gap| *gap > 0.0).fold(f64::INFINITY, f64::min);
+    let step = places
+        .windows(2)
+        .map(|pair| pair[1] - pair[0])
+        .filter(|gap| *gap > 0.0)
+        .fold(f64::INFINITY, f64::min);
     let step = if step.is_finite() { step } else { 1.0 };
     let numbers: Vec<f64> = values.iter().flatten().copied().collect();
     if numbers.is_empty() || width <= 0.0 || height <= 0.0 {
         return out;
     }
     let pad = (3.0 * zoom).max(1.0);
-    let (x0, x1, y0, y1) = (pad, (width - pad).max(pad + 1.0), pad, (height - pad).max(pad + 1.0));
+    let (x0, x1, y0, y1) = (
+        pad,
+        (width - pad).max(pad + 1.0),
+        pad,
+        (height - pad).max(pad + 1.0),
+    );
     let data_min = numbers.iter().copied().fold(f64::INFINITY, f64::min);
     let data_max = numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let bound = |b: AxisBound, shared: Option<f64>, own: f64| match b {
@@ -346,7 +423,10 @@ pub fn shapes_at(
         AxisBound::Group => shared.unwrap_or(own),
         AxisBound::Individual => own,
     };
-    let (mut lo, mut hi) = (bound(group.min, shared.min, data_min), bound(group.max, shared.max, data_max));
+    let (mut lo, mut hi) = (
+        bound(group.min, shared.min, data_min),
+        bound(group.max, shared.max, data_max),
+    );
     if hi < lo {
         std::mem::swap(&mut lo, &mut hi);
     }
@@ -369,7 +449,13 @@ pub fn shapes_at(
             None
         }
     };
-    let rect = |x0: f32, y0: f32, x1: f32, y1: f32, color: Color| SparkShape::Rect { x0, y0, x1, y1, color };
+    let rect = |x0: f32, y0: f32, x1: f32, y1: f32, color: Color| SparkShape::Rect {
+        x0,
+        y0,
+        x1,
+        y1,
+        color,
+    };
     let axis = |y: f32| rect(x0, y.round(), x1, y.round() + 1.0, colors.axis);
     match group.kind {
         SparklineType::Line => {
@@ -438,7 +524,11 @@ pub fn shapes_at(
                     y1 - (((v - lo) / span).clamp(0.0, 1.0) as f32) * (y1 - y0)
                 }
             };
-            let base_y = if span <= 0.0 { if lo > 0.0 { y1 } else { y0 } } else { y_of(base) };
+            let base_y = if span <= 0.0 {
+                if lo > 0.0 { y1 } else { y0 }
+            } else {
+                y_of(base)
+            };
             // One slot per step of the axis: with dates, the days (or
             // months) without a value keep their room.
             let slots = (((place_max - place_min) / step).round() + 1.0).max(1.0);
@@ -456,7 +546,11 @@ pub fn shapes_at(
                 let (left, right) = (x0 + at * slot + gap, x0 + (at + 1.0) * slot - gap);
                 let y = y_of(shown);
                 // The smallest column still shows.
-                let (top, bottom) = if y <= base_y { (y.min(base_y - 1.0), base_y) } else { (base_y, y.max(base_y + 1.0)) };
+                let (top, bottom) = if y <= base_y {
+                    (y.min(base_y - 1.0), base_y)
+                } else {
+                    (base_y, y.max(base_y + 1.0))
+                };
                 let color = special(i, *v).unwrap_or(colors.series);
                 out.push(rect(left, top, right.max(left + 1.0), bottom, color));
             }
@@ -491,7 +585,9 @@ fn pair(data: Rect, location: Rect) -> Result<Vec<((u32, u32), Rect)>, Sparkline
     if location.rows() > 1 && location.cols() > 1 {
         return Err(SparklineError::LocationShape);
     }
-    let cells: Vec<(u32, u32)> = (location.r0..=location.r1).flat_map(|r| (location.c0..=location.c1).map(move |c| (r, c))).collect();
+    let cells: Vec<(u32, u32)> = (location.r0..=location.r1)
+        .flat_map(|r| (location.c0..=location.c1).map(move |c| (r, c)))
+        .collect();
     let n = cells.len() as u32;
     let rows = |i: u32| Rect::new(data.r0 + i, data.c0, data.r0 + i, data.c1);
     let cols = |i: u32| Rect::new(data.r0, data.c0 + i, data.r1, data.c0 + i);
@@ -510,14 +606,21 @@ fn pair(data: Rect, location: Rect) -> Result<Vec<((u32, u32), Rect)>, Sparkline
     } else {
         return Err(SparklineError::Mismatch);
     };
-    Ok(cells.into_iter().enumerate().map(|(i, cell)| (cell, slice(i as u32))).collect())
+    Ok(cells
+        .into_iter()
+        .enumerate()
+        .map(|(i, cell)| (cell, slice(i as u32)))
+        .collect())
 }
 
 impl Sheet {
     /// The sparkline of a cell: its group and its place in the group.
     pub fn sparkline_at(&self, row: u32, col: u32) -> Option<(usize, usize)> {
         self.sparklines.iter().enumerate().find_map(|(g, group)| {
-            let i = group.sparklines.iter().position(|s| (s.row, s.col) == (row, col))?;
+            let i = group
+                .sparklines
+                .iter()
+                .position(|s| (s.row, s.col) == (row, col))?;
             Some((g, i))
         })
     }
@@ -525,7 +628,9 @@ impl Sheet {
     /// The groups that have a sparkline in one of `ranges`.
     pub fn sparkline_groups_in(&self, ranges: &[Rect]) -> Vec<usize> {
         let inside = |s: &Sparkline| ranges.iter().any(|r| r.contains(s.row, s.col));
-        (0..self.sparklines.len()).filter(|g| self.sparklines[*g].sparklines.iter().any(inside)).collect()
+        (0..self.sparklines.len())
+            .filter(|g| self.sparklines[*g].sparklines.iter().any(inside))
+            .collect()
     }
 
     /// Take the sparklines of some cells away; groups left empty go.
@@ -542,7 +647,11 @@ impl Workbook {
     /// for an empty cell (or one that holds no number). Hidden rows and
     /// columns are left out unless the group shows them, and empty cells
     /// count as zero when the group says so.
-    pub fn sparkline_values(&self, group: &SparklineGroup, sparkline: &Sparkline) -> Vec<Option<f64>> {
+    pub fn sparkline_values(
+        &self,
+        group: &SparklineGroup,
+        sparkline: &Sparkline,
+    ) -> Vec<Option<f64>> {
         let Some(sheet) = self.sheet_index(&sparkline.data.sheet) else {
             return Vec::new();
         };
@@ -598,21 +707,36 @@ impl Workbook {
     /// from `dates` (one row or one column of cells holding as many cells
     /// as each sparkline has points), or go back to the general axis
     /// (`None`). `Err(Mismatch)` when the range does not fit.
-    pub fn set_sparkline_date_axis(&mut self, sheet: usize, ranges: &[Rect], dates: Option<(usize, Rect)>) -> Result<bool, SparklineError> {
+    pub fn set_sparkline_date_axis(
+        &mut self,
+        sheet: usize,
+        ranges: &[Rect],
+        dates: Option<(usize, Rect)>,
+    ) -> Result<bool, SparklineError> {
         let Some(sh) = self.sheets.get(sheet) else {
             return Ok(false);
         };
         let groups = sh.sparkline_groups_in(ranges);
         let axis = match dates {
             Some((data_sheet, range)) => {
-                let name = self.sheets.get(data_sheet).ok_or(SparklineError::BadData)?.name.clone();
+                let name = self
+                    .sheets
+                    .get(data_sheet)
+                    .ok_or(SparklineError::BadData)?
+                    .name
+                    .clone();
                 let range = self.clamp_data(data_sheet, range);
                 if range.rows() > 1 && range.cols() > 1 {
                     return Err(SparklineError::Mismatch);
                 }
                 let cells = range.rows() as u64 * range.cols() as u64;
-                let fits = |s: &Sparkline| s.data.range.rows() as u64 * s.data.range.cols() as u64 == cells;
-                if !groups.iter().all(|g| sh.sparklines[*g].sparklines.iter().all(fits)) {
+                let fits = |s: &Sparkline| {
+                    s.data.range.rows() as u64 * s.data.range.cols() as u64 == cells
+                };
+                if !groups
+                    .iter()
+                    .all(|g| sh.sparklines[*g].sparklines.iter().all(fits))
+                {
                     return Err(SparklineError::Mismatch);
                 }
                 Some(DataRef { sheet: name, range })
@@ -635,17 +759,36 @@ impl Workbook {
         if group.min != AxisBound::Group && group.max != AxisBound::Group {
             return SharedScale::default();
         }
-        let all: Vec<f64> = group.sparklines.iter().flat_map(|s| self.sparkline_values(group, s)).flatten().collect();
+        let all: Vec<f64> = group
+            .sparklines
+            .iter()
+            .flat_map(|s| self.sparkline_values(group, s))
+            .flatten()
+            .collect();
         SharedScale {
-            min: (group.min == AxisBound::Group).then(|| all.iter().copied().fold(f64::INFINITY, f64::min)).filter(|v| v.is_finite()),
-            max: (group.max == AxisBound::Group).then(|| all.iter().copied().fold(f64::NEG_INFINITY, f64::max)).filter(|v| v.is_finite()),
+            min: (group.min == AxisBound::Group)
+                .then(|| all.iter().copied().fold(f64::INFINITY, f64::min))
+                .filter(|v| v.is_finite()),
+            max: (group.max == AxisBound::Group)
+                .then(|| all.iter().copied().fold(f64::NEG_INFINITY, f64::max))
+                .filter(|v| v.is_finite()),
         }
     }
 
     /// The sparklines `data` (on the sheet `data_sheet`) gives the cells
     /// of `location`, when the two go together.
-    fn paired_sparklines(&self, data_sheet: usize, data: Rect, location: Rect) -> Result<Vec<Sparkline>, SparklineError> {
-        let name = self.sheets.get(data_sheet).ok_or(SparklineError::BadData)?.name.clone();
+    fn paired_sparklines(
+        &self,
+        data_sheet: usize,
+        data: Rect,
+        location: Rect,
+    ) -> Result<Vec<Sparkline>, SparklineError> {
+        let name = self
+            .sheets
+            .get(data_sheet)
+            .ok_or(SparklineError::BadData)?
+            .name
+            .clone();
         let pairs = pair(self.clamp_data(data_sheet, data), location)?;
         Ok(pairs
             .into_iter()
@@ -662,7 +805,11 @@ impl Workbook {
 
     /// Whole rows or columns given as data stop at the last cell in use.
     fn clamp_data(&self, sheet: usize, data: Rect) -> Rect {
-        if data.is_whole_rows() || data.is_whole_cols() { self.clamp_to_used(sheet, data) } else { data }
+        if data.is_whole_rows() || data.is_whole_cols() {
+            self.clamp_to_used(sheet, data)
+        } else {
+            data
+        }
     }
 
     /// Insert > Sparklines: a new group of `kind` in the cells of
@@ -682,14 +829,26 @@ impl Workbook {
         self.snapshot();
         let sh = &mut self.sheets[sheet];
         sh.drop_sparklines(|s| location.contains(s.row, s.col));
-        sh.sparklines.push(SparklineGroup::new(kind).with(sparklines));
+        sh.sparklines
+            .push(SparklineGroup::new(kind).with(sparklines));
         Ok(sh.sparklines.len() - 1)
     }
 
     /// Edit Group Location & Data: the group keeps its settings and gets
     /// other cells and other data.
-    pub fn edit_sparkline_group(&mut self, sheet: usize, group: usize, data: (usize, Rect), location: Rect) -> Result<(), SparklineError> {
-        if self.sheets.get(sheet).and_then(|sh| sh.sparklines.get(group)).is_none() {
+    pub fn edit_sparkline_group(
+        &mut self,
+        sheet: usize,
+        group: usize,
+        data: (usize, Rect),
+        location: Rect,
+    ) -> Result<(), SparklineError> {
+        if self
+            .sheets
+            .get(sheet)
+            .and_then(|sh| sh.sparklines.get(group))
+            .is_none()
+        {
             return Err(SparklineError::LocationShape);
         }
         let sparklines = self.paired_sparklines(data.0, data.1, location)?;
@@ -705,8 +864,18 @@ impl Workbook {
     }
 
     /// Edit Single Sparkline's Data: one row or one column of cells.
-    pub fn edit_sparkline_data(&mut self, sheet: usize, row: u32, col: u32, data: (usize, Rect)) -> Result<(), SparklineError> {
-        let Some((group, index)) = self.sheets.get(sheet).and_then(|sh| sh.sparkline_at(row, col)) else {
+    pub fn edit_sparkline_data(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        data: (usize, Rect),
+    ) -> Result<(), SparklineError> {
+        let Some((group, index)) = self
+            .sheets
+            .get(sheet)
+            .and_then(|sh| sh.sparkline_at(row, col))
+        else {
             return Err(SparklineError::LocationShape);
         };
         let mut found = self.paired_sparklines(data.0, data.1, Rect::cell(row, col))?;
@@ -718,7 +887,12 @@ impl Workbook {
     /// Change the settings of the groups that have a sparkline in
     /// `ranges` (the commands of the Sparkline tab). False when there is
     /// none.
-    pub fn update_sparkline_groups(&mut self, sheet: usize, ranges: &[Rect], change: impl Fn(&mut SparklineGroup)) -> bool {
+    pub fn update_sparkline_groups(
+        &mut self,
+        sheet: usize,
+        ranges: &[Rect],
+        change: impl Fn(&mut SparklineGroup),
+    ) -> bool {
         let Some(sh) = self.sheets.get(sheet) else {
             return false;
         };
@@ -742,10 +916,18 @@ impl Workbook {
         };
         let inside = |s: &Sparkline| ranges.iter().any(|r| r.contains(s.row, s.col));
         let touched = sh.sparkline_groups_in(ranges);
-        let Some(model) = sh.sparkline_at(lead.0, lead.1).map(|(g, _)| g).or(touched.first().copied()) else {
+        let Some(model) = sh
+            .sparkline_at(lead.0, lead.1)
+            .map(|(g, _)| g)
+            .or(touched.first().copied())
+        else {
             return false;
         };
-        let mut members: Vec<Sparkline> = sh.sparklines.iter().flat_map(|g| g.sparklines.iter().filter(|s| inside(s)).cloned()).collect();
+        let mut members: Vec<Sparkline> = sh
+            .sparklines
+            .iter()
+            .flat_map(|g| g.sparklines.iter().filter(|s| inside(s)).cloned())
+            .collect();
         members.sort_by_key(|s| (s.row, s.col));
         let grouped = sh.sparklines[model].with(members);
         self.snapshot();
@@ -764,7 +946,12 @@ impl Workbook {
         let singles: Vec<SparklineGroup> = sh
             .sparklines
             .iter()
-            .flat_map(|g| g.sparklines.iter().filter(|s| inside(s)).map(|s| g.with(vec![s.clone()])))
+            .flat_map(|g| {
+                g.sparklines
+                    .iter()
+                    .filter(|s| inside(s))
+                    .map(|s| g.with(vec![s.clone()]))
+            })
             .collect();
         if singles.is_empty() {
             return false;
@@ -806,7 +993,14 @@ impl Workbook {
     /// model's data lay from the model. The copies join the group of
     /// their model on its own sheet. With `cut` the sparklines move and
     /// keep their data.
-    pub fn copy_sparklines(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest: (u32, u32), cut: bool) {
+    pub fn copy_sparklines(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest: (u32, u32),
+        cut: bool,
+    ) {
         let Some(sh) = self.sheets.get(src_sheet) else {
             return;
         };
@@ -816,19 +1010,27 @@ impl Workbook {
         let (d_row, d_col) = (dest.0 as i64 - src.r0 as i64, dest.1 as i64 - src.c0 as i64);
         let moved = |row: u32, col: u32| -> Option<(u32, u32)> {
             let (r, c) = (row as i64 + d_row, col as i64 + d_col);
-            (r >= 0 && c >= 0 && r < MAX_ROWS as i64 && c < MAX_COLS as i64).then_some((r as u32, c as u32))
+            (r >= 0 && c >= 0 && r < MAX_ROWS as i64 && c < MAX_COLS as i64)
+                .then_some((r as u32, c as u32))
         };
         let own_sheet = same_name(&sh.name, &self.sheets[dest_sheet].name);
         // (group of the model, the copy)
         let mut copies: Vec<(usize, Sparkline)> = Vec::new();
         for (g, group) in sh.sparklines.iter().enumerate() {
-            for s in group.sparklines.iter().filter(|s| src.contains(s.row, s.col)) {
+            for s in group
+                .sparklines
+                .iter()
+                .filter(|s| src.contains(s.row, s.col))
+            {
                 let Some((row, col)) = moved(s.row, s.col) else {
                     continue;
                 };
                 let mut data = s.data.clone();
                 if !cut {
-                    let (Some(a), Some(b)) = (moved(data.range.r0, data.range.c0), moved(data.range.r1, data.range.c1)) else {
+                    let (Some(a), Some(b)) = (
+                        moved(data.range.r0, data.range.c0),
+                        moved(data.range.r1, data.range.c1),
+                    ) else {
                         continue;
                     };
                     data.range = Rect::new(a.0, a.1, b.0, b.1);
@@ -842,12 +1044,19 @@ impl Workbook {
             (dest.0 as u64 + src.rows() as u64 - 1).min(MAX_ROWS as u64 - 1) as u32,
             (dest.1 as u64 + src.cols() as u64 - 1).min(MAX_COLS as u64 - 1) as u32,
         );
-        let covered = self.sheets[dest_sheet].sparklines.iter().any(|g| g.sparklines.iter().any(|s| landing.contains(s.row, s.col)));
+        let covered = self.sheets[dest_sheet]
+            .sparklines
+            .iter()
+            .any(|g| g.sparklines.iter().any(|s| landing.contains(s.row, s.col)));
         if copies.is_empty() && !covered {
             return;
         }
         self.snapshot();
-        let models: Vec<SparklineGroup> = self.sheets[src_sheet].sparklines.iter().map(|g| g.with(Vec::new())).collect();
+        let models: Vec<SparklineGroup> = self.sheets[src_sheet]
+            .sparklines
+            .iter()
+            .map(|g| g.with(Vec::new()))
+            .collect();
         if cut {
             self.sheets[src_sheet].drop_sparklines(|s| src.contains(s.row, s.col));
         }
@@ -857,7 +1066,13 @@ impl Workbook {
         for (g, copy) in copies {
             let dest = &mut self.sheets[dest_sheet];
             // The group of the model, when it is on this sheet and still there.
-            let home = own_sheet.then(|| dest.sparklines.iter_mut().find(|group| group.with(Vec::new()) == models[g])).flatten();
+            let home = own_sheet
+                .then(|| {
+                    dest.sparklines
+                        .iter_mut()
+                        .find(|group| group.with(Vec::new()) == models[g])
+                })
+                .flatten();
             match home {
                 Some(group) => group.sparklines.push(copy),
                 None => match new_groups.iter_mut().find(|(model, _)| *model == g) {
@@ -866,7 +1081,9 @@ impl Workbook {
                 },
             }
         }
-        self.sheets[dest_sheet].sparklines.extend(new_groups.into_iter().map(|(_, group)| group));
+        self.sheets[dest_sheet]
+            .sparklines
+            .extend(new_groups.into_iter().map(|(_, group)| group));
     }
 
     /// A block of cells was filled from the cells it starts with (Fill
@@ -877,8 +1094,16 @@ impl Workbook {
         let Some(sh) = self.sheets.get(sheet) else {
             return;
         };
-        let inside: Vec<(u32, u32)> =
-            sh.sparklines.iter().flat_map(|g| g.sparklines.iter().filter(|s| dest.contains(s.row, s.col)).map(|s| (s.row, s.col))).collect();
+        let inside: Vec<(u32, u32)> = sh
+            .sparklines
+            .iter()
+            .flat_map(|g| {
+                g.sparklines
+                    .iter()
+                    .filter(|s| dest.contains(s.row, s.col))
+                    .map(|s| (s.row, s.col))
+            })
+            .collect();
         if inside.is_empty() {
             return;
         }
@@ -893,7 +1118,12 @@ impl Workbook {
                     .rev()
                     .find(|r| has(*r, col))
                     .map(|r| (r, col))
-                    .or_else(|| (dest.c0..col).rev().find(|c| has(row, *c)).map(|c| (row, c)))
+                    .or_else(|| {
+                        (dest.c0..col)
+                            .rev()
+                            .find(|c| has(row, *c))
+                            .map(|c| (row, c))
+                    })
                     .or_else(|| (row + 1..=dest.r1).find(|r| has(*r, col)).map(|r| (r, col)))
                     .or_else(|| (col + 1..=dest.c1).find(|c| has(row, *c)).map(|c| (row, c)));
                 if let Some(model) = model {
@@ -927,9 +1157,17 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     let own = same_name(&sheet.name, edited_sheet);
     for group in &mut sheet.sparklines {
         // The dates follow their cells; without them the axis is general.
-        if let Some(dates) = group.date_axis.as_mut().filter(|dates| same_name(&dates.sheet, edited_sheet)) {
+        if let Some(dates) = group
+            .date_axis
+            .as_mut()
+            .filter(|dates| same_name(&dates.sheet, edited_sheet))
+        {
             let r = dates.range;
-            match if rows { shift(r.r0, r.r1) } else { shift(r.c0, r.c1) } {
+            match if rows {
+                shift(r.r0, r.r1)
+            } else {
+                shift(r.c0, r.c1)
+            } {
                 Some((a, b)) if rows => dates.range = Rect::new(a, r.c0, b, r.c1),
                 Some((a, b)) => dates.range = Rect::new(r.r0, a, r.r1, b),
                 None => group.date_axis = None,
@@ -937,7 +1175,11 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
         }
         group.sparklines.retain_mut(|s| {
             if own {
-                let moved = if rows { shift(s.row, s.row) } else { shift(s.col, s.col) };
+                let moved = if rows {
+                    shift(s.row, s.row)
+                } else {
+                    shift(s.col, s.col)
+                };
                 match moved {
                     Some((p, _)) if rows => s.row = p,
                     Some((p, _)) => s.col = p,
@@ -946,7 +1188,11 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
             }
             if same_name(&s.data.sheet, edited_sheet) {
                 let r = s.data.range;
-                let moved = if rows { shift(r.r0, r.r1) } else { shift(r.c0, r.c1) };
+                let moved = if rows {
+                    shift(r.r0, r.r1)
+                } else {
+                    shift(r.c0, r.c1)
+                };
                 match moved {
                     Some((a, b)) if rows => s.data.range = Rect::new(a, r.c0, b, r.c1),
                     Some((a, b)) => s.data.range = Rect::new(r.r0, a, r.r1, b),
@@ -956,16 +1202,26 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
             true
         });
     }
-    sheet.sparklines.retain(|group| !group.sparklines.is_empty());
+    sheet
+        .sparklines
+        .retain(|group| !group.sparklines.is_empty());
 }
 
 pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
-    for dates in sheet.sparklines.iter_mut().filter_map(|group| group.date_axis.as_mut()) {
+    for dates in sheet
+        .sparklines
+        .iter_mut()
+        .filter_map(|group| group.date_axis.as_mut())
+    {
         if same_name(&dates.sheet, old) {
             dates.sheet = new.to_string();
         }
     }
-    for s in sheet.sparklines.iter_mut().flat_map(|group| group.sparklines.iter_mut()) {
+    for s in sheet
+        .sparklines
+        .iter_mut()
+        .flat_map(|group| group.sparklines.iter_mut())
+    {
         if same_name(&s.data.sheet, old) {
             s.data.sheet = new.to_string();
         }
@@ -986,7 +1242,11 @@ pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet) {
             sheet.drop_sparklines(|s| same_name(&s.data.sheet, &deleted.name));
         }
         for group in &mut sheet.sparklines {
-            if group.date_axis.as_ref().is_some_and(|dates| same_name(&dates.sheet, &deleted.name)) {
+            if group
+                .date_axis
+                .as_ref()
+                .is_some_and(|dates| same_name(&dates.sheet, &deleted.name))
+            {
                 group.date_axis = None;
             }
         }
@@ -1030,7 +1290,11 @@ mod tests {
     /// Three rows of four numbers in A1:D3.
     fn book() -> Workbook {
         let mut wb = Workbook::new(Locale::en());
-        let rows = [["1", "3", "2", "5"], ["4", "-2", "", "1"], ["2", "2", "2", "2"]];
+        let rows = [
+            ["1", "3", "2", "5"],
+            ["4", "-2", "", "1"],
+            ["2", "2", "2", "2"],
+        ];
         for (r, row) in rows.iter().enumerate() {
             for (c, text) in row.iter().enumerate() {
                 wb.set_cell_text(0, r as u32, c as u32, text).unwrap();
@@ -1044,7 +1308,11 @@ mod tests {
         let mut out: Vec<(u32, u32, String)> = wb.sheets[sheet]
             .sparklines
             .iter()
-            .flat_map(|g| g.sparklines.iter().map(|s| (s.row, s.col, s.data.range.name())))
+            .flat_map(|g| {
+                g.sparklines
+                    .iter()
+                    .map(|s| (s.row, s.col, s.data.range.name()))
+            })
             .collect();
         out.sort();
         out
@@ -1054,28 +1322,51 @@ mod tests {
     fn data_and_location_are_paired_as_excel_does() {
         let mut wb = book();
         // A column of cells beside the rows: one row each.
-        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3")).unwrap();
+        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3"))
+            .unwrap();
         wb.commit("Insert Sparkline");
-        assert_eq!(cells(&wb, 0), [(0, 5, "A1:D1".into()), (1, 5, "A2:D2".into()), (2, 5, "A3:D3".into())]);
+        assert_eq!(
+            cells(&wb, 0),
+            [
+                (0, 5, "A1:D1".into()),
+                (1, 5, "A2:D2".into()),
+                (2, 5, "A3:D3".into())
+            ]
+        );
         assert_eq!(wb.sheets[0].sparkline_at(1, 5), Some((0, 1)));
         // A row of cells under the columns: one column each; what was in
         // a cell is replaced.
-        wb.add_sparklines(0, SparklineType::Column, (0, rect("A1:D3")), rect("A5:D5")).unwrap();
-        wb.add_sparklines(0, SparklineType::WinLoss, (0, rect("A2:D2")), rect("F2")).unwrap();
+        wb.add_sparklines(0, SparklineType::Column, (0, rect("A1:D3")), rect("A5:D5"))
+            .unwrap();
+        wb.add_sparklines(0, SparklineType::WinLoss, (0, rect("A2:D2")), rect("F2"))
+            .unwrap();
         wb.commit("Insert Sparkline");
         assert_eq!(wb.sheets[0].sparklines.len(), 3);
         assert_eq!(wb.sheets[0].sparklines[0].sparklines.len(), 2);
         assert_eq!(cells(&wb, 0)[3], (4, 0, "A1:A3".into()));
         assert!(wb.sheets[0].sparklines[2].negative && !wb.sheets[0].sparklines[1].negative);
         // What does not go together.
-        let add = |wb: &mut Workbook, data: &str, location: &str| wb.add_sparklines(0, SparklineType::Line, (0, rect(data)), rect(location));
-        assert_eq!(add(&mut wb, "A1:D3", "F1:G2"), Err(SparklineError::LocationShape));
-        assert_eq!(add(&mut wb, "A1:D3", "F1:F2"), Err(SparklineError::Mismatch));
+        let add = |wb: &mut Workbook, data: &str, location: &str| {
+            wb.add_sparklines(0, SparklineType::Line, (0, rect(data)), rect(location))
+        };
+        assert_eq!(
+            add(&mut wb, "A1:D3", "F1:G2"),
+            Err(SparklineError::LocationShape)
+        );
+        assert_eq!(
+            add(&mut wb, "A1:D3", "F1:F2"),
+            Err(SparklineError::Mismatch)
+        );
         assert_eq!(add(&mut wb, "A1:D3", "H1"), Err(SparklineError::Mismatch));
-        assert_eq!(wb.add_sparklines(0, SparklineType::Line, (7, rect("A1:D1")), rect("H1")), Err(SparklineError::BadData));
+        assert_eq!(
+            wb.add_sparklines(0, SparklineType::Line, (7, rect("A1:D1")), rect("H1")),
+            Err(SparklineError::BadData)
+        );
         // A square of data along a row of as many cells goes by columns.
         let mut square = book();
-        square.add_sparklines(0, SparklineType::Line, (0, rect("A1:C3")), rect("A5:C5")).unwrap();
+        square
+            .add_sparklines(0, SparklineType::Line, (0, rect("A1:C3")), rect("A5:C5"))
+            .unwrap();
         assert_eq!(cells(&square, 0)[0], (4, 0, "A1:A3".into()));
         assert!(wb.undo());
         assert_eq!(wb.sheets[0].sparklines.len(), 1);
@@ -1084,7 +1375,8 @@ mod tests {
     #[test]
     fn values_follow_hidden_and_empty_cells() {
         let mut wb = book();
-        wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:D2")), rect("F2")).unwrap();
+        wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:D2")), rect("F2"))
+            .unwrap();
         wb.commit("Insert Sparkline");
         let values = |wb: &Workbook| {
             let group = &wb.sheets[0].sparklines[0];
@@ -1109,7 +1401,13 @@ mod tests {
         shapes
             .iter()
             .filter_map(|s| match s {
-                SparkShape::Rect { x0, y0, x1, y1, color } => Some((*x0, *y0, *x1, *y1, *color)),
+                SparkShape::Rect {
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    color,
+                } => Some((*x0, *y0, *x1, *y1, *color)),
                 _ => None,
             })
             .collect()
@@ -1139,19 +1437,46 @@ mod tests {
         assert!(rects(&drawn).is_empty());
         // Connected over the gap: one run of four points.
         group.empty = EmptyCells::Connect;
-        assert_eq!(lines(&shapes(&group, &values, SharedScale::default(), 106.0, 26.0, 1.0))[0].len(), 4);
+        assert_eq!(
+            lines(&shapes(
+                &group,
+                &values,
+                SharedScale::default(),
+                106.0,
+                26.0,
+                1.0
+            ))[0]
+                .len(),
+            4
+        );
         // Points that stand out, each in its colour; the axis at zero.
         group.high = true;
         group.negative = true;
         group.last = true;
         group.show_axis = true;
         group.colors = style(30);
-        let marks = rects(&shapes(&group, &values, SharedScale::default(), 106.0, 26.0, 1.0));
+        let marks = rects(&shapes(
+            &group,
+            &values,
+            SharedScale::default(),
+            106.0,
+            26.0,
+            1.0,
+        ));
         assert_eq!(marks.len(), 4);
-        assert_eq!((marks[0].0, marks[0].2, marks[0].4), (3.0, 103.0, Color::BLACK));
-        assert!((marks[0].1 - 16.0).abs() <= 1.0, "the axis is a third of the way up: {marks:?}");
+        assert_eq!(
+            (marks[0].0, marks[0].2, marks[0].4),
+            (3.0, 103.0, Color::BLACK)
+        );
+        assert!(
+            (marks[0].1 - 16.0).abs() <= 1.0,
+            "the axis is a third of the way up: {marks:?}"
+        );
         let colors: Vec<Color> = marks[1..].iter().map(|m| m.4).collect();
-        assert_eq!(colors, [group.colors.high, group.colors.negative, group.colors.last]);
+        assert_eq!(
+            colors,
+            [group.colors.high, group.colors.negative, group.colors.last]
+        );
         // All the markers, and right to left.
         group.markers = true;
         group.right_to_left = true;
@@ -1160,18 +1485,37 @@ mod tests {
         assert_eq!(lines(&drawn)[0][0].1, lines(&drawn)[0][1].1);
         // A thicker line at a larger zoom.
         group.line_weight = 3.0;
-        let SparkShape::Line { width, .. } = &shapes(&group, &values, SharedScale::default(), 212.0, 52.0, 2.0)[1] else {
+        let SparkShape::Line { width, .. } =
+            &shapes(&group, &values, SharedScale::default(), 212.0, 52.0, 2.0)[1]
+        else {
             panic!("a line");
         };
         assert_eq!(*width, 8.0);
-        assert!(shapes(&group, &[None, None], SharedScale::default(), 106.0, 26.0, 1.0).is_empty());
+        assert!(
+            shapes(
+                &group,
+                &[None, None],
+                SharedScale::default(),
+                106.0,
+                26.0,
+                1.0
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     fn columns_and_win_loss() {
         let mut group = SparklineGroup::new(SparklineType::Column);
         let values = [Some(4.0), Some(-2.0), None, Some(1.0)];
-        let bars = rects(&shapes(&group, &values, SharedScale::default(), 106.0, 36.0, 1.0));
+        let bars = rects(&shapes(
+            &group,
+            &values,
+            SharedScale::default(),
+            106.0,
+            36.0,
+            1.0,
+        ));
         // Three columns standing on zero, the negative one hanging.
         assert_eq!(bars.len(), 3);
         let zero = 3.0 + 30.0 * 4.0 / 6.0;
@@ -1180,11 +1524,25 @@ mod tests {
         assert!(bars[0].0 >= 3.0 && bars[0].2 <= 28.0 && bars[2].0 >= 78.0);
         assert!(bars.iter().all(|b| b.4 == group.colors.series));
         // All above zero: the smallest column still shows.
-        let up = rects(&shapes(&group, &[Some(5.0), Some(7.0)], SharedScale::default(), 106.0, 36.0, 1.0));
+        let up = rects(&shapes(
+            &group,
+            &[Some(5.0), Some(7.0)],
+            SharedScale::default(),
+            106.0,
+            36.0,
+            1.0,
+        ));
         assert_eq!((up[0].3 - up[0].1, up[1].1), (1.0, 3.0));
         // A custom axis from zero gives it its true height.
         group.min = AxisBound::Custom(0.0);
-        let up = rects(&shapes(&group, &[Some(5.0), Some(7.0)], SharedScale::default(), 106.0, 36.0, 1.0));
+        let up = rects(&shapes(
+            &group,
+            &[Some(5.0), Some(7.0)],
+            SharedScale::default(),
+            106.0,
+            36.0,
+            1.0,
+        ));
         assert!((up[0].3 - up[0].1 - 30.0 * 5.0 / 7.0).abs() < 0.01);
         // The same axis for the whole group.
         group.min = AxisBound::Group;
@@ -1200,10 +1558,23 @@ mod tests {
         // axis between them, nothing for zero.
         let mut group = SparklineGroup::new(SparklineType::WinLoss);
         group.show_axis = true;
-        let drawn = rects(&shapes(&group, &[Some(4.0), Some(-2.0), Some(0.0), Some(0.5)], SharedScale::default(), 106.0, 36.0, 1.0));
+        let drawn = rects(&shapes(
+            &group,
+            &[Some(4.0), Some(-2.0), Some(0.0), Some(0.5)],
+            SharedScale::default(),
+            106.0,
+            36.0,
+            1.0,
+        ));
         assert_eq!(drawn.len(), 4);
-        assert_eq!((drawn[0].1, drawn[0].3, drawn[0].4), (3.0, 18.0, group.colors.series));
-        assert_eq!((drawn[1].1, drawn[1].3, drawn[1].4), (18.0, 33.0, group.colors.negative));
+        assert_eq!(
+            (drawn[0].1, drawn[0].3, drawn[0].4),
+            (3.0, 18.0, group.colors.series)
+        );
+        assert_eq!(
+            (drawn[1].1, drawn[1].3, drawn[1].4),
+            (18.0, 33.0, group.colors.negative)
+        );
         assert_eq!((drawn[2].1, drawn[2].3), (3.0, 18.0));
         assert_eq!((drawn[3].1, drawn[3].4), (18.0, group.colors.axis));
     }
@@ -1211,7 +1582,8 @@ mod tests {
     #[test]
     fn groups_scale_edit_and_clear() {
         let mut wb = book();
-        wb.add_sparklines(0, SparklineType::Column, (0, rect("A1:D3")), rect("F1:F3")).unwrap();
+        wb.add_sparklines(0, SparklineType::Column, (0, rect("A1:D3")), rect("F1:F3"))
+            .unwrap();
         wb.update_sparkline_groups(0, &[rect("F2")], |g| {
             g.min = AxisBound::Group;
             g.max = AxisBound::Group;
@@ -1226,19 +1598,40 @@ mod tests {
         assert!(wb.group_sparklines(0, &[rect("F2:F3")], (2, 5)));
         assert_eq!(wb.sheets[0].sparklines.len(), 2);
         let (g, _) = wb.sheets[0].sparkline_at(1, 5).unwrap();
-        assert_eq!((wb.sheets[0].sparklines[g].kind, wb.sheets[0].sparklines[g].sparklines.len()), (SparklineType::Line, 2));
+        assert_eq!(
+            (
+                wb.sheets[0].sparklines[g].kind,
+                wb.sheets[0].sparklines[g].sparklines.len()
+            ),
+            (SparklineType::Line, 2)
+        );
         // Edit one sparkline's data, then the group's location and data.
         wb.edit_sparkline_data(0, 1, 5, (0, rect("A1:A3"))).unwrap();
         assert_eq!(cells(&wb, 0)[1], (1, 5, "A1:A3".into()));
-        assert_eq!(wb.edit_sparkline_data(0, 1, 5, (0, rect("A1:B3"))), Err(SparklineError::Mismatch));
+        assert_eq!(
+            wb.edit_sparkline_data(0, 1, 5, (0, rect("A1:B3"))),
+            Err(SparklineError::Mismatch)
+        );
         let (g, _) = wb.sheets[0].sparkline_at(1, 5).unwrap();
-        wb.edit_sparkline_group(0, g, (0, rect("A1:D2")), rect("G1:G2")).unwrap();
-        assert_eq!(cells(&wb, 0), [(0, 5, "A1:D1".into()), (0, 6, "A1:D1".into()), (1, 6, "A2:D2".into())]);
-        assert_eq!(wb.sheets[0].sparklines.last().unwrap().kind, SparklineType::Line);
+        wb.edit_sparkline_group(0, g, (0, rect("A1:D2")), rect("G1:G2"))
+            .unwrap();
+        assert_eq!(
+            cells(&wb, 0),
+            [
+                (0, 5, "A1:D1".into()),
+                (0, 6, "A1:D1".into()),
+                (1, 6, "A2:D2".into())
+            ]
+        );
+        assert_eq!(
+            wb.sheets[0].sparklines.last().unwrap().kind,
+            SparklineType::Line
+        );
         // Clear one sparkline, then a whole group.
         assert!(wb.clear_sparklines(0, &[rect("G1")], false));
         assert_eq!(cells(&wb, 0).len(), 2);
-        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("H1:H3")).unwrap();
+        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("H1:H3"))
+            .unwrap();
         assert!(wb.clear_sparklines(0, &[rect("H2")], true));
         assert_eq!(cells(&wb, 0).len(), 2);
         assert!(!wb.clear_sparklines(0, &[rect("A1:B9")], true));
@@ -1247,32 +1640,50 @@ mod tests {
     #[test]
     fn sparklines_follow_rows_columns_and_sheets() {
         let mut wb = book();
-        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3")).unwrap();
+        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3"))
+            .unwrap();
         wb.commit("Insert Sparkline");
         wb.insert_rows(0, 1, 2);
         wb.insert_cols(0, 2, 1);
         wb.commit("Insert");
-        assert_eq!(cells(&wb, 0), [(0, 6, "A1:E1".into()), (3, 6, "A4:E4".into()), (4, 6, "A5:E5".into())]);
+        assert_eq!(
+            cells(&wb, 0),
+            [
+                (0, 6, "A1:E1".into()),
+                (3, 6, "A4:E4".into()),
+                (4, 6, "A5:E5".into())
+            ]
+        );
         // The row of a sparkline goes: so does the sparkline. All the
         // data of another goes: that one too.
         wb.delete_rows(0, 0, 1);
         wb.commit("Delete");
-        assert_eq!(cells(&wb, 0), [(2, 6, "A3:E3".into()), (3, 6, "A4:E4".into())]);
+        assert_eq!(
+            cells(&wb, 0),
+            [(2, 6, "A3:E3".into()), (3, 6, "A4:E4".into())]
+        );
         wb.delete_cols(0, 1, 2);
         wb.commit("Delete");
-        assert_eq!(cells(&wb, 0), [(2, 4, "A3:C3".into()), (3, 4, "A4:C4".into())]);
+        assert_eq!(
+            cells(&wb, 0),
+            [(2, 4, "A3:C3".into()), (3, 4, "A4:C4".into())]
+        );
         assert!(wb.undo() && wb.undo());
         assert_eq!(cells(&wb, 0).len(), 3);
 
         // Data on another sheet: it follows that sheet's rows and name.
         let other = wb.add_sheet(1);
-        wb.add_sparklines(other, SparklineType::Line, (0, rect("A1:E1")), rect("B2")).unwrap();
+        wb.add_sparklines(other, SparklineType::Line, (0, rect("A1:E1")), rect("B2"))
+            .unwrap();
         wb.commit("Insert Sparkline");
         wb.insert_rows(0, 0, 1);
         assert!(wb.rename_sheet(0, "Data"));
         wb.commit("Rename");
         let s = wb.sheets[other].sparklines[0].sparklines[0].clone();
-        assert_eq!((s.data.sheet.as_str(), s.data.range), ("Data", rect("A2:E2")));
+        assert_eq!(
+            (s.data.sheet.as_str(), s.data.range),
+            ("Data", rect("A2:E2"))
+        );
         // A copy of a sheet plots its own cells.
         let copy = wb.duplicate_sheet(0).unwrap();
         wb.commit("Copy");
@@ -1288,22 +1699,41 @@ mod tests {
     #[test]
     fn copies_and_fills() {
         let mut wb = book();
-        wb.add_sparklines(0, SparklineType::Column, (0, rect("A1:D1")), rect("F1")).unwrap();
+        wb.add_sparklines(0, SparklineType::Column, (0, rect("A1:D1")), rect("F1"))
+            .unwrap();
         wb.commit("Insert Sparkline");
         // Filled down: the copies join the group and plot their own rows.
         wb.fill_sparklines(0, rect("F1:F3"));
         wb.commit("Fill");
         assert_eq!(wb.sheets[0].sparklines.len(), 1);
-        assert_eq!(cells(&wb, 0), [(0, 5, "A1:D1".into()), (1, 5, "A2:D2".into()), (2, 5, "A3:D3".into())]);
+        assert_eq!(
+            cells(&wb, 0),
+            [
+                (0, 5, "A1:D1".into()),
+                (1, 5, "A2:D2".into()),
+                (2, 5, "A3:D3".into())
+            ]
+        );
         // Copied two columns to the right: data two columns to the right.
         wb.copy_sparklines(0, rect("F1:F2"), 0, (5, 7), false);
         wb.commit("Paste");
-        assert_eq!(cells(&wb, 0)[3..], [(5, 7, "C6:F6".into()), (6, 7, "C7:F7".into())]);
+        assert_eq!(
+            cells(&wb, 0)[3..],
+            [(5, 7, "C6:F6".into()), (6, 7, "C7:F7".into())]
+        );
         assert_eq!(wb.sheets[0].sparklines.len(), 1);
         // Cut: the sparkline moves and keeps its data; what it lands on goes.
         wb.copy_sparklines(0, rect("F3"), 0, (5, 7), true);
         wb.commit("Paste");
-        assert_eq!(cells(&wb, 0), [(0, 5, "A1:D1".into()), (1, 5, "A2:D2".into()), (5, 7, "A3:D3".into()), (6, 7, "C7:F7".into())]);
+        assert_eq!(
+            cells(&wb, 0),
+            [
+                (0, 5, "A1:D1".into()),
+                (1, 5, "A2:D2".into()),
+                (5, 7, "A3:D3".into()),
+                (6, 7, "C7:F7".into())
+            ]
+        );
         // A copy that would plot cells off the sheet is not made.
         let other = wb.add_sheet(1);
         wb.copy_sparklines(0, rect("F1:F2"), other, (0, 0), false);
@@ -1311,7 +1741,10 @@ mod tests {
         // To another sheet: a group with the same settings there.
         wb.copy_sparklines(0, rect("F1:F2"), other, (0, 9), false);
         wb.commit("Paste");
-        assert_eq!(cells(&wb, other), [(0, 9, "E1:H1".into()), (1, 9, "E2:H2".into())]);
+        assert_eq!(
+            cells(&wb, other),
+            [(0, 9, "E1:H1".into()), (1, 9, "E2:H2".into())]
+        );
         assert_eq!(wb.sheets[other].sparklines.len(), 1);
         assert_eq!(wb.sheets[other].sparklines[0].kind, SparklineType::Column);
         // Pasting plain cells over sparklines takes them away.
@@ -1323,7 +1756,10 @@ mod tests {
     fn the_gallery_has_thirty_six_styles() {
         let all: Vec<SparklineColors> = (0..STYLE_COUNT).map(style).collect();
         for (i, a) in all.iter().enumerate() {
-            assert!(all[i + 1..].iter().all(|b| a != b), "style {i} is unlike the others");
+            assert!(
+                all[i + 1..].iter().all(|b| a != b),
+                "style {i} is unlike the others"
+            );
             assert_eq!(a.axis, Color::BLACK);
         }
         // Accent 1, darker 50 %; the plain accent; the style of new sparklines.
@@ -1340,33 +1776,95 @@ mod tests {
         let values = [Some(1.0), Some(3.0), Some(2.0), Some(5.0)];
         // Days 1, 2, 3 and 11: the last point stands far from the others.
         let dates = [Some(1.0), Some(2.0), Some(3.0), Some(11.0)];
-        let even = lines(&shapes(&group, &values, SharedScale::default(), 106.0, 26.0, 1.0));
-        let dated = lines(&shapes_at(&group, &values, Some(&dates), SharedScale::default(), 106.0, 26.0, 1.0));
+        let even = lines(&shapes(
+            &group,
+            &values,
+            SharedScale::default(),
+            106.0,
+            26.0,
+            1.0,
+        ));
+        let dated = lines(&shapes_at(
+            &group,
+            &values,
+            Some(&dates),
+            SharedScale::default(),
+            106.0,
+            26.0,
+            1.0,
+        ));
         let xs = |line: &[(f32, f32)]| line.iter().map(|point| point.0).collect::<Vec<_>>();
         let (even, dated) = (xs(&even[0]), xs(&dated[0]));
-        assert_eq!((even[0], even[3]), (dated[0], dated[3]), "the ends stay at the ends");
-        assert!((even[1] - even[0] - (even[3] - even[2])).abs() < 0.01, "evenly spaced without dates");
-        assert!((dated[1] - dated[0]) * 7.9 < dated[3] - dated[2], "{dated:?}");
-        assert!((dated[1] - (3.0 + 10.0)).abs() < 0.01, "one tenth of the 100 pixels: {dated:?}");
+        assert_eq!(
+            (even[0], even[3]),
+            (dated[0], dated[3]),
+            "the ends stay at the ends"
+        );
+        assert!(
+            (even[1] - even[0] - (even[3] - even[2])).abs() < 0.01,
+            "evenly spaced without dates"
+        );
+        assert!(
+            (dated[1] - dated[0]) * 7.9 < dated[3] - dated[2],
+            "{dated:?}"
+        );
+        assert!(
+            (dated[1] - (3.0 + 10.0)).abs() < 0.01,
+            "one tenth of the 100 pixels: {dated:?}"
+        );
         // Dates out of order are put in order; a point without a date is
         // not drawn.
-        let shuffled = lines(&shapes_at(&group, &[Some(5.0), Some(1.0), Some(9.0), Some(3.0)], Some(&[Some(11.0), Some(1.0), None, Some(2.0)]), SharedScale::default(), 106.0, 26.0, 1.0));
+        let shuffled = lines(&shapes_at(
+            &group,
+            &[Some(5.0), Some(1.0), Some(9.0), Some(3.0)],
+            Some(&[Some(11.0), Some(1.0), None, Some(2.0)]),
+            SharedScale::default(),
+            106.0,
+            26.0,
+            1.0,
+        ));
         assert_eq!(shuffled[0].len(), 3);
         assert_eq!(xs(&shuffled[0]), [dated[0], dated[1], dated[3]]);
-        assert!(shuffled[0][0].1 > shuffled[0][2].1, "the value of day 1 is the smallest: it is lowest");
+        assert!(
+            shuffled[0][0].1 > shuffled[0][2].1,
+            "the value of day 1 is the smallest: it is lowest"
+        );
         // Columns: one slot per day, so the missing days leave gaps.
         let group = SparklineGroup::new(SparklineType::Column);
-        let bars = rects(&shapes_at(&group, &values, Some(&dates), SharedScale::default(), 113.0, 26.0, 1.0));
+        let bars = rects(&shapes_at(
+            &group,
+            &values,
+            Some(&dates),
+            SharedScale::default(),
+            113.0,
+            26.0,
+            1.0,
+        ));
         assert_eq!(bars.len(), 4);
         let slot = 107.0 / 11.0;
         assert!((bars[1].0 - bars[0].0 - slot).abs() < 0.01);
-        assert!((bars[3].0 - bars[2].0 - 8.0 * slot).abs() < 0.05, "{bars:?}");
+        assert!(
+            (bars[3].0 - bars[2].0 - 8.0 * slot).abs() < 0.05,
+            "{bars:?}"
+        );
         assert!(bars[3].2 <= 110.01);
         // Right to left mirrors the places.
         let mut group = SparklineGroup::new(SparklineType::Line);
         group.right_to_left = true;
-        let mirrored = xs(&lines(&shapes_at(&group, &values, Some(&dates), SharedScale::default(), 106.0, 26.0, 1.0))[0]);
-        assert!((mirrored[0] - dated[0]).abs() < 0.01 && (mirrored[1] - (106.0 - dated[2])).abs() < 0.01, "{mirrored:?}");
+        let mirrored = xs(&lines(&shapes_at(
+            &group,
+            &values,
+            Some(&dates),
+            SharedScale::default(),
+            106.0,
+            26.0,
+            1.0,
+        ))[0]);
+        assert!(
+            (mirrored[0] - dated[0]).abs() < 0.01
+                && (mirrored[1] - (106.0 - dated[2])).abs() < 0.01,
+            "{mirrored:?}"
+        );
     }
 
     #[test]
@@ -1375,32 +1873,68 @@ mod tests {
         for (c, day) in ["45000", "45001", "45003", "45010"].iter().enumerate() {
             wb.set_cell_text(0, 5, c as u32, day).unwrap();
         }
-        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3")).unwrap();
+        wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3"))
+            .unwrap();
         wb.commit("Insert Sparkline");
         let group = |wb: &Workbook| wb.sheets[0].sparklines[0].clone();
         assert_eq!(wb.sparkline_dates(&group(&wb)), None);
         // A range of another length, or a block, does not fit.
-        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A6:C6")))), Err(SparklineError::Mismatch));
-        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A5:D6")))), Err(SparklineError::Mismatch));
-        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((9, rect("A6:D6")))), Err(SparklineError::BadData));
-        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("H9")], Some((0, rect("A6:D6")))), Ok(false));
-        assert_eq!(wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A6:D6")))), Ok(true));
+        assert_eq!(
+            wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A6:C6")))),
+            Err(SparklineError::Mismatch)
+        );
+        assert_eq!(
+            wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A5:D6")))),
+            Err(SparklineError::Mismatch)
+        );
+        assert_eq!(
+            wb.set_sparkline_date_axis(0, &[rect("F1")], Some((9, rect("A6:D6")))),
+            Err(SparklineError::BadData)
+        );
+        assert_eq!(
+            wb.set_sparkline_date_axis(0, &[rect("H9")], Some((0, rect("A6:D6")))),
+            Ok(false)
+        );
+        assert_eq!(
+            wb.set_sparkline_date_axis(0, &[rect("F1")], Some((0, rect("A6:D6")))),
+            Ok(true)
+        );
         wb.commit("Sparkline Axis");
-        assert_eq!(group(&wb).date_axis.as_ref().map(|d| d.range.name()), Some("A6:D6".to_string()));
-        assert_eq!(wb.sparkline_dates(&group(&wb)), Some(vec![Some(45000.0), Some(45001.0), Some(45003.0), Some(45010.0)]));
+        assert_eq!(
+            group(&wb).date_axis.as_ref().map(|d| d.range.name()),
+            Some("A6:D6".to_string())
+        );
+        assert_eq!(
+            wb.sparkline_dates(&group(&wb)),
+            Some(vec![
+                Some(45000.0),
+                Some(45001.0),
+                Some(45003.0),
+                Some(45010.0)
+            ])
+        );
         // A hidden column leaves the values and the dates together.
         wb.set_cols_hidden(0, 1, 1, true);
         wb.commit("hide");
         let g = group(&wb);
-        assert_eq!(wb.sparkline_dates(&g).unwrap().len(), wb.sparkline_values(&g, &g.sparklines[0]).len());
+        assert_eq!(
+            wb.sparkline_dates(&g).unwrap().len(),
+            wb.sparkline_values(&g, &g.sparklines[0]).len()
+        );
         assert!(wb.undo());
         // The range follows its cells, and its sheet's name.
         wb.insert_rows(0, 0, 2);
         wb.commit("insert");
-        assert_eq!(group(&wb).date_axis.as_ref().map(|d| d.range.name()), Some("A8:D8".to_string()));
+        assert_eq!(
+            group(&wb).date_axis.as_ref().map(|d| d.range.name()),
+            Some("A8:D8".to_string())
+        );
         assert!(wb.rename_sheet(0, "Data"));
         wb.commit("rename");
-        assert_eq!(group(&wb).date_axis.as_ref().map(|d| d.sheet.clone()), Some("Data".to_string()));
+        assert_eq!(
+            group(&wb).date_axis.as_ref().map(|d| d.sheet.clone()),
+            Some("Data".to_string())
+        );
         // Without its dates the group has a general axis again.
         wb.delete_rows(0, 7, 1);
         wb.commit("delete");

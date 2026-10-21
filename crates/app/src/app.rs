@@ -4,8 +4,8 @@
 //! file calls the hooks of `features/mod.rs` at the right moments.
 
 use crate::features::{
-    self, CellEdit, ChangeCause, Command, ContextMenu, Intent, MenuSection, MenuTarget, ObjectId, PendingEdit, Verdict,
-    ViewMode, Zone, ZoneEvent, ZoneResponse,
+    self, CellEdit, ChangeCause, Command, ContextMenu, Intent, MenuSection, MenuTarget, ObjectId,
+    PendingEdit, Verdict, ViewMode, Zone, ZoneEvent, ZoneResponse,
 };
 use crate::grid::{FontResolver, GridLayout, Selection};
 use crate::i18n::t;
@@ -13,11 +13,11 @@ use crate::shell::{Alert, ModalEntry, PaneEntry};
 use crate::text_input::{InputEvent, NavKey, TextInput};
 use crate::theme;
 use gpui::{
-    AnyView, App, Bounds, ClipboardItem, Context, Entity, EntityInputHandler, FocusHandle, Focusable, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollWheelEvent, SharedString, Subscription, Task,
-    UTF16Selection, Window, actions, point, prelude::*, px,
+    AnyView, App, Bounds, ClipboardItem, Context, Entity, EntityInputHandler, FocusHandle,
+    Focusable, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
+    ScrollWheelEvent, SharedString, Subscription, Task, UTF16Selection, Window, actions, point,
+    prelude::*, px,
 };
-use std::any::{Any, TypeId};
 use opensheet_engine::format;
 use opensheet_engine::ops::{BorderPreset, Clip, Direction, PasteMode, SelectionStats};
 use opensheet_engine::parser;
@@ -25,6 +25,7 @@ use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, cell_name};
 use opensheet_engine::style::{Border, Color, HAlign, Style, Underline, VAlign};
 use opensheet_engine::workbook::ClearMode;
 use opensheet_engine::{Locale, Rect, Workbook};
+use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -195,15 +196,40 @@ pub(crate) enum Drag {
     Point(SelectKind),
     /// Picking cells for the range field of a dialog.
     Pick(SelectKind),
-    Fill { src: Rect, dest: Rect },
-    ColResize { col: u32, start_x: f32, start_w: f32 },
-    RowResize { row: u32, start_y: f32, start_h: f32 },
-    VScroll { grab: f32 },
-    HScroll { grab: f32 },
+    Fill {
+        src: Rect,
+        dest: Rect,
+    },
+    ColResize {
+        col: u32,
+        start_x: f32,
+        start_w: f32,
+    },
+    RowResize {
+        row: u32,
+        start_y: f32,
+        start_h: f32,
+    },
+    VScroll {
+        grab: f32,
+    },
+    HScroll {
+        grab: f32,
+    },
     /// `origin`: the object's top-left corner in sheet pixels at 100 %.
-    ObjectMove { id: ObjectId, start: (f32, f32), origin: (f64, f64), size: (f32, f32) },
+    ObjectMove {
+        id: ObjectId,
+        start: (f32, f32),
+        origin: (f64, f64),
+        size: (f32, f32),
+    },
     /// `origin`: x, y, width, height in sheet pixels at 100 %.
-    ObjectResize { id: ObjectId, handle: u8, start: (f32, f32), origin: (f64, f64, f64, f64) },
+    ObjectResize {
+        id: ObjectId,
+        handle: u8,
+        start: (f32, f32),
+        origin: (f64, f64, f64, f64),
+    },
     /// A press a feature captured on one of its zones.
     Zone(Zone),
 }
@@ -269,9 +295,11 @@ impl MenuEntry {
 
     /// The entry of a feature command: its label, icon and current state.
     pub fn command<C: Command>(cmd: C, app: &ExcelApp) -> MenuEntry {
-        let mut entry = MenuEntry::new(cmd.label_in(app), move |a, window, cx| cmd.run(a, window, cx))
-            .checked(cmd.checked(app))
-            .disabled(!cmd.enabled(app));
+        let mut entry = MenuEntry::new(cmd.label_in(app), move |a, window, cx| {
+            cmd.run(a, window, cx)
+        })
+        .checked(cmd.checked(app))
+        .disabled(!cmd.enabled(app));
         if !cmd.icon().is_empty() {
             entry.icon = Some(cmd.icon());
         }
@@ -559,7 +587,13 @@ impl ExcelApp {
     }
 
     /// Replace the workbook (New / Open).
-    pub fn set_workbook(&mut self, wb: Workbook, path: Option<PathBuf>, title: String, cx: &mut Context<Self>) {
+    pub fn set_workbook(
+        &mut self,
+        wb: Workbook,
+        path: Option<PathBuf>,
+        title: String,
+        cx: &mut Context<Self>,
+    ) {
         self.views = wb.sheets.iter().map(|_| SheetView::default()).collect();
         // A1 inside a merged area selects the whole area, as a click on it.
         for (view, sheet) in self.views.iter_mut().zip(&wb.sheets) {
@@ -595,7 +629,9 @@ impl ExcelApp {
     /// What a feature keeps between events (`None` until it first asked for
     /// it with `ext_mut`).
     pub fn ext<T: 'static>(&self) -> Option<&T> {
-        self.ext.get(&TypeId::of::<T>()).and_then(|b| b.downcast_ref::<T>())
+        self.ext
+            .get(&TypeId::of::<T>())
+            .and_then(|b| b.downcast_ref::<T>())
     }
 
     /// The state of a feature, created on first use. It is dropped when
@@ -624,7 +660,11 @@ impl ExcelApp {
     }
 
     /// Like `may`, for every range of the selection.
-    pub(crate) fn may_all(&mut self, intent: impl Fn(Rect) -> Intent, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn may_all(
+        &mut self,
+        intent: impl Fn(Rect) -> Intent,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let ranges = self.sel().ranges.clone();
         ranges.into_iter().all(|r| self.may(intent(r), cx))
     }
@@ -720,9 +760,23 @@ impl ExcelApp {
         let text = match &self.drag {
             Some(Drag::Select(_)) if !sel.current().is_single() => {
                 let cur = sel.current();
-                let rows = if cur.is_whole_cols() { MAX_ROWS } else { cur.rows() };
-                let cols = if cur.is_whole_rows() { MAX_COLS } else { cur.cols() };
-                format!("{}{} x {}{}", rows, t("R", "L"), cols, crate::i18n::t_ctx("column", "C", "C"))
+                let rows = if cur.is_whole_cols() {
+                    MAX_ROWS
+                } else {
+                    cur.rows()
+                };
+                let cols = if cur.is_whole_rows() {
+                    MAX_COLS
+                } else {
+                    cur.cols()
+                };
+                format!(
+                    "{}{} x {}{}",
+                    rows,
+                    t("R", "L"),
+                    cols,
+                    crate::i18n::t_ctx("column", "C", "C")
+                )
             }
             // The name of the selected range, else the active cell.
             _ => features::names::name_box_label(self),
@@ -744,7 +798,10 @@ impl ExcelApp {
             format!(
                 "{} — {}",
                 what,
-                t("not available yet in this version", "pas encore disponible dans cette version")
+                t(
+                    "not available yet in this version",
+                    "pas encore disponible dans cette version"
+                )
             ),
             cx,
         );
@@ -757,7 +814,13 @@ impl ExcelApp {
     /// Layout for the current sheet using the last painted bounds.
     pub fn make_layout(&self, bounds: Bounds<Pixels>) -> GridLayout {
         let view = &self.views[self.sheet];
-        let mut layout = GridLayout::new(&self.wb.sheets[self.sheet], bounds, self.zoom, view.scroll_x, view.scroll_y);
+        let mut layout = GridLayout::new(
+            &self.wb.sheets[self.sheet],
+            bounds,
+            self.zoom,
+            view.scroll_x,
+            view.scroll_y,
+        );
         features::adjust_layout(self, &mut layout);
         layout
     }
@@ -859,8 +922,16 @@ impl ExcelApp {
     fn lead(&self) -> (u32, u32) {
         let sel = self.sel();
         let cur = sel.current();
-        let row = if sel.anchor.0 <= cur.r0 { cur.r1 } else { cur.r0 };
-        let col = if sel.anchor.1 <= cur.c0 { cur.c1 } else { cur.c0 };
+        let row = if sel.anchor.0 <= cur.r0 {
+            cur.r1
+        } else {
+            cur.r0
+        };
+        let col = if sel.anchor.1 <= cur.c0 {
+            cur.c1
+        } else {
+            cur.c0
+        };
         (row, col)
     }
 
@@ -895,7 +966,8 @@ impl ExcelApp {
             }
             r = nr as u32;
             c = nc as u32;
-            let hidden = (dr != 0 && sheet.is_row_hidden(r)) || (dc != 0 && sheet.hidden_cols.contains(&c));
+            let hidden =
+                (dr != 0 && sheet.is_row_hidden(r)) || (dc != 0 && sheet.hidden_cols.contains(&c));
             if !hidden {
                 return (r, c);
             }
@@ -912,7 +984,8 @@ impl ExcelApp {
             self.extend_to(r, c, cx);
         } else {
             let from = self.active();
-            let (r, c) = features::next_cell(self, from, dir, false).unwrap_or_else(|| self.step(from, dir));
+            let (r, c) =
+                features::next_cell(self, from, dir, false).unwrap_or_else(|| self.step(from, dir));
             self.select_cell(r, c, cx);
         }
     }
@@ -997,7 +1070,10 @@ impl ExcelApp {
     }
 
     pub fn switch_sheet(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if index >= self.wb.sheets.len() || index == self.sheet || !self.wb.sheets[index].is_visible() {
+        if index >= self.wb.sheets.len()
+            || index == self.sheet
+            || !self.wb.sheets[index].is_visible()
+        {
             return;
         }
         if self.editing.is_some() && !self.commit_edit(None, window, cx) {
@@ -1035,7 +1111,14 @@ impl ExcelApp {
     /// While a cell is being edited, a key that reached the grid (the
     /// editor lost focus) is handled as if typed in the editor. Returns
     /// true when the key was consumed.
-    fn editing_key(&mut self, dir: Direction, extend: bool, commit: bool, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    fn editing_key(
+        &mut self,
+        dir: Direction,
+        extend: bool,
+        commit: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if self.editing.is_none() {
             return false;
         }
@@ -1155,7 +1238,13 @@ impl ExcelApp {
         }
     }
 
-    fn on_editor_event(&mut self, source: EditSource, ev: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_editor_event(
+        &mut self,
+        source: EditSource,
+        ev: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match ev {
             InputEvent::Focused => {
                 // Clicking into the formula bar starts editing the cell.
@@ -1175,7 +1264,8 @@ impl ExcelApp {
                         source,
                         point: None,
                     });
-                    self.cell_editor.update(cx, |input, cx| input.set_text(text, cx));
+                    self.cell_editor
+                        .update(cx, |input, cx| input.set_text(text, cx));
                     self.update_ref_highlights(cx);
                     cx.notify();
                 } else if let Some(edit) = &mut self.editing {
@@ -1215,14 +1305,19 @@ impl ExcelApp {
                 if self.commit_edit(dir, window, cx) {
                     // After a run of Tab entries, Enter goes back under the
                     // first one.
-                    if let (Some(col), false, true) = (origin, *shift, self.sel().is_single_cell()) {
+                    if let (Some(col), false, true) = (origin, *shift, self.sel().is_single_cell())
+                    {
                         let (r, _) = self.active();
                         self.select_cell(r, col, cx);
                     }
                 }
             }
             InputEvent::Tab { shift } => {
-                let dir = if *shift { Direction::Left } else { Direction::Right };
+                let dir = if *shift {
+                    Direction::Left
+                } else {
+                    Direction::Right
+                };
                 let col = self.editing.as_ref().map(|e| e.col);
                 let origin = self.tab_origin.or(col);
                 features::tables::tab_pressed(self);
@@ -1276,7 +1371,13 @@ impl ExcelApp {
     }
 
     /// Insert (or replace) the pointed reference in the formula.
-    fn point_at(&mut self, anchor: (u32, u32), lead: (u32, u32), kind: SelectKind, cx: &mut Context<Self>) {
+    fn point_at(
+        &mut self,
+        anchor: (u32, u32),
+        lead: (u32, u32),
+        kind: SelectKind,
+        cx: &mut Context<Self>,
+    ) {
         let Some(edit) = &self.editing else {
             return;
         };
@@ -1322,7 +1423,13 @@ impl ExcelApp {
         cx.notify();
     }
 
-    fn point_step(&mut self, dir: Direction, extend: bool, _window: &mut Window, cx: &mut Context<Self>) {
+    fn point_step(
+        &mut self,
+        dir: Direction,
+        extend: bool,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(edit) = &self.editing else {
             return;
         };
@@ -1340,7 +1447,12 @@ impl ExcelApp {
 
     /// Store the edited text into the cell. Returns false when the entry was
     /// rejected (invalid formula, data validation) and editing continues.
-    pub fn commit_edit(&mut self, advance: Option<Direction>, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub fn commit_edit(
+        &mut self,
+        advance: Option<Direction>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(edit) = &self.editing else {
             return true;
         };
@@ -1362,7 +1474,12 @@ impl ExcelApp {
 
     /// `commit_edit` without asking the features first: what the "Yes"
     /// button of a validation warning does.
-    pub fn commit_edit_unchecked(&mut self, advance: Option<Direction>, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub fn commit_edit_unchecked(
+        &mut self,
+        advance: Option<Direction>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(edit) = &self.editing else {
             return true;
         };
@@ -1437,7 +1554,13 @@ impl ExcelApp {
 
     // ---- name box / rename / find events ----------------------------------
 
-    fn on_name_box_event(&mut self, _: &Entity<TextInput>, ev: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_name_box_event(
+        &mut self,
+        _: &Entity<TextInput>,
+        ev: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match ev {
             InputEvent::Enter { .. } => {
                 let text = self.name_box.read(cx).text().to_string();
@@ -1455,7 +1578,12 @@ impl ExcelApp {
         }
     }
 
-    pub fn begin_rename_sheet(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn begin_rename_sheet(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if index >= self.wb.sheets.len() || !self.may(Intent::RenameSheet, cx) {
             return;
         }
@@ -1470,7 +1598,13 @@ impl ExcelApp {
         cx.notify();
     }
 
-    fn on_rename_event(&mut self, _: &Entity<TextInput>, ev: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_rename_event(
+        &mut self,
+        _: &Entity<TextInput>,
+        ev: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(index) = self.renaming_sheet else {
             return;
         };
@@ -1503,7 +1637,13 @@ impl ExcelApp {
         }
     }
 
-    fn on_find_event(&mut self, _: &Entity<TextInput>, ev: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_find_event(
+        &mut self,
+        _: &Entity<TextInput>,
+        ev: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match ev {
             InputEvent::Enter { .. } => self.find_next(cx),
             InputEvent::Escape => {
@@ -1528,7 +1668,8 @@ impl ExcelApp {
         if self.show_find {
             let handle = self.find_input.read(cx).focus_handle(cx);
             window.focus(&handle);
-            self.find_input.update(cx, |input, cx| input.select_all_text(cx));
+            self.find_input
+                .update(cx, |input, cx| input.select_all_text(cx));
         } else {
             window.focus(&self.grid_focus);
         }
@@ -1546,9 +1687,22 @@ impl ExcelApp {
     /// Finish a transaction that changed cells of the current sheet: the
     /// features first add what belongs to the same undo step, then hear
     /// about the committed change.
-    pub fn commit_cells(&mut self, label: &str, rects: &[Rect], cause: ChangeCause, cx: &mut Context<Self>) {
+    pub fn commit_cells(
+        &mut self,
+        label: &str,
+        rects: &[Rect],
+        cause: ChangeCause,
+        cx: &mut Context<Self>,
+    ) {
         let sheet = self.sheet;
-        let edits: Vec<CellEdit> = rects.iter().map(|rect| CellEdit { sheet, rect: *rect, cause }).collect();
+        let edits: Vec<CellEdit> = rects
+            .iter()
+            .map(|rect| CellEdit {
+                sheet,
+                rect: *rect,
+                cause,
+            })
+            .collect();
         for edit in &edits {
             features::cells_written(self, edit, cx);
         }
@@ -1592,7 +1746,9 @@ impl ExcelApp {
             ClearMode::Formats => self.may_all(Intent::FormatCells, cx),
             ClearMode::Comments => self.may(Intent::EditComment, cx),
             // Clear All takes the formats away with the contents.
-            ClearMode::All => self.may_all(Intent::EditCells, cx) && self.may_all(Intent::FormatCells, cx),
+            ClearMode::All => {
+                self.may_all(Intent::EditCells, cx) && self.may_all(Intent::FormatCells, cx)
+            }
         };
         if !allowed {
             return;
@@ -1651,7 +1807,10 @@ impl ExcelApp {
             PasteMode::Formats => Intent::FormatCells(target),
             _ => Intent::EditCells(target),
         };
-        if !targets.into_iter().all(|target| self.may(intent(target), cx)) {
+        if !targets
+            .into_iter()
+            .all(|target| self.may(intent(target), cx))
+        {
             return;
         }
         // Where the cells come from, for the features that follow them
@@ -1663,9 +1822,13 @@ impl ExcelApp {
             from = Some((state.clip.sheet, state.clip.rect));
             if state.cut && mode == PasteMode::All {
                 cut = true;
-                let out = self
-                    .wb
-                    .move_range(state.clip.sheet, state.clip.rect, self.sheet, dest.r0, dest.c0);
+                let out = self.wb.move_range(
+                    state.clip.sheet,
+                    state.clip.rect,
+                    self.sheet,
+                    dest.r0,
+                    dest.c0,
+                );
                 Some(out)
             } else {
                 let out = self.wb.paste(self.sheet, dest, &state.clip, mode);
@@ -1683,14 +1846,25 @@ impl ExcelApp {
             sel.ranges = vec![rect];
             sel.active = active;
             sel.anchor = active;
-            self.commit_cells(t("Paste", "Coller"), &[rect], ChangeCause::Paste { from, cut, mode }, cx);
+            self.commit_cells(
+                t("Paste", "Coller"),
+                &[rect],
+                ChangeCause::Paste { from, cut, mode },
+                cx,
+            );
         }
     }
 
     /// The cells a paste at `dest` will write: the block on the clipboard,
     /// repeated when the selection is a multiple of it, without the rows a
     /// filter hides.
-    fn paste_targets(&self, dest: Rect, internal: bool, text: Option<&str>, mode: PasteMode) -> Vec<Rect> {
+    fn paste_targets(
+        &self,
+        dest: Rect,
+        internal: bool,
+        text: Option<&str>,
+        mode: PasteMode,
+    ) -> Vec<Rect> {
         let block = |rows: u32, cols: u32| {
             vec![Rect::new(
                 dest.r0,
@@ -1745,13 +1919,19 @@ impl ExcelApp {
     pub fn toggle_underline(&mut self, cx: &mut Context<Self>) {
         let on = self.active_style().font.underline == Underline::None;
         self.apply_style(t("Underline", "Souligné"), cx, move |s| {
-            s.font.underline = if on { Underline::Single } else { Underline::None }
+            s.font.underline = if on {
+                Underline::Single
+            } else {
+                Underline::None
+            }
         });
     }
 
     pub fn toggle_strike(&mut self, cx: &mut Context<Self>) {
         let on = !self.active_style().font.strike;
-        self.apply_style(t("Strikethrough", "Barré"), cx, move |s| s.font.strike = on);
+        self.apply_style(t("Strikethrough", "Barré"), cx, move |s| {
+            s.font.strike = on
+        });
     }
 
     pub fn set_font_name(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -1759,7 +1939,9 @@ impl ExcelApp {
         // becomes; any other name is that font.
         let name: Arc<str> = Arc::from(name);
         let document = self.wb.theme_arc();
-        self.apply_style(t("Font", "Police"), cx, move |s| theme::set_font_choice(&mut s.font, &name, &document));
+        self.apply_style(t("Font", "Police"), cx, move |s| {
+            theme::set_font_choice(&mut s.font, &name, &document)
+        });
     }
 
     pub fn set_font_size(&mut self, pt: f32, cx: &mut Context<Self>) {
@@ -1767,7 +1949,13 @@ impl ExcelApp {
         // A selected object takes the size for its own text.
         if let Some(id) = self.object_sel {
             let label = t("Font Size", "Taille de police");
-            if features::all()[id.owner].object_style(self, id.id, label, &|s| s.font.set_size_pt(pt), cx) {
+            if features::all()[id.owner].object_style(
+                self,
+                id.id,
+                label,
+                &|s| s.font.set_size_pt(pt),
+                cx,
+            ) {
                 return;
             }
         }
@@ -1776,7 +1964,8 @@ impl ExcelApp {
         }
         let ranges = self.sel().ranges.clone();
         for r in &ranges {
-            self.wb.update_style(self.sheet, *r, &|s| s.font.set_size_pt(pt));
+            self.wb
+                .update_style(self.sheet, *r, &|s| s.font.set_size_pt(pt));
         }
         self.grow_rows_for_font(pt);
         self.commit(t("Font Size", "Taille de police"), cx);
@@ -1803,12 +1992,14 @@ impl ExcelApp {
     }
 
     pub const FONT_SIZES: [f32; 16] = [
-        8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0, 72.0,
+        8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0,
+        72.0,
     ];
 
     pub fn step_font_size(&mut self, grow: bool, cx: &mut Context<Self>) {
         // The text of a selected chart element is what grows and shrinks.
-        let cur = features::charts::home_text_size(self).unwrap_or_else(|| self.active_style().font.size_pt());
+        let cur = features::charts::home_text_size(self)
+            .unwrap_or_else(|| self.active_style().font.size_pt());
         let next = if grow {
             Self::FONT_SIZES
                 .iter()
@@ -1841,7 +2032,9 @@ impl ExcelApp {
 
     pub fn toggle_wrap(&mut self, cx: &mut Context<Self>) {
         let on = !self.active_style().wrap;
-        self.apply_style(t("Wrap Text", "Renvoyer à la ligne"), cx, move |s| s.wrap = on);
+        self.apply_style(t("Wrap Text", "Renvoyer à la ligne"), cx, move |s| {
+            s.wrap = on
+        });
     }
 
     pub fn change_indent(&mut self, delta: i32, cx: &mut Context<Self>) {
@@ -1857,19 +2050,25 @@ impl ExcelApp {
         if color.is_some() {
             self.last_fill = color;
         }
-        self.apply_style(t("Fill Color", "Couleur de remplissage"), cx, move |s| s.fill = color);
+        self.apply_style(t("Fill Color", "Couleur de remplissage"), cx, move |s| {
+            s.fill = color
+        });
     }
 
     pub fn set_font_color(&mut self, color: Option<Color>, cx: &mut Context<Self>) {
         if color.is_some() {
             self.last_font_color = color;
         }
-        self.apply_style(t("Font Color", "Couleur de police"), cx, move |s| s.font.color = color);
+        self.apply_style(t("Font Color", "Couleur de police"), cx, move |s| {
+            s.font.color = color
+        });
     }
 
     pub fn set_number_format(&mut self, code: &str, cx: &mut Context<Self>) {
         let code: Arc<str> = Arc::from(code);
-        self.apply_style(t("Number Format", "Format de nombre"), cx, move |s| s.num_fmt = code.clone());
+        self.apply_style(t("Number Format", "Format de nombre"), cx, move |s| {
+            s.num_fmt = code.clone()
+        });
     }
 
     pub fn change_decimals(&mut self, delta: i32, cx: &mut Context<Self>) {
@@ -1914,12 +2113,19 @@ impl ExcelApp {
         if !self.may(Intent::ChangeSheet, cx) {
             return;
         }
-        if self.wb.sheets[sheet].merges.iter().any(|m| rect.intersects(m)) {
+        if self.wb.sheets[sheet]
+            .merges
+            .iter()
+            .any(|m| rect.intersects(m))
+        {
             self.wb.unmerge(sheet, rect);
         } else if !rect.is_single() {
             self.wb.merge(sheet, rect);
             if center {
-                self.wb.update_style(sheet, Rect::cell(rect.r0, rect.c0), &|s| s.h_align = HAlign::Center);
+                self.wb
+                    .update_style(sheet, Rect::cell(rect.r0, rect.c0), &|s| {
+                        s.h_align = HAlign::Center
+                    });
             }
         }
         self.commit(t("Merge Cells", "Fusionner les cellules"), cx);
@@ -1939,7 +2145,13 @@ impl ExcelApp {
 
     pub fn delete_rows(&mut self, cx: &mut Context<Self>) {
         let r = self.sel().current();
-        if !self.may(Intent::DeleteRows { first: r.r0, last: r.r1 }, cx) {
+        if !self.may(
+            Intent::DeleteRows {
+                first: r.r0,
+                last: r.r1,
+            },
+            cx,
+        ) {
             return;
         }
         self.wb.delete_rows(self.sheet, r.r0, r.rows());
@@ -1958,7 +2170,13 @@ impl ExcelApp {
 
     pub fn delete_cols(&mut self, cx: &mut Context<Self>) {
         let r = self.sel().current();
-        if !self.may(Intent::DeleteColumns { first: r.c0, last: r.c1 }, cx) {
+        if !self.may(
+            Intent::DeleteColumns {
+                first: r.c0,
+                last: r.c1,
+            },
+            cx,
+        ) {
             return;
         }
         self.wb.delete_cols(self.sheet, r.c0, r.cols());
@@ -2065,7 +2283,10 @@ impl ExcelApp {
             self.refresh(cx);
         } else if self.wb.sheets.len() > 1 {
             // Hidden sheets remain: this one is the last with a tab.
-            self.alert(Alert::new("OpenSheet", features::sheets::last_visible_message()).warning(), cx);
+            self.alert(
+                Alert::new("OpenSheet", features::sheets::last_visible_message()).warning(),
+                cx,
+            );
         }
     }
 
@@ -2154,7 +2375,10 @@ impl ExcelApp {
             if x - left <= 4.0 && col > 0 {
                 // The border on the left belongs to the previous visible column.
                 let mut prev = col - 1;
-                while prev > 0 && layout.col_w(prev) <= 0.0 && self.wb.sheets[self.sheet].hidden_cols.contains(&prev) {
+                while prev > 0
+                    && layout.col_w(prev) <= 0.0
+                    && self.wb.sheets[self.sheet].hidden_cols.contains(&prev)
+                {
                     prev -= 1;
                 }
                 return Hit::ColResize(prev);
@@ -2247,7 +2471,12 @@ impl ExcelApp {
         window.prevent_default();
     }
 
-    pub fn grid_mouse_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn grid_mouse_down(
+        &mut self,
+        ev: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.grid_mouse_down_inner(ev, window, cx);
         if self.editing.is_some() && !self.modal_open() {
             // Whatever the click did (double-click to edit, pointing at a
@@ -2258,7 +2487,12 @@ impl ExcelApp {
         }
     }
 
-    fn grid_mouse_down_inner(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn grid_mouse_down_inner(
+        &mut self,
+        ev: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(layout) = self.current_layout() else {
             return;
         };
@@ -2267,7 +2501,13 @@ impl ExcelApp {
         // A feature's zone gets the press first and may let it through.
         if let Hit::Zone(i) = hit {
             let zone = self.zones[i].clone();
-            let event = self.zone_event(&layout, ev.position, ev.button, ev.modifiers, ev.click_count);
+            let event = self.zone_event(
+                &layout,
+                ev.position,
+                ev.button,
+                ev.modifiers,
+                ev.click_count,
+            );
             let focus = window.focused(cx);
             match features::all()[zone.owner].zone_mouse_down(self, &zone, &event, window, cx) {
                 ZoneResponse::Ignored => hit = self.hit_test_inner(&layout, ev.position, false),
@@ -2319,7 +2559,13 @@ impl ExcelApp {
                     return;
                 }
                 if ev.click_count >= 2 && matches!(hit, Hit::Object(_)) {
-                    let event = self.zone_event(&layout, ev.position, ev.button, ev.modifiers, ev.click_count);
+                    let event = self.zone_event(
+                        &layout,
+                        ev.position,
+                        ev.button,
+                        ev.modifiers,
+                        ev.click_count,
+                    );
                     let focus = window.focused(cx);
                     features::all()[id.owner].object_double_click(self, id.id, &event, window, cx);
                     // The feature may have put the keyboard in a field.
@@ -2338,11 +2584,15 @@ impl ExcelApp {
             }
             Hit::VThumb => {
                 let (_, ty, _, pos, _) = layout.v_scrollbar(self.content_size(&layout).1);
-                self.drag = Some(Drag::VScroll { grab: ly - (ty + pos) });
+                self.drag = Some(Drag::VScroll {
+                    grab: ly - (ty + pos),
+                });
             }
             Hit::HThumb => {
                 let (tx, _, _, pos, _) = layout.h_scrollbar(self.content_size(&layout).0);
-                self.drag = Some(Drag::HScroll { grab: lx - (tx + pos) });
+                self.drag = Some(Drag::HScroll {
+                    grab: lx - (tx + pos),
+                });
             }
             Hit::VTrack => {
                 let (_, ty, _, pos, _) = layout.v_scrollbar(self.content_size(&layout).1);
@@ -2479,7 +2729,14 @@ impl ExcelApp {
                 if self.editing.is_some() {
                     if self.can_point(cx) {
                         if shift && self.editing.as_ref().is_some_and(|e| e.point.is_some()) {
-                            let anchor = self.editing.as_ref().unwrap().point.as_ref().unwrap().anchor;
+                            let anchor = self
+                                .editing
+                                .as_ref()
+                                .unwrap()
+                                .point
+                                .as_ref()
+                                .unwrap()
+                                .anchor;
                             self.point_at(anchor, (row, col), SelectKind::Cells, cx);
                         } else {
                             self.point_at((row, col), (row, col), SelectKind::Cells, cx);
@@ -2521,25 +2778,45 @@ impl ExcelApp {
 
     /// After a double click on a cell: put the caret at the character
     /// under the pointer, where the editor now shows it.
-    fn caret_under_pointer(&mut self, layout: &GridLayout, lx: f32, window: &mut Window, cx: &mut Context<Self>) {
+    fn caret_under_pointer(
+        &mut self,
+        layout: &GridLayout,
+        lx: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(edit) = &self.editing else {
             return;
         };
         let sheet = &self.wb.sheets[self.sheet];
-        let rect = sheet.merge_at(edit.row, edit.col).unwrap_or(Rect::cell(edit.row, edit.col));
+        let rect = sheet
+            .merge_at(edit.row, edit.col)
+            .unwrap_or(Rect::cell(edit.row, edit.col));
         let (x0, _, _, _) = layout.rect_px(rect);
-        let style = self.wb.display(self.sheet, edit.row, edit.col).style.into_owned();
+        let style = self
+            .wb
+            .display(self.sheet, edit.row, edit.col)
+            .style
+            .into_owned();
         let font_px = (crate::grid::pt_to_px(style.font.size_pt()) * self.zoom).max(1.0);
         let pad = (3.0 * self.zoom).round().max(1.0);
         let font = crate::grid::cell_font(&style, &self.fonts);
         let text = self.cell_editor.read(cx).text().to_string();
-        let index = TextInput::index_for_offset(&text, px(lx - x0 - pad), font, px(font_px), window);
-        self.cell_editor.update(cx, |input, cx| input.set_selection(index..index, cx));
+        let index =
+            TextInput::index_for_offset(&text, px(lx - x0 - pad), font, px(font_px), window);
+        self.cell_editor
+            .update(cx, |input, cx| input.set_selection(index..index, cx));
     }
 
     /// The pointer went from one part of the grid to another: tell the
     /// feature whose zone was left or entered, and arm its tooltip.
-    fn hover_changed(&mut self, was: Hit, now: Hit, position: Point<Pixels>, cx: &mut Context<Self>) {
+    fn hover_changed(
+        &mut self,
+        was: Hit,
+        now: Hit,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         self.hide_zone_tip();
         if let (Hit::Zone(_), Some(owner)) = (was, self.hover_owner.take()) {
             features::all()[owner].zone_hover(self, None, cx);
@@ -2571,7 +2848,12 @@ impl ExcelApp {
         self.zone_tip = None;
     }
 
-    pub fn grid_mouse_move(&mut self, ev: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn grid_mouse_move(
+        &mut self,
+        ev: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(layout) = self.current_layout() else {
             return;
         };
@@ -2582,7 +2864,8 @@ impl ExcelApp {
                 // from one feature zone or handle to another: they may
                 // differ in cursor).
                 let kind = |h: Hit| std::mem::discriminant(&h);
-                let changed = kind(hit) != kind(self.hover) || matches!(hit, Hit::Zone(_) | Hit::ObjectHandle(..));
+                let changed = kind(hit) != kind(self.hover)
+                    || matches!(hit, Hit::Zone(_) | Hit::ObjectHandle(..));
                 let was = self.hover;
                 self.hover = hit;
                 self.hover_changed(was, hit, ev.position, cx);
@@ -2600,7 +2883,8 @@ impl ExcelApp {
         let (lx, ly) = layout.local(ev.position);
         match drag {
             Drag::Zone(zone) => {
-                let event = self.zone_event(&layout, ev.position, MouseButton::Left, ev.modifiers, 1);
+                let event =
+                    self.zone_event(&layout, ev.position, MouseButton::Left, ev.modifiers, 1);
                 features::all()[zone.owner].zone_drag(self, &zone, &event, window, cx);
             }
             Drag::Pick(kind) => {
@@ -2617,15 +2901,26 @@ impl ExcelApp {
                         let rect = self.expand_merges(Rect::new(anchor.0, anchor.1, row, col));
                         self.sel_mut().set_current(rect);
                     }
-                    SelectKind::Cols => self.sel_mut().set_current(Rect::new(0, anchor.1, MAX_ROWS - 1, col)),
-                    SelectKind::Rows => self.sel_mut().set_current(Rect::new(anchor.0, 0, row, MAX_COLS - 1)),
+                    SelectKind::Cols => {
+                        self.sel_mut()
+                            .set_current(Rect::new(0, anchor.1, MAX_ROWS - 1, col))
+                    }
+                    SelectKind::Rows => {
+                        self.sel_mut()
+                            .set_current(Rect::new(anchor.0, 0, row, MAX_COLS - 1))
+                    }
                 }
                 self.update_name_box(cx);
             }
             Drag::Point(kind) => {
                 self.autoscroll(&layout, ev.position);
                 let (row, col) = self.cell_at_clamped(&layout, ev.position);
-                if let Some(anchor) = self.editing.as_ref().and_then(|e| e.point.as_ref()).map(|p| p.anchor) {
+                if let Some(anchor) = self
+                    .editing
+                    .as_ref()
+                    .and_then(|e| e.point.as_ref())
+                    .map(|p| p.anchor)
+                {
                     self.point_at(anchor, (row, col), kind, cx);
                 }
             }
@@ -2656,17 +2951,36 @@ impl ExcelApp {
                 };
                 self.drag = Some(Drag::Fill { src, dest });
             }
-            Drag::ColResize { col, start_x, start_w } => {
+            Drag::ColResize {
+                col,
+                start_x,
+                start_w,
+            } => {
                 let w = (start_w + (lx - start_x) / self.zoom).round().max(0.0);
                 self.wb.set_col_width(self.sheet, col, Some(w));
-                self.set_status(crate::i18n::labelled(t("Width", "Largeur"), format!("{w:.0} px")), cx);
+                self.set_status(
+                    crate::i18n::labelled(t("Width", "Largeur"), format!("{w:.0} px")),
+                    cx,
+                );
             }
-            Drag::RowResize { row, start_y, start_h } => {
+            Drag::RowResize {
+                row,
+                start_y,
+                start_h,
+            } => {
                 let h = (start_h + (ly - start_y) / self.zoom).round().max(0.0);
                 self.wb.set_row_height(self.sheet, row, Some(h));
-                self.set_status(crate::i18n::labelled(t("Height", "Hauteur"), format!("{h:.0} px")), cx);
+                self.set_status(
+                    crate::i18n::labelled(t("Height", "Hauteur"), format!("{h:.0} px")),
+                    cx,
+                );
             }
-            Drag::ObjectMove { id, start, origin, size } => {
+            Drag::ObjectMove {
+                id,
+                start,
+                origin,
+                size,
+            } => {
                 self.drag_object_move(&layout, id, start, origin, size, (lx, ly));
             }
             Drag::ObjectResize {
@@ -2703,7 +3017,8 @@ impl ExcelApp {
             let zone = zone.clone();
             self.drag = None;
             if let Some(layout) = self.current_layout() {
-                let event = self.zone_event(&layout, position, MouseButton::Left, window.modifiers(), 1);
+                let event =
+                    self.zone_event(&layout, position, MouseButton::Left, window.modifiers(), 1);
                 features::all()[zone.owner].zone_mouse_up(self, &zone, &event, window, cx);
             }
             cx.notify();
@@ -2720,7 +3035,12 @@ impl ExcelApp {
             Drag::Fill { src, dest } => {
                 if dest != src && self.may(Intent::EditCells(dest), cx) {
                     self.wb.autofill(self.sheet, src, dest);
-                    self.commit_cells(t("Auto Fill", "Recopie incrémentée"), &[dest], ChangeCause::Fill, cx);
+                    self.commit_cells(
+                        t("Auto Fill", "Recopie incrémentée"),
+                        &[dest],
+                        ChangeCause::Fill,
+                        cx,
+                    );
                     let active = self.active();
                     let sel = self.sel_mut();
                     sel.ranges = vec![dest];
@@ -2741,7 +3061,9 @@ impl ExcelApp {
                 self.status_message = None;
             }
             Drag::ObjectMove { id, .. } => self.commit_object(id, features::ObjectVerb::Move, cx),
-            Drag::ObjectResize { id, .. } => self.commit_object(id, features::ObjectVerb::Resize, cx),
+            Drag::ObjectResize { id, .. } => {
+                self.commit_object(id, features::ObjectVerb::Resize, cx)
+            }
             Drag::Pick(_) => self.end_pick(cx),
             Drag::Select(_) => {
                 // The format painter applies to the range just selected.
@@ -2752,7 +3074,8 @@ impl ExcelApp {
                         return;
                     }
                     self.wb.paste(self.sheet, dest, &clip, PasteMode::Formats);
-                    self.wb.commit(t("Format Painter", "Reproduire la mise en forme"));
+                    self.wb
+                        .commit(t("Format Painter", "Reproduire la mise en forme"));
                     self.status_message = None;
                 }
             }
@@ -2766,9 +3089,12 @@ impl ExcelApp {
     fn fill_down_to_neighbour(&mut self, src: Rect, cx: &mut Context<Self>) {
         let sheet = &self.wb.sheets[self.sheet];
         let mut last = src.r1;
-        for col in [src.c0.checked_sub(1), (src.c1 + 1 < MAX_COLS).then_some(src.c1 + 1)]
-            .into_iter()
-            .flatten()
+        for col in [
+            src.c0.checked_sub(1),
+            (src.c1 + 1 < MAX_COLS).then_some(src.c1 + 1),
+        ]
+        .into_iter()
+        .flatten()
         {
             let mut r = src.r1;
             while r + 1 < MAX_ROWS && !sheet.is_blank(r + 1, col) {
@@ -2783,7 +3109,12 @@ impl ExcelApp {
             }
             self.wb.autofill(self.sheet, src, dest);
             self.sel_mut().ranges = vec![dest];
-            self.commit_cells(t("Auto Fill", "Recopie incrémentée"), &[dest], ChangeCause::Fill, cx);
+            self.commit_cells(
+                t("Auto Fill", "Recopie incrémentée"),
+                &[dest],
+                ChangeCause::Fill,
+                cx,
+            );
         }
     }
 
@@ -2799,7 +3130,12 @@ impl ExcelApp {
         );
     }
 
-    pub fn grid_mouse_up(&mut self, ev: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn grid_mouse_up(
+        &mut self,
+        ev: &MouseUpEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.end_drag(ev.position, window, cx);
     }
 
@@ -2845,8 +3181,12 @@ impl ExcelApp {
                 .get(i)
                 .and_then(|zone| zone.cursor)
                 .unwrap_or(CursorStyle::Arrow),
-            (Some(Drag::ColResize { .. }), _) | (None, Hit::ColResize(_)) => CursorStyle::ResizeLeftRight,
-            (Some(Drag::RowResize { .. }), _) | (None, Hit::RowResize(_)) => CursorStyle::ResizeUpDown,
+            (Some(Drag::ColResize { .. }), _) | (None, Hit::ColResize(_)) => {
+                CursorStyle::ResizeLeftRight
+            }
+            (Some(Drag::RowResize { .. }), _) | (None, Hit::RowResize(_)) => {
+                CursorStyle::ResizeUpDown
+            }
             (Some(Drag::Fill { .. }), _) | (None, Hit::FillHandle) => CursorStyle::Crosshair,
             _ if self.painter.is_some() => CursorStyle::Crosshair,
             _ => CursorStyle::Arrow,
@@ -2862,14 +3202,22 @@ impl ExcelApp {
         }
     }
 
-    pub fn grid_scroll(&mut self, ev: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn grid_scroll(
+        &mut self,
+        ev: &ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let delta = ev.delta.pixel_delta(px(20.0 * self.zoom));
         let (mut dx, mut dy) = (f32::from(delta.x) as f64, f32::from(delta.y) as f64);
         // A feature's zone may scroll what it shows (the buttons of a
         // slicer) instead of the sheet.
         if let Some(layout) = self.current_layout() {
             let (x, y) = layout.local(ev.position);
-            if let Some(zone) = self.zone_at(x, y, true).or_else(|| self.zone_at(x, y, false)).map(|i| self.zones[i].clone())
+            if let Some(zone) = self
+                .zone_at(x, y, true)
+                .or_else(|| self.zone_at(x, y, false))
+                .map(|i| self.zones[i].clone())
                 && features::all()[zone.owner].zone_scroll(self, &zone, (dx as f32, dy as f32), cx)
             {
                 cx.notify();
@@ -2897,7 +3245,13 @@ impl ExcelApp {
         cx.notify();
     }
 
-    fn grid_context_menu(&mut self, hit: Hit, pos: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+    fn grid_context_menu(
+        &mut self,
+        hit: Hit,
+        pos: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.editing.is_some() && !self.commit_edit(None, window, cx) {
             return;
         }
@@ -2905,15 +3259,21 @@ impl ExcelApp {
         let mut menu = ContextMenu::default();
         let clipboard = |menu: &mut ContextMenu| {
             let mut add = |entry: MenuEntry| menu.add(MenuSection::Clipboard, entry);
-            add(MenuEntry::new(t("Cut", "Couper"), |a, _, cx| a.copy(true, cx))
-                .icon("cut")
-                .shortcut("⌘X"));
-            add(MenuEntry::new(t("Copy", "Copier"), |a, _, cx| a.copy(false, cx))
-                .icon("copy")
-                .shortcut("⌘C"));
-            add(MenuEntry::new(t("Paste", "Coller"), |a, _, cx| a.paste(PasteMode::All, cx))
-                .icon("paste")
-                .shortcut("⌘V"));
+            add(
+                MenuEntry::new(t("Cut", "Couper"), |a, _, cx| a.copy(true, cx))
+                    .icon("cut")
+                    .shortcut("⌘X"),
+            );
+            add(
+                MenuEntry::new(t("Copy", "Copier"), |a, _, cx| a.copy(false, cx))
+                    .icon("copy")
+                    .shortcut("⌘C"),
+            );
+            add(
+                MenuEntry::new(t("Paste", "Coller"), |a, _, cx| a.paste(PasteMode::All, cx))
+                    .icon("paste")
+                    .shortcut("⌘V"),
+            );
         };
         let paste_special = |menu: &mut ContextMenu| {
             menu.add(
@@ -2925,9 +3285,10 @@ impl ExcelApp {
             );
             menu.add(
                 MenuSection::Clipboard,
-                MenuEntry::new(t("Paste Formatting", "Coller la mise en forme"), |a, _, cx| {
-                    a.paste(PasteMode::Formats, cx)
-                }),
+                MenuEntry::new(
+                    t("Paste Formatting", "Coller la mise en forme"),
+                    |a, _, cx| a.paste(PasteMode::Formats, cx),
+                ),
             );
         };
         let clear = || {
@@ -2940,16 +3301,22 @@ impl ExcelApp {
                 self.click_object(id, false, cx);
                 clipboard(&mut menu);
                 let order = |label: &'static str, mv: features::ZMove| {
-                    MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
-                        a.reorder_object(mv, cx)
-                    })
+                    MenuEntry::new(
+                        label,
+                        move |a: &mut ExcelApp, _: &mut Window, cx: &mut Context<ExcelApp>| {
+                            a.reorder_object(mv, cx)
+                        },
+                    )
                 };
                 menu.add(
                     MenuSection::Format,
                     MenuEntry::submenu(
                         t("Bring to Front", "Mettre au premier plan"),
                         vec![
-                            order(t("Bring to Front", "Mettre au premier plan"), features::ZMove::ToFront),
+                            order(
+                                t("Bring to Front", "Mettre au premier plan"),
+                                features::ZMove::ToFront,
+                            ),
                             order(t("Bring Forward", "Avancer"), features::ZMove::Forward),
                         ],
                     ),
@@ -2959,7 +3326,10 @@ impl ExcelApp {
                     MenuEntry::submenu(
                         t("Send to Back", "Mettre à l'arrière-plan"),
                         vec![
-                            order(t("Send to Back", "Mettre à l'arrière-plan"), features::ZMove::ToBack),
+                            order(
+                                t("Send to Back", "Mettre à l'arrière-plan"),
+                                features::ZMove::ToBack,
+                            ),
                             order(t("Send Backward", "Reculer"), features::ZMove::Backward),
                         ],
                     ),
@@ -2974,8 +3344,14 @@ impl ExcelApp {
                 clipboard(&mut menu);
                 paste_special(&mut menu);
                 let mut add = |entry: MenuEntry| menu.add(MenuSection::Edit, entry);
-                add(MenuEntry::new(t("Insert", "Insertion"), |a, _, cx| a.insert_cols(cx)).icon("insert-cells"));
-                add(MenuEntry::new(t("Delete", "Supprimer"), |a, _, cx| a.delete_cols(cx)).icon("delete-cells"));
+                add(
+                    MenuEntry::new(t("Insert", "Insertion"), |a, _, cx| a.insert_cols(cx))
+                        .icon("insert-cells"),
+                );
+                add(
+                    MenuEntry::new(t("Delete", "Supprimer"), |a, _, cx| a.delete_cols(cx))
+                        .icon("delete-cells"),
+                );
                 add(clear());
                 let mut add = |entry: MenuEntry| menu.add(MenuSection::Format, entry);
                 add(MenuEntry::new(
@@ -2991,8 +3367,12 @@ impl ExcelApp {
                         }
                     },
                 ));
-                add(MenuEntry::new(t("Hide", "Masquer"), |a, _, cx| a.hide_cols(true, cx)));
-                add(MenuEntry::new(t("Unhide", "Afficher"), |a, _, cx| a.hide_cols(false, cx)));
+                add(MenuEntry::new(t("Hide", "Masquer"), |a, _, cx| {
+                    a.hide_cols(true, cx)
+                }));
+                add(MenuEntry::new(t("Unhide", "Afficher"), |a, _, cx| {
+                    a.hide_cols(false, cx)
+                }));
                 MenuTarget::ColHeader(col)
             }
             Hit::RowHeader(row) | Hit::RowResize(row) => {
@@ -3003,12 +3383,22 @@ impl ExcelApp {
                 clipboard(&mut menu);
                 paste_special(&mut menu);
                 let mut add = |entry: MenuEntry| menu.add(MenuSection::Edit, entry);
-                add(MenuEntry::new(t("Insert", "Insertion"), |a, _, cx| a.insert_rows(cx)).icon("insert-cells"));
-                add(MenuEntry::new(t("Delete", "Supprimer"), |a, _, cx| a.delete_rows(cx)).icon("delete-cells"));
+                add(
+                    MenuEntry::new(t("Insert", "Insertion"), |a, _, cx| a.insert_rows(cx))
+                        .icon("insert-cells"),
+                );
+                add(
+                    MenuEntry::new(t("Delete", "Supprimer"), |a, _, cx| a.delete_rows(cx))
+                        .icon("delete-cells"),
+                );
                 add(clear());
                 let mut add = |entry: MenuEntry| menu.add(MenuSection::Format, entry);
-                add(MenuEntry::new(t("Hide", "Masquer"), |a, _, cx| a.hide_rows(true, cx)));
-                add(MenuEntry::new(t("Unhide", "Afficher"), |a, _, cx| a.hide_rows(false, cx)));
+                add(MenuEntry::new(t("Hide", "Masquer"), |a, _, cx| {
+                    a.hide_rows(true, cx)
+                }));
+                add(MenuEntry::new(t("Unhide", "Afficher"), |a, _, cx| {
+                    a.hide_rows(false, cx)
+                }));
                 MenuTarget::RowHeader(row)
             }
             Hit::Cell(row, col) => {
@@ -3021,21 +3411,34 @@ impl ExcelApp {
                 // A table cell gets the Insert and Delete submenus of its
                 // table instead (`features/tables`).
                 if self.wb.table_at(self.sheet, row, col).is_none() {
-                    add(MenuEntry::new(t("Insert Rows", "Insérer des lignes"), |a, _, cx| a.insert_rows(cx)).icon("insert-cells"));
-                    add(MenuEntry::new(t("Insert Columns", "Insérer des colonnes"), |a, _, cx| {
-                        a.insert_cols(cx)
-                    }));
-                    add(MenuEntry::new(t("Delete Rows", "Supprimer les lignes"), |a, _, cx| a.delete_rows(cx)).icon("delete-cells"));
-                    add(MenuEntry::new(t("Delete Columns", "Supprimer les colonnes"), |a, _, cx| {
-                        a.delete_cols(cx)
-                    }));
+                    add(
+                        MenuEntry::new(t("Insert Rows", "Insérer des lignes"), |a, _, cx| {
+                            a.insert_rows(cx)
+                        })
+                        .icon("insert-cells"),
+                    );
+                    add(MenuEntry::new(
+                        t("Insert Columns", "Insérer des colonnes"),
+                        |a, _, cx| a.insert_cols(cx),
+                    ));
+                    add(
+                        MenuEntry::new(t("Delete Rows", "Supprimer les lignes"), |a, _, cx| {
+                            a.delete_rows(cx)
+                        })
+                        .icon("delete-cells"),
+                    );
+                    add(MenuEntry::new(
+                        t("Delete Columns", "Supprimer les colonnes"),
+                        |a, _, cx| a.delete_cols(cx),
+                    ));
                 }
                 add(clear());
                 menu.add(
                     MenuSection::Format,
-                    MenuEntry::new(t("Merge / Unmerge Cells", "Fusionner / annuler la fusion"), |a, _, cx| {
-                        a.toggle_merge(false, cx)
-                    }),
+                    MenuEntry::new(
+                        t("Merge / Unmerge Cells", "Fusionner / annuler la fusion"),
+                        |a, _, cx| a.toggle_merge(false, cx),
+                    ),
                 );
                 MenuTarget::Cell(row, col)
             }
@@ -3046,7 +3449,12 @@ impl ExcelApp {
     }
 
     /// Open a context menu at a point of the window.
-    pub fn open_context_menu(&mut self, pos: Point<Pixels>, entries: Vec<MenuEntry>, cx: &mut Context<Self>) {
+    pub fn open_context_menu(
+        &mut self,
+        pos: Point<Pixels>,
+        entries: Vec<MenuEntry>,
+        cx: &mut Context<Self>,
+    ) {
         if entries.is_empty() {
             return;
         }
@@ -3057,11 +3465,21 @@ impl ExcelApp {
     /// Open the drop-down of the command that is running: under the ribbon
     /// control that started it, or at the pointer when it came from a menu
     /// or the keyboard.
-    pub fn open_command_menu(&mut self, entries: Vec<MenuEntry>, width: f32, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_command_menu(
+        &mut self,
+        entries: Vec<MenuEntry>,
+        width: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match self.command_anchor {
             Some(anchor) => self.open_menu(anchor, entries, width, window, cx),
             None => {
-                self.popup = Some(Popup::new(PopupKind::Menu(entries), window.mouse_position(), width));
+                self.popup = Some(Popup::new(
+                    PopupKind::Menu(entries),
+                    window.mouse_position(),
+                    width,
+                ));
                 cx.notify();
             }
         }
@@ -3070,7 +3488,12 @@ impl ExcelApp {
     /// Show a view of a feature as a drop-down at a point of the window
     /// (see `cell_anchor`). It closes on a click outside it, or with
     /// `close_popup`.
-    pub fn open_popup_view(&mut self, pos: Point<Pixels>, view: impl Into<AnyView>, cx: &mut Context<Self>) {
+    pub fn open_popup_view(
+        &mut self,
+        pos: Point<Pixels>,
+        view: impl Into<AnyView>,
+        cx: &mut Context<Self>,
+    ) {
         self.popup = Some(Popup::new(PopupKind::View(view.into()), pos, 0.0).max_height(600.0));
         cx.notify();
     }
@@ -3144,7 +3567,14 @@ impl ExcelApp {
         cx.notify();
     }
     /// Open a drop-down below the ribbon control registered under `anchor`.
-    pub fn open_menu(&mut self, anchor: &'static str, entries: Vec<MenuEntry>, width: f32, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_menu(
+        &mut self,
+        anchor: &'static str,
+        entries: Vec<MenuEntry>,
+        width: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.toggles_popup_of(anchor, cx) {
             return;
         }
@@ -3153,7 +3583,13 @@ impl ExcelApp {
         cx.notify();
     }
 
-    pub fn open_palette(&mut self, anchor: &'static str, target: ColorTarget, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_palette(
+        &mut self,
+        anchor: &'static str,
+        target: ColorTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.toggles_popup_of(anchor, cx) {
             return;
         }
@@ -3165,7 +3601,10 @@ impl ExcelApp {
     /// A click on a control whose pop-up is open (or was closed by the
     /// press of this very click) closes it instead of opening it again.
     fn toggles_popup_of(&mut self, anchor: &'static str, cx: &mut Context<Self>) -> bool {
-        let open = self.popup.as_ref().is_some_and(|popup| popup.anchor == Some(anchor));
+        let open = self
+            .popup
+            .as_ref()
+            .is_some_and(|popup| popup.anchor == Some(anchor));
         let just_closed = self.popup_dismissed.take() == Some(anchor);
         if open {
             self.popup = None;
@@ -3183,7 +3622,12 @@ impl ExcelApp {
         }
     }
 
-    pub fn pick_color(&mut self, target: ColorTarget, color: Option<Color>, cx: &mut Context<Self>) {
+    pub fn pick_color(
+        &mut self,
+        target: ColorTarget,
+        color: Option<Color>,
+        cx: &mut Context<Self>,
+    ) {
         self.popup = None;
         match target {
             ColorTarget::Fill => self.set_fill(color, cx),
@@ -3210,20 +3654,35 @@ impl EntityInputHandler for ExcelApp {
         Some(String::new())
     }
 
-    fn selected_text_range(&mut self, _ignore: bool, _window: &mut Window, _cx: &mut Context<Self>) -> Option<UTF16Selection> {
+    fn selected_text_range(
+        &mut self,
+        _ignore: bool,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<UTF16Selection> {
         Some(UTF16Selection {
             range: 0..0,
             reversed: false,
         })
     }
 
-    fn marked_text_range(&self, _window: &mut Window, _cx: &mut Context<Self>) -> Option<Range<usize>> {
+    fn marked_text_range(
+        &self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<Range<usize>> {
         None
     }
 
     fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {}
 
-    fn replace_text_in_range(&mut self, _range: Option<Range<usize>>, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn replace_text_in_range(
+        &mut self,
+        _range: Option<Range<usize>>,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if text.is_empty() || self.modal_open() {
             return;
         }
@@ -3256,7 +3715,11 @@ impl EntityInputHandler for ExcelApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if new_text.is_empty() || self.editing.is_some() || self.modal_open() || self.object_sel.is_some() {
+        if new_text.is_empty()
+            || self.editing.is_some()
+            || self.modal_open()
+            || self.object_sel.is_some()
+        {
             return;
         }
         // IME composition: hand over to the cell editor.
@@ -3280,10 +3743,18 @@ impl EntityInputHandler for ExcelApp {
         let (r, c) = self.active();
         let (x0, y0, x1, y1) = layout.rect_px(Rect::cell(r, c));
         let _ = element_bounds;
-        Some(Bounds::new(layout.to_window(x0, y0), gpui::size(px(x1 - x0), px(y1 - y0))))
+        Some(Bounds::new(
+            layout.to_window(x0, y0),
+            gpui::size(px(x1 - x0), px(y1 - y0)),
+        ))
     }
 
-    fn character_index_for_point(&mut self, _point: Point<Pixels>, _window: &mut Window, _cx: &mut Context<Self>) -> Option<usize> {
+    fn character_index_for_point(
+        &mut self,
+        _point: Point<Pixels>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<usize> {
         None
     }
 }
@@ -3291,25 +3762,33 @@ impl EntityInputHandler for ExcelApp {
 // Keyboard actions.
 impl ExcelApp {
     pub fn on_move_up(&mut self, _: &MoveUp, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Up, false, false, window, cx) || self.nudge_object(Direction::Up, cx) {
+        if self.editing_key(Direction::Up, false, false, window, cx)
+            || self.nudge_object(Direction::Up, cx)
+        {
             return;
         }
         self.move_selection(Direction::Up, false, cx);
     }
     pub fn on_move_down(&mut self, _: &MoveDown, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Down, false, false, window, cx) || self.nudge_object(Direction::Down, cx) {
+        if self.editing_key(Direction::Down, false, false, window, cx)
+            || self.nudge_object(Direction::Down, cx)
+        {
             return;
         }
         self.move_selection(Direction::Down, false, cx);
     }
     pub fn on_move_left(&mut self, _: &MoveLeft, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Left, false, false, window, cx) || self.nudge_object(Direction::Left, cx) {
+        if self.editing_key(Direction::Left, false, false, window, cx)
+            || self.nudge_object(Direction::Left, cx)
+        {
             return;
         }
         self.move_selection(Direction::Left, false, cx);
     }
     pub fn on_move_right(&mut self, _: &MoveRight, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editing_key(Direction::Right, false, false, window, cx) || self.nudge_object(Direction::Right, cx) {
+        if self.editing_key(Direction::Right, false, false, window, cx)
+            || self.nudge_object(Direction::Right, cx)
+        {
             return;
         }
         self.move_selection(Direction::Right, false, cx);
@@ -3332,7 +3811,12 @@ impl ExcelApp {
         }
         self.move_selection(Direction::Left, true, cx);
     }
-    pub fn on_extend_right(&mut self, _: &ExtendRight, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_right(
+        &mut self,
+        _: &ExtendRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.editing_key(Direction::Right, true, false, window, cx) {
             return;
         }
@@ -3353,18 +3837,35 @@ impl ExcelApp {
     pub fn on_extend_jump_up(&mut self, _: &ExtendJumpUp, _: &mut Window, cx: &mut Context<Self>) {
         self.jump_selection(Direction::Up, true, cx);
     }
-    pub fn on_extend_jump_down(&mut self, _: &ExtendJumpDown, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_jump_down(
+        &mut self,
+        _: &ExtendJumpDown,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.jump_selection(Direction::Down, true, cx);
     }
-    pub fn on_extend_jump_left(&mut self, _: &ExtendJumpLeft, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_jump_left(
+        &mut self,
+        _: &ExtendJumpLeft,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.jump_selection(Direction::Left, true, cx);
     }
-    pub fn on_extend_jump_right(&mut self, _: &ExtendJumpRight, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_extend_jump_right(
+        &mut self,
+        _: &ExtendJumpRight,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.jump_selection(Direction::Right, true, cx);
     }
     pub fn on_next_cell(&mut self, _: &NextCell, window: &mut Window, cx: &mut Context<Self>) {
         features::tables::tab_pressed(self);
-        if self.editing_key(Direction::Right, false, true, window, cx) || self.cycle_object(true, cx) {
+        if self.editing_key(Direction::Right, false, true, window, cx)
+            || self.cycle_object(true, cx)
+        {
             return;
         }
         if self.tab_origin.is_none() {
@@ -3374,7 +3875,9 @@ impl ExcelApp {
     }
     pub fn on_prev_cell(&mut self, _: &PrevCell, window: &mut Window, cx: &mut Context<Self>) {
         features::tables::tab_pressed(self);
-        if self.editing_key(Direction::Left, false, true, window, cx) || self.cycle_object(false, cx) {
+        if self.editing_key(Direction::Left, false, true, window, cx)
+            || self.cycle_object(false, cx)
+        {
             return;
         }
         self.advance(Direction::Left, cx);
@@ -3415,7 +3918,12 @@ impl ExcelApp {
     pub fn on_edit_cell(&mut self, _: &EditCell, window: &mut Window, cx: &mut Context<Self>) {
         self.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
     }
-    pub fn on_clear_contents(&mut self, _: &ClearContents, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_clear_contents(
+        &mut self,
+        _: &ClearContents,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.editing.is_some() {
             // Backspace belongs to the text being typed.
             self.focus_editor(window, cx);
@@ -3454,7 +3962,10 @@ impl ExcelApp {
         // First press selects the data region, second the whole sheet.
         let (r, c) = self.active();
         let region = self.wb.current_region(self.sheet, r, c);
-        if !region.is_single() && self.sel().current() != region && !self.sel().current().is_whole_cols() {
+        if !region.is_single()
+            && self.sel().current() != region
+            && !self.sel().current().is_whole_cols()
+        {
             let sel = self.sel_mut();
             sel.ranges = vec![region];
             sel.anchor = (region.r0, region.c0);
@@ -3515,7 +4026,9 @@ impl ExcelApp {
         self.select_cell(0, 0, cx);
     }
     pub fn on_go_end(&mut self, _: &GoEnd, _: &mut Window, cx: &mut Context<Self>) {
-        let used = self.wb.sheets[self.sheet].used_rect().unwrap_or(Rect::cell(0, 0));
+        let used = self.wb.sheets[self.sheet]
+            .used_rect()
+            .unwrap_or(Rect::cell(0, 0));
         self.select_cell(used.r1, used.c1, cx);
     }
     pub fn on_select_column(&mut self, _: &SelectColumn, _: &mut Window, cx: &mut Context<Self>) {
@@ -3540,9 +4053,15 @@ impl ExcelApp {
             return;
         }
         let today = opensheet_engine::datetime::now_serial().floor();
-        let text = format::format_number(today, self.wb.locale.short_date_format, self.wb.locale).text;
+        let text =
+            format::format_number(today, self.wb.locale.short_date_format, self.wb.locale).text;
         if self.wb.set_cell_text(self.sheet, r, c, &text).is_ok() {
-            self.commit_cells(t("Typing", "Saisie"), &[Rect::cell(r, c)], ChangeCause::Typing, cx);
+            self.commit_cells(
+                t("Typing", "Saisie"),
+                &[Rect::cell(r, c)],
+                ChangeCause::Typing,
+                cx,
+            );
         }
     }
     pub fn on_auto_sum(&mut self, _: &AutoSum, window: &mut Window, cx: &mut Context<Self>) {
@@ -3607,16 +4126,31 @@ impl ExcelApp {
     }
 
     // Shortcuts of commands that live in the feature modules.
-    pub fn on_format_cells(&mut self, _: &FormatCells, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_format_cells(
+        &mut self,
+        _: &FormatCells,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.run_command(features::format_cells::Cmd::Open, window, cx);
     }
     pub fn on_print(&mut self, _: &Print, window: &mut Window, cx: &mut Context<Self>) {
         self.run_command(features::page::Cmd::Print, window, cx);
     }
-    pub fn on_toggle_filter(&mut self, _: &ToggleFilter, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_toggle_filter(
+        &mut self,
+        _: &ToggleFilter,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.run_command(features::filters::Cmd::Toggle, window, cx);
     }
-    pub fn on_insert_table(&mut self, _: &InsertTable, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_insert_table(
+        &mut self,
+        _: &InsertTable,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.run_command(features::tables::Cmd::Insert, window, cx);
     }
     pub fn on_new_note(&mut self, _: &NewNote, window: &mut Window, cx: &mut Context<Self>) {
@@ -3625,11 +4159,21 @@ impl ExcelApp {
     pub fn on_new_comment(&mut self, _: &NewComment, window: &mut Window, cx: &mut Context<Self>) {
         self.run_command(features::comments::Cmd::NewComment, window, cx);
     }
-    pub fn on_name_manager(&mut self, _: &NameManager, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_name_manager(
+        &mut self,
+        _: &NameManager,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.run_command(features::names::Cmd::Manager, window, cx);
     }
     /// Alt+Down: the drop-down a feature hangs from the active cell.
-    pub fn on_open_drop_down(&mut self, _: &OpenDropDown, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn on_open_drop_down(
+        &mut self,
+        _: &OpenDropDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.editing.is_none() {
             features::cell_drop_down(self, window, cx);
         }

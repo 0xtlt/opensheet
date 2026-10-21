@@ -2,8 +2,8 @@
 //! drops it down, and the "More Colors" dialog.
 
 use super::{
-    Button, CONTROL_H, DropState, FIELD_BORDER, Handler, NumberField, TextField, dialog, focus_of, icon, input, label,
-    labeled, number_input, plain,
+    Button, CONTROL_H, DropState, FIELD_BORDER, Handler, NumberField, TextField, dialog, focus_of,
+    icon, input, label, labeled, number_input, plain,
 };
 use crate::app::ExcelApp;
 use crate::i18n::t;
@@ -11,8 +11,8 @@ use crate::shell::Modal;
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use gpui::{
-    AnyElement, App, Context, ElementId, Entity, FontWeight, IntoElement, KeyDownEvent, RenderOnce, SharedString,
-    WeakEntity, Window, anchored, deferred, div, prelude::*, px, relative,
+    AnyElement, App, Context, ElementId, Entity, FontWeight, IntoElement, KeyDownEvent, RenderOnce,
+    SharedString, WeakEntity, Window, anchored, deferred, div, prelude::*, px, relative,
 };
 use opensheet_engine::style::Color;
 use std::rc::Rc;
@@ -74,9 +74,17 @@ impl ColorGrid {
 }
 
 /// Open the "More Colors" dialog; `on_pick` gets the colour chosen.
-fn open_more_colors(app: &WeakEntity<ExcelApp>, current: Option<Color>, on_pick: Handler<Option<Color>>, window: &mut Window, cx: &mut App) {
+fn open_more_colors(
+    app: &WeakEntity<ExcelApp>,
+    current: Option<Color>,
+    on_pick: Handler<Option<Color>>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     app.update(cx, |app, cx| {
-        app.open_modal(window, cx, move |modal, _, cx| MoreColors::new(modal, current, on_pick, cx));
+        app.open_modal(window, cx, move |modal, _, cx| {
+            MoreColors::new(modal, current, on_pick, cx)
+        });
     })
     .ok();
 }
@@ -114,7 +122,11 @@ impl RenderOnce for ColorGrid {
                 .flex_none()
                 .bg(c(color.value()))
                 .border_1()
-                .border_color(c(if on || under_cursor { 0xE8590C } else { 0xD0D0D0 }))
+                .border_color(c(if on || under_cursor {
+                    0xE8590C
+                } else {
+                    0xD0D0D0
+                }))
                 .when(on, |d| d.border_2())
                 .hover(|s| s.border_color(c(0xF2994A)))
                 .on_click(move |_, window, cx| pick(Some(color), window, cx))
@@ -128,10 +140,12 @@ impl RenderOnce for ColorGrid {
                 .child(text)
         };
         let line = |row: usize| {
-            div()
-                .flex()
-                .gap(px(GAP))
-                .children(rows[row].iter().enumerate().map(|(col, color)| swatch(row, col, *color)))
+            div().flex().gap(px(GAP)).children(
+                rows[row]
+                    .iter()
+                    .enumerate()
+                    .map(|(col, color)| swatch(row, col, *color)),
+            )
         };
 
         let none = self.none_label.map(|text| {
@@ -170,7 +184,9 @@ impl RenderOnce for ColorGrid {
                 .hover(|s| s.bg(c(theme::HOVER)))
                 .child(icon("fill", 13.0, theme::TEXT_MUTED))
                 .child(t("More Colors…", "Autres couleurs…"))
-                .on_click(move |_, window, cx| open_more_colors(&app, current, handler.clone(), window, cx))
+                .on_click(move |_, window, cx| {
+                    open_more_colors(&app, current, handler.clone(), window, cx)
+                })
         });
 
         let key_rows = rows.clone();
@@ -301,12 +317,13 @@ impl RenderOnce for ColorButton {
         let panel = open.then(|| {
             let handler = self.on_pick.clone();
             let picked = close.clone();
-            let mut grid = ColorGrid::new("grid", self.selected).on_pick(move |color, window, cx| {
-                picked(false, cx);
-                if let Some(handler) = &handler {
-                    handler(color, window, cx);
-                }
-            });
+            let mut grid =
+                ColorGrid::new("grid", self.selected).on_pick(move |color, window, cx| {
+                    picked(false, cx);
+                    if let Some(handler) = &handler {
+                        handler(color, window, cx);
+                    }
+                });
             if let Some(text) = self.none_label.clone() {
                 grid = grid.none_label(text);
             }
@@ -404,16 +421,32 @@ struct MoreColors {
 }
 
 impl MoreColors {
-    fn new(modal: Modal, current: Option<Color>, on_pick: Handler<Option<Color>>, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        current: Option<Color>,
+        on_pick: Handler<Option<Color>>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let start = current.unwrap_or(Color(0xFFFFFF));
         let hex = input(cx, format!("#{}", start.to_hex()));
-        let channel = |value: u8, cx: &mut Context<Self>| number_input(cx, Some(value as f64), 0.0, 255.0, 1.0);
-        let rgb = [channel(start.r(), cx), channel(start.g(), cx), channel(start.b(), cx)];
+        let channel = |value: u8, cx: &mut Context<Self>| {
+            number_input(cx, Some(value as f64), 0.0, 255.0, 1.0)
+        };
+        let rgb = [
+            channel(start.r(), cx),
+            channel(start.g(), cx),
+            channel(start.b(), cx),
+        ];
         // The two ways of writing the colour follow each other.
         cx.subscribe(&hex, |this, _, ev: &InputEvent, cx| {
             if *ev == InputEvent::Changed {
                 if let Some(color) = Color::from_hex(this.hex.read(cx).text().trim()) {
-                    for (field, value) in this.rgb.clone().iter().zip([color.r(), color.g(), color.b()]) {
+                    for (field, value) in
+                        this.rgb
+                            .clone()
+                            .iter()
+                            .zip([color.r(), color.g(), color.b()])
+                    {
                         field.update(cx, |field, cx| field.set_text(value.to_string(), cx));
                     }
                 }
@@ -424,7 +457,9 @@ impl MoreColors {
             cx.subscribe(field, |this, _, ev: &InputEvent, cx| {
                 if *ev == InputEvent::Changed {
                     if let Some(color) = this.typed_rgb(cx) {
-                        this.hex.update(cx, |hex, cx| hex.set_text(format!("#{}", color.to_hex()), cx));
+                        this.hex.update(cx, |hex, cx| {
+                            hex.set_text(format!("#{}", color.to_hex()), cx)
+                        });
                     }
                 }
             })
@@ -493,10 +528,22 @@ impl Render for MoreColors {
                             .flex()
                             .flex_col()
                             .gap(px(6.))
-                            .child(labeled(t("Hex:", "Hex :"), TextField::new(&self.hex).width(90.0)).justify_between())
-                            .child(labeled(t("Red:", "Rouge :"), NumberField::new("r", &self.rgb[0])).justify_between())
-                            .child(labeled(t("Green:", "Vert :"), NumberField::new("g", &self.rgb[1])).justify_between())
-                            .child(labeled(t("Blue:", "Bleu :"), NumberField::new("b", &self.rgb[2])).justify_between()),
+                            .child(
+                                labeled(t("Hex:", "Hex :"), TextField::new(&self.hex).width(90.0))
+                                    .justify_between(),
+                            )
+                            .child(
+                                labeled(t("Red:", "Rouge :"), NumberField::new("r", &self.rgb[0]))
+                                    .justify_between(),
+                            )
+                            .child(
+                                labeled(t("Green:", "Vert :"), NumberField::new("g", &self.rgb[1]))
+                                    .justify_between(),
+                            )
+                            .child(
+                                labeled(t("Blue:", "Bleu :"), NumberField::new("b", &self.rgb[2]))
+                                    .justify_between(),
+                            ),
                     )
                     .child(
                         div()
@@ -517,7 +564,10 @@ impl Render for MoreColors {
                             .disabled(new.is_none())
                             .on_click(cx.listener(Self::ok)),
                     )
-                    .child(Button::new("cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx))),
+                    .child(
+                        Button::new("cancel", t("Cancel", "Annuler"))
+                            .on_click(move |_, window, cx| modal.close(window, cx)),
+                    ),
             )
     }
 }

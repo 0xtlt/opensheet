@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::app::PopupKind;
-use gpui::{Entity, Modifiers, Pixels, Point, TestAppContext, VisualTestContext, point, px};
 use crate::features::MenuTarget;
+use gpui::{Entity, Modifiers, Pixels, Point, TestAppContext, VisualTestContext, point, px};
 use opensheet_engine::ops::PasteMode;
 use opensheet_engine::{Rect, Value, Workbook};
 
@@ -68,7 +68,9 @@ fn text(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> Strin
 
 /// The centre of something a view named for the tests.
 fn middle(cx: &mut VisualTestContext, name: &'static str) -> Point<Pixels> {
-    cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is not drawn")).center()
+    cx.debug_bounds(name)
+        .unwrap_or_else(|| panic!("{name} is not drawn"))
+        .center()
 }
 
 fn press(cx: &mut VisualTestContext, name: &'static str) {
@@ -88,11 +90,15 @@ fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Stri
 
 /// The labels of the menu that is open, separators left out.
 fn menu(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<String> {
-    app.update(cx, |app, _| match app.popup.as_ref().map(|popup| &popup.kind) {
-        Some(PopupKind::Menu(entries)) => {
-            entries.iter().filter(|entry| !entry.separator).map(|entry| entry.label.to_string()).collect()
+    app.update(cx, |app, _| {
+        match app.popup.as_ref().map(|popup| &popup.kind) {
+            Some(PopupKind::Menu(entries)) => entries
+                .iter()
+                .filter(|entry| !entry.separator)
+                .map(|entry| entry.label.to_string())
+                .collect(),
+            _ => Vec::new(),
         }
-        _ => Vec::new(),
     })
 }
 
@@ -101,7 +107,17 @@ fn menu(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<String> {
 #[gpui::test]
 fn the_replace_dialog_finds_and_replaces(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    edit(&app, cx, |wb| enter(wb, &[("A1", "tea"), ("B2", "Teapot"), ("A3", "=LEN(\"tea\")"), ("C4", "coffee")]));
+    edit(&app, cx, |wb| {
+        enter(
+            wb,
+            &[
+                ("A1", "tea"),
+                ("B2", "Teapot"),
+                ("A3", "=LEN(\"tea\")"),
+                ("C4", "coffee"),
+            ],
+        )
+    });
     // Control-H opens the dialog on its Replace tab, in "Find what".
     cx.simulate_keystrokes("ctrl-h");
     assert_eq!(dialogs(&app, cx), 1);
@@ -140,7 +156,9 @@ fn the_replace_dialog_finds_and_replaces(cx: &mut TestAppContext) {
 #[gpui::test]
 fn find_says_when_there_is_nothing_and_keeps_to_the_selection(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    edit(&app, cx, |wb| enter(wb, &[("A1", "x"), ("B2", "x"), ("B3", "x"), ("D5", "x")]));
+    edit(&app, cx, |wb| {
+        enter(wb, &[("A1", "x"), ("B2", "x"), ("B3", "x"), ("D5", "x")])
+    });
     run(&app, cx, Cmd::Find);
     cx.simulate_input("zzz");
     cx.simulate_keystrokes("enter");
@@ -155,9 +173,14 @@ fn find_says_when_there_is_nothing_and_keeps_to_the_selection(cx: &mut TestAppCo
         ..Default::default()
     };
     for expected in [(1, 1), (2, 1), (1, 1)] {
-        app.update_in(cx, |app, window, cx| assert!(find::find_next(app, &choices, false, window, cx)));
+        app.update_in(cx, |app, window, cx| {
+            assert!(find::find_next(app, &choices, false, window, cx))
+        });
         assert_eq!(active(&app, cx), expected);
-        assert_eq!(app.update(cx, |app, _| app.sel().ranges.clone()), vec![Rect::parse("B1:B4").unwrap()]);
+        assert_eq!(
+            app.update(cx, |app, _| app.sel().ranges.clone()),
+            vec![Rect::parse("B1:B4").unwrap()]
+        );
     }
 }
 
@@ -173,7 +196,9 @@ fn replace_all_spares_locked_cells_and_refuses_broken_formulas(cx: &mut TestAppC
         find: ")".into(),
         ..Default::default()
     };
-    app.update_in(cx, |app, window, cx| find::replace_all(app, &broken, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        find::replace_all(app, &broken, window, cx)
+    });
     assert_eq!(text(&app, cx, "C1"), "=SUM(A2:A3)");
     assert_eq!(active(&app, cx), (0, 2), "the cell at fault is shown");
     assert_eq!(dialogs(&app, cx), 1);
@@ -187,18 +212,24 @@ fn replace_all_spares_locked_cells_and_refuses_broken_formulas(cx: &mut TestAppC
         replace: "new".into(),
         ..Default::default()
     };
-    app.update_in(cx, |app, window, cx| find::replace_all(app, &choices, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        find::replace_all(app, &choices, window, cx)
+    });
     assert_eq!(value(&app, cx, "A1"), Value::text("old"));
     assert_eq!(value(&app, cx, "B1"), Value::text("new"));
     cx.simulate_keystrokes("enter");
     // Nothing left but the locked cell: the message of protected sheets.
-    app.update_in(cx, |app, window, cx| find::replace_all(app, &choices, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        find::replace_all(app, &choices, window, cx)
+    });
     assert_eq!(value(&app, cx, "A1"), Value::text("old"));
     assert_eq!(dialogs(&app, cx), 1);
     // The Replace button asks the protection too.
     cx.simulate_keystrokes("enter");
     select(&app, cx, "A1");
-    app.update_in(cx, |app, window, cx| find::replace(app, &choices, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        find::replace(app, &choices, window, cx)
+    });
     assert_eq!(value(&app, cx, "A1"), Value::text("old"));
 }
 
@@ -211,7 +242,9 @@ fn the_find_bar_searches_like_the_dialog(cx: &mut TestAppContext) {
     assert_eq!(active(&app, cx), (1, 0));
     app.update(cx, |app, cx| find_bar_next(app, "5", cx));
     assert_eq!(active(&app, cx), (1, 0));
-    app.update(cx, |app, _| app.ext_mut::<find::Choices>().options.look_in = opensheet_engine::find::LookIn::Values);
+    app.update(cx, |app, _| {
+        app.ext_mut::<find::Choices>().options.look_in = opensheet_engine::find::LookIn::Values
+    });
     app.update(cx, |app, cx| find_bar_next(app, "5", cx));
     assert_eq!(active(&app, cx), (0, 0));
 }
@@ -219,13 +252,21 @@ fn the_find_bar_searches_like_the_dialog(cx: &mut TestAppContext) {
 #[gpui::test]
 fn find_and_select_reaches_the_cells_of_a_kind(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    edit(&app, cx, |wb| enter(wb, &[("A1", "1"), ("A2", "=A1+1"), ("B2", "text")]));
+    edit(&app, cx, |wb| {
+        enter(wb, &[("A1", "1"), ("A2", "=A1+1"), ("B2", "text")])
+    });
     run(&app, cx, Cmd::SelectFormulas);
-    assert_eq!(app.update(cx, |app, _| app.sel().ranges.clone()), vec![Rect::parse("A2").unwrap()]);
+    assert_eq!(
+        app.update(cx, |app, _| app.sel().ranges.clone()),
+        vec![Rect::parse("A2").unwrap()]
+    );
     run(&app, cx, Cmd::SelectConstants);
     let mut found = app.update(cx, |app, _| app.sel().ranges.clone());
     found.sort_by_key(|range| (range.r0, range.c0));
-    assert_eq!(found, vec![Rect::parse("A1").unwrap(), Rect::parse("B2").unwrap()]);
+    assert_eq!(
+        found,
+        vec![Rect::parse("A1").unwrap(), Rect::parse("B2").unwrap()]
+    );
 }
 
 /// The cells the Find All list of the open dialog holds, drawn again
@@ -233,7 +274,11 @@ fn find_and_select_reaches_the_cells_of_a_kind(cx: &mut TestAppContext) {
 fn listed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Vec<(usize, u32, u32)>> {
     redraw(cx);
     let dialog = app
-        .update(cx, |app, _| app.front_modal_view().expect("a dialog is open").downcast::<find::FindReplace>())
+        .update(cx, |app, _| {
+            app.front_modal_view()
+                .expect("a dialog is open")
+                .downcast::<find::FindReplace>()
+        })
         .ok()
         .expect("the Find dialog");
     dialog.update(cx, |dialog, _| dialog.listed())
@@ -243,7 +288,15 @@ fn listed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Vec<(usi
 fn find_all_lists_the_cells_and_a_click_goes_to_one(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     edit(&app, cx, |wb| {
-        enter(wb, &[("A1", "tea"), ("B2", "Teapot"), ("A3", "=LEN(\"tea\")"), ("C4", "coffee")]);
+        enter(
+            wb,
+            &[
+                ("A1", "tea"),
+                ("B2", "Teapot"),
+                ("A3", "=LEN(\"tea\")"),
+                ("C4", "coffee"),
+            ],
+        );
         let second = wb.add_sheet(1);
         wb.set_cell_text(second, 5, 2, "green tea").unwrap();
     });
@@ -252,7 +305,10 @@ fn find_all_lists_the_cells_and_a_click_goes_to_one(cx: &mut TestAppContext) {
     cx.simulate_input("tea");
     assert_eq!(listed(&app, cx), None, "no list before Find All");
     press(cx, "find-all");
-    assert_eq!(listed(&app, cx), Some(vec![(0, 0, 0), (0, 1, 1), (0, 2, 0)]));
+    assert_eq!(
+        listed(&app, cx),
+        Some(vec![(0, 0, 0), (0, 1, 1), (0, 2, 0)])
+    );
     // A click on a line goes to its cell and leaves the dialog open.
     press(cx, "find-result-2");
     assert_eq!(active(&app, cx), (2, 0));
@@ -271,7 +327,11 @@ fn find_all_lists_the_cells_and_a_click_goes_to_one(cx: &mut TestAppContext) {
     press(cx, "find-all");
     assert_eq!(listed(&app, cx), Some(vec![(0, 0, 0), (1, 5, 2)]));
     press(cx, "find-result-1");
-    assert_eq!(app.update(cx, |app, _| app.sheet), 1, "the line of another sheet shows that sheet");
+    assert_eq!(
+        app.update(cx, |app, _| app.sheet),
+        1,
+        "the line of another sheet shows that sheet"
+    );
     assert_eq!(active(&app, cx), (5, 2));
     press(cx, "find-close");
 
@@ -299,7 +359,12 @@ fn find_all_lists_the_cells_and_a_click_goes_to_one(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_list_of_find_all_follows_a_replacement(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    edit(&app, cx, |wb| enter(wb, &[("A1", "tea"), ("B2", "Teapot"), ("A3", "=LEN(\"tea\")")]));
+    edit(&app, cx, |wb| {
+        enter(
+            wb,
+            &[("A1", "tea"), ("B2", "Teapot"), ("A3", "=LEN(\"tea\")")],
+        )
+    });
     cx.simulate_keystrokes("ctrl-h");
     cx.simulate_input("tea");
     cx.simulate_keystrokes("tab");
@@ -328,7 +393,12 @@ fn copy(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str) {
 #[gpui::test]
 fn the_paste_special_dialog_transposes_and_operates(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    edit(&app, cx, |wb| enter(wb, &[("A1", "1"), ("B1", "2"), ("C1", "=A1+B1"), ("E1", "x")]));
+    edit(&app, cx, |wb| {
+        enter(
+            wb,
+            &[("A1", "1"), ("B1", "2"), ("C1", "=A1+B1"), ("E1", "x")],
+        )
+    });
     copy(&app, cx, "A1:C1");
     select(&app, cx, "E1");
     // Control-Command-V opens the dialog; Transpose, then Return.
@@ -339,7 +409,10 @@ fn the_paste_special_dialog_transposes_and_operates(cx: &mut TestAppContext) {
     assert_eq!(dialogs(&app, cx), 0);
     assert_eq!(value(&app, cx, "E2"), Value::Number(2.0));
     assert_eq!(text(&app, cx, "E3"), "=E1+E2");
-    assert_eq!(app.update(cx, |app, _| app.sel().current()), Rect::parse("E1:E3").unwrap());
+    assert_eq!(
+        app.update(cx, |app, _| app.sel().current()),
+        Rect::parse("E1:E3").unwrap()
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Paste Special"));
     // One step to undo.
     app.update(cx, |app, cx| app.undo(cx));
@@ -426,15 +499,24 @@ fn drawings(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<Drawing> 
 /// its corner (the picture is drawn at twice that size).
 fn colour_at(drawing: &Drawing, x: u32, y: u32) -> [u8; 4] {
     let picture = drawing.as_picture().expect("a picture");
-    let pixels = image::load_from_memory(&picture.data).expect("a PNG file").into_rgba8();
+    let pixels = image::load_from_memory(&picture.data)
+        .expect("a PNG file")
+        .into_rgba8();
     pixels.get_pixel(x * 2, y * 2).0
 }
 
 /// A1:B2 with a red A1, a bold number in B1 and a green B2.
 fn painted(wb: &mut Workbook) {
-    enter(wb, &[("A1", "Tea"), ("B1", "12.5"), ("A2", "Coffee"), ("B2", "7")]);
-    wb.update_style(0, Rect::parse("A1").unwrap(), &|s| s.fill = Some(Color(0xFF0000)));
-    wb.update_style(0, Rect::parse("B2").unwrap(), &|s| s.fill = Some(Color(0x00B050)));
+    enter(
+        wb,
+        &[("A1", "Tea"), ("B1", "12.5"), ("A2", "Coffee"), ("B2", "7")],
+    );
+    wb.update_style(0, Rect::parse("A1").unwrap(), &|s| {
+        s.fill = Some(Color(0xFF0000))
+    });
+    wb.update_style(0, Rect::parse("B2").unwrap(), &|s| {
+        s.fill = Some(Color(0x00B050))
+    });
     wb.update_style(0, Rect::parse("B1").unwrap(), &|s| s.font.bold = true);
 }
 
@@ -453,7 +535,10 @@ fn extent(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str) -> (f
 fn the_copied_cells_are_pasted_as_a_picture(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     edit(&app, cx, painted);
-    assert!(!app.update(cx, |app, _| Cmd::PastePicture.enabled(app)), "nothing is copied");
+    assert!(
+        !app.update(cx, |app, _| Cmd::PastePicture.enabled(app)),
+        "nothing is copied"
+    );
     copy(&app, cx, "A1:B2");
     select(&app, cx, "D5");
     run(&app, cx, Cmd::PastePicture);
@@ -461,18 +546,31 @@ fn the_copied_cells_are_pasted_as_a_picture(cx: &mut TestAppContext) {
     assert_eq!(pictures.len(), 1);
     let picture = &pictures[0];
     // An ordinary picture, the size of the cells, its corner on D5.
-    assert!(picture.as_picture().is_some_and(|p| p.link.is_none() && p.svg.is_none()));
+    assert!(
+        picture
+            .as_picture()
+            .is_some_and(|p| p.link.is_none() && p.svg.is_none())
+    );
     let (width, height) = extent(&app, cx, "A1:B2");
-    assert!((picture.size.0 - width).abs() < 0.5 && (picture.size.1 - height).abs() < 0.5, "{:?}", picture.size);
+    assert!(
+        (picture.size.0 - width).abs() < 0.5 && (picture.size.1 - height).abs() < 0.5,
+        "{:?}",
+        picture.size
+    );
     let frame = app.update(cx, |app, _| app.wb.drawing_frame(0, picture.id).unwrap());
-    let corner = app.update(cx, |app, _| app.wb.sheets[0].corner_point(((4, 3), (0.0, 0.0))));
+    let corner = app.update(cx, |app, _| {
+        app.wb.sheets[0].corner_point(((4, 3), (0.0, 0.0)))
+    });
     assert!((frame.x - corner.0).abs() < 0.5 && (frame.y - corner.1).abs() < 0.5);
     // It looks like the cells: the fills are where the cells are.
     let (column, row) = extent(&app, cx, "A1");
     let red = colour_at(picture, column as u32 / 2, row as u32 / 2);
     assert!(red[0] > 200 && red[1] < 60 && red[2] < 60, "{red:?}");
     let green = colour_at(picture, column as u32 + 8, row as u32 + row as u32 / 2);
-    assert!(green[0] < 60 && green[1] > 140 && green[2] < 120, "{green:?}");
+    assert!(
+        green[0] < 60 && green[1] > 140 && green[2] < 120,
+        "{green:?}"
+    );
     // A cell without a fill lets what is under the picture show, as in
     // Excel.
     let blank = colour_at(picture, column as u32 + 4, 3);
@@ -498,11 +596,16 @@ fn a_linked_picture_follows_its_cells(cx: &mut TestAppContext) {
     copy(&app, cx, "A1:B2");
     select(&app, cx, "D5");
     run(&app, cx, Cmd::PasteLinkedPicture);
-    assert_eq!(undo_label(&app, cx).as_deref(), Some("Paste Linked Picture"));
+    assert_eq!(
+        undo_label(&app, cx).as_deref(),
+        Some("Paste Linked Picture")
+    );
     let link = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
         redraw(cx);
         let picture = drawings(app, cx).remove(0);
-        let text = app.update(cx, |app, _| picture.as_picture().unwrap().link_text(app.wb.locale));
+        let text = app.update(cx, |app, _| {
+            picture.as_picture().unwrap().link_text(app.wb.locale)
+        });
         (picture, text.unwrap_or_default())
     };
     let (before, formula) = link(&app, cx);
@@ -511,7 +614,11 @@ fn a_linked_picture_follows_its_cells(cx: &mut TestAppContext) {
     let at = (column as u32 / 2, row as u32 / 2);
     assert!(colour_at(&before, at.0, at.1)[0] > 200);
     // The cell turns blue: so does the picture, without a step of its own.
-    edit(&app, cx, |wb| wb.update_style(0, Rect::parse("A1").unwrap(), &|s| s.fill = Some(Color(0x0000FF))));
+    edit(&app, cx, |wb| {
+        wb.update_style(0, Rect::parse("A1").unwrap(), &|s| {
+            s.fill = Some(Color(0x0000FF))
+        })
+    });
     let (after, _) = link(&app, cx);
     let blue = colour_at(&after, at.0, at.1);
     assert!(blue[2] > 200 && blue[0] < 60, "{blue:?}");
@@ -542,13 +649,30 @@ fn a_linked_picture_follows_its_cells(cx: &mut TestAppContext) {
     let (_, formula) = link(&app, cx);
     assert_eq!(formula, "=Stock!$A$2:$B$3");
     // Saved and opened again, both pictures still name their cells.
-    let bytes = app.update(cx, |app, _| opensheet_io::write_xlsx(&app.wb, std::io::Cursor::new(Vec::new())).unwrap().into_inner());
+    let bytes = app.update(cx, |app, _| {
+        opensheet_io::write_xlsx(&app.wb, std::io::Cursor::new(Vec::new()))
+            .unwrap()
+            .into_inner()
+    });
     if let Some(dir) = std::env::var_os("OPENSHEET_SAMPLES") {
-        std::fs::write(std::path::Path::new(&dir).join("opensheet-linked-picture-of-cells.xlsx"), &bytes).unwrap();
+        std::fs::write(
+            std::path::Path::new(&dir).join("opensheet-linked-picture-of-cells.xlsx"),
+            &bytes,
+        )
+        .unwrap();
     }
-    let back = opensheet_io::read_xlsx(std::io::Cursor::new(&bytes), opensheet_engine::Locale::en()).unwrap();
-    let sources: Vec<_> = back.linked_pictures().into_iter().map(|(sheet, _, source)| (sheet, source.sheet, source.rect.name())).collect();
-    assert_eq!(sources, vec![(0, 0, "A2:B3".to_string()), (1, 0, "A2:B3".to_string())]);
+    let back =
+        opensheet_io::read_xlsx(std::io::Cursor::new(&bytes), opensheet_engine::Locale::en())
+            .unwrap();
+    let sources: Vec<_> = back
+        .linked_pictures()
+        .into_iter()
+        .map(|(sheet, _, source)| (sheet, source.sheet, source.rect.name()))
+        .collect();
+    assert_eq!(
+        sources,
+        vec![(0, 0, "A2:B3".to_string()), (1, 0, "A2:B3".to_string())]
+    );
 }
 
 #[gpui::test]
@@ -569,7 +693,10 @@ fn copy_as_picture_puts_a_picture_on_the_clipboard(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(dialogs(&app, cx), 0);
-    assert!(app.update(cx, |app, _| app.clip.is_none()), "the cells are no longer what Paste pastes");
+    assert!(
+        app.update(cx, |app, _| app.clip.is_none()),
+        "the cells are no longer what Paste pastes"
+    );
     let item = cx.read_from_clipboard().expect("something was copied");
     let image = item
         .entries()
@@ -587,7 +714,11 @@ fn copy_as_picture_puts_a_picture_on_the_clipboard(cx: &mut TestAppContext) {
     let pictures = drawings(&app, cx);
     assert_eq!(pictures.len(), 1);
     let (width, height) = extent(&app, cx, "A1:B2");
-    assert!((pictures[0].size.0 - width).abs() < 1.0 && (pictures[0].size.1 - height).abs() < 1.0, "{:?}", pictures[0].size);
+    assert!(
+        (pictures[0].size.0 - width).abs() < 1.0 && (pictures[0].size.1 - height).abs() < 1.0,
+        "{:?}",
+        pictures[0].size
+    );
     assert_eq!(value(&app, cx, "D5"), Value::Empty, "no cell was pasted");
 
     // "As shown when printed": the sheet prints in black and white, so
@@ -603,7 +734,9 @@ fn copy_as_picture_puts_a_picture_on_the_clipboard(cx: &mut TestAppContext) {
             _ => None,
         })
     });
-    let pixels = image::load_from_memory(&printed.expect("a picture")).unwrap().into_rgba8();
+    let pixels = image::load_from_memory(&printed.expect("a picture"))
+        .unwrap()
+        .into_rgba8();
     let (column, row) = extent(&app, cx, "A1");
     let pixel = pixels.get_pixel(column as u32, row as u32).0;
     assert_eq!(pixel[3], 0, "{pixel:?}");
@@ -616,12 +749,20 @@ use std::time::Duration;
 
 fn link(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> Option<Hyperlink> {
     let at = Rect::parse(name).unwrap();
-    app.update(cx, |app, _| app.wb.hyperlink_at(app.sheet, at.r0, at.c0).cloned())
+    app.update(cx, |app, _| {
+        app.wb.hyperlink_at(app.sheet, at.r0, at.c0).cloned()
+    })
 }
 
-fn font_color(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> Option<opensheet_engine::Color> {
+fn font_color(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    name: &str,
+) -> Option<opensheet_engine::Color> {
     let at = Rect::parse(name).unwrap();
-    app.update(cx, |app, _| app.wb.style_at(app.sheet, at.r0, at.c0).font.color)
+    app.update(cx, |app, _| {
+        app.wb.style_at(app.sheet, at.r0, at.c0).font.color
+    })
 }
 
 /// The middle of a cell, in window coordinates.
@@ -640,7 +781,11 @@ fn cell_menu(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> 
     app.update(cx, |app, _| {
         let mut menu = crate::features::ContextMenu::default();
         EditTools.context_menu(app, &MenuTarget::Cell(at.r0, at.c0), &mut menu);
-        menu.build().into_iter().filter(|entry| !entry.separator).map(|entry| entry.label.to_string()).collect()
+        menu.build()
+            .into_iter()
+            .filter(|entry| !entry.separator)
+            .map(|entry| entry.label.to_string())
+            .collect()
     })
 }
 
@@ -655,12 +800,21 @@ fn the_link_dialog_inserts_a_web_link(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     assert_eq!(dialogs(&app, cx), 0);
     let made = link(&app, cx, "B2").expect("a link");
-    assert_eq!((made.kind(), made.address.as_str()), (LinkKind::Web, "http://www.example.org/"));
+    assert_eq!(
+        (made.kind(), made.address.as_str()),
+        (LinkKind::Web, "http://www.example.org/")
+    );
     // An empty cell shows the address, with the look of a link.
-    assert_eq!(value(&app, cx, "B2"), Value::text("http://www.example.org/"));
+    assert_eq!(
+        value(&app, cx, "B2"),
+        Value::text("http://www.example.org/")
+    );
     assert_eq!(font_color(&app, cx, "B2"), Some(LINK_COLOR));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Insert Hyperlink"));
-    assert_eq!(cell_menu(&app, cx, "B2"), ["Paste Special…", "Edit Link…", "Open Link", "Remove Link"]);
+    assert_eq!(
+        cell_menu(&app, cx, "B2"),
+        ["Paste Special…", "Edit Link…", "Open Link", "Remove Link"]
+    );
     assert_eq!(cell_menu(&app, cx, "C5"), ["Paste Special…", "Link"]);
     // One step back: no link, no text, no colour.
     app.update(cx, |app, cx| app.undo(cx));
@@ -679,7 +833,12 @@ fn the_link_dialog_edits_places_mail_and_screen_tips(cx: &mut TestAppContext) {
     // A place in this document, through the dialog's own pieces.
     select(&app, cx, "A1");
     let range = Rect::parse("A1").unwrap();
-    assert!(app.update(cx, |app, cx| links::insert(app, Hyperlink::place(range, "Sheet2!C3"), Some("Go".into()), cx)));
+    assert!(app.update(cx, |app, cx| links::insert(
+        app,
+        Hyperlink::place(range, "Sheet2!C3"),
+        Some("Go".into()),
+        cx
+    )));
     assert_eq!(value(&app, cx, "A1"), Value::text("Go"));
     // Editing it: the dialog opens on "This Document"; the ScreenTip box
     // opens over it and gives its text back.
@@ -693,11 +852,19 @@ fn the_link_dialog_edits_places_mail_and_screen_tips(cx: &mut TestAppContext) {
     press(cx, "link-ok");
     assert_eq!(dialogs(&app, cx), 0);
     let edited = link(&app, cx, "A1").expect("a link");
-    assert_eq!((edited.location.as_str(), edited.tooltip.as_str()), ("Sheet2!C3", "Where the totals are"));
+    assert_eq!(
+        (edited.location.as_str(), edited.tooltip.as_str()),
+        ("Sheet2!C3", "Where the totals are")
+    );
     // A number keeps its value under a link: the text is not asked.
     select(&app, cx, "A2");
     assert!(app.update(cx, |app, cx| {
-        links::insert(app, Hyperlink::email(Rect::parse("A2").unwrap(), "ann@example.org", "Hi"), None, cx)
+        links::insert(
+            app,
+            Hyperlink::email(Rect::parse("A2").unwrap(), "ann@example.org", "Hi"),
+            None,
+            cx,
+        )
     }));
     assert_eq!(value(&app, cx, "A2"), Value::Number(12.0));
     // Remove Link in the dialog takes the link and its look away.
@@ -713,17 +880,35 @@ fn the_link_dialog_edits_places_mail_and_screen_tips(cx: &mut TestAppContext) {
 fn a_click_follows_a_link_and_a_long_press_selects(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     edit(&app, cx, |wb| {
-        enter(wb, &[("B2", "Site"), ("B3", "There"), ("B4", "=HYPERLINK(\"mailto:ann@example.org\",\"Ann\")")]);
-        wb.set_hyperlink(0, Hyperlink::external(Rect::parse("B2").unwrap(), "https://example.org/"));
+        enter(
+            wb,
+            &[
+                ("B2", "Site"),
+                ("B3", "There"),
+                ("B4", "=HYPERLINK(\"mailto:ann@example.org\",\"Ann\")"),
+            ],
+        );
+        wb.set_hyperlink(
+            0,
+            Hyperlink::external(Rect::parse("B2").unwrap(), "https://example.org/"),
+        );
         wb.format_as_link(0, Rect::parse("B2").unwrap(), false);
         wb.set_hyperlink(0, Hyperlink::place(Rect::parse("B3").unwrap(), "Sheet1!E9"));
     });
     // The hand and the ScreenTip are there for the three cells.
     let zones = app.update(cx, |app, _| {
-        app.zones.iter().filter(|zone| zone.cursor == Some(gpui::CursorStyle::PointingHand)).filter_map(|zone| zone.tooltip.clone()).collect::<Vec<_>>()
+        app.zones
+            .iter()
+            .filter(|zone| zone.cursor == Some(gpui::CursorStyle::PointingHand))
+            .filter_map(|zone| zone.tooltip.clone())
+            .collect::<Vec<_>>()
     });
     assert_eq!(zones.len(), 3);
-    assert!(zones.iter().any(|tip| tip.as_ref() == "https://example.org/"));
+    assert!(
+        zones
+            .iter()
+            .any(|tip| tip.as_ref() == "https://example.org/")
+    );
     // A click on the web link hands it to the system and marks it followed.
     let at = centre(&app, cx, "B2");
     cx.simulate_click(at, Modifiers::none());
@@ -741,12 +926,19 @@ fn a_click_follows_a_link_and_a_long_press_selects(cx: &mut TestAppContext) {
     redraw(cx);
     assert_eq!(cx.opened_url().as_deref(), Some("mailto:ann@example.org"));
     // A long press selects the cell instead; so do the arrow keys.
-    app.update_in(cx, |app, window, cx| links::released(app, (2, 1), (2, 1), Duration::from_secs(1), window, cx));
+    app.update_in(cx, |app, window, cx| {
+        links::released(app, (2, 1), (2, 1), Duration::from_secs(1), window, cx)
+    });
     assert_eq!(active(&app, cx), (2, 1));
     cx.simulate_keystrokes("up");
     assert_eq!(active(&app, cx), (1, 1));
     // A place that is nowhere says so.
-    edit(&app, cx, |wb| wb.set_hyperlink(0, Hyperlink::place(Rect::parse("D1").unwrap(), "Nowhere!A1")));
+    edit(&app, cx, |wb| {
+        wb.set_hyperlink(
+            0,
+            Hyperlink::place(Rect::parse("D1").unwrap(), "Nowhere!A1"),
+        )
+    });
     app.update_in(cx, |app, window, cx| links::follow(app, 0, 3, window, cx));
     assert_eq!(dialogs(&app, cx), 1);
 }
@@ -762,7 +954,10 @@ fn typing_an_address_makes_a_link_and_links_follow_their_cells(cx: &mut TestAppC
     assert_eq!(font_color(&app, cx, "A1"), Some(LINK_COLOR));
     // The entry and its link are one step.
     app.update(cx, |app, cx| app.undo(cx));
-    assert_eq!((link(&app, cx, "A1"), value(&app, cx, "A1")), (None, Value::Empty));
+    assert_eq!(
+        (link(&app, cx, "A1"), value(&app, cx, "A1")),
+        (None, Value::Empty)
+    );
     app.update(cx, |app, cx| app.redo(cx));
     // Ordinary text stays text.
     select(&app, cx, "A2");
@@ -773,7 +968,10 @@ fn typing_an_address_makes_a_link_and_links_follow_their_cells(cx: &mut TestAppC
     copy(&app, cx, "A1");
     select(&app, cx, "C1");
     app.update(cx, |app, cx| app.paste(PasteMode::All, cx));
-    assert_eq!(link(&app, cx, "C1").map(|link| link.address), Some("mailto:ann@example.org".into()));
+    assert_eq!(
+        link(&app, cx, "C1").map(|link| link.address),
+        Some("mailto:ann@example.org".into())
+    );
     select(&app, cx, "C1");
     app.update(cx, |app, cx| app.copy(true, cx));
     select(&app, cx, "E5");
@@ -789,11 +987,16 @@ fn typing_an_address_makes_a_link_and_links_follow_their_cells(cx: &mut TestAppC
     assert!(!app.update(cx, |app, _| Cmd::ClearHyperlinks.enabled(app)));
     select(&app, cx, "A1");
     run(&app, cx, Cmd::RemoveHyperlinks);
-    assert_eq!((link(&app, cx, "A1"), font_color(&app, cx, "A1")), (None, None));
+    assert_eq!(
+        (link(&app, cx, "A1"), font_color(&app, cx, "A1")),
+        (None, None)
+    );
     assert_eq!(value(&app, cx, "A1"), Value::text("ann@example.org"));
     app.update(cx, |app, cx| app.undo(cx));
     assert!(link(&app, cx, "A1").is_some());
-    app.update(cx, |app, cx| app.clear(opensheet_engine::workbook::ClearMode::Contents, cx));
+    app.update(cx, |app, cx| {
+        app.clear(opensheet_engine::workbook::ClearMode::Contents, cx)
+    });
     assert_eq!(link(&app, cx, "A1"), None);
     // A protected sheet takes no link.
     edit(&app, cx, |wb| {
@@ -801,18 +1004,33 @@ fn typing_an_address_makes_a_link_and_links_follow_their_cells(cx: &mut TestAppC
     });
     select(&app, cx, "B9");
     run(&app, cx, Cmd::Link);
-    assert_eq!(dialogs(&app, cx), 1, "the message of protected sheets, not the dialog");
-    assert!(!app.update(cx, |app, cx| links::insert(app, Hyperlink::external(Rect::parse("B9").unwrap(), "https://example.org"), None, cx)));
+    assert_eq!(
+        dialogs(&app, cx),
+        1,
+        "the message of protected sheets, not the dialog"
+    );
+    assert!(!app.update(cx, |app, cx| links::insert(
+        app,
+        Hyperlink::external(Rect::parse("B9").unwrap(), "https://example.org"),
+        None,
+        cx
+    )));
 }
 
 // --------------------------------------------------------------- cell styles
 
 fn style_name(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> String {
     let at = Rect::parse(name).unwrap();
-    app.update(cx, |app, _| app.wb.cell_style_at(app.sheet, at.r0, at.c0).to_string())
+    app.update(cx, |app, _| {
+        app.wb.cell_style_at(app.sheet, at.r0, at.c0).to_string()
+    })
 }
 
-fn fill(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> Option<opensheet_engine::Color> {
+fn fill(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    name: &str,
+) -> Option<opensheet_engine::Color> {
     let at = Rect::parse(name).unwrap();
     app.update(cx, |app, _| app.wb.style_at(app.sheet, at.r0, at.c0).fill)
 }
@@ -825,21 +1043,50 @@ fn the_gallery_shows_excels_styles_and_applies_one(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::CellStyles);
     // Excel's sections, in Excel's order, each style drawn.
     let shown = app.update(cx, |app, _| styles::sections(app));
-    let titles: Vec<(opensheet_engine::cell_style::StyleGroup, usize)> = shown.iter().map(|(group, styles)| (*group, styles.len())).collect();
+    let titles: Vec<(opensheet_engine::cell_style::StyleGroup, usize)> = shown
+        .iter()
+        .map(|(group, styles)| (*group, styles.len()))
+        .collect();
     use opensheet_engine::cell_style::StyleGroup::*;
-    assert_eq!(titles, [(GoodBadNeutral, 4), (DataModel, 10), (TitlesHeadings, 6), (Themed, 24), (NumberFormat, 5)]);
-    for name in ["Normal", "Good", "Heading 1", "20% - Accent1", "Accent6", "Percent"] {
-        assert!(cx.debug_bounds(Box::leak(format!("cell-style-{name}").into_boxed_str())).is_some(), "{name} is drawn");
+    assert_eq!(
+        titles,
+        [
+            (GoodBadNeutral, 4),
+            (DataModel, 10),
+            (TitlesHeadings, 6),
+            (Themed, 24),
+            (NumberFormat, 5)
+        ]
+    );
+    for name in [
+        "Normal",
+        "Good",
+        "Heading 1",
+        "20% - Accent1",
+        "Accent6",
+        "Percent",
+    ] {
+        assert!(
+            cx.debug_bounds(Box::leak(format!("cell-style-{name}").into_boxed_str()))
+                .is_some(),
+            "{name} is drawn"
+        );
     }
     // A click applies the style to the selection and closes the gallery.
     press(cx, "cell-style-Good");
     assert!(app.update(cx, |app, _| app.popup.is_none()));
     assert_eq!(style_name(&app, cx, "B2"), "Good");
     assert_eq!(style_name(&app, cx, "B3"), "Good");
-    assert_eq!(fill(&app, cx, "B2"), Some(opensheet_engine::Color(0xC6EFCE)));
+    assert_eq!(
+        fill(&app, cx, "B2"),
+        Some(opensheet_engine::Color(0xC6EFCE))
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Cell Styles"));
     app.update(cx, |app, cx| app.undo(cx));
-    assert_eq!((style_name(&app, cx, "B2"), fill(&app, cx, "B2")), ("Normal".to_string(), None));
+    assert_eq!(
+        (style_name(&app, cx, "B2"), fill(&app, cx, "B2")),
+        ("Normal".to_string(), None)
+    );
     // The names follow the language of the interface, not the file's.
     let good = app.update(cx, |app, _| app.wb.cell_style("Good").unwrap());
     assert_eq!(styles::display_name(&good), "Good");
@@ -873,18 +1120,34 @@ fn a_new_style_is_made_modified_duplicated_and_deleted(cx: &mut TestAppContext) 
     press(cx, "style-font");
     cx.simulate_keystrokes("enter");
     assert_eq!(dialogs(&app, cx), 0);
-    let made = app.update(cx, |app, _| app.wb.cell_style("Blue box").expect("the style"));
+    let made = app.update(cx, |app, _| {
+        app.wb.cell_style("Blue box").expect("the style")
+    });
     assert_eq!(made.style.fill, Some(opensheet_engine::Color(0x00B0F0)));
     assert!(made.includes.fill && !made.includes.font);
     assert_eq!(undo_label(&app, cx).as_deref(), Some("New Cell Style"));
     // It leads the gallery, under Custom.
     let first = app.update(cx, |app, _| styles::sections(app).remove(0));
-    assert_eq!((first.0, first.1[0].name.as_str()), (opensheet_engine::cell_style::StyleGroup::Custom, "Blue box"));
+    assert_eq!(
+        (first.0, first.1[0].name.as_str()),
+        (opensheet_engine::cell_style::StyleGroup::Custom, "Blue box")
+    );
     // Applied to another cell, then modified: the cell follows.
     select(&app, cx, "A2");
     app.update(cx, |app, cx| styles::apply(app, "Blue box", cx));
-    assert_eq!(fill(&app, cx, "A2"), Some(opensheet_engine::Color(0x00B0F0)));
-    app.update_in(cx, |app, window, cx| styles::open_dialog(app, styles::Purpose::Modify("Blue box".into()), None, window, cx));
+    assert_eq!(
+        fill(&app, cx, "A2"),
+        Some(opensheet_engine::Color(0x00B0F0))
+    );
+    app.update_in(cx, |app, window, cx| {
+        styles::open_dialog(
+            app,
+            styles::Purpose::Modify("Blue box".into()),
+            None,
+            window,
+            cx,
+        )
+    });
     redraw(cx);
     assert_eq!(dialogs(&app, cx), 1);
     // Format… opens Format Cells over the dialog; Return keeps the format.
@@ -895,12 +1158,32 @@ fn a_new_style_is_made_modified_duplicated_and_deleted(cx: &mut TestAppContext) 
     cx.simulate_keystrokes("escape");
     let mut changed = made.style.clone();
     changed.fill = Some(opensheet_engine::Color(0xFF0000));
-    assert!(app.update(cx, |app, cx| styles::save(app, &styles::Purpose::Modify("Blue box".into()), "", changed, made.includes, cx)));
-    assert_eq!(fill(&app, cx, "A2"), Some(opensheet_engine::Color(0xFF0000)));
+    assert!(app.update(cx, |app, cx| styles::save(
+        app,
+        &styles::Purpose::Modify("Blue box".into()),
+        "",
+        changed,
+        made.includes,
+        cx
+    )));
+    assert_eq!(
+        fill(&app, cx, "A2"),
+        Some(opensheet_engine::Color(0xFF0000))
+    );
     app.update(cx, |app, cx| app.undo(cx));
-    assert_eq!(fill(&app, cx, "A2"), Some(opensheet_engine::Color(0x00B0F0)));
+    assert_eq!(
+        fill(&app, cx, "A2"),
+        Some(opensheet_engine::Color(0x00B0F0))
+    );
     // A name that is taken is refused, as Excel does.
-    assert!(!app.update(cx, |app, cx| styles::save(app, &styles::Purpose::New, "good", made.style.clone(), made.includes, cx)));
+    assert!(!app.update(cx, |app, cx| styles::save(
+        app,
+        &styles::Purpose::New,
+        "good",
+        made.style.clone(),
+        made.includes,
+        cx
+    )));
     assert_eq!(dialogs(&app, cx), 1);
     cx.simulate_keystrokes("enter");
     // The menu of a style: Normal cannot be modified, Excel's styles
@@ -908,21 +1191,38 @@ fn a_new_style_is_made_modified_duplicated_and_deleted(cx: &mut TestAppContext) 
     let entries = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str| {
         app.update(cx, |app, _| {
             let style = app.wb.cell_style(name).unwrap();
-            styles::style_menu(app, &style).into_iter().map(|entry| (entry.label.to_string(), entry.disabled)).collect::<Vec<_>>()
+            styles::style_menu(app, &style)
+                .into_iter()
+                .map(|entry| (entry.label.to_string(), entry.disabled))
+                .collect::<Vec<_>>()
         })
     };
-    let all = |disabled: [bool; 4]| ["Apply", "Modify...", "Duplicate...", "Delete"].iter().map(|l| l.to_string()).zip(disabled).collect::<Vec<_>>();
-    assert_eq!(entries(&app, cx, "Blue box"), all([false, false, false, false]));
+    let all = |disabled: [bool; 4]| {
+        ["Apply", "Modify...", "Duplicate...", "Delete"]
+            .iter()
+            .map(|l| l.to_string())
+            .zip(disabled)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        entries(&app, cx, "Blue box"),
+        all([false, false, false, false])
+    );
     assert_eq!(entries(&app, cx, "Good"), all([false, false, false, true]));
     assert_eq!(entries(&app, cx, "Normal"), all([false, true, false, true]));
     // Duplicate proposes a name of its own.
-    app.update_in(cx, |app, window, cx| styles::open_dialog(app, styles::Purpose::New, Some("Blue box"), window, cx));
+    app.update_in(cx, |app, window, cx| {
+        styles::open_dialog(app, styles::Purpose::New, Some("Blue box"), window, cx)
+    });
     redraw(cx);
     cx.simulate_keystrokes("enter");
     assert!(app.update(cx, |app, _| app.wb.cell_style("Blue box 2").is_some()));
     // Delete: the cells that had the style are Normal again.
     app.update(cx, |app, cx| styles::delete(app, "Blue box", cx));
-    assert_eq!((style_name(&app, cx, "A2"), fill(&app, cx, "A2")), ("Normal".to_string(), None));
+    assert_eq!(
+        (style_name(&app, cx, "A2"), fill(&app, cx, "A2")),
+        ("Normal".to_string(), None)
+    );
     app.update(cx, |app, cx| app.undo(cx));
     assert_eq!(style_name(&app, cx, "A2"), "Blue box");
 }
@@ -961,15 +1261,34 @@ fn a_symbol_goes_into_a_text_box_and_into_a_note(cx: &mut TestAppContext) {
     // A selected shape is opened for typing, after what it holds; no cell
     // is opened.
     let id = app.update(cx, |app, cx| {
-        let id = app.wb.add_shape(app.sheet, ShapeTool::TextBox, Frame::new(100.0, 60.0, 160.0, 80.0)).expect("a shape");
-        app.wb.update_drawing(app.sheet, id, |drawing| drawing.as_shape_mut().unwrap().set_text("Sum ".to_string()));
+        let id = app
+            .wb
+            .add_shape(
+                app.sheet,
+                ShapeTool::TextBox,
+                Frame::new(100.0, 60.0, 160.0, 80.0),
+            )
+            .expect("a shape");
+        app.wb.update_drawing(app.sheet, id, |drawing| {
+            drawing.as_shape_mut().unwrap().set_text("Sum ".to_string())
+        });
         app.commit("setup", cx);
-        app.select_object(Some(crate::features::object_id(&crate::features::drawings::Drawings, id)), cx);
+        app.select_object(
+            Some(crate::features::object_id(
+                &crate::features::drawings::Drawings,
+                id,
+            )),
+            cx,
+        );
         id
     });
     redraw(cx);
     let shape_text = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
-        app.update(cx, |app, _| app.wb.drawing(0, id).and_then(|d| d.as_shape().map(|shape| shape.text.clone())))
+        app.update(cx, |app, _| {
+            app.wb
+                .drawing(0, id)
+                .and_then(|d| d.as_shape().map(|shape| shape.text.clone()))
+        })
     };
     app.update_in(cx, |app, window, cx| Cmd::Symbol.run(app, window, cx));
     redraw(cx);
@@ -991,7 +1310,9 @@ fn a_symbol_goes_into_a_text_box_and_into_a_note(cx: &mut TestAppContext) {
     cx.simulate_input("§");
     cx.simulate_keystrokes("escape");
     let note = app.update(cx, |app, _| {
-        app.wb.comment_at(0, 2, 2).and_then(|comment| comment.as_note().map(|note| note.text()))
+        app.wb
+            .comment_at(0, 2, 2)
+            .and_then(|comment| comment.as_note().map(|note| note.text()))
     });
     assert!(note.is_some_and(|text| text.ends_with("See §")));
     assert!(app.update(cx, |app, _| app.wb.sheets[0].cells.is_empty()));

@@ -37,7 +37,11 @@ impl Lang {
     /// "zh-Hans-CN" (none): its first subtag, whatever the separators of
     /// the system (BCP 47 for macOS and Windows, POSIX for Linux).
     pub fn from_code(code: &str) -> Option<Lang> {
-        let primary = code.trim().split(['-', '_', '.', '@']).next()?.to_lowercase();
+        let primary = code
+            .trim()
+            .split(['-', '_', '.', '@'])
+            .next()?
+            .to_lowercase();
         Lang::ALL.into_iter().find(|l| primary == l.code())
     }
 
@@ -80,7 +84,8 @@ pub fn lang() -> Lang {
 fn table(lang: Lang) -> &'static HashMap<&'static str, &'static str> {
     static TABLES: OnceLock<[HashMap<&'static str, &'static str>; 3]> = OnceLock::new();
     let tables = TABLES.get_or_init(|| {
-        [i18n_tables::ES, i18n_tables::DE, i18n_tables::IT].map(|pairs| pairs.iter().copied().collect())
+        [i18n_tables::ES, i18n_tables::DE, i18n_tables::IT]
+            .map(|pairs| pairs.iter().copied().collect())
     });
     match lang {
         Lang::Es => &tables[0],
@@ -108,7 +113,11 @@ pub fn t_ctx(context: &'static str, en: &'static str, fr: &'static str) -> &'sta
         other => {
             let key = format!("{context}|{en}");
             let table = table(other);
-            table.get(key.as_str()).or_else(|| table.get(en)).copied().unwrap_or(en)
+            table
+                .get(key.as_str())
+                .or_else(|| table.get(en))
+                .copied()
+                .unwrap_or(en)
         }
     }
 }
@@ -125,7 +134,8 @@ pub fn labelled(label: &str, value: impl std::fmt::Display) -> String {
 /// The first language of a list in order of preference that the interface
 /// speaks.
 fn first_supported<S: AsRef<str>>(tags: impl IntoIterator<Item = S>) -> Option<Lang> {
-    tags.into_iter().find_map(|tag| Lang::from_code(tag.as_ref()))
+    tags.into_iter()
+        .find_map(|tag| Lang::from_code(tag.as_ref()))
 }
 
 /// Language to start in: `OPENSHEET_LANG`, else the first supported one of
@@ -135,7 +145,10 @@ fn first_supported<S: AsRef<str>>(tags: impl IntoIterator<Item = S>) -> Option<L
 /// interface languages; elsewhere `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and
 /// `LANG`.
 pub fn detect() -> Lang {
-    if let Some(lang) = std::env::var("OPENSHEET_LANG").ok().and_then(|v| Lang::from_code(&v)) {
+    if let Some(lang) = std::env::var("OPENSHEET_LANG")
+        .ok()
+        .and_then(|v| Lang::from_code(&v))
+    {
         return lang;
     }
     first_supported(sys_locale::get_locales()).unwrap_or(Lang::En)
@@ -164,7 +177,10 @@ mod tests {
 
     #[test]
     fn the_first_supported_preferred_language_wins() {
-        assert_eq!(first_supported(["zh-Hans-CN", "de-CH", "fr-FR"]), Some(Lang::De));
+        assert_eq!(
+            first_supported(["zh-Hans-CN", "de-CH", "fr-FR"]),
+            Some(Lang::De)
+        );
         assert_eq!(first_supported(["ja-JP", "pt-BR"]), None);
         assert_eq!(first_supported(Vec::<String>::new()), None);
         assert_eq!(first_supported(["en-US", "fr-FR"]), Some(Lang::En));

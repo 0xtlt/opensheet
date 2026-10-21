@@ -129,7 +129,12 @@ pub enum Negative {
 /// Parentheses are an English-speaking habit.
 pub fn negatives(locale: &Locale) -> &'static [Negative] {
     if locale.id == "en" {
-        &[Negative::Minus, Negative::Red, Negative::Parens, Negative::RedParens]
+        &[
+            Negative::Minus,
+            Negative::Red,
+            Negative::Parens,
+            Negative::RedParens,
+        ]
     } else {
         &[Negative::Minus, Negative::Red, Negative::RedMinus]
     }
@@ -252,16 +257,29 @@ pub fn date_types(locale: &Locale) -> Vec<String> {
             "yyyy-mm-dd",
         ],
     };
-    let mut codes = vec![locale.short_date_format.to_string(), locale.long_date_format.to_string()];
+    let mut codes = vec![
+        locale.short_date_format.to_string(),
+        locale.long_date_format.to_string(),
+    ];
     // Numeric dates use the separator of the locale ("14.03.2012").
     let sep = locale.date_sep.to_string();
-    codes.extend(extra.iter().map(|code| if sep == "/" { code.to_string() } else { code.replace('/', &sep) }));
+    codes.extend(extra.iter().map(|code| {
+        if sep == "/" {
+            code.to_string()
+        } else {
+            code.replace('/', &sep)
+        }
+    }));
     dedup(codes)
 }
 
 /// The time types of a locale (format codes).
 pub fn time_types(locale: &Locale) -> Vec<String> {
-    let mut codes = vec![locale.time_format.to_string(), "h:mm".to_string(), "h:mm:ss".to_string()];
+    let mut codes = vec![
+        locale.time_format.to_string(),
+        "h:mm".to_string(),
+        "h:mm:ss".to_string(),
+    ];
     if locale.id == "en" {
         codes.push("h:mm AM/PM".to_string());
     } else {
@@ -277,14 +295,26 @@ pub fn time_types(locale: &Locale) -> Vec<String> {
 pub fn fraction_types() -> Vec<(&'static str, &'static str)> {
     vec![
         ("# ?/?", t("Up to one digit (1/4)", "D'un chiffre (1/4)")),
-        ("# ??/??", t("Up to two digits (21/25)", "De deux chiffres (21/25)")),
-        ("# ???/???", t("Up to three digits (312/943)", "De trois chiffres (312/943)")),
+        (
+            "# ??/??",
+            t("Up to two digits (21/25)", "De deux chiffres (21/25)"),
+        ),
+        (
+            "# ???/???",
+            t(
+                "Up to three digits (312/943)",
+                "De trois chiffres (312/943)",
+            ),
+        ),
         ("# ?/2", t("As halves (1/2)", "Demis (1/2)")),
         ("# ?/4", t("As quarters (2/4)", "Quarts (2/4)")),
         ("# ?/8", t("As eighths (4/8)", "Huitièmes (4/8)")),
         ("# ??/16", t("As sixteenths (8/16)", "Seizièmes (8/16)")),
         ("# ?/10", t("As tenths (3/10)", "Dixièmes (3/10)")),
-        ("# ??/100", t("As hundredths (30/100)", "Centièmes (30/100)")),
+        (
+            "# ??/100",
+            t("As hundredths (30/100)", "Centièmes (30/100)"),
+        ),
     ]
 }
 
@@ -294,12 +324,21 @@ pub fn special_types(locale: &Locale) -> Vec<(&'static str, &'static str)> {
         "en" => vec![
             ("00000", t("Zip Code", "Code postal")),
             ("00000-0000", t("Zip Code + 4", "Code postal + 4")),
-            ("[<=9999999]###-####;(###) ###-####", t("Phone Number", "Numéro de téléphone")),
-            ("000-00-0000", t("Social Security Number", "Numéro de sécurité sociale")),
+            (
+                "[<=9999999]###-####;(###) ###-####",
+                t("Phone Number", "Numéro de téléphone"),
+            ),
+            (
+                "000-00-0000",
+                t("Social Security Number", "Numéro de sécurité sociale"),
+            ),
         ],
         "fr" => vec![
             ("00000", t("Zip Code", "Code postal")),
-            ("0 00 00 00 000 000 00", t("Social Security Number", "Numéro de sécurité sociale")),
+            (
+                "0 00 00 00 000 000 00",
+                t("Social Security Number", "Numéro de sécurité sociale"),
+            ),
             ("0# ## ## ## ##", t("Phone Number", "Numéro de téléphone")),
         ],
         _ => vec![("00000", t("Zip Code", "Code postal"))],
@@ -329,15 +368,31 @@ pub fn custom_codes(locale: &Locale, used: &[String]) -> Vec<String> {
             codes.push(currency_code(decimals, own, *negative, locale));
         }
     }
-    codes.extend(["0%", "0.00%", "0.00E+00", "##0.0E+0", "# ?/?", "# ??/??"].iter().map(|code| code.to_string()));
+    codes.extend(
+        ["0%", "0.00%", "0.00E+00", "##0.0E+0", "# ?/?", "# ??/??"]
+            .iter()
+            .map(|code| code.to_string()),
+    );
     codes.push(locale.short_date_format.to_string());
-    codes.extend(["d-mmm-yy", "d-mmm", "mmm-yy"].iter().map(|code| code.to_string()));
+    codes.extend(
+        ["d-mmm-yy", "d-mmm", "mmm-yy"]
+            .iter()
+            .map(|code| code.to_string()),
+    );
     if locale.id == "en" {
-        codes.extend(["h:mm AM/PM", "h:mm:ss AM/PM"].iter().map(|code| code.to_string()));
+        codes.extend(
+            ["h:mm AM/PM", "h:mm:ss AM/PM"]
+                .iter()
+                .map(|code| code.to_string()),
+        );
     }
     codes.extend(["h:mm", "h:mm:ss"].iter().map(|code| code.to_string()));
     codes.push(format!("{} h:mm", locale.short_date_format));
-    codes.extend(["mm:ss", "mm:ss.0", "@", "[h]:mm:ss"].iter().map(|code| code.to_string()));
+    codes.extend(
+        ["mm:ss", "mm:ss.0", "@", "[h]:mm:ss"]
+            .iter()
+            .map(|code| code.to_string()),
+    );
     codes.push(accounting_code(0, own, locale));
     codes.push(accounting_code(0, "", locale));
     codes.push(accounting_code(2, own, locale));
@@ -376,7 +431,10 @@ impl Choice {
     /// The format code these choices produce; `None` for Custom, whose
     /// code is typed.
     pub fn code(&self, locale: &Locale) -> Option<String> {
-        let negative = negatives(locale).get(self.negative).copied().unwrap_or(Negative::Minus);
+        let negative = negatives(locale)
+            .get(self.negative)
+            .copied()
+            .unwrap_or(Negative::Minus);
         let symbol = symbols(locale).get(self.symbol).copied().unwrap_or("");
         let pick = |codes: Vec<String>| codes.get(self.kind).or(codes.first()).cloned();
         match self.category {
@@ -387,10 +445,20 @@ impl Choice {
             Category::Date => pick(date_types(locale)),
             Category::Time => pick(time_types(locale)),
             Category::Percentage => Some(percent_code(self.decimals)),
-            Category::Fraction => pick(fraction_types().iter().map(|(code, _)| code.to_string()).collect()),
+            Category::Fraction => pick(
+                fraction_types()
+                    .iter()
+                    .map(|(code, _)| code.to_string())
+                    .collect(),
+            ),
             Category::Scientific => Some(scientific_code(self.decimals)),
             Category::Text => Some("@".to_string()),
-            Category::Special => pick(special_types(locale).iter().map(|(code, _)| code.to_string()).collect()),
+            Category::Special => pick(
+                special_types(locale)
+                    .iter()
+                    .map(|(code, _)| code.to_string())
+                    .collect(),
+            ),
             Category::Custom => None,
         }
     }
@@ -420,7 +488,10 @@ impl Choice {
             || list(Category::Time, time_types(locale), &mut choice)
             || list(
                 Category::Fraction,
-                fraction_types().iter().map(|(c, _)| c.to_string()).collect(),
+                fraction_types()
+                    .iter()
+                    .map(|(c, _)| c.to_string())
+                    .collect(),
                 &mut choice,
             )
         {
@@ -430,7 +501,10 @@ impl Choice {
         let negative_count = negatives(locale).len();
         let symbol_count = symbols(locale).len();
         for decimals in 0..=MAX_DECIMALS {
-            let mut candidate = Choice { decimals, ..Choice::general() };
+            let mut candidate = Choice {
+                decimals,
+                ..Choice::general()
+            };
             for category in [Category::Percentage, Category::Scientific] {
                 candidate.category = category;
                 if candidate.code(locale).as_deref() == Some(code) {
@@ -469,7 +543,10 @@ impl Choice {
         }
         if list(
             Category::Special,
-            special_types(locale).iter().map(|(c, _)| c.to_string()).collect(),
+            special_types(locale)
+                .iter()
+                .map(|(c, _)| c.to_string())
+                .collect(),
             &mut choice,
         ) {
             return choice;
@@ -494,7 +571,11 @@ pub fn typed(text: &str, known: &[String], locale: &Locale) -> String {
     let text = text.trim();
     // "Standard" is General in several languages; both are understood
     // whatever the language.
-    if text.is_empty() || ["General", "Standard"].iter().any(|name| text.eq_ignore_ascii_case(name)) {
+    if text.is_empty()
+        || ["General", "Standard"]
+            .iter()
+            .any(|name| text.eq_ignore_ascii_case(name))
+    {
         return "General".to_string();
     }
     if let Some(code) = known.iter().find(|code| shown(code, locale) == text) {
@@ -515,9 +596,18 @@ mod tests {
             assert_eq!((currency.decimals, currency.symbol), (2, 1));
             let accounting = Choice::from_code(locale.accounting_format, locale);
             assert_eq!(accounting.category, Category::Accounting, "{}", locale.id);
-            assert_eq!(Choice::from_code(locale.short_date_format, locale).category, Category::Date);
-            assert_eq!(Choice::from_code(locale.long_date_format, locale).category, Category::Date);
-            assert_eq!(Choice::from_code(locale.time_format, locale).category, Category::Time);
+            assert_eq!(
+                Choice::from_code(locale.short_date_format, locale).category,
+                Category::Date
+            );
+            assert_eq!(
+                Choice::from_code(locale.long_date_format, locale).category,
+                Category::Date
+            );
+            assert_eq!(
+                Choice::from_code(locale.time_format, locale).category,
+                Category::Time
+            );
         }
     }
 
@@ -542,8 +632,14 @@ mod tests {
                 assert_eq!(choice.code(en).as_deref(), Some(code));
             }
         }
-        assert_eq!(accounting_code(2, "", en), "_(* #,##0.00_);_(* (#,##0.00);_(* \"-\"??_);_(@_)");
-        assert_eq!(currency_code(0, "CHF", Negative::Minus, Locale::fr()), "#,##0 \"CHF\"");
+        assert_eq!(
+            accounting_code(2, "", en),
+            "_(* #,##0.00_);_(* (#,##0.00);_(* \"-\"??_);_(@_)"
+        );
+        assert_eq!(
+            currency_code(0, "CHF", Negative::Minus, Locale::fr()),
+            "#,##0 \"CHF\""
+        );
     }
 
     #[test]

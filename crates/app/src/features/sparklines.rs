@@ -20,11 +20,11 @@ use crate::i18n::{t, t_ctx};
 use crate::ribbon::{group, row, rows};
 use crate::theme;
 use gpui::{AnyElement, Pixels, Point, Window, div, point, prelude::*, px};
+use opensheet_engine::Rect;
 use opensheet_engine::ops::PasteMode;
 use opensheet_engine::protect::Action;
 use opensheet_engine::sparkline::{AxisBound, SparkShape, SparklineGroup, SparklineType};
 use opensheet_engine::workbook::ClearMode;
-use opensheet_engine::Rect;
 
 pub struct Sparklines;
 
@@ -73,19 +73,34 @@ pub(crate) mod labels {
         t("Insert Sparkline", "Insérer un graphique sparkline")
     }
     pub fn data() -> &'static str {
-        t("Sparkline Data Change", "Modification des données du graphique sparkline")
+        t(
+            "Sparkline Data Change",
+            "Modification des données du graphique sparkline",
+        )
     }
     pub fn kind() -> &'static str {
-        t("Sparkline Type Change", "Modification du type de graphique sparkline")
+        t(
+            "Sparkline Type Change",
+            "Modification du type de graphique sparkline",
+        )
     }
     pub fn style() -> &'static str {
-        t("Sparkline Style Change", "Modification du style de graphique sparkline")
+        t(
+            "Sparkline Style Change",
+            "Modification du style de graphique sparkline",
+        )
     }
     pub fn color() -> &'static str {
-        t("Sparkline Color Change", "Modification de la couleur du graphique sparkline")
+        t(
+            "Sparkline Color Change",
+            "Modification de la couleur du graphique sparkline",
+        )
     }
     pub fn axis() -> &'static str {
-        t("Sparkline Axis Change", "Modification de l’axe du graphique sparkline")
+        t(
+            "Sparkline Axis Change",
+            "Modification de l’axe du graphique sparkline",
+        )
     }
     pub fn group() -> &'static str {
         t("Group Sparklines", "Grouper des graphiques sparkline")
@@ -102,20 +117,32 @@ pub(crate) mod labels {
 pub(crate) fn active_group(app: &ExcelApp) -> Option<&SparklineGroup> {
     let (row, col) = app.active();
     let sheet = &app.wb.sheets[app.sheet];
-    sheet.sparkline_at(row, col).map(|(group, _)| &sheet.sparklines[group])
+    sheet
+        .sparkline_at(row, col)
+        .map(|(group, _)| &sheet.sparklines[group])
 }
 
 /// Where a drop-down of the command being run opens: under its button.
 pub(crate) fn drop_position(app: &ExcelApp, window: &Window) -> Point<Pixels> {
-    let anchor = app.command_anchor.and_then(|id| app.anchors.borrow().get(id).copied());
+    let anchor = app
+        .command_anchor
+        .and_then(|id| app.anchors.borrow().get(id).copied());
     match anchor {
-        Some(bounds) => point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)),
+        Some(bounds) => point(
+            bounds.origin.x,
+            bounds.origin.y + bounds.size.height + px(2.),
+        ),
         None => window.mouse_position(),
     }
 }
 
 /// Change the groups of the selected sparklines, in one undo step.
-pub(crate) fn change(app: &mut ExcelApp, label: &str, cx: &mut Cx, f: impl Fn(&mut SparklineGroup)) {
+pub(crate) fn change(
+    app: &mut ExcelApp,
+    label: &str,
+    cx: &mut Cx,
+    f: impl Fn(&mut SparklineGroup),
+) {
     if !app.may(Intent::ChangeSheet, cx) {
         return;
     }
@@ -164,7 +191,10 @@ impl Command for Cmd {
     }
 
     fn run(self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-        let menu = matches!(self, Cmd::Menu | Cmd::EditDataMenu | Cmd::ClearMenu | Cmd::Axis | Cmd::MarkerColor);
+        let menu = matches!(
+            self,
+            Cmd::Menu | Cmd::EditDataMenu | Cmd::ClearMenu | Cmd::Axis | Cmd::MarkerColor
+        );
         if !menu && app.is_editing() && !app.commit_edit(None, window, cx) {
             return;
         }
@@ -206,7 +236,12 @@ impl Command for Cmd {
                     set_kind(app, kind, cx);
                 }
             }
-            Cmd::HighPoint | Cmd::LowPoint | Cmd::NegativePoints | Cmd::FirstPoint | Cmd::LastPoint | Cmd::Markers => {
+            Cmd::HighPoint
+            | Cmd::LowPoint
+            | Cmd::NegativePoints
+            | Cmd::FirstPoint
+            | Cmd::LastPoint
+            | Cmd::Markers => {
                 let on = !self.checked(app);
                 change(app, labels::style(), cx, |group| {
                     if let Some(flag) = self.show_flag(group) {
@@ -219,7 +254,11 @@ impl Command for Cmd {
             Cmd::MarkerColor => {
                 let entries = gallery::Slot::POINTS
                     .into_iter()
-                    .map(|slot| MenuEntry::new(slot.label(), move |app, window, cx| gallery::open_color(app, slot, window, cx)))
+                    .map(|slot| {
+                        MenuEntry::new(slot.label(), move |app, window, cx| {
+                            gallery::open_color(app, slot, window, cx)
+                        })
+                    })
                     .collect();
                 app.open_command_menu(entries, 200.0, window, cx);
             }
@@ -229,7 +268,8 @@ impl Command for Cmd {
             }
             Cmd::Group => {
                 let (sheet, ranges, lead) = (app.sheet, app.sel().ranges.clone(), app.active());
-                if app.may(Intent::ChangeSheet, cx) && app.wb.group_sparklines(sheet, &ranges, lead) {
+                if app.may(Intent::ChangeSheet, cx) && app.wb.group_sparklines(sheet, &ranges, lead)
+                {
                     app.commit(labels::group(), cx);
                 }
             }
@@ -240,12 +280,19 @@ impl Command for Cmd {
                 }
             }
             Cmd::ClearMenu => {
-                let entries = vec![MenuEntry::command(Cmd::ClearSelected, app), MenuEntry::command(Cmd::ClearGroups, app)];
+                let entries = vec![
+                    MenuEntry::command(Cmd::ClearSelected, app),
+                    MenuEntry::command(Cmd::ClearGroups, app),
+                ];
                 app.open_command_menu(entries, 400.0, window, cx);
             }
             Cmd::ClearSelected | Cmd::ClearGroups => {
                 let (sheet, ranges) = (app.sheet, app.sel().ranges.clone());
-                if app.may(Intent::ChangeSheet, cx) && app.wb.clear_sparklines(sheet, &ranges, self == Cmd::ClearGroups) {
+                if app.may(Intent::ChangeSheet, cx)
+                    && app
+                        .wb
+                        .clear_sparklines(sheet, &ranges, self == Cmd::ClearGroups)
+                {
                     app.commit(labels::clear(), cx);
                 }
             }
@@ -254,13 +301,19 @@ impl Command for Cmd {
 
     fn enabled(self, app: &ExcelApp) -> bool {
         // Excel greys sparklines out on a protected sheet.
-        if app.wb.permits(&Action::ChangeSheet { sheet: app.sheet }).is_err() {
+        if app
+            .wb
+            .permits(&Action::ChangeSheet { sheet: app.sheet })
+            .is_err()
+        {
             return false;
         }
         match self {
             Cmd::Menu | Cmd::InsertLine | Cmd::InsertColumn | Cmd::InsertWinLoss => true,
             // Markers belong to lines.
-            Cmd::Markers => active_group(app).is_some_and(|group| group.kind == SparklineType::Line),
+            Cmd::Markers => {
+                active_group(app).is_some_and(|group| group.kind == SparklineType::Line)
+            }
             _ => active_group(app).is_some(),
         }
     }
@@ -287,52 +340,94 @@ fn axis_menu(app: &ExcelApp) -> Vec<MenuEntry> {
     };
     let heading = |text: &'static str| MenuEntry::new(text, |_, _, _| {}).disabled(true);
     let flag = |text: &'static str, on: bool, set: fn(&mut SparklineGroup, bool)| {
-        MenuEntry::new(text, move |app, _, cx| change(app, labels::axis(), cx, |group| set(group, !on))).checked(on)
+        MenuEntry::new(text, move |app, _, cx| {
+            change(app, labels::axis(), cx, |group| set(group, !on))
+        })
+        .checked(on)
     };
     let bound = |text: &'static str, current: AxisBound, wanted: AxisBound, max: bool| {
         MenuEntry::new(text, move |app, _, cx| {
-            change(app, labels::axis(), cx, |group| if max { group.max = wanted } else { group.min = wanted })
+            change(app, labels::axis(), cx, |group| {
+                if max {
+                    group.max = wanted
+                } else {
+                    group.min = wanted
+                }
+            })
         })
         .checked(current == wanted)
     };
     let end = |current: AxisBound, max: bool| {
         vec![
             bound(
-                t("Automatic for Each Sparkline", "Automatique pour chaque graphique sparkline"),
+                t(
+                    "Automatic for Each Sparkline",
+                    "Automatique pour chaque graphique sparkline",
+                ),
                 current,
                 AxisBound::Individual,
                 max,
             ),
-            bound(t("Same for All Sparklines", "Identique pour tous les graphiques sparkline"), current, AxisBound::Group, max),
-            MenuEntry::new(t("Custom Value…", "Valeur personnalisée…"), move |app, window, cx| {
-                dialogs::open_axis_value(app, max, window, cx);
-            })
+            bound(
+                t(
+                    "Same for All Sparklines",
+                    "Identique pour tous les graphiques sparkline",
+                ),
+                current,
+                AxisBound::Group,
+                max,
+            ),
+            MenuEntry::new(
+                t("Custom Value…", "Valeur personnalisée…"),
+                move |app, window, cx| {
+                    dialogs::open_axis_value(app, max, window, cx);
+                },
+            )
             .checked(matches!(current, AxisBound::Custom(_))),
         ]
     };
     let dated = group.date_axis.is_some();
     let mut entries = vec![
         heading(t("Horizontal Axis Options", "Options de l'axe horizontal")),
-        MenuEntry::new(t("General Axis Type", "Type de l'axe général"), |app, _, cx| {
-            dialogs::set_date_axis(app, None, cx);
-        })
+        MenuEntry::new(
+            t("General Axis Type", "Type de l'axe général"),
+            |app, _, cx| {
+                dialogs::set_date_axis(app, None, cx);
+            },
+        )
         .checked(!dated),
-        MenuEntry::new(t("Date Axis Type...", "Type de l'axe de date..."), |app, window, cx| {
-            dialogs::open_date_range(app, window, cx);
-        })
+        MenuEntry::new(
+            t("Date Axis Type...", "Type de l'axe de date..."),
+            |app, window, cx| {
+                dialogs::open_date_range(app, window, cx);
+            },
+        )
         .checked(dated),
-        flag(t("Show Axis", "Afficher l'axe"), group.show_axis, |group, on| group.show_axis = on),
         flag(
-            t("Plot Data Right-to-Left", "Tracer les données de droite à gauche"),
+            t("Show Axis", "Afficher l'axe"),
+            group.show_axis,
+            |group, on| group.show_axis = on,
+        ),
+        flag(
+            t(
+                "Plot Data Right-to-Left",
+                "Tracer les données de droite à gauche",
+            ),
             group.right_to_left,
             |group, on| group.right_to_left = on,
         ),
         MenuEntry::separator(),
-        heading(t("Vertical Axis Minimum Value Options", "Options - Valeur minimale de l'axe vertical")),
+        heading(t(
+            "Vertical Axis Minimum Value Options",
+            "Options - Valeur minimale de l'axe vertical",
+        )),
     ];
     entries.extend(end(group.min, false));
     entries.push(MenuEntry::separator());
-    entries.push(heading(t("Vertical Axis Maximum Value Options", "Options - Valeur maximale de l'axe vertical")));
+    entries.push(heading(t(
+        "Vertical Axis Maximum Value Options",
+        "Options - Valeur maximale de l'axe vertical",
+    )));
     entries.extend(end(group.max, true));
     entries
 }
@@ -349,7 +444,11 @@ pub(crate) fn paint_cells(p: &mut Painter) {
     }
     let (layout, zoom) = (p.layout, p.layout.zoom);
     for group in &sheet.sparklines {
-        let in_view: Vec<_> = group.sparklines.iter().filter(|s| p.visible.contains(s.row, s.col)).collect();
+        let in_view: Vec<_> = group
+            .sparklines
+            .iter()
+            .filter(|s| p.visible.contains(s.row, s.col))
+            .collect();
         if in_view.is_empty() {
             continue;
         }
@@ -357,7 +456,9 @@ pub(crate) fn paint_cells(p: &mut Painter) {
         let dates = app.wb.sparkline_dates(group);
         for sparkline in in_view {
             // The sparkline of a merged cell fills the merged area.
-            let cells = sheet.merge_at(sparkline.row, sparkline.col).unwrap_or(Rect::cell(sparkline.row, sparkline.col));
+            let cells = sheet
+                .merge_at(sparkline.row, sparkline.col)
+                .unwrap_or(Rect::cell(sparkline.row, sparkline.col));
             if (cells.r0, cells.c0) != (sparkline.row, sparkline.col) {
                 continue;
             }
@@ -368,13 +469,32 @@ pub(crate) fn paint_cells(p: &mut Painter) {
             }
             let values = app.wb.sparkline_values(group, sparkline);
             let outer = std::mem::take(&mut p.items);
-            for shape in opensheet_engine::sparkline::shapes_at(group, &values, dates.as_deref(), shared, width, height, zoom) {
+            for shape in opensheet_engine::sparkline::shapes_at(
+                group,
+                &values,
+                dates.as_deref(),
+                shared,
+                width,
+                height,
+                zoom,
+            ) {
                 match shape {
-                    SparkShape::Rect { x0: a, y0: b, x1: c, y1: d, color } => {
+                    SparkShape::Rect {
+                        x0: a,
+                        y0: b,
+                        x1: c,
+                        y1: d,
+                        color,
+                    } => {
                         p.rect(x0 + a, y0 + b, x0 + c, y0 + d, theme::engine_color(color));
                     }
-                    SparkShape::Line { points, color, width } => {
-                        let points: Vec<(f32, f32)> = points.iter().map(|(x, y)| (x0 + x, y0 + y)).collect();
+                    SparkShape::Line {
+                        points,
+                        color,
+                        width,
+                    } => {
+                        let points: Vec<(f32, f32)> =
+                            points.iter().map(|(x, y)| (x0 + x, y0 + y)).collect();
                         p.polyline(&points, width, theme::engine_color(color));
                     }
                 }
@@ -382,7 +502,12 @@ pub(crate) fn paint_cells(p: &mut Painter) {
             let items = std::mem::replace(&mut p.items, outer);
             if !items.is_empty() {
                 p.push(Draw::Clipped {
-                    clip: layout.bounds_px(x0.max(p.clip.0), y0.max(p.clip.1), (x1 - 1.0).min(p.clip.2), (y1 - 1.0).min(p.clip.3)),
+                    clip: layout.bounds_px(
+                        x0.max(p.clip.0),
+                        y0.max(p.clip.1),
+                        (x1 - 1.0).min(p.clip.2),
+                        (y1 - 1.0).min(p.clip.3),
+                    ),
                     items,
                 });
             }
@@ -405,7 +530,13 @@ impl Feature for Sparklines {
         }
     }
 
-    fn render_tab(&self, app: &mut ExcelApp, _tab: &'static str, _window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn render_tab(
+        &self,
+        app: &mut ExcelApp,
+        _tab: &'static str,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         tab_groups(app, cx)
     }
 
@@ -422,7 +553,14 @@ impl Feature for Sparklines {
                 // A copy laid several times over a larger destination
                 // brings its sparklines each time.
                 let (rows, cols) = (rect.rows().max(1), rect.cols().max(1));
-                let (down, across) = if cut { (1, 1) } else { ((edit.rect.rows() / rows).max(1), (edit.rect.cols() / cols).max(1)) };
+                let (down, across) = if cut {
+                    (1, 1)
+                } else {
+                    (
+                        (edit.rect.rows() / rows).max(1),
+                        (edit.rect.cols() / cols).max(1),
+                    )
+                };
                 for i in 0..down {
                     for j in 0..across {
                         let dest = (edit.rect.r0 + i * rows, edit.rect.c0 + j * cols);
@@ -445,11 +583,17 @@ impl Feature for Sparklines {
 fn tab_groups(app: &ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
     let check = |id: &'static str, cmd: Cmd, cx: &mut Cx| -> AnyElement {
         // A greyed-out box keeps its place (Markers, for columns).
-        div().when(!cmd.enabled(app), |d| d.opacity(0.45)).child(app.cmd_check(id, cmd, cx)).into_any_element()
+        div()
+            .when(!cmd.enabled(app), |d| d.opacity(0.45))
+            .child(app.cmd_check(id, cmd, cx))
+            .into_any_element()
     };
     vec![
-        group(t_ctx("group", "Sparkline", "Graphique sparkline"), row(vec![app.cmd_large("sp-edit", Cmd::EditDataMenu, true, cx)]))
-            .into_any_element(),
+        group(
+            t_ctx("group", "Sparkline", "Graphique sparkline"),
+            row(vec![app.cmd_large("sp-edit", Cmd::EditDataMenu, true, cx)]),
+        )
+        .into_any_element(),
         group(
             t_ctx("group", "Type", "Type"),
             row(vec![

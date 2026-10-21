@@ -13,18 +13,22 @@ use super::parts::{Extras, SheetLinks};
 use super::read::{Package, parse_cell_ref, relationships};
 use super::write::{NS_DOC_REL, NS_MAIN, push_number, push_range};
 use super::xml::{Event, Reader, Tag, XML_DECL, push_attr, push_cell_text};
-use opensheet_engine::external::{QueryItem, QueryProps, WebQuery};
 use opensheet_engine::consolidate::{ConsolidateFunction, ConsolidateSource, Consolidation};
+use opensheet_engine::external::{QueryItem, QueryProps, WebQuery};
 use opensheet_engine::input::parse_numeric_text;
 use opensheet_engine::refs::cell_name;
-use opensheet_engine::text_columns::{ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextImport};
+use opensheet_engine::text_columns::{
+    ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextImport,
+};
 use opensheet_engine::whatif::{DataTable, Scenario, ScenarioCell};
 use opensheet_engine::{Content, Locale, Rect, Sheet, Workbook};
 use std::fmt::Write;
 use std::io::{Read, Seek};
 
-const CT_CONNECTIONS: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml";
-const CT_QUERY_TABLE: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml";
+const CT_CONNECTIONS: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml";
+const CT_QUERY_TABLE: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml";
 
 /// Read `<dataConsolidate>`: the function, the labels used and the
 /// references. References to other workbooks (`r:id`) and to names are
@@ -45,7 +49,9 @@ pub(crate) fn read_consolidate<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mu
             match r.next() {
                 Event::Open(t) => {
                     if t.name == "dataRef" && t.attr_local("id").is_none() {
-                        let range = t.attr("ref").and_then(|text| Rect::parse(&text.replace('$', "")));
+                        let range = t
+                            .attr("ref")
+                            .and_then(|text| Rect::parse(&text.replace('$', "")));
                         if let (Some(range), Some(name)) = (range, t.attr("sheet")) {
                             spec.sources.push(ConsolidateSource {
                                 sheet: name.into_owned(),
@@ -101,7 +107,12 @@ pub(crate) fn write_consolidate(x: &mut String, sheet: &Sheet) {
 
 /// Read `<scenarios>`. The value of a changing cell is kept as it would
 /// be typed in `locale` (a file writes numbers with a point).
-pub(crate) fn read_scenarios<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mut Sheet, locale: &Locale) {
+pub(crate) fn read_scenarios<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    sheet: &mut Sheet,
+    locale: &Locale,
+) {
     if tag.empty {
         return;
     }
@@ -124,7 +135,9 @@ pub(crate) fn read_scenarios<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mut 
                                 if let (true, Some((row, col))) = (c.name == "inputCells", cell) {
                                     let value = c.attr("val").unwrap_or_default();
                                     let value = match value.trim().parse::<f64>() {
-                                        Ok(n) if n.is_finite() => value.trim().replace('.', &locale.decimal_sep.to_string()),
+                                        Ok(n) if n.is_finite() => value
+                                            .trim()
+                                            .replace('.', &locale.decimal_sep.to_string()),
                                         _ => value.into_owned(),
                                     };
                                     scenario.cells.push(ScenarioCell { row, col, value });
@@ -137,7 +150,10 @@ pub(crate) fn read_scenarios<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, sheet: &mut 
                     }
                 }
                 // A scenario needs a name of its own and cells to change.
-                let known = sheet.scenarios.iter().any(|other| other.name.eq_ignore_ascii_case(&scenario.name));
+                let known = sheet
+                    .scenarios
+                    .iter()
+                    .any(|other| other.name.eq_ignore_ascii_case(&scenario.name));
                 if !scenario.name.trim().is_empty() && !scenario.cells.is_empty() && !known {
                     sheet.scenarios.push(scenario);
                 }
@@ -175,7 +191,11 @@ pub(crate) fn write_scenarios(x: &mut String, sheet: &Sheet, locale: &Locale) {
         }
         x.push('>');
         for cell in &scenario.cells {
-            w!(x, "<inputCells r=\"{}\" val=\"", cell_name(cell.row, cell.col));
+            w!(
+                x,
+                "<inputCells r=\"{}\" val=\"",
+                cell_name(cell.row, cell.col)
+            );
             // Numbers are written the way files write them.
             match parse_numeric_text(&cell.value, locale) {
                 Some(n) if n.is_finite() => push_number(x, n),
@@ -191,14 +211,22 @@ pub(crate) fn write_scenarios(x: &mut String, sheet: &Sheet, locale: &Locale) {
 /// The `<f t="dataTable">` element of a cell, when it is the first result
 /// cell of a data table.
 pub(crate) fn table_formula(sheet: &Sheet, row: u32, col: u32) -> Option<String> {
-    let table = sheet.data_tables.iter().find(|table| (table.range.r0, table.range.c0) == (row, col))?;
+    let table = sheet
+        .data_tables
+        .iter()
+        .find(|table| (table.range.r0, table.range.c0) == (row, col))?;
     let mut f = String::from("<f t=\"dataTable\" ref=\"");
     push_range(&mut f, table.range);
     f.push('"');
     let name = |(row, col): (u32, u32)| cell_name(row, col);
     match (table.row_input, table.col_input) {
         (Some(row_input), Some(col_input)) => {
-            w!(f, " dt2D=\"1\" dtr=\"1\" r1=\"{}\" r2=\"{}\"", name(row_input), name(col_input));
+            w!(
+                f,
+                " dt2D=\"1\" dtr=\"1\" r1=\"{}\" r2=\"{}\"",
+                name(row_input),
+                name(col_input)
+            );
         }
         (Some(row_input), None) => {
             w!(f, " dtr=\"1\" r1=\"{}\"", name(row_input));
@@ -225,7 +253,10 @@ pub(crate) fn read_table(f: &Tag, sheet: &mut Sheet) {
     if f.attr_bool("del1").unwrap_or(false) || f.attr_bool("del2").unwrap_or(false) {
         return;
     }
-    let (row_input, col_input) = match (f.attr_bool("dt2D").unwrap_or(false), f.attr_bool("dtr").unwrap_or(false)) {
+    let (row_input, col_input) = match (
+        f.attr_bool("dt2D").unwrap_or(false),
+        f.attr_bool("dtr").unwrap_or(false),
+    ) {
         (true, _) => (cell("r1"), cell("r2")),
         (false, true) => (cell("r1"), None),
         (false, false) => (None, cell("r1")),
@@ -239,13 +270,22 @@ pub(crate) fn read_table(f: &Tag, sheet: &mut Sheet) {
         (None, _) => (range.r0.wrapping_sub(1), range.c0),
         (Some(_), None) => (range.r0, range.c0.wrapping_sub(1)),
     };
-    let has_formula = sheet.cells.get(&head).is_some_and(|cell| matches!(cell.content, Content::Formula(_)));
+    let has_formula = sheet
+        .cells
+        .get(&head)
+        .is_some_and(|cell| matches!(cell.content, Content::Formula(_)));
     let usable = range.r0 > 0
         && range.c0 > 0
         && has_formula
         && inputs.iter().any(Option::is_some)
-        && !inputs.iter().flatten().any(|(row, col)| range.contains(*row, *col))
-        && !sheet.data_tables.iter().any(|table| table.range.intersects(&range));
+        && !inputs
+            .iter()
+            .flatten()
+            .any(|(row, col)| range.contains(*row, *col))
+        && !sheet
+            .data_tables
+            .iter()
+            .any(|table| table.range.intersects(&range));
     if usable {
         sheet.data_tables.push(DataTable {
             range,
@@ -271,7 +311,10 @@ fn field_format(name: &str) -> ColumnFormat {
     match name {
         "text" => ColumnFormat::Text,
         "skip" => ColumnFormat::Skip,
-        other => DateOrder::ALL.into_iter().find(|order| order.letters() == other).map_or(ColumnFormat::General, ColumnFormat::Date),
+        other => DateOrder::ALL
+            .into_iter()
+            .find(|order| order.letters() == other)
+            .map_or(ColumnFormat::General, ColumnFormat::Date),
     }
 }
 
@@ -287,7 +330,11 @@ fn push_connection(x: &mut String, id: usize, import: &TextImport) {
         push_attr(x, &import.props.description);
         x.push('"');
     }
-    w!(x, " type=\"{}\" refreshedVersion=\"8\"", if import.web.is_some() { 4 } else { 6 });
+    w!(
+        x,
+        " type=\"{}\" refreshedVersion=\"8\"",
+        if import.web.is_some() { 4 } else { 6 }
+    );
     if import.props.background {
         x.push_str(" background=\"1\"");
     }
@@ -339,7 +386,12 @@ fn push_connection(x: &mut String, id: usize, import: &TextImport) {
             if !d.tab {
                 x.push_str(" tab=\"0\"");
             }
-            for (name, on) in [("semicolon", d.semicolon), ("comma", d.comma), ("space", d.space), ("consecutive", d.consecutive_as_one)] {
+            for (name, on) in [
+                ("semicolon", d.semicolon),
+                ("comma", d.comma),
+                ("space", d.space),
+                ("consecutive", d.consecutive_as_one),
+            ] {
                 if on {
                     w!(x, " {name}=\"1\"");
                 }
@@ -402,9 +454,21 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
             if !import.props.adjust_width {
                 table.push_str(" adjustColumnWidth=\"0\"");
             }
-            w!(table, " connectionId=\"{number}\" autoFormatId=\"16\" applyNumberFormats=\"0\" applyBorderFormats=\"0\" applyFontFormats=\"0\" applyPatternFormats=\"0\" applyAlignmentFormats=\"0\" applyWidthHeightFormats=\"0\"/>");
-            extras.add_part(format!("xl/queryTables/queryTable{number}.xml"), Some(CT_QUERY_TABLE), table);
-            extras.relate_sheet(index, *id, &format!("{NS_DOC_REL}/queryTable"), &format!("../queryTables/queryTable{number}.xml"));
+            w!(
+                table,
+                " connectionId=\"{number}\" autoFormatId=\"16\" applyNumberFormats=\"0\" applyBorderFormats=\"0\" applyFontFormats=\"0\" applyPatternFormats=\"0\" applyAlignmentFormats=\"0\" applyWidthHeightFormats=\"0\"/>"
+            );
+            extras.add_part(
+                format!("xl/queryTables/queryTable{number}.xml"),
+                Some(CT_QUERY_TABLE),
+                table,
+            );
+            extras.relate_sheet(
+                index,
+                *id,
+                &format!("{NS_DOC_REL}/queryTable"),
+                &format!("../queryTables/queryTable{number}.xml"),
+            );
         }
     }
     if number > 0 {
@@ -434,7 +498,10 @@ pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
             let mut text = String::new();
             opensheet_engine::ast::write_sheet_name(&sheet.name, &mut text);
             text.push('!');
-            let (first, last) = (cell_name(import.range.r0, import.range.c0), cell_name(import.range.r1, import.range.c1));
+            let (first, last) = (
+                cell_name(import.range.r0, import.range.c0),
+                cell_name(import.range.r1, import.range.c1),
+            );
             for (n, name) in [first, last].iter().enumerate() {
                 if n == 1 {
                     text.push(':');
@@ -465,7 +532,10 @@ fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
                 "connection" => {
                     id = t.attr_u32("id");
                     props = QueryProps {
-                        description: t.attr("description").map(|text| text.into_owned()).unwrap_or_default(),
+                        description: t
+                            .attr("description")
+                            .map(|text| text.into_owned())
+                            .unwrap_or_default(),
                         background: t.attr_bool("background").unwrap_or(false),
                         refresh_on_open: t.attr_bool("refreshOnLoad").unwrap_or(false),
                         refresh_minutes: t.attr_u32("interval").unwrap_or(0),
@@ -529,7 +599,11 @@ fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
                 // The table of the page a web query takes: its number
                 // (`x`) or its name (`s`). Only the first is kept.
                 "x" | "s" => {
-                    if let Some(web) = current.as_mut().and_then(|import| import.web.as_mut()).filter(|web| web.item.is_none()) {
+                    if let Some(web) = current
+                        .as_mut()
+                        .and_then(|import| import.web.as_mut())
+                        .filter(|web| web.item.is_none())
+                    {
                         web.item = match t.name {
                             "x" => t.attr_u32("v").map(QueryItem::Index),
                             _ => t.attr("v").map(|name| QueryItem::Name(name.into_owned())),
@@ -539,8 +613,13 @@ fn parse_connections(xml: &str) -> Vec<(u32, TextImport)> {
                 }
                 "textField" => {
                     if let Some(import) = current.as_mut() {
-                        import.spec.formats.push(field_format(t.attr("type").as_deref().unwrap_or("general")));
-                        if let Some(position) = t.attr_u32("position").filter(|position| *position > 0) {
+                        import
+                            .spec
+                            .formats
+                            .push(field_format(t.attr("type").as_deref().unwrap_or("general")));
+                        if let Some(position) =
+                            t.attr_u32("position").filter(|position| *position > 0)
+                        {
                             breaks.push(position as usize);
                         }
                     }
@@ -589,7 +668,9 @@ impl PendingImports {
     /// sheets. `sheet_parts` names the worksheet part of each sheet, in
     /// order. Queries on anything but a text file are left out.
     pub fn read<R: Read + Seek>(pkg: &mut Package<R>, sheet_parts: &[String]) -> PendingImports {
-        let mut pending = PendingImports { imports: Vec::new() };
+        let mut pending = PendingImports {
+            imports: Vec::new(),
+        };
         let Ok(Some(xml)) = pkg.read("xl/connections.xml") else {
             return pending;
         };
@@ -598,7 +679,10 @@ impl PendingImports {
             return pending;
         }
         for (index, part) in sheet_parts.iter().enumerate() {
-            for rel in relationships(pkg, part).into_iter().filter(|rel| rel.kind == "queryTable") {
+            for rel in relationships(pkg, part)
+                .into_iter()
+                .filter(|rel| rel.kind == "queryTable")
+            {
                 let Ok(Some(xml)) = pkg.read(&rel.target) else {
                     continue;
                 };
@@ -612,11 +696,14 @@ impl PendingImports {
                     }
                 };
                 let Some(root) = root else { continue };
-                let connection = root.attr_u32("connectionId").and_then(|id| connections.iter().find(|(known, _)| *known == id));
+                let connection = root
+                    .attr_u32("connectionId")
+                    .and_then(|id| connections.iter().find(|(known, _)| *known == id));
                 if let (Some((_, import)), Some(name)) = (connection, root.attr("name")) {
                     let mut import = import.clone();
                     import.name = name.into_owned();
-                    import.props.preserve_formatting = root.attr_bool("preserveFormatting").unwrap_or(true);
+                    import.props.preserve_formatting =
+                        root.attr_bool("preserveFormatting").unwrap_or(true);
                     import.props.adjust_width = root.attr_bool("adjustColumnWidth").unwrap_or(true);
                     pending.imports.push((index, import, false));
                 }
@@ -629,11 +716,9 @@ impl PendingImports {
     /// text import of `sheet` (`name` in upper case). Returns whether it
     /// was.
     pub fn read_name(&mut self, name: &str, text: &str, sheet: Option<usize>) -> bool {
-        let Some(entry) = self
-            .imports
-            .iter_mut()
-            .find(|(on, import, placed)| Some(*on) == sheet && !placed && import.name.to_uppercase() == name)
-        else {
+        let Some(entry) = self.imports.iter_mut().find(|(on, import, placed)| {
+            Some(*on) == sheet && !placed && import.name.to_uppercase() == name
+        }) else {
             return false;
         };
         let cells = text.rsplit('!').next().unwrap_or(text);

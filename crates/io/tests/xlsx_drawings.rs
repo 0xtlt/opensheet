@@ -789,9 +789,12 @@ fn parts_say_what_the_model_says() {
     }
     // (Two outlines are those of picture styles, not shapes of the
     // gallery: `picture_styles_round_trip` has them.)
-    let gallery = ShapePreset::ALL
-        .into_iter()
-        .filter(|preset| !matches!(preset, ShapePreset::Round2DiagRect | ShapePreset::Snip2DiagRect));
+    let gallery = ShapePreset::ALL.into_iter().filter(|preset| {
+        !matches!(
+            preset,
+            ShapePreset::Round2DiagRect | ShapePreset::Snip2DiagRect
+        )
+    });
     for preset in gallery {
         assert!(
             shapes.contains(&format!("<a:prstGeom prst=\"{}\">", preset.ooxml_name())),
@@ -1442,7 +1445,10 @@ fn anchors_are_written_in_stacking_order() {
             &rest[from..from + rest[from..].find('"').unwrap()]
         })
         .collect();
-    assert_eq!(names, ["Sales", "Rectangle 1", "Oval 5", "Chart 2", "Picture 3"]);
+    assert_eq!(
+        names,
+        ["Sales", "Rectangle 1", "Oval 5", "Chart 2", "Picture 3"]
+    );
     assert_eq!(xml.matches("hidden=\"1\"").count(), 2);
     assert_eq!(xml.matches("<xdr:twoCellAnchor").count(), 5);
     assert_eq!(xml.matches("</xdr:wsDr>").count(), 1);
@@ -1499,9 +1505,13 @@ fn groups_round_trip() {
     let logo_id = wb.add_picture(0, logo(), (9, 1)).expect("a picture");
     let c = shape(&mut wb, 0, ShapeTool::Arrow, (60.0, 300.0, 80.0, 40.0));
     change(&mut wb, 0, b, |d| d.rotation = 30.0);
-    change(&mut wb, 0, a, |d| d.as_shape_mut().unwrap().text = "In a group".to_string());
+    change(&mut wb, 0, a, |d| {
+        d.as_shape_mut().unwrap().text = "In a group".to_string()
+    });
     let inner = wb.group_drawings(0, &[a, b]).expect("a group");
-    let outer = wb.group_drawings(0, &[inner, logo_id, c]).expect("a group of a group");
+    let outer = wb
+        .group_drawings(0, &[inner, logo_id, c])
+        .expect("a group of a group");
     change(&mut wb, 0, outer, |d| {
         d.name = "Everything".to_string();
         d.rotation = 15.0;
@@ -1509,7 +1519,11 @@ fn groups_round_trip() {
     });
     // Stretched after grouping: the members stretch with it.
     let frame = wb.drawing_frame(0, outer).unwrap();
-    wb.set_drawing_frame(0, outer, Frame::new(frame.x, frame.y, frame.width * 1.5, frame.height));
+    wb.set_drawing_frame(
+        0,
+        outer,
+        Frame::new(frame.x, frame.y, frame.width * 1.5, frame.height),
+    );
     wb.commit("groups");
 
     let bytes = to_bytes(&wb);
@@ -1534,7 +1548,10 @@ fn groups_round_trip() {
     let back = load(&bytes);
     assert_eq!(back.sheets[0].drawings.len(), 1);
     let group = named(&back, 0, "Everything");
-    assert_eq!((group.rotation, group.alt_text.as_str()), (15.0, "Shapes held together"));
+    assert_eq!(
+        (group.rotation, group.alt_text.as_str()),
+        (15.0, "Shapes held together")
+    );
     assert_eq!(shown(&back, 0, "Everything"), shown(&wb, 0, "Everything"));
     assert_eq!(shown(&back, 0, "Everything").len(), 4);
     let text = |wb: &Workbook| {
@@ -1578,8 +1595,20 @@ fn a_group_whose_children_have_a_scale_of_their_own() {
     assert_eq!(
         shown(&wb, 0, "Groupe 1"),
         vec![
-            ("Left".to_string(), [10000, 5000, 10000, 10000], 0.0, false, false),
-            ("Right".to_string(), [25000, 10000, 5000, 5000], 0.0, false, false),
+            (
+                "Left".to_string(),
+                [10000, 5000, 10000, 10000],
+                0.0,
+                false,
+                false
+            ),
+            (
+                "Right".to_string(),
+                [25000, 10000, 5000, 5000],
+                0.0,
+                false,
+                false
+            ),
         ]
     );
 }
@@ -1604,7 +1633,8 @@ fn a_linked_picture_keeps_the_formula_of_its_cells() {
     };
     linked(&mut wb, 1, "Here", "$A$1:$B$2");
     linked(&mut wb, 8, "There", "'Stock & co'!$A$1:$C$4");
-    wb.add_picture(0, logo(), (15, 3)).expect("an ordinary picture");
+    wb.add_picture(0, logo(), (15, 3))
+        .expect("an ordinary picture");
     wb.commit("pictures");
     let bytes = to_bytes(&wb);
     common::keep_sample("opensheet-linked-picture.xlsx", &bytes);
@@ -1615,10 +1645,18 @@ fn a_linked_picture_keeps_the_formula_of_its_cells() {
     // know the 2010 extensions, the range in an extension of the
     // picture's properties.
     assert_eq!(xml.matches("<mc:Choice xmlns:a14=\"http://schemas.microsoft.com/office/drawing/2010/main\" Requires=\"a14\"><xdr:twoCellAnchor").count(), 2);
-    assert_eq!(xml.matches("</xdr:twoCellAnchor></mc:Choice><mc:Fallback/></mc:AlternateContent>").count(), 2);
+    assert_eq!(
+        xml.matches("</xdr:twoCellAnchor></mc:Choice><mc:Fallback/></mc:AlternateContent>")
+            .count(),
+        2
+    );
     assert!(xml.contains("<a:ext uri=\"{84589F7E-364E-4C9E-8A38-B11213B215E9}\"><a14:cameraTool"));
     assert!(xml.contains("cellRange=\"$A$1:$B$2\"/>"), "{xml}");
-    assert!(xml.contains("cellRange=\"&apos;Stock &amp; co&apos;!$A$1:$C$4\"/>") || xml.contains("cellRange=\"'Stock &amp; co'!$A$1:$C$4\"/>"), "{xml}");
+    assert!(
+        xml.contains("cellRange=\"&apos;Stock &amp; co&apos;!$A$1:$C$4\"/>")
+            || xml.contains("cellRange=\"'Stock &amp; co'!$A$1:$C$4\"/>"),
+        "{xml}"
+    );
 
     let back = load(&bytes);
     let links: Vec<Option<String>> = back.sheets[0]
@@ -1626,9 +1664,23 @@ fn a_linked_picture_keeps_the_formula_of_its_cells() {
         .iter()
         .map(|d| d.as_picture().and_then(|p| p.link_text(Locale::en())))
         .collect();
-    assert_eq!(links, vec![Some("=$A$1:$B$2".to_string()), Some("='Stock & co'!$A$1:$C$4".to_string()), None]);
-    let sources: Vec<_> = back.linked_pictures().into_iter().map(|(_, _, source)| (source.sheet, source.rect.name())).collect();
-    assert_eq!(sources, vec![(0, "A1:B2".to_string()), (1, "A1:C4".to_string())]);
+    assert_eq!(
+        links,
+        vec![
+            Some("=$A$1:$B$2".to_string()),
+            Some("='Stock & co'!$A$1:$C$4".to_string()),
+            None
+        ]
+    );
+    let sources: Vec<_> = back
+        .linked_pictures()
+        .into_iter()
+        .map(|(_, _, source)| (source.sheet, source.rect.name()))
+        .collect();
+    assert_eq!(
+        sources,
+        vec![(0, "A1:B2".to_string()), (1, "A1:C4".to_string())]
+    );
     // Written again, the same file.
     assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
 }
@@ -1637,33 +1689,110 @@ fn a_linked_picture_keeps_the_formula_of_its_cells() {
 fn picture_adjustments_and_effects_round_trip() {
     use opensheet_engine::drawing::{Effects, Glow, PictureAdjust, Recolor, Shadow, ShadowPreset};
     let mut wb = Workbook::new(Locale::en());
-    let adjusted = |wb: &mut Workbook, row: u32, name: &str, adjust: PictureAdjust, effects: Effects| {
-        let id = wb.add_picture(0, logo(), (row, 1)).expect("a picture");
-        change(wb, 0, id, |d| {
-            d.name = name.to_string();
-            d.effects = effects;
-            d.as_picture_mut().unwrap().adjust = adjust;
-        });
-    };
+    let adjusted =
+        |wb: &mut Workbook, row: u32, name: &str, adjust: PictureAdjust, effects: Effects| {
+            let id = wb.add_picture(0, logo(), (row, 1)).expect("a picture");
+            change(wb, 0, id, |d| {
+                d.name = name.to_string();
+                d.effects = effects;
+                d.as_picture_mut().unwrap().adjust = adjust;
+            });
+        };
     let plain = PictureAdjust::default();
     let none = Effects::default();
-    adjusted(&mut wb, 1, "Cropped", PictureAdjust { crop: [0.25, 0.0, 0.1, -0.05], shape: ShapePreset::Ellipse, ..plain }, none);
-    adjusted(&mut wb, 6, "Faded", PictureAdjust { transparency: 0.3, brightness: 0.2, contrast: -0.4, ..plain }, none);
-    adjusted(&mut wb, 11, "Grey", PictureAdjust { recolor: Recolor::Grayscale, saturation: 2.0, ..plain }, none);
-    adjusted(&mut wb, 16, "Sepia", PictureAdjust { recolor: Recolor::Duotone(Color(0), Color(0xD9C3A5)), temperature: 4700.0, ..plain }, none);
-    adjusted(&mut wb, 21, "Washed", PictureAdjust { recolor: Recolor::Washout, temperature: 8800.0, ..plain }, none);
-    adjusted(&mut wb, 26, "Two tones", PictureAdjust { recolor: Recolor::BlackAndWhite(0.25), ..plain }, none);
+    adjusted(
+        &mut wb,
+        1,
+        "Cropped",
+        PictureAdjust {
+            crop: [0.25, 0.0, 0.1, -0.05],
+            shape: ShapePreset::Ellipse,
+            ..plain
+        },
+        none,
+    );
+    adjusted(
+        &mut wb,
+        6,
+        "Faded",
+        PictureAdjust {
+            transparency: 0.3,
+            brightness: 0.2,
+            contrast: -0.4,
+            ..plain
+        },
+        none,
+    );
+    adjusted(
+        &mut wb,
+        11,
+        "Grey",
+        PictureAdjust {
+            recolor: Recolor::Grayscale,
+            saturation: 2.0,
+            ..plain
+        },
+        none,
+    );
+    adjusted(
+        &mut wb,
+        16,
+        "Sepia",
+        PictureAdjust {
+            recolor: Recolor::Duotone(Color(0), Color(0xD9C3A5)),
+            temperature: 4700.0,
+            ..plain
+        },
+        none,
+    );
+    adjusted(
+        &mut wb,
+        21,
+        "Washed",
+        PictureAdjust {
+            recolor: Recolor::Washout,
+            temperature: 8800.0,
+            ..plain
+        },
+        none,
+    );
+    adjusted(
+        &mut wb,
+        26,
+        "Two tones",
+        PictureAdjust {
+            recolor: Recolor::BlackAndWhite(0.25),
+            ..plain
+        },
+        none,
+    );
     let all = Effects {
-        shadow: Some(Shadow { color: Color(0x112233), transparency: 0.5, size: 1.02, blur: 6.0, angle: 135.0, distance: 4.0, ..Shadow::default() }),
-        glow: Some(Glow { color: Color(0xE97132), transparency: 0.6, radius: 8.0 }),
+        shadow: Some(Shadow {
+            color: Color(0x112233),
+            transparency: 0.5,
+            size: 1.02,
+            blur: 6.0,
+            angle: 135.0,
+            distance: 4.0,
+            ..Shadow::default()
+        }),
+        glow: Some(Glow {
+            color: Color(0xE97132),
+            transparency: 0.6,
+            radius: 8.0,
+        }),
         soft_edge: 2.5,
         ..Effects::default()
     };
     adjusted(&mut wb, 31, "Effects", plain, all);
     let shadowed = shape(&mut wb, 0, ShapeTool::Rectangle, (400.0, 40.0, 120.0, 60.0));
-    change(&mut wb, 0, shadowed, |d| d.effects.shadow = Some(ShadowPreset::BottomRight.shadow()));
+    change(&mut wb, 0, shadowed, |d| {
+        d.effects.shadow = Some(ShadowPreset::BottomRight.shadow())
+    });
     let arrow = shape(&mut wb, 0, ShapeTool::Arrow, (400.0, 160.0, 120.0, 60.0));
-    change(&mut wb, 0, arrow, |d| d.effects.shadow = Some(ShadowPreset::Center.shadow()));
+    change(&mut wb, 0, arrow, |d| {
+        d.effects.shadow = Some(ShadowPreset::Center.shadow())
+    });
     wb.commit("pictures");
 
     let bytes = to_bytes(&wb);
@@ -1700,14 +1829,29 @@ fn picture_adjustments_and_effects_round_trip() {
         match (da.effects.shadow, db.effects.shadow) {
             (Some(x), Some(y)) => {
                 assert_eq!(x.color, y.color, "{}", da.name);
-                for (p, q) in [(x.transparency, y.transparency), (x.size, y.size), (x.blur, y.blur), (x.angle, y.angle), (x.distance, y.distance)] {
+                for (p, q) in [
+                    (x.transparency, y.transparency),
+                    (x.size, y.size),
+                    (x.blur, y.blur),
+                    (x.angle, y.angle),
+                    (x.distance, y.distance),
+                ] {
                     assert!(near(p, q), "{}: {p} became {q}", da.name);
                 }
             }
             (x, y) => assert_eq!(x, y, "{}", da.name),
         }
-        assert_eq!(da.effects.glow.map(|g| (g.color, g.radius)), db.effects.glow.map(|g| (g.color, g.radius)), "{}", da.name);
-        assert!(near(da.effects.soft_edge, db.effects.soft_edge), "{}", da.name);
+        assert_eq!(
+            da.effects.glow.map(|g| (g.color, g.radius)),
+            db.effects.glow.map(|g| (g.color, g.radius)),
+            "{}",
+            da.name
+        );
+        assert!(
+            near(da.effects.soft_edge, db.effects.soft_edge),
+            "{}",
+            da.name
+        );
         let (Some(pa), Some(pb)) = (da.as_picture(), db.as_picture()) else {
             continue;
         };
@@ -1745,19 +1889,33 @@ fn decorative_objects_round_trip() {
     let mark = "<a:extLst><a:ext uri=\"{C183D7F6-B498-43B3-948B-1728B52AA6E4}\"><adec:decorative xmlns:adec=\"http://schemas.microsoft.com/office/drawing/2017/decorative\" val=\"1\"/></a:ext></a:extLst></xdr:cNvPr>";
     assert_eq!(xml.matches(mark).count(), 2, "{xml}");
     let back = load(&bytes);
-    let flags: Vec<(bool, &str)> = back.sheets[0].drawings.iter().map(|d| (d.decorative, d.alt_text.as_str())).collect();
+    let flags: Vec<(bool, &str)> = back.sheets[0]
+        .drawings
+        .iter()
+        .map(|d| (d.decorative, d.alt_text.as_str()))
+        .collect();
     assert_eq!(flags, vec![(true, ""), (true, ""), (false, "A box")]);
     // Excel writes `val="0"` when the mark is taken off again.
     let off = xml.replacen("val=\"1\"", "val=\"0\"", 1);
-    let mut parts: Vec<(String, Vec<u8>)> = part_names(&bytes).into_iter().map(|name| (name.clone(), raw_part(&bytes, &name))).collect();
+    let mut parts: Vec<(String, Vec<u8>)> = part_names(&bytes)
+        .into_iter()
+        .map(|name| (name.clone(), raw_part(&bytes, &name)))
+        .collect();
     for (name, data) in &mut parts {
         if name == "xl/drawings/drawing1.xml" {
             *data = off.clone().into_bytes();
         }
     }
-    let listed: Vec<(&str, &[u8])> = parts.iter().map(|(name, data)| (name.as_str(), data.as_slice())).collect();
+    let listed: Vec<(&str, &[u8])> = parts
+        .iter()
+        .map(|(name, data)| (name.as_str(), data.as_slice()))
+        .collect();
     let back = load(&raw_package(&listed));
-    let flags: Vec<bool> = back.sheets[0].drawings.iter().map(|d| d.decorative).collect();
+    let flags: Vec<bool> = back.sheets[0]
+        .drawings
+        .iter()
+        .map(|d| d.decorative)
+        .collect();
     assert_eq!(flags, vec![false, true, false]);
 }
 
@@ -1766,7 +1924,9 @@ fn picture_styles_round_trip() {
     use opensheet_engine::picture_style::PictureStyle;
     let mut wb = Workbook::new(Locale::en());
     for (i, style) in PictureStyle::ALL.into_iter().enumerate() {
-        let id = wb.add_picture(0, logo(), (1 + 6 * (i as u32 / 6), 1 + 3 * (i as u32 % 6))).expect("a picture");
+        let id = wb
+            .add_picture(0, logo(), (1 + 6 * (i as u32 / 6), 1 + 3 * (i as u32 % 6)))
+            .expect("a picture");
         let look = style.look();
         change(&mut wb, 0, id, |d| {
             d.name = style.name(Locale::en()).to_string();
@@ -1825,7 +1985,11 @@ fn an_artistic_effect_keeps_both_images() {
     let id = wb.add_picture(0, logo(), (1, 1)).expect("a picture");
     change(&mut wb, 0, id, |d| {
         let picture = d.as_picture_mut().unwrap();
-        picture.artistic = Some(Artistic { kind: ArtisticKind::Blur, transparency: 0.25, amount: 17.0 });
+        picture.artistic = Some(Artistic {
+            kind: ArtisticKind::Blur,
+            transparency: 0.25,
+            amount: 17.0,
+        });
         picture.adjust.saturation = 0.66;
         picture.baked = Some(Baked {
             data: filtered.clone(),
@@ -1856,29 +2020,58 @@ fn an_artistic_effect_keeps_both_images() {
     let back = load(&bytes);
     let picture = back.sheets[0].drawings[0].as_picture().unwrap();
     assert_eq!(&picture.data[..], &logo()[..]);
-    assert_eq!(picture.artistic, Some(Artistic { kind: ArtisticKind::Blur, transparency: 0.25, amount: 17.0 }));
+    assert_eq!(
+        picture.artistic,
+        Some(Artistic {
+            kind: ArtisticKind::Blur,
+            transparency: 0.25,
+            amount: 17.0
+        })
+    );
     assert!((picture.adjust.saturation - 0.66).abs() < 1e-4);
-    assert_eq!(picture.baked().map(|baked| baked.data.to_vec()), Some(filtered.to_vec()));
+    assert_eq!(
+        picture.baked().map(|baked| baked.data.to_vec()),
+        Some(filtered.to_vec())
+    );
     assert!(!picture.needs_baking());
     let second = back.sheets[0].drawings[1].as_picture().unwrap();
-    assert_eq!(second.artistic, Some(Artistic::preset(ArtisticKind::MosaicBubbles)));
+    assert_eq!(
+        second.artistic,
+        Some(Artistic::preset(ArtisticKind::MosaicBubbles))
+    );
     assert!(second.needs_baking());
     assert_eq!(part(&to_bytes(&back), "xl/drawings/drawing1.xml"), xml);
 
     // As Excel writes it: the image as it was is an HD Photo file, which
     // cannot be read. The blip then stands for the picture, effects done.
-    let mut parts: Vec<(String, Vec<u8>)> = part_names(&bytes).into_iter().map(|name| (name.clone(), raw_part(&bytes, &name))).collect();
+    let mut parts: Vec<(String, Vec<u8>)> = part_names(&bytes)
+        .into_iter()
+        .map(|name| (name.clone(), raw_part(&bytes, &name)))
+        .collect();
     for (name, data) in &mut parts {
         if name == "xl/drawings/_rels/drawing1.xml.rels" {
             let rels = String::from_utf8(data.clone()).unwrap();
             assert!(rels.contains("Target=\"../media/image1.png\""), "{rels}");
-            *data = rels.replace("Target=\"../media/image1.png\"", "Target=\"../media/hdphoto1.wdp\"").into_bytes();
+            *data = rels
+                .replace(
+                    "Target=\"../media/image1.png\"",
+                    "Target=\"../media/hdphoto1.wdp\"",
+                )
+                .into_bytes();
         }
     }
-    parts.push(("xl/media/hdphoto1.wdp".to_string(), b"II\xbc\x01 not really".to_vec()));
-    let listed: Vec<(&str, &[u8])> = parts.iter().map(|(name, data)| (name.as_str(), data.as_slice())).collect();
+    parts.push((
+        "xl/media/hdphoto1.wdp".to_string(),
+        b"II\xbc\x01 not really".to_vec(),
+    ));
+    let listed: Vec<(&str, &[u8])> = parts
+        .iter()
+        .map(|(name, data)| (name.as_str(), data.as_slice()))
+        .collect();
     let from_excel = load(&raw_package(&listed));
-    let picture = from_excel.sheets[0].drawings[0].as_picture().expect("the picture is still there");
+    let picture = from_excel.sheets[0].drawings[0]
+        .as_picture()
+        .expect("the picture is still there");
     assert_eq!(picture.data.to_vec(), filtered.to_vec());
     assert_eq!((picture.artistic, picture.adjust.saturation), (None, 1.0));
     assert!(!picture.has_baked_effects());

@@ -343,7 +343,10 @@ fn values_and_formulas() {
             "{name} is not a constant"
         );
     }
-    assert_eq!(wb.style_at(0, 7, 3).fill.map(Color::plain), Some(Color(0xD9E1F2)));
+    assert_eq!(
+        wb.style_at(0, 7, 3).fill.map(Color::plain),
+        Some(Color(0xD9E1F2))
+    );
     assert_eq!(wb.sheets[0].spills.len(), 1);
 
     assert_eq!(formula(&wb, 0, "E7").unwrap(), "XLOOKUP(20,A3:A5,B3:B5)");
@@ -479,7 +482,11 @@ fn styles() {
         Some(Color(0xABCDEF)),
         "indexed 10 is redefined by the file"
     );
-    assert_eq!(a3.fill.map(Color::plain), Some(Color(0xBFBFBF)), "white, darker 25 %");
+    assert_eq!(
+        a3.fill.map(Color::plain),
+        Some(Color(0xBFBFBF)),
+        "white, darker 25 %"
+    );
     assert_eq!(
         (a3.h_align, a3.v_align),
         (HAlign::CenterAcross, VAlign::Center)

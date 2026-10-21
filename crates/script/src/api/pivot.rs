@@ -10,8 +10,8 @@ use std::sync::Arc;
 use serde_json::{Value as J, json};
 
 use opensheet_engine::pivot::{
-    Aggregation, Area, AxisField, BaseItem, FieldLayout, FilterKind, LabelFilter, PivotDestination, PivotError, PivotSource, PivotTable,
-    ShowAs, SortOrder, Subtotals, Top10By, ValueFilter,
+    Aggregation, Area, AxisField, BaseItem, FieldLayout, FilterKind, LabelFilter, PivotDestination,
+    PivotError, PivotSource, PivotTable, ShowAs, SortOrder, Subtotals, Top10By, ValueFilter,
 };
 use opensheet_engine::protect::Action;
 use opensheet_engine::refs::Rect;
@@ -85,16 +85,25 @@ fn update(h: &mut Host, call: &Call, edit: impl FnOnce(&mut PivotTable)) -> Res<
     let (sheet, p) = pivot(h, call)?;
     let id = p.id;
     h.permit(call, &Action::UsePivotTable { sheet })?;
-    h.wb.pivot_update(id, false, edit).map_err(|e| fail(call, e))?;
+    h.wb.pivot_update(id, false, edit)
+        .map_err(|e| fail(call, e))?;
     h.restructured();
     Ok(Ret::Nothing)
 }
 
 /// A change that the PivotTable may refuse (a name already taken).
-fn update_checked(h: &mut Host, call: &Call, edit: impl FnOnce(&mut PivotTable) -> bool) -> Res<Ret> {
+fn update_checked(
+    h: &mut Host,
+    call: &Call,
+    edit: impl FnOnce(&mut PivotTable) -> bool,
+) -> Res<Ret> {
     let mut done = true;
     update(h, call, |p| done = edit(p))?;
-    if done { Ok(Ret::Nothing) } else { Err(call.fail("A field or an item of the PivotTable already has this name.")) }
+    if done {
+        Ok(Ret::Nothing)
+    } else {
+        Err(call.fail("A field or an item of the PivotTable already has this name."))
+    }
 }
 
 fn sub_object(call: &Call, class: &str, rest: &[usize]) -> J {
@@ -132,26 +141,40 @@ fn entry_name(p: &PivotTable, area: Area, entry: usize) -> &str {
 
 fn hierarchies(h: &Host, call: &Call, area: Area) -> Res<Ret> {
     let (_, p) = pivot(h, call)?;
-    let objects: Vec<J> = entries(p, area).into_iter().map(|entry| sub_object(call, area_class(area), &[entry])).collect();
+    let objects: Vec<J> = entries(p, area)
+        .into_iter()
+        .map(|entry| sub_object(call, area_class(area), &[entry]))
+        .collect();
     Ok(Ret::Object(J::from(objects)))
 }
 
 fn hierarchy(h: &Host, call: &Call, area: Area) -> Res<Ret> {
     let (_, p) = pivot(h, call)?;
     let name = call.str(0)?;
-    let found = entries(p, area).into_iter().find(|entry| entry_name(p, area, *entry).eq_ignore_ascii_case(name));
-    Ok(Ret::maybe(found.map(|entry| sub_object(call, area_class(area), &[entry]))))
+    let found = entries(p, area)
+        .into_iter()
+        .find(|entry| entry_name(p, area, *entry).eq_ignore_ascii_case(name));
+    Ok(Ret::maybe(
+        found.map(|entry| sub_object(call, area_class(area), &[entry])),
+    ))
 }
 
 /// The field of a PivotHierarchy (or of a hierarchy of an area) given as
 /// an argument, which must belong to this PivotTable.
 fn hierarchy_arg(call: &Call, index: usize, classes: &[&str]) -> Res<usize> {
     let given = call.arg(index);
-    let state = classes.iter().find_map(|class| state_of(given, class)).ok_or_else(|| call.invalid())?;
+    let state = classes
+        .iter()
+        .find_map(|class| state_of(given, class))
+        .ok_or_else(|| call.invalid())?;
     if state.first().and_then(J::as_i64) != Some(call.this_int(0)) {
         return Err(call.fail("The hierarchy belongs to another PivotTable."));
     }
-    state.get(1).and_then(J::as_u64).map(|n| n as usize).ok_or_else(|| call.invalid())
+    state
+        .get(1)
+        .and_then(J::as_u64)
+        .map(|n| n as usize)
+        .ok_or_else(|| call.invalid())
 }
 
 /// `addRowHierarchy` and its like: the field goes to the area, as when
@@ -159,12 +182,21 @@ fn hierarchy_arg(call: &Call, index: usize, classes: &[&str]) -> Res<usize> {
 fn add_to(h: &mut Host, call: &Call, area: Area) -> Res<Ret> {
     let (sheet, p) = pivot(h, call)?;
     let id = p.id;
-    let field = hierarchy_arg(call, 0, &["PivotHierarchy", "RowColumnPivotHierarchy", "FilterPivotHierarchy"])?;
+    let field = hierarchy_arg(
+        call,
+        0,
+        &[
+            "PivotHierarchy",
+            "RowColumnPivotHierarchy",
+            "FilterPivotHierarchy",
+        ],
+    )?;
     if field >= p.fields.len() {
         return Err(call.gone());
     }
     h.permit(call, &Action::UsePivotTable { sheet })?;
-    h.wb.pivot_add_field(id, field, area, None, false).map_err(|e| fail(call, e))?;
+    h.wb.pivot_add_field(id, field, area, None, false)
+        .map_err(|e| fail(call, e))?;
     h.restructured();
     let p = h.wb.pivot(id).ok_or_else(|| call.gone())?.1;
     let entry = match area {
@@ -193,7 +225,12 @@ fn position(h: &Host, call: &Call, area: Option<Area>) -> Res<(Area, usize)> {
     let areas = area.map_or(vec![Area::Rows, Area::Columns], |area| vec![area]);
     areas
         .into_iter()
-        .find_map(|area| entries(p, area).iter().position(|e| *e == entry).map(|at| (area, at)))
+        .find_map(|area| {
+            entries(p, area)
+                .iter()
+                .position(|e| *e == entry)
+                .map(|at| (area, at))
+        })
         .ok_or_else(|| call.gone())
 }
 
@@ -201,14 +238,32 @@ fn position(h: &Host, call: &Call, area: Option<Area>) -> Res<(Area, usize)> {
 fn set_position(h: &mut Host, call: &Call, area: Option<Area>) -> Res<Ret> {
     let (area, from) = position(h, call, area)?;
     let (_, p) = pivot(h, call)?;
-    let to = usize::try_from(call.int(0)?).ok().filter(|to| *to < entries(p, area).len()).ok_or_else(|| call.invalid())?;
+    let to = usize::try_from(call.int(0)?)
+        .ok()
+        .filter(|to| *to < entries(p, area).len())
+        .ok_or_else(|| call.invalid())?;
     // "Σ Values" may stand among the fields of the rows or the columns.
     let slot = |p: &PivotTable, nth: usize| match area {
-        Area::Rows => p.row_fields.iter().enumerate().filter(|(_, a)| a.field().is_some()).nth(nth).map(|(at, _)| at),
-        Area::Columns => p.col_fields.iter().enumerate().filter(|(_, a)| a.field().is_some()).nth(nth).map(|(at, _)| at),
+        Area::Rows => p
+            .row_fields
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.field().is_some())
+            .nth(nth)
+            .map(|(at, _)| at),
+        Area::Columns => p
+            .col_fields
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.field().is_some())
+            .nth(nth)
+            .map(|(at, _)| at),
         _ => Some(nth),
     };
-    let (from, to) = (slot(p, from).ok_or_else(|| call.gone())?, slot(p, to).ok_or_else(|| call.gone())?);
+    let (from, to) = (
+        slot(p, from).ok_or_else(|| call.gone())?,
+        slot(p, to).ok_or_else(|| call.gone())?,
+    );
     let locale = h.wb.locale;
     update(h, call, |p| {
         p.move_entry(area, from, area, to, locale);
@@ -246,22 +301,41 @@ pub(super) fn add(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
     let name = call.str(0)?;
     let source = match (call.arg(1), state_of(call.arg(1), "Table")) {
         (_, Some(state)) => {
-            let id = state.first().and_then(J::as_u64).ok_or_else(|| call.invalid())? as u32;
-            let table = h.wb.sheets.iter().flat_map(|sh| sh.tables.iter()).find(|t| t.id == id).ok_or_else(|| call.gone())?;
+            let id = state
+                .first()
+                .and_then(J::as_u64)
+                .ok_or_else(|| call.invalid())? as u32;
+            let table =
+                h.wb.sheets
+                    .iter()
+                    .flat_map(|sh| sh.tables.iter())
+                    .find(|t| t.id == id)
+                    .ok_or_else(|| call.gone())?;
             PivotSource::Name(table.name.clone())
         }
-        (J::String(text), None) if h.wb.table_by_name(text).is_some() => PivotSource::Name(text.clone()),
+        (J::String(text), None) if h.wb.table_by_name(text).is_some() => {
+            PivotSource::Name(text.clone())
+        }
         _ => {
             let (on, range) = range_arg(h, call, 1, sheet)?;
-            PivotSource::Range { sheet: h.wb.sheets[on].name.clone(), range }
+            PivotSource::Range {
+                sheet: h.wb.sheets[on].name.clone(),
+                range,
+            }
         }
     };
     let (on, at) = range_arg(h, call, 2, sheet)?;
     h.permit(call, &Action::UsePivotTable { sheet: on })?;
     // The source is read as it is now.
     h.calculate();
-    let dest = PivotDestination::Existing { sheet: on, row: at.r0, col: at.c0 };
-    let id = h.wb.pivot_create(source, dest, false).map_err(|e| fail(call, e))?;
+    let dest = PivotDestination::Existing {
+        sheet: on,
+        row: at.r0,
+        col: at.c0,
+    };
+    let id =
+        h.wb.pivot_create(source, dest, false)
+            .map_err(|e| fail(call, e))?;
     if let Err(error) = h.wb.pivot_rename(id, name) {
         let _ = h.wb.pivot_delete(id);
         return Err(fail(call, error));
@@ -271,19 +345,30 @@ pub(super) fn add(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
 }
 
 pub(super) fn all(h: &Host, only: Option<usize>) -> Ret {
-    let objects: Vec<J> = h.wb.pivots().filter(|(sheet, _)| only.is_none_or(|s| s == *sheet)).map(|(_, p)| pivot_object(p.id)).collect();
+    let objects: Vec<J> =
+        h.wb.pivots()
+            .filter(|(sheet, _)| only.is_none_or(|s| s == *sheet))
+            .map(|(_, p)| pivot_object(p.id))
+            .collect();
     Ret::Object(J::from(objects))
 }
 
 pub(super) fn by_name(h: &Host, call: &Call, only: Option<usize>) -> Res<Ret> {
     let name = call.str(0)?;
-    let found = h.wb.pivots().find(|(sheet, p)| only.is_none_or(|s| s == *sheet) && p.name.eq_ignore_ascii_case(name));
+    let found = h
+        .wb
+        .pivots()
+        .find(|(sheet, p)| only.is_none_or(|s| s == *sheet) && p.name.eq_ignore_ascii_case(name));
     Ok(Ret::maybe(found.map(|(_, p)| pivot_object(p.id))))
 }
 
 /// `refreshAllPivotTables`, for the workbook or one sheet.
 pub(super) fn refresh_all(h: &mut Host, call: &Call, only: Option<usize>) -> Res<Ret> {
-    let found: Vec<(usize, u32)> = h.wb.pivots().filter(|(sheet, _)| only.is_none_or(|s| s == *sheet)).map(|(sheet, p)| (sheet, p.id)).collect();
+    let found: Vec<(usize, u32)> =
+        h.wb.pivots()
+            .filter(|(sheet, _)| only.is_none_or(|s| s == *sheet))
+            .map(|(sheet, p)| (sheet, p.id))
+            .collect();
     h.calculate();
     for (sheet, id) in found {
         h.permit(call, &Action::UsePivotTable { sheet })?;
@@ -338,28 +423,58 @@ fn show_as(call: &Call, given: &J) -> Res<ShowAs> {
             }
         }
     };
-    let base_field = state("baseField", "PivotField")?.and_then(|s| s.get(1).copied()).map(|f| f as usize);
+    let base_field = state("baseField", "PivotField")?
+        .and_then(|s| s.get(1).copied())
+        .map(|f| f as usize);
     let base_item = state("baseItem", "PivotItem")?;
-    let field = || base_field.or(base_item.as_ref().and_then(|s| s.get(1).copied()).map(|f| f as usize)).ok_or_else(|| call.fail("This calculation needs a base field."));
-    let item = || base_item.as_ref().and_then(|s| s.get(2).copied()).map(|x| BaseItem::Item(x as u32)).ok_or_else(|| call.fail("This calculation needs a base item."));
-    Ok(match given.get("calculation").and_then(J::as_str).ok_or_else(|| call.invalid())? {
-        "None" => ShowAs::Normal,
-        "PercentOfGrandTotal" => ShowAs::PercentOfTotal,
-        "PercentOfRowTotal" => ShowAs::PercentOfRow,
-        "PercentOfColumnTotal" => ShowAs::PercentOfColumn,
-        "PercentOfParentRowTotal" => ShowAs::PercentOfParentRow,
-        "PercentOfParentColumnTotal" => ShowAs::PercentOfParentColumn,
-        "PercentOfParentTotal" => ShowAs::PercentOfParent { field: field()? },
-        "PercentOf" => ShowAs::PercentOf { field: field()?, item: item()? },
-        "DifferenceFrom" => ShowAs::Difference { field: field()?, item: item()? },
-        "PercentDifferenceFrom" => ShowAs::PercentDifference { field: field()?, item: item()? },
-        "RunningTotal" => ShowAs::RunningTotal { field: field()? },
-        "PercentRunningTotal" => ShowAs::PercentRunningTotal { field: field()? },
-        "RankAscending" => ShowAs::RankAscending { field: field()? },
-        "RankDecending" => ShowAs::RankDescending { field: field()? },
-        "Index" => ShowAs::Index,
-        _ => return Err(call.invalid()),
-    })
+    let field = || {
+        base_field
+            .or(base_item
+                .as_ref()
+                .and_then(|s| s.get(1).copied())
+                .map(|f| f as usize))
+            .ok_or_else(|| call.fail("This calculation needs a base field."))
+    };
+    let item = || {
+        base_item
+            .as_ref()
+            .and_then(|s| s.get(2).copied())
+            .map(|x| BaseItem::Item(x as u32))
+            .ok_or_else(|| call.fail("This calculation needs a base item."))
+    };
+    Ok(
+        match given
+            .get("calculation")
+            .and_then(J::as_str)
+            .ok_or_else(|| call.invalid())?
+        {
+            "None" => ShowAs::Normal,
+            "PercentOfGrandTotal" => ShowAs::PercentOfTotal,
+            "PercentOfRowTotal" => ShowAs::PercentOfRow,
+            "PercentOfColumnTotal" => ShowAs::PercentOfColumn,
+            "PercentOfParentRowTotal" => ShowAs::PercentOfParentRow,
+            "PercentOfParentColumnTotal" => ShowAs::PercentOfParentColumn,
+            "PercentOfParentTotal" => ShowAs::PercentOfParent { field: field()? },
+            "PercentOf" => ShowAs::PercentOf {
+                field: field()?,
+                item: item()?,
+            },
+            "DifferenceFrom" => ShowAs::Difference {
+                field: field()?,
+                item: item()?,
+            },
+            "PercentDifferenceFrom" => ShowAs::PercentDifference {
+                field: field()?,
+                item: item()?,
+            },
+            "RunningTotal" => ShowAs::RunningTotal { field: field()? },
+            "PercentRunningTotal" => ShowAs::PercentRunningTotal { field: field()? },
+            "RankAscending" => ShowAs::RankAscending { field: field()? },
+            "RankDecending" => ShowAs::RankDescending { field: field()? },
+            "Index" => ShowAs::Index,
+            _ => return Err(call.invalid()),
+        },
+    )
 }
 
 /// The calculation of a value field as a `ShowAsRule`.
@@ -374,7 +489,9 @@ fn show_as_out(call: &Call, rule: &ShowAs) -> J {
         ShowAs::PercentOfParent { field } => ("PercentOfParentTotal", Some(*field), None),
         ShowAs::PercentOf { field, item } => ("PercentOf", Some(*field), Some(*item)),
         ShowAs::Difference { field, item } => ("DifferenceFrom", Some(*field), Some(*item)),
-        ShowAs::PercentDifference { field, item } => ("PercentDifferenceFrom", Some(*field), Some(*item)),
+        ShowAs::PercentDifference { field, item } => {
+            ("PercentDifferenceFrom", Some(*field), Some(*item))
+        }
         ShowAs::RunningTotal { field } => ("RunningTotal", Some(*field), None),
         ShowAs::PercentRunningTotal { field } => ("PercentRunningTotal", Some(*field), None),
         ShowAs::RankAscending { field } => ("RankAscending", Some(*field), None),
@@ -406,49 +523,97 @@ fn text_of(value: Option<&J>) -> Option<String> {
 fn label_filter(call: &Call, given: &J) -> Res<LabelFilter> {
     let text = |key: &str| text_of(given.get(key)).ok_or_else(|| call.invalid());
     let not = given.get("exclusive").and_then(J::as_bool).unwrap_or(false);
-    Ok(match (given.get("condition").and_then(J::as_str).ok_or_else(|| call.invalid())?, not) {
-        ("BeginsWith", false) => LabelFilter::BeginsWith(text("substring")?),
-        ("BeginsWith", true) => LabelFilter::NotBeginsWith(text("substring")?),
-        ("EndsWith", false) => LabelFilter::EndsWith(text("substring")?),
-        ("EndsWith", true) => LabelFilter::NotEndsWith(text("substring")?),
-        ("Contains", false) => LabelFilter::Contains(text("substring")?),
-        ("Contains", true) => LabelFilter::NotContains(text("substring")?),
-        ("Equals", false) => LabelFilter::Equals(text("comparator")?),
-        ("Equals", true) => LabelFilter::NotEquals(text("comparator")?),
-        // "Not greater than" is "less than or equal to", and so on.
-        ("GreaterThan", false) | ("LessThanOrEqualTo", true) => LabelFilter::GreaterThan(text("comparator")?),
-        ("GreaterThanOrEqualTo", false) | ("LessThan", true) => LabelFilter::GreaterOrEqual(text("comparator")?),
-        ("LessThan", false) | ("GreaterThanOrEqualTo", true) => LabelFilter::LessThan(text("comparator")?),
-        ("LessThanOrEqualTo", false) | ("GreaterThan", true) => LabelFilter::LessOrEqual(text("comparator")?),
-        ("Between", false) => LabelFilter::Between(text("lowerBound")?, text("upperBound")?),
-        ("Between", true) => LabelFilter::NotBetween(text("lowerBound")?, text("upperBound")?),
-        _ => return Err(call.invalid()),
-    })
+    Ok(
+        match (
+            given
+                .get("condition")
+                .and_then(J::as_str)
+                .ok_or_else(|| call.invalid())?,
+            not,
+        ) {
+            ("BeginsWith", false) => LabelFilter::BeginsWith(text("substring")?),
+            ("BeginsWith", true) => LabelFilter::NotBeginsWith(text("substring")?),
+            ("EndsWith", false) => LabelFilter::EndsWith(text("substring")?),
+            ("EndsWith", true) => LabelFilter::NotEndsWith(text("substring")?),
+            ("Contains", false) => LabelFilter::Contains(text("substring")?),
+            ("Contains", true) => LabelFilter::NotContains(text("substring")?),
+            ("Equals", false) => LabelFilter::Equals(text("comparator")?),
+            ("Equals", true) => LabelFilter::NotEquals(text("comparator")?),
+            // "Not greater than" is "less than or equal to", and so on.
+            ("GreaterThan", false) | ("LessThanOrEqualTo", true) => {
+                LabelFilter::GreaterThan(text("comparator")?)
+            }
+            ("GreaterThanOrEqualTo", false) | ("LessThan", true) => {
+                LabelFilter::GreaterOrEqual(text("comparator")?)
+            }
+            ("LessThan", false) | ("GreaterThanOrEqualTo", true) => {
+                LabelFilter::LessThan(text("comparator")?)
+            }
+            ("LessThanOrEqualTo", false) | ("GreaterThan", true) => {
+                LabelFilter::LessOrEqual(text("comparator")?)
+            }
+            ("Between", false) => LabelFilter::Between(text("lowerBound")?, text("upperBound")?),
+            ("Between", true) => LabelFilter::NotBetween(text("lowerBound")?, text("upperBound")?),
+            _ => return Err(call.invalid()),
+        },
+    )
 }
 
 /// A `PivotValueFilter` as the engine filters on a value field.
 fn value_filter(call: &Call, p: &PivotTable, given: &J) -> Res<FilterKind> {
-    let number = |key: &str| given.get(key).and_then(J::as_f64).ok_or_else(|| call.invalid());
-    let name = given.get("value").and_then(J::as_str).ok_or_else(|| call.invalid())?;
-    let data_field = p.data_fields.iter().position(|d| d.name.eq_ignore_ascii_case(name)).ok_or_else(|| call.fail("The PivotTable has no value field of this name."))?;
+    let number = |key: &str| {
+        given
+            .get(key)
+            .and_then(J::as_f64)
+            .ok_or_else(|| call.invalid())
+    };
+    let name = given
+        .get("value")
+        .and_then(J::as_str)
+        .ok_or_else(|| call.invalid())?;
+    let data_field = p
+        .data_fields
+        .iter()
+        .position(|d| d.name.eq_ignore_ascii_case(name))
+        .ok_or_else(|| call.fail("The PivotTable has no value field of this name."))?;
     let not = given.get("exclusive").and_then(J::as_bool).unwrap_or(false);
-    let condition = given.get("condition").and_then(J::as_str).ok_or_else(|| call.invalid())?;
+    let condition = given
+        .get("condition")
+        .and_then(J::as_str)
+        .ok_or_else(|| call.invalid())?;
     if let "TopN" | "BottomN" = condition {
-        let by = match given.get("selectionType").and_then(J::as_str).unwrap_or("Items") {
+        let by = match given
+            .get("selectionType")
+            .and_then(J::as_str)
+            .unwrap_or("Items")
+        {
             "Items" => Top10By::Items,
             "Percent" => Top10By::Percent,
             "Sum" => Top10By::Sum,
             _ => return Err(call.invalid()),
         };
-        return Ok(FilterKind::Top10 { data_field, top: condition == "TopN", count: number("threshold")?, by });
+        return Ok(FilterKind::Top10 {
+            data_field,
+            top: condition == "TopN",
+            count: number("threshold")?,
+            by,
+        });
     }
     let test = match (condition, not) {
         ("Equals", false) => ValueFilter::Equals(number("comparator")?),
         ("Equals", true) => ValueFilter::NotEquals(number("comparator")?),
-        ("GreaterThan", false) | ("LessThanOrEqualTo", true) => ValueFilter::GreaterThan(number("comparator")?),
-        ("GreaterThanOrEqualTo", false) | ("LessThan", true) => ValueFilter::GreaterOrEqual(number("comparator")?),
-        ("LessThan", false) | ("GreaterThanOrEqualTo", true) => ValueFilter::LessThan(number("comparator")?),
-        ("LessThanOrEqualTo", false) | ("GreaterThan", true) => ValueFilter::LessOrEqual(number("comparator")?),
+        ("GreaterThan", false) | ("LessThanOrEqualTo", true) => {
+            ValueFilter::GreaterThan(number("comparator")?)
+        }
+        ("GreaterThanOrEqualTo", false) | ("LessThan", true) => {
+            ValueFilter::GreaterOrEqual(number("comparator")?)
+        }
+        ("LessThan", false) | ("GreaterThanOrEqualTo", true) => {
+            ValueFilter::LessThan(number("comparator")?)
+        }
+        ("LessThanOrEqualTo", false) | ("GreaterThan", true) => {
+            ValueFilter::LessOrEqual(number("comparator")?)
+        }
         ("Between", false) => ValueFilter::Between(number("lowerBound")?, number("upperBound")?),
         ("Between", true) => ValueFilter::NotBetween(number("lowerBound")?, number("upperBound")?),
         _ => return Err(call.invalid()),
@@ -458,21 +623,44 @@ fn value_filter(call: &Call, p: &PivotTable, given: &J) -> Res<FilterKind> {
 
 /// The items a manual filter keeps: names, or PivotItem objects.
 fn chosen_items(h: &Host, call: &Call, p: &PivotTable, field: usize, given: &J) -> Res<Vec<u32>> {
-    let list = given.get("selectedItems").and_then(J::as_array).ok_or_else(|| call.invalid())?;
+    let list = given
+        .get("selectedItems")
+        .and_then(J::as_array)
+        .ok_or_else(|| call.invalid())?;
     let locale = h.wb.locale;
     list.iter()
-        .map(|chosen| match (chosen.as_str(), state_of(chosen, "PivotItem")) {
-            (Some(name), _) => p.fields[field].items.iter().map(|it| it.x).find(|x| p.item_text(field, *x, locale).eq_ignore_ascii_case(name)).ok_or_else(|| call.fail(format!("The field has no item named {name}."))),
-            (None, Some(state)) => state.get(2).and_then(J::as_u64).map(|x| x as u32).ok_or_else(|| call.invalid()),
-            _ => Err(call.invalid()),
-        })
+        .map(
+            |chosen| match (chosen.as_str(), state_of(chosen, "PivotItem")) {
+                (Some(name), _) => p.fields[field]
+                    .items
+                    .iter()
+                    .map(|it| it.x)
+                    .find(|x| p.item_text(field, *x, locale).eq_ignore_ascii_case(name))
+                    .ok_or_else(|| call.fail(format!("The field has no item named {name}."))),
+                (None, Some(state)) => state
+                    .get(2)
+                    .and_then(J::as_u64)
+                    .map(|x| x as u32)
+                    .ok_or_else(|| call.invalid()),
+                _ => Err(call.invalid()),
+            },
+        )
         .collect()
 }
 
 /// Which kinds of filter a field has: (manual, label, value).
 fn filtered(p: &PivotTable, field: usize) -> (bool, bool, bool) {
-    let manual = p.fields[field].items.iter().any(|it| it.hidden) || p.page_fields.iter().any(|page| page.field == field && page.item.is_some());
-    let of = |label: bool| p.filters.iter().any(|f| f.field == field && matches!(f.kind, FilterKind::Label(_)) == label && !matches!(f.kind, FilterKind::Date { .. }));
+    let manual = p.fields[field].items.iter().any(|it| it.hidden)
+        || p.page_fields
+            .iter()
+            .any(|page| page.field == field && page.item.is_some());
+    let of = |label: bool| {
+        p.filters.iter().any(|f| {
+            f.field == field
+                && matches!(f.kind, FilterKind::Label(_)) == label
+                && !matches!(f.kind, FilterKind::Date { .. })
+        })
+    };
     (manual, of(true), of(false))
 }
 

@@ -80,13 +80,18 @@ pub(crate) fn topics(markdown: &str, wanted: &[&str]) -> Vec<Topic> {
             open = true;
             continue;
         }
-        let bold = line.strip_prefix("**").and_then(|rest| rest.split_once("**"));
+        let bold = line
+            .strip_prefix("**")
+            .and_then(|rest| rest.split_once("**"));
         if let Some((title, rest)) = bold {
             start(title);
             open = true;
             let rest = rest.trim().trim_start_matches(':').trim();
             if !rest.is_empty() {
-                out.last_mut().expect("a topic").lines.push(Line::new(rest, false));
+                out.last_mut()
+                    .expect("a topic")
+                    .lines
+                    .push(Line::new(rest, false));
             }
             continue;
         }
@@ -101,7 +106,10 @@ pub(crate) fn topics(markdown: &str, wanted: &[&str]) -> Vec<Topic> {
         } else if line.starts_with('|') {
             let cells: Vec<String> = line.trim_matches('|').split('|').map(plain).collect();
             // The rule under the heads of a table says nothing.
-            if !cells.iter().all(|cell| cell.chars().all(|ch| matches!(ch, '-' | ':' | ' '))) {
+            if !cells
+                .iter()
+                .all(|cell| cell.chars().all(|ch| matches!(ch, '-' | ':' | ' ')))
+            {
                 topic.lines.push(Line::new(&cells.join(" — "), false));
             }
         } else {
@@ -154,7 +162,11 @@ pub(crate) fn search(topics: &[Topic], query: &str) -> Vec<(usize, Vec<usize>)> 
                 .iter()
                 .enumerate()
                 .filter(|(_, line)| {
-                    let text = format!("{} {} {title}", folded(&line.text), folded(line.keys.as_deref().unwrap_or("")));
+                    let text = format!(
+                        "{} {} {title}",
+                        folded(&line.text),
+                        folded(line.keys.as_deref().unwrap_or(""))
+                    );
                     words.iter().all(|word| text.contains(word))
                 })
                 .map(|(line, _)| line)
@@ -173,8 +185,16 @@ mod tests {
     #[test]
     fn the_readme_becomes_topics() {
         let topics = topics(SAMPLE, &SECTIONS);
-        let shape: Vec<(&str, &str, usize)> =
-            topics.iter().map(|topic| (topic.section.as_str(), topic.title.as_str(), topic.lines.len())).collect();
+        let shape: Vec<(&str, &str, usize)> = topics
+            .iter()
+            .map(|topic| {
+                (
+                    topic.section.as_str(),
+                    topic.title.as_str(),
+                    topic.lines.len(),
+                )
+            })
+            .collect();
         assert_eq!(
             shape,
             [
@@ -187,9 +207,15 @@ mod tests {
         );
         // Marks are taken off; bullets are told from paragraphs; pictures
         // are left out, the lines of a code block are kept.
-        assert_eq!(topics[0].lines[0], Line::new("Barre de titre, ruban à onglets.", true));
+        assert_eq!(
+            topics[0].lines[0],
+            Line::new("Barre de titre, ruban à onglets.", true)
+        );
         assert_eq!(topics[0].lines[1].text, "Grille de 1 048 576 lignes.");
-        assert_eq!(topics[1].lines[1], Line::new("Un classeur d'exemple :", false));
+        assert_eq!(
+            topics[1].lines[1],
+            Line::new("Un classeur d'exemple :", false)
+        );
         assert_eq!(topics[1].lines[2].text, "cargo run");
         assert_eq!(topics[2].lines[0], Line::new("les macros VBA.", false));
         assert_eq!(topics[4].lines[0].text, "Modification — Durée");
@@ -200,10 +226,17 @@ mod tests {
     fn the_real_readme_has_both_sections() {
         let topics = readme_topics();
         for section in SECTIONS {
-            let count = topics.iter().filter(|topic| topic.section == section).count();
+            let count = topics
+                .iter()
+                .filter(|topic| topic.section == section)
+                .count();
             assert!(count >= 2, "{section}: {count} topics");
         }
-        assert!(topics.iter().all(|topic| !topic.title.is_empty() && !topic.lines.is_empty()));
+        assert!(
+            topics
+                .iter()
+                .all(|topic| !topic.title.is_empty() && !topic.lines.is_empty())
+        );
         // Something every version of the README says.
         assert!(!search(&topics, "fonctions").is_empty());
     }

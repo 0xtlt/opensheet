@@ -94,12 +94,19 @@ pub fn starting_list(lang: Lang) -> Vec<(String, String)> {
             ("citta", "città"),
         ],
     };
-    SIGNS.iter().chain(words).map(|(from, to)| (from.to_string(), to.to_string())).collect()
+    SIGNS
+        .iter()
+        .chain(words)
+        .map(|(from, to)| (from.to_string(), to.to_string()))
+        .collect()
 }
 
 /// The list in use: the user's, or the starting one of the language.
 pub fn replacements(settings: &Settings) -> Vec<(String, String)> {
-    settings.replacements.clone().unwrap_or_else(|| starting_list(lang()))
+    settings
+        .replacements
+        .clone()
+        .unwrap_or_else(|| starting_list(lang()))
 }
 
 /// What to correct and how, taken from the settings once per keystroke.
@@ -120,12 +127,20 @@ impl Rules {
         let lang = lang();
         // French, Spanish and Italian write the days in small letters.
         let days = if settings.capitalize_days && matches!(lang, Lang::En | Lang::De) {
-            lang.locale().days.iter().map(|day| day.to_lowercase()).collect()
+            lang.locale()
+                .days
+                .iter()
+                .map(|day| day.to_lowercase())
+                .collect()
         } else {
             Vec::new()
         };
         Rules {
-            replacements: if settings.replace_text { replacements(&settings) } else { Vec::new() },
+            replacements: if settings.replace_text {
+                replacements(&settings)
+            } else {
+                Vec::new()
+            },
             two_capitals: settings.correct_two_capitals,
             sentences: settings.capitalize_sentences,
             days,
@@ -204,7 +219,9 @@ fn replacement_at_end(head: &str, rules: &Rules, signs: bool) -> Option<Correcti
         let first = from.chars().next().unwrap_or(last);
         let starts_word = match before {
             None => true,
-            Some(before) if is_word_char(first) || matches!(first, '(' | '[' | '{') => !is_word_char(before),
+            Some(before) if is_word_char(first) || matches!(first, '(' | '[' | '{') => {
+                !is_word_char(before)
+            }
             Some(before) => before != first,
         };
         if !starts_word {
@@ -212,7 +229,10 @@ fn replacement_at_end(head: &str, rules: &Rules, signs: bool) -> Option<Correcti
         }
         let typed = &head[at..];
         if let Some(text) = replaced(typed, from, to).filter(|text| text != typed) {
-            if best.as_ref().is_none_or(|best| typed.len() > best.original.len()) {
+            if best
+                .as_ref()
+                .is_none_or(|best| typed.len() > best.original.len())
+            {
                 best = Some(Correction {
                     at,
                     original: typed.to_string(),
@@ -226,7 +246,8 @@ fn replacement_at_end(head: &str, rules: &Rules, signs: bool) -> Option<Correcti
 
 /// Short forms after whose full stop a sentence goes on.
 const ABBREVIATIONS: &[&str] = &[
-    "etc", "e.g", "i.e", "vs", "cf", "no", "nr", "ex", "p", "z.b", "bzw", "ca", "ecc", "es", "p.ej", "approx", "env",
+    "etc", "e.g", "i.e", "vs", "cf", "no", "nr", "ex", "p", "z.b", "bzw", "ca", "ecc", "es",
+    "p.ej", "approx", "env",
 ];
 
 /// Whether what precedes a word ends a sentence: a full stop, a question
@@ -241,8 +262,13 @@ fn after_sentence_end(before: &str) -> bool {
         Some('.') => {
             let sentence = &trimmed[..trimmed.len() - 1];
             // "..." trails off, and a short form does not end a sentence.
-            let last_word = sentence.rsplit(|ch: char| ch.is_whitespace()).next().unwrap_or("");
-            !sentence.ends_with('.') && !last_word.is_empty() && !ABBREVIATIONS.contains(&last_word.to_lowercase().as_str())
+            let last_word = sentence
+                .rsplit(|ch: char| ch.is_whitespace())
+                .next()
+                .unwrap_or("");
+            !sentence.ends_with('.')
+                && !last_word.is_empty()
+                && !ABBREVIATIONS.contains(&last_word.to_lowercase().as_str())
         }
         _ => false,
     }
@@ -255,7 +281,12 @@ pub fn correct_word(text: &str, end: usize, rules: &Rules) -> Option<Correction>
     if let Some(found) = replacement_at_end(head, rules, false) {
         return Some(found);
     }
-    let at = head.char_indices().rev().take_while(|(_, ch)| is_word_char(*ch)).last().map(|(at, _)| at)?;
+    let at = head
+        .char_indices()
+        .rev()
+        .take_while(|(_, ch)| is_word_char(*ch))
+        .last()
+        .map(|(at, _)| at)?;
     let word = &head[at..];
     let mut chars: Vec<char> = word.chars().collect();
     // "MOnday" has its second capital taken away: the rest of the word is
@@ -292,7 +323,8 @@ pub fn correct_typed(text: &str, caret: usize, rules: &Rules) -> Option<Correcti
     }
     // "(c)" is replaced when its bracket closes; "teh" when a space, a
     // comma… follows it.
-    replacement_at_end(head, rules, true).or_else(|| correct_word(text, caret - typed.len_utf8(), rules))
+    replacement_at_end(head, rules, true)
+        .or_else(|| correct_word(text, caret - typed.len_utf8(), rules))
 }
 
 /// The correction of the last word of a confirmed entry.
@@ -324,7 +356,11 @@ pub struct Typing {
 /// The text of the editor changed: correct what was just typed. Called
 /// by the application before it shows the change.
 pub fn text_typed(app: &mut ExcelApp, cx: &mut Cx) {
-    let Some(cell) = app.editing.as_ref().map(|edit| (edit.sheet, edit.row, edit.col)) else {
+    let Some(cell) = app
+        .editing
+        .as_ref()
+        .map(|edit| (edit.sheet, edit.row, edit.col))
+    else {
         return;
     };
     let editor = app.editor().clone();
@@ -347,7 +383,9 @@ pub fn text_typed(app: &mut ExcelApp, cx: &mut Cx) {
     let typed_one = selection.is_empty()
         && text[..caret].chars().last().is_some_and(|ch| {
             let start = caret - ch.len_utf8();
-            before.len() + ch.len_utf8() == text.len() && before.get(..start) == Some(&text[..start]) && before.get(start..) == Some(&text[caret..])
+            before.len() + ch.len_utf8() == text.len()
+                && before.get(..start) == Some(&text[..start])
+                && before.get(start..) == Some(&text[caret..])
         });
     if !typed_one {
         return;
@@ -384,7 +422,11 @@ pub fn undo_correction(app: &mut ExcelApp, cx: &mut Cx) -> bool {
         return false;
     }
     // The caret stays on the character it was after.
-    let caret = if caret >= corrected.end { caret - done.text.len() + done.original.len() } else { caret.min(done.at + done.original.len()) };
+    let caret = if caret >= corrected.end {
+        caret - done.text.len() + done.original.len()
+    } else {
+        caret.min(done.at + done.original.len())
+    };
     editor.update(cx, |input, cx| {
         input.replace_range(corrected, &done.original, cx);
         input.set_selection(caret..caret, cx);
@@ -411,7 +453,9 @@ pub(super) fn cells_changed(app: &mut ExcelApp, edit: &CellEdit, cx: &mut Cx) {
         Some(Content::Value(Value::Text(text))) => text.to_string(),
         _ => return,
     };
-    let Some(found) = correct_entry(&typed, &Rules::current()).filter(|found| !refused.contains(&found.original)) else {
+    let Some(found) =
+        correct_entry(&typed, &Rules::current()).filter(|found| !refused.contains(&found.original))
+    else {
         return;
     };
     let mut corrected = typed;
@@ -419,7 +463,12 @@ pub(super) fn cells_changed(app: &mut ExcelApp, edit: &CellEdit, cx: &mut Cx) {
     app.wb.set_value(sheet, row, col, Value::text(&corrected));
     // Through the same door as the entry itself: a table whose header
     // this is takes the corrected name.
-    app.commit_cells(t("AutoCorrect", "Correction automatique"), &[Rect::cell(row, col)], ChangeCause::Typing, cx);
+    app.commit_cells(
+        t("AutoCorrect", "Correction automatique"),
+        &[Rect::cell(row, col)],
+        ChangeCause::Typing,
+        cx,
+    );
 }
 
 #[cfg(test)]
@@ -431,7 +480,12 @@ mod tests {
             replacements: starting_list(Lang::En),
             two_capitals: true,
             sentences: true,
-            days: Lang::En.locale().days.iter().map(|day| day.to_lowercase()).collect(),
+            days: Lang::En
+                .locale()
+                .days
+                .iter()
+                .map(|day| day.to_lowercase())
+                .collect(),
         }
     }
 
@@ -474,20 +528,35 @@ mod tests {
         assert_eq!(typed("5 (E)", &rules), "5 €");
         // "(c)" glued to a word is a function call or a reference.
         assert_eq!(typed("f(c)", &rules), "f(c)");
-        assert_eq!(correct_typed("(c)", 3, &rules).map(|found| found.text), Some("©".to_string()));
+        assert_eq!(
+            correct_typed("(c)", 3, &rules).map(|found| found.text),
+            Some("©".to_string())
+        );
     }
 
     #[test]
     fn capitals_are_corrected() {
         let rules = rules();
-        assert_eq!(typed("THe plan. it works! does it? yes", &rules), "The plan. It works! Does it? Yes");
+        assert_eq!(
+            typed("THe plan. it works! does it? yes", &rules),
+            "The plan. It works! Does it? Yes"
+        );
         // The start of a cell is left as typed, like Excel; so are short
         // forms, words in capitals and two-letter words.
-        assert_eq!(typed("see p. 4 etc. and so on... or not", &rules), "see p. 4 etc. and so on… or not");
+        assert_eq!(
+            typed("see p. 4 etc. and so on... or not", &rules),
+            "see p. 4 etc. and so on… or not"
+        );
         assert_eq!(typed("USA and IT are OK", &rules), "USA and IT are OK");
-        assert_eq!(typed("on monday and FRIDAY, not mondays", &rules), "on Monday and FRIDAY, not mondays");
+        assert_eq!(
+            typed("on monday and FRIDAY, not mondays", &rules),
+            "on Monday and FRIDAY, not mondays"
+        );
         let off = Rules::default();
-        assert_eq!(typed("THe plan. it works on monday, teh end (c)", &off), "THe plan. it works on monday, teh end (c)");
+        assert_eq!(
+            typed("THe plan. it works on monday, teh end (c)", &off),
+            "THe plan. it works on monday, teh end (c)"
+        );
     }
 
     #[test]
@@ -499,9 +568,21 @@ mod tests {
             // Nothing is replaced by itself and nothing is listed twice.
             for (index, (from, to)) in list.iter().enumerate() {
                 assert_ne!(from, to);
-                assert!(!list[..index].iter().any(|(other, _)| other == from), "{from}");
+                assert!(
+                    !list[..index].iter().any(|(other, _)| other == from),
+                    "{from}"
+                );
             }
         }
-        assert_eq!(typed("un oeuf, Deja", &Rules { replacements: starting_list(Lang::Fr), ..Rules::default() }), "un œuf, Déjà");
+        assert_eq!(
+            typed(
+                "un oeuf, Deja",
+                &Rules {
+                    replacements: starting_list(Lang::Fr),
+                    ..Rules::default()
+                }
+            ),
+            "un œuf, Déjà"
+        );
     }
 }

@@ -6,8 +6,9 @@
 
 use crate::app::*;
 use crate::features::{
-    self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters, format_cells, misc, names, page,
-    pivot, proofing, protection, slicers, tables, themes, validation,
+    self, Command, ViewMode, charts, comments, condfmt, data_tools, drawings, edit_tools, filters,
+    format_cells, misc, names, page, pivot, proofing, protection, slicers, tables, themes,
+    validation,
 };
 use crate::i18n::t;
 use crate::ribbon_fold as fold;
@@ -51,7 +52,11 @@ pub fn group(label: &'static str, content: impl IntoElement) -> gpui::Div {
 
 /// A group with the small arrow that opens its dialog (see
 /// `ExcelApp::launcher`).
-pub fn launcher_group(label: &'static str, content: impl IntoElement, launcher: Option<AnyElement>) -> gpui::Div {
+pub fn launcher_group(
+    label: &'static str,
+    content: impl IntoElement,
+    launcher: Option<AnyElement>,
+) -> gpui::Div {
     // When the window is too narrow the group is folded into one button;
     // its drop-down is the group as it is built here (`ribbon_fold.rs`).
     let slot = fold::next_group(label);
@@ -73,7 +78,11 @@ pub fn launcher_group(label: &'static str, content: impl IntoElement, launcher: 
 }
 
 /// A group in full: its controls over its name.
-fn whole_group(label: &'static str, content: impl IntoElement, launcher: Option<AnyElement>) -> gpui::Div {
+fn whole_group(
+    label: &'static str,
+    content: impl IntoElement,
+    launcher: Option<AnyElement>,
+) -> gpui::Div {
     div()
         .h_full()
         .flex()
@@ -81,7 +90,14 @@ fn whole_group(label: &'static str, content: impl IntoElement, launcher: Option<
         .px(px(6.))
         .border_r_1()
         .border_color(c(theme::BORDER))
-        .child(div().flex_1().flex().items_center().gap(px(2.)).child(content))
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .gap(px(2.))
+                .child(content),
+        )
         .child(
             div()
                 .relative()
@@ -112,14 +128,26 @@ pub(crate) fn split_label(label: &str) -> (&str, &str) {
 
 /// Controls stacked in up to three rows.
 pub fn rows(children: Vec<AnyElement>) -> gpui::Div {
-    div().flex().flex_col().justify_center().gap(px(2.)).children(children)
+    div()
+        .flex()
+        .flex_col()
+        .justify_center()
+        .gap(px(2.))
+        .children(children)
 }
 
 /// Controls side by side. A row that holds several large buttons stacks
 /// its controls in three rows when its group gives way, as Excel does
 /// (`ribbon_fold.rs`).
 pub fn row(mut children: Vec<AnyElement>) -> AnyElement {
-    let larges: Vec<usize> = children.iter_mut().filter_map(|child| child.downcast_mut::<LargeButton>().map(|large| large.number)).collect();
+    let larges: Vec<usize> = children
+        .iter_mut()
+        .filter_map(|child| {
+            child
+                .downcast_mut::<LargeButton>()
+                .map(|large| large.number)
+        })
+        .collect();
     if larges.len() < 2 {
         return side_by_side(children).into_any_element();
     }
@@ -229,7 +257,10 @@ impl gpui::Element for LargeButton {
 
 /// A thin vertical line between controls of a row.
 pub fn sep() -> AnyElement {
-    Sep { hidden: fold::sep_built() }.into_any_element()
+    Sep {
+        hidden: fold::sep_built(),
+    }
+    .into_any_element()
 }
 
 /// What `sep` builds: the line goes when its group is restacked.
@@ -262,19 +293,50 @@ impl ExcelApp {
 
     /// A large button running a command. `dropdown` adds the small arrow
     /// of buttons that open a menu.
-    pub fn cmd_large<C: Command>(&self, id: &'static str, cmd: C, dropdown: bool, cx: &mut Cx) -> AnyElement {
-        let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
-        self.large_state(id, icon_name, cmd.label_in(self), dropdown, cmd.checked(self), cmd.enabled(self), cx, move |this, window, cx| {
-            this.run_from(id, cmd, window, cx)
-        })
+    pub fn cmd_large<C: Command>(
+        &self,
+        id: &'static str,
+        cmd: C,
+        dropdown: bool,
+        cx: &mut Cx,
+    ) -> AnyElement {
+        let icon_name = if cmd.icon().is_empty() {
+            "more"
+        } else {
+            cmd.icon()
+        };
+        self.large_state(
+            id,
+            icon_name,
+            cmd.label_in(self),
+            dropdown,
+            cmd.checked(self),
+            cmd.enabled(self),
+            cx,
+            move |this, window, cx| this.run_from(id, cmd, window, cx),
+        )
     }
 
     /// A one-row button with icon and label running a command.
-    pub fn cmd_labeled<C: Command>(&self, id: &'static str, cmd: C, dropdown: bool, cx: &mut Cx) -> AnyElement {
+    pub fn cmd_labeled<C: Command>(
+        &self,
+        id: &'static str,
+        cmd: C,
+        dropdown: bool,
+        cx: &mut Cx,
+    ) -> AnyElement {
         let enabled = cmd.enabled(self);
-        let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
+        let icon_name = if cmd.icon().is_empty() {
+            "more"
+        } else {
+            cmd.icon()
+        };
         fold::saw_icon(icon_name);
-        let color = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
+        let color = if enabled {
+            theme::TEXT
+        } else {
+            theme::TEXT_DISABLED
+        };
         self.small(
             id,
             div()
@@ -285,7 +347,9 @@ impl ExcelApp {
                 .text_color(c(color))
                 .child(icon(icon_name, 16.0, color))
                 .child(div().whitespace_nowrap().child(cmd.label_in(self)))
-                .when(dropdown, |d| d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED))),
+                .when(dropdown, |d| {
+                    d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED))
+                }),
             cmd.label_in(self),
             cmd.checked(self),
             cx,
@@ -297,20 +361,37 @@ impl ExcelApp {
     /// An icon-only button running a command.
     #[allow(dead_code)] // for the contextual tabs of the feature modules
     pub fn cmd_icon<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
-        let color = if cmd.enabled(self) { theme::TEXT } else { theme::TEXT_DISABLED };
-        let icon_name = if cmd.icon().is_empty() { "more" } else { cmd.icon() };
+        let color = if cmd.enabled(self) {
+            theme::TEXT
+        } else {
+            theme::TEXT_DISABLED
+        };
+        let icon_name = if cmd.icon().is_empty() {
+            "more"
+        } else {
+            cmd.icon()
+        };
         fold::saw_icon(icon_name);
-        self.small(id, icon(icon_name, 16.0, color), cmd.label_in(self), cmd.checked(self), cx, move |this, window, cx| {
-            this.run_from(id, cmd, window, cx)
-        })
+        self.small(
+            id,
+            icon(icon_name, 16.0, color),
+            cmd.label_in(self),
+            cmd.checked(self),
+            cx,
+            move |this, window, cx| this.run_from(id, cmd, window, cx),
+        )
         .into_any_element()
     }
 
     /// A check box showing `cmd.checked` and running the command.
     pub fn cmd_check<C: Command>(&self, id: &'static str, cmd: C, cx: &mut Cx) -> AnyElement {
-        self.check(id, cmd.label_in(self), cmd.checked(self), cx, move |this, window, cx| {
-            this.run_from(id, cmd, window, cx)
-        })
+        self.check(
+            id,
+            cmd.label_in(self),
+            cmd.checked(self),
+            cx,
+            move |this, window, cx| this.run_from(id, cmd, window, cx),
+        )
     }
 
     /// The small arrow at the corner of a group that opens its dialog.
@@ -408,7 +489,9 @@ impl ExcelApp {
         let level = fold::level();
         match id {
             "rb-cut" | "rb-copy" | "rb-painter" | "rb-wrap" | "rb-merge" => level < 2,
-            "rb-insert" | "rb-delete" | "rb-format" | "rb-fill-series" | "rb-clear" | "rb-sum" => level < 4,
+            "rb-insert" | "rb-delete" | "rb-format" | "rb-fill-series" | "rb-clear" | "rb-sum" => {
+                level < 4
+            }
             _ => true,
         }
     }
@@ -433,8 +516,12 @@ impl ExcelApp {
                 .gap(px(5.))
                 .px(px(2.))
                 .child(icon(icon_name, 16.0, theme::TEXT))
-                .when(self.label_visible(id), |d| d.child(div().whitespace_nowrap().child(label)))
-                .when(dropdown, |d| d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED))),
+                .when(self.label_visible(id), |d| {
+                    d.child(div().whitespace_nowrap().child(label))
+                })
+                .when(dropdown, |d| {
+                    d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED))
+                }),
             label,
             active,
             cx,
@@ -468,7 +555,11 @@ impl ExcelApp {
         f: impl Fn(&mut Self, &mut Window, &mut Cx) + 'static,
     ) -> AnyElement {
         fold::saw_icon(icon_name);
-        let color = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
+        let color = if enabled {
+            theme::TEXT
+        } else {
+            theme::TEXT_DISABLED
+        };
         // In a group short of room, a large button is a small one: with
         // its label on one line first, then without (the tip still names
         // it).
@@ -478,13 +569,24 @@ impl ExcelApp {
             let content = div()
                 .flex()
                 .items_center()
-                .gap(px(if form == fold::LargeForm::Labeled { 5. } else { 2. }))
+                .gap(px(if form == fold::LargeForm::Labeled {
+                    5.
+                } else {
+                    2.
+                }))
                 .px(px(2.))
                 .text_color(c(color))
                 .child(icon(icon_name, 16.0, color))
-                .when(form == fold::LargeForm::Labeled, |d| d.child(div().whitespace_nowrap().child(label)))
-                .when(dropdown, |d| d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED)));
-            return numbered(self.small(id, content, label, active, cx, f).into_any_element());
+                .when(form == fold::LargeForm::Labeled, |d| {
+                    d.child(div().whitespace_nowrap().child(label))
+                })
+                .when(dropdown, |d| {
+                    d.child(icon("chevron-down", 9.0, theme::TEXT_MUTED))
+                });
+            return numbered(
+                self.small(id, content, label, active, cx, f)
+                    .into_any_element(),
+            );
         }
         let (line1, line2) = split_label(label);
         let button = div()
@@ -501,7 +603,10 @@ impl ExcelApp {
             .rounded(px(4.))
             .text_color(c(color))
             .when(active, |d| d.bg(c(theme::TOGGLED)))
-            .when(enabled, |d| d.hover(|s| s.bg(c(theme::HOVER))).active(|s| s.bg(c(theme::PRESSED))))
+            .when(enabled, |d| {
+                d.hover(|s| s.bg(c(theme::HOVER)))
+                    .active(|s| s.bg(c(theme::PRESSED)))
+            })
             .child(icon(icon_name, 26.0, color))
             .child(
                 div()
@@ -518,7 +623,9 @@ impl ExcelApp {
                             .items_center()
                             .gap(px(2.))
                             .child(line2.to_string())
-                            .when(dropdown, |d| d.child(icon("chevron-down", 8.0, theme::TEXT_MUTED))),
+                            .when(dropdown, |d| {
+                                d.child(icon("chevron-down", 8.0, theme::TEXT_MUTED))
+                            }),
                     ),
             )
             .child(self.anchor(id))
@@ -572,21 +679,26 @@ impl ExcelApp {
     }
 
     /// A button with a colour bar underneath (fill / font colour).
-    pub fn color_button(&self, id: &'static str, top: impl IntoElement, color: Option<u32>, tip: &'static str, cx: &mut Cx, f: impl Fn(&mut Self, &mut Window, &mut Cx) + 'static) -> AnyElement {
+    pub fn color_button(
+        &self,
+        id: &'static str,
+        top: impl IntoElement,
+        color: Option<u32>,
+        tip: &'static str,
+        cx: &mut Cx,
+        f: impl Fn(&mut Self, &mut Window, &mut Cx) + 'static,
+    ) -> AnyElement {
         self.small(
             id,
-            div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .child(top)
-                .child(
-                    div()
-                        .w(px(16.))
-                        .h(px(3.5))
-                        .bg(color.map(c).unwrap_or(c(0xFFFFFF)))
-                        .when(color.is_none(), |d| d.border_1().border_color(c(theme::BORDER_STRONG))),
-                ),
+            div().flex().flex_col().items_center().child(top).child(
+                div()
+                    .w(px(16.))
+                    .h(px(3.5))
+                    .bg(color.map(c).unwrap_or(c(0xFFFFFF)))
+                    .when(color.is_none(), |d| {
+                        d.border_1().border_color(c(theme::BORDER_STRONG))
+                    }),
+            ),
             tip,
             false,
             cx,
@@ -598,10 +710,14 @@ impl ExcelApp {
     pub fn render_ribbon_tabs(&mut self, window: &Window, cx: &mut Cx) -> impl IntoElement {
         // The permanent tabs, then those of the object that is active.
         let context = features::context_tabs(self);
-        if self.context_tab.is_some_and(|id| !context.iter().any(|(_, tab)| tab.id == id)) {
+        if self
+            .context_tab
+            .is_some_and(|id| !context.iter().any(|(_, tab)| tab.id == id))
+        {
             self.context_tab = None;
         }
-        let mut names: Vec<(&'static str, Option<&'static str>)> = tab_names().iter().map(|name| (*name, None)).collect();
+        let mut names: Vec<(&'static str, Option<&'static str>)> =
+            tab_names().iter().map(|name| (*name, None)).collect();
         names.extend(context.iter().map(|(_, tab)| (tab.title, Some(tab.id))));
         // Short of room for the names of the tabs, Comments and Share
         // keep their icon only and the tabs stand closer; the two buttons
@@ -633,9 +749,14 @@ impl ExcelApp {
                     .justify_center()
                     .text_size(px(13.))
                     .whitespace_nowrap()
-                    .when(active, |d| d.font_weight(FontWeight::SEMIBOLD).text_color(c(theme::ACCENT_DARK)))
+                    .when(active, |d| {
+                        d.font_weight(FontWeight::SEMIBOLD)
+                            .text_color(c(theme::ACCENT_DARK))
+                    })
                     .when(!active, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                    .when(context_id.is_some() && !active, |d| d.text_color(c(theme::ACCENT)))
+                    .when(context_id.is_some() && !active, |d| {
+                        d.text_color(c(theme::ACCENT))
+                    })
                     .rounded(px(4.))
                     .child(*name)
                     .when(active, |d| {
@@ -674,7 +795,16 @@ impl ExcelApp {
             .items_center()
             .px_2()
             .bg(c(theme::CHROME_BG))
-            .child(div().h_full().flex_shrink().min_w(px(0.)).overflow_hidden().flex().items_center().children(tabs))
+            .child(
+                div()
+                    .h_full()
+                    .flex_shrink()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .flex()
+                    .items_center()
+                    .children(tabs),
+            )
             .child(div().flex_1())
             .child(
                 div()
@@ -692,7 +822,9 @@ impl ExcelApp {
                     .bg(c(0xFFFFFF))
                     .child(icon("comment", 14.0, theme::TEXT))
                     .when(labels, |d| d.child(comments_label))
-                    .on_click(cx.listener(|this, _, window, cx| comments::Cmd::ShowPane.run(this, window, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        comments::Cmd::ShowPane.run(this, window, cx)
+                    })),
             )
             .child(
                 div()
@@ -710,7 +842,9 @@ impl ExcelApp {
                     .when(labels, |d| d.child(share_label))
                     .relative()
                     .child(self.anchor(features::share::BUTTON))
-                    .on_click(cx.listener(|this, _, window, cx| features::share::Cmd::Share.run(this, window, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        features::share::Cmd::Share.run(this, window, cx)
+                    })),
             )
     }
 
@@ -726,7 +860,10 @@ impl ExcelApp {
             MenuEntry::new(t("Save", "Enregistrer"), |a, w, cx| a.save(false, w, cx))
                 .icon("save")
                 .shortcut("⌘S"),
-            MenuEntry::new(t("Save As…", "Enregistrer sous…"), |a, w, cx| a.save(true, w, cx)).shortcut("⇧⌘S"),
+            MenuEntry::new(t("Save As…", "Enregistrer sous…"), |a, w, cx| {
+                a.save(true, w, cx)
+            })
+            .shortcut("⇧⌘S"),
             MenuEntry::separator(),
             MenuEntry::command(page::Cmd::Print, self).shortcut("⌘P"),
             features::share::file_menu_entry(self),
@@ -741,29 +878,38 @@ impl ExcelApp {
         // The window less the margins, the border and the padding below.
         let available = f32::from(window.viewport_size().width) - 22.0;
         let fitted = fold::fitted(cx.weak_entity(), self.ribbon_key(), available);
-        div().w_full().flex_none().px_2().pb(px(4.)).bg(c(theme::CHROME_BG)).child(
-            div()
-                .id("ribbon")
-                .h(px(theme::RIBBON_H))
-                .w_full()
-                .flex()
-                .items_center()
-                .overflow_x_scroll()
-                .bg(c(theme::PANEL_BG))
-                .border_1()
-                .border_color(c(theme::BORDER))
-                .rounded(px(8.))
-                .py(px(3.))
-                .px(px(2.))
-                .child(fitted),
-        )
+        div()
+            .w_full()
+            .flex_none()
+            .px_2()
+            .pb(px(4.))
+            .bg(c(theme::CHROME_BG))
+            .child(
+                div()
+                    .id("ribbon")
+                    .h(px(theme::RIBBON_H))
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .overflow_x_scroll()
+                    .bg(c(theme::PANEL_BG))
+                    .border_1()
+                    .border_color(c(theme::BORDER))
+                    .rounded(px(8.))
+                    .py(px(3.))
+                    .px(px(2.))
+                    .child(fitted),
+            )
     }
 
     /// What tells the tab shown from the others, in the language shown:
     /// the steps taken to fit one are of no use to another.
     pub(crate) fn ribbon_key(&self) -> String {
         let context = features::context_tabs(self);
-        let tab = match self.context_tab.filter(|id| context.iter().any(|(_, tab)| tab.id == *id)) {
+        let tab = match self
+            .context_tab
+            .filter(|id| context.iter().any(|(_, tab)| tab.id == *id))
+        {
             Some(id) => id.to_string(),
             None => self.ribbon_tab.to_string(),
         };
@@ -773,9 +919,12 @@ impl ExcelApp {
     /// The groups of the tab shown.
     pub(crate) fn ribbon_groups(&mut self, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
         let context = features::context_tabs(self);
-        let owner = self
-            .context_tab
-            .and_then(|id| context.iter().find(|(_, tab)| tab.id == id).map(|(owner, _)| (*owner, id)));
+        let owner = self.context_tab.and_then(|id| {
+            context
+                .iter()
+                .find(|(_, tab)| tab.id == id)
+                .map(|(owner, _)| (*owner, id))
+        });
         match (owner, self.ribbon_tab) {
             (Some((owner, id)), _) => features::all()[owner].render_tab(self, id, window, cx),
             (None, 2) => self.insert_tab(cx),
@@ -818,12 +967,22 @@ impl ExcelApp {
             .into_any_element(),
             group(
                 t("Accessibility", "Accessibilité"),
-                row(vec![self.cmd_large("rv-access", proofing::Cmd::AccessibilityMenu, true, cx)]),
+                row(vec![self.cmd_large(
+                    "rv-access",
+                    proofing::Cmd::AccessibilityMenu,
+                    true,
+                    cx,
+                )]),
             )
             .into_any_element(),
             group(
                 t("Language", "Langue"),
-                row(vec![self.cmd_large("rv-translate", proofing::Cmd::Translate, false, cx)]),
+                row(vec![self.cmd_large(
+                    "rv-translate",
+                    proofing::Cmd::Translate,
+                    false,
+                    cx,
+                )]),
             )
             .into_any_element(),
             group(
@@ -839,15 +998,30 @@ impl ExcelApp {
             .into_any_element(),
             group(
                 t("Notes", "Notes"),
-                row(vec![self.cmd_large("rv-notes", comments::Cmd::NotesMenu, true, cx)]),
+                row(vec![self.cmd_large(
+                    "rv-notes",
+                    comments::Cmd::NotesMenu,
+                    true,
+                    cx,
+                )]),
             )
             .into_any_element(),
             group(
                 t("Protect", "Protéger"),
                 row(vec![
                     self.cmd_large("rv-protect-sheet", protection::Cmd::ProtectSheet, false, cx),
-                    self.cmd_large("rv-protect-book", protection::Cmd::ProtectWorkbook, false, cx),
-                    self.cmd_large("rv-edit-ranges", protection::Cmd::AllowEditRanges, false, cx),
+                    self.cmd_large(
+                        "rv-protect-book",
+                        protection::Cmd::ProtectWorkbook,
+                        false,
+                        cx,
+                    ),
+                    self.cmd_large(
+                        "rv-edit-ranges",
+                        protection::Cmd::AllowEditRanges,
+                        false,
+                        cx,
+                    ),
                     self.cmd_large("rv-unshare", protection::Cmd::UnshareWorkbook, false, cx),
                 ]),
             )
@@ -883,9 +1057,14 @@ impl ExcelApp {
                     // arrow open the choices.
                     div()
                         .relative()
-                        .child(self.large("rb-paste", "paste", t("Paste", "Coller"), true, cx, |this, _, cx| {
-                            this.paste(PasteMode::All, cx)
-                        }))
+                        .child(self.large(
+                            "rb-paste",
+                            "paste",
+                            t("Paste", "Coller"),
+                            true,
+                            cx,
+                            |this, _, cx| this.paste(PasteMode::All, cx),
+                        ))
                         .child(
                             div()
                                 .id("rb-paste-menu")
@@ -896,21 +1075,38 @@ impl ExcelApp {
                                 .h(px(24.))
                                 .occlude()
                                 .on_click(cx.listener(|this, _, window, cx| {
-                                    this.run_from("rb-paste", edit_tools::Cmd::PasteMenu, window, cx)
+                                    this.run_from(
+                                        "rb-paste",
+                                        edit_tools::Cmd::PasteMenu,
+                                        window,
+                                        cx,
+                                    )
                                 })),
                         ),
                 )
                 .child(rows(vec![
-                    self.labeled("rb-cut", "cut", t("Cut", "Couper"), false, false, cx, |this, _, cx| {
-                        this.copy(true, cx)
-                    }),
+                    self.labeled(
+                        "rb-cut",
+                        "cut",
+                        t("Cut", "Couper"),
+                        false,
+                        false,
+                        cx,
+                        |this, _, cx| this.copy(true, cx),
+                    ),
                     // A split button like Paste: the button copies, its
                     // arrow opens Copy and Copy as Picture.
                     div()
                         .relative()
-                        .child(self.labeled("rb-copy", "copy", t("Copy", "Copier"), true, false, cx, |this, _, cx| {
-                            this.copy(false, cx)
-                        }))
+                        .child(self.labeled(
+                            "rb-copy",
+                            "copy",
+                            t("Copy", "Copier"),
+                            true,
+                            false,
+                            cx,
+                            |this, _, cx| this.copy(false, cx),
+                        ))
                         .child(
                             div()
                                 .id("rb-copy-menu")
@@ -945,19 +1141,33 @@ impl ExcelApp {
             rows(vec![
                 row(vec![
                     // Wide enough for "Aptos Narrow (Corps)", the name of the theme's body font.
-                    self.combo("rb-font", font_name, 160.0, t("Font", "Police"), cx, |this, window, cx| {
-                        this.open_font_menu(window, cx)
-                    }),
-                    self.combo("rb-size", size_text, 50.0, t("Font Size", "Taille de police"), cx, |this, window, cx| {
-                        let entries = Self::FONT_SIZES
-                            .iter()
-                            .map(|s| {
-                                let s = *s;
-                                MenuEntry::new(format!("{:.0}", s), move |a, _, cx| a.set_font_size(s, cx))
-                            })
-                            .collect();
-                        this.open_menu("rb-size", entries, 70.0, window, cx);
-                    }),
+                    self.combo(
+                        "rb-font",
+                        font_name,
+                        160.0,
+                        t("Font", "Police"),
+                        cx,
+                        |this, window, cx| this.open_font_menu(window, cx),
+                    ),
+                    self.combo(
+                        "rb-size",
+                        size_text,
+                        50.0,
+                        t("Font Size", "Taille de police"),
+                        cx,
+                        |this, window, cx| {
+                            let entries = Self::FONT_SIZES
+                                .iter()
+                                .map(|s| {
+                                    let s = *s;
+                                    MenuEntry::new(format!("{:.0}", s), move |a, _, cx| {
+                                        a.set_font_size(s, cx)
+                                    })
+                                })
+                                .collect();
+                            this.open_menu("rb-size", entries, 70.0, window, cx);
+                        },
+                    ),
                     self.icon_btn(
                         "rb-grow",
                         "font-grow",
@@ -1005,7 +1215,13 @@ impl ExcelApp {
                     .into_any_element(),
                     self.small(
                         "rb-strike",
-                        div().w(px(16.)).flex().justify_center().text_size(px(13.)).line_through().child("ab"),
+                        div()
+                            .w(px(16.))
+                            .flex()
+                            .justify_center()
+                            .text_size(px(13.))
+                            .line_through()
+                            .child("ab"),
                         t("Strikethrough", "Barré"),
                         style.font.strike,
                         cx,
@@ -1024,9 +1240,12 @@ impl ExcelApp {
                             this.apply_border(preset, cx)
                         },
                     ),
-                    self.caret_btn("rb-borders-menu", t("Borders", "Bordures"), cx, |this, window, cx| {
-                        this.open_border_menu(window, cx)
-                    }),
+                    self.caret_btn(
+                        "rb-borders-menu",
+                        t("Borders", "Bordures"),
+                        cx,
+                        |this, window, cx| this.open_border_menu(window, cx),
+                    ),
                     sep(),
                     self.color_button(
                         "rb-fill",
@@ -1043,11 +1262,17 @@ impl ExcelApp {
                         "rb-fill-menu",
                         t("Fill Color", "Couleur de remplissage"),
                         cx,
-                        |this, window, cx| this.open_palette("rb-fill", ColorTarget::Fill, window, cx),
+                        |this, window, cx| {
+                            this.open_palette("rb-fill", ColorTarget::Fill, window, cx)
+                        },
                     ),
                     self.color_button(
                         "rb-font-color",
-                        div().text_size(px(13.)).line_height(px(13.)).font_weight(FontWeight::SEMIBOLD).child("A"),
+                        div()
+                            .text_size(px(13.))
+                            .line_height(px(13.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("A"),
                         self.last_font_color.map(|col| col.value()),
                         t("Font Color", "Couleur de police"),
                         cx,
@@ -1056,14 +1281,22 @@ impl ExcelApp {
                             this.set_font_color(color, cx)
                         },
                     ),
-                    self.caret_btn("rb-font-color-menu", t("Font Color", "Couleur de police"), cx, |this, window, cx| {
-                        this.open_palette("rb-font-color", ColorTarget::Font, window, cx)
-                    }),
+                    self.caret_btn(
+                        "rb-font-color-menu",
+                        t("Font Color", "Couleur de police"),
+                        cx,
+                        |this, window, cx| {
+                            this.open_palette("rb-font-color", ColorTarget::Font, window, cx)
+                        },
+                    ),
                 ]),
             ]),
-            Some(self.launcher("rb-font-launcher", t("Font Settings", "Paramètres de police"), cx, |this, window, cx| {
-                format_cells::Cmd::Font.run(this, window, cx)
-            })),
+            Some(self.launcher(
+                "rb-font-launcher",
+                t("Font Settings", "Paramètres de police"),
+                cx,
+                |this, window, cx| format_cells::Cmd::Font.run(this, window, cx),
+            )),
         );
 
         // Alignment
@@ -1212,7 +1445,12 @@ impl ExcelApp {
                     .into_any_element(),
                     self.small(
                         "rb-comma",
-                        div().w(px(22.)).flex().justify_center().text_size(px(11.)).child("000"),
+                        div()
+                            .w(px(22.))
+                            .flex()
+                            .justify_center()
+                            .text_size(px(11.))
+                            .child("000"),
                         t("Comma Style", "Séparateur de milliers"),
                         false,
                         cx,
@@ -1238,9 +1476,12 @@ impl ExcelApp {
                     ),
                 ]),
             ]),
-            Some(self.launcher("rb-number-launcher", t("Number Format", "Format de nombre"), cx, |this, window, cx| {
-                format_cells::Cmd::Number.run(this, window, cx)
-            })),
+            Some(self.launcher(
+                "rb-number-launcher",
+                t("Number Format", "Format de nombre"),
+                cx,
+                |this, window, cx| format_cells::Cmd::Number.run(this, window, cx),
+            )),
         );
 
         // Styles
@@ -1255,82 +1496,136 @@ impl ExcelApp {
         let cells = group(
             t("Cells", "Cellules"),
             rows(vec![
-                self.labeled("rb-insert", "insert-cells", t("Insert", "Insérer"), true, false, cx, |this, window, cx| {
-                    let entries = vec![
-                        MenuEntry::new(t("Insert Sheet Rows", "Insérer des lignes dans la feuille"), |a, _, cx| {
-                            a.insert_rows(cx)
-                        }),
-                        MenuEntry::new(
-                            t("Insert Sheet Columns", "Insérer des colonnes dans la feuille"),
-                            |a, _, cx| a.insert_cols(cx),
-                        ),
-                        MenuEntry::separator(),
-                        MenuEntry::new(t("Insert Sheet", "Insérer une feuille"), |a, _, cx| a.add_sheet(cx)),
-                    ];
-                    this.open_menu("rb-insert", entries, 270.0, window, cx);
-                }),
-                self.labeled("rb-delete", "delete-cells", t("Delete", "Supprimer"), true, false, cx, |this, window, cx| {
-                    let entries = vec![
-                        MenuEntry::new(t("Delete Sheet Rows", "Supprimer des lignes dans la feuille"), |a, _, cx| {
-                            a.delete_rows(cx)
-                        }),
-                        MenuEntry::new(
-                            t("Delete Sheet Columns", "Supprimer des colonnes dans la feuille"),
-                            |a, _, cx| a.delete_cols(cx),
-                        ),
-                        MenuEntry::separator(),
-                        MenuEntry::new(t("Delete Sheet", "Supprimer une feuille"), |a, _, cx| {
-                            let i = a.sheet;
-                            a.delete_sheet(i, cx)
-                        }),
-                    ];
-                    this.open_menu("rb-delete", entries, 270.0, window, cx);
-                }),
-                self.labeled("rb-format", "format-cells", t("Format", "Format"), true, false, cx, |this, window, cx| {
-                    let entries = vec![
-                        MenuEntry::new(
-                            t("AutoFit Column Width", "Ajuster la largeur de colonne"),
-                            |a, window, cx| {
-                                let r = a.wb.clamp_to_used(a.sheet, a.sel().current());
-                                // One refusal, not one for each column.
-                                if !a.may(features::Intent::FormatColumns, cx) {
-                                    return;
-                                }
-                                for col in r.c0..=r.c1.min(r.c0 + 500) {
-                                    a.autofit_col(col, window, cx);
-                                }
-                            },
-                        ),
-                        MenuEntry::separator(),
-                        MenuEntry::submenu(
-                            t("Hide & Unhide", "Masquer et afficher"),
-                            vec![
-                                MenuEntry::new(t("Hide Rows", "Masquer les lignes"), |a, _, cx| a.hide_rows(true, cx)),
-                                MenuEntry::new(t("Hide Columns", "Masquer les colonnes"), |a, _, cx| a.hide_cols(true, cx)),
-                                MenuEntry::command(features::sheets::Cmd::Hide, this),
-                                MenuEntry::separator(),
-                                MenuEntry::new(t("Unhide Rows", "Afficher les lignes"), |a, _, cx| a.hide_rows(false, cx)),
-                                MenuEntry::new(t("Unhide Columns", "Afficher les colonnes"), |a, _, cx| {
-                                    a.hide_cols(false, cx)
-                                }),
-                                MenuEntry::command(features::sheets::Cmd::Unhide, this),
-                            ],
-                        ),
-                        MenuEntry::separator(),
-                        MenuEntry::new(t("Rename Sheet", "Renommer la feuille"), |a, window, cx| {
-                            let i = a.sheet;
-                            a.begin_rename_sheet(i, window, cx)
-                        }),
-                        MenuEntry::new(t("Tab Color…", "Couleur d'onglet…"), |a, window, cx| {
-                            a.open_palette("rb-format", ColorTarget::Tab, window, cx)
-                        }),
-                        MenuEntry::separator(),
-                        MenuEntry::command(protection::Cmd::ProtectSheet, this),
-                        MenuEntry::command(protection::Cmd::LockCell, this),
-                        MenuEntry::command(format_cells::Cmd::Open, this).shortcut("⌘1"),
-                    ];
-                    this.open_menu("rb-format", entries, 250.0, window, cx);
-                }),
+                self.labeled(
+                    "rb-insert",
+                    "insert-cells",
+                    t("Insert", "Insérer"),
+                    true,
+                    false,
+                    cx,
+                    |this, window, cx| {
+                        let entries = vec![
+                            MenuEntry::new(
+                                t("Insert Sheet Rows", "Insérer des lignes dans la feuille"),
+                                |a, _, cx| a.insert_rows(cx),
+                            ),
+                            MenuEntry::new(
+                                t(
+                                    "Insert Sheet Columns",
+                                    "Insérer des colonnes dans la feuille",
+                                ),
+                                |a, _, cx| a.insert_cols(cx),
+                            ),
+                            MenuEntry::separator(),
+                            MenuEntry::new(
+                                t("Insert Sheet", "Insérer une feuille"),
+                                |a, _, cx| a.add_sheet(cx),
+                            ),
+                        ];
+                        this.open_menu("rb-insert", entries, 270.0, window, cx);
+                    },
+                ),
+                self.labeled(
+                    "rb-delete",
+                    "delete-cells",
+                    t("Delete", "Supprimer"),
+                    true,
+                    false,
+                    cx,
+                    |this, window, cx| {
+                        let entries = vec![
+                            MenuEntry::new(
+                                t("Delete Sheet Rows", "Supprimer des lignes dans la feuille"),
+                                |a, _, cx| a.delete_rows(cx),
+                            ),
+                            MenuEntry::new(
+                                t(
+                                    "Delete Sheet Columns",
+                                    "Supprimer des colonnes dans la feuille",
+                                ),
+                                |a, _, cx| a.delete_cols(cx),
+                            ),
+                            MenuEntry::separator(),
+                            MenuEntry::new(
+                                t("Delete Sheet", "Supprimer une feuille"),
+                                |a, _, cx| {
+                                    let i = a.sheet;
+                                    a.delete_sheet(i, cx)
+                                },
+                            ),
+                        ];
+                        this.open_menu("rb-delete", entries, 270.0, window, cx);
+                    },
+                ),
+                self.labeled(
+                    "rb-format",
+                    "format-cells",
+                    t("Format", "Format"),
+                    true,
+                    false,
+                    cx,
+                    |this, window, cx| {
+                        let entries = vec![
+                            MenuEntry::new(
+                                t("AutoFit Column Width", "Ajuster la largeur de colonne"),
+                                |a, window, cx| {
+                                    let r = a.wb.clamp_to_used(a.sheet, a.sel().current());
+                                    // One refusal, not one for each column.
+                                    if !a.may(features::Intent::FormatColumns, cx) {
+                                        return;
+                                    }
+                                    for col in r.c0..=r.c1.min(r.c0 + 500) {
+                                        a.autofit_col(col, window, cx);
+                                    }
+                                },
+                            ),
+                            MenuEntry::separator(),
+                            MenuEntry::submenu(
+                                t("Hide & Unhide", "Masquer et afficher"),
+                                vec![
+                                    MenuEntry::new(
+                                        t("Hide Rows", "Masquer les lignes"),
+                                        |a, _, cx| a.hide_rows(true, cx),
+                                    ),
+                                    MenuEntry::new(
+                                        t("Hide Columns", "Masquer les colonnes"),
+                                        |a, _, cx| a.hide_cols(true, cx),
+                                    ),
+                                    MenuEntry::command(features::sheets::Cmd::Hide, this),
+                                    MenuEntry::separator(),
+                                    MenuEntry::new(
+                                        t("Unhide Rows", "Afficher les lignes"),
+                                        |a, _, cx| a.hide_rows(false, cx),
+                                    ),
+                                    MenuEntry::new(
+                                        t("Unhide Columns", "Afficher les colonnes"),
+                                        |a, _, cx| a.hide_cols(false, cx),
+                                    ),
+                                    MenuEntry::command(features::sheets::Cmd::Unhide, this),
+                                ],
+                            ),
+                            MenuEntry::separator(),
+                            MenuEntry::new(
+                                t("Rename Sheet", "Renommer la feuille"),
+                                |a, window, cx| {
+                                    let i = a.sheet;
+                                    a.begin_rename_sheet(i, window, cx)
+                                },
+                            ),
+                            MenuEntry::new(
+                                t("Tab Color…", "Couleur d'onglet…"),
+                                |a, window, cx| {
+                                    a.open_palette("rb-format", ColorTarget::Tab, window, cx)
+                                },
+                            ),
+                            MenuEntry::separator(),
+                            MenuEntry::command(protection::Cmd::ProtectSheet, this),
+                            MenuEntry::command(protection::Cmd::LockCell, this),
+                            MenuEntry::command(format_cells::Cmd::Open, this).shortcut("⌘1"),
+                        ];
+                        this.open_menu("rb-format", entries, 250.0, window, cx);
+                    },
+                ),
             ]),
         );
 
@@ -1351,51 +1646,87 @@ impl ExcelApp {
                                 .gap(px(5.))
                                 .px(px(2.))
                                 .child(div().text_size(px(15.)).child("Σ"))
-                                .when(self.label_visible("rb-sum"), |d| d.child(t("AutoSum", "Somme automatique"))),
+                                .when(self.label_visible("rb-sum"), |d| {
+                                    d.child(t("AutoSum", "Somme automatique"))
+                                }),
                             t("AutoSum", "Somme automatique"),
                             false,
                             cx,
                             |this, window, cx| this.auto_sum("SUM", window, cx),
                         )
                         .into_any_element(),
-                        self.caret_btn("rb-sum-menu", t("AutoSum", "Somme automatique"), cx, |this, window, cx| {
-                            let mk = |label: &'static str, func: &'static str| {
-                                MenuEntry::new(label, move |a, window, cx| a.auto_sum(func, window, cx))
-                            };
-                            let entries = vec![
-                                mk(t("Sum", "Somme"), "SUM"),
-                                mk(t("Average", "Moyenne"), "AVERAGE"),
-                                mk(t("Count Numbers", "Nb"), "COUNT"),
-                                mk(t("Max", "Max"), "MAX"),
-                                mk(t("Min", "Min"), "MIN"),
-                            ];
-                            this.open_menu("rb-sum", entries, 180.0, window, cx);
-                        }),
+                        self.caret_btn(
+                            "rb-sum-menu",
+                            t("AutoSum", "Somme automatique"),
+                            cx,
+                            |this, window, cx| {
+                                let mk = |label: &'static str, func: &'static str| {
+                                    MenuEntry::new(label, move |a, window, cx| {
+                                        a.auto_sum(func, window, cx)
+                                    })
+                                };
+                                let entries = vec![
+                                    mk(t("Sum", "Somme"), "SUM"),
+                                    mk(t("Average", "Moyenne"), "AVERAGE"),
+                                    mk(t("Count Numbers", "Nb"), "COUNT"),
+                                    mk(t("Max", "Max"), "MAX"),
+                                    mk(t("Min", "Min"), "MIN"),
+                                ];
+                                this.open_menu("rb-sum", entries, 180.0, window, cx);
+                            },
+                        ),
                     ]),
-                    self.labeled("rb-fill-series", "fill-down", crate::i18n::t_ctx("command", "Fill", "Remplissage"), true, false, cx, |this, window, cx| {
-                        let entries = vec![
-                            MenuEntry::new(t("Down", "En bas"), |a, _, cx| a.fill(Direction::Down, cx)).shortcut("⌘D"),
-                            MenuEntry::new(crate::i18n::t_ctx("fill", "Right", "À droite"), |a, _, cx| a.fill(Direction::Right, cx)).shortcut("⌘R"),
-                            MenuEntry::separator(),
-                            MenuEntry::command(data_tools::Cmd::FlashFill, this).shortcut("⌃E"),
-                        ];
-                        this.open_menu("rb-fill-series", entries, 240.0, window, cx);
-                    }),
-                    self.labeled("rb-clear", "clear", t("Clear", "Effacer"), true, false, cx, |this, window, cx| {
-                        let entries = vec![
-                            MenuEntry::new(t("Clear All", "Effacer tout"), |a, _, cx| a.clear(ClearMode::All, cx)),
-                            MenuEntry::new(t("Clear Formats", "Effacer les formats"), |a, _, cx| {
-                                a.clear(ClearMode::Formats, cx)
-                            }),
-                            MenuEntry::new(t("Clear Contents", "Effacer le contenu"), |a, _, cx| {
-                                a.clear(ClearMode::Contents, cx)
-                            }),
-                            MenuEntry::command(comments::Cmd::Clear, this),
-                            MenuEntry::command(edit_tools::Cmd::ClearHyperlinks, this),
-                            MenuEntry::command(edit_tools::Cmd::RemoveHyperlinks, this),
-                        ];
-                        this.open_menu("rb-clear", entries, 260.0, window, cx);
-                    }),
+                    self.labeled(
+                        "rb-fill-series",
+                        "fill-down",
+                        crate::i18n::t_ctx("command", "Fill", "Remplissage"),
+                        true,
+                        false,
+                        cx,
+                        |this, window, cx| {
+                            let entries = vec![
+                                MenuEntry::new(t("Down", "En bas"), |a, _, cx| {
+                                    a.fill(Direction::Down, cx)
+                                })
+                                .shortcut("⌘D"),
+                                MenuEntry::new(
+                                    crate::i18n::t_ctx("fill", "Right", "À droite"),
+                                    |a, _, cx| a.fill(Direction::Right, cx),
+                                )
+                                .shortcut("⌘R"),
+                                MenuEntry::separator(),
+                                MenuEntry::command(data_tools::Cmd::FlashFill, this).shortcut("⌃E"),
+                            ];
+                            this.open_menu("rb-fill-series", entries, 240.0, window, cx);
+                        },
+                    ),
+                    self.labeled(
+                        "rb-clear",
+                        "clear",
+                        t("Clear", "Effacer"),
+                        true,
+                        false,
+                        cx,
+                        |this, window, cx| {
+                            let entries = vec![
+                                MenuEntry::new(t("Clear All", "Effacer tout"), |a, _, cx| {
+                                    a.clear(ClearMode::All, cx)
+                                }),
+                                MenuEntry::new(
+                                    t("Clear Formats", "Effacer les formats"),
+                                    |a, _, cx| a.clear(ClearMode::Formats, cx),
+                                ),
+                                MenuEntry::new(
+                                    t("Clear Contents", "Effacer le contenu"),
+                                    |a, _, cx| a.clear(ClearMode::Contents, cx),
+                                ),
+                                MenuEntry::command(comments::Cmd::Clear, this),
+                                MenuEntry::command(edit_tools::Cmd::ClearHyperlinks, this),
+                                MenuEntry::command(edit_tools::Cmd::RemoveHyperlinks, this),
+                            ];
+                            this.open_menu("rb-clear", entries, 260.0, window, cx);
+                        },
+                    ),
                 ]))
                 .child(self.large(
                     "rb-sort",
@@ -1458,7 +1789,14 @@ impl ExcelApp {
         let current = theme::font_label(&self.active_style().font);
         // The two fonts of the theme come first, as in Excel.
         let mut names: Vec<String> = theme::theme_font_labels(self.wb.theme()).to_vec();
-        for office in ["Aptos Narrow", "Aptos", "Calibri", "Arial", "Times New Roman", "Courier New"] {
+        for office in [
+            "Aptos Narrow",
+            "Aptos",
+            "Calibri",
+            "Arial",
+            "Times New Roman",
+            "Courier New",
+        ] {
             names.push(office.to_string());
         }
         for n in &self.fonts.names {
@@ -1482,14 +1820,42 @@ impl ExcelApp {
             MenuEntry::new(label, move |a, _, cx| a.apply_border(preset, cx)).icon(ic)
         };
         let entries = vec![
-            mk(t("Bottom Border", "Bordure inférieure"), "border-bottom", BorderPreset::Bottom),
-            mk(t("Top Border", "Bordure supérieure"), "border-top", BorderPreset::Top),
-            mk(t("Left Border", "Bordure gauche"), "border-left", BorderPreset::Left),
-            mk(t("Right Border", "Bordure droite"), "border-right", BorderPreset::Right),
+            mk(
+                t("Bottom Border", "Bordure inférieure"),
+                "border-bottom",
+                BorderPreset::Bottom,
+            ),
+            mk(
+                t("Top Border", "Bordure supérieure"),
+                "border-top",
+                BorderPreset::Top,
+            ),
+            mk(
+                t("Left Border", "Bordure gauche"),
+                "border-left",
+                BorderPreset::Left,
+            ),
+            mk(
+                t("Right Border", "Bordure droite"),
+                "border-right",
+                BorderPreset::Right,
+            ),
             MenuEntry::separator(),
-            mk(t("No Border", "Aucune bordure"), "border-none", BorderPreset::None),
-            mk(t("All Borders", "Toutes les bordures"), "borders", BorderPreset::All),
-            mk(t("Outside Borders", "Bordures extérieures"), "border-outside", BorderPreset::Outside),
+            mk(
+                t("No Border", "Aucune bordure"),
+                "border-none",
+                BorderPreset::None,
+            ),
+            mk(
+                t("All Borders", "Toutes les bordures"),
+                "borders",
+                BorderPreset::All,
+            ),
+            mk(
+                t("Outside Borders", "Bordures extérieures"),
+                "border-outside",
+                BorderPreset::Outside,
+            ),
             mk(
                 t("Thick Outside Borders", "Bordure extérieure épaisse"),
                 "border-thick",
@@ -1522,11 +1888,26 @@ impl ExcelApp {
         let current = self.active_style().num_fmt.to_string();
         let items: Vec<(&'static str, String)> = vec![
             (t("General", "Standard"), "General".to_string()),
-            (crate::i18n::t_ctx("format", "Number", "Nombre"), "0.00".to_string()),
-            (t("Currency", "Monétaire"), locale.currency_format.to_string()),
-            (t("Accounting", "Comptabilité"), locale.accounting_format.to_string()),
-            (t("Short Date", "Date courte"), locale.short_date_format.to_string()),
-            (t("Long Date", "Date longue"), locale.long_date_format.to_string()),
+            (
+                crate::i18n::t_ctx("format", "Number", "Nombre"),
+                "0.00".to_string(),
+            ),
+            (
+                t("Currency", "Monétaire"),
+                locale.currency_format.to_string(),
+            ),
+            (
+                t("Accounting", "Comptabilité"),
+                locale.accounting_format.to_string(),
+            ),
+            (
+                t("Short Date", "Date courte"),
+                locale.short_date_format.to_string(),
+            ),
+            (
+                t("Long Date", "Date longue"),
+                locale.long_date_format.to_string(),
+            ),
             (t("Time", "Heure"), locale.time_format.to_string()),
             (t("Percentage", "Pourcentage"), "0.00%".to_string()),
             (t("Fraction", "Fraction"), "# ?/?".to_string()),
@@ -1537,7 +1918,8 @@ impl ExcelApp {
             .into_iter()
             .map(|(label, code)| {
                 let checked = code == current;
-                MenuEntry::new(label, move |a, _, cx| a.set_number_format(&code, cx)).checked(checked)
+                MenuEntry::new(label, move |a, _, cx| a.set_number_format(&code, cx))
+                    .checked(checked)
             })
             .collect();
         entries.push(MenuEntry::separator());
@@ -1554,17 +1936,31 @@ impl ExcelApp {
         let angle = |label: &'static str, degrees: i16| {
             // Choosing the current angle again puts the text back level.
             let to = if current == degrees { 0 } else { degrees };
-            MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
-                a.apply_style(t("Orientation", "Orientation"), cx, move |s| s.rotation = to)
-            })
+            MenuEntry::new(
+                label,
+                move |a: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
+                    a.apply_style(t("Orientation", "Orientation"), cx, move |s| {
+                        s.rotation = to
+                    })
+                },
+            )
             .checked(current == degrees)
         };
         let entries = vec![
             angle(
-                t("Angle Counterclockwise", "Rotation dans le sens inverse des aiguilles d'une montre"),
+                t(
+                    "Angle Counterclockwise",
+                    "Rotation dans le sens inverse des aiguilles d'une montre",
+                ),
                 45,
             ),
-            angle(t("Angle Clockwise", "Rotation dans le sens des aiguilles d'une montre"), -45),
+            angle(
+                t(
+                    "Angle Clockwise",
+                    "Rotation dans le sens des aiguilles d'une montre",
+                ),
+                -45,
+            ),
             angle(t("Rotate Text Up", "Rotation du texte vers le haut"), 90),
             angle(t("Rotate Text Down", "Rotation du texte vers le bas"), -90),
             MenuEntry::separator(),
@@ -1577,7 +1973,13 @@ impl ExcelApp {
     }
 
     /// Menu of functions, optionally restricted to one category.
-    pub fn open_function_menu(&mut self, anchor: &'static str, category: Option<Category>, window: &mut Window, cx: &mut Cx) {
+    pub fn open_function_menu(
+        &mut self,
+        anchor: &'static str,
+        category: Option<Category>,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) {
         let locale = self.wb.locale;
         let mut entries: Vec<MenuEntry> = Vec::new();
         for def in functions::all() {
@@ -1586,9 +1988,10 @@ impl ExcelApp {
             }
             let canonical = def.name;
             // The function goes into the formula and its arguments open.
-            entries.push(MenuEntry::new(locale.fn_to_local(canonical).to_string(), move |a, window, cx| {
-                misc::function_arguments(a, canonical, window, cx)
-            }));
+            entries.push(MenuEntry::new(
+                locale.fn_to_local(canonical).to_string(),
+                move |a, window, cx| misc::function_arguments(a, canonical, window, cx),
+            ));
         }
         entries.sort_by(|a, b| a.label.cmp(&b.label));
         self.open_menu(anchor, entries, 240.0, window, cx);
@@ -1618,12 +2021,22 @@ impl ExcelApp {
             group(t("Charts", "Graphiques"), charts::insert_group(self, cx)).into_any_element(),
             group(
                 t("PivotChart", "Graphique croisé dynamique"),
-                row(vec![self.cmd_large("in-pivot-chart", pivot::Cmd::PivotChart, false, cx)]),
+                row(vec![self.cmd_large(
+                    "in-pivot-chart",
+                    pivot::Cmd::PivotChart,
+                    false,
+                    cx,
+                )]),
             )
             .into_any_element(),
             group(
                 t("Sparklines", "Graphiques sparkline"),
-                row(vec![self.cmd_large("in-sparklines", features::sparklines::Cmd::Menu, true, cx)]),
+                row(vec![self.cmd_large(
+                    "in-sparklines",
+                    features::sparklines::Cmd::Menu,
+                    true,
+                    cx,
+                )]),
             )
             .into_any_element(),
             group(
@@ -1636,12 +2049,22 @@ impl ExcelApp {
             .into_any_element(),
             group(
                 t("Links", "Liens"),
-                row(vec![self.cmd_large("in-link", edit_tools::Cmd::Link, false, cx)]),
+                row(vec![self.cmd_large(
+                    "in-link",
+                    edit_tools::Cmd::Link,
+                    false,
+                    cx,
+                )]),
             )
             .into_any_element(),
             group(
                 t("Comments", "Commentaires"),
-                row(vec![self.cmd_large("in-comment", comments::Cmd::NewComment, false, cx)]),
+                row(vec![self.cmd_large(
+                    "in-comment",
+                    comments::Cmd::NewComment,
+                    false,
+                    cx,
+                )]),
             )
             .into_any_element(),
             group(
@@ -1694,9 +2117,12 @@ impl ExcelApp {
                     self.cmd_large("pl-background", page::Cmd::Background, false, cx),
                     self.cmd_large("pl-titles", page::Cmd::PrintTitles, false, cx),
                 ]),
-                Some(self.launcher("pl-setup-launcher", t("Page Setup", "Mise en page"), cx, |this, window, cx| {
-                    page::Cmd::Setup.run(this, window, cx)
-                })),
+                Some(self.launcher(
+                    "pl-setup-launcher",
+                    t("Page Setup", "Mise en page"),
+                    cx,
+                    |this, window, cx| page::Cmd::Setup.run(this, window, cx),
+                )),
             )
             .into_any_element(),
             launcher_group(
@@ -1706,9 +2132,12 @@ impl ExcelApp {
                     self.cmd_labeled("pl-fit-height", page::Cmd::FitHeight, true, cx),
                     self.cmd_labeled("pl-scale", page::Cmd::Scale, true, cx),
                 ]),
-                Some(self.launcher("pl-scale-launcher", t("Page Setup", "Mise en page"), cx, |this, window, cx| {
-                    page::Cmd::Setup.run(this, window, cx)
-                })),
+                Some(self.launcher(
+                    "pl-scale-launcher",
+                    t("Page Setup", "Mise en page"),
+                    cx,
+                    |this, window, cx| page::Cmd::Setup.run(this, window, cx),
+                )),
             )
             .into_any_element(),
             launcher_group(
@@ -1717,22 +2146,39 @@ impl ExcelApp {
                     .flex()
                     .gap(px(10.))
                     .child(rows(vec![
-                        div().px(px(4.)).child(t("Gridlines", "Quadrillage")).into_any_element(),
-                        self.check("pl-grid-view", crate::i18n::t_ctx("option", "View", "Afficher"), gridlines, cx, |this, _, cx| {
-                            this.toggle_gridlines(cx)
-                        }),
+                        div()
+                            .px(px(4.))
+                            .child(t("Gridlines", "Quadrillage"))
+                            .into_any_element(),
+                        self.check(
+                            "pl-grid-view",
+                            crate::i18n::t_ctx("option", "View", "Afficher"),
+                            gridlines,
+                            cx,
+                            |this, _, cx| this.toggle_gridlines(cx),
+                        ),
                         self.cmd_check("pl-grid-print", page::Cmd::PrintGridlines, cx),
                     ]))
                     .child(rows(vec![
-                        div().px(px(4.)).child(t("Headings", "En-têtes")).into_any_element(),
-                        self.check("pl-head-view", crate::i18n::t_ctx("option", "View", "Afficher"), headers, cx, |this, _, cx| {
-                            this.toggle_headings(cx)
-                        }),
+                        div()
+                            .px(px(4.))
+                            .child(t("Headings", "En-têtes"))
+                            .into_any_element(),
+                        self.check(
+                            "pl-head-view",
+                            crate::i18n::t_ctx("option", "View", "Afficher"),
+                            headers,
+                            cx,
+                            |this, _, cx| this.toggle_headings(cx),
+                        ),
                         self.cmd_check("pl-head-print", page::Cmd::PrintHeadings, cx),
                     ])),
-                Some(self.launcher("pl-sheet-launcher", t("Page Setup", "Mise en page"), cx, |this, window, cx| {
-                    page::Cmd::SetupSheet.run(this, window, cx)
-                })),
+                Some(self.launcher(
+                    "pl-sheet-launcher",
+                    t("Page Setup", "Mise en page"),
+                    cx,
+                    |this, window, cx| page::Cmd::SetupSheet.run(this, window, cx),
+                )),
             )
             .into_any_element(),
             self.arrange_group("pl", cx).border_r_0().into_any_element(),
@@ -1745,8 +2191,22 @@ impl ExcelApp {
     pub fn arrange_group(&self, prefix: &'static str, cx: &mut Cx) -> gpui::Div {
         // One set of ids per tab: only one tab is drawn at a time.
         let ids: [&'static str; 6] = match prefix {
-            "pl" => ["pl-forward", "pl-backward", "pl-selection", "pl-align", "pl-group", "pl-rotate"],
-            _ => ["ar-forward", "ar-backward", "ar-selection", "ar-align", "ar-group", "ar-rotate"],
+            "pl" => [
+                "pl-forward",
+                "pl-backward",
+                "pl-selection",
+                "pl-align",
+                "pl-group",
+                "pl-rotate",
+            ],
+            _ => [
+                "ar-forward",
+                "ar-backward",
+                "ar-selection",
+                "ar-align",
+                "ar-group",
+                "ar-rotate",
+            ],
         };
         group(
             t("Arrange", "Organiser"),
@@ -1824,9 +2284,13 @@ impl ExcelApp {
                 .gap(px(8.))
                 .child(rows(vec![
                     self.cmd_check("vw-ruler", page::Cmd::Ruler, cx),
-                    self.check("vw-grid", t("Gridlines", "Quadrillage"), sheet.show_gridlines, cx, |this, _, cx| {
-                        this.toggle_gridlines(cx)
-                    }),
+                    self.check(
+                        "vw-grid",
+                        t("Gridlines", "Quadrillage"),
+                        sheet.show_gridlines,
+                        cx,
+                        |this, _, cx| this.toggle_gridlines(cx),
+                    ),
                 ]))
                 .child(rows(vec![
                     self.check(
@@ -1839,15 +2303,24 @@ impl ExcelApp {
                             cx.notify();
                         },
                     ),
-                    self.check("vw-head", t("Headings", "En-têtes"), sheet.show_headers, cx, |this, _, cx| {
-                        this.toggle_headings(cx)
-                    }),
+                    self.check(
+                        "vw-head",
+                        t("Headings", "En-têtes"),
+                        sheet.show_headers,
+                        cx,
+                        |this, _, cx| this.toggle_headings(cx),
+                    ),
                 ])),
         )
     }
 
     fn formulas_tab(&mut self, cx: &mut Cx) -> Vec<AnyElement> {
-        let lib = |this: &Self, id: &'static str, ic: &'static str, label: &'static str, cat: Category, cx: &mut Cx| {
+        let lib = |this: &Self,
+                   id: &'static str,
+                   ic: &'static str,
+                   label: &'static str,
+                   cat: Category,
+                   cx: &mut Cx| {
             this.large(id, ic, label, true, cx, move |this, window, cx| {
                 this.open_function_menu(id, Some(cat), window, cx)
             })
@@ -1865,10 +2338,38 @@ impl ExcelApp {
                         cx,
                         |this, window, cx| this.auto_sum("SUM", window, cx),
                     ),
-                    lib(self, "fx-fin", "currency", t("Financial", "Financier"), Category::Financial, cx),
-                    lib(self, "fx-logic", "validation", t("Logical", "Logique"), Category::Logical, cx),
-                    lib(self, "fx-text", "textbox", t("Text", "Texte"), Category::Text, cx),
-                    lib(self, "fx-date", "clock", t("Date & Time", "Date et heure"), Category::DateTime, cx),
+                    lib(
+                        self,
+                        "fx-fin",
+                        "currency",
+                        t("Financial", "Financier"),
+                        Category::Financial,
+                        cx,
+                    ),
+                    lib(
+                        self,
+                        "fx-logic",
+                        "validation",
+                        t("Logical", "Logique"),
+                        Category::Logical,
+                        cx,
+                    ),
+                    lib(
+                        self,
+                        "fx-text",
+                        "textbox",
+                        t("Text", "Texte"),
+                        Category::Text,
+                        cx,
+                    ),
+                    lib(
+                        self,
+                        "fx-date",
+                        "clock",
+                        t("Date & Time", "Date et heure"),
+                        Category::DateTime,
+                        cx,
+                    ),
                     lib(
                         self,
                         "fx-lookup",
@@ -1927,20 +2428,30 @@ impl ExcelApp {
             )
             .into_any_element(),
             misc::auditing_group(self, cx),
-            misc::calculation_group(self, cx).border_r_0().into_any_element(),
+            misc::calculation_group(self, cx)
+                .border_r_0()
+                .into_any_element(),
         ]
     }
 
     fn data_tab(&mut self, cx: &mut Cx) -> Vec<AnyElement> {
         vec![
             group(
-                t("Get & Transform Data", "Récupérer et transformer des données"),
+                t(
+                    "Get & Transform Data",
+                    "Récupérer et transformer des données",
+                ),
                 row(vec![
                     self.cmd_large("dt-get", data_tools::Cmd::GetData, true, cx),
                     self.cmd_large("dt-refresh", data_tools::Cmd::RefreshMenu, true, cx),
                     rows(vec![
                         self.cmd_labeled("dt-connections", data_tools::Cmd::Connections, false, cx),
-                        self.cmd_labeled("dt-properties", data_tools::Cmd::RangeProperties, false, cx),
+                        self.cmd_labeled(
+                            "dt-properties",
+                            data_tools::Cmd::RangeProperties,
+                            false,
+                            cx,
+                        ),
                     ])
                     .into_any_element(),
                 ]),
@@ -1978,10 +2489,17 @@ impl ExcelApp {
             .into_any_element(),
             group(
                 t("Forecast", "Prévision"),
-                row(vec![self.cmd_large("dt-whatif", data_tools::Cmd::WhatIf, true, cx)]),
+                row(vec![self.cmd_large(
+                    "dt-whatif",
+                    data_tools::Cmd::WhatIf,
+                    true,
+                    cx,
+                )]),
             )
             .into_any_element(),
-            features::outline::ribbon_group(self, cx).border_r_0().into_any_element(),
+            features::outline::ribbon_group(self, cx)
+                .border_r_0()
+                .into_any_element(),
         ]
     }
 
@@ -2033,15 +2551,31 @@ impl ExcelApp {
             group(
                 t("Zoom", "Zoom"),
                 row(vec![
-                    self.large("vw-zoom-in", "zoom", t("Zoom In", "Zoom avant"), false, cx, |this, _, cx| {
-                        let z = this.zoom + 0.1;
-                        this.set_zoom(z, cx)
+                    self.large(
+                        "vw-zoom-in",
+                        "zoom",
+                        t("Zoom In", "Zoom avant"),
+                        false,
+                        cx,
+                        |this, _, cx| {
+                            let z = this.zoom + 0.1;
+                            this.set_zoom(z, cx)
+                        },
+                    ),
+                    self.large("vw-zoom-100", "page", "100 %", false, cx, |this, _, cx| {
+                        this.set_zoom(1.0, cx)
                     }),
-                    self.large("vw-zoom-100", "page", "100 %", false, cx, |this, _, cx| this.set_zoom(1.0, cx)),
-                    self.large("vw-zoom-out", "search", t("Zoom Out", "Zoom arrière"), false, cx, |this, _, cx| {
-                        let z = this.zoom - 0.1;
-                        this.set_zoom(z, cx)
-                    }),
+                    self.large(
+                        "vw-zoom-out",
+                        "search",
+                        t("Zoom Out", "Zoom arrière"),
+                        false,
+                        cx,
+                        |this, _, cx| {
+                            let z = this.zoom - 0.1;
+                            this.set_zoom(z, cx)
+                        },
+                    ),
                 ]),
             )
             .into_any_element(),
@@ -2055,13 +2589,16 @@ impl ExcelApp {
                     cx,
                     move |this, window, cx| {
                         let freeze = |label: &'static str, rows: u32, cols: u32| {
-                            MenuEntry::new(label, move |a: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
-                                a.wb.set_frozen(a.sheet, rows, cols);
-                                let view = &mut a.views[a.sheet];
-                                view.scroll_x = 0.0;
-                                view.scroll_y = 0.0;
-                                a.commit(t("Freeze Panes", "Figer les volets"), cx);
-                            })
+                            MenuEntry::new(
+                                label,
+                                move |a: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
+                                    a.wb.set_frozen(a.sheet, rows, cols);
+                                    let view = &mut a.views[a.sheet];
+                                    view.scroll_x = 0.0;
+                                    view.scroll_y = 0.0;
+                                    a.commit(t("Freeze Panes", "Figer les volets"), cx);
+                                },
+                            )
                         };
                         let entries = vec![
                             MenuEntry::new(
@@ -2081,7 +2618,9 @@ impl ExcelApp {
                 )]),
             )
             .into_any_element(),
-            features::automate::macros_group(self, cx).border_r_0().into_any_element(),
+            features::automate::macros_group(self, cx)
+                .border_r_0()
+                .into_any_element(),
         ]
     }
 }
@@ -2094,15 +2633,20 @@ pub fn chart_kind_name(kind: ChartKind) -> &'static str {
         ChartKind::PercentStackedColumn => t("100% Stacked Column", "Histogramme empilé 100 %"),
         ChartKind::Column3D => t("3-D Clustered Column", "Histogramme 3D groupé"),
         ChartKind::StackedColumn3D => t("3-D Stacked Column", "Histogramme 3D empilé"),
-        ChartKind::PercentStackedColumn3D => t("3-D 100% Stacked Column", "Histogramme 3D empilé 100 %"),
+        ChartKind::PercentStackedColumn3D => {
+            t("3-D 100% Stacked Column", "Histogramme 3D empilé 100 %")
+        }
         ChartKind::Line => crate::i18n::t_ctx("chart", "Line", "Courbes"),
         ChartKind::StackedLine => t("Stacked Line", "Courbes empilées"),
         ChartKind::PercentStackedLine => t("100% Stacked Line", "Courbes empilées 100 %"),
         ChartKind::LineMarkers => t("Line with Markers", "Courbes avec marques"),
-        ChartKind::StackedLineMarkers => t("Stacked Line with Markers", "Courbes empilées avec marques"),
-        ChartKind::PercentStackedLineMarkers => {
-            t("100% Stacked Line with Markers", "Courbes empilées 100 % avec marques")
+        ChartKind::StackedLineMarkers => {
+            t("Stacked Line with Markers", "Courbes empilées avec marques")
         }
+        ChartKind::PercentStackedLineMarkers => t(
+            "100% Stacked Line with Markers",
+            "Courbes empilées 100 % avec marques",
+        ),
         ChartKind::Line3D => t("3-D Line", "Courbes 3D"),
         ChartKind::Pie => t("Pie", "Secteurs"),
         ChartKind::Pie3D => t("3-D Pie", "Secteurs en 3D"),
@@ -2120,14 +2664,22 @@ pub fn chart_kind_name(kind: ChartKind) -> &'static str {
         ChartKind::StackedArea3D => t("3-D Stacked Area", "Aires 3D empilées"),
         ChartKind::PercentStackedArea3D => t("3-D 100% Stacked Area", "Aires 3D empilées 100 %"),
         ChartKind::Scatter => t("Scatter", "Nuage de points"),
-        ChartKind::ScatterSmoothMarkers => {
-            t("Scatter with Smooth Lines and Markers", "Nuage de points avec courbes lissées et marques")
-        }
-        ChartKind::ScatterSmooth => t("Scatter with Smooth Lines", "Nuage de points avec courbes lissées"),
-        ChartKind::ScatterLinesMarkers => {
-            t("Scatter with Straight Lines and Markers", "Nuage de points avec courbes droites et marques")
-        }
-        ChartKind::ScatterLines => t("Scatter with Straight Lines", "Nuage de points avec courbes droites"),
+        ChartKind::ScatterSmoothMarkers => t(
+            "Scatter with Smooth Lines and Markers",
+            "Nuage de points avec courbes lissées et marques",
+        ),
+        ChartKind::ScatterSmooth => t(
+            "Scatter with Smooth Lines",
+            "Nuage de points avec courbes lissées",
+        ),
+        ChartKind::ScatterLinesMarkers => t(
+            "Scatter with Straight Lines and Markers",
+            "Nuage de points avec courbes droites et marques",
+        ),
+        ChartKind::ScatterLines => t(
+            "Scatter with Straight Lines",
+            "Nuage de points avec courbes droites",
+        ),
         ChartKind::Bubble => t("Bubble", "Bulles"),
         ChartKind::Radar => t("Radar", "Radar"),
         ChartKind::RadarMarkers => t("Radar with Markers", "Radar avec marques"),

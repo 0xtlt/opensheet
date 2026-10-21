@@ -1,5 +1,6 @@
 //! Reading `.xlsx` packages into a [`Workbook`].
 
+use super::cell_style::RawCellStyle;
 use super::chart::Track;
 use super::chart::read::{parse_chart, parse_drawing};
 use super::color::{Palette, RawColor, blend, parse_rgb};
@@ -11,13 +12,11 @@ use super::numfmt::{builtin_code, shows_date};
 use super::xml::{Event, Reader, Tag, decode_cell_text, parse_bool};
 use super::{col_width_to_px, page, points_to_px, protection, validation};
 use crate::{IoError, Result, decode_utf16};
-use super::cell_style::RawCellStyle;
 use opensheet_engine::ast::Expr;
 use opensheet_engine::cell_style::{CellStyle, StyleParts};
 use opensheet_engine::chart::Chart;
 use opensheet_engine::datetime::date_to_serial;
 use opensheet_engine::protect::WorkbookProtection;
-use opensheet_engine::{CalcMode, IterativeCalc};
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::style::{
     Border, BorderStyle, Borders, DEFAULT_FONT, DEFAULT_FONT_SIZE, Font, HAlign, Style, StyleId,
@@ -25,6 +24,7 @@ use opensheet_engine::style::{
 };
 use opensheet_engine::value::{ErrorKind, Value};
 use opensheet_engine::workbook::{Cell, Content, DefinedName, Sheet, SheetVisibility};
+use opensheet_engine::{CalcMode, IterativeCalc};
 use opensheet_engine::{Color, Locale, Theme, Workbook};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -207,7 +207,8 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
             Event::Open(t) => match t.name {
                 "workbook" | "sheets" | "definedNames" | "customWorkbookViews" => {}
                 "customWorkbookView" => {
-                    out.custom_views.extend(super::custom_view::read_book_view(&t));
+                    out.custom_views
+                        .extend(super::custom_view::read_book_view(&t));
                     r.skip(&t);
                 }
                 "workbookPr" => {
@@ -226,7 +227,9 @@ fn parse_workbook_part(xml: &str) -> WorkbookPart {
                     };
                     let usual = IterativeCalc::default();
                     let count = t.attr_u32("iterateCount").filter(|n| *n >= 1);
-                    let delta = t.attr_f64("iterateDelta").filter(|d| d.is_finite() && *d >= 0.0);
+                    let delta = t
+                        .attr_f64("iterateDelta")
+                        .filter(|d| d.is_finite() && *d >= 0.0);
                     out.iterative = IterativeCalc {
                         enabled: t.attr_bool("iterate").unwrap_or(false),
                         max_iterations: count.unwrap_or(usual.max_iterations),
@@ -603,7 +606,9 @@ fn resolve_font(f: &RawFont, palette: &Palette, theme: &Theme) -> Font {
     // does. (Where it does not, the name is what the file was seen in:
     // Excel names the font the theme has for the script of its language,
     // which for Japanese or Chinese is not the Latin one kept here.)
-    font.theme = f.theme.filter(|role| theme.font(*role).eq_ignore_ascii_case(&font.name));
+    font.theme = f
+        .theme
+        .filter(|role| theme.font(*role).eq_ignore_ascii_case(&font.name));
     if let Some(role) = font.theme {
         font.name = theme.font(role).clone();
     }
@@ -715,7 +720,10 @@ fn parse_styles(xml: Option<&str>, locale: &Locale, table: &mut StyleTable) -> S
         }
     }
 
-    let fonts: Vec<Font> = fonts.iter().map(|f| resolve_font(f, &palette, &theme)).collect();
+    let fonts: Vec<Font> = fonts
+        .iter()
+        .map(|f| resolve_font(f, &palette, &theme))
+        .collect();
     let fills: Vec<Option<Color>> = fills.iter().map(|f| resolve_fill(f, &palette)).collect();
     let borders: Vec<Borders> = borders
         .iter()
@@ -759,37 +767,45 @@ fn parse_styles(xml: Option<&str>, locale: &Locale, table: &mut StyleTable) -> S
     let defaults = Defaults::of(normal_font);
 
     let to_style = |xf: &RawXf| {
-            let code: Cow<str> = match num_fmts.get(&xf.num_fmt) {
-                Some(code) => Cow::Borrowed(code.as_str()),
-                None => builtin_code(xf.num_fmt, locale).unwrap_or(Cow::Borrowed("General")),
-            };
-            let code = if code.trim().is_empty() || code.eq_ignore_ascii_case("General") {
-                "General"
-            } else {
-                code.as_ref()
-            };
-            let mut style = Style::default();
-            style.font = fonts.get(xf.font).cloned().unwrap_or_default();
-            style.fill = fills.get(xf.fill).copied().flatten();
-            style.h_align = xf.h_align;
-            style.v_align = xf.v_align;
-            style.wrap = xf.wrap;
-            style.shrink_to_fit = xf.shrink;
-            style.indent = xf.indent;
-            style.rotation = xf.rotation;
-            style.num_fmt = Arc::from(code);
-            style.borders = borders.get(xf.border).copied().unwrap_or_default();
-            style.locked = xf.locked;
-            style.hidden = xf.hidden;
-            style
+        let code: Cow<str> = match num_fmts.get(&xf.num_fmt) {
+            Some(code) => Cow::Borrowed(code.as_str()),
+            None => builtin_code(xf.num_fmt, locale).unwrap_or(Cow::Borrowed("General")),
+        };
+        let code = if code.trim().is_empty() || code.eq_ignore_ascii_case("General") {
+            "General"
+        } else {
+            code.as_ref()
+        };
+        let mut style = Style::default();
+        style.font = fonts.get(xf.font).cloned().unwrap_or_default();
+        style.fill = fills.get(xf.fill).copied().flatten();
+        style.h_align = xf.h_align;
+        style.v_align = xf.v_align;
+        style.wrap = xf.wrap;
+        style.shrink_to_fit = xf.shrink;
+        style.indent = xf.indent;
+        style.rotation = xf.rotation;
+        style.num_fmt = Arc::from(code);
+        style.borders = borders.get(xf.border).copied().unwrap_or_default();
+        style.locked = xf.locked;
+        style.hidden = xf.hidden;
+        style
     };
-    let style_formats: Vec<(Style, StyleParts)> = style_xfs.iter().map(|xf| (to_style(xf), xf.parts)).collect();
+    let style_formats: Vec<(Style, StyleParts)> = style_xfs
+        .iter()
+        .map(|xf| (to_style(xf), xf.parts))
+        .collect();
     let loaded = super::cell_style::load(cell_styles, &style_formats, table.default_style());
     let mut out: Vec<StyleId> = xfs
         .iter()
         .map(|xf| {
             let mut style = to_style(xf);
-            style.cell_style = loaded.names.get(xf.xf_id).cloned().flatten().map(|name| Arc::from(name.as_str()));
+            style.cell_style = loaded
+                .names
+                .get(xf.xf_id)
+                .cloned()
+                .flatten()
+                .map(|name| Arc::from(name.as_str()));
             table.intern(style)
         })
         .collect();
@@ -1001,16 +1017,25 @@ impl<'c> SheetReader<'c> {
                         this.sheet.protection = protection::read_sheet(&t);
                         r.skip(&t);
                     }
-                    "protectedRanges" => this.sheet.protected_ranges = protection::read_ranges(&mut r, &t),
-                    "scenarios" => super::datatools::read_scenarios(&mut r, &t, &mut this.sheet, ctx.locale),
+                    "protectedRanges" => {
+                        this.sheet.protected_ranges = protection::read_ranges(&mut r, &t)
+                    }
+                    "scenarios" => {
+                        super::datatools::read_scenarios(&mut r, &t, &mut this.sheet, ctx.locale)
+                    }
                     "autoFilter" => {
                         this.sheet.auto_filter =
                             super::filter::parse_auto_filter(&mut r, &t, ctx.filter_colors)
                     }
-                    "dataConsolidate" => super::datatools::read_consolidate(&mut r, &t, &mut this.sheet),
-                    "customSheetViews" => {
-                        super::custom_view::read_sheet(&mut r, &t, &mut this.sheet, ctx.filter_colors)
+                    "dataConsolidate" => {
+                        super::datatools::read_consolidate(&mut r, &t, &mut this.sheet)
                     }
+                    "customSheetViews" => super::custom_view::read_sheet(
+                        &mut r,
+                        &t,
+                        &mut this.sheet,
+                        ctx.filter_colors,
+                    ),
                     "mergeCells" => this.merges(&mut r, &t),
                     "conditionalFormatting" => {
                         let ctx = this.cond_format_context();
@@ -1051,7 +1076,9 @@ impl<'c> SheetReader<'c> {
                                 self.cond_formats.read_ext(r, &t, &ctx);
                             }
                             "dataValidations" => validation::read(r, &t, &mut self.sheet),
-                            "sparklineGroups" => super::sparkline::read(r, &t, &mut self.sheet, self.ctx.palette),
+                            "sparklineGroups" => {
+                                super::sparkline::read(r, &t, &mut self.sheet, self.ctx.palette)
+                            }
                             _ => r.skip(&t),
                         },
                         Event::Close(_) | Event::Eof => break,
@@ -1075,7 +1102,10 @@ impl<'c> SheetReader<'c> {
 
     fn sheet_pr<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) {
         // The name the VBA project knows the sheet by.
-        self.sheet.code_name = tag.attr("codeName").map(Cow::into_owned).filter(|name| !name.is_empty());
+        self.sheet.code_name = tag
+            .attr("codeName")
+            .map(Cow::into_owned)
+            .filter(|name| !name.is_empty());
         if tag.attr_bool("filterMode") == Some(true) {
             super::filter::read_filter_mode(&mut self.sheet);
         }
@@ -1533,7 +1563,11 @@ fn read_charts<R: Read + Seek>(
             chart.z = frame.index;
             chart.hidden = frame.hidden;
             let name = frame.name.trim();
-            let taken = |name: &str| charts.iter().any(|other: &Chart| other.name.eq_ignore_ascii_case(name));
+            let taken = |name: &str| {
+                charts
+                    .iter()
+                    .any(|other: &Chart| other.name.eq_ignore_ascii_case(name))
+            };
             chart.name = if name.is_empty() || taken(name) {
                 let mut number = charts.len() + 1;
                 while taken(&format!("Chart {number}")) {
@@ -1690,7 +1724,13 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         let mut loaded = SheetReader::read(&xml, name, &ctx);
         super::hyperlink::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
         super::background::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet);
-        super::control::read_sheet(&mut pkg, &part, &xml, &mut loaded.sheet, &mut next_control_id);
+        super::control::read_sheet(
+            &mut pkg,
+            &part,
+            &xml,
+            &mut loaded.sheet,
+            &mut next_control_id,
+        );
         drop(xml);
         loaded.sheet.charts = read_charts(
             &mut pkg,
@@ -1717,7 +1757,12 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         // The anchors that held nothing the engine shows leave no gaps
         // in the stacking order of the others.
         loaded.sheet.set_object_stack(&[]);
-        inks.read_sheet(&mut pkg, &part, loaded.drawing.as_deref(), &mut loaded.sheet);
+        inks.read_sheet(
+            &mut pkg,
+            &part,
+            loaded.drawing.as_deref(),
+            &mut loaded.sheet,
+        );
         loaded.sheet.visibility = info.sheet_states.get(i).copied().unwrap_or_default();
         loaded_as[i] = Some(sheets.len());
         sheets.push(loaded.sheet);
@@ -1760,9 +1805,17 @@ pub(crate) fn read_workbook<R: Read + Seek>(
         // like) belong to features that keep their ranges elsewhere.
         let sheet = scope.and_then(|sheet| wb.sheets.get_mut(sheet));
         if page::read_name(&key, &raw.text, sheet)
-            || super::filter::read_name(&key, &raw.text, scope.and_then(|sheet| wb.sheets.get_mut(sheet)))
+            || super::filter::read_name(
+                &key,
+                &raw.text,
+                scope.and_then(|sheet| wb.sheets.get_mut(sheet)),
+            )
             || imports.read_name(&key, &raw.text, scope)
-            || super::custom_view::read_name(&raw.name, &raw.text, scope.and_then(|sheet| wb.sheets.get_mut(sheet)))
+            || super::custom_view::read_name(
+                &raw.name,
+                &raw.text,
+                scope.and_then(|sheet| wb.sheets.get_mut(sheet)),
+            )
             || raw.name.is_empty()
             || key.starts_with("_XLNM.")
             || super::slicer::is_cache_name(&wb, &raw.name)
@@ -1787,7 +1840,10 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     // The custom views: the workbook part names what the sheets hold.
     let mut sheet_ids = vec![0; wb.sheets.len()];
     for (i, loaded) in loaded_as.iter().enumerate() {
-        if let (Some(slot), Some(id)) = (loaded.and_then(|k| sheet_ids.get_mut(k)), info.sheet_ids.get(i)) {
+        if let (Some(slot), Some(id)) = (
+            loaded.and_then(|k| sheet_ids.get_mut(k)),
+            info.sheet_ids.get(i),
+        ) {
             *slot = *id;
         }
     }

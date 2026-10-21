@@ -140,11 +140,16 @@ impl Face {
             .map(|step| match step {
                 OutlineStep::Move(x, y) => OutlineStep::Move(x / em, y / em),
                 OutlineStep::Line(x, y) => OutlineStep::Line(x / em, y / em),
-                OutlineStep::Quad(cx, cy, x, y) => OutlineStep::Quad(cx / em, cy / em, x / em, y / em),
+                OutlineStep::Quad(cx, cy, x, y) => {
+                    OutlineStep::Quad(cx / em, cy / em, x / em, y / em)
+                }
                 OutlineStep::Close => OutlineStep::Close,
             })
             .collect();
-        Some((scaled, font.advance(glyph) as f64 / font.units_per_em as f64))
+        Some((
+            scaled,
+            font.advance(glyph) as f64 / font.units_per_em as f64,
+        ))
     }
 
     /// Whether the outlines are to be thickened (no bold file of the
@@ -156,7 +161,9 @@ impl Face {
     /// Advance width of a glyph, in thousandths of the font size.
     pub(crate) fn glyph_advance(&self, glyph: Glyph) -> f64 {
         match (&self.kind, glyph) {
-            (FaceKind::TrueType(f), Glyph::Index(g)) => f.advance(g) as f64 * 1000.0 / f.units_per_em as f64,
+            (FaceKind::TrueType(f), Glyph::Index(g)) => {
+                f.advance(g) as f64 * 1000.0 / f.units_per_em as f64
+            }
             (FaceKind::Standard(s), Glyph::Code(c)) => s.width(c) as f64,
             _ => 0.0,
         }
@@ -248,9 +255,13 @@ fn system_dirs() -> Vec<PathBuf> {
         dirs.extend(["/System/Library/Fonts", "/Library/Fonts"].map(PathBuf::from));
         dirs.extend(home.iter().map(|h| h.join("Library/Fonts")));
     } else if cfg!(target_os = "windows") {
-        let windows = std::env::var_os("WINDIR").map_or_else(|| PathBuf::from("C:\\Windows"), PathBuf::from);
+        let windows =
+            std::env::var_os("WINDIR").map_or_else(|| PathBuf::from("C:\\Windows"), PathBuf::from);
         dirs.push(windows.join("Fonts"));
-        dirs.extend(std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Microsoft\\Windows\\Fonts")));
+        dirs.extend(
+            std::env::var_os("LOCALAPPDATA")
+                .map(|d| PathBuf::from(d).join("Microsoft\\Windows\\Fonts")),
+        );
     } else {
         dirs.extend(["/usr/share/fonts", "/usr/local/share/fonts"].map(PathBuf::from));
         dirs.extend(
@@ -290,7 +301,14 @@ enum Generic {
 
 fn generic(lower: &str) -> Generic {
     let has = |words: &[&str]| words.iter().any(|w| lower.contains(w));
-    if has(&["courier", "consolas", "mono", "menlo", "typewriter", "fixed"]) {
+    if has(&[
+        "courier",
+        "consolas",
+        "mono",
+        "menlo",
+        "typewriter",
+        "fixed",
+    ]) {
         Generic::Mono
     } else if has(&[
         "times", "cambria", "georgia", "garamond", "serif", "roman", "book", "palatino", "century",
@@ -319,7 +337,13 @@ fn generic_families(kind: Generic) -> &'static [&'static str] {
             "Liberation Serif",
             "DejaVu Serif",
         ],
-        Generic::Mono => &["Menlo", "Courier New", "Courier", "Liberation Mono", "DejaVu Sans Mono"],
+        Generic::Mono => &[
+            "Menlo",
+            "Courier New",
+            "Courier",
+            "Liberation Mono",
+            "DejaVu Sans Mono",
+        ],
     }
 }
 
@@ -484,20 +508,24 @@ impl FontDb {
     /// family is installed: index into `infos`.
     fn best_match(&self, lower_family: &str, bold: bool, italic: bool) -> Option<usize> {
         let target = if bold { 700i32 } else { 400 };
-        self.by_name.get(lower_family)?.iter().copied().min_by_key(|i| {
-            let info = &self.infos[*i];
-            let s = &info.style;
-            // An exact family name beats a face that only belongs to the
-            // wider typographic family (a "Light" or "Condensed" cut).
-            let named = if info.family.to_lowercase() == lower_family {
-                0
-            } else {
-                2000
-            };
-            let slant = if s.italic == italic { 0 } else { 10_000 };
-            let width = (s.width as i32 - 5).abs() * 1000;
-            named + slant + width + (s.weight as i32 - target).abs()
-        })
+        self.by_name
+            .get(lower_family)?
+            .iter()
+            .copied()
+            .min_by_key(|i| {
+                let info = &self.infos[*i];
+                let s = &info.style;
+                // An exact family name beats a face that only belongs to the
+                // wider typographic family (a "Light" or "Condensed" cut).
+                let named = if info.family.to_lowercase() == lower_family {
+                    0
+                } else {
+                    2000
+                };
+                let slant = if s.italic == italic { 0 } else { 10_000 };
+                let width = (s.width as i32 - 5).abs() * 1000;
+                named + slant + width + (s.weight as i32 - target).abs()
+            })
     }
 
     fn load(&self, state: &mut State, index: usize) -> Option<Arc<TtfFont>> {
@@ -521,7 +549,13 @@ impl FontDb {
         font
     }
 
-    fn truetype_face(&self, state: &mut State, lower: &str, bold: bool, italic: bool) -> Option<Face> {
+    fn truetype_face(
+        &self,
+        state: &mut State,
+        lower: &str,
+        bold: bool,
+        italic: bool,
+    ) -> Option<Face> {
         let index = self.best_match(lower, bold, italic)?;
         let font = self.load(state, index)?;
         let info = &self.infos[index];
@@ -552,7 +586,8 @@ impl FontDb {
             .chain(generic_families(kind).iter().copied())
             .find_map(|name| self.truetype_face(&mut state, &name.to_lowercase(), bold, italic))
             .unwrap_or_else(|| {
-                let standard = Standard::pick(kind == Generic::Serif, kind == Generic::Mono, bold, italic);
+                let standard =
+                    Standard::pick(kind == Generic::Serif, kind == Generic::Mono, bold, italic);
                 Face {
                     family: standard.family().to_string(),
                     bold,
@@ -588,7 +623,11 @@ impl FontDb {
                 .then(|| self.face(family, false, false))
                 .filter(|f| f.has_glyph(ch))
         });
-        self.state.lock().unwrap().fallbacks.insert(ch, found.clone());
+        self.state
+            .lock()
+            .unwrap()
+            .fallbacks
+            .insert(ch, found.clone());
         found
     }
 
@@ -659,7 +698,10 @@ mod tests {
         let face = db.face("Aptos Narrow", false, false);
         assert!(!face.is_embedded());
         assert_eq!(face.family(), "Helvetica");
-        assert_eq!(db.face("Cambria", true, false).standard(), Some(Standard::TimesBold));
+        assert_eq!(
+            db.face("Cambria", true, false).standard(),
+            Some(Standard::TimesBold)
+        );
         assert_eq!(
             db.face("Consolas", false, true).standard(),
             Some(Standard::CourierOblique)
@@ -710,16 +752,31 @@ mod tests {
         // The outline of a letter: closed contours that stay within the
         // height of the font and the advance of the letter, more or less.
         if let Some((outline, advance)) = face.outline('O') {
-            let moves = outline.iter().filter(|step| matches!(step, OutlineStep::Move(..))).count();
-            let closes = outline.iter().filter(|step| matches!(step, OutlineStep::Close)).count();
+            let moves = outline
+                .iter()
+                .filter(|step| matches!(step, OutlineStep::Move(..)))
+                .count();
+            let closes = outline
+                .iter()
+                .filter(|step| matches!(step, OutlineStep::Close))
+                .count();
             assert!(moves == 2 && closes == 2, "{moves} contours");
             assert!(advance > 0.3 && advance < 1.2, "{advance}");
             for step in &outline {
-                if let OutlineStep::Quad(_, _, x, y) | OutlineStep::Line(x, y) | OutlineStep::Move(x, y) = *step {
-                    assert!((-0.1..=1.2).contains(&x) && (-0.3..=1.1).contains(&y), "{x} {y}");
+                if let OutlineStep::Quad(_, _, x, y)
+                | OutlineStep::Line(x, y)
+                | OutlineStep::Move(x, y) = *step
+                {
+                    assert!(
+                        (-0.1..=1.2).contains(&x) && (-0.3..=1.1).contains(&y),
+                        "{x} {y}"
+                    );
                 }
             }
-            assert!(face.outline(' ').is_some_and(|(space, advance)| space.is_empty() && advance > 0.0));
+            assert!(
+                face.outline(' ')
+                    .is_some_and(|(space, advance)| space.is_empty() && advance > 0.0)
+            );
         }
     }
 }

@@ -13,7 +13,8 @@ use opensheet_engine::table::{Table, TableOption, table_style};
 use super::range::{Entry, entered, sort_levels, write_cell};
 use super::util::{range_arg, table_fail};
 use super::worksheet::{
-    auto_filter_object, color_filter, criteria_from, custom_filter, dynamic_filter, set_criteria, top_filter, values_filter,
+    auto_filter_object, color_filter, criteria_from, custom_filter, dynamic_filter, set_criteria,
+    top_filter, values_filter,
 };
 use super::{ApiClass, Call, Res, Ret, class, enum_value, object};
 use crate::host::Host;
@@ -25,11 +26,10 @@ pub(super) fn table_object(id: u32) -> J {
 /// `getTable`: by name or by ID, in the workbook or on one sheet.
 pub(super) fn find(h: &Host, call: &Call, sheet: Option<usize>) -> Res<Ret> {
     let key = call.str(0)?;
-    let found = h
-        .wb
-        .table_by_name(key)
-        .or_else(|| key.parse().ok().and_then(|id| h.wb.table_by_id(id)))
-        .filter(|(on, _)| sheet.is_none_or(|s| s == *on));
+    let found =
+        h.wb.table_by_name(key)
+            .or_else(|| key.parse().ok().and_then(|id| h.wb.table_by_id(id)))
+            .filter(|(on, _)| sheet.is_none_or(|s| s == *on));
     Ok(Ret::maybe(found.map(|(_, table)| table_object(table.id))))
 }
 
@@ -38,7 +38,9 @@ pub(super) fn add(h: &mut Host, call: &Call, sheet: usize, rect: Rect) -> Res<Re
     let headers = call.bool(1)?;
     h.permit(call, &Action::ChangeTable { sheet })?;
     h.calculate();
-    let id = h.wb.add_table(sheet, rect, headers).map_err(|e| table_fail(call, e))?;
+    let id =
+        h.wb.add_table(sheet, rect, headers)
+            .map_err(|e| table_fail(call, e))?;
     h.restructured();
     Ok(Ret::Object(table_object(id)))
 }
@@ -53,7 +55,10 @@ fn this_table(h: &Host, call: &Call) -> Res<(usize, Table)> {
 /// The same, with the column a TableColumn or a Filter object stands for.
 fn this_column(h: &Host, call: &Call) -> Res<(usize, Table, usize)> {
     let (sheet, table) = this_table(h, call)?;
-    let index = usize::try_from(call.this_int(1)).ok().filter(|i| *i < table.columns.len()).ok_or_else(|| call.gone())?;
+    let index = usize::try_from(call.this_int(1))
+        .ok()
+        .filter(|i| *i < table.columns.len())
+        .ok_or_else(|| call.gone())?;
     Ok((sheet, table, index))
 }
 
@@ -70,7 +75,8 @@ fn set_option(h: &mut Host, call: &Call, option: TableOption) -> Res<Ret> {
     let (sheet, table) = this_table(h, call)?;
     let on = call.bool(0)?;
     h.permit(call, &Action::ChangeTable { sheet })?;
-    h.wb.set_table_option(sheet, table.id, option, on).map_err(|e| table_fail(call, e))?;
+    h.wb.set_table_option(sheet, table.id, option, on)
+        .map_err(|e| table_fail(call, e))?;
     h.restructured();
     Ok(Ret::Nothing)
 }
@@ -82,7 +88,8 @@ fn fill(h: &mut Host, call: &Call, sheet: usize, cells: Rect, values: &[J]) -> R
         return Err(call.fail("The number of rows or columns in the input array doesn't match the size or dimensions of the range."));
     }
     h.spend(call, count as u64)?;
-    let places = (cells.r0..=cells.r1).flat_map(|row| (cells.c0..=cells.c1).map(move |col| (row, col)));
+    let places =
+        (cells.r0..=cells.r1).flat_map(|row| (cells.c0..=cells.c1).map(move |col| (row, col)));
     for ((row, col), value) in places.zip(values) {
         write_cell(h, call, sheet, row, col, value, Entry::English)?;
     }
@@ -103,19 +110,30 @@ fn add_rows(h: &mut Host, call: &Call, rows: Vec<&[J]>) -> Res<Ret> {
     let end = table.range.r1 + 1 - table.totals_row as u32;
     let at = match call.opt_int(0)? {
         None | Some(-1) => end,
-        Some(index) => u32::try_from(index).ok().map(|i| first + i).filter(|row| *row <= end).ok_or_else(|| call.invalid())?,
+        Some(index) => u32::try_from(index)
+            .ok()
+            .map(|i| first + i)
+            .filter(|row| *row <= end)
+            .ok_or_else(|| call.invalid())?,
     };
     // A table made of headers alone has one blank row waiting: the first
     // row added goes there, as in Excel.
-    let blank = end - first == 1 && (table.range.c0..=table.range.c1).all(|col| h.wb.sheets[sheet].is_blank(first, col));
+    let blank = end - first == 1
+        && (table.range.c0..=table.range.c1).all(|col| h.wb.sheets[sheet].is_blank(first, col));
     let count = rows.len() as u32 - blank as u32;
     let at = if blank { first } else { at };
     if count > 0 {
-        h.wb.table_insert_rows(sheet, table.id, if blank { first + 1 } else { at }, count).map_err(|e| table_fail(call, e))?;
+        h.wb.table_insert_rows(sheet, table.id, if blank { first + 1 } else { at }, count)
+            .map_err(|e| table_fail(call, e))?;
         h.restructured();
     }
     for (offset, row) in rows.iter().enumerate() {
-        let cells = Rect::new(at + offset as u32, table.range.c0, at + offset as u32, table.range.c1);
+        let cells = Rect::new(
+            at + offset as u32,
+            table.range.c0,
+            at + offset as u32,
+            table.range.c1,
+        );
         fill(h, call, sheet, cells, row)?;
     }
     Ok(Ret::Nothing)
@@ -130,9 +148,17 @@ fn filter_column(h: &mut Host, call: &Call, criteria: Option<Criteria>) -> Res<R
             return Ok(Ret::Nothing);
         }
         h.permit(call, &Action::ChangeTable { sheet })?;
-        h.wb.set_table_option(sheet, table.id, TableOption::FilterButton, true).map_err(|e| table_fail(call, e))?;
+        h.wb.set_table_option(sheet, table.id, TableOption::FilterButton, true)
+            .map_err(|e| table_fail(call, e))?;
     }
-    set_criteria(h, call, sheet, FilterScope::Table(table.id), index as i64, criteria)?;
+    set_criteria(
+        h,
+        call,
+        sheet,
+        FilterScope::Table(table.id),
+        index as i64,
+        criteria,
+    )?;
     Ok(Ret::Nothing)
 }
 

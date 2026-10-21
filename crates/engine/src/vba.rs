@@ -76,7 +76,10 @@ mod tests {
         }
         wb.commit("setup");
         let names = |wb: &Workbook| -> Vec<(String, Option<String>)> {
-            wb.sheets.iter().map(|s| (s.name.clone(), s.code_name.clone())).collect()
+            wb.sheets
+                .iter()
+                .map(|s| (s.name.clone(), s.code_name.clone()))
+                .collect()
         };
         let code = |name: &str| Some(name.to_string());
 
@@ -86,7 +89,11 @@ mod tests {
         wb.commit("rename and move");
         assert_eq!(
             names(&wb),
-            [("Sheet2".to_string(), code("Sheet2")), ("Sheet3".to_string(), code("Sheet3")), ("Sales".to_string(), code("Sheet1"))]
+            [
+                ("Sheet2".to_string(), code("Sheet2")),
+                ("Sheet3".to_string(), code("Sheet3")),
+                ("Sales".to_string(), code("Sheet1"))
+            ]
         );
 
         // A copy has no code name; the original keeps its own.

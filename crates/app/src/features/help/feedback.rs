@@ -14,8 +14,8 @@ use crate::theme::{self, c};
 use crate::widgets::text_area::{AreaEvent, TextArea};
 use crate::widgets::{Button, RadioGroup, dialog};
 use gpui::{
-    Bounds, Context, Entity, Focusable, MouseButton, MouseDownEvent, Pixels, SharedString, Subscription, Window,
-    canvas, div, prelude::*, px,
+    Bounds, Context, Entity, Focusable, MouseButton, MouseDownEvent, Pixels, SharedString,
+    Subscription, Window, canvas, div, prelude::*, px,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -43,7 +43,10 @@ impl Kind {
     pub fn hint(self) -> &'static str {
         match self {
             Kind::Like => t("Tell us what you like", "Dites-nous ce que vous avez aimé."),
-            Kind::Dislike => t("Tell us what you didn't like", "Dites-nous ce que vous n’avez pas apprécié"),
+            Kind::Dislike => t(
+                "Tell us what you didn't like",
+                "Dites-nous ce que vous n’avez pas apprécié",
+            ),
             Kind::Idea => t("Tell us your idea", "Dites-nous-en plus sur votre idée"),
         }
     }
@@ -52,7 +55,12 @@ impl Kind {
 /// The message handed to the share sheet: what the feedback is about,
 /// what was written, and the versions it was written on.
 pub(crate) fn message(kind: Kind, text: &str, os: &str) -> String {
-    format!("{}\n\n{}\n\nOpenSheet {} — {os}", kind.title(), text.trim(), env!("CARGO_PKG_VERSION"))
+    format!(
+        "{}\n\n{}\n\nOpenSheet {} — {os}",
+        kind.title(),
+        text.trim(),
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 pub(crate) struct FeedbackDialog {
@@ -74,11 +82,15 @@ impl FeedbackDialog {
             area.placeholder = Kind::Like.hint().into();
             area
         });
-        let subscription = cx.subscribe_in(&text, window, |dialog, _, event: &AreaEvent, window, cx| match event {
-            AreaEvent::Submit => dialog.send(&(), window, cx),
-            AreaEvent::Escape => dialog.modal.close(window, cx),
-            _ => cx.notify(),
-        });
+        let subscription = cx.subscribe_in(
+            &text,
+            window,
+            |dialog, _, event: &AreaEvent, window, cx| match event {
+                AreaEvent::Submit => dialog.send(&(), window, cx),
+                AreaEvent::Escape => dialog.modal.close(window, cx),
+                _ => cx.notify(),
+            },
+        );
         FeedbackDialog {
             modal,
             kind: Kind::Like,
@@ -117,7 +129,10 @@ impl FeedbackDialog {
                 )
             );
             self.modal.update_app(cx, |app, cx| {
-                app.alert(Alert::new(t("Send Feedback", "Envoyer des commentaires"), message).warning(), cx)
+                app.alert(
+                    Alert::new(t("Send Feedback", "Envoyer des commentaires"), message).warning(),
+                    cx,
+                )
             });
         }
     }
@@ -226,8 +241,18 @@ mod tests {
         let text = message(Kind::Idea, "  Add sparkline dates.\n", "macOS 15.1");
         assert_eq!(
             text,
-            format!("I have a suggestion\n\nAdd sparkline dates.\n\nOpenSheet {} — macOS 15.1", env!("CARGO_PKG_VERSION"))
+            format!(
+                "I have a suggestion\n\nAdd sparkline dates.\n\nOpenSheet {} — macOS 15.1",
+                env!("CARGO_PKG_VERSION")
+            )
         );
-        assert_eq!(Kind::ALL.map(Kind::title), ["I like something", "I don't like something", "I have a suggestion"]);
+        assert_eq!(
+            Kind::ALL.map(Kind::title),
+            [
+                "I like something",
+                "I don't like something",
+                "I have a suggestion"
+            ]
+        );
     }
 }

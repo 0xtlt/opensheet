@@ -17,8 +17,8 @@ mod duplicates;
 mod sort;
 
 use super::{
-    Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PaintLayer, Painter, StatusItem, Zone, ZoneEvent,
-    ZoneResponse,
+    Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PaintLayer, Painter,
+    StatusItem, Zone, ZoneEvent, ZoneResponse,
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::Draw;
@@ -27,8 +27,8 @@ use crate::shell::Alert;
 use crate::theme::{self, c};
 use gpui::{CursorStyle, MouseButton, Pixels, Point, Window, px};
 use opensheet_engine::filter::{
-    AutoFilter, ColorFilter, ColumnKind, Comparison, Condition, Criteria, DynamicFilter, FilterButton, FilterScope,
-    ValueFilter,
+    AutoFilter, ColorFilter, ColumnKind, Comparison, Condition, Criteria, DynamicFilter,
+    FilterButton, FilterScope, ValueFilter,
 };
 use opensheet_engine::format::{self, FormatKind};
 use opensheet_engine::ops::{SortError, SortLevel, SortOn, SortSpec};
@@ -134,9 +134,12 @@ struct Found {
 pub(super) const APP_NAME: &str = "OpenSheet";
 
 pub(super) fn records_found(found: usize, total: usize) -> String {
-    t("{0} of {1} records found", "{0} enregistrement(s) trouvé(s) sur {1}")
-        .replace("{0}", &found.to_string())
-        .replace("{1}", &total.to_string())
+    t(
+        "{0} of {1} records found",
+        "{0} enregistrement(s) trouvé(s) sur {1}",
+    )
+    .replace("{0}", &found.to_string())
+    .replace("{1}", &total.to_string())
 }
 
 /// The two sort entries, worded for what the column holds.
@@ -144,12 +147,24 @@ pub(super) fn sort_labels(kind: ColumnKind) -> (&'static str, &'static str) {
     match kind {
         ColumnKind::Text => (Cmd::SortAscending.label(), Cmd::SortDescending.label()),
         ColumnKind::Number => (
-            t("Sort Smallest to Largest", "Trier du plus petit au plus grand"),
-            t("Sort Largest to Smallest", "Trier du plus grand au plus petit"),
+            t(
+                "Sort Smallest to Largest",
+                "Trier du plus petit au plus grand",
+            ),
+            t(
+                "Sort Largest to Smallest",
+                "Trier du plus grand au plus petit",
+            ),
         ),
         ColumnKind::Date => (
-            t("Sort Oldest to Newest", "Trier du plus ancien au plus récent"),
-            t("Sort Newest to Oldest", "Trier du plus récent au plus ancien"),
+            t(
+                "Sort Oldest to Newest",
+                "Trier du plus ancien au plus récent",
+            ),
+            t(
+                "Sort Newest to Oldest",
+                "Trier du plus récent au plus ancien",
+            ),
         ),
     }
 }
@@ -165,7 +180,11 @@ pub(super) fn column_title(header: &str, col: u32) -> String {
 }
 
 pub(super) fn clear_filter_label(title: &str) -> String {
-    t("Clear Filter From \"{}\"", "Effacer le filtre de «\u{a0}{}\u{a0}»").replace("{}", title)
+    t(
+        "Clear Filter From \"{}\"",
+        "Effacer le filtre de «\u{a0}{}\u{a0}»",
+    )
+    .replace("{}", title)
 }
 
 /// The name of a month with a capital, as menus list them.
@@ -198,7 +217,9 @@ pub(super) fn dynamic_label(filter: DynamicFilter, locale: &Locale) -> String {
         DynamicFilter::LastYear => t("Last Year", "L'année dernière"),
         DynamicFilter::NextYear => t("Next Year", "L'année prochaine"),
         DynamicFilter::YearToDate => t("Year to Date", "Année à ce jour"),
-        DynamicFilter::Quarter(q) => return t("Quarter {}", "Trimestre {}").replace("{}", &q.to_string()),
+        DynamicFilter::Quarter(q) => {
+            return t("Quarter {}", "Trimestre {}").replace("{}", &q.to_string());
+        }
         DynamicFilter::Month(m) => return month_name(locale, m as u32),
     };
     label.to_string()
@@ -210,43 +231,74 @@ fn condition_summary(condition: &Condition, as_date: bool, locale: &Locale) -> S
     let (comparison, _) = condition.comparison();
     let pattern = match (comparison, as_date) {
         (Comparison::Equals, _) => t("Equals \"{}\"", "Est égal à «\u{a0}{}\u{a0}»"),
-        (Comparison::NotEquals, _) => t("Does not equal \"{}\"", "N'est pas égal à «\u{a0}{}\u{a0}»"),
-        (Comparison::Greater, false) => t("Greater than \"{}\"", "Supérieur à «\u{a0}{}\u{a0}»"),
-        (Comparison::GreaterOrEqual, false) => {
-            t("Greater than or equal to \"{}\"", "Supérieur ou égal à «\u{a0}{}\u{a0}»")
+        (Comparison::NotEquals, _) => {
+            t("Does not equal \"{}\"", "N'est pas égal à «\u{a0}{}\u{a0}»")
         }
+        (Comparison::Greater, false) => t("Greater than \"{}\"", "Supérieur à «\u{a0}{}\u{a0}»"),
+        (Comparison::GreaterOrEqual, false) => t(
+            "Greater than or equal to \"{}\"",
+            "Supérieur ou égal à «\u{a0}{}\u{a0}»",
+        ),
         (Comparison::Less, false) => t("Less than \"{}\"", "Inférieur à «\u{a0}{}\u{a0}»"),
-        (Comparison::LessOrEqual, false) => t("Less than or equal to \"{}\"", "Inférieur ou égal à «\u{a0}{}\u{a0}»"),
+        (Comparison::LessOrEqual, false) => t(
+            "Less than or equal to \"{}\"",
+            "Inférieur ou égal à «\u{a0}{}\u{a0}»",
+        ),
         (Comparison::Greater, true) => t("After \"{}\"", "Postérieur au «\u{a0}{}\u{a0}»"),
-        (Comparison::GreaterOrEqual, true) => t("After or equal to \"{}\"", "Postérieur ou égal au «\u{a0}{}\u{a0}»"),
+        (Comparison::GreaterOrEqual, true) => t(
+            "After or equal to \"{}\"",
+            "Postérieur ou égal au «\u{a0}{}\u{a0}»",
+        ),
         (Comparison::Less, true) => t("Before \"{}\"", "Antérieur au «\u{a0}{}\u{a0}»"),
-        (Comparison::LessOrEqual, true) => t("Before or equal to \"{}\"", "Antérieur ou égal au «\u{a0}{}\u{a0}»"),
+        (Comparison::LessOrEqual, true) => t(
+            "Before or equal to \"{}\"",
+            "Antérieur ou égal au «\u{a0}{}\u{a0}»",
+        ),
         (Comparison::BeginsWith, _) => t("Begins with \"{}\"", "Commence par «\u{a0}{}\u{a0}»"),
-        (Comparison::NotBeginsWith, _) => t("Does not begin with \"{}\"", "Ne commence pas par «\u{a0}{}\u{a0}»"),
+        (Comparison::NotBeginsWith, _) => t(
+            "Does not begin with \"{}\"",
+            "Ne commence pas par «\u{a0}{}\u{a0}»",
+        ),
         (Comparison::EndsWith, _) => t("Ends with \"{}\"", "Se termine par «\u{a0}{}\u{a0}»"),
-        (Comparison::NotEndsWith, _) => t("Does not end with \"{}\"", "Ne se termine pas par «\u{a0}{}\u{a0}»"),
+        (Comparison::NotEndsWith, _) => t(
+            "Does not end with \"{}\"",
+            "Ne se termine pas par «\u{a0}{}\u{a0}»",
+        ),
         (Comparison::Contains, _) => t("Contains \"{}\"", "Contient «\u{a0}{}\u{a0}»"),
-        (Comparison::NotContains, _) => t("Does not contain \"{}\"", "Ne contient pas «\u{a0}{}\u{a0}»"),
+        (Comparison::NotContains, _) => t(
+            "Does not contain \"{}\"",
+            "Ne contient pas «\u{a0}{}\u{a0}»",
+        ),
     };
     pattern.replace("{}", &condition.operand_text(locale, as_date))
 }
 
 /// What a column is filtered on, in words: the second line of the tip of
 /// its button.
-pub(super) fn criteria_summary(criteria: Option<&Criteria>, as_date: bool, locale: &Locale) -> String {
+pub(super) fn criteria_summary(
+    criteria: Option<&Criteria>,
+    as_date: bool,
+    locale: &Locale,
+) -> String {
     let Some(criteria) = criteria else {
         return t("(Showing All)", "(Afficher tout)").to_string();
     };
     match criteria {
         Criteria::Values(filter) => {
-            let mut names: Vec<String> = filter.values.iter().take(3).map(|v| format!("\"{v}\"")).collect();
+            let mut names: Vec<String> = filter
+                .values
+                .iter()
+                .take(3)
+                .map(|v| format!("\"{v}\""))
+                .collect();
             if filter.blanks && names.len() < 3 {
                 names.push(blanks_label().to_string());
             }
             let listed = filter.values.len() + filter.blanks as usize + filter.dates.len();
             if names.is_empty() || listed > names.len() {
                 // Too many to name, or only dates: say how many are kept.
-                return t("{} items selected", "{} élément(s) sélectionné(s)").replace("{}", &listed.to_string());
+                return t("{} items selected", "{} élément(s) sélectionné(s)")
+                    .replace("{}", &listed.to_string());
             }
             t("Equals {}", "Est égal à {}").replace("{}", &names.join(t(" or ", " ou ")))
         }
@@ -255,8 +307,15 @@ pub(super) fn criteria_summary(criteria: Option<&Criteria>, as_date: bool, local
             match &custom.second {
                 None => first,
                 Some(second) => {
-                    let joint = if custom.and { t(" and ", " et ") } else { t(" or ", " ou ") };
-                    format!("{first}{joint}{}", condition_summary(second, as_date, locale))
+                    let joint = if custom.and {
+                        t(" and ", " et ")
+                    } else {
+                        t(" or ", " ou ")
+                    };
+                    format!(
+                        "{first}{joint}{}",
+                        condition_summary(second, as_date, locale)
+                    )
                 }
             }
         }
@@ -270,18 +329,26 @@ pub(super) fn criteria_summary(criteria: Option<&Criteria>, as_date: bool, local
             pattern.replace("{}", &locale.number_to_text(top.value))
         }
         Criteria::Dynamic(dynamic) => dynamic_label(*dynamic, locale),
-        Criteria::Color(ColorFilter { color: Some(_), font: false }) => {
-            t("Equals a cell color", "Correspond à une couleur de cellule").to_string()
-        }
-        Criteria::Color(ColorFilter { color: None, font: false }) => t(
+        Criteria::Color(ColorFilter {
+            color: Some(_),
+            font: false,
+        }) => t("Equals a cell color", "Correspond à une couleur de cellule").to_string(),
+        Criteria::Color(ColorFilter {
+            color: None,
+            font: false,
+        }) => t(
             "Equals a cell color (No Fill)",
             "Correspond à la couleur de cellule (Aucun remplissage)",
         )
         .to_string(),
-        Criteria::Color(ColorFilter { color: Some(_), font: true }) => {
-            t("Equals a font color", "Correspond à une couleur de police").to_string()
-        }
-        Criteria::Color(ColorFilter { color: None, font: true }) => t(
+        Criteria::Color(ColorFilter {
+            color: Some(_),
+            font: true,
+        }) => t("Equals a font color", "Correspond à une couleur de police").to_string(),
+        Criteria::Color(ColorFilter {
+            color: None,
+            font: true,
+        }) => t(
             "Equals a font color (Automatic)",
             "Correspond à la couleur de police (Automatique)",
         )
@@ -299,7 +366,10 @@ pub(super) fn blanks_label() -> &'static str {
 /// tables.
 fn filters_of(wb: &Workbook, sheet: usize) -> impl Iterator<Item = (FilterScope, &AutoFilter)> {
     let sh = &wb.sheets[sheet];
-    let own = sh.auto_filter.iter().map(|filter| (FilterScope::Sheet, filter));
+    let own = sh
+        .auto_filter
+        .iter()
+        .map(|filter| (FilterScope::Sheet, filter));
     own.chain(
         sh.tables
             .iter()
@@ -331,7 +401,12 @@ fn buttons_shown(app: &ExcelApp) -> bool {
 
 /// The fill and the font colour a cell shows, conditional formats
 /// included: what "Filter by Color" and "Sort by Color" compare.
-pub(super) fn shown_colors(wb: &Workbook, sheet: usize, row: u32, col: u32) -> (Option<Color>, Option<Color>) {
+pub(super) fn shown_colors(
+    wb: &Workbook,
+    sheet: usize,
+    row: u32,
+    col: u32,
+) -> (Option<Color>, Option<Color>) {
     let style = wb.style_at(sheet, row, col);
     let (mut fill, mut font) = (style.fill, style.font.color);
     if let Some(result) = opensheet_engine::condfmt::result_at(wb, sheet, row, col) {
@@ -346,7 +421,11 @@ const KIND_SAMPLE: usize = 5_000;
 
 /// What some cells mostly hold: text, numbers or dates (the engine's rule
 /// for the columns of a filter).
-pub(super) fn cells_kind(wb: &Workbook, sheet: usize, cells: impl Iterator<Item = (u32, u32)>) -> ColumnKind {
+pub(super) fn cells_kind(
+    wb: &Workbook,
+    sheet: usize,
+    cells: impl Iterator<Item = (u32, u32)>,
+) -> ColumnKind {
     let sh = &wb.sheets[sheet];
     let (mut texts, mut numbers, mut dates) = (0usize, 0usize, 0usize);
     for (row, col) in cells.take(KIND_SAMPLE) {
@@ -354,7 +433,10 @@ pub(super) fn cells_kind(wb: &Workbook, sheet: usize, cells: impl Iterator<Item 
             Value::Empty => {}
             Value::Number(_) => {
                 let code = &wb.style_at(sheet, row, col).num_fmt;
-                if matches!(format::format_kind(code), FormatKind::Date | FormatKind::DateTime) {
+                if matches!(
+                    format::format_kind(code),
+                    FormatKind::Date | FormatKind::DateTime
+                ) {
                     dates += 1;
                 } else {
                     numbers += 1;
@@ -372,7 +454,12 @@ pub(super) fn cells_kind(wb: &Workbook, sheet: usize, cells: impl Iterator<Item 
     }
 }
 
-pub(super) fn column_kind(wb: &Workbook, sheet: usize, col: u32, rows: RangeInclusive<u32>) -> ColumnKind {
+pub(super) fn column_kind(
+    wb: &Workbook,
+    sheet: usize,
+    col: u32,
+    rows: RangeInclusive<u32>,
+) -> ColumnKind {
     cells_kind(wb, sheet, rows.map(|row| (row, col)))
 }
 
@@ -492,7 +579,11 @@ fn reapply(app: &mut ExcelApp, cx: &mut Cx) {
 /// Have the status bar report what the filter kept.
 fn note_found(app: &mut ExcelApp, sheet: usize, scope: FilterScope) {
     let generation = app.wb.generation;
-    app.ext_mut::<State>().found = Some(Found { sheet, scope, generation });
+    app.ext_mut::<State>().found = Some(Found {
+        sheet,
+        scope,
+        generation,
+    });
 }
 
 /// Give a column of a filter its criterion (`None` shows everything
@@ -505,7 +596,10 @@ pub(super) fn apply_criteria(
     criteria: Option<Criteria>,
     cx: &mut Cx,
 ) {
-    let current = app.wb.auto_filter(sheet, scope).and_then(|filter| filter.columns.get(&col_id));
+    let current = app
+        .wb
+        .auto_filter(sheet, scope)
+        .and_then(|filter| filter.columns.get(&col_id));
     if current == criteria.as_ref() || !app.may(Intent::UseAutoFilter, cx) {
         return;
     }
@@ -563,7 +657,10 @@ pub(super) enum SortPlan {
     Sort(SortTarget),
     /// One column of a larger block is selected: ask whether the rest of
     /// the block follows ("Sort Warning").
-    Ask { selection: Rect, expanded: Rect },
+    Ask {
+        selection: Rect,
+        expanded: Rect,
+    },
     /// The selection is partly in a filtered range and partly outside.
     StraddlesFilter,
 }
@@ -571,7 +668,12 @@ pub(super) enum SortPlan {
 /// Decide what to sort for a selection and its active cell, as Excel does:
 /// a single cell stands for the block of data around it, cells inside a
 /// filtered list or a table for the whole list.
-pub(super) fn sort_plan(wb: &Workbook, sheet: usize, selection: Rect, active: (u32, u32)) -> SortPlan {
+pub(super) fn sort_plan(
+    wb: &Workbook,
+    sheet: usize,
+    selection: Rect,
+    active: (u32, u32),
+) -> SortPlan {
     let sh = &wb.sheets[sheet];
     let selection = if selection.is_single() {
         selection
@@ -592,9 +694,18 @@ pub(super) fn sort_plan(wb: &Workbook, sheet: usize, selection: Rect, active: (u
     }
     // A table whose buttons are off is still sorted as a whole, without
     // its totals row.
-    if let Some(table) = sh.tables.iter().find(|table| table.contains(active.0, active.1)) {
+    if let Some(table) = sh
+        .tables
+        .iter()
+        .find(|table| table.contains(active.0, active.1))
+    {
         let range = table.range;
-        let rect = Rect::new(range.r0, range.c0, range.r1 - table.totals_row as u32, range.c1);
+        let rect = Rect::new(
+            range.r0,
+            range.c0,
+            range.r1 - table.totals_row as u32,
+            range.c1,
+        );
         if inside(&rect) {
             return SortPlan::Sort(SortTarget::Range {
                 rect,
@@ -615,7 +726,10 @@ pub(super) fn sort_plan(wb: &Workbook, sheet: usize, selection: Rect, active: (u
     if selection.cols() == 1 {
         let expanded = block_around(wb, sheet, selection);
         if expanded != selection {
-            return SortPlan::Ask { selection, expanded };
+            return SortPlan::Ask {
+                selection,
+                expanded,
+            };
         }
     }
     SortPlan::Sort(SortTarget::Range {
@@ -651,7 +765,13 @@ pub(super) fn straddles_filter(app: &mut ExcelApp, cx: &mut Cx) {
 
 /// Sort what the selection stands for on the column of the active cell:
 /// the A to Z / Z to A buttons, and "Put Selected Cell Color On Top".
-pub(super) fn sort_selection(app: &mut ExcelApp, on: SortOn, descending: bool, window: &mut Window, cx: &mut Cx) {
+pub(super) fn sort_selection(
+    app: &mut ExcelApp,
+    on: SortOn,
+    descending: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let Some(selection) = single_selection(app, cx) else {
         return;
     };
@@ -660,14 +780,24 @@ pub(super) fn sort_selection(app: &mut ExcelApp, on: SortOn, descending: bool, w
         SortPlan::Nothing => {}
         SortPlan::StraddlesFilter => straddles_filter(app, cx),
         SortPlan::Sort(target) => sort_target(app, target, col, on, descending, cx),
-        SortPlan::Ask { selection, expanded } => sort::ask_to_expand(
+        SortPlan::Ask {
+            selection,
+            expanded,
+        } => sort::ask_to_expand(
             app,
             sort::Asking::Sort,
             selection,
             expanded,
             move |app, rect, _, cx| {
                 let has_header = app.wb.guess_header_row(app.sheet, rect);
-                sort_target(app, SortTarget::Range { rect, has_header }, col, on, descending, cx);
+                sort_target(
+                    app,
+                    SortTarget::Range { rect, has_header },
+                    col,
+                    on,
+                    descending,
+                    cx,
+                );
             },
             window,
             cx,
@@ -676,7 +806,14 @@ pub(super) fn sort_selection(app: &mut ExcelApp, on: SortOn, descending: bool, w
 }
 
 /// Sort a target on one of its columns (`col` is a sheet column).
-pub(super) fn sort_target(app: &mut ExcelApp, target: SortTarget, col: u32, on: SortOn, descending: bool, cx: &mut Cx) {
+pub(super) fn sort_target(
+    app: &mut ExcelApp,
+    target: SortTarget,
+    col: u32,
+    on: SortOn,
+    descending: bool,
+    cx: &mut Cx,
+) {
     let rect = target.rect();
     if !app.may(Intent::Sort(rect), cx) {
         return;
@@ -684,7 +821,9 @@ pub(super) fn sort_target(app: &mut ExcelApp, target: SortTarget, col: u32, on: 
     let sheet = app.sheet;
     let key = col.clamp(rect.c0, rect.c1) - rect.c0;
     let outcome = match target {
-        SortTarget::Filter { scope, .. } => app.wb.sort_by_filter(sheet, scope, key, on, descending),
+        SortTarget::Filter { scope, .. } => {
+            app.wb.sort_by_filter(sheet, scope, key, on, descending)
+        }
         SortTarget::Range { rect, has_header } => {
             let level = SortLevel {
                 key,
@@ -727,12 +866,22 @@ pub(super) fn criterion_like(wb: &Workbook, sheet: usize, row: u32, col: u32, by
             let text = wb.display_text(sheet, row, col).text;
             Criteria::Values(ValueFilter {
                 blanks: text.is_empty(),
-                values: if text.is_empty() { Vec::new() } else { vec![text] },
+                values: if text.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![text]
+                },
                 dates: Vec::new(),
             })
         }
-        By::CellColor => Criteria::Color(ColorFilter { color: fill, font: false }),
-        By::FontColor => Criteria::Color(ColorFilter { color: font, font: true }),
+        By::CellColor => Criteria::Color(ColorFilter {
+            color: fill,
+            font: false,
+        }),
+        By::FontColor => Criteria::Color(ColorFilter {
+            color: font,
+            font: true,
+        }),
     }
 }
 
@@ -747,7 +896,11 @@ fn filter_by_cell(app: &mut ExcelApp, by: By, cx: &mut Cx) {
         if !app.may(Intent::ToggleAutoFilter, cx) {
             return;
         }
-        if app.wb.toggle_auto_filter(sheet, Rect::cell(row, col)).is_err() {
+        if app
+            .wb
+            .toggle_auto_filter(sheet, Rect::cell(row, col))
+            .is_err()
+        {
             app.wb.rollback();
             cannot_apply(app, cx);
             return;
@@ -764,24 +917,42 @@ fn filter_by_cell(app: &mut ExcelApp, by: By, cx: &mut Cx) {
         return;
     };
     let criteria = criterion_like(&app.wb, sheet, row, col, by);
-    app.wb.set_filter_criteria(sheet, scope, col - first_col, Some(criteria));
+    app.wb
+        .set_filter_criteria(sheet, scope, col - first_col, Some(criteria));
     app.commit(Cmd::Toggle.label(), cx);
     note_found(app, sheet, scope);
 }
 
 /// The filtered column a cell belongs to: its filter, its offset in it,
 /// its title, and whether it has a criterion.
-pub(super) fn filter_column_at(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option<(FilterScope, u32, String, bool)> {
+pub(super) fn filter_column_at(
+    wb: &Workbook,
+    sheet: usize,
+    row: u32,
+    col: u32,
+) -> Option<(FilterScope, u32, String, bool)> {
     let scope = wb.filter_scope_at(sheet, row, col)?;
     let filter = wb.auto_filter(sheet, scope)?;
     let col_id = col - filter.range.c0;
     let header = wb.display_text(sheet, filter.range.r0, col).text;
-    Some((scope, col_id, column_title(&header, col), filter.columns.contains_key(&col_id)))
+    Some((
+        scope,
+        col_id,
+        column_title(&header, col),
+        filter.columns.contains_key(&col_id),
+    ))
 }
 
 /// The Filter and Sort submenus of the context menu of a cell. `reapply`
 /// and `custom_sort` are the entries of those two commands.
-fn cell_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, reapply: MenuEntry, custom_sort: MenuEntry) -> [MenuEntry; 2] {
+fn cell_menu(
+    wb: &Workbook,
+    sheet: usize,
+    row: u32,
+    col: u32,
+    reapply: MenuEntry,
+    custom_sort: MenuEntry,
+) -> [MenuEntry; 2] {
     let column = filter_column_at(wb, sheet, row, col);
     let clear = match &column {
         Some((scope, col_id, title, filtered)) => {
@@ -794,16 +965,24 @@ fn cell_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, reapply: MenuEntry
         }
         None => MenuEntry::new(t("Clear Filter", "Effacer le filtre"), |_, _, _| {}).disabled(true),
     };
-    let like = |label: &'static str, by: By| MenuEntry::new(label, move |app, _, cx| filter_by_cell(app, by, cx));
+    let like = |label: &'static str, by: By| {
+        MenuEntry::new(label, move |app, _, cx| filter_by_cell(app, by, cx))
+    };
     let filter = vec![
         clear.icon("filters-clear"),
         reapply,
         like(
-            t("Filter by Selected Cell's Value", "Filtrer par la valeur de la cellule sélectionnée"),
+            t(
+                "Filter by Selected Cell's Value",
+                "Filtrer par la valeur de la cellule sélectionnée",
+            ),
             By::Value,
         ),
         like(
-            t("Filter by Selected Cell's Color", "Filtrer par la couleur de la cellule sélectionnée"),
+            t(
+                "Filter by Selected Cell's Color",
+                "Filtrer par la couleur de la cellule sélectionnée",
+            ),
             By::CellColor,
         ),
         like(
@@ -820,13 +999,23 @@ fn cell_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, reapply: MenuEntry
         MenuEntry::new(label, move |app, window, cx| {
             let (row, col) = app.active();
             let (fill, color) = shown_colors(&app.wb, app.sheet, row, col);
-            let on = if font { SortOn::FontColor(color) } else { SortOn::CellColor(fill) };
+            let on = if font {
+                SortOn::FontColor(color)
+            } else {
+                SortOn::CellColor(fill)
+            };
             sort_selection(app, on, false, window, cx);
         })
     };
     let sort = vec![
-        MenuEntry::new(asc, |app, window, cx| sort_selection(app, SortOn::Values, false, window, cx)).icon("sort-asc"),
-        MenuEntry::new(desc, |app, window, cx| sort_selection(app, SortOn::Values, true, window, cx)).icon("sort-desc"),
+        MenuEntry::new(asc, |app, window, cx| {
+            sort_selection(app, SortOn::Values, false, window, cx)
+        })
+        .icon("sort-asc"),
+        MenuEntry::new(desc, |app, window, cx| {
+            sort_selection(app, SortOn::Values, true, window, cx)
+        })
+        .icon("sort-desc"),
         on_top(
             t(
                 "Put Selected Cell Color On Top",
@@ -942,7 +1131,11 @@ fn button_tip(wb: &Workbook, sheet: usize, button: &FilterButton) -> String {
     // cells are enough to tell (this runs at every repaint).
     let as_date = criteria.is_some_and(|criteria| matches!(criteria, Criteria::Custom(_)))
         && filter_data_rows(wb, sheet, button.scope).is_some_and(|rows| {
-            cells_kind(wb, sheet, rows.take(TIP_SAMPLE).map(|row| (row, button.col))) == ColumnKind::Date
+            cells_kind(
+                wb,
+                sheet,
+                rows.take(TIP_SAMPLE).map(|row| (row, button.col)),
+            ) == ColumnKind::Date
         });
     let title = column_title(&header, button.col);
     format!(
@@ -952,7 +1145,11 @@ fn button_tip(wb: &Workbook, sheet: usize, button: &FilterButton) -> String {
     )
 }
 
-fn filter_data_rows(wb: &Workbook, sheet: usize, scope: FilterScope) -> Option<RangeInclusive<u32>> {
+fn filter_data_rows(
+    wb: &Workbook,
+    sheet: usize,
+    scope: FilterScope,
+) -> Option<RangeInclusive<u32>> {
     let data = wb.auto_filter(sheet, scope)?.data_range()?;
     Some(data.r0..=data.r1)
 }
@@ -964,12 +1161,15 @@ fn paint_buttons(p: &mut Painter) {
         return;
     }
     for button in buttons_in(&app.wb, app.sheet, p.visible) {
-        let Some(bounds) = button_box(p.cell_box(Rect::cell(button.row, button.col)), p.zoom()) else {
+        let Some(bounds) = button_box(p.cell_box(Rect::cell(button.row, button.col)), p.zoom())
+        else {
             continue;
         };
         draw_button(p, bounds, &button);
         let tip = button_tip(&app.wb, app.sheet, &button);
-        p.zone(bounds, ButtonZone(button)).cursor(CursorStyle::Arrow).tooltip(tip);
+        p.zone(bounds, ButtonZone(button))
+            .cursor(CursorStyle::Arrow)
+            .tooltip(tip);
     }
 }
 
@@ -1010,20 +1210,36 @@ fn paint_row_numbers(p: &mut Painter) {
             let (y, height) = (layout.row_y(row), layout.row_h(row));
             // A row selected as a whole keeps its white number.
             let in_selection = ranges.iter().any(|r| r.r0 <= row && row <= r.r1);
-            if height < line_h * 0.7 || ranges.iter().any(|r| r.is_whole_rows() && r.r0 <= row && row <= r.r1) {
+            if height < line_h * 0.7
+                || ranges
+                    .iter()
+                    .any(|r| r.is_whole_rows() && r.r0 <= row && row <= r.r1)
+            {
                 continue;
             }
             let (y0, y1) = (y.max(top), (y + height - 1.0).min(bottom));
             if y1 <= y0 {
                 continue;
             }
-            let (background, edge) = if in_selection { (theme::HEADER_SEL_BG, 2.0) } else { (theme::HEADER_BG, 1.0) };
+            let (background, edge) = if in_selection {
+                (theme::HEADER_SEL_BG, 2.0)
+            } else {
+                (theme::HEADER_BG, 1.0)
+            };
             p.rect(left, y0, hw - edge, y1, c(background));
-            let line = p.shape(&(row + 1).to_string(), size, c(FILTERED_ROW_NUMBER), in_selection);
+            let line = p.shape(
+                &(row + 1).to_string(),
+                size,
+                c(FILTERED_ROW_NUMBER),
+                in_selection,
+            );
             let width = f32::from(line.width);
             p.push(Draw::Text {
                 line,
-                origin: layout.to_window(left + ((hw - left - width) / 2.0).round(), y + ((height - line_h) / 2.0).round()),
+                origin: layout.to_window(
+                    left + ((hw - left - width) / 2.0).round(),
+                    y + ((height - line_h) / 2.0).round(),
+                ),
                 line_height: px(line_h),
                 clip: layout.bounds_px(left, y0, hw, y1),
             });
@@ -1046,7 +1262,14 @@ impl Feature for Filters {
         }
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         let Some(ButtonZone(button)) = zone.payload::<ButtonZone>() else {
             return ZoneResponse::Ignored;
         };
@@ -1081,7 +1304,10 @@ impl Feature for Filters {
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
         if let MenuTarget::Cell(row, col) = *target {
-            let (reapply, custom_sort) = (MenuEntry::command(Cmd::Reapply, app), MenuEntry::command(Cmd::CustomSort, app));
+            let (reapply, custom_sort) = (
+                MenuEntry::command(Cmd::Reapply, app),
+                MenuEntry::command(Cmd::CustomSort, app),
+            );
             for entry in cell_menu(&app.wb, app.sheet, row, col, reapply, custom_sort) {
                 menu.add(MenuSection::Data, entry);
             }

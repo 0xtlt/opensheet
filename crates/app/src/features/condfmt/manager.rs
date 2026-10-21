@@ -37,8 +37,18 @@ pub fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let setup = Opening {
         locale: app.wb.locale,
         current: app.sheet,
-        names: app.wb.sheets.iter().map(|sheet| sheet.name.clone()).collect(),
-        rules: app.wb.sheets.iter().map(|sheet| sheet.cond_formats.clone()).collect(),
+        names: app
+            .wb
+            .sheets
+            .iter()
+            .map(|sheet| sheet.name.clone())
+            .collect(),
+        rules: app
+            .wb
+            .sheets
+            .iter()
+            .map(|sheet| sheet.cond_formats.clone())
+            .collect(),
         selections: (0..app.wb.sheets.len())
             .map(|sheet| match app.views.get(sheet) {
                 Some(view) => (view.sel.ranges.clone(), view.sel.active),
@@ -46,7 +56,9 @@ pub fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
             })
             .collect(),
     };
-    app.open_modal(window, cx, move |modal, _, cx| Manager::new(modal, setup, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        Manager::new(modal, setup, cx)
+    });
 }
 
 /// The rules of `rules` that touch one of `selection`, as positions in
@@ -159,7 +171,10 @@ impl Manager {
                 Row { rule, applies }
             })
             .collect();
-        if self.selected.is_some_and(|selected| self.rows.iter().all(|row| row.rule != selected)) {
+        if self
+            .selected
+            .is_some_and(|selected| self.rows.iter().all(|row| row.rule != selected))
+        {
             self.selected = None;
         }
         cx.notify();
@@ -170,7 +185,8 @@ impl Manager {
     }
 
     fn open_rule_dialog(&mut self, setup: Setup, window: &mut Window, cx: &mut Context<Self>) {
-        self.modal.update_app(cx, |app, cx| rule_dialog::open(app, setup, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| rule_dialog::open(app, setup, window, cx));
     }
 
     fn new_rule(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -222,20 +238,34 @@ impl Manager {
 
     fn delete_rule(&mut self, cx: &mut Context<Self>) {
         let sheet = self.sheet();
-        let Some(index) = self.selected.filter(|index| *index < self.rules[sheet].len()) else {
+        let Some(index) = self
+            .selected
+            .filter(|index| *index < self.rules[sheet].len())
+        else {
             return;
         };
         // The selection goes to the rule that takes the place.
-        let place = self.rows.iter().position(|row| row.rule == index).unwrap_or(0);
+        let place = self
+            .rows
+            .iter()
+            .position(|row| row.rule == index)
+            .unwrap_or(0);
         self.rules[sheet].remove(index);
         self.selected = None;
         self.rebuild(cx);
-        self.selected = self.rows.get(place).or(self.rows.last()).map(|row| row.rule);
+        self.selected = self
+            .rows
+            .get(place)
+            .or(self.rows.last())
+            .map(|row| row.rule);
     }
 
     fn duplicate_rule(&mut self, cx: &mut Context<Self>) {
         let sheet = self.sheet();
-        let Some(index) = self.selected.filter(|index| *index < self.rules[sheet].len()) else {
+        let Some(index) = self
+            .selected
+            .filter(|index| *index < self.rules[sheet].len())
+        else {
             return;
         };
         let copy = self.rules[sheet][index].clone();
@@ -261,10 +291,15 @@ impl Manager {
     /// Write the rules back; false (and a message) when an "Applies to"
     /// box does not hold a range.
     fn apply(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.rows.iter().any(|row| parse_ranges(row.applies.read(cx).text()).is_none()) {
+        if self
+            .rows
+            .iter()
+            .any(|row| parse_ranges(row.applies.read(cx).text()).is_none())
+        {
             let message = t("Reference is not valid.", "Référence non valide.");
-            self.modal
-                .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+            self.modal.update_app(cx, |app, cx| {
+                app.alert(Alert::new("OpenSheet", message).warning(), cx)
+            });
             return false;
         }
         let rules = self.rules.clone();
@@ -274,15 +309,23 @@ impl Manager {
             .modal
             .read_app(cx, |app| {
                 rules.iter().enumerate().find_map(|(sheet, rules)| {
-                    let changed = app.wb.sheets.get(sheet).is_some_and(|sh| sh.cond_formats != *rules);
+                    let changed = app
+                        .wb
+                        .sheets
+                        .get(sheet)
+                        .is_some_and(|sh| sh.cond_formats != *rules);
                     let answer = app.wb.permits(&Action::FormatCells { sheet });
-                    answer.err().filter(|_| changed).map(|denied| denied.message(app.wb.locale))
+                    answer
+                        .err()
+                        .filter(|_| changed)
+                        .map(|denied| denied.message(app.wb.locale))
                 })
             })
             .flatten();
         if let Some(message) = denied {
-            self.modal
-                .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+            self.modal.update_app(cx, |app, cx| {
+                app.alert(Alert::new("OpenSheet", message).warning(), cx)
+            });
             return false;
         }
         self.modal.update_app(cx, |app, cx| {
@@ -312,7 +355,9 @@ impl Manager {
                 div()
                     .border_1()
                     .border_color(c(theme::BORDER_STRONG))
-                    .child(draw::picture(128.0, 18.0, move |bounds, out| draw::scale_strip(&colors, bounds, out)))
+                    .child(draw::picture(128.0, 18.0, move |bounds, out| {
+                        draw::scale_strip(&colors, bounds, out)
+                    }))
                     .into_any_element()
             }
             Rule::DataBar(bar) => {
@@ -364,20 +409,26 @@ impl Render for Manager {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sheet = self.sheet();
         let active = self.selections[sheet].1;
-        let scopes: Vec<SharedString> = [crate::i18n::t_ctx("rules", "Current Selection", "Sélection actuelle"), t("This Worksheet", "Cette feuille de calcul")]
-            .into_iter()
-            .map(SharedString::from)
-            .chain(
-                self.names
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| *index != self.current)
-                    .map(|(_, name)| format!("{}{name}", t("Sheet: ", "Feuille : ")).into()),
-            )
-            .collect();
+        let scopes: Vec<SharedString> = [
+            crate::i18n::t_ctx("rules", "Current Selection", "Sélection actuelle"),
+            t("This Worksheet", "Cette feuille de calcul"),
+        ]
+        .into_iter()
+        .map(SharedString::from)
+        .chain(
+            self.names
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != self.current)
+                .map(|(_, name)| format!("{}{name}", t("Sheet: ", "Feuille : ")).into()),
+        )
+        .collect();
         let has = self.selected_rule().is_some();
         let shown = self.shown();
-        let can_move = |up: bool| self.selected.is_some_and(|from| move_target(&shown, from, up).is_some());
+        let can_move = |up: bool| {
+            self.selected
+                .is_some_and(|from| move_target(&shown, from, up).is_some())
+        };
 
         let buttons = div()
             .flex()
@@ -426,7 +477,10 @@ impl Render for Manager {
             .border_b_1()
             .border_color(c(theme::BORDER))
             .font_weight(FontWeight::SEMIBOLD)
-            .child(cell(None).child(t("Rule (applied in order shown)", "Règle (appliquée dans l'ordre indiqué)")))
+            .child(cell(None).child(t(
+                "Rule (applied in order shown)",
+                "Règle (appliquée dans l'ordre indiqué)",
+            )))
             .child(cell(Some(COL_FORMAT)).child(t("Format", "Format")))
             .child(cell(Some(COL_APPLIES)).child(t("Applies to", "S'applique à")))
             .child(cell(Some(COL_STOP)).child(t("Stop If True", "Interrompre si Vrai")));
@@ -447,9 +501,15 @@ impl Render for Manager {
                         .border_color(c(theme::BORDER))
                         .when(on, |d| d.bg(c(theme::ACCENT_LIGHT)))
                         .when(!on, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                        .child(cell(None).child(div().truncate().child(words::describe(cf, self.locale, active))))
+                        .child(cell(None).child(div().truncate().child(words::describe(
+                            cf,
+                            self.locale,
+                            active,
+                        ))))
                         .child(cell(Some(COL_FORMAT)).child(Self::format_cell(cf)))
-                        .child(cell(Some(COL_APPLIES)).child(RefEdit::new(&row.applies, &self.modal).width(COL_APPLIES - 16.0)))
+                        .child(cell(Some(COL_APPLIES)).child(
+                            RefEdit::new(&row.applies, &self.modal).width(COL_APPLIES - 16.0),
+                        ))
                         .child(
                             cell(Some(COL_STOP)).justify_center().child(
                                 Checkbox::new(("stop", index), "", cf.stop_if_true)
@@ -486,7 +546,10 @@ impl Render for Manager {
         .width(880.0)
         .on_ok(cx.listener(Self::ok))
         .child(labeled(
-            t("Show formatting rules for:", "Afficher les règles de mise en forme pour :"),
+            t(
+                "Show formatting rules for:",
+                "Afficher les règles de mise en forme pour :",
+            ),
             Select::new("scope", scopes, Some(self.scope))
                 .width(240.0)
                 .on_change(cx.listener(|this, ix: &usize, _, cx| {
@@ -509,14 +572,22 @@ impl Render for Manager {
             div()
                 .flex()
                 .gap(px(8.))
-                .child(Button::new("dialog-ok", t("OK", "OK")).primary().on_click(cx.listener(Self::ok)))
+                .child(
+                    Button::new("dialog-ok", t("OK", "OK"))
+                        .primary()
+                        .on_click(cx.listener(Self::ok)),
+                )
                 .child(Button::new("dialog-close", t("Close", "Fermer")).on_click({
                     let modal = self.modal.clone();
                     move |_, window, cx| modal.close(window, cx)
                 }))
-                .child(Button::new("dialog-apply", t("Apply", "Appliquer")).on_click(cx.listener(|this, _, _, cx| {
-                    this.apply(cx);
-                }))),
+                .child(
+                    Button::new("dialog-apply", t("Apply", "Appliquer")).on_click(cx.listener(
+                        |this, _, _, cx| {
+                            this.apply(cx);
+                        },
+                    )),
+                ),
         )
     }
 }
@@ -527,7 +598,10 @@ mod tests {
     use opensheet_engine::Expr;
 
     fn rule_on(range: &str) -> CondFormat {
-        CondFormat::new(vec![Rect::parse(range).unwrap()], Rule::greater_than(Expr::Number(1.0)))
+        CondFormat::new(
+            vec![Rect::parse(range).unwrap()],
+            Rule::greater_than(Expr::Number(1.0)),
+        )
     }
 
     #[test]
@@ -535,7 +609,13 @@ mod tests {
         let rules = [rule_on("A1:A5"), rule_on("C1:C5"), rule_on("A4:D4")];
         assert_eq!(rules_in(&rules, &[Rect::parse("A1").unwrap()]), [0]);
         assert_eq!(rules_in(&rules, &[Rect::parse("B4:C4").unwrap()]), [1, 2]);
-        assert_eq!(rules_in(&rules, &[Rect::parse("F9").unwrap(), Rect::parse("A4").unwrap()]), [0, 2]);
+        assert_eq!(
+            rules_in(
+                &rules,
+                &[Rect::parse("F9").unwrap(), Rect::parse("A4").unwrap()]
+            ),
+            [0, 2]
+        );
         assert!(rules_in(&rules, &[Rect::parse("F9").unwrap()]).is_empty());
     }
 

@@ -20,8 +20,8 @@ use super::dxf::Dxfs;
 use super::write::push_number;
 use super::xml::{Event, Reader, Tag, decode_cell_text, push_cell_text};
 use opensheet_engine::filter::{
-    AdvancedFilter, AutoFilter, ColorFilter, Condition, Criteria, CustomFilter, CustomOp, DateGroup, DynamicFilter,
-    FilterScope, SortState, Top10, ValueFilter,
+    AdvancedFilter, AutoFilter, ColorFilter, Condition, Criteria, CustomFilter, CustomOp,
+    DateGroup, DynamicFilter, FilterScope, SortState, Top10, ValueFilter,
 };
 use opensheet_engine::ops::{SortLevel, SortOn};
 use opensheet_engine::refs::cell_name;
@@ -177,7 +177,9 @@ pub(crate) fn write_sheet(x: &mut String, wb: &Workbook, sheet: usize, dxfs: &mu
 /// Whether any sheet has a filter of its own or an Advanced Filter, which
 /// a file also names (see [`push_names`]).
 pub(crate) fn has_names(wb: &Workbook) -> bool {
-    wb.sheets.iter().any(|sheet| sheet.auto_filter.is_some() || sheet.advanced_filter.is_some())
+    wb.sheets
+        .iter()
+        .any(|sheet| sheet.auto_filter.is_some() || sheet.advanced_filter.is_some())
 }
 
 /// `Sheet1!$A$1:$C$7`.
@@ -208,11 +210,19 @@ pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
     for (index, sheet) in wb.sheets.iter().enumerate() {
         let advanced = sheet.advanced_filter.as_ref();
         if let Some(criteria) = advanced.and_then(|filter| filter.criteria) {
-            w!(x, "<definedName name=\"_xlnm.Criteria\" localSheetId=\"{index}\">");
+            w!(
+                x,
+                "<definedName name=\"_xlnm.Criteria\" localSheetId=\"{index}\">"
+            );
             push_cell_text(x, &name_text(&sheet.name, criteria));
             x.push_str("</definedName>");
         }
-        let Some(range) = sheet.auto_filter.as_ref().map(|filter| filter.range).or(advanced.map(|filter| filter.range)) else {
+        let Some(range) = sheet
+            .auto_filter
+            .as_ref()
+            .map(|filter| filter.range)
+            .or(advanced.map(|filter| filter.range))
+        else {
             continue;
         };
         w!(
@@ -259,7 +269,11 @@ pub(crate) fn read_name(name: &str, text: &str, sheet: Option<&mut Sheet>) -> bo
         // The rows hidden under the header of the list are those the
         // filter hides: the file is the truth, as for an AutoFilter.
         filter.range = range;
-        let rows: Vec<u32> = sheet.hidden_rows.range(range.r0 + 1..=range.r1).copied().collect();
+        let rows: Vec<u32> = sheet
+            .hidden_rows
+            .range(range.r0 + 1..=range.r1)
+            .copied()
+            .collect();
         for row in rows {
             sheet.hidden_rows.remove(&row);
             sheet.filtered_rows.insert(row);
@@ -273,7 +287,11 @@ pub(crate) fn read_name(name: &str, text: &str, sheet: Option<&mut Sheet>) -> bo
 /// Advanced Filter was filtered by its AutoFilter or by a table.
 pub(crate) fn finish_names(wb: &mut Workbook) {
     for sheet in &mut wb.sheets {
-        if sheet.advanced_filter.as_ref().is_some_and(|filter| filter.range.rows() < 2) {
+        if sheet
+            .advanced_filter
+            .as_ref()
+            .is_some_and(|filter| filter.range.rows() < 2)
+        {
             sheet.advanced_filter = None;
         }
     }

@@ -8,8 +8,17 @@ fn main() {
     match std::env::args().nth(1) {
         Some(lang) => {
             let locale = opensheet_engine::Locale::by_id(&lang);
-            let same: Vec<&str> = all.iter().map(|d| d.name).filter(|n| locale.fn_to_local(n) == *n).collect();
-            println!("{} without a name in '{}': {}", same.len(), locale.id, same.join(" "));
+            let same: Vec<&str> = all
+                .iter()
+                .map(|d| d.name)
+                .filter(|n| locale.fn_to_local(n) == *n)
+                .collect();
+            println!(
+                "{} without a name in '{}': {}",
+                same.len(),
+                locale.id,
+                same.join(" ")
+            );
         }
         None => {
             for def in all {

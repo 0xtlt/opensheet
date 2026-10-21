@@ -73,20 +73,33 @@ fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Stri
 /// A checker that knows a few English words.
 fn checker() -> Rc<fake::Words> {
     Rc::new(fake::Words::knowing(
-        &["the", "cat", "sat", "end", "a", "note", "on", "box", "of", "sales", "page", "budget", "total", "ada", "good", "first", "ten", "that", "and"],
-        &[("catt", &["cat", "cart"]), ("teh", &["the", "ten"]), ("Teh", &["The"]), ("salles", &["sales"])],
+        &[
+            "the", "cat", "sat", "end", "a", "note", "on", "box", "of", "sales", "page", "budget",
+            "total", "ada", "good", "first", "ten", "that", "and",
+        ],
+        &[
+            ("catt", &["cat", "cart"]),
+            ("teh", &["the", "ten"]),
+            ("Teh", &["The"]),
+            ("salles", &["sales"]),
+        ],
     ))
 }
 
 fn use_checker(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Rc<fake::Words> {
     let words = checker();
     let shared = words.clone();
-    app.update(cx, |app, _| app.ext_mut::<Services>().spelling = Some(shared));
+    app.update(cx, |app, _| {
+        app.ext_mut::<Services>().spelling = Some(shared)
+    });
     words
 }
 
 /// The word the Spelling dialog shows, where it is and its suggestions.
-fn issue(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<(String, Place, Vec<String>)> {
+fn issue(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+) -> Option<(String, Place, Vec<String>)> {
     app.update(cx, |app, _| {
         let issue = app.ext::<Spelling>()?.session.as_ref()?.current.clone()?;
         Some((issue.word, issue.place, issue.suggestions))
@@ -98,11 +111,20 @@ fn word(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<String> {
 }
 
 fn dialog(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<SpellingDialog> {
-    app.update(cx, |app, _| app.ext::<Spelling>().and_then(|spelling| spelling.dialog.clone()).expect("the Spelling dialog is open").0)
+    app.update(cx, |app, _| {
+        app.ext::<Spelling>()
+            .and_then(|spelling| spelling.dialog.clone())
+            .expect("the Spelling dialog is open")
+            .0
+    })
 }
 
 /// Press a button of the Spelling dialog.
-fn press(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, f: impl FnOnce(&mut SpellingDialog, &mut gpui::Window, &mut gpui::Context<SpellingDialog>)) {
+fn press(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    f: impl FnOnce(&mut SpellingDialog, &mut gpui::Window, &mut gpui::Context<SpellingDialog>),
+) {
     let dialog = dialog(app, cx);
     dialog.update_in(cx, f);
     redraw(cx);
@@ -129,7 +151,14 @@ fn f7_checks_the_sheet_word_by_word(cx: &mut TestAppContext) {
     redraw(cx);
     assert_eq!(modals(&app, cx), 1);
     let (found, place, suggestions) = issue(&app, cx).expect("a first word");
-    assert_eq!((found.as_str(), place, suggestions), ("catt", Place::Cell(0, 0), vec!["cat".to_string(), "cart".to_string()]));
+    assert_eq!(
+        (found.as_str(), place, suggestions),
+        (
+            "catt",
+            Place::Cell(0, 0),
+            vec!["cat".to_string(), "cart".to_string()]
+        )
+    );
     // Return is Change, with the first suggestion.
     cx.simulate_keystrokes("enter");
     redraw(cx);
@@ -164,10 +193,15 @@ fn f7_checks_the_sheet_word_by_word(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(word(&app, cx).as_deref(), Some("frobnicate"));
-    press(&app, cx, |dialog, window, cx| dialog.ignore_once(window, cx));
+    press(&app, cx, |dialog, window, cx| {
+        dialog.ignore_once(window, cx)
+    });
     // The end: the dialog goes and Excel says so.
     assert_eq!(modals(&app, cx), 1);
-    assert!(app.update(cx, |app, _| app.ext::<Spelling>().is_none_or(|spelling| spelling.session.is_none())));
+    assert!(app.update(cx, |app, _| {
+        app.ext::<Spelling>()
+            .is_none_or(|spelling| spelling.session.is_none())
+    }));
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(modals(&app, cx), 0);
@@ -175,7 +209,10 @@ fn f7_checks_the_sheet_word_by_word(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(text(&app, cx, 5, 0), "Teh cat, ten end");
     cx.simulate_keystrokes("cmd-z");
-    assert_eq!((text(&app, cx, 4, 1), text(&app, cx, 5, 0)), ("teh end teh".to_string(), "Teh cat, teh end".to_string()));
+    assert_eq!(
+        (text(&app, cx, 4, 1), text(&app, cx, 5, 0)),
+        ("teh end teh".to_string(), "Teh cat, teh end".to_string())
+    );
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(text(&app, cx, 0, 0), "The catt sat");
 }
@@ -184,11 +221,16 @@ fn f7_checks_the_sheet_word_by_word(cx: &mut TestAppContext) {
 fn a_sheet_without_mistakes_is_said_to_be_good(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     use_checker(&app, cx);
-    edit(&app, cx, |wb| wb.set_cell_text(0, 0, 0, "The cat sat").unwrap());
+    edit(&app, cx, |wb| {
+        wb.set_cell_text(0, 0, 0, "The cat sat").unwrap()
+    });
     run(&app, cx, Cmd::Spelling);
     // No dialog: only the message.
     assert_eq!(modals(&app, cx), 1);
-    assert!(app.update(cx, |app, _| app.ext::<Spelling>().is_none_or(|spelling| spelling.dialog.is_none())));
+    assert!(app.update(cx, |app, _| {
+        app.ext::<Spelling>()
+            .is_none_or(|spelling| spelling.dialog.is_none())
+    }));
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(modals(&app, cx), 0);
@@ -221,11 +263,16 @@ fn the_check_goes_on_from_the_top_when_asked(cx: &mut TestAppContext) {
     edit(&app, cx, |wb| wb.set_cell_text(0, 3, 0, "teh end").unwrap());
     select(&app, cx, 2, 0);
     run(&app, cx, Cmd::Spelling);
-    press(&app, cx, |dialog, window, cx| dialog.ignore_once(window, cx));
+    press(&app, cx, |dialog, window, cx| {
+        dialog.ignore_once(window, cx)
+    });
     assert_eq!(modals(&app, cx), 2);
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert_eq!((modals(&app, cx), word(&app, cx)), (1, Some("catt".to_string())));
+    assert_eq!(
+        (modals(&app, cx), word(&app, cx)),
+        (1, Some("catt".to_string()))
+    );
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(text(&app, cx, 0, 0), "cat first");
@@ -248,7 +295,10 @@ fn a_selection_is_all_that_is_checked(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::Spelling);
     assert_eq!(word(&app, cx).as_deref(), Some("teh"));
     // The selection stays; the active cell walks through it.
-    assert_eq!(app.update(cx, |app, _| (app.sel().current(), app.active())), (Rect::new(1, 0, 2, 0), (1, 0)));
+    assert_eq!(
+        app.update(cx, |app, _| (app.sel().current(), app.active())),
+        (Rect::new(1, 0, 2, 0), (1, 0))
+    );
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(word(&app, cx).as_deref(), Some("catt"));
@@ -277,8 +327,16 @@ fn notes_comments_shapes_titles_and_headers_are_checked(cx: &mut TestAppContext)
         let author = opensheet_engine::comment::Person::new("Ada");
         wb.add_comment(0, 2, 2, &author, 45000.0, "teh first");
         wb.add_reply(0, 2, 2, &author, 45000.5, "on teh box");
-        shape = wb.add_shape(0, ShapeTool::Rectangle, Frame::new(300.0, 40.0, 120.0, 60.0)).expect("a shape");
-        wb.update_drawing(0, shape, |drawing| drawing.as_shape_mut().unwrap().text = "Box of catt".to_string());
+        shape = wb
+            .add_shape(
+                0,
+                ShapeTool::Rectangle,
+                Frame::new(300.0, 40.0, 120.0, 60.0),
+            )
+            .expect("a shape");
+        wb.update_drawing(0, shape, |drawing| {
+            drawing.as_shape_mut().unwrap().text = "Box of catt".to_string()
+        });
         let titled = Chart {
             title: ChartTitle::Text("Total salles".to_string()),
             ..Chart::new(ChartKind::Column)
@@ -310,13 +368,28 @@ fn notes_comments_shapes_titles_and_headers_are_checked(cx: &mut TestAppContext)
     );
     app.update(cx, |app, _| {
         let sheet = &app.wb.sheets[0];
-        assert_eq!(sheet.comments[&(1, 1)].as_note().unwrap().text(), "Zorglub:\nA cat note");
+        assert_eq!(
+            sheet.comments[&(1, 1)].as_note().unwrap().text(),
+            "Zorglub:\nA cat note"
+        );
         let thread = sheet.comments[&(2, 2)].as_thread().unwrap();
-        assert_eq!((thread.first.text.as_str(), thread.replies[0].text.as_str()), ("the first", "on the box"));
-        assert_eq!(app.wb.drawing(0, shape).unwrap().as_shape().unwrap().text, "Box of cat");
-        assert_eq!(app.wb.chart(0, chart).unwrap().title, ChartTitle::Text("Total sales".to_string()));
+        assert_eq!(
+            (thread.first.text.as_str(), thread.replies[0].text.as_str()),
+            ("the first", "on the box")
+        );
+        assert_eq!(
+            app.wb.drawing(0, shape).unwrap().as_shape().unwrap().text,
+            "Box of cat"
+        );
+        assert_eq!(
+            app.wb.chart(0, chart).unwrap().title,
+            ChartTitle::Text("Total sales".to_string())
+        );
         // The codes of the header are where they were.
-        assert_eq!(sheet.page.header_footer.odd_header, "&L&\"Arial,Bold\"&14Budget of the cat&RPage &P");
+        assert_eq!(
+            sheet.page.header_footer.odd_header,
+            "&L&\"Arial,Bold\"&14Budget of the cat&RPage &P"
+        );
         assert_eq!(sheet.page.header_footer.odd_footer, "&Ccat");
     });
     // The message of the end, then one undo per change.
@@ -324,7 +397,14 @@ fn notes_comments_shapes_titles_and_headers_are_checked(cx: &mut TestAppContext)
     redraw(cx);
     assert_eq!(modals(&app, cx), 0);
     cx.simulate_keystrokes("cmd-z");
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].page.header_footer.odd_footer.clone()), "&Ccatt");
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[0]
+            .page
+            .header_footer
+            .odd_footer
+            .clone()),
+        "&Ccatt"
+    );
 }
 
 #[gpui::test]
@@ -339,14 +419,27 @@ fn undo_last_takes_answers_back(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::Spelling);
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert_eq!((text(&app, cx, 0, 0), word(&app, cx)), ("cat".to_string(), Some("teh".to_string())));
+    assert_eq!(
+        (text(&app, cx, 0, 0), word(&app, cx)),
+        ("cat".to_string(), Some("teh".to_string()))
+    );
     // The change is taken back and its word shown again.
     press(&app, cx, |dialog, window, cx| dialog.undo_last(window, cx));
-    assert_eq!((text(&app, cx, 0, 0), word(&app, cx)), ("catt".to_string(), Some("catt".to_string())));
-    press(&app, cx, |dialog, window, cx| dialog.ignore_once(window, cx));
+    assert_eq!(
+        (text(&app, cx, 0, 0), word(&app, cx)),
+        ("catt".to_string(), Some("catt".to_string()))
+    );
+    press(&app, cx, |dialog, window, cx| {
+        dialog.ignore_once(window, cx)
+    });
     // Change All, Add and Ignore All, then back through the three.
-    press(&app, cx, |dialog, window, cx| dialog.change(true, window, cx));
-    assert_eq!((text(&app, cx, 1, 0), text(&app, cx, 2, 0)), ("the blorp".to_string(), "the zork".to_string()));
+    press(&app, cx, |dialog, window, cx| {
+        dialog.change(true, window, cx)
+    });
+    assert_eq!(
+        (text(&app, cx, 1, 0), text(&app, cx, 2, 0)),
+        ("the blorp".to_string(), "the zork".to_string())
+    );
     press(&app, cx, |dialog, window, cx| dialog.add(window, cx));
     assert_eq!(word(&app, cx).as_deref(), Some("zork"));
     press(&app, cx, |dialog, window, cx| dialog.ignore_all(window, cx));
@@ -384,11 +477,20 @@ fn undo_last_unlearns_and_unignores(cx: &mut TestAppContext) {
     press(&app, cx, |dialog, window, cx| dialog.add(window, cx));
     press(&app, cx, |dialog, window, cx| dialog.ignore_all(window, cx));
     assert_eq!(word(&app, cx).as_deref(), Some("teh"));
-    assert_eq!((words.learned.borrow().len(), words.ignored.borrow().len()), (1, 1));
+    assert_eq!(
+        (words.learned.borrow().len(), words.ignored.borrow().len()),
+        (1, 1)
+    );
     press(&app, cx, |dialog, window, cx| dialog.undo_last(window, cx));
-    assert_eq!((word(&app, cx).as_deref(), words.ignored.borrow().len()), (Some("zork"), 0));
+    assert_eq!(
+        (word(&app, cx).as_deref(), words.ignored.borrow().len()),
+        (Some("zork"), 0)
+    );
     press(&app, cx, |dialog, window, cx| dialog.undo_last(window, cx));
-    assert_eq!((word(&app, cx).as_deref(), words.learned.borrow().len()), (Some("blorp"), 0));
+    assert_eq!(
+        (word(&app, cx).as_deref(), words.learned.borrow().len()),
+        (Some("blorp"), 0)
+    );
     // Nothing more to take back; Escape gives the check up without a word.
     press(&app, cx, |dialog, window, cx| dialog.undo_last(window, cx));
     assert_eq!(word(&app, cx).as_deref(), Some("blorp"));
@@ -414,16 +516,35 @@ fn a_protected_sheet_refuses_corrections(cx: &mut TestAppContext) {
     // Change: Excel's message for a protected sheet, and nothing changes.
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert_eq!((modals(&app, cx), text(&app, cx, 0, 0)), (2, "catt".to_string()));
+    assert_eq!(
+        (modals(&app, cx), text(&app, cx, 0, 0)),
+        (2, "catt".to_string())
+    );
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert_eq!((modals(&app, cx), word(&app, cx)), (1, Some("catt".to_string())));
-    press(&app, cx, |dialog, window, cx| dialog.ignore_once(window, cx));
-    press(&app, cx, |dialog, window, cx| dialog.ignore_once(window, cx));
+    assert_eq!(
+        (modals(&app, cx), word(&app, cx)),
+        (1, Some("catt".to_string()))
+    );
+    press(&app, cx, |dialog, window, cx| {
+        dialog.ignore_once(window, cx)
+    });
+    press(&app, cx, |dialog, window, cx| {
+        dialog.ignore_once(window, cx)
+    });
     // The unlocked cell: Change All changes it, and only it.
-    assert_eq!(issue(&app, cx).map(|(_, place, _)| place), Some(Place::Cell(2, 1)));
-    press(&app, cx, |dialog, window, cx| dialog.change(true, window, cx));
-    let cells = [text(&app, cx, 0, 0), text(&app, cx, 1, 0), text(&app, cx, 2, 1)];
+    assert_eq!(
+        issue(&app, cx).map(|(_, place, _)| place),
+        Some(Place::Cell(2, 1))
+    );
+    press(&app, cx, |dialog, window, cx| {
+        dialog.change(true, window, cx)
+    });
+    let cells = [
+        text(&app, cx, 0, 0),
+        text(&app, cx, 1, 0),
+        text(&app, cx, 2, 1),
+    ];
     assert_eq!(cells, ["catt", "catt", "cat"].map(str::to_string));
 }
 
@@ -435,11 +556,24 @@ fn the_dictionary_language_is_chosen_and_kept(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::Spelling);
     // The language of the interface to begin with.
     let language = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
-        app.update(cx, |app, _| app.ext::<Spelling>().unwrap().session.as_ref().unwrap().language.clone())
+        app.update(cx, |app, _| {
+            app.ext::<Spelling>()
+                .unwrap()
+                .session
+                .as_ref()
+                .unwrap()
+                .language
+                .clone()
+        })
     };
     assert_eq!(language(&app, cx), "en");
-    press(&app, cx, |dialog, window, cx| dialog.set_language(1, window, cx));
-    assert_eq!((language(&app, cx), word(&app, cx)), ("fr".to_string(), Some("catt".to_string())));
+    press(&app, cx, |dialog, window, cx| {
+        dialog.set_language(1, window, cx)
+    });
+    assert_eq!(
+        (language(&app, cx), word(&app, cx)),
+        ("fr".to_string(), Some("catt".to_string()))
+    );
     assert_eq!(settings::get().spelling_language, "fr");
     cx.simulate_keystrokes("escape");
     redraw(cx);
@@ -455,14 +589,20 @@ fn a_cell_being_typed_is_stored_before_the_check(cx: &mut TestAppContext) {
     cx.simulate_input("catt");
     cx.simulate_keystrokes("f7");
     redraw(cx);
-    assert_eq!((text(&app, cx, 0, 0), word(&app, cx)), ("catt".to_string(), Some("catt".to_string())));
+    assert_eq!(
+        (text(&app, cx, 0, 0), word(&app, cx)),
+        ("catt".to_string(), Some("catt".to_string()))
+    );
     // A text that would read as a number keeps its apostrophe.
     cx.simulate_keystrokes("escape");
     edit(&app, cx, |wb| wb.set_cell_text(0, 0, 0, "'catt").unwrap());
     run(&app, cx, Cmd::Spelling);
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert_eq!(app.update(cx, |app, _| app.wb.value_at(0, 0, 0)), Value::text("cat"));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.value_at(0, 0, 0)),
+        Value::text("cat")
+    );
 }
 
 // ---------------------------------------------------------------- thesaurus
@@ -476,8 +616,17 @@ fn book() -> fake::Book {
     };
     fake::Book(
         [
-            ("happy".to_string(), vec![sense("adjective", &["cheerful", "merry"], &["sad"]), sense("adjective", &["willing"], &[])]),
-            ("cheerful".to_string(), vec![sense("adjective", &["happy", "jolly"], &[])]),
+            (
+                "happy".to_string(),
+                vec![
+                    sense("adjective", &["cheerful", "merry"], &["sad"]),
+                    sense("adjective", &["willing"], &[]),
+                ],
+            ),
+            (
+                "cheerful".to_string(),
+                vec![sense("adjective", &["happy", "jolly"], &[])],
+            ),
         ]
         .into_iter()
         .collect(),
@@ -485,37 +634,62 @@ fn book() -> fake::Book {
 }
 
 fn thesaurus_pane(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<ThesaurusPane> {
-    app.update(cx, |app, _| app.ext::<ThesaurusUi>().and_then(|ui| ui.pane.clone()).expect("the Thesaurus pane"))
+    app.update(cx, |app, _| {
+        app.ext::<ThesaurusUi>()
+            .and_then(|ui| ui.pane.clone())
+            .expect("the Thesaurus pane")
+    })
 }
 
 #[gpui::test]
 fn shift_f7_lists_the_synonyms_of_the_cell(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    app.update(cx, |app, _| app.ext_mut::<Services>().thesaurus = Some(Rc::new(book())));
+    app.update(cx, |app, _| {
+        app.ext_mut::<Services>().thesaurus = Some(Rc::new(book()))
+    });
     edit(&app, cx, |wb| wb.set_cell_text(0, 0, 0, "Happy").unwrap());
     cx.simulate_keystrokes("shift-f7");
     redraw(cx);
     assert!(app.update(cx, |app, _| app.pane_open(thesaurus::PANE)));
     let pane = thesaurus_pane(&app, cx);
     let headings = pane.update(cx, |pane, _| match &pane.result {
-        Some(Synonyms::Found { senses, .. }) => senses.iter().map(thesaurus::heading).collect::<Vec<_>>(),
+        Some(Synonyms::Found { senses, .. }) => {
+            senses.iter().map(thesaurus::heading).collect::<Vec<_>>()
+        }
         other => panic!("{other:?}"),
     });
     assert_eq!(headings, vec!["cheerful (adj.)", "willing (adj.)"]);
     // A press on a synonym chooses it; Insert puts it in the cell.
-    let merry = cx.debug_bounds("thesaurus-word-1").expect("the second synonym is drawn").center();
+    let merry = cx
+        .debug_bounds("thesaurus-word-1")
+        .expect("the second synonym is drawn")
+        .center();
     cx.simulate_click(merry, Modifiers::none());
     redraw(cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.chosen.clone()).as_deref(), Some("merry"));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.chosen.clone()).as_deref(),
+        Some("merry")
+    );
     pane.update(cx, |pane, cx| pane.copy_chosen(cx));
-    assert_eq!(cx.read_from_clipboard().and_then(|item| item.text()).as_deref(), Some("merry"));
+    assert_eq!(
+        cx.read_from_clipboard()
+            .and_then(|item| item.text())
+            .as_deref(),
+        Some("merry")
+    );
     pane.update(cx, |pane, cx| pane.insert_chosen(cx));
     redraw(cx);
-    assert_eq!((text(&app, cx, 0, 0), undo_label(&app, cx)), ("merry".to_string(), Some("Thesaurus".to_string())));
+    assert_eq!(
+        (text(&app, cx, 0, 0), undo_label(&app, cx)),
+        ("merry".to_string(), Some("Thesaurus".to_string()))
+    );
     app.update(cx, |app, cx| app.undo(cx));
     assert_eq!(text(&app, cx, 0, 0), "Happy");
     // Two presses look the synonym up; Back returns.
-    let cheerful = cx.debug_bounds("thesaurus-word-0").expect("the first synonym").center();
+    let cheerful = cx
+        .debug_bounds("thesaurus-word-0")
+        .expect("the first synonym")
+        .center();
     cx.simulate_mouse_down(cheerful, gpui::MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_up(cheerful, gpui::MouseButton::Left, Modifiers::none());
     cx.simulate_event(gpui::MouseDownEvent {
@@ -532,9 +706,14 @@ fn shift_f7_lists_the_synonyms_of_the_cell(cx: &mut TestAppContext) {
     // A word the thesaurus does not hold, typed in the search field.
     pane.update(cx, |pane, cx| pane.look_up("heureux", cx));
     redraw(cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.result.clone()), Some(Synonyms::NotFound));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.result.clone()),
+        Some(Synonyms::NotFound)
+    );
     // The command again, on another cell: the same pane, the new word.
-    edit(&app, cx, |wb| wb.set_cell_text(0, 1, 0, "cheerful.").unwrap());
+    edit(&app, cx, |wb| {
+        wb.set_cell_text(0, 1, 0, "cheerful.").unwrap()
+    });
     select(&app, cx, 1, 0);
     run(&app, cx, Cmd::Thesaurus);
     assert_eq!(pane.update(cx, |pane, _| pane.word.clone()), "cheerful");
@@ -549,17 +728,27 @@ fn the_thesaurus_says_when_the_mac_has_none(cx: &mut TestAppContext) {
     });
     run(&app, cx, Cmd::Thesaurus);
     let pane = thesaurus_pane(&app, cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.result.clone()), Some(Synonyms::NoThesaurus));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.result.clone()),
+        Some(Synonyms::NoThesaurus)
+    );
     // A protected sheet refuses the word Insert would put.
     app.update(cx, |app, cx| assert!(!thesaurus::insert(app, "merry", cx)));
     redraw(cx);
-    assert_eq!((modals(&app, cx), text(&app, cx, 0, 0)), (1, "happy".to_string()));
+    assert_eq!(
+        (modals(&app, cx), text(&app, cx, 0, 0)),
+        (1, "happy".to_string())
+    );
 }
 
 // ---------------------------------------------------------------- translate
 
 fn translator_pane(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<TranslatePane> {
-    app.update(cx, |app, _| app.ext::<TranslateUi>().and_then(|ui| ui.pane.clone()).expect("the Translator pane"))
+    app.update(cx, |app, _| {
+        app.ext::<TranslateUi>()
+            .and_then(|ui| ui.pane.clone())
+            .expect("the Translator pane")
+    })
 }
 
 fn translated(text: &str, source: &str) -> State {
@@ -572,7 +761,9 @@ fn translated(text: &str, source: &str) -> State {
 #[gpui::test]
 fn the_translator_translates_the_selected_cell(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    app.update(cx, |app, _| app.ext_mut::<Services>().translator = Some(Arc::new(fake::Echo(None))));
+    app.update(cx, |app, _| {
+        app.ext_mut::<Services>().translator = Some(Arc::new(fake::Echo(None)))
+    });
     edit(&app, cx, |wb| {
         wb.set_cell_text(0, 0, 0, "Good morning").unwrap();
         wb.set_cell_text(0, 1, 0, "Thank you").unwrap();
@@ -581,25 +772,48 @@ fn the_translator_translates_the_selected_cell(cx: &mut TestAppContext) {
     assert!(app.update(cx, |app, _| app.pane_open(translate::PANE)));
     let pane = translator_pane(&app, cx);
     // From: detected; To: the language of the interface.
-    let state = |cx: &mut VisualTestContext| pane.update(cx, |pane, _| (pane.from.clone(), pane.to.clone(), pane.state.clone()));
-    assert_eq!(state(cx), (None, "en".to_string(), translated("[en] GOOD MORNING", "en")));
+    let state = |cx: &mut VisualTestContext| {
+        pane.update(cx, |pane, _| {
+            (pane.from.clone(), pane.to.clone(), pane.state.clone())
+        })
+    };
+    assert_eq!(
+        state(cx),
+        (
+            None,
+            "en".to_string(),
+            translated("[en] GOOD MORNING", "en")
+        )
+    );
     pane.update(cx, |pane, cx| pane.set_to("fr".to_string(), cx));
     redraw(cx);
     assert_eq!(state(cx).2, translated("[fr] GOOD MORNING", "en"));
     pane.update(cx, |pane, cx| pane.set_from(Some("de".to_string()), cx));
     redraw(cx);
     assert_eq!(state(cx).2, translated("[fr] GOOD MORNING", "de"));
-    assert_eq!((settings::get().translate_from, settings::get().translate_to), ("de".to_string(), "fr".to_string()));
+    assert_eq!(
+        (settings::get().translate_from, settings::get().translate_to),
+        ("de".to_string(), "fr".to_string())
+    );
     // The pane follows the selection.
     select(&app, cx, 1, 0);
-    assert_eq!(pane.update(cx, |pane, cx| pane.source_text(cx)), "Thank you");
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.source_text(cx)),
+        "Thank you"
+    );
     assert_eq!(state(cx).2, translated("[fr] THANK YOU", "de"));
     // Insert puts the translation in the cell, as one step, and the pane
     // does not translate it in its turn.
     pane.update(cx, |pane, cx| pane.insert(cx));
     redraw(cx);
-    assert_eq!((text(&app, cx, 1, 0), undo_label(&app, cx)), ("[fr] THANK YOU".to_string(), Some("Translate".to_string())));
-    assert_eq!(pane.update(cx, |pane, cx| pane.source_text(cx)), "Thank you");
+    assert_eq!(
+        (text(&app, cx, 1, 0), undo_label(&app, cx)),
+        ("[fr] THANK YOU".to_string(), Some("Translate".to_string()))
+    );
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.source_text(cx)),
+        "Thank you"
+    );
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(text(&app, cx, 1, 0), "Thank you");
     // An empty cell: nothing to translate.
@@ -608,7 +822,9 @@ fn the_translator_translates_the_selected_cell(cx: &mut TestAppContext) {
     // A text typed in the box is translated after a pause.
     pane.update(cx, |pane, cx| pane.follow("typed".to_string(), cx));
     redraw(cx);
-    pane.update(cx, |pane, cx| pane.translate_after(Duration::from_millis(500), cx));
+    pane.update(cx, |pane, cx| {
+        pane.translate_after(Duration::from_millis(500), cx)
+    });
     cx.run_until_parked();
     assert_eq!(state(cx).2, State::Working);
     cx.executor().advance_clock(Duration::from_millis(600));
@@ -619,20 +835,32 @@ fn the_translator_translates_the_selected_cell(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_translator_opens_and_explains_when_macos_cannot_translate(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    edit(&app, cx, |wb| wb.set_cell_text(0, 0, 0, "Good morning").unwrap());
+    edit(&app, cx, |wb| {
+        wb.set_cell_text(0, 0, 0, "Good morning").unwrap()
+    });
     // What a window gets in a test: no helper next to the application.
     run(&app, cx, Cmd::Translate);
     let pane = translator_pane(&app, cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.state.clone()), State::Failed(TranslateError::NoHelper));
-    assert!(cx.debug_bounds("translation").is_some(), "the pane is drawn all the same");
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.state.clone()),
+        State::Failed(TranslateError::NoHelper)
+    );
+    assert!(
+        cx.debug_bounds("translation").is_some(),
+        "the pane is drawn all the same"
+    );
     // Languages that are not downloaded: the pane says where to get them.
     app.update(cx, |app, cx| {
         app.close_pane(translate::PANE, cx);
-        app.ext_mut::<Services>().translator = Some(Arc::new(fake::Echo(Some(TranslateError::NotInstalled))));
+        app.ext_mut::<Services>().translator =
+            Some(Arc::new(fake::Echo(Some(TranslateError::NotInstalled))));
     });
     run(&app, cx, Cmd::Translate);
     let pane = translator_pane(&app, cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.state.clone()), State::Failed(TranslateError::NotInstalled));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.state.clone()),
+        State::Failed(TranslateError::NotInstalled)
+    );
     pane.update(cx, |pane, cx| pane.insert(cx));
     assert_eq!(text(&app, cx, 0, 0), "Good morning");
     assert!(translate::where_languages_are().contains("System Settings"));
@@ -667,16 +895,21 @@ fn troubled(wb: &mut Workbook) -> (u32, u32) {
     wb.set_cell_text(0, 3, 0, "c").unwrap();
     wb.set_cell_text(0, 3, 1, "3").unwrap();
     let table = wb.add_table(0, Rect::new(0, 0, 3, 1), true).unwrap();
-    wb.set_table_option(0, table, TableOption::HeaderRow, false).unwrap();
+    wb.set_table_option(0, table, TableOption::HeaderRow, false)
+        .unwrap();
     // Yellow on white, twice side by side.
     wb.set_cell_text(0, 5, 0, "faint").unwrap();
     wb.set_cell_text(0, 5, 1, "faint").unwrap();
-    wb.update_style(0, Rect::new(5, 0, 5, 1), &|style| style.font.color = Some(Color(0xFFFF00)));
+    wb.update_style(0, Rect::new(5, 0, 5, 1), &|style| {
+        style.font.color = Some(Color(0xFFFF00))
+    });
     // Merged cells.
     wb.merge(0, Rect::new(7, 0, 7, 2));
     // Negative numbers in red alone.
     wb.set_cell_text(0, 9, 0, "-5").unwrap();
-    wb.update_style(0, Rect::new(9, 0, 9, 0), &|style| style.num_fmt = Arc::from("0;[Red]0"));
+    wb.update_style(0, Rect::new(9, 0, 9, 0), &|style| {
+        style.num_fmt = Arc::from("0;[Red]0")
+    });
     // A link that shows as its address, and one that reads well.
     wb.set_cell_text(0, 11, 0, "https://example.org/a").unwrap();
     wb.set_cell_text(0, 12, 0, "Our prices").unwrap();
@@ -689,31 +922,68 @@ fn troubled(wb: &mut Workbook) -> (u32, u32) {
     wb.set_hyperlink(0, link(11));
     wb.set_hyperlink(0, link(12));
     // A shape without text nor description, and one that has a text.
-    let bare = wb.add_shape(0, ShapeTool::Ellipse, Frame::new(400.0, 40.0, 80.0, 60.0)).expect("a shape");
-    let labelled = wb.add_shape(0, ShapeTool::Rectangle, Frame::new(400.0, 140.0, 80.0, 60.0)).expect("a shape");
-    wb.update_drawing(0, labelled, |drawing| drawing.as_shape_mut().unwrap().text = "Total".to_string());
+    let bare = wb
+        .add_shape(0, ShapeTool::Ellipse, Frame::new(400.0, 40.0, 80.0, 60.0))
+        .expect("a shape");
+    let labelled = wb
+        .add_shape(
+            0,
+            ShapeTool::Rectangle,
+            Frame::new(400.0, 140.0, 80.0, 60.0),
+        )
+        .expect("a shape");
+    wb.update_drawing(0, labelled, |drawing| {
+        drawing.as_shape_mut().unwrap().text = "Total".to_string()
+    });
     (bare, labelled)
 }
 
 fn rules(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<(Rule, String)> {
-    app.update(cx, |app, _| accessibility::findings(&app.wb).iter().map(|finding| (finding.rule, finding.label.clone())).collect())
+    app.update(cx, |app, _| {
+        accessibility::findings(&app.wb)
+            .iter()
+            .map(|finding| (finding.rule, finding.label.clone()))
+            .collect()
+    })
 }
 
 fn status(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> String {
     app.update(cx, |app, _| {
         let items = features::status_items(app);
-        items.iter().map(|item| item.text.to_string()).find(|text| text.starts_with("Accessibility")).expect("the indicator")
+        items
+            .iter()
+            .map(|item| item.text.to_string())
+            .find(|text| text.starts_with("Accessibility"))
+            .expect("the indicator")
     })
 }
 
-fn accessibility_pane(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<accessibility::AccessibilityPane> {
-    app.update(cx, |app, _| app.ext::<AccessibilityUi>().and_then(|ui| ui.pane.clone()).expect("the Accessibility pane"))
+fn accessibility_pane(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+) -> Entity<accessibility::AccessibilityPane> {
+    app.update(cx, |app, _| {
+        app.ext::<AccessibilityUi>()
+            .and_then(|ui| ui.pane.clone())
+            .expect("the Accessibility pane")
+    })
 }
 
 /// Select the result of a rule in the pane.
-fn choose(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, rule: Rule) -> accessibility::Finding {
+fn choose(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    rule: Rule,
+) -> accessibility::Finding {
     let pane = accessibility_pane(app, cx);
-    let finding = pane.update(cx, |pane, cx| pane.listed(cx).iter().find(|finding| finding.rule == rule).cloned()).expect("a result of the rule");
+    let finding = pane
+        .update(cx, |pane, cx| {
+            pane.listed(cx)
+                .iter()
+                .find(|finding| finding.rule == rule)
+                .cloned()
+        })
+        .expect("a result of the rule");
     let chosen = finding.clone();
     pane.update_in(cx, |pane, window, cx| pane.select(chosen, window, cx));
     redraw(cx);
@@ -730,7 +1000,10 @@ fn act(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, action: Action) {
 fn the_checker_lists_what_excel_lists(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     // An empty workbook is good to go, whatever its sheet is called.
-    assert_eq!((rules(&app, cx), status(&app, cx)), (Vec::new(), "Accessibility: Good to go".to_string()));
+    assert_eq!(
+        (rules(&app, cx), status(&app, cx)),
+        (Vec::new(), "Accessibility: Good to go".to_string())
+    );
     edit(&app, cx, |wb| {
         troubled(wb);
     });
@@ -746,14 +1019,21 @@ fn the_checker_lists_what_excel_lists(cx: &mut TestAppContext) {
         (Rule::DefaultSheetName, "Sheet1"),
     ];
     let found = rules(&app, cx);
-    let found: Vec<(Rule, &str)> = found.iter().map(|(rule, label)| (*rule, label.as_str())).collect();
+    let found: Vec<(Rule, &str)> = found
+        .iter()
+        .map(|(rule, label)| (*rule, label.as_str()))
+        .collect();
     assert_eq!(found, expected);
     // Every rule has Excel's words, in every language of the interface.
     for lang in crate::i18n::Lang::ALL {
         crate::i18n::set_lang(lang);
         for (rule, _) in expected {
             assert!(!rule.title().is_empty() && !rule.why().is_empty() && !rule.steps().is_empty());
-            assert!(rule.actions().iter().all(|action| !action.label().is_empty()));
+            assert!(
+                rule.actions()
+                    .iter()
+                    .all(|action| !action.label().is_empty())
+            );
         }
     }
     crate::i18n::set_lang(crate::i18n::Lang::En);
@@ -766,7 +1046,10 @@ fn the_accessibility_pane_shows_and_fixes(cx: &mut TestAppContext) {
     edit(&app, cx, |wb| bare = troubled(wb).0);
     // The indicator of the status bar opens the pane.
     app.update_in(cx, |app, window, cx| {
-        let item = features::status_items(app).into_iter().find(|item| item.text.starts_with("Accessibility")).unwrap();
+        let item = features::status_items(app)
+            .into_iter()
+            .find(|item| item.text.starts_with("Accessibility"))
+            .unwrap();
         (item.on_click.expect("the indicator answers a click"))(app, window, cx);
     });
     redraw(cx);
@@ -774,15 +1057,31 @@ fn the_accessibility_pane_shows_and_fixes(cx: &mut TestAppContext) {
     let pane = accessibility_pane(&app, cx);
     assert_eq!(pane.update(cx, |pane, cx| pane.listed(cx).len()), 8);
     // A press on a result selects what it is about.
-    let first = cx.debug_bounds("accessibility-result-0").expect("the first result is drawn").center();
+    let first = cx
+        .debug_bounds("accessibility-result-0")
+        .expect("the first result is drawn")
+        .center();
     cx.simulate_click(first, Modifiers::none());
     redraw(cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.selected.as_ref().map(|finding| finding.target)), Some(Target::Object(0, bare)));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane
+            .selected
+            .as_ref()
+            .map(|finding| finding.target)),
+        Some(Target::Object(0, bare))
+    );
     let selected = app.update(cx, |app, _| app.selected_objects());
-    assert_eq!(selected, vec![features::object_id(&drawings::Drawings, bare)]);
+    assert_eq!(
+        selected,
+        vec![features::object_id(&drawings::Drawings, bare)]
+    );
     // Add a description: the Alt Text pane, on that object.
     act(&app, cx, Action::AddDescription);
-    assert!(app.update(cx, |app, _| app.panes.iter().any(|pane| pane.title.as_ref() == "Alt Text")));
+    assert!(app.update(cx, |app, _| {
+        app.panes
+            .iter()
+            .any(|pane| pane.title.as_ref() == "Alt Text")
+    }));
     // Mark as decorative: the result goes, in one step that undoes.
     choose(&app, cx, Rule::MissingAltText);
     act(&app, cx, Action::MarkDecorative);
@@ -792,12 +1091,19 @@ fn the_accessibility_pane_shows_and_fixes(cx: &mut TestAppContext) {
     app.update(cx, |app, cx| app.undo(cx));
     assert_eq!(rules(&app, cx).len(), 8);
     act(&app, cx, Action::MarkDecorative);
-    assert_eq!(rules(&app, cx).len(), 8, "nothing is selected: nothing is done");
+    assert_eq!(
+        rules(&app, cx).len(),
+        8,
+        "nothing is selected: nothing is done"
+    );
     choose(&app, cx, Rule::MissingAltText);
     act(&app, cx, Action::MarkDecorative);
     // Merged cells: selected, then unmerged.
     choose(&app, cx, Rule::MergedCells);
-    assert_eq!(app.update(cx, |app, _| app.sel().current()), Rect::new(7, 0, 7, 2));
+    assert_eq!(
+        app.update(cx, |app, _| app.sel().current()),
+        Rect::new(7, 0, 7, 2)
+    );
     act(&app, cx, Action::Unmerge);
     assert!(app.update(cx, |app, _| app.wb.sheets[0].merges.is_empty()));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Unmerge Cells"));
@@ -806,7 +1112,11 @@ fn the_accessibility_pane_shows_and_fixes(cx: &mut TestAppContext) {
     act(&app, cx, Action::UseFirstRowAsHeader);
     assert!(app.update(cx, |app, _| app.wb.sheets[0].tables[0].header_row));
     // Contrast and number format lead to Format Cells, the link to its dialog.
-    for (rule, action) in [(Rule::Contrast, Action::FormatCellFont), (Rule::RedNegative, Action::FormatCellNumber), (Rule::UnclearLink, Action::EditLink)] {
+    for (rule, action) in [
+        (Rule::Contrast, Action::FormatCellFont),
+        (Rule::RedNegative, Action::FormatCellNumber),
+        (Rule::UnclearLink, Action::EditLink),
+    ] {
         let finding = choose(&app, cx, rule);
         let Target::Cells(_, rect) = finding.target else {
             panic!("{finding:?}");
@@ -819,8 +1129,14 @@ fn the_accessibility_pane_shows_and_fixes(cx: &mut TestAppContext) {
         assert_eq!(modals(&app, cx), 0);
     }
     // The pane follows the workbook: a better colour and the result goes.
-    edit(&app, cx, |wb| wb.update_style(0, Rect::new(5, 0, 5, 1), &|style| style.font.color = None));
-    assert!(!pane.update(cx, |pane, cx| pane.listed(cx).iter().any(|finding| finding.rule == Rule::Contrast)));
+    edit(&app, cx, |wb| {
+        wb.update_style(0, Rect::new(5, 0, 5, 1), &|style| style.font.color = None)
+    });
+    assert!(!pane.update(cx, |pane, cx| {
+        pane.listed(cx)
+            .iter()
+            .any(|finding| finding.rule == Rule::Contrast)
+    }));
     // Rename sheet: the tab is ready for a name.
     choose(&app, cx, Rule::DefaultSheetName);
     act(&app, cx, Action::RenameSheet);
@@ -828,9 +1144,15 @@ fn the_accessibility_pane_shows_and_fixes(cx: &mut TestAppContext) {
     cx.simulate_input("Budget");
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].name.clone()), "Budget");
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[0].name.clone()),
+        "Budget"
+    );
     let left: Vec<Rule> = rules(&app, cx).into_iter().map(|(rule, _)| rule).collect();
-    assert_eq!(left, vec![Rule::RedNegative, Rule::BlankTableRows, Rule::UnclearLink]);
+    assert_eq!(
+        left,
+        vec![Rule::RedNegative, Rule::BlankTableRows, Rule::UnclearLink]
+    );
     assert_eq!(status(&app, cx), "Accessibility: Investigate");
 }
 
@@ -851,7 +1173,13 @@ fn the_ribbon_command_opens_the_pane_and_protection_holds(cx: &mut TestAppContex
     assert_eq!(app.update(cx, |app, _| app.sheet), 0);
     // The sheet is protected: neither unmerged nor marked.
     act(&app, cx, Action::Unmerge);
-    assert_eq!((modals(&app, cx), app.update(cx, |app, _| app.wb.sheets[0].merges.len())), (1, 1));
+    assert_eq!(
+        (
+            modals(&app, cx),
+            app.update(cx, |app, _| app.wb.sheets[0].merges.len())
+        ),
+        (1, 1)
+    );
     cx.simulate_keystrokes("enter");
     redraw(cx);
     choose(&app, cx, Rule::MissingAltText);

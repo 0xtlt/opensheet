@@ -2,15 +2,18 @@
 //! from Selection, Paste Name and Apply Names.
 
 use super::{
-    LabelSides, NameRow, RowKind, absolute_ref, apply_names, formula_names, guess_label_sides, insert_in_formula,
-    invalid_reference, label_to_name, locked, name_error_message, names_from_labels, paste_list, selection_formula,
+    LabelSides, NameRow, RowKind, absolute_ref, apply_names, formula_names, guess_label_sides,
+    insert_in_formula, invalid_reference, label_to_name, locked, name_error_message,
+    names_from_labels, paste_list, selection_formula,
 };
 use crate::app::ExcelApp;
 use crate::features::Cx;
 use crate::i18n::t;
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
-use crate::widgets::{self, Button, Checkbox, ListBox, RefEdit, Select, TextField, dialog, label, ok_cancel};
+use crate::widgets::{
+    self, Button, Checkbox, ListBox, RefEdit, Select, TextField, dialog, label, ok_cancel,
+};
 use gpui::{Context, Entity, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::names::{NameError, NameScope};
 use opensheet_engine::table::TableError;
@@ -59,7 +62,12 @@ struct NameInit {
 /// The Scope list: the workbook, then every sheet.
 fn scopes(app: &ExcelApp) -> Vec<SharedString> {
     let mut scopes: Vec<SharedString> = vec![t("Workbook", "Classeur").into()];
-    scopes.extend(app.wb.sheets.iter().map(|sheet| SharedString::from(sheet.name.clone())));
+    scopes.extend(
+        app.wb
+            .sheets
+            .iter()
+            .map(|sheet| SharedString::from(sheet.name.clone())),
+    );
     scopes
 }
 
@@ -74,7 +82,11 @@ fn scope_at(index: usize) -> NameScope {
 /// cell, else the one on its left, else the one above it.
 fn suggested_name(app: &ExcelApp) -> String {
     let (row, col) = app.active();
-    let near = [Some((row, col)), col.checked_sub(1).map(|c| (row, c)), row.checked_sub(1).map(|r| (r, col))];
+    let near = [
+        Some((row, col)),
+        col.checked_sub(1).map(|c| (row, c)),
+        row.checked_sub(1).map(|r| (r, col)),
+    ];
     near.into_iter()
         .flatten()
         .filter_map(|(r, c)| match app.wb.value_at(app.sheet, r, c) {
@@ -99,7 +111,9 @@ pub(super) fn open_new_name(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx
         comment: String::new(),
         refers: selection_formula(app),
     };
-    app.open_modal(window, cx, move |modal, _, cx| NameDialog::new(modal, init, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        NameDialog::new(modal, init, cx)
+    });
 }
 
 /// Edit Name, on a line of the Name Manager.
@@ -123,7 +137,9 @@ pub(super) fn open_edit_name(app: &mut ExcelApp, row: &NameRow, window: &mut Win
         comment: row.comment.clone(),
         refers: row.refers_to.clone(),
     };
-    app.open_modal(window, cx, move |modal, _, cx| NameDialog::new(modal, init, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        NameDialog::new(modal, init, cx)
+    });
 }
 
 /// Why the dialog cannot store what it holds.
@@ -168,20 +184,25 @@ fn define(
         Target::Name(scope, old) => (*scope, Some(old.as_str())),
         _ => (scope_at(scope), None),
     };
-    wb.check_name(scope, name, replacing).map_err(Refusal::Name)?;
+    wb.check_name(scope, name, replacing)
+        .map_err(Refusal::Name)?;
     // A sheet's own name is written from that sheet.
     let from = match scope {
         NameScope::Sheet(sheet) => sheet,
         NameScope::Workbook => cell.0,
     };
-    let expr = wb.parse_name_formula(refers, from, cell.1, cell.2).map_err(|_| Refusal::Reference)?;
+    let expr = wb
+        .parse_name_formula(refers, from, cell.1, cell.2)
+        .map_err(|_| Refusal::Reference)?;
     match replacing {
         Some(old) => {
-            wb.edit_name(scope, old, name, expr, comment).map_err(Refusal::Name)?;
+            wb.edit_name(scope, old, name, expr, comment)
+                .map_err(Refusal::Name)?;
             Ok(t("Edit Name", "Modifier le nom"))
         }
         None => {
-            wb.add_name(scope, name, expr, comment).map_err(Refusal::Name)?;
+            wb.add_name(scope, name, expr, comment)
+                .map_err(Refusal::Name)?;
             Ok(t("Define Name", "Définir un nom"))
         }
     }
@@ -189,9 +210,25 @@ fn define(
 
 /// `define` for the application: commit, or say why not. Returns whether
 /// the dialog can close.
-fn store_name(app: &mut ExcelApp, target: &Target, scope: usize, name: &str, refers: &str, comment: &str, cx: &mut Cx) -> bool {
+fn store_name(
+    app: &mut ExcelApp,
+    target: &Target,
+    scope: usize,
+    name: &str,
+    refers: &str,
+    comment: &str,
+    cx: &mut Cx,
+) -> bool {
     let (row, col) = app.active();
-    match define(&mut app.wb, (app.sheet, row, col), target, scope, name, refers, comment) {
+    match define(
+        &mut app.wb,
+        (app.sheet, row, col),
+        target,
+        scope,
+        name,
+        refers,
+        comment,
+    ) {
         Ok(label) => {
             app.commit(label, cx);
             true
@@ -231,9 +268,9 @@ impl NameDialog {
         let refers = self.refers.read(cx).text().to_string();
         let comment = self.comment.read(cx).text().to_string();
         let (target, scope) = (self.target.clone(), self.scope);
-        let stored = self
-            .modal
-            .update_app(cx, |app, cx| store_name(app, &target, scope, &name, &refers, &comment, cx));
+        let stored = self.modal.update_app(cx, |app, cx| {
+            store_name(app, &target, scope, &name, &refers, &comment, cx)
+        });
         if stored == Some(true) {
             self.modal.close(window, cx);
         }
@@ -263,8 +300,14 @@ impl Render for NameDialog {
                     })),
             ))
             .when(!table, |d| {
-                d.child(field(t("Comment:", "Commentaire :"), TextField::new(&self.comment)))
-                    .child(field(t("Refers to:", "Fait référence à :"), RefEdit::new(&self.refers, &self.modal)))
+                d.child(field(
+                    t("Comment:", "Commentaire :"),
+                    TextField::new(&self.comment),
+                ))
+                .child(field(
+                    t("Refers to:", "Fait référence à :"),
+                    RefEdit::new(&self.refers, &self.modal),
+                ))
             })
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -294,7 +337,12 @@ pub(super) fn open_create_names(app: &mut ExcelApp, window: &mut Window, cx: &mu
 
 /// Define the names one after the other, asking before one that exists is
 /// redefined; everything is one undo step.
-fn create_names(app: &mut ExcelApp, mut queue: VecDeque<(String, Expr)>, mut made: usize, cx: &mut Cx) {
+fn create_names(
+    app: &mut ExcelApp,
+    mut queue: VecDeque<(String, Expr)>,
+    mut made: usize,
+    cx: &mut Cx,
+) {
     let scope = NameScope::Workbook;
     while let Some((name, expr)) = queue.pop_front() {
         match app.wb.check_name(scope, &name, None) {
@@ -318,8 +366,15 @@ fn create_names(app: &mut ExcelApp, mut queue: VecDeque<(String, Expr)>, mut mad
                     .warning()
                     .button(t("Yes", "Oui"), move |app, _, cx| {
                         if let Some((queue, name, expr)) = yes.borrow_mut().take() {
-                            let comment = app.wb.name_in(scope, &name).map(|def| def.comment.clone()).unwrap_or_default();
-                            let replaced = app.wb.edit_name(scope, &name, &name, expr, &comment).is_ok();
+                            let comment = app
+                                .wb
+                                .name_in(scope, &name)
+                                .map(|def| def.comment.clone())
+                                .unwrap_or_default();
+                            let replaced = app
+                                .wb
+                                .edit_name(scope, &name, &name, expr, &comment)
+                                .is_ok();
                             create_names(app, queue, made + replaced as usize, cx);
                         }
                     })
@@ -359,10 +414,11 @@ impl CreateNames {
         }
         self.modal.update_app(cx, |app, cx| {
             let sheet = &app.wb.sheets[app.sheet].name;
-            let queue: VecDeque<(String, Expr)> = names_from_labels(&app.wb, app.sheet, app.sel().current(), sides)
-                .into_iter()
-                .map(|(name, cells)| (name, absolute_ref(sheet, cells)))
-                .collect();
+            let queue: VecDeque<(String, Expr)> =
+                names_from_labels(&app.wb, app.sheet, app.sel().current(), sides)
+                    .into_iter()
+                    .map(|(name, cells)| (name, absolute_ref(sheet, cells)))
+                    .collect();
             create_names(app, queue, 0, cx);
         });
     }
@@ -370,29 +426,66 @@ impl CreateNames {
 
 impl Render for CreateNames {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let side = |id: &'static str, text: &'static str, on: bool, set: fn(&mut LabelSides, bool), cx: &mut Context<Self>| {
+        let side = |id: &'static str,
+                    text: &'static str,
+                    on: bool,
+                    set: fn(&mut LabelSides, bool),
+                    cx: &mut Context<Self>| {
             Checkbox::new(id, text, on).on_change(cx.listener(move |this, on: &bool, _, cx| {
                 set(&mut this.sides, *on);
                 cx.notify();
             }))
         };
         let sides = self.sides;
-        dialog(&self.modal, t("Create Names from Selection", "Créer des noms à partir de la sélection"))
-            .width(330.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(label(t("Create names from values in the:", "Créer des noms à partir des valeurs de la :")))
-            .child(
-                div()
-                    .pl(px(10.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .child(side("top", t("Top row", "Ligne du haut"), sides.top, |s, on| s.top = on, cx))
-                    .child(side("left", t("Left column", "Colonne de gauche"), sides.left, |s, on| s.left = on, cx))
-                    .child(side("bottom", t("Bottom row", "Ligne du bas"), sides.bottom, |s, on| s.bottom = on, cx))
-                    .child(side("right", t("Right column", "Colonne de droite"), sides.right, |s, on| s.right = on, cx)),
-            )
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+        dialog(
+            &self.modal,
+            t(
+                "Create Names from Selection",
+                "Créer des noms à partir de la sélection",
+            ),
+        )
+        .width(330.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(label(t(
+            "Create names from values in the:",
+            "Créer des noms à partir des valeurs de la :",
+        )))
+        .child(
+            div()
+                .pl(px(10.))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(side(
+                    "top",
+                    t("Top row", "Ligne du haut"),
+                    sides.top,
+                    |s, on| s.top = on,
+                    cx,
+                ))
+                .child(side(
+                    "left",
+                    t("Left column", "Colonne de gauche"),
+                    sides.left,
+                    |s, on| s.left = on,
+                    cx,
+                ))
+                .child(side(
+                    "bottom",
+                    t("Bottom row", "Ligne du bas"),
+                    sides.bottom,
+                    |s, on| s.bottom = on,
+                    cx,
+                ))
+                .child(side(
+                    "right",
+                    t("Right column", "Colonne de droite"),
+                    sides.right,
+                    |s, on| s.right = on,
+                    cx,
+                )),
+        )
+        .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
@@ -419,10 +512,14 @@ struct PasteNames {
 impl PasteNames {
     /// OK puts the chosen name into the formula being typed.
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let name = self.selected.and_then(|index| self.names.get(index)).cloned();
+        let name = self
+            .selected
+            .and_then(|index| self.names.get(index))
+            .cloned();
         self.modal.close(window, cx);
         if let Some(name) = name {
-            self.modal.update_app(cx, |app, cx| insert_in_formula(app, &name, window, cx));
+            self.modal
+                .update_app(cx, |app, cx| insert_in_formula(app, &name, window, cx));
         }
     }
 
@@ -440,7 +537,11 @@ impl PasteNames {
 
 impl Render for PasteNames {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let names: Vec<SharedString> = self.names.iter().map(|name| SharedString::from(name.clone())).collect();
+        let names: Vec<SharedString> = self
+            .names
+            .iter()
+            .map(|name| SharedString::from(name.clone()))
+            .collect();
         dialog(&self.modal, t("Paste Name", "Coller un nom"))
             .width(300.0)
             .on_ok(cx.listener(Self::ok))
@@ -466,8 +567,9 @@ impl Render for PasteNames {
                     .items_center()
                     .gap(px(8.))
                     .child(
-                        Button::new("paste-list", t("Paste List", "Coller une liste"))
-                            .on_click(cx.listener(|this, _, window, cx| this.paste_list(window, cx))),
+                        Button::new("paste-list", t("Paste List", "Coller une liste")).on_click(
+                            cx.listener(|this, _, window, cx| this.paste_list(window, cx)),
+                        ),
                     )
                     .child(div().flex_1())
                     .child(ok_cancel(&self.modal, cx.listener(Self::ok))),
@@ -505,7 +607,12 @@ struct ApplyNames {
 
 impl ApplyNames {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let names: Vec<String> = self.selected.iter().filter_map(|index| self.names.get(*index)).cloned().collect();
+        let names: Vec<String> = self
+            .selected
+            .iter()
+            .filter_map(|index| self.names.get(*index))
+            .cloned()
+            .collect();
         let ignore_kind = self.ignore_kind;
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
@@ -534,7 +641,11 @@ impl ApplyNames {
 
 impl Render for ApplyNames {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let names: Vec<SharedString> = self.names.iter().map(|name| SharedString::from(name.clone())).collect();
+        let names: Vec<SharedString> = self
+            .names
+            .iter()
+            .map(|name| SharedString::from(name.clone()))
+            .collect();
         dialog(&self.modal, t("Apply Names", "Appliquer les noms"))
             .width(320.0)
             .on_ok(cx.listener(Self::ok))
@@ -550,12 +661,15 @@ impl Render for ApplyNames {
                 ),
             )
             .child(
-                Checkbox::new("ignore", t("Ignore Relative/Absolute", "Ignorer relatif/absolu"), self.ignore_kind).on_change(
-                    cx.listener(|this, on: &bool, _, cx| {
-                        this.ignore_kind = *on;
-                        cx.notify();
-                    }),
-                ),
+                Checkbox::new(
+                    "ignore",
+                    t("Ignore Relative/Absolute", "Ignorer relatif/absolu"),
+                    self.ignore_kind,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    this.ignore_kind = *on;
+                    cx.notify();
+                })),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -569,7 +683,13 @@ mod tests {
     fn workbook() -> Workbook {
         let mut wb = Workbook::new(Locale::en());
         wb.add_sheet(1);
-        for (cell, text) in [("A1", "Item"), ("B1", "Qty"), ("A2", "Pens"), ("B2", "12"), ("C2", "=B2*2")] {
+        for (cell, text) in [
+            ("A1", "Item"),
+            ("B1", "Qty"),
+            ("A2", "Pens"),
+            ("B2", "12"),
+            ("C2", "=B2*2"),
+        ] {
             let (row, col) = opensheet_engine::refs::parse_cell_name(cell).unwrap();
             wb.set_cell_text(0, row, col, text).unwrap();
         }
@@ -579,21 +699,39 @@ mod tests {
 
     /// The name as the Name Manager would list it: (refers to, comment).
     fn listed(wb: &Workbook, scope: NameScope, name: &str) -> Option<(String, String)> {
-        wb.name_in(scope, name).map(|def| (def.refers_to(wb.locale, 0, 0), def.comment.clone()))
+        wb.name_in(scope, name)
+            .map(|def| (def.refers_to(wb.locale, 0, 0), def.comment.clone()))
     }
 
     #[test]
     fn new_names_are_stored_in_their_scope() {
         let mut wb = workbook();
         let cell = (0, 0, 0);
-        assert!(define(&mut wb, cell, &Target::New, 0, "Qty", "=Sheet1!$B$2", "units").is_ok());
+        assert!(
+            define(
+                &mut wb,
+                cell,
+                &Target::New,
+                0,
+                "Qty",
+                "=Sheet1!$B$2",
+                "units"
+            )
+            .is_ok()
+        );
         wb.commit("name");
-        assert_eq!(listed(&wb, NameScope::Workbook, "qty"), Some(("=Sheet1!$B$2".to_string(), "units".to_string())));
+        assert_eq!(
+            listed(&wb, NameScope::Workbook, "qty"),
+            Some(("=Sheet1!$B$2".to_string(), "units".to_string()))
+        );
         // Scope 2 of the list is the second sheet; a reference without a
         // sheet is on the sheet of the name.
         assert!(define(&mut wb, cell, &Target::New, 2, "Qty", "=$D$4", "").is_ok());
         wb.commit("name");
-        assert_eq!(listed(&wb, NameScope::Sheet(1), "Qty").unwrap().0, "=Sheet2!$D$4");
+        assert_eq!(
+            listed(&wb, NameScope::Sheet(1), "Qty").unwrap().0,
+            "=Sheet2!$D$4"
+        );
         // Constants and formulas are names too; the "=" may be left out.
         assert!(define(&mut wb, cell, &Target::New, 0, "Rate", "0.2", "").is_ok());
         wb.commit("name");
@@ -607,18 +745,33 @@ mod tests {
         let cell = (0, 0, 0);
         define(&mut wb, cell, &Target::New, 0, "Qty", "=Sheet1!$B$2", "").unwrap();
         wb.commit("name");
-        let refused = |wb: &mut Workbook, name: &str, refers: &str| define(wb, cell, &Target::New, 0, name, refers, "").unwrap_err();
-        assert_eq!(refused(&mut wb, "QTY", "=1"), Refusal::Name(NameError::Duplicate));
+        let refused = |wb: &mut Workbook, name: &str, refers: &str| {
+            define(wb, cell, &Target::New, 0, name, refers, "").unwrap_err()
+        };
+        assert_eq!(
+            refused(&mut wb, "QTY", "=1"),
+            Refusal::Name(NameError::Duplicate)
+        );
         for name in ["", "my name", "A1", "2nd", "TRUE"] {
-            assert_eq!(refused(&mut wb, name, "=1"), Refusal::Name(NameError::Invalid), "{name}");
+            assert_eq!(
+                refused(&mut wb, name, "=1"),
+                Refusal::Name(NameError::Invalid),
+                "{name}"
+            );
         }
         // The name is looked at first, then what it refers to.
-        assert_eq!(refused(&mut wb, "my name", "=SUM("), Refusal::Name(NameError::Invalid));
+        assert_eq!(
+            refused(&mut wb, "my name", "=SUM("),
+            Refusal::Name(NameError::Invalid)
+        );
         assert_eq!(refused(&mut wb, "Fine", "=SUM("), Refusal::Reference);
         assert_eq!(refused(&mut wb, "Fine", ""), Refusal::Reference);
         // Nothing was stored, and the messages are told apart.
         assert_eq!(wb.all_names().len(), 1);
-        assert_ne!(Refusal::Name(NameError::Duplicate).message(), Refusal::Name(NameError::Invalid).message());
+        assert_ne!(
+            Refusal::Name(NameError::Duplicate).message(),
+            Refusal::Name(NameError::Invalid).message()
+        );
         assert_eq!(Refusal::Reference.message(), invalid_reference());
         // The same name can live on a sheet.
         assert!(define(&mut wb, cell, &Target::New, 1, "Qty", "=1", "").is_ok());
@@ -635,7 +788,18 @@ mod tests {
         let target = Target::Name(NameScope::Workbook, "Qty".to_string());
         // The Scope list is disabled while editing: whatever it says, the
         // name stays where it is.
-        assert!(define(&mut wb, cell, &target, 2, "Quantity", "=Sheet1!$B$2:$B$3", "all of them").is_ok());
+        assert!(
+            define(
+                &mut wb,
+                cell,
+                &target,
+                2,
+                "Quantity",
+                "=Sheet1!$B$2:$B$3",
+                "all of them"
+            )
+            .is_ok()
+        );
         wb.commit("edit");
         assert_eq!(listed(&wb, NameScope::Workbook, "Qty"), None);
         assert_eq!(
@@ -648,7 +812,10 @@ mod tests {
         // Keeping its own spelling is no duplicate; taking another's is.
         let target = Target::Name(NameScope::Workbook, "Quantity".to_string());
         assert!(define(&mut wb, cell, &target, 0, "quantity", "=1", "").is_ok());
-        assert_eq!(define(&mut wb, cell, &target, 0, "Other", "=1", ""), Err(Refusal::Name(NameError::Duplicate)));
+        assert_eq!(
+            define(&mut wb, cell, &target, 0, "Other", "=1", ""),
+            Err(Refusal::Name(NameError::Duplicate))
+        );
     }
 
     #[test]
@@ -658,11 +825,28 @@ mod tests {
         define(&mut wb, (0, 0, 0), &Target::New, 0, "Taken", "=1", "").unwrap();
         wb.commit("table");
         let target = Target::Table(0, id);
-        assert!(define(&mut wb, (0, 0, 0), &target, 0, "Stock", "ignored", "ignored").is_ok());
+        assert!(
+            define(
+                &mut wb,
+                (0, 0, 0),
+                &target,
+                0,
+                "Stock",
+                "ignored",
+                "ignored"
+            )
+            .is_ok()
+        );
         wb.commit("rename");
         assert_eq!(wb.sheets[0].tables[0].name, "Stock");
-        assert_eq!(define(&mut wb, (0, 0, 0), &target, 0, "Taken", "", ""), Err(Refusal::Name(NameError::Duplicate)));
-        assert_eq!(define(&mut wb, (0, 0, 0), &target, 0, "not a name", "", ""), Err(Refusal::Name(NameError::Invalid)));
+        assert_eq!(
+            define(&mut wb, (0, 0, 0), &target, 0, "Taken", "", ""),
+            Err(Refusal::Name(NameError::Duplicate))
+        );
+        assert_eq!(
+            define(&mut wb, (0, 0, 0), &target, 0, "not a name", "", ""),
+            Err(Refusal::Name(NameError::Invalid))
+        );
     }
 
     #[test]

@@ -5,7 +5,10 @@ use crate::app::ExcelApp;
 use crate::i18n::{t, t_ctx};
 use crate::theme::{self, c};
 use crate::widgets::icon;
-use gpui::{Context, Entity, IntoElement, MouseButton, Render, ScrollHandle, WeakEntity, Window, div, prelude::*, px};
+use gpui::{
+    Context, Entity, IntoElement, MouseButton, Render, ScrollHandle, WeakEntity, Window, div,
+    prelude::*, px,
+};
 use opensheet_engine::comment::CommentKind;
 use std::collections::BTreeSet;
 
@@ -40,7 +43,14 @@ impl CommentsPane {
     /// Show the card of a cell of the current sheet with the cursor in its
     /// box: to reply to its thread, or (`composing`) to write the comment
     /// of a cell that has none.
-    pub fn write(&mut self, sheet: usize, cell: (u32, u32), composing: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn write(
+        &mut self,
+        sheet: usize,
+        cell: (u32, u32),
+        composing: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if sheet != self.sheet {
             self.cards.clear();
             self.sheet = sheet;
@@ -76,19 +86,30 @@ impl CommentsPane {
         };
         let (sheet, threads) = {
             let app = app.read(cx);
-            (app.sheet, app.wb.sheets[app.sheet].comment_cells(Some(CommentKind::Thread)))
+            (
+                app.sheet,
+                app.wb.sheets[app.sheet].comment_cells(Some(CommentKind::Thread)),
+            )
         };
         if sheet != self.sheet {
             self.cards.clear();
             self.sheet = sheet;
         }
         let mut wanted: BTreeSet<(u32, u32)> = threads.into_iter().collect();
-        wanted.extend(self.cards.iter().map(|card| card.read(cx)).filter(|card| card.composing).map(|card| card.cell));
-        self.cards.retain(|card| wanted.contains(&card.read(cx).cell));
+        wanted.extend(
+            self.cards
+                .iter()
+                .map(|card| card.read(cx))
+                .filter(|card| card.composing)
+                .map(|card| card.cell),
+        );
+        self.cards
+            .retain(|card| wanted.contains(&card.read(cx).cell));
         for cell in wanted {
             if !self.cards.iter().any(|card| card.read(cx).cell == cell) {
                 let app = self.app.clone();
-                self.cards.push(cx.new(|cx| CommentCard::new(app, sheet, cell, true, window, cx)));
+                self.cards
+                    .push(cx.new(|cx| CommentCard::new(app, sheet, cell, true, window, cx)));
             }
         }
         self.cards.sort_by_key(|card| card.read(cx).cell);
@@ -101,12 +122,19 @@ impl Render for CommentsPane {
         let (active, elsewhere) = match self.app.upgrade() {
             Some(app) => {
                 let app = app.read(cx);
-                (Some(app.active()), app.wb.first_comment(Some(CommentKind::Thread)).is_some())
+                (
+                    Some(app.active()),
+                    app.wb.first_comment(Some(CommentKind::Thread)).is_some(),
+                )
             }
             None => (None, false),
         };
         if let Some(cell) = self.reveal.take() {
-            if let Some(index) = self.cards.iter().position(|card| card.read(cx).cell == cell) {
+            if let Some(index) = self
+                .cards
+                .iter()
+                .position(|card| card.read(cx).cell == cell)
+            {
                 self.scroll.scroll_to_item(index);
             }
         }
@@ -122,7 +150,11 @@ impl Render for CommentsPane {
                     .debug_selector(|| format!("pane-card-{index}"))
                     .rounded(px(7.))
                     .border_1()
-                    .border_color(if active == Some(cell) { c(theme::ACCENT) } else { gpui::transparent_black() })
+                    .border_color(if active == Some(cell) {
+                        c(theme::ACCENT)
+                    } else {
+                        gpui::transparent_black()
+                    })
                     // A press on a card goes to its cell.
                     .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                         let app = app.clone();
@@ -163,7 +195,10 @@ impl Render for CommentsPane {
                         .on_click(move |_, window, cx| {
                             let app = app.clone();
                             window.defer(cx, move |window, cx| {
-                                app.update(cx, |app, cx| app.run_command(super::Cmd::NewComment, window, cx)).ok();
+                                app.update(cx, |app, cx| {
+                                    app.run_command(super::Cmd::NewComment, window, cx)
+                                })
+                                .ok();
                             });
                         }),
                 ),

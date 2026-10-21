@@ -28,7 +28,14 @@ fn cells(names: &[&str]) -> Vec<(u32, u32)> {
 /// A list in A1:B6.
 fn list() -> Workbook {
     let mut wb = Workbook::new(Locale::en());
-    let rows = [("Item", "Qty"), ("a", "5"), ("b", "1"), ("c", "7"), ("d", "2"), ("e", "9")];
+    let rows = [
+        ("Item", "Qty"),
+        ("a", "5"),
+        ("b", "1"),
+        ("c", "7"),
+        ("d", "2"),
+        ("e", "9"),
+    ];
     for (r, (item, qty)) in rows.iter().enumerate() {
         wb.set_cell_text(0, r as u32, 0, item).unwrap();
         wb.set_cell_text(0, r as u32, 1, qty).unwrap();
@@ -42,9 +49,21 @@ fn list() -> Workbook {
 fn filter(wb: &mut Workbook) {
     wb.toggle_auto_filter(0, Rect::cell(0, 0)).unwrap();
     let more = Condition::new(Comparison::Greater, "2", Locale::en());
-    wb.set_filter_criteria(0, FilterScope::Sheet, 1, Some(Criteria::Custom(CustomFilter::one(more))));
+    wb.set_filter_criteria(
+        0,
+        FilterScope::Sheet,
+        1,
+        Some(Criteria::Custom(CustomFilter::one(more))),
+    );
     wb.commit("filter");
-    assert_eq!(wb.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2, 4]);
+    assert_eq!(
+        wb.sheets[0]
+            .filtered_rows
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [2, 4]
+    );
 }
 
 fn filtered() -> Workbook {
@@ -72,7 +91,10 @@ fn formats_skip_the_rows_a_filter_hides() {
     wb.update_style(0, rect("A2:B6"), &|s| s.font.bold = true);
     wb.commit("bold");
     let rows = ["A2", "A3", "A4", "A5", "A6"];
-    assert_eq!(rows.map(|cell| bold(&wb, cell)), [true, false, true, false, true]);
+    assert_eq!(
+        rows.map(|cell| bold(&wb, cell)),
+        [true, false, true, false, true]
+    );
     // Rows hidden by hand are formatted like the others.
     wb.set_rows_hidden(0, 5, 5, true);
     wb.update_style(0, rect("A6:B6"), &|s| s.font.italic = true);
@@ -83,7 +105,10 @@ fn formats_skip_the_rows_a_filter_hides() {
     let mut wb = filtered();
     wb.update_style(0, rect("B:C"), &|s| s.font.bold = true);
     wb.commit("bold");
-    assert_eq!(["B2", "B3", "B5", "B6"].map(|cell| bold(&wb, cell)), [true, false, false, true]);
+    assert_eq!(
+        ["B2", "B3", "B5", "B6"].map(|cell| bold(&wb, cell)),
+        [true, false, false, true]
+    );
     assert!(bold(&wb, "B40") && !bold(&wb, "A40"));
     wb.clear_filters(0, FilterScope::Sheet);
     wb.commit("show all");
@@ -91,21 +116,33 @@ fn formats_skip_the_rows_a_filter_hides() {
     // Whole rows.
     let mut wb = filtered();
     wb.update_style(0, rect("2:4"), &|s| s.font.bold = true);
-    assert_eq!(["A2", "A3", "A4", "K2", "K3"].map(|cell| bold(&wb, cell)), [true, false, true, true, false]);
+    assert_eq!(
+        ["A2", "A3", "A4", "K2", "K3"].map(|cell| bold(&wb, cell)),
+        [true, false, true, true, false]
+    );
 
     // Borders: each block of shown rows is outlined on its own.
     let mut wb = filtered();
     wb.apply_borders(0, rect("A2:B6"), BorderPreset::Outside, Border::thin());
     wb.commit("borders");
-    assert_eq!(["A2", "A4", "A6"].map(|cell| edges(&wb, cell)), [(true, true); 3]);
-    assert_eq!(["A3", "A5"].map(|cell| edges(&wb, cell)), [(false, false); 2]);
+    assert_eq!(
+        ["A2", "A4", "A6"].map(|cell| edges(&wb, cell)),
+        [(true, true); 3]
+    );
+    assert_eq!(
+        ["A3", "A5"].map(|cell| edges(&wb, cell)),
+        [(false, false); 2]
+    );
     // Taking them off leaves the hidden neighbours alone.
     let mut wb = list();
     wb.apply_borders(0, rect("A2:B6"), BorderPreset::All, Border::thin());
     filter(&mut wb);
     wb.apply_borders(0, rect("A4:B4"), BorderPreset::None, Border::thin());
     wb.commit("no borders");
-    assert_eq!(["A3", "A4", "A5"].map(|cell| edges(&wb, cell)), [(true, true), (false, false), (true, true)]);
+    assert_eq!(
+        ["A3", "A4", "A5"].map(|cell| edges(&wb, cell)),
+        [(true, true), (false, false), (true, true)]
+    );
 
     // Clear Formats and Clear All: the same rows, and what they carry.
     let mut wb = filtered();
@@ -116,7 +153,10 @@ fn formats_skip_the_rows_a_filter_hides() {
     wb.commit("clear");
     let left: Vec<(u32, u32)> = wb.sheets[0].comment_cells(None);
     assert_eq!(left, cells(&["A3", "A5"]));
-    assert_eq!([value(&wb, 0, "A3"), value(&wb, 0, "A4")], [Value::text("b"), Value::Empty]);
+    assert_eq!(
+        [value(&wb, 0, "A3"), value(&wb, 0, "A4")],
+        [Value::text("b"), Value::Empty]
+    );
 }
 
 #[test]
@@ -128,19 +168,34 @@ fn pasting_into_a_filtered_list() {
     wb.commit("setup");
     let one = wb.copy(0, rect("D1"));
     assert_eq!(wb.paste_area(0, rect("A2:A6"), &one), rect("A2:A6"));
-    assert_eq!(wb.paste_blocks(0, rect("A2:A6"), &one), [rect("A2"), rect("A4"), rect("A6")]);
+    assert_eq!(
+        wb.paste_blocks(0, rect("A2:A6"), &one),
+        [rect("A2"), rect("A4"), rect("A6")]
+    );
     wb.paste(0, rect("A2:A6"), &one, PasteMode::All);
     wb.commit("paste");
     let column = |wb: &Workbook| ["A2", "A3", "A4", "A5", "A6"].map(|cell| value(wb, 0, cell));
     let (x, b, d) = (Value::text("x"), Value::text("b"), Value::text("d"));
-    assert_eq!(column(&wb), [x.clone(), b.clone(), x.clone(), d.clone(), x.clone()]);
-    assert_eq!(wb.sheets[0].comment_cells(None), cells(&["D1", "A2", "A4", "A6"]));
+    assert_eq!(
+        column(&wb),
+        [x.clone(), b.clone(), x.clone(), d.clone(), x.clone()]
+    );
+    assert_eq!(
+        wb.sheets[0].comment_cells(None),
+        cells(&["D1", "A2", "A4", "A6"])
+    );
     assert!(wb.undo());
     // Ctrl+D goes the same way.
     wb.fill_down(0, rect("D1:D6"));
     wb.commit("fill");
-    assert_eq!(wb.sheets[0].comment_cells(None), cells(&["D1", "D2", "D4", "D6"]));
-    assert_eq!([value(&wb, 0, "D3"), value(&wb, 0, "D4")], [Value::Empty, x.clone()]);
+    assert_eq!(
+        wb.sheets[0].comment_cells(None),
+        cells(&["D1", "D2", "D4", "D6"])
+    );
+    assert_eq!(
+        [value(&wb, 0, "D3"), value(&wb, 0, "D4")],
+        [Value::Empty, x.clone()]
+    );
 
     // Several rows are laid on consecutive rows, hidden or not.
     let mut wb = filtered();
@@ -148,7 +203,10 @@ fn pasting_into_a_filtered_list() {
     enter(&mut wb, 0, "D2", "y");
     let two = wb.copy(0, rect("D1:D2"));
     assert_eq!(wb.paste(0, rect("A2"), &two, PasteMode::All), rect("A2:A3"));
-    assert_eq!([value(&wb, 0, "A2"), value(&wb, 0, "A3")], [x, Value::text("y")]);
+    assert_eq!(
+        [value(&wb, 0, "A2"), value(&wb, 0, "A3")],
+        [x, Value::text("y")]
+    );
 
     // What was copied from a filtered list comes without its hidden rows,
     // with what the rows that are shown carry.
@@ -164,18 +222,26 @@ fn pasting_into_a_filtered_list() {
     wb.set_validation(0, &[rect("B3:B4")], (2, 1), whole);
     wb.commit("setup");
     let list = wb.copy(0, rect("A1:B6"));
-    assert_eq!(wb.paste(0, rect("E1"), &list, PasteMode::All), rect("E1:F4"));
+    assert_eq!(
+        wb.paste(0, rect("E1"), &list, PasteMode::All),
+        rect("E1:F4")
+    );
     wb.commit("paste");
     assert_eq!(value(&wb, 0, "E3"), Value::text("c"));
     assert_eq!(wb.sheets[0].comment_cells(None), cells(&["A3", "E3", "A4"]));
-    let validated: Vec<bool> = (0..4).map(|row| wb.validation_at(0, row, 5).is_some()).collect();
+    let validated: Vec<bool> = (0..4)
+        .map(|row| wb.validation_at(0, row, 5).is_some())
+        .collect();
     assert_eq!(validated, [false, false, true, false]);
 
     // Cutting takes the whole block, hidden rows included, as in Excel.
     let mut wb = filtered();
     wb.move_range(0, rect("A2:A6"), 0, 1, 3);
     wb.commit("cut");
-    assert_eq!([value(&wb, 0, "D3"), value(&wb, 0, "A3")], [b, Value::Empty]);
+    assert_eq!(
+        [value(&wb, 0, "D3"), value(&wb, 0, "A3")],
+        [b, Value::Empty]
+    );
 }
 
 /// A rule that fills what is over 5, on `range`.
@@ -197,7 +263,8 @@ fn positive() -> Validation {
 /// Which of the rows 1 to 7 of a column are under a conditional format,
 /// which under a validation rule, which carry a note.
 fn rules_down(wb: &Workbook, col: u32) -> [Vec<u32>; 3] {
-    let rows = |test: &dyn Fn(u32) -> bool| (0..7).filter(|row| test(*row)).map(|row| row + 1).collect();
+    let rows =
+        |test: &dyn Fn(u32) -> bool| (0..7).filter(|row| test(*row)).map(|row| row + 1).collect();
     [
         rows(&|row| !wb.cond_formats_in(0, &[Rect::cell(row, col)]).is_empty()),
         rows(&|row| wb.validation_at(0, row, col).is_some()),
@@ -222,9 +289,18 @@ fn rules_laid_over_a_filtered_list_stay_off_its_hidden_rows() {
     wb.fill_down(0, rect("C2:D6"));
     wb.commit("fill");
     let shown = vec![2, 4, 6];
-    assert_eq!(rules_down(&wb, 2), [shown.clone(), shown.clone(), shown.clone()]);
-    assert_eq!(wb.cond_formats(0)[0].ranges, [rect("C2"), rect("C4"), rect("C6")]);
-    assert_eq!(wb.validation_at(0, 1, 2).unwrap().ranges, [rect("C2"), rect("C4"), rect("C6")]);
+    assert_eq!(
+        rules_down(&wb, 2),
+        [shown.clone(), shown.clone(), shown.clone()]
+    );
+    assert_eq!(
+        wb.cond_formats(0)[0].ranges,
+        [rect("C2"), rect("C4"), rect("C6")]
+    );
+    assert_eq!(
+        wb.validation_at(0, 1, 2).unwrap().ranges,
+        [rect("C2"), rect("C4"), rect("C6")]
+    );
     // The rule of the whole column is still one range.
     assert_eq!(wb.cond_formats(0)[1].ranges, [rect("D:D")]);
     assert_ne!(wb.display(0, 3, 3).style.fill, None);
@@ -242,8 +318,14 @@ fn rules_laid_over_a_filtered_list_stay_off_its_hidden_rows() {
     assert_eq!(rules_down(&wb, 4), [vec![], shown.clone(), vec![]]);
     assert_eq!(rules_down(&wb, 5), [shown.clone(), vec![], vec![]]);
     assert_eq!(rules_down(&wb, 6), [vec![], vec![], shown.clone()]);
-    assert_eq!(rules_down(&wb, 7), [shown.clone(), shown.clone(), shown.clone()]);
-    assert_eq!([value(&wb, 0, "H4"), value(&wb, 0, "H5")], [num(8.0), Value::Empty]);
+    assert_eq!(
+        rules_down(&wb, 7),
+        [shown.clone(), shown.clone(), shown.clone()]
+    );
+    assert_eq!(
+        [value(&wb, 0, "H4"), value(&wb, 0, "H5")],
+        [num(8.0), Value::Empty]
+    );
 
     // Clearing takes the rules off the rows that are shown only.
     wb.clear(0, rect("D2:H6"), ClearMode::Formats);
@@ -258,7 +340,10 @@ fn rules_laid_over_a_filtered_list_stay_off_its_hidden_rows() {
     // The fill handle steps over the hidden rows with them.
     wb.autofill(0, rect("C2"), rect("C2:C6"));
     wb.commit("fill");
-    assert_eq!(rules_down(&wb, 2), [shown.clone(), shown.clone(), shown.clone()]);
+    assert_eq!(
+        rules_down(&wb, 2),
+        [shown.clone(), shown.clone(), shown.clone()]
+    );
 }
 
 #[test]
@@ -282,7 +367,12 @@ fn a_long_filtered_list_takes_rules_block_by_block_all_the_same() {
         wb.commit("setup");
         wb.toggle_auto_filter(0, Rect::cell(0, 0)).unwrap();
         let not_zero = Condition::new(Comparison::NotEquals, "0", Locale::en());
-        wb.set_filter_criteria(0, FilterScope::Sheet, 0, Some(Criteria::Custom(CustomFilter::one(not_zero))));
+        wb.set_filter_criteria(
+            0,
+            FilterScope::Sheet,
+            0,
+            Some(Criteria::Custom(CustomFilter::one(not_zero))),
+        );
         wb.commit("filter");
         wb
     };
@@ -302,7 +392,11 @@ fn a_long_filtered_list_takes_rules_block_by_block_all_the_same() {
     for row in 0..ROWS {
         for col in 1..3 {
             let cell = [Rect::cell(row, col)];
-            assert_eq!(at_once.cond_formats_in(0, &cell), in_turn.cond_formats_in(0, &cell), "{row}, {col}");
+            assert_eq!(
+                at_once.cond_formats_in(0, &cell),
+                in_turn.cond_formats_in(0, &cell),
+                "{row}, {col}"
+            );
             assert_eq!(
                 at_once.validation_at(0, row, col).is_some(),
                 in_turn.validation_at(0, row, col).is_some(),
@@ -318,7 +412,10 @@ fn a_long_filtered_list_takes_rules_block_by_block_all_the_same() {
     // was; the rule over the two columns has one range for each block.
     assert_eq!(at_once.cond_formats(0)[0].ranges, [rect("C:C")]);
     assert_eq!(at_once.cond_formats(0)[1].ranges.len(), 1000);
-    assert_eq!(at_once.cond_formats(0)[1].ranges[..2], [rect("B2:C3"), rect("B5:C6")]);
+    assert_eq!(
+        at_once.cond_formats(0)[1].ranges[..2],
+        [rect("B2:C3"), rect("B5:C6")]
+    );
 }
 
 #[test]
@@ -348,7 +445,10 @@ fn find_and_replace_pass_over_rows_that_are_not_shown() {
     wb.set_rows_hidden(0, 3, 3, false);
     assert_eq!(wb.replace_all(0, "+1", "+2", &values), 1);
     wb.commit("replace");
-    assert_eq!([shown(&wb, 0, "C3"), shown(&wb, 0, "C4")], ["=B3+1", "=B4+2"]);
+    assert_eq!(
+        [shown(&wb, 0, "C3"), shown(&wb, 0, "C4")],
+        ["=B3+1", "=B4+2"]
+    );
 }
 
 /// Sheet1 with a rule and a list that read Sheet2, on a workbook of three.
@@ -363,7 +463,8 @@ fn linked() -> Workbook {
         kind: ValidationKind::List,
         ..Default::default()
     };
-    list.set_operands("=Sheet2!$A$1:$A$3", "", Locale::en()).unwrap();
+    list.set_operands("=Sheet2!$A$1:$A$3", "", Locale::en())
+        .unwrap();
     wb.set_validation(0, &[rect("B1")], (0, 1), list);
     wb.commit("setup");
     wb
@@ -384,7 +485,12 @@ fn deleting_a_sheet_reaches_every_feature() {
     wb.commit("delete");
     // The rule and the list read cells that are no more.
     assert_eq!(rule_text(&wb, 0), "#REF!$A$1");
-    assert_eq!(wb.validation_at(0, 0, 1).unwrap().operand1_text(0, 1, Locale::en()), "=#REF!$A$1:$A$3");
+    assert_eq!(
+        wb.validation_at(0, 0, 1)
+            .unwrap()
+            .operand1_text(0, 1, Locale::en()),
+        "=#REF!$A$1:$A$3"
+    );
     assert_eq!(wb.display(0, 0, 0).style.fill, None);
     assert!(wb.undo());
     assert_eq!(rule_text(&wb, 0), "Sheet2!$A$1");
@@ -412,7 +518,9 @@ fn moving_a_sheet_reaches_every_feature() {
         kind: ValidationKind::Custom,
         ..Default::default()
     };
-    custom.set_operands("=SUM(Sheet2:Sheet4!$A$1)>2", "", Locale::en()).unwrap();
+    custom
+        .set_operands("=SUM(Sheet2:Sheet4!$A$1)>2", "", Locale::en())
+        .unwrap();
     wb.set_validation(0, &[rect("A1")], (0, 0), custom);
     let total = parse_operand("=SUM(Sheet2:Sheet4!$A$1)", Locale::en(), (0, 0), (0, 0)).unwrap();
     wb.add_cond_format(0, CondFormat::new(vec![rect("A1")], Rule::Formula(total)));
@@ -423,7 +531,10 @@ fn moving_a_sheet_reaches_every_feature() {
     wb.commit("move");
     assert_eq!(rule_text(&wb, 1), "SUM(Sheet2:Sheet3!$A$1)");
     let rule = wb.validation_at(1, 0, 0).unwrap();
-    assert_eq!(rule.operand1_text(0, 0, Locale::en()), "=SUM(Sheet2:Sheet3!$A$1)>2");
+    assert_eq!(
+        rule.operand1_text(0, 0, Locale::en()),
+        "=SUM(Sheet2:Sheet3!$A$1)>2"
+    );
     assert!(wb.undo());
     assert_eq!(rule_text(&wb, 0), "SUM(Sheet2:Sheet4!$A$1)");
 }
@@ -431,7 +542,12 @@ fn moving_a_sheet_reaches_every_feature() {
 #[test]
 fn table_rows_and_columns_carry_what_sits_on_their_cells() {
     let mut wb = Workbook::new(Locale::en());
-    let rows = [["Item", "Qty", "Price"], ["nut", "1", "10"], ["bolt", "2", "20"], ["gear", "3", "30"]];
+    let rows = [
+        ["Item", "Qty", "Price"],
+        ["nut", "1", "10"],
+        ["bolt", "2", "20"],
+        ["gear", "3", "30"],
+    ];
     for (r, row) in rows.iter().enumerate() {
         for (c, text) in row.iter().enumerate() {
             wb.set_cell_text(0, r as u32, c as u32, text).unwrap();
@@ -450,7 +566,10 @@ fn table_rows_and_columns_carry_what_sits_on_their_cells() {
     };
     whole.set_operands("0", "", Locale::en()).unwrap();
     wb.set_validation(0, &[rect("B2:B4")], (1, 1), whole);
-    let dear = CondFormat::new(vec![rect("C2:C4")], Rule::greater_than(opensheet_engine::Expr::Number(15.0)));
+    let dear = CondFormat::new(
+        vec![rect("C2:C4")],
+        Rule::greater_than(opensheet_engine::Expr::Number(15.0)),
+    );
     wb.add_cond_format(0, dear.with_format(HighlightFormat::LightRedFill.patch()));
     // A list elsewhere whose entries are cells of the table.
     let mut list = Validation {
@@ -461,7 +580,11 @@ fn table_rows_and_columns_carry_what_sits_on_their_cells() {
     wb.set_validation(0, &[rect("G1")], (0, 6), list);
     wb.commit("setup");
     let notes = |wb: &Workbook| wb.sheets[0].comment_cells(None);
-    let source = |wb: &Workbook| wb.validation_at(0, 0, 6).unwrap().operand1_text(0, 6, Locale::en());
+    let source = |wb: &Workbook| {
+        wb.validation_at(0, 0, 6)
+            .unwrap()
+            .operand1_text(0, 6, Locale::en())
+    };
 
     // A table row above "bolt": only the cells of the table's columns
     // move down, and with them what they carry.
@@ -517,10 +640,14 @@ fn table_rows_and_columns_carry_what_sits_on_their_cells() {
     // notes included, and is no data row: the rules stop above it.
     enter(&mut wb, 0, "A5", "in the way");
     wb.set_note(0, 4, 0, "Ada", "pushed");
-    wb.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+    wb.set_table_option(0, id, TableOption::TotalsRow, true)
+        .unwrap();
     wb.commit("totals");
     assert_eq!(notes(&wb), cells(&["B3", "E3", "A6", "B8"]));
-    assert_eq!([value(&wb, 0, "A6"), value(&wb, 0, "C5")], [Value::text("in the way"), num(60.0)]);
+    assert_eq!(
+        [value(&wb, 0, "A6"), value(&wb, 0, "C5")],
+        [Value::text("in the way"), num(60.0)]
+    );
     assert_eq!(wb.cond_formats(0)[0].ranges, [rect("C2:C4")]);
     assert_eq!(wb.validation_at(0, 1, 1).unwrap().ranges, [rect("B2:B4")]);
 }
@@ -528,7 +655,12 @@ fn table_rows_and_columns_carry_what_sits_on_their_cells() {
 #[test]
 fn what_protection_is_asked_before_each_edit() {
     let mut wb = Workbook::new(Locale::en());
-    for (cell, text) in [("A1", "locked"), ("B1", "open"), ("B2", "open too"), ("D1", "x")] {
+    for (cell, text) in [
+        ("A1", "locked"),
+        ("B1", "open"),
+        ("B2", "open too"),
+        ("D1", "x"),
+    ] {
         enter(&mut wb, 0, cell, text);
     }
     wb.update_style(0, rect("B1:B5"), &|s| s.locked = false);
@@ -538,34 +670,118 @@ fn what_protection_is_asked_before_each_edit() {
     let all = FindOptions::default();
     let asks = |wb: &Workbook| {
         [
-            wb.permits_edit(&Edit::Enter { sheet: 0, ranges: &[rect("B1")] }),
-            wb.permits_edit(&Edit::Enter { sheet: 0, ranges: &[rect("A1:B1")] }),
-            wb.permits_edit(&Edit::Clear { sheet: 0, ranges: &[rect("B1")], mode: ClearMode::Contents }),
-            wb.permits_edit(&Edit::Clear { sheet: 0, ranges: &[rect("B1")], mode: ClearMode::Formats }),
-            wb.permits_edit(&Edit::Clear { sheet: 0, ranges: &[rect("B1")], mode: ClearMode::All }),
-            wb.permits_edit(&Edit::Clear { sheet: 0, ranges: &[rect("B1")], mode: ClearMode::Comments }),
+            wb.permits_edit(&Edit::Enter {
+                sheet: 0,
+                ranges: &[rect("B1")],
+            }),
+            wb.permits_edit(&Edit::Enter {
+                sheet: 0,
+                ranges: &[rect("A1:B1")],
+            }),
+            wb.permits_edit(&Edit::Clear {
+                sheet: 0,
+                ranges: &[rect("B1")],
+                mode: ClearMode::Contents,
+            }),
+            wb.permits_edit(&Edit::Clear {
+                sheet: 0,
+                ranges: &[rect("B1")],
+                mode: ClearMode::Formats,
+            }),
+            wb.permits_edit(&Edit::Clear {
+                sheet: 0,
+                ranges: &[rect("B1")],
+                mode: ClearMode::All,
+            }),
+            wb.permits_edit(&Edit::Clear {
+                sheet: 0,
+                ranges: &[rect("B1")],
+                mode: ClearMode::Comments,
+            }),
             // One cell tiled over unlocked cells; two cells that run over.
-            wb.permits_edit(&Edit::Paste { sheet: 0, dest: rect("B1:B4"), clip: &one, mode: PasteMode::All }),
-            wb.permits_edit(&Edit::Paste { sheet: 0, dest: rect("B1"), clip: &two, mode: PasteMode::Values }),
-            wb.permits_edit(&Edit::Paste { sheet: 0, dest: rect("B1"), clip: &one, mode: PasteMode::Formats }),
-            wb.permits_edit(&Edit::Paste { sheet: 0, dest: rect("B1"), clip: &one, mode: PasteMode::Validation }),
-            wb.permits_edit(&Edit::Paste { sheet: 0, dest: rect("B1"), clip: &one, mode: PasteMode::ColumnWidths }),
-            wb.permits_edit(&Edit::Move { src_sheet: 0, src: rect("B1"), dest_sheet: 0, dest_row: 3, dest_col: 1 }),
-            wb.permits_edit(&Edit::Move { src_sheet: 0, src: rect("B1:B2"), dest_sheet: 0, dest_row: 4, dest_col: 1 }),
-            wb.permits_edit(&Edit::Fill { sheet: 0, dest: rect("B1:B5") }),
-            wb.permits_edit(&Edit::Fill { sheet: 0, dest: rect("B1:C5") }),
+            wb.permits_edit(&Edit::Paste {
+                sheet: 0,
+                dest: rect("B1:B4"),
+                clip: &one,
+                mode: PasteMode::All,
+            }),
+            wb.permits_edit(&Edit::Paste {
+                sheet: 0,
+                dest: rect("B1"),
+                clip: &two,
+                mode: PasteMode::Values,
+            }),
+            wb.permits_edit(&Edit::Paste {
+                sheet: 0,
+                dest: rect("B1"),
+                clip: &one,
+                mode: PasteMode::Formats,
+            }),
+            wb.permits_edit(&Edit::Paste {
+                sheet: 0,
+                dest: rect("B1"),
+                clip: &one,
+                mode: PasteMode::Validation,
+            }),
+            wb.permits_edit(&Edit::Paste {
+                sheet: 0,
+                dest: rect("B1"),
+                clip: &one,
+                mode: PasteMode::ColumnWidths,
+            }),
+            wb.permits_edit(&Edit::Move {
+                src_sheet: 0,
+                src: rect("B1"),
+                dest_sheet: 0,
+                dest_row: 3,
+                dest_col: 1,
+            }),
+            wb.permits_edit(&Edit::Move {
+                src_sheet: 0,
+                src: rect("B1:B2"),
+                dest_sheet: 0,
+                dest_row: 4,
+                dest_col: 1,
+            }),
+            wb.permits_edit(&Edit::Fill {
+                sheet: 0,
+                dest: rect("B1:B5"),
+            }),
+            wb.permits_edit(&Edit::Fill {
+                sheet: 0,
+                dest: rect("B1:C5"),
+            }),
             wb.permits_edit(&Edit::Format { sheet: 0 }),
             wb.permits_edit(&Edit::Merge { sheet: 0 }),
             wb.permits_edit(&Edit::InsertRows { sheet: 0 }),
-            wb.permits_edit(&Edit::DeleteRows { sheet: 0, at: 1, count: 2 }),
-            wb.permits_edit(&Edit::DeleteCols { sheet: 0, at: 4, count: 1 }),
+            wb.permits_edit(&Edit::DeleteRows {
+                sheet: 0,
+                at: 1,
+                count: 2,
+            }),
+            wb.permits_edit(&Edit::DeleteCols {
+                sheet: 0,
+                at: 4,
+                count: 1,
+            }),
             wb.permits_edit(&Edit::SizeRows { sheet: 0 }),
             wb.permits_edit(&Edit::SizeCols { sheet: 0 }),
-            wb.permits_edit(&Edit::Sort { sheet: 0, range: rect("B1:B5") }),
+            wb.permits_edit(&Edit::Sort {
+                sheet: 0,
+                range: rect("B1:B5"),
+            }),
             wb.permits_edit(&Edit::RemoveDuplicates { sheet: 0 }),
             // Only the cells that would change count.
-            wb.permits_edit(&Edit::Replace { sheet: 0, needle: "open", options: &all }),
-            wb.permits_edit(&Edit::Replace { sheet: 0, needle: "e", options: &all }),
+            wb.permits_edit(&Edit::Replace {
+                sheet: 0,
+                needle: "open",
+                options: &all,
+            }),
+            wb.permits_edit(&Edit::Replace {
+                sheet: 0,
+                needle: "e",
+                options: &all,
+            }),
         ]
     };
     // Nothing is refused on a sheet that is not protected.
@@ -647,7 +863,12 @@ fn what_protection_is_asked_before_each_edit() {
     wb.commit("unlock");
     let one = wb.copy(0, rect("B1"));
     wb.protect_sheet(0, SheetProtection::default(), "");
-    let paste = |dest: &str| Edit::Paste { sheet: 0, dest: rect(dest), clip: &one, mode: PasteMode::Values };
+    let paste = |dest: &str| Edit::Paste {
+        sheet: 0,
+        dest: rect(dest),
+        clip: &one,
+        mode: PasteMode::Values,
+    };
     assert_eq!(wb.permits_edit(&paste("A2:A6")), Ok(()));
     assert_eq!(wb.permits_edit(&paste("A2:A3")), Ok(()));
     assert_eq!(wb.permits_edit(&paste("A3")), Err(Denied::Sheet));

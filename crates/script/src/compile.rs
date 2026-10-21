@@ -48,7 +48,10 @@ pub(crate) fn place(source: &str, offset: usize) -> (u32, u32) {
     let offset = offset.min(source.len());
     let before = &source.as_bytes()[..offset];
     let line = before.iter().filter(|b| **b == b'\n').count();
-    let start = before.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+    let start = before
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .map_or(0, |i| i + 1);
     let column = String::from_utf8_lossy(&before[start..]).chars().count();
     (line as u32 + 1, column as u32 + 1)
 }
@@ -56,7 +59,11 @@ pub(crate) fn place(source: &str, offset: usize) -> (u32, u32) {
 fn syntax_error(source: &str, diagnostic: &OxcDiagnostic) -> ScriptError {
     // When two places are named (a name declared twice), the second is
     // the one at fault.
-    let at = diagnostic.labels.iter().last().map(|label| place(source, label.offset() as usize));
+    let at = diagnostic
+        .labels
+        .iter()
+        .last()
+        .map(|label| place(source, label.offset() as usize));
     let mut message = diagnostic.message.to_string();
     if let Some(help) = &diagnostic.help {
         message.push_str(". ");
@@ -75,13 +82,19 @@ fn syntax_error(source: &str, diagnostic: &OxcDiagnostic) -> ScriptError {
 pub(crate) fn workbook_parameter(source: &str) -> Option<String> {
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, SourceType::ts()).parse();
-    parsed.program.body.iter().find_map(|statement| match statement {
-        Statement::FunctionDeclaration(f) if f.id.as_ref().is_some_and(|id| id.name == "main") => {
-            let name = f.params.items.first()?.pattern.get_identifier_name()?;
-            Some(name.to_string())
-        }
-        _ => None,
-    })
+    parsed
+        .program
+        .body
+        .iter()
+        .find_map(|statement| match statement {
+            Statement::FunctionDeclaration(f)
+                if f.id.as_ref().is_some_and(|id| id.name == "main") =>
+            {
+                let name = f.params.items.first()?.pattern.get_identifier_name()?;
+                Some(name.to_string())
+            }
+            _ => None,
+        })
 }
 
 /// Compile a script, or say what is wrong with its text.
@@ -89,7 +102,11 @@ pub(crate) fn compile(source: &str) -> Result<Compiled, Vec<ScriptError>> {
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, SourceType::ts()).parse();
     if !parsed.diagnostics.is_empty() {
-        let mut errors: Vec<ScriptError> = parsed.diagnostics.iter().map(|d| syntax_error(source, d)).collect();
+        let mut errors: Vec<ScriptError> = parsed
+            .diagnostics
+            .iter()
+            .map(|d| syntax_error(source, d))
+            .collect();
         if errors.is_empty() {
             errors.push(ScriptError {
                 kind: ErrorKind::Syntax,
@@ -107,11 +124,20 @@ pub(crate) fn compile(source: &str) -> Result<Compiled, Vec<ScriptError>> {
         .with_enum_eval(true)
         .build(&program);
     if !semantic.diagnostics.is_empty() {
-        return Err(semantic.diagnostics.iter().map(|d| syntax_error(source, d)).collect());
+        return Err(semantic
+            .diagnostics
+            .iter()
+            .map(|d| syntax_error(source, d))
+            .collect());
     }
     let main = program.body.iter().find_map(|statement| match statement {
-        Statement::FunctionDeclaration(f) if f.id.as_ref().is_some_and(|id| id.name == "main") && f.body.is_some() => {
-            Some((f.params.items.len() + f.params.rest.is_some() as usize, f.span.start as usize))
+        Statement::FunctionDeclaration(f)
+            if f.id.as_ref().is_some_and(|id| id.name == "main") && f.body.is_some() =>
+        {
+            Some((
+                f.params.items.len() + f.params.rest.is_some() as usize,
+                f.span.start as usize,
+            ))
         }
         _ => None,
     });
@@ -125,9 +151,14 @@ pub(crate) fn compile(source: &str) -> Result<Compiled, Vec<ScriptError>> {
     };
     let scoping = semantic.semantic.into_scoping();
     let options = TransformOptions::default();
-    let transformed = Transformer::new(&allocator, Path::new("script.ts"), &options).build_with_scoping(scoping, &mut program);
+    let transformed = Transformer::new(&allocator, Path::new("script.ts"), &options)
+        .build_with_scoping(scoping, &mut program);
     if !transformed.diagnostics.is_empty() {
-        return Err(transformed.diagnostics.iter().map(|d| syntax_error(source, d)).collect());
+        return Err(transformed
+            .diagnostics
+            .iter()
+            .map(|d| syntax_error(source, d))
+            .collect());
     }
     let printed = Codegen::new()
         .with_options(CodegenOptions {
@@ -139,7 +170,14 @@ pub(crate) fn compile(source: &str) -> Result<Compiled, Vec<ScriptError>> {
         .map
         .map(|map| {
             map.get_tokens()
-                .map(|t| (t.get_dst_line(), t.get_dst_col(), t.get_src_line(), t.get_src_col()))
+                .map(|t| {
+                    (
+                        t.get_dst_line(),
+                        t.get_dst_col(),
+                        t.get_src_line(),
+                        t.get_src_col(),
+                    )
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -162,18 +200,35 @@ mod tests {
         let compiled = compile(source).expect("compiles");
         assert!(!compiled.js.contains("interface") && !compiled.js.contains(" as "));
         assert_eq!((compiled.main_params, compiled.main_at), (1, (3, 1)));
-        let line = compiled.js.lines().position(|l| l.contains("boom(")).expect("the call") as u32;
-        let column = compiled.js.lines().nth(line as usize).unwrap().find("boom").unwrap() as u32;
+        let line = compiled
+            .js
+            .lines()
+            .position(|l| l.contains("boom("))
+            .expect("the call") as u32;
+        let column = compiled
+            .js
+            .lines()
+            .nth(line as usize)
+            .unwrap()
+            .find("boom")
+            .unwrap() as u32;
         assert_eq!(compiled.origin(line + 1, column + 1), Some((5, 3)));
     }
 
     #[test]
     fn what_is_wrong_is_placed() {
-        let errors = compile("function main(workbook: ExcelScript.Workbook) {\n  let x = ;\n}\n").err().expect("an error");
-        assert_eq!((errors[0].kind, errors[0].line, errors[0].column), (ErrorKind::Syntax, Some(2), Some(11)));
+        let errors = compile("function main(workbook: ExcelScript.Workbook) {\n  let x = ;\n}\n")
+            .err()
+            .expect("an error");
+        assert_eq!(
+            (errors[0].kind, errors[0].line, errors[0].column),
+            (ErrorKind::Syntax, Some(2), Some(11))
+        );
         let errors = compile("function helper() {}\n").err().expect("no main");
         assert!(errors[0].message.contains("main"));
-        let errors = compile("function main(workbook) {\n  let a = 1;\n  let a = 2;\n}\n").err().expect("declared twice");
+        let errors = compile("function main(workbook) {\n  let a = 1;\n  let a = 2;\n}\n")
+            .err()
+            .expect("declared twice");
         assert_eq!(errors[0].line, Some(3));
     }
 }

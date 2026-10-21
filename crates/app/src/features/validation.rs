@@ -13,8 +13,8 @@ mod list;
 mod textarea;
 
 use super::{
-    Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, PaintLayer, Painter, PendingEdit, Verdict, Zone,
-    ZoneEvent, ZoneResponse,
+    Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, PaintLayer, Painter, PendingEdit,
+    Verdict, Zone, ZoneEvent, ZoneResponse,
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::GridLayout;
@@ -121,7 +121,9 @@ impl Circles {
         };
         let mut remaining = self.remaining.borrow_mut();
         match remaining.as_ref() {
-            Some((of, generation, cells)) if of == name && *generation == wb.generation => cells.clone(),
+            Some((of, generation, cells)) if of == name && *generation == wb.generation => {
+                cells.clone()
+            }
             _ => {
                 let cells: Vec<(u32, u32)> = marked
                     .iter()
@@ -171,7 +173,9 @@ fn arrow_box(cell: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
 /// The cell (or merged cell) the active cell stands for.
 fn active_rect(app: &ExcelApp) -> Rect {
     let (row, col) = app.active();
-    app.wb.sheets[app.sheet].merge_at(row, col).unwrap_or(Rect::cell(row, col))
+    app.wb.sheets[app.sheet]
+        .merge_at(row, col)
+        .unwrap_or(Rect::cell(row, col))
 }
 
 /// Whether a cell is on screen, in the frozen panes or the scrolled part.
@@ -191,7 +195,8 @@ fn error_alert(alert: opensheet_engine::validation::Alert, advance: Option<Direc
     // Back to the entry, selected so that typing replaces it.
     let retry = |app: &mut ExcelApp, window: &mut Window, cx: &mut Cx| {
         app.focus_editor(window, cx);
-        app.editor().update(cx, |input, cx| input.select_all_text(cx));
+        app.editor()
+            .update(cx, |input, cx| input.select_all_text(cx));
     };
     let keep = move |app: &mut ExcelApp, window: &mut Window, cx: &mut Cx| {
         app.commit_edit_unchecked(advance, window, cx);
@@ -250,11 +255,22 @@ impl Feature for Validation {
         let (x0, y0, x1, y1) = arrow_box(p.cell_box(rect));
         p.rounded(x0, y0, x1, y1, 2.0, c(0xF3F3F3), Some(c(0xA6A6A6)));
         let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-        p.polygon(&[(mx - 4.0, my - 2.0), (mx + 4.0, my - 2.0), (mx, my + 2.5)], c(0x444444));
-        p.zone((x0, y0, x1, y1), DropArrow).cursor(CursorStyle::Arrow);
+        p.polygon(
+            &[(mx - 4.0, my - 2.0), (mx + 4.0, my - 2.0), (mx, my + 2.5)],
+            c(0x444444),
+        );
+        p.zone((x0, y0, x1, y1), DropArrow)
+            .cursor(CursorStyle::Arrow);
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         if zone.payload::<DropArrow>().is_none() || ev.button != gpui::MouseButton::Left {
             return ZoneResponse::Ignored;
         }
@@ -264,7 +280,13 @@ impl Feature for Validation {
 
     /// The input message of the active cell, in Excel's yellow note under
     /// the cell.
-    fn overlay_elements(&self, app: &mut ExcelApp, layout: &GridLayout, _window: &mut Window, _cx: &mut Cx) -> Vec<AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        layout: &GridLayout,
+        _window: &mut Window,
+        _cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         let (row, col) = app.active();
         let Some((title, text)) = app.wb.input_message(app.sheet, row, col) else {
             return Vec::new();
@@ -274,7 +296,10 @@ impl Feature for Validation {
             return Vec::new();
         }
         let (x0, _, x1, y1) = layout.rect_px(rect);
-        let lines: Vec<SharedString> = text.split('\n').map(|line| line.to_string().into()).collect();
+        let lines: Vec<SharedString> = text
+            .split('\n')
+            .map(|line| line.to_string().into())
+            .collect();
         vec![
             div()
                 .absolute()
@@ -291,17 +316,34 @@ impl Feature for Validation {
                 .line_height(px(15.))
                 .text_color(c(0x000000))
                 .when(!title.is_empty(), |d| {
-                    d.child(div().font_weight(FontWeight::BOLD).child(SharedString::from(title.to_string())))
+                    d.child(
+                        div()
+                            .font_weight(FontWeight::BOLD)
+                            .child(SharedString::from(title.to_string())),
+                    )
                 })
                 .when(!text.is_empty(), |d| {
-                    d.children(lines.into_iter().map(|line| div().min_h(px(15.)).child(line)))
+                    d.children(
+                        lines
+                            .into_iter()
+                            .map(|line| div().min_h(px(15.)).child(line)),
+                    )
                 })
                 .into_any_element(),
         ]
     }
 
-    fn may_commit(&self, app: &mut ExcelApp, edit: &PendingEdit, _window: &mut Window, cx: &mut Cx) -> Verdict {
-        match app.wb.check_entry(edit.sheet, edit.row, edit.col, edit.text) {
+    fn may_commit(
+        &self,
+        app: &mut ExcelApp,
+        edit: &PendingEdit,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) -> Verdict {
+        match app
+            .wb
+            .check_entry(edit.sheet, edit.row, edit.col, edit.text)
+        {
             EntryCheck::Accepted => Verdict::Accept,
             EntryCheck::Invalid(alert) => {
                 app.alert(error_alert(alert, edit.advance), cx);
@@ -317,7 +359,10 @@ impl Feature for Validation {
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
         if matches!(target, MenuTarget::Cell(..)) {
-            menu.add(MenuSection::Format, MenuEntry::command(Cmd::PickFromList, app));
+            menu.add(
+                MenuSection::Format,
+                MenuEntry::command(Cmd::PickFromList, app),
+            );
         }
     }
 }
@@ -414,9 +459,18 @@ mod tests {
 
     #[test]
     fn the_arrow_sits_at_the_foot_of_the_cell() {
-        assert_eq!(arrow_box((10.0, 20.0, 74.0, 40.0)), (74.0, 23.0, 91.0, 40.0));
+        assert_eq!(
+            arrow_box((10.0, 20.0, 74.0, 40.0)),
+            (74.0, 23.0, 91.0, 40.0)
+        );
         // A tall (merged) cell keeps it at the bottom, a low row squeezes it.
-        assert_eq!(arrow_box((10.0, 20.0, 74.0, 120.0)), (74.0, 103.0, 91.0, 120.0));
-        assert_eq!(arrow_box((10.0, 20.0, 74.0, 30.0)), (74.0, 20.0, 91.0, 30.0));
+        assert_eq!(
+            arrow_box((10.0, 20.0, 74.0, 120.0)),
+            (74.0, 103.0, 91.0, 120.0)
+        );
+        assert_eq!(
+            arrow_box((10.0, 20.0, 74.0, 30.0)),
+            (74.0, 20.0, 91.0, 30.0)
+        );
     }
 }

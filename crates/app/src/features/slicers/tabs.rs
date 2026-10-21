@@ -3,7 +3,9 @@
 //! number of columns and the sizes.
 
 use super::logic::{self, SLICER_STYLES, TIMELINE_STYLES};
-use super::{Cmd, SlicerUi, edit_slicer, edit_timeline, items_of, selected_slicer, selected_timeline};
+use super::{
+    Cmd, SlicerUi, edit_slicer, edit_timeline, items_of, selected_slicer, selected_timeline,
+};
 use crate::app::ExcelApp;
 use crate::features::{Command, Cx};
 use crate::i18n::{Lang, lang, t};
@@ -12,8 +14,8 @@ use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{self, NumberField, Sketch, TextField, icon, preview, tooltip};
 use gpui::{
-    AnyElement, Context, Entity, Focusable, FontWeight, Pixels, Point, SharedString, Subscription, WeakEntity, Window, div,
-    point, prelude::*, px,
+    AnyElement, Context, Entity, Focusable, FontWeight, Pixels, Point, SharedString, Subscription,
+    WeakEntity, Window, div, point, prelude::*, px,
 };
 use opensheet_engine::theme::Theme;
 use std::cell::Cell;
@@ -82,7 +84,11 @@ pub(super) fn field_value(app: &ExcelApp, kind: FieldKind) -> Option<String> {
         FieldKind::Caption => slicer.caption.clone(),
         FieldKind::Columns => slicer.columns.to_string(),
         FieldKind::ButtonHeight => length(slicer.button_height),
-        FieldKind::ButtonWidth => length(logic::button_width(slicer.size.0, slicer.columns, scrolling(app, slicer.id))),
+        FieldKind::ButtonWidth => length(logic::button_width(
+            slicer.size.0,
+            slicer.columns,
+            scrolling(app, slicer.id),
+        )),
         FieldKind::Height => length(slicer.size.1),
         FieldKind::Width => length(slicer.size.0),
     })
@@ -94,25 +100,50 @@ fn scrolling(app: &ExcelApp, id: u32) -> bool {
         return false;
     };
     let items = items_of(app, id).len();
-    logic::slicer_layout(slicer.size, slicer.show_header, slicer.columns, slicer.button_height, items, 0).scroll.is_some()
+    logic::slicer_layout(
+        slicer.size,
+        slicer.show_header,
+        slicer.columns,
+        slicer.button_height,
+        items,
+        0,
+    )
+    .scroll
+    .is_some()
 }
 
 /// Store what was typed in a field. Sizes are in the unit shown.
 pub(super) fn set_field(app: &mut ExcelApp, kind: FieldKind, text: &str, cx: &mut Cx) {
-    let number = text.trim().replace(lang().locale().decimal_sep, ".").parse::<f64>().ok().filter(|n| n.is_finite());
+    let number = text
+        .trim()
+        .replace(lang().locale().decimal_sep, ".")
+        .parse::<f64>()
+        .ok()
+        .filter(|n| n.is_finite());
     let pixels = number.map(|n| (n * length_unit().1) as f32);
     if selected_timeline(app).is_some() {
         match (kind, pixels) {
             (FieldKind::Caption, _) => {
                 let caption = text.to_string();
-                edit_timeline(app, t("Timeline Caption", "Légende de la chronologie"), cx, |tl| tl.caption = caption);
+                edit_timeline(
+                    app,
+                    t("Timeline Caption", "Légende de la chronologie"),
+                    cx,
+                    |tl| tl.caption = caption,
+                );
             }
-            (FieldKind::Height, Some(h)) if h >= 70.0 => {
-                edit_timeline(app, t("Resize Timeline", "Redimensionner la chronologie"), cx, |tl| tl.size.1 = h)
-            }
-            (FieldKind::Width, Some(w)) if w >= 150.0 => {
-                edit_timeline(app, t("Resize Timeline", "Redimensionner la chronologie"), cx, |tl| tl.size.0 = w)
-            }
+            (FieldKind::Height, Some(h)) if h >= 70.0 => edit_timeline(
+                app,
+                t("Resize Timeline", "Redimensionner la chronologie"),
+                cx,
+                |tl| tl.size.1 = h,
+            ),
+            (FieldKind::Width, Some(w)) if w >= 150.0 => edit_timeline(
+                app,
+                t("Resize Timeline", "Redimensionner la chronologie"),
+                cx,
+                |tl| tl.size.0 = w,
+            ),
             _ => {}
         }
         return;
@@ -124,15 +155,21 @@ pub(super) fn set_field(app: &mut ExcelApp, kind: FieldKind, text: &str, cx: &mu
     match (kind, pixels) {
         (FieldKind::Caption, _) => {
             let caption = text.to_string();
-            edit_slicer(app, t("Slicer Caption", "Légende du segment"), cx, |s| s.caption = caption);
+            edit_slicer(app, t("Slicer Caption", "Légende du segment"), cx, |s| {
+                s.caption = caption
+            });
         }
         (FieldKind::Columns, _) => {
             if let Some(columns) = number.filter(|n| *n >= 1.0) {
-                edit_slicer(app, t("Columns", "Colonnes"), cx, |s| s.columns = columns.min(100.0) as u32);
+                edit_slicer(app, t("Columns", "Colonnes"), cx, |s| {
+                    s.columns = columns.min(100.0) as u32
+                });
             }
         }
         (FieldKind::ButtonHeight, Some(h)) if h >= 4.0 => {
-            edit_slicer(app, t("Button Height", "Hauteur des boutons"), cx, |s| s.button_height = h.min(2000.0))
+            edit_slicer(app, t("Button Height", "Hauteur des boutons"), cx, |s| {
+                s.button_height = h.min(2000.0)
+            })
         }
         (FieldKind::ButtonWidth, Some(w)) if w >= 4.0 => {
             // The buttons fill the slicer: it takes the width they need.
@@ -149,7 +186,14 @@ pub(super) fn set_field(app: &mut ExcelApp, kind: FieldKind, text: &str, cx: &mu
 
 /// Something happened in a field: what was typed is stored on Return, on
 /// Tab, on leaving the field, and at each step of a spinner.
-fn on_field_event(app: &mut ExcelApp, kind: FieldKind, field: &Entity<TextInput>, event: &InputEvent, window: &mut Window, cx: &mut Cx) {
+fn on_field_event(
+    app: &mut ExcelApp,
+    kind: FieldKind,
+    field: &Entity<TextInput>,
+    event: &InputEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let confirmed = match event {
         InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => true,
         // The spinner leaves the whole number selected; typing does not.
@@ -178,12 +222,23 @@ fn on_field_event(app: &mut ExcelApp, kind: FieldKind, field: &Entity<TextInput>
 
 /// A field, created on first use and filled with the value of the
 /// selected object unless it is being typed in.
-fn field(app: &mut ExcelApp, kind: FieldKind, window: &mut Window, cx: &mut Cx) -> Entity<TextInput> {
+fn field(
+    app: &mut ExcelApp,
+    kind: FieldKind,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<TextInput> {
     if !app.ext_mut::<SlicerUi>().tabs.fields.contains_key(&kind) {
         let input = match kind {
             FieldKind::Caption => widgets::input(cx, ""),
             FieldKind::Columns => widgets::number_input(cx, None, 1.0, 100.0, 1.0),
-            _ => widgets::number_input(cx, None, 0.0, 5000.0 / length_unit().1, if lang() == Lang::En { 0.05 } else { 0.1 }),
+            _ => widgets::number_input(
+                cx,
+                None,
+                0.0,
+                5000.0 / length_unit().1,
+                if lang() == Lang::En { 0.05 } else { 0.1 },
+            ),
         };
         let subscription = cx.subscribe_in(&input, window, move |app, field, event, window, cx| {
             on_field_event(app, kind, field, event, window, cx)
@@ -198,7 +253,12 @@ fn field(app: &mut ExcelApp, kind: FieldKind, window: &mut Window, cx: &mut Cx) 
         );
     }
     let now = field_value(app, kind);
-    let state = app.ext_mut::<SlicerUi>().tabs.fields.get_mut(&kind).expect("the field was just created");
+    let state = app
+        .ext_mut::<SlicerUi>()
+        .tabs
+        .fields
+        .get_mut(&kind)
+        .expect("the field was just created");
     let input = state.input.clone();
     if state.shown != now && !input.read(cx).focus_handle(cx).is_focused(window) {
         state.shown = now.clone();
@@ -210,26 +270,62 @@ fn field(app: &mut ExcelApp, kind: FieldKind, window: &mut Window, cx: &mut Cx) 
     input
 }
 
-fn caption_box(app: &mut ExcelApp, title: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+fn caption_box(
+    app: &mut ExcelApp,
+    title: &'static str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Vec<AnyElement> {
     let input = field(app, FieldKind::Caption, window, cx);
     vec![
-        div().px(px(4.)).whitespace_nowrap().child(title).into_any_element(),
-        div().px(px(2.)).child(TextField::new(&input).width(140.0)).into_any_element(),
+        div()
+            .px(px(4.))
+            .whitespace_nowrap()
+            .child(title)
+            .into_any_element(),
+        div()
+            .px(px(2.))
+            .child(TextField::new(&input).width(140.0))
+            .into_any_element(),
     ]
 }
 
 /// A number field with its label and, for a length, its unit.
-fn number_row(app: &mut ExcelApp, id: &'static str, title: &'static str, kind: FieldKind, window: &mut Window, cx: &mut Cx) -> AnyElement {
+fn number_row(
+    app: &mut ExcelApp,
+    id: &'static str,
+    title: &'static str,
+    kind: FieldKind,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> AnyElement {
     let input = field(app, kind, window, cx);
-    let unit = if kind == FieldKind::Columns { "" } else { length_unit().0 };
+    let unit = if kind == FieldKind::Columns {
+        ""
+    } else {
+        length_unit().0
+    };
     div()
         .flex()
         .items_center()
         .gap(px(4.))
-        .child(div().w(px(62.)).flex_none().text_size(px(11.5)).child(title))
+        .child(
+            div()
+                .w(px(62.))
+                .flex_none()
+                .text_size(px(11.5))
+                .child(title),
+        )
         // Three of these rows fit in a group of the ribbon.
         .child(NumberField::new(id, &input).width(72.0).height(20.0))
-        .child(div().w(px(20.)).flex_none().whitespace_nowrap().text_color(c(theme::TEXT_MUTED)).child(unit))
+        .child(
+            div()
+                .w(px(20.))
+                .flex_none()
+                .whitespace_nowrap()
+                .text_color(c(theme::TEXT_MUTED))
+                .child(unit),
+        )
         .into_any_element()
 }
 
@@ -237,8 +333,22 @@ fn size_group(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> AnyElemen
     group(
         t("Size", "Taille"),
         rows(vec![
-            number_row(app, "sl-height", t("Height:", "Hauteur :"), FieldKind::Height, window, cx),
-            number_row(app, "sl-width", t("Width:", "Largeur :"), FieldKind::Width, window, cx),
+            number_row(
+                app,
+                "sl-height",
+                t("Height:", "Hauteur :"),
+                FieldKind::Height,
+                window,
+                cx,
+            ),
+            number_row(
+                app,
+                "sl-width",
+                t("Width:", "Largeur :"),
+                FieldKind::Width,
+                window,
+                cx,
+            ),
         ]),
     )
     .into_any_element()
@@ -246,7 +356,12 @@ fn size_group(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> AnyElemen
 
 /// The groups of the "Slicer" tab.
 pub(super) fn slicer_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-    let mut caption = caption_box(app, t("Slicer Caption:", "Légende du segment :"), window, cx);
+    let mut caption = caption_box(
+        app,
+        t("Slicer Caption:", "Légende du segment :"),
+        window,
+        cx,
+    );
     caption.push(app.cmd_labeled("sl-settings", Cmd::SlicerSettings, false, cx));
     let gallery = ribbon_gallery(app, cx);
     vec![
@@ -265,9 +380,30 @@ pub(super) fn slicer_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -
         group(
             t("Buttons", "Boutons"),
             rows(vec![
-                number_row(app, "sl-columns", t("Columns:", "Colonnes :"), FieldKind::Columns, window, cx),
-                number_row(app, "sl-button-height", t("Height:", "Hauteur :"), FieldKind::ButtonHeight, window, cx),
-                number_row(app, "sl-button-width", t("Width:", "Largeur :"), FieldKind::ButtonWidth, window, cx),
+                number_row(
+                    app,
+                    "sl-columns",
+                    t("Columns:", "Colonnes :"),
+                    FieldKind::Columns,
+                    window,
+                    cx,
+                ),
+                number_row(
+                    app,
+                    "sl-button-height",
+                    t("Height:", "Hauteur :"),
+                    FieldKind::ButtonHeight,
+                    window,
+                    cx,
+                ),
+                number_row(
+                    app,
+                    "sl-button-width",
+                    t("Width:", "Largeur :"),
+                    FieldKind::ButtonWidth,
+                    window,
+                    cx,
+                ),
             ]),
         )
         .into_any_element(),
@@ -276,8 +412,17 @@ pub(super) fn slicer_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -
 }
 
 /// The groups of the "Timeline" tab.
-pub(super) fn timeline_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-    let caption = caption_box(app, t("Timeline Caption:", "Légende de la chronologie :"), window, cx);
+pub(super) fn timeline_tab(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Vec<AnyElement> {
+    let caption = caption_box(
+        app,
+        t("Timeline Caption:", "Légende de la chronologie :"),
+        window,
+        cx,
+    );
     let gallery = ribbon_gallery(app, cx);
     vec![
         group(
@@ -344,12 +489,28 @@ fn draw_timeline(s: &mut Sketch, theme: &Theme, name: &str) {
     for k in 0..5 {
         let x = 4.0 + k as f32 * tile;
         s.rect(x + 1.0, 19.0, x + tile - 1.0, 20.5, c(look.period_text));
-        s.rect(x + 0.5, 24.0, x + tile - 0.5, 31.0, c(if (1..=2).contains(&k) { look.selected } else { look.unselected }));
+        s.rect(
+            x + 0.5,
+            24.0,
+            x + tile - 0.5,
+            31.0,
+            c(if (1..=2).contains(&k) {
+                look.selected
+            } else {
+                look.unselected
+            }),
+        );
     }
     s.frame(0.0, 0.0, s.width, s.height, 1.0, c(look.border));
 }
 
-fn thumbnail(index: usize, name: &'static str, theme: &Rc<Theme>, current: bool, on_pick: impl Fn(&mut Window, &mut gpui::App) + 'static) -> AnyElement {
+fn thumbnail(
+    index: usize,
+    name: &'static str,
+    theme: &Rc<Theme>,
+    current: bool,
+    on_pick: impl Fn(&mut Window, &mut gpui::App) + 'static,
+) -> AnyElement {
     let title: SharedString = logic::style_title(name, lang().locale()).into();
     let timeline = name.starts_with("Time");
     let theme = theme.clone();
@@ -357,10 +518,20 @@ fn thumbnail(index: usize, name: &'static str, theme: &Rc<Theme>, current: bool,
         .id(("slicer-style", index))
         .p(px(2.))
         .border_1()
-        .border_color(if current { c(theme::ACCENT) } else { gpui::transparent_black() })
+        .border_color(if current {
+            c(theme::ACCENT)
+        } else {
+            gpui::transparent_black()
+        })
         .rounded(px(2.))
         .hover(|s| s.border_color(c(0xF2994A)))
-        .child(preview(THUMB_W, THUMB_H, move |s| if timeline { draw_timeline(s, &theme, name) } else { draw_slicer(s, &theme, name) }))
+        .child(preview(THUMB_W, THUMB_H, move |s| {
+            if timeline {
+                draw_timeline(s, &theme, name)
+            } else {
+                draw_slicer(s, &theme, name)
+            }
+        }))
         .tooltip(tooltip(title))
         .on_click(move |_, window, cx| on_pick(window, cx))
         .into_any_element()
@@ -378,9 +549,13 @@ fn styles_of(app: &ExcelApp) -> Option<(&'static [&'static str], String)> {
 pub(super) fn set_style(app: &mut ExcelApp, name: &str, cx: &mut Cx) {
     let style = name.to_string();
     if selected_timeline(app).is_some() {
-        edit_timeline(app, t("Timeline Style", "Style de chronologie"), cx, |tl| tl.style = style);
+        edit_timeline(app, t("Timeline Style", "Style de chronologie"), cx, |tl| {
+            tl.style = style
+        });
     } else {
-        edit_slicer(app, t("Slicer Style", "Style de segment"), cx, |s| s.style = style);
+        edit_slicer(app, t("Slicer Style", "Style de segment"), cx, |s| {
+            s.style = style
+        });
     }
 }
 
@@ -445,14 +620,20 @@ pub(super) fn open_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
     // The press of this very click may have just closed the gallery.
     let closed = app.ext_mut::<SlicerUi>().tabs.gallery_closed.clone();
     let at = window.mouse_position();
-    if closed.take().is_some_and(|press| (press.x - at.x).abs() < px(4.) && (press.y - at.y).abs() < px(4.)) {
+    if closed
+        .take()
+        .is_some_and(|press| (press.x - at.x).abs() < px(4.) && (press.y - at.y).abs() < px(4.))
+    {
         return;
     }
     let Some((names, current)) = styles_of(app) else {
         return;
     };
     let position = match app.anchors.borrow().get(ANCHOR) {
-        Some(b) => point((b.right() - px(6.0 * (THUMB_W + 8.0) + 30.0)).max(px(6.)), b.bottom() + px(2.)),
+        Some(b) => point(
+            (b.right() - px(6.0 * (THUMB_W + 8.0) + 30.0)).max(px(6.)),
+            b.bottom() + px(2.),
+        ),
         None => at,
     };
     let weak = cx.weak_entity();
@@ -468,7 +649,12 @@ pub(super) fn open_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 }
 
 impl Gallery {
-    fn section(&self, title: &'static str, family: &[&'static str], cx: &mut Context<Self>) -> AnyElement {
+    fn section(
+        &self,
+        title: &'static str,
+        family: &[&'static str],
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let listed: Vec<(usize, &'static str)> = self
             .names
             .iter()
@@ -484,13 +670,19 @@ impl Gallery {
                     .gap(px(2.))
                     .children(chunk.iter().map(|(index, name)| {
                         let (app, name) = (self.app.clone(), *name);
-                        thumbnail(100 + index, name, &self.theme, name == self.current, move |window, cx| {
-                            app.update(cx, |app, cx| {
-                                app.close_popup(window, cx);
-                                set_style(app, name, cx);
-                            })
-                            .ok();
-                        })
+                        thumbnail(
+                            100 + index,
+                            name,
+                            &self.theme,
+                            name == self.current,
+                            move |window, cx| {
+                                app.update(cx, |app, cx| {
+                                    app.close_popup(window, cx);
+                                    set_style(app, name, cx);
+                                })
+                                .ok();
+                            },
+                        )
                     }))
                     .into_any_element()
             })

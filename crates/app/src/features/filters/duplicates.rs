@@ -8,8 +8,13 @@ use crate::features::{Command, Cx, Intent};
 use crate::i18n::t;
 use crate::shell::{Alert, Modal};
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, Checkbox, ROW_H, ScrollState, Tri, check_mark, dialog, virtual_rows};
-use gpui::{App, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, SharedString, Window, div, prelude::*, px};
+use crate::widgets::{
+    self, Button, Checkbox, ROW_H, ScrollState, Tri, check_mark, dialog, virtual_rows,
+};
+use gpui::{
+    App, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, SharedString, Window, div,
+    prelude::*, px,
+};
 use opensheet_engine::ops::{DuplicatesRemoved, SortError};
 use opensheet_engine::refs::col_to_letters;
 use opensheet_engine::{Rect, Workbook};
@@ -34,7 +39,12 @@ pub(super) fn plan(wb: &Workbook, sheet: usize, selection: Rect, active: (u32, u
     if let Some(table) = wb.table_at(sheet, active.0, active.1) {
         let range = table.range;
         return Plan::Rows {
-            rect: Rect::new(range.r0, range.c0, range.r1 - table.totals_row as u32, range.c1),
+            rect: Rect::new(
+                range.r0,
+                range.c0,
+                range.r1 - table.totals_row as u32,
+                range.c1,
+            ),
             has_header: table.header_row,
             fixed_header: true,
         };
@@ -49,7 +59,10 @@ pub(super) fn plan(wb: &Workbook, sheet: usize, selection: Rect, active: (u32, u
         let selection = wb.clamp_to_used(sheet, selection);
         let expanded = block_around(wb, sheet, selection);
         if expanded != selection {
-            return Plan::Ask { selection, expanded };
+            return Plan::Ask {
+                selection,
+                expanded,
+            };
         }
         selection
     };
@@ -61,7 +74,12 @@ pub(super) fn plan(wb: &Workbook, sheet: usize, selection: Rect, active: (u32, u
 }
 
 /// The columns as the dialog lists them: their headers, or "Column B".
-pub(super) fn column_names(wb: &Workbook, sheet: usize, rect: Rect, has_header: bool) -> Vec<String> {
+pub(super) fn column_names(
+    wb: &Workbook,
+    sheet: usize,
+    rect: Rect,
+    has_header: bool,
+) -> Vec<String> {
     (rect.c0..=rect.c1)
         .map(|col| {
             if has_header {
@@ -76,7 +94,11 @@ pub(super) fn column_names(wb: &Workbook, sheet: usize, rect: Rect, has_header: 
 /// The message shown once the duplicates are gone.
 pub(super) fn outcome_message(outcome: DuplicatesRemoved) -> String {
     if outcome.removed == 0 {
-        return t("No duplicate values found.", "Aucune valeur en double trouvée.").to_string();
+        return t(
+            "No duplicate values found.",
+            "Aucune valeur en double trouvée.",
+        )
+        .to_string();
     }
     t(
         "{0} duplicate values found and removed; {1} unique values remain. Note that counts may include empty cells, spaces, etc.",
@@ -98,7 +120,10 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
             has_header,
             fixed_header,
         } => open_on(app, rect, has_header, fixed_header, window, cx),
-        Plan::Ask { selection, expanded } => ask_to_expand(
+        Plan::Ask {
+            selection,
+            expanded,
+        } => ask_to_expand(
             app,
             Asking::Duplicates,
             selection,
@@ -113,7 +138,14 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     }
 }
 
-fn open_on(app: &mut ExcelApp, rect: Rect, has_header: bool, fixed_header: bool, window: &mut Window, cx: &mut Cx) {
+fn open_on(
+    app: &mut ExcelApp,
+    rect: Rect,
+    has_header: bool,
+    fixed_header: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     // A protected sheet never allows it, as in Excel.
     if !app.may(Intent::ChangeSheet, cx) {
         return;
@@ -135,12 +167,22 @@ fn open_on(app: &mut ExcelApp, rect: Rect, has_header: bool, fixed_header: bool,
 }
 
 fn names_of(wb: &Workbook, sheet: usize, rect: Rect, has_header: bool) -> Vec<SharedString> {
-    column_names(wb, sheet, rect, has_header).into_iter().map(SharedString::from).collect()
+    column_names(wb, sheet, rect, has_header)
+        .into_iter()
+        .map(SharedString::from)
+        .collect()
 }
 
 /// What OK does once the dialog is closed. `columns`: offsets of the
 /// compared columns in `rect`.
-fn run(app: &mut ExcelApp, sheet: usize, rect: Rect, columns: Vec<u32>, has_header: bool, cx: &mut Cx) {
+fn run(
+    app: &mut ExcelApp,
+    sheet: usize,
+    rect: Rect,
+    columns: Vec<u32>,
+    has_header: bool,
+    cx: &mut Cx,
+) {
     if app.sheet != sheet || !app.may(Intent::ChangeSheet, cx) {
         return;
     }
@@ -189,7 +231,10 @@ impl DuplicatesDialog {
     fn set_header(&mut self, has_header: bool, cx: &mut Context<Self>) {
         self.has_header = has_header;
         let (sheet, rect) = (self.sheet, self.rect);
-        if let Some(names) = self.modal.read_app(cx, |app| names_of(&app.wb, sheet, rect, has_header)) {
+        if let Some(names) = self
+            .modal
+            .read_app(cx, |app| names_of(&app.wb, sheet, rect, has_header))
+        {
             self.names = names;
         }
         cx.notify();
@@ -215,14 +260,17 @@ impl DuplicatesDialog {
             _ => return,
         };
         self.cursor = next;
-        self.scroll
-            .update(cx, |scroll, _| scroll.reveal(next, next, ROW_H, LIST_ROWS * ROW_H));
+        self.scroll.update(cx, |scroll, _| {
+            scroll.reveal(next, next, ROW_H, LIST_ROWS * ROW_H)
+        });
         cx.stop_propagation();
         cx.notify();
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let columns: Vec<u32> = (0..self.checked.len() as u32).filter(|i| self.checked[*i as usize]).collect();
+        let columns: Vec<u32> = (0..self.checked.len() as u32)
+            .filter(|i| self.checked[*i as usize])
+            .collect();
         if columns.is_empty() {
             return;
         }
@@ -240,29 +288,42 @@ impl Render for DuplicatesDialog {
         let cursor = self.cursor;
         let view = cx.weak_entity();
         let (names, checked) = (&self.names, &self.checked);
-        let rows = virtual_rows(&self.scroll, checked.len(), ROW_H, LIST_ROWS * ROW_H, cx, |i| {
-            let view = view.clone();
-            div()
-                .id(("column", i))
-                .size_full()
-                .px(px(6.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .when(focused && i == cursor, |d| d.bg(c(widgets::SELECTED_BG)))
-                .when(!(focused && i == cursor), |d| d.hover(|s| s.bg(c(0xF5F5F5))))
-                .child(check_mark(Tri::from(checked[i]), false))
-                .child(div().truncate().child(names.get(i).cloned().unwrap_or_default()))
-                .on_click(move |_, _, cx: &mut App| {
-                    view.update(cx, |this, cx| {
-                        this.checked[i] ^= true;
-                        this.cursor = i;
-                        cx.notify();
+        let rows = virtual_rows(
+            &self.scroll,
+            checked.len(),
+            ROW_H,
+            LIST_ROWS * ROW_H,
+            cx,
+            |i| {
+                let view = view.clone();
+                div()
+                    .id(("column", i))
+                    .size_full()
+                    .px(px(6.))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .when(focused && i == cursor, |d| d.bg(c(widgets::SELECTED_BG)))
+                    .when(!(focused && i == cursor), |d| {
+                        d.hover(|s| s.bg(c(0xF5F5F5)))
                     })
-                    .ok();
-                })
-                .into_any_element()
-        });
+                    .child(check_mark(Tri::from(checked[i]), false))
+                    .child(
+                        div()
+                            .truncate()
+                            .child(names.get(i).cloned().unwrap_or_default()),
+                    )
+                    .on_click(move |_, _, cx: &mut App| {
+                        view.update(cx, |this, cx| {
+                            this.checked[i] ^= true;
+                            this.cursor = i;
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+                    .into_any_element()
+            },
+        );
         let nothing = !self.checked.contains(&true);
         let modal = self.modal.clone();
         dialog(&self.modal, Cmd::RemoveDuplicates.label())

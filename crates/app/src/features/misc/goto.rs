@@ -9,8 +9,12 @@ use crate::i18n::{t, t_ctx};
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, Checkbox, GroupBox, ListBox, RadioGroup, TextField, dialog, label, ok_cancel};
-use gpui::{App, Context, ElementId, Entity, KeyDownEvent, SharedString, Window, div, prelude::*, px};
+use crate::widgets::{
+    self, Button, Checkbox, GroupBox, ListBox, RadioGroup, TextField, dialog, label, ok_cancel,
+};
+use gpui::{
+    App, Context, ElementId, Entity, KeyDownEvent, SharedString, Window, div, prelude::*, px,
+};
 use opensheet_engine::{Content, Rect, Reference, Value, Workbook};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -26,7 +30,11 @@ const REMEMBERED: usize = 4;
 
 fn none_found(app: &mut ExcelApp, cx: &mut Cx) {
     app.alert(
-        Alert::new("OpenSheet", t("No cells were found.", "Pas de cellules correspondantes.")).warning(),
+        Alert::new(
+            "OpenSheet",
+            t("No cells were found.", "Pas de cellules correspondantes."),
+        )
+        .warning(),
         cx,
     );
 }
@@ -34,7 +42,10 @@ fn none_found(app: &mut ExcelApp, cx: &mut Cx) {
 // --------------------------------------------------------------------- Go To
 
 pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let mut items = app.ext::<Visited>().map(|visited| visited.places.clone()).unwrap_or_default();
+    let mut items = app
+        .ext::<Visited>()
+        .map(|visited| visited.places.clone())
+        .unwrap_or_default();
     items.extend(names::visible_names(&app.wb, app.sheet));
     app.open_modal(window, cx, move |modal, _, cx| GoTo {
         reference: widgets::input(cx, ""),
@@ -49,7 +60,10 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 fn go_to(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
     let (row, col) = app.active();
     let Some(areas) = app.wb.reference_areas(app.sheet, row, col, text) else {
-        app.alert(Alert::new("OpenSheet", names::invalid_reference()).warning(), cx);
+        app.alert(
+            Alert::new("OpenSheet", names::invalid_reference()).warning(),
+            cx,
+        );
         return false;
     };
     let style = RefStyle {
@@ -59,7 +73,10 @@ fn go_to(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
     };
     let from = style.format(app.sel().current(), &app.wb.sheets[app.sheet].name);
     if !names::select_areas(app, &areas, cx) {
-        app.alert(Alert::new("OpenSheet", names::invalid_reference()).warning(), cx);
+        app.alert(
+            Alert::new("OpenSheet", names::invalid_reference()).warning(),
+            cx,
+        );
         return false;
     }
     remember(&mut app.ext_mut::<Visited>().places, from);
@@ -105,13 +122,18 @@ impl GoTo {
 
     fn special(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| open_special(app, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| open_special(app, window, cx));
     }
 }
 
 impl Render for GoTo {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let items: Vec<SharedString> = self.items.iter().map(|item| SharedString::from(item.clone())).collect();
+        let items: Vec<SharedString> = self
+            .items
+            .iter()
+            .map(|item| SharedString::from(item.clone()))
+            .collect();
         dialog(&self.modal, t("Go To", "Atteindre"))
             .width(320.0)
             .on_ok(cx.listener(Self::ok))
@@ -189,13 +211,21 @@ pub(crate) enum Special {
     Objects,
     RowDifferences,
     ColumnDifferences,
-    Precedents { all_levels: bool },
-    Dependents { all_levels: bool },
+    Precedents {
+        all_levels: bool,
+    },
+    Dependents {
+        all_levels: bool,
+    },
     LastCell,
     VisibleCells,
     /// `same`: only those formatted like the active cell.
-    ConditionalFormats { same: bool },
-    DataValidation { same: bool },
+    ConditionalFormats {
+        same: bool,
+    },
+    DataValidation {
+        same: bool,
+    },
 }
 
 /// Stack runs of cells (row, first column, last column), sorted by row,
@@ -246,7 +276,12 @@ fn same_content(wb: &Workbook, sheet: usize, a: (u32, u32), b: (u32, u32)) -> bo
 /// The cells Go To Special selects on `sheet` for the selection it is
 /// asked from; empty when there are none. A selection of one cell means
 /// the whole sheet for the choices that search.
-pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, what: Special) -> Vec<Rect> {
+pub(crate) fn special_cells(
+    wb: &Workbook,
+    sheet: usize,
+    selection: &Selection,
+    what: Special,
+) -> Vec<Rect> {
     let Some(sh) = wb.sheets.get(sheet) else {
         return Vec::new();
     };
@@ -260,7 +295,11 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
     let area: Vec<Rect> = match (used, one_cell) {
         (None, _) => Vec::new(),
         (Some(used), true) => vec![used],
-        (Some(used), false) => selection.ranges.iter().filter_map(|range| range.intersection(&used)).collect(),
+        (Some(used), false) => selection
+            .ranges
+            .iter()
+            .filter_map(|range| range.intersection(&used))
+            .collect(),
     };
     let within = |row: u32, col: u32| area.iter().any(|range| range.contains(row, col));
     let cells_where = |keep: &dyn Fn(&opensheet_engine::Cell) -> bool| -> Vec<Rect> {
@@ -292,7 +331,11 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
     // or all of them; `step` gives the neighbours of a rectangle.
     let follow = |all_levels: bool, step: &dyn Fn(Rect) -> Vec<Rect>| -> Vec<Rect> {
         let mut found: Vec<Rect> = Vec::new();
-        let mut frontier: Vec<Rect> = selection.ranges.iter().map(|range| wb.clamp_to_used(sheet, *range)).collect();
+        let mut frontier: Vec<Rect> = selection
+            .ranges
+            .iter()
+            .map(|range| wb.clamp_to_used(sheet, *range))
+            .collect();
         // Chains of formulas end; the bound is for circular ones.
         for _ in 0..10_000 {
             let mut next: Vec<Rect> = Vec::new();
@@ -314,15 +357,20 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
 
     match what {
         Special::Notes => {
-            let found: BTreeSet<(u32, u32)> = sh.comments.keys().filter(|(row, col)| within(*row, *col)).copied().collect();
+            let found: BTreeSet<(u32, u32)> = sh
+                .comments
+                .keys()
+                .filter(|(row, col)| within(*row, *col))
+                .copied()
+                .collect();
             coalesce(&found)
         }
-        Special::Constants(kinds) => {
-            cells_where(&|cell| matches!(&cell.content, Content::Value(value) if !value.is_empty() && kinds.admits(value)))
-        }
-        Special::Formulas(kinds) => {
-            cells_where(&|cell| matches!(cell.content, Content::Formula(_)) && kinds.admits(&cell.value))
-        }
+        Special::Constants(kinds) => cells_where(
+            &|cell| matches!(&cell.content, Content::Value(value) if !value.is_empty() && kinds.admits(value)),
+        ),
+        Special::Formulas(kinds) => cells_where(&|cell| {
+            matches!(cell.content, Content::Formula(_)) && kinds.admits(&cell.value)
+        }),
         Special::Blanks => {
             let mut runs: Vec<(u32, u32, u32)> = Vec::new();
             let mut seen: Vec<Rect> = Vec::new();
@@ -371,11 +419,23 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
                 for range in &area {
                     // Each row (or column) is compared with its cell in the
                     // column (or row) of the active cell.
-                    let pivot_col = if col >= range.c0 && col <= range.c1 { col } else { range.c0 };
-                    let pivot_row = if row >= range.r0 && row <= range.r1 { row } else { range.r0 };
+                    let pivot_col = if col >= range.c0 && col <= range.c1 {
+                        col
+                    } else {
+                        range.c0
+                    };
+                    let pivot_row = if row >= range.r0 && row <= range.r1 {
+                        row
+                    } else {
+                        range.r0
+                    };
                     for r in range.r0..=range.r1 {
                         for c in range.c0..=range.c1 {
-                            let model = if by_row { (r, pivot_col) } else { (pivot_row, c) };
+                            let model = if by_row {
+                                (r, pivot_col)
+                            } else {
+                                (pivot_row, c)
+                            };
                             if !same_content(wb, sheet, model, (r, c)) {
                                 found.insert((r, c));
                             }
@@ -406,7 +466,10 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
                 .map(|(_, r, c)| Rect::cell(r, c))
                 .collect()
         }),
-        Special::LastCell => used.map(|used| Rect::cell(used.r1, used.c1)).into_iter().collect(),
+        Special::LastCell => used
+            .map(|used| Rect::cell(used.r1, used.c1))
+            .into_iter()
+            .collect(),
         Special::VisibleCells => {
             let hidden_rows = sh.rows_not_shown();
             let mut out: Vec<Rect> = Vec::new();
@@ -434,12 +497,20 @@ pub(crate) fn special_cells(wb: &Workbook, sheet: usize, selection: &Selection, 
             }
             out
         }
-        Special::ConditionalFormats { same } => {
-            rule_ranges(sh.cond_formats.iter().map(|format| &format.ranges).collect(), same)
-        }
-        Special::DataValidation { same } => {
-            rule_ranges(sh.validations.iter().map(|validation| &validation.ranges).collect(), same)
-        }
+        Special::ConditionalFormats { same } => rule_ranges(
+            sh.cond_formats
+                .iter()
+                .map(|format| &format.ranges)
+                .collect(),
+            same,
+        ),
+        Special::DataValidation { same } => rule_ranges(
+            sh.validations
+                .iter()
+                .map(|validation| &validation.ranges)
+                .collect(),
+            same,
+        ),
     }
 }
 
@@ -463,7 +534,10 @@ pub(crate) fn select_special(app: &mut ExcelApp, what: Special, cx: &mut Cx) {
     if let Some(index) = ranges.iter().position(|range| range.contains(row, col)) {
         ranges.rotate_left(index);
     }
-    let areas: Vec<Reference> = ranges.into_iter().map(|range| Reference::new(sheet, range)).collect();
+    let areas: Vec<Reference> = ranges
+        .into_iter()
+        .map(|range| Reference::new(sheet, range))
+        .collect();
     names::select_areas(app, &areas, cx);
     if areas[0].rect.contains(row, col) {
         let view = &mut app.views[sheet];
@@ -564,18 +638,28 @@ impl RenderOnce for Radio {
                             .flex_none()
                             .rounded_full()
                             .border_1()
-                            .border_color(c(if self.on { theme::ACCENT } else { theme::TEXT_MUTED }))
+                            .border_color(c(if self.on {
+                                theme::ACCENT
+                            } else {
+                                theme::TEXT_MUTED
+                            }))
                             .bg(c(0xFFFFFF))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .when(self.on, |d| d.child(div().size(px(8.)).rounded_full().bg(c(theme::ACCENT)))),
+                            .when(self.on, |d| {
+                                d.child(div().size(px(8.)).rounded_full().bg(c(theme::ACCENT)))
+                            }),
                     )
                     .child(
                         div()
                             .px(px(2.))
                             .border_1()
-                            .border_color(if focused { c(theme::ACCENT) } else { gpui::transparent_black() })
+                            .border_color(if focused {
+                                c(theme::ACCENT)
+                            } else {
+                                gpui::transparent_black()
+                            })
                             .rounded(px(2.))
                             .whitespace_nowrap()
                             .child(self.label),
@@ -623,7 +707,8 @@ impl GoToSpecial {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let what = self.what();
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| select_special(app, what, cx));
+        self.modal
+            .update_app(cx, |app, cx| select_special(app, what, cx));
     }
 
     fn radio(&self, choice: Choice, cx: &mut Context<Self>) -> Radio {
@@ -639,7 +724,14 @@ impl GoToSpecial {
         }
     }
 
-    fn kind(&self, id: &'static str, text: &'static str, on: bool, set: fn(&mut Kinds, bool), cx: &mut Context<Self>) -> Checkbox {
+    fn kind(
+        &self,
+        id: &'static str,
+        text: &'static str,
+        on: bool,
+        set: fn(&mut Kinds, bool),
+        cx: &mut Context<Self>,
+    ) -> Checkbox {
         let enabled = matches!(self.choice, Choice::Constants | Choice::Formulas);
         Checkbox::new(id, text, on)
             .disabled(!enabled)
@@ -654,7 +746,10 @@ impl Render for GoToSpecial {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let kinds = self.kinds;
         let levels = matches!(self.choice, Choice::Precedents | Choice::Dependents);
-        let rules = matches!(self.choice, Choice::ConditionalFormats | Choice::DataValidation);
+        let rules = matches!(
+            self.choice,
+            Choice::ConditionalFormats | Choice::DataValidation
+        );
         let indent = |control: gpui::AnyElement| div().pl(px(22.)).child(control);
         let left = div()
             .flex()
@@ -664,15 +759,44 @@ impl Render for GoToSpecial {
             .child(self.radio(Choice::Constants, cx))
             .child(self.radio(Choice::Formulas, cx))
             .child(indent(
-                self.kind("numbers", t("Numbers", "Nombres"), kinds.numbers, |k, on| k.numbers = on, cx).into_any_element(),
+                self.kind(
+                    "numbers",
+                    t("Numbers", "Nombres"),
+                    kinds.numbers,
+                    |k, on| k.numbers = on,
+                    cx,
+                )
+                .into_any_element(),
             ))
-            .child(indent(self.kind("text", t("Text", "Texte"), kinds.text, |k, on| k.text = on, cx).into_any_element()))
             .child(indent(
-                self.kind("logicals", t("Logicals", "Valeurs logiques"), kinds.logicals, |k, on| k.logicals = on, cx)
-                    .into_any_element(),
+                self.kind(
+                    "text",
+                    t("Text", "Texte"),
+                    kinds.text,
+                    |k, on| k.text = on,
+                    cx,
+                )
+                .into_any_element(),
             ))
             .child(indent(
-                self.kind("errors", t("Errors", "Erreurs"), kinds.errors, |k, on| k.errors = on, cx).into_any_element(),
+                self.kind(
+                    "logicals",
+                    t("Logicals", "Valeurs logiques"),
+                    kinds.logicals,
+                    |k, on| k.logicals = on,
+                    cx,
+                )
+                .into_any_element(),
+            ))
+            .child(indent(
+                self.kind(
+                    "errors",
+                    t("Errors", "Erreurs"),
+                    kinds.errors,
+                    |k, on| k.errors = on,
+                    cx,
+                )
+                .into_any_element(),
             ))
             .child(self.radio(Choice::Blanks, cx))
             .child(self.radio(Choice::CurrentRegion, cx))
@@ -689,7 +813,10 @@ impl Render for GoToSpecial {
             .child(indent(
                 RadioGroup::new(
                     "levels",
-                    vec![t("Direct only", "Directs seulement").into(), t("All levels", "Tous niveaux").into()],
+                    vec![
+                        t("Direct only", "Directs seulement").into(),
+                        t("All levels", "Tous niveaux").into(),
+                    ],
                     Some(self.all_levels as usize),
                 )
                 .disabled(!levels)
@@ -706,7 +833,10 @@ impl Render for GoToSpecial {
             .child(indent(
                 RadioGroup::new(
                     "rules",
-                    vec![t_ctx("rules", "All", "Tous").into(), t("Same", "Identiques").into()],
+                    vec![
+                        t_ctx("rules", "All", "Tous").into(),
+                        t("Same", "Identiques").into(),
+                    ],
                     Some(self.same as usize),
                 )
                 .disabled(!rules)
@@ -719,7 +849,10 @@ impl Render for GoToSpecial {
         dialog(&self.modal, t("Go To Special", "Sélectionner les cellules"))
             .width(430.0)
             .on_ok(cx.listener(Self::ok))
-            .child(GroupBox::new(t("Select", "Sélectionner")).child(div().flex().gap(px(28.)).child(left).child(right)))
+            .child(
+                GroupBox::new(t("Select", "Sélectionner"))
+                    .child(div().flex().gap(px(28.)).child(left).child(right)),
+            )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
@@ -757,7 +890,10 @@ mod tests {
     }
 
     fn selecting(ranges: &[&str]) -> Selection {
-        let ranges: Vec<Rect> = ranges.iter().map(|range| Rect::parse(range).unwrap()).collect();
+        let ranges: Vec<Rect> = ranges
+            .iter()
+            .map(|range| Rect::parse(range).unwrap())
+            .collect();
         let last = *ranges.last().unwrap();
         Selection {
             active: (last.r0, last.c0),
@@ -767,22 +903,46 @@ mod tests {
     }
 
     fn found(wb: &Workbook, selection: &[&str], what: Special) -> Vec<String> {
-        special_cells(wb, 0, &selecting(selection), what).iter().map(|range| range.name()).collect()
+        special_cells(wb, 0, &selecting(selection), what)
+            .iter()
+            .map(|range| range.name())
+            .collect()
     }
 
     #[test]
     fn the_last_places_left_are_remembered() {
         let mut places = Vec::new();
-        for place in ["Sheet1!$A$1", "Sheet1!$B$2", "Sheet1!$A$1", "Sheet2!$C$3", "Sheet1!$D$4", "Sheet1!$E$5"] {
+        for place in [
+            "Sheet1!$A$1",
+            "Sheet1!$B$2",
+            "Sheet1!$A$1",
+            "Sheet2!$C$3",
+            "Sheet1!$D$4",
+            "Sheet1!$E$5",
+        ] {
             remember(&mut places, place.to_string());
         }
         // Most recent first, each once, four at most.
-        assert_eq!(places, ["Sheet1!$E$5", "Sheet1!$D$4", "Sheet2!$C$3", "Sheet1!$A$1"]);
+        assert_eq!(
+            places,
+            ["Sheet1!$E$5", "Sheet1!$D$4", "Sheet2!$C$3", "Sheet1!$A$1"]
+        );
     }
 
     #[test]
     fn cells_are_gathered_into_rectangles() {
-        let cells: BTreeSet<(u32, u32)> = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 1), (4, 0), (4, 2), (5, 2)].into_iter().collect();
+        let cells: BTreeSet<(u32, u32)> = [
+            (0, 0),
+            (0, 1),
+            (1, 0),
+            (1, 1),
+            (2, 1),
+            (4, 0),
+            (4, 2),
+            (5, 2),
+        ]
+        .into_iter()
+        .collect();
         let names: Vec<String> = coalesce(&cells).iter().map(|range| range.name()).collect();
         assert_eq!(names, ["A1:B2", "B3", "A5", "C5:C6"]);
         assert!(coalesce(&BTreeSet::new()).is_empty());
@@ -798,15 +958,55 @@ mod tests {
             errors,
         };
         // One cell selected: the whole sheet.
-        assert_eq!(found(&wb, &["A1"], Special::Constants(Kinds::ALL)), ["A1:C1", "A2:B3", "A4", "A6"]);
-        assert_eq!(found(&wb, &["A1"], Special::Constants(only(true, false, false, false))), ["B2:B3"]);
-        assert_eq!(found(&wb, &["A1"], Special::Constants(only(false, false, true, false))), ["A6"]);
-        assert_eq!(found(&wb, &["A1"], Special::Formulas(Kinds::ALL)), ["C2:C4", "B6:D6"]);
-        assert_eq!(found(&wb, &["A1"], Special::Formulas(only(false, false, false, true))), ["B6"]);
-        assert_eq!(found(&wb, &["A1"], Special::Formulas(only(false, true, false, false))), ["D6"]);
+        assert_eq!(
+            found(&wb, &["A1"], Special::Constants(Kinds::ALL)),
+            ["A1:C1", "A2:B3", "A4", "A6"]
+        );
+        assert_eq!(
+            found(
+                &wb,
+                &["A1"],
+                Special::Constants(only(true, false, false, false))
+            ),
+            ["B2:B3"]
+        );
+        assert_eq!(
+            found(
+                &wb,
+                &["A1"],
+                Special::Constants(only(false, false, true, false))
+            ),
+            ["A6"]
+        );
+        assert_eq!(
+            found(&wb, &["A1"], Special::Formulas(Kinds::ALL)),
+            ["C2:C4", "B6:D6"]
+        );
+        assert_eq!(
+            found(
+                &wb,
+                &["A1"],
+                Special::Formulas(only(false, false, false, true))
+            ),
+            ["B6"]
+        );
+        assert_eq!(
+            found(
+                &wb,
+                &["A1"],
+                Special::Formulas(only(false, true, false, false))
+            ),
+            ["D6"]
+        );
         // Several cells selected: those only.
-        assert_eq!(found(&wb, &["A1:C2"], Special::Formulas(Kinds::ALL)), ["C2"]);
-        assert_eq!(found(&wb, &["A1:A2", "C1:C3"], Special::Constants(Kinds::ALL)), ["A1:A2", "C1"]);
+        assert_eq!(
+            found(&wb, &["A1:C2"], Special::Formulas(Kinds::ALL)),
+            ["C2"]
+        );
+        assert_eq!(
+            found(&wb, &["A1:A2", "C1:C3"], Special::Constants(Kinds::ALL)),
+            ["A1:A2", "C1"]
+        );
         assert!(found(&wb, &["E1:F9"], Special::Constants(Kinds::ALL)).is_empty());
     }
 
@@ -814,7 +1014,10 @@ mod tests {
     fn blanks_regions_and_last_cell() {
         let wb = workbook();
         assert_eq!(found(&wb, &["A1:C4"], Special::Blanks), ["B4"]);
-        assert_eq!(found(&wb, &["A1"], Special::Blanks), ["D1:D4", "B4", "A5:D5"]);
+        assert_eq!(
+            found(&wb, &["A1"], Special::Blanks),
+            ["D1:D4", "B4", "A5:D5"]
+        );
         assert_eq!(found(&wb, &["B3"], Special::CurrentRegion), ["A1:C4"]);
         assert_eq!(found(&wb, &["B3"], Special::LastCell), ["D6"]);
         assert!(found(&wb, &["B3"], Special::CurrentArray).is_empty());
@@ -846,14 +1049,26 @@ mod tests {
     #[test]
     fn precedents_and_dependents_by_level() {
         let wb = workbook();
-        assert_eq!(found(&wb, &["C6"], Special::Precedents { all_levels: false }), ["C2:C4"]);
-        assert_eq!(found(&wb, &["D6"], Special::Precedents { all_levels: false }), ["C6"]);
+        assert_eq!(
+            found(&wb, &["C6"], Special::Precedents { all_levels: false }),
+            ["C2:C4"]
+        );
+        assert_eq!(
+            found(&wb, &["D6"], Special::Precedents { all_levels: false }),
+            ["C6"]
+        );
         assert_eq!(
             found(&wb, &["D6"], Special::Precedents { all_levels: true }),
             ["C6", "C2:C4", "B2", "B3", "B4"]
         );
-        assert_eq!(found(&wb, &["B2"], Special::Dependents { all_levels: false }), ["C2"]);
-        assert_eq!(found(&wb, &["B2"], Special::Dependents { all_levels: true }), ["C2", "C6", "D6"]);
+        assert_eq!(
+            found(&wb, &["B2"], Special::Dependents { all_levels: false }),
+            ["C2"]
+        );
+        assert_eq!(
+            found(&wb, &["B2"], Special::Dependents { all_levels: true }),
+            ["C2", "C6", "D6"]
+        );
         assert!(found(&wb, &["A1"], Special::Precedents { all_levels: true }).is_empty());
         assert!(found(&wb, &["D6"], Special::Dependents { all_levels: true }).is_empty());
     }
@@ -864,7 +1079,10 @@ mod tests {
         wb.set_rows_hidden(0, 2, 2, true);
         wb.set_cols_hidden(0, 1, 1, true);
         wb.commit("hide");
-        assert_eq!(found(&wb, &["A1:C4"], Special::VisibleCells), ["A1:A2", "C1:C2", "A4", "C4"]);
+        assert_eq!(
+            found(&wb, &["A1:C4"], Special::VisibleCells),
+            ["A1:A2", "C1:C2", "A4", "C4"]
+        );
         assert_eq!(found(&wb, &["A1:A2"], Special::VisibleCells), ["A1:A2"]);
     }
 }

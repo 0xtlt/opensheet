@@ -325,7 +325,9 @@ impl PivotCache {
     /// Index of the field named `name`, compared without case.
     pub fn field_index(&self, name: &str) -> Option<usize> {
         let wanted = name.to_lowercase();
-        self.fields.iter().position(|f| f.name.to_lowercase() == wanted)
+        self.fields
+            .iter()
+            .position(|f| f.name.to_lowercase() == wanted)
     }
 
     /// The items of a field as a report shows them.
@@ -359,7 +361,12 @@ impl PivotCache {
     pub fn database_field(&self, field: usize) -> usize {
         let mut f = field;
         for _ in 0..self.fields.len() {
-            match self.fields.get(f).and_then(|x| x.group.as_ref()).and_then(|g| g.base) {
+            match self
+                .fields
+                .get(f)
+                .and_then(|x| x.group.as_ref())
+                .and_then(|g| g.base)
+            {
                 Some(b) if b != f => f = b,
                 _ => break,
             }
@@ -370,7 +377,13 @@ impl PivotCache {
     /// The fields derived from `field` by grouping.
     pub fn group_children(&self, field: usize) -> Vec<usize> {
         (0..self.fields.len())
-            .filter(|&k| k != field && self.fields[k].group.as_ref().is_some_and(|g| g.base == Some(field)))
+            .filter(|&k| {
+                k != field
+                    && self.fields[k]
+                        .group
+                        .as_ref()
+                        .is_some_and(|g| g.base == Some(field))
+            })
             .collect()
     }
 
@@ -378,9 +391,9 @@ impl PivotCache {
     /// by default, and counts it otherwise.
     pub fn is_numeric(&self, field: usize) -> bool {
         // A calculated field computes numbers.
-        self.fields
-            .get(field)
-            .is_some_and(|f| f.formula.is_some() || (!f.shared.is_empty() && f.shared.iter().all(Value::is_number)))
+        self.fields.get(field).is_some_and(|f| {
+            f.formula.is_some() || (!f.shared.is_empty() && f.shared.iter().all(Value::is_number))
+        })
     }
 
     /// True for a numeric field formatted as dates or times.
@@ -469,7 +482,10 @@ impl PivotCache {
         locale: &Locale,
     ) -> Result<(PivotCache, Vec<usize>), PivotError> {
         let numbers = self.numbers(field)?;
-        if numbers.iter().any(|n| *n < 0.0) || periods.is_empty() || periods.contains(&GroupBy::Range) {
+        if numbers.iter().any(|n| *n < 0.0)
+            || periods.is_empty()
+            || periods.contains(&GroupBy::Range)
+        {
             return Err(PivotError::CannotGroup);
         }
         let base_name = self.fields[field].name.clone();
@@ -485,12 +501,19 @@ impl PivotCache {
                 by,
                 start: start.unwrap_or(0.0),
                 end: end.unwrap_or(0.0),
-                interval: if by == GroupBy::Days { days.max(1) as f64 } else { 1.0 },
+                interval: if by == GroupBy::Days {
+                    days.max(1) as f64
+                } else {
+                    1.0
+                },
                 auto_start: start.is_none(),
                 auto_end: end.is_none(),
             };
             let group = range_group(kind, Some(base), &numbers, locale)?;
-            let name = unique_name(&text::date_group_field_name(by, &base_name, locale), &out.names());
+            let name = unique_name(
+                &text::date_group_field_name(by, &base_name, locale),
+                &out.names(),
+            );
             created.push(out.fields.len());
             out.fields.push(CacheField {
                 name,
@@ -509,13 +532,22 @@ impl PivotCache {
     /// dates spanning several years, months within one year, hours and
     /// minutes for times of day. Empty when the field is left as it is.
     pub fn auto_date_periods(&self, field: usize) -> Vec<GroupBy> {
-        if !self.is_date(field) || self.fields[field].group.is_some() || !self.group_children(field).is_empty() {
+        if !self.is_date(field)
+            || self.fields[field].group.is_some()
+            || !self.group_children(field).is_empty()
+        {
             return Vec::new();
         }
         let numbers: Vec<f64> = self.fields[field]
             .shared
             .iter()
-            .filter_map(|v| if let Value::Number(n) = v { Some(*n) } else { None })
+            .filter_map(|v| {
+                if let Value::Number(n) = v {
+                    Some(*n)
+                } else {
+                    None
+                }
+            })
             .collect();
         let min = numbers.iter().copied().fold(f64::INFINITY, f64::min);
         let max = numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -590,7 +622,10 @@ impl PivotCache {
         };
         match existing {
             Some(parent) => {
-                let g = out.fields[parent].group.as_mut().ok_or(PivotError::CannotGroup)?;
+                let g = out.fields[parent]
+                    .group
+                    .as_mut()
+                    .ok_or(PivotError::CannotGroup)?;
                 let name = group_name(&g.items);
                 // The new group takes the place of the first item it absorbs.
                 let at = g.map[selected[0] as usize] as usize;
@@ -653,7 +688,11 @@ impl PivotCache {
     /// Undo a grouping. For a field grouped by interval or by date periods,
     /// the whole grouping goes; for hand-made groups, `item` names the group
     /// to dissolve (all of them when `None`).
-    pub(crate) fn without_group(&self, field: usize, item: Option<u32>) -> Result<PivotCache, PivotError> {
+    pub(crate) fn without_group(
+        &self,
+        field: usize,
+        item: Option<u32>,
+    ) -> Result<PivotCache, PivotError> {
         let f = self.fields.get(field).ok_or(PivotError::NoSuchField)?;
         match &f.group {
             Some(g) if g.base.is_none() => Ok(self.without_groups_of(field)),
@@ -693,7 +732,8 @@ impl PivotCache {
                 }
                 // Without any group left, the field has no reason to be;
                 // nor have, either way, the groups made of its groups.
-                let grouped = (0..group.items.len() as u32).any(|x| group.map.iter().filter(|m| **m == x).count() > 1);
+                let grouped = (0..group.items.len() as u32)
+                    .any(|x| group.map.iter().filter(|m| **m == x).count() > 1);
                 if grouped {
                     Ok(out.without_fields(&self.group_children(field)))
                 } else {
@@ -713,7 +753,10 @@ impl PivotCache {
     /// and the fields derived from it.
     fn without_groups_of(&self, field: usize) -> PivotCache {
         let mut out = self.without_fields(&self.group_children(field));
-        if let Some(f) = self.fields.get(field).and_then(|f| out.field_index(&f.name))
+        if let Some(f) = self
+            .fields
+            .get(field)
+            .and_then(|f| out.field_index(&f.name))
             && out.fields[f].is_database()
         {
             out.fields[f].group = None;
@@ -784,7 +827,13 @@ impl PivotCache {
             let numbers: Vec<f64> = self
                 .items_of_base(f, &g)
                 .iter()
-                .map(|v| if let Value::Number(n) = v { *n } else { f64::NAN })
+                .map(|v| {
+                    if let Value::Number(n) = v {
+                        *n
+                    } else {
+                        f64::NAN
+                    }
+                })
                 .collect();
             // The bounds are the file's, not the data's.
             let kind = match g.kind {
@@ -842,7 +891,8 @@ impl PivotCache {
                     }
                 }
                 Some(ob) => {
-                    let Some(base) = old.fields.get(ob).and_then(|b| self.field_index(&b.name)) else {
+                    let Some(base) = old.fields.get(ob).and_then(|b| self.field_index(&b.name))
+                    else {
                         continue;
                     };
                     let group = match &g.kind {
@@ -942,12 +992,23 @@ fn range_group(
     let min = numbers.iter().copied().fold(f64::INFINITY, f64::min);
     let max = numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     if auto_start {
-        start = if by == GroupBy::Range { min } else { min.floor() };
+        start = if by == GroupBy::Range {
+            min
+        } else {
+            min.floor()
+        };
     }
     if auto_end {
-        end = if by == GroupBy::Range { max } else { max.floor() };
+        end = if by == GroupBy::Range {
+            max
+        } else {
+            max.floor()
+        };
     }
-    if !(start.is_finite() && end.is_finite() && interval.is_finite()) || end < start || interval <= 0.0 {
+    if !(start.is_finite() && end.is_finite() && interval.is_finite())
+        || end < start
+        || interval <= 0.0
+    {
         return Err(PivotError::CannotGroup);
     }
     let mut items: Vec<Value> = Vec::new();
@@ -958,15 +1019,24 @@ fn range_group(
         }
         let bins = bins as u32;
         // Whole numbers are labelled "0-9", "10-19"; others "0-10", "10-20".
-        let whole = numbers.iter().all(|n| n.fract() == 0.0) && start.fract() == 0.0 && interval.fract() == 0.0;
+        let whole = numbers.iter().all(|n| n.fract() == 0.0)
+            && start.fract() == 0.0
+            && interval.fract() == 0.0;
         let num = |n: f64| locale.number_to_text(n);
         items.push(Value::text(format!("<{}", num(start))));
         for k in 0..bins {
             let lo = start + k as f64 * interval;
-            let hi = if whole { lo + interval - 1.0 } else { lo + interval };
+            let hi = if whole {
+                lo + interval - 1.0
+            } else {
+                lo + interval
+            };
             items.push(Value::text(format!("{}-{}", num(lo), num(hi))));
         }
-        items.push(Value::text(format!(">{}", num(start + bins as f64 * interval))));
+        items.push(Value::text(format!(
+            ">{}",
+            num(start + bins as f64 * interval)
+        )));
         numbers
             .iter()
             .map(|&n| {
@@ -980,7 +1050,10 @@ fn range_group(
     } else {
         let first_day = start.floor();
         let last_day = end.floor();
-        items.push(Value::text(format!("<{}", text::short_date(first_day, locale))));
+        items.push(Value::text(format!(
+            "<{}",
+            text::short_date(first_day, locale)
+        )));
         let inside: Box<dyn Fn(f64) -> u32> = match by {
             GroupBy::Years => {
                 let y0 = serial_to_ymd(first_day).0;
@@ -1005,11 +1078,18 @@ fn range_group(
                 Box::new(move |n| ((n.floor() - first_day) / interval).floor() as u32)
             }
             _ => {
-                items.extend(text::date_group_items(by, locale).into_iter().map(Value::from));
+                items.extend(
+                    text::date_group_items(by, locale)
+                        .into_iter()
+                        .map(Value::from),
+                );
                 Box::new(move |n| text::date_group_index(by, n) as u32)
             }
         };
-        items.push(Value::text(format!(">{}", text::short_date(last_day, locale))));
+        items.push(Value::text(format!(
+            ">{}",
+            text::short_date(last_day, locale)
+        )));
         let last = items.len() as u32 - 1;
         numbers
             .iter()

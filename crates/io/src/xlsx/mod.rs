@@ -51,13 +51,13 @@ mod page;
 mod parts;
 mod pivot;
 mod protection;
-mod slicer;
-mod timeline;
-mod sparkline;
 pub(crate) mod read;
+mod slicer;
+mod sparkline;
 mod stylerefs;
 mod table;
 mod theme;
+mod timeline;
 
 pub use theme::{read_thmx, write_thmx};
 mod validation;

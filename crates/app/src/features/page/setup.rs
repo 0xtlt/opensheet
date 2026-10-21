@@ -13,19 +13,19 @@ use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{
-    self, Button, Checkbox, ComboBox, GroupBox, NumberField, RadioGroup, RefEdit, Select, Sketch, TabStrip, TextField,
-    dialog, icon, label, labeled, ok_cancel, preview, tooltip,
+    self, Button, Checkbox, ComboBox, GroupBox, NumberField, RadioGroup, RefEdit, Select, Sketch,
+    TabStrip, TextField, dialog, icon, label, labeled, ok_cancel, preview, tooltip,
 };
 use gpui::{
-    AnyElement, App, Context, Entity, Focusable, PathPromptOptions, Render, SharedString, WeakEntity, Window, div,
-    prelude::*, px,
+    AnyElement, App, Context, Entity, Focusable, PathPromptOptions, Render, SharedString,
+    WeakEntity, Window, div, prelude::*, px,
 };
 use opensheet_engine::datetime;
 use opensheet_engine::drawing::image_info;
 use opensheet_engine::page::{
-    HeaderFooter, HfContext, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant, Margins, Orientation,
-    PageOrder, PageSetup, PaperSize, PrintComments, PrintErrors, expand, from_dialog_text, plain_text, presets,
-    to_dialog_text,
+    HeaderFooter, HfContext, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant, Margins,
+    Orientation, PageOrder, PageSetup, PaperSize, PrintComments, PrintErrors, expand,
+    from_dialog_text, plain_text, presets, to_dialog_text,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS};
 use opensheet_engine::{Locale, Rect};
@@ -87,7 +87,11 @@ pub(crate) fn parse_area(text: &str, locale: &Locale) -> Option<Vec<Rect>> {
         .filter(|part| !part.is_empty())
         .map(|part| {
             // A sheet name before the range is accepted and ignored.
-            let range = part.rsplit('!').next().unwrap_or(part).trim_start_matches('=');
+            let range = part
+                .rsplit('!')
+                .next()
+                .unwrap_or(part)
+                .trim_start_matches('=');
             Rect::parse(range)
         })
         .collect()
@@ -105,10 +109,16 @@ pub(crate) fn parse_titles(text: &str, rows: bool) -> Result<Option<(u32, u32)>,
     let range = text.rsplit('!').next().unwrap_or(text);
     let rect = Rect::parse(range).ok_or(())?;
     // `$1:$3` is rows, `$A:$B` columns: the other kind is a mistake.
-    if rows && rect.is_whole_cols() && !rect.is_whole_rows() || !rows && rect.is_whole_rows() && !rect.is_whole_cols() {
+    if rows && rect.is_whole_cols() && !rect.is_whole_rows()
+        || !rows && rect.is_whole_rows() && !rect.is_whole_cols()
+    {
         return Err(());
     }
-    Ok(Some(if rows { (rect.r0, rect.r1) } else { (rect.c0, rect.c1) }))
+    Ok(Some(if rows {
+        (rect.r0, rect.r1)
+    } else {
+        (rect.c0, rect.c1)
+    }))
 }
 
 pub(crate) fn titles_text(titles: Option<(u32, u32)>, rows: bool) -> String {
@@ -164,12 +174,24 @@ struct SetupDialog {
 }
 
 impl SetupDialog {
-    fn new(modal: Modal, tab: usize, setup: PageSetup, around: Around, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        tab: usize,
+        setup: PageSetup,
+        around: Around,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let locale = around.locale;
         let m = setup.margins;
         let margin = |cx: &mut Context<Self>, inches: f64| {
             let shown = (to_unit(inches, locale) * 100.0).round() / 100.0;
-            widgets::number_input(cx, Some(shown), 0.0, 500.0, if metric(locale) { 0.5 } else { 0.25 })
+            widgets::number_input(
+                cx,
+                Some(shown),
+                0.0,
+                500.0,
+                if metric(locale) { 0.5 } else { 0.25 },
+            )
         };
         let pages = |cx: &mut Context<Self>, count: u16| {
             widgets::number_input(cx, (count > 0).then_some(count as f64), 0.0, 32767.0, 1.0)
@@ -188,9 +210,21 @@ impl SetupDialog {
                 margin(cx, m.header),
                 margin(cx, m.footer),
             ],
-            print_area: modal.ref_input(RefStyle::absolute(), area_text(&setup.print_area, locale), cx),
-            title_rows: modal.ref_input(RefStyle::absolute(), titles_text(setup.title_rows, true), cx),
-            title_cols: modal.ref_input(RefStyle::absolute(), titles_text(setup.title_cols, false), cx),
+            print_area: modal.ref_input(
+                RefStyle::absolute(),
+                area_text(&setup.print_area, locale),
+                cx,
+            ),
+            title_rows: modal.ref_input(
+                RefStyle::absolute(),
+                titles_text(setup.title_rows, true),
+                cx,
+            ),
+            title_cols: modal.ref_input(
+                RefStyle::absolute(),
+                titles_text(setup.title_cols, false),
+                cx,
+            ),
             modal,
             around,
             setup,
@@ -230,8 +264,9 @@ impl SetupDialog {
     }
 
     fn refuse(&self, message: &'static str, cx: &mut Context<Self>) {
-        self.modal
-            .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+        self.modal.update_app(cx, |app, cx| {
+            app.alert(Alert::new("OpenSheet", message).warning(), cx)
+        });
     }
 
     /// What the dialog says the page setup is; `None` (after telling
@@ -240,16 +275,17 @@ impl SetupDialog {
         let locale = self.around.locale;
         let invalid = t("Integer is not valid.", "Valeur incorrecte.");
         let mut setup = self.setup.clone();
-        let whole = |field: &Entity<TextInput>, min: f64, max: f64, cx: &App| -> Result<Option<u16>, ()> {
-            let field = field.read(cx);
-            if field.text().trim().is_empty() {
-                return Ok(None);
-            }
-            match field.number() {
-                Some(n) if n >= min && n <= max && n.fract() == 0.0 => Ok(Some(n as u16)),
-                _ => Err(()),
-            }
-        };
+        let whole =
+            |field: &Entity<TextInput>, min: f64, max: f64, cx: &App| -> Result<Option<u16>, ()> {
+                let field = field.read(cx);
+                if field.text().trim().is_empty() {
+                    return Ok(None);
+                }
+                match field.number() {
+                    Some(n) if n >= min && n <= max && n.fract() == 0.0 => Ok(Some(n as u16)),
+                    _ => Err(()),
+                }
+            };
         match whole(&self.scale, 10.0, 400.0, cx) {
             Ok(Some(scale)) => setup.scale = scale,
             _ => {
@@ -283,7 +319,9 @@ impl SetupDialog {
         }
         let paper = setup.paper_pt(locale);
         match self.typed_margins(cx) {
-            Some(m) if (m.left + m.right) * 72.0 < paper.0 && (m.top + m.bottom) * 72.0 < paper.1 => {
+            Some(m)
+                if (m.left + m.right) * 72.0 < paper.0 && (m.top + m.bottom) * 72.0 < paper.1 =>
+            {
                 // Fields show two decimals: margins nobody retyped keep
                 // their exact value.
                 let near = |typed: f64, old: f64| {
@@ -360,8 +398,12 @@ impl SetupDialog {
         let (sheet, tab) = (self.around.sheet, self.tab);
         self.modal.update_app(cx, |app, cx| {
             let margins = setup.margins;
-            let custom =
-                margins.preset().is_none() && app.wb.sheets.get(sheet).is_some_and(|s| s.page.margins != margins);
+            let custom = margins.preset().is_none()
+                && app
+                    .wb
+                    .sheets
+                    .get(sheet)
+                    .is_some_and(|s| s.page.margins != margins);
             let ui = app.ext_mut::<PageUi>();
             ui.setup_tab = tab;
             if custom {
@@ -417,7 +459,10 @@ impl SetupDialog {
         let landscape = self.setup.orientation == Orientation::Landscape;
         let papers = PaperSize::all();
         let paper = self.setup.paper_size(locale);
-        let paper_names: Vec<SharedString> = papers.iter().map(|info| info.size.name(locale).into()).collect();
+        let paper_names: Vec<SharedString> = papers
+            .iter()
+            .map(|info| info.size.name(locale).into())
+            .collect();
         let mut qualities: Vec<SharedString> = vec![t("Automatic", "Automatique").into()];
         qualities.extend(
             QUALITIES
@@ -430,7 +475,11 @@ impl SetupDialog {
         };
         // The page as it will lie: a sketch beside the two choices.
         let sketch = preview(44.0, 44.0, move |s: &mut Sketch| {
-            let (w, h) = if landscape { (36.0, 26.0) } else { (26.0, 36.0) };
+            let (w, h) = if landscape {
+                (36.0, 26.0)
+            } else {
+                (26.0, 36.0)
+            };
             let (x, y) = ((s.width - w) / 2.0, (s.height - h) / 2.0);
             s.rect(x, y, x + w, y + h, c(0xFFFFFF));
             s.frame(x, y, x + w, y + h, 1.0, c(0x808080));
@@ -449,22 +498,32 @@ impl SetupDialog {
             .gap(px(12.))
             .child(
                 GroupBox::new(t("Orientation", "Orientation")).child(
-                    div().flex().items_center().gap(px(16.)).child(sketch).child(
-                        RadioGroup::new(
-                            "orientation",
-                            vec![t("Portrait", "Portrait").into(), t("Landscape", "Paysage").into()],
-                            Some(landscape as usize),
-                        )
-                        .horizontal()
-                        .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                            this.setup.orientation = if *ix == 0 {
-                                Orientation::Portrait
-                            } else {
-                                Orientation::Landscape
-                            };
-                            cx.notify();
-                        })),
-                    ),
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(16.))
+                        .child(sketch)
+                        .child(
+                            RadioGroup::new(
+                                "orientation",
+                                vec![
+                                    t("Portrait", "Portrait").into(),
+                                    t("Landscape", "Paysage").into(),
+                                ],
+                                Some(landscape as usize),
+                            )
+                            .horizontal()
+                            .on_change(cx.listener(
+                                |this, ix: &usize, _, cx| {
+                                    this.setup.orientation = if *ix == 0 {
+                                        Orientation::Portrait
+                                    } else {
+                                        Orientation::Landscape
+                                    };
+                                    cx.notify();
+                                },
+                            )),
+                        ),
                 ),
             )
             .child(
@@ -480,10 +539,12 @@ impl SetupDialog {
                                     vec![t("Adjust to:", "Réduire/agrandir à :").into()],
                                     (!fit).then_some(0),
                                 )
-                                .on_change(cx.listener(|this, _: &usize, _, cx| {
-                                    this.setup.fit_to_page = false;
-                                    cx.notify();
-                                })),
+                                .on_change(cx.listener(
+                                    |this, _: &usize, _, cx| {
+                                        this.setup.fit_to_page = false;
+                                        cx.notify();
+                                    },
+                                )),
                             )
                             .child(NumberField::new("scale", &self.scale).width(64.0))
                             .child(label(t("% normal size", "% de la taille normale"))),
@@ -494,11 +555,17 @@ impl SetupDialog {
                             .items_center()
                             .gap(px(8.))
                             .child(
-                                RadioGroup::new("fit", vec![t("Fit to:", "Ajuster :").into()], fit.then_some(0))
-                                    .on_change(cx.listener(|this, _: &usize, _, cx| {
+                                RadioGroup::new(
+                                    "fit",
+                                    vec![t("Fit to:", "Ajuster :").into()],
+                                    fit.then_some(0),
+                                )
+                                .on_change(cx.listener(
+                                    |this, _: &usize, _, cx| {
                                         this.setup.fit_to_page = true;
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             )
                             .child(NumberField::new("fit-width", &self.fit_width).width(56.0))
                             .child(label(t("page(s) wide by", "page(s) en largeur sur")))
@@ -513,14 +580,20 @@ impl SetupDialog {
                     .gap(px(8.))
                     .child(labeled(
                         t("Paper size:", "Format du papier :"),
-                        Select::new("paper", paper_names, papers.iter().position(|info| info.size == paper))
-                            .width(300.0)
-                            .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                        Select::new(
+                            "paper",
+                            paper_names,
+                            papers.iter().position(|info| info.size == paper),
+                        )
+                        .width(300.0)
+                        .on_change(cx.listener(
+                            move |this, ix: &usize, _, cx| {
                                 if let Some(info) = papers.get(*ix) {
                                     this.setup.paper = Some(info.size);
                                     cx.notify();
                                 }
-                            })),
+                            },
+                        )),
                     ))
                     .child(labeled(
                         t("Print quality:", "Qualité d'impression :"),
@@ -564,8 +637,14 @@ impl SetupDialog {
             s.rect(x, y, x + w, y + h, c(0xFFFFFF));
             s.frame(x, y, x + w, y + h, 1.0, c(0x808080));
             let inch = 72.0 * k;
-            let (left, right) = (x + margins.left as f32 * inch, x + w - margins.right as f32 * inch);
-            let (top, bottom) = (y + margins.top as f32 * inch, y + h - margins.bottom as f32 * inch);
+            let (left, right) = (
+                x + margins.left as f32 * inch,
+                x + w - margins.right as f32 * inch,
+            );
+            let (top, bottom) = (
+                y + margins.top as f32 * inch,
+                y + h - margins.bottom as f32 * inch,
+            );
             let line = c(0x9A9A9A);
             let dashed = |s: &mut Sketch, vertical: bool, at: f32| {
                 let (mut from, to) = if vertical { (y, y + h) } else { (x, x + w) };
@@ -587,9 +666,20 @@ impl SetupDialog {
             dashed(s, false, y + h - margins.footer as f32 * inch);
             // A small table: at the top-left corner of the printable
             // area, or in its middle when centred.
-            let (tw, th) = ((right - left).clamp(0.0, 46.0), (bottom - top).clamp(0.0, 34.0));
-            let tx = if centre_h { (left + right - tw) / 2.0 } else { left };
-            let ty = if centre_v { (top + bottom - th) / 2.0 } else { top };
+            let (tw, th) = (
+                (right - left).clamp(0.0, 46.0),
+                (bottom - top).clamp(0.0, 34.0),
+            );
+            let tx = if centre_h {
+                (left + right - tw) / 2.0
+            } else {
+                left
+            };
+            let ty = if centre_v {
+                (top + bottom - th) / 2.0
+            } else {
+                top
+            };
             if tw > 6.0 && th > 6.0 {
                 s.rect(tx, ty, tx + tw, ty + th, c(0xDDEBF7));
                 s.frame(tx, ty, tx + tw, ty + th, 1.0, c(0x5B9BD5));
@@ -645,11 +735,13 @@ impl SetupDialog {
                         cx,
                         |s, on| s.center_horizontally = on,
                     ))
-                    .child(
-                        self.check("centre-v", t("Vertically", "Verticalement"), centre_v, cx, |s, on| {
-                            s.center_vertically = on
-                        }),
-                    )
+                    .child(self.check(
+                        "centre-v",
+                        t("Vertically", "Verticalement"),
+                        centre_v,
+                        cx,
+                        |s, on| s.center_vertically = on,
+                    ))
                     .child(div().flex_1())
                     .child(label(format!("({unit})")).text_color(c(theme::TEXT_MUTED))),
             )
@@ -660,7 +752,11 @@ impl SetupDialog {
     /// added when it is none of them.
     fn preset_list(&self, footer: bool) -> (Vec<String>, Vec<SharedString>, Option<usize>) {
         let hf = &self.setup.header_footer;
-        let current = if footer { &hf.odd_footer } else { &hf.odd_header };
+        let current = if footer {
+            &hf.odd_footer
+        } else {
+            &hf.odd_header
+        };
         let mut codes = presets(self.around.locale, &views::user_name());
         if !codes.contains(current) {
             codes.push(current.clone());
@@ -683,7 +779,11 @@ impl SetupDialog {
     /// What a header or footer prints, in a box like the top of a page.
     fn sample(&self, footer: bool) -> impl IntoElement + use<> {
         let hf = &self.setup.header_footer;
-        let code = if footer { &hf.odd_footer } else { &hf.odd_header };
+        let code = if footer {
+            &hf.odd_footer
+        } else {
+            &hf.odd_header
+        };
         let sections = HfSections::parse(code);
         let context = self.context();
         let texts: Vec<Vec<String>> = [&sections.left, &sections.center, &sections.right]
@@ -768,12 +868,20 @@ impl SetupDialog {
                     .gap(px(12.))
                     .py(px(4.))
                     .child(
-                        Button::new("custom-header", t("Custom Header…", "En-tête personnalisé…"))
-                            .on_click(cx.listener(|this, _, window, cx| this.custom(false, window, cx))),
+                        Button::new(
+                            "custom-header",
+                            t("Custom Header…", "En-tête personnalisé…"),
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.custom(false, window, cx)),
+                        ),
                     )
                     .child(
-                        Button::new("custom-footer", t("Custom Footer…", "Pied de page personnalisé…"))
-                            .on_click(cx.listener(|this, _, window, cx| this.custom(true, window, cx))),
+                        Button::new(
+                            "custom-footer",
+                            t("Custom Footer…", "Pied de page personnalisé…"),
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| this.custom(true, window, cx))),
                     ),
             )
             .child(row(
@@ -796,7 +904,10 @@ impl SetupDialog {
                     .gap(px(5.))
                     .child(self.check(
                         "odd-even",
-                        t("Different odd and even pages", "Pages paires et impaires différentes"),
+                        t(
+                            "Different odd and even pages",
+                            "Pages paires et impaires différentes",
+                        ),
                         odd_even,
                         cx,
                         |s, on| s.header_footer.different_odd_even = on,
@@ -840,7 +951,8 @@ impl SetupDialog {
 
     fn sheet_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let s = &self.setup;
-        let (gridlines, mono, draft, headings) = (s.gridlines, s.black_and_white, s.draft, s.headings);
+        let (gridlines, mono, draft, headings) =
+            (s.gridlines, s.black_and_white, s.draft, s.headings);
         let over_first = s.page_order == PageOrder::OverThenDown;
         let comments = match s.comments {
             PrintComments::None => 0,
@@ -853,7 +965,9 @@ impl SetupDialog {
             PrintErrors::Dash => 2,
             PrintErrors::NA => 3,
         };
-        let names = |list: &[&'static str]| -> Vec<SharedString> { list.iter().map(|name| (*name).into()).collect() };
+        let names = |list: &[&'static str]| -> Vec<SharedString> {
+            list.iter().map(|name| (*name).into()).collect()
+        };
         // The order the pages are numbered in: an arrow through four pages.
         let order = preview(84.0, 56.0, move |s: &mut Sketch| {
             let ink = c(0x5B9BD5);
@@ -891,7 +1005,10 @@ impl SetupDialog {
                         RefEdit::new(&self.title_rows, &self.modal),
                     ))
                     .child(labeled(
-                        t("Columns to repeat at left:", "Colonnes à répéter à gauche :"),
+                        t(
+                            "Columns to repeat at left:",
+                            "Colonnes à répéter à gauche :",
+                        ),
                         RefEdit::new(&self.title_cols, &self.modal),
                     )),
             )
@@ -928,7 +1045,10 @@ impl SetupDialog {
                                 ))
                                 .child(self.check(
                                     "headings",
-                                    t("Row and column headings", "En-têtes des lignes et des colonnes"),
+                                    t(
+                                        "Row and column headings",
+                                        "En-têtes des lignes et des colonnes",
+                                    ),
                                     headings,
                                     cx,
                                     |s, on| s.headings = on,
@@ -966,7 +1086,12 @@ impl SetupDialog {
                                     t("Cell errors as:", "Erreurs de cellule comme :"),
                                     Select::new(
                                         "errors",
-                                        names(&[t("displayed", "affiché"), t("<blank>", "<vide>"), "--", "#N/A"]),
+                                        names(&[
+                                            t("displayed", "affiché"),
+                                            t("<blank>", "<vide>"),
+                                            "--",
+                                            "#N/A",
+                                        ]),
                                         Some(errors),
                                     )
                                     .width(120.0)
@@ -1000,14 +1125,16 @@ impl SetupDialog {
                                 ]),
                                 Some(over_first as usize),
                             )
-                            .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                this.setup.page_order = if *ix == 1 {
-                                    PageOrder::OverThenDown
-                                } else {
-                                    PageOrder::DownThenOver
-                                };
-                                cx.notify();
-                            })),
+                            .on_change(cx.listener(
+                                |this, ix: &usize, _, cx| {
+                                    this.setup.page_order = if *ix == 1 {
+                                        PageOrder::OverThenDown
+                                    } else {
+                                        PageOrder::DownThenOver
+                                    };
+                                    cx.notify();
+                                },
+                            )),
                         )
                         .child(order),
                 ),
@@ -1036,20 +1163,26 @@ impl Render for SetupDialog {
         dialog(&self.modal, t("Page Setup", "Mise en page"))
             .width(580.0)
             .on_ok(cx.listener(Self::ok))
-            .child(
-                TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
+            .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(
+                |this, ix: &usize, _, cx| {
                     this.tab = *ix;
                     cx.notify();
-                })),
-            )
+                },
+            )))
             .child(div().h(px(352.)).flex().flex_col().child(body))
             .child(
                 div()
                     .flex()
                     .justify_end()
                     .gap(px(8.))
-                    .child(Button::new("print", t("Print…", "Imprimer…")).on_click(cx.listener(Self::print)))
-                    .child(Button::new("preview", t("Print Preview", "Aperçu")).on_click(cx.listener(Self::print)))
+                    .child(
+                        Button::new("print", t("Print…", "Imprimer…"))
+                            .on_click(cx.listener(Self::print)),
+                    )
+                    .child(
+                        Button::new("preview", t("Print Preview", "Aperçu"))
+                            .on_click(cx.listener(Self::print)),
+                    )
                     // The options of a printer driver: there is none to
                     // open, printing goes through a PDF.
                     .child(Button::new("options", t("Options…", "Options…")).disabled(true)),
@@ -1103,7 +1236,8 @@ impl HfDialog {
                 } else {
                     hf.header(*variant)
                 });
-                [&sections.left, &sections.center, &sections.right].map(|code| to_dialog_text(code, locale))
+                [&sections.left, &sections.center, &sections.right]
+                    .map(|code| to_dialog_text(code, locale))
             })
             .collect();
         let fields = [0, 1, 2].map(|k| {
@@ -1181,7 +1315,11 @@ impl HfDialog {
             let Ok(Ok(Some(paths))) = paths.await else {
                 return;
             };
-            let Some(data) = paths.into_iter().next().and_then(|path| std::fs::read(path).ok()) else {
+            let Some(data) = paths
+                .into_iter()
+                .next()
+                .and_then(|path| std::fs::read(path).ok())
+            else {
                 return;
             };
             this.update_in(cx, |this, window, cx| {
@@ -1210,7 +1348,13 @@ impl HfDialog {
         let parent = cx.weak_entity();
         let locale = self.locale;
         self.modal.update_app(cx, |app, cx| {
-            let family = app.wb.styles.get(opensheet_engine::StyleId(0)).font.name.to_string();
+            let family = app
+                .wb
+                .styles
+                .get(opensheet_engine::StyleId(0))
+                .font
+                .name
+                .to_string();
             app.open_modal(window, cx, move |modal, _, cx| {
                 FontDialog::new(modal, parent, family, locale, cx)
             });
@@ -1225,8 +1369,17 @@ impl HfDialog {
             .iter()
             .zip(&self.texts)
             .map(|(variant, texts)| {
-                let [left, center, right] = texts.clone().map(|text| from_dialog_text(&text, locale));
-                (*variant, HfSections { left, center, right }.to_code())
+                let [left, center, right] =
+                    texts.clone().map(|text| from_dialog_text(&text, locale));
+                (
+                    *variant,
+                    HfSections {
+                        left,
+                        center,
+                        right,
+                    }
+                    .to_code(),
+                )
             })
             .collect();
         let pictures = self.pictures.clone();
@@ -1270,15 +1423,20 @@ impl Render for HfDialog {
                      icon_name: &'static str,
                      tip: &'static str,
                      code: &'static str| {
-            tool(id, icon_name, tip)
-                .on_click(cx.listener(move |this, _, window, cx| this.insert_field(code, window, cx)))
+            tool(id, icon_name, tip).on_click(
+                cx.listener(move |this, _, window, cx| this.insert_field(code, window, cx)),
+            )
         };
         let tools = div()
             .flex()
             .gap(px(4.))
             .child(
-                tool("font", "page-font", t("Format Text", "Mettre le texte en forme"))
-                    .on_click(cx.listener(|this, _, window, cx| this.format_text(window, cx))),
+                tool(
+                    "font",
+                    "page-font",
+                    t("Format Text", "Mettre le texte en forme"),
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.format_text(window, cx))),
             )
             .child(field(
                 cx,
@@ -1301,7 +1459,13 @@ impl Render for HfDialog {
                 t("Insert Date", "Insérer la date"),
                 "&D",
             ))
-            .child(field(cx, "time", "clock", t("Insert Time", "Insérer l'heure"), "&T"))
+            .child(field(
+                cx,
+                "time",
+                "clock",
+                t("Insert Time", "Insérer l'heure"),
+                "&T",
+            ))
             .child(field(
                 cx,
                 "path",
@@ -1324,15 +1488,21 @@ impl Render for HfDialog {
                 "&A",
             ))
             .child(
-                tool("picture", "picture", t("Insert Picture", "Insérer une image"))
-                    .on_click(cx.listener(|this, _, window, cx| this.insert_picture(window, cx))),
+                tool(
+                    "picture",
+                    "picture",
+                    t("Insert Picture", "Insérer une image"),
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.insert_picture(window, cx))),
             );
         let variant_names: Vec<SharedString> = self
             .variants
             .iter()
             .map(|variant| {
                 let (header, footer) = match variant {
-                    HfVariant::Odd if self.variants.len() == 1 => (t("Header", "En-tête"), t("Footer", "Pied de page")),
+                    HfVariant::Odd if self.variants.len() == 1 => {
+                        (t("Header", "En-tête"), t("Footer", "Pied de page"))
+                    }
                     HfVariant::Odd => (
                         t("Odd Page Header", "En-tête de page impaire"),
                         t("Odd Page Footer", "Pied de page impaire"),
@@ -1476,7 +1646,11 @@ impl FontDialog {
     }
 
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let size = self.size.read(cx).number().map(|n| n.round().clamp(1.0, 409.0) as u32);
+        let size = self
+            .size
+            .read(cx)
+            .number()
+            .map(|n| n.round().clamp(1.0, 409.0) as u32);
         let code = font_code(
             self.family.read(cx).text().trim(),
             style_names(self.locale)[self.style],
@@ -1494,11 +1668,14 @@ impl FontDialog {
 
 impl Render for FontDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let names = |list: &[&'static str]| -> Vec<SharedString> { list.iter().map(|name| (*name).into()).collect() };
-        let sizes: Vec<SharedString> = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
-            .iter()
-            .map(|size| SharedString::from(size.to_string()))
-            .collect();
+        let names = |list: &[&'static str]| -> Vec<SharedString> {
+            list.iter().map(|name| (*name).into()).collect()
+        };
+        let sizes: Vec<SharedString> =
+            [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72]
+                .iter()
+                .map(|size| SharedString::from(size.to_string()))
+                .collect();
         dialog(&self.modal, t("Font", "Police"))
             .width(420.0)
             .on_ok(cx.listener(Self::ok))
@@ -1512,7 +1689,10 @@ impl Render for FontDialog {
                             .flex_col()
                             .gap(px(3.))
                             .child(label(t("Font:", "Police :")))
-                            .child(ComboBox::new("family", &self.family, self.families.clone()).width(180.0)),
+                            .child(
+                                ComboBox::new("family", &self.family, self.families.clone())
+                                    .width(180.0),
+                            ),
                     )
                     .child(
                         div()
@@ -1521,12 +1701,18 @@ impl Render for FontDialog {
                             .gap(px(3.))
                             .child(label(t("Font style:", "Style :")))
                             .child(
-                                Select::new("style", names(&style_names(self.locale)), Some(self.style))
-                                    .width(120.0)
-                                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                                Select::new(
+                                    "style",
+                                    names(&style_names(self.locale)),
+                                    Some(self.style),
+                                )
+                                .width(120.0)
+                                .on_change(cx.listener(
+                                    |this, ix: &usize, _, cx| {
                                         this.style = *ix;
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(
@@ -1542,7 +1728,11 @@ impl Render for FontDialog {
                 t("Underline:", "Soulignement :"),
                 Select::new(
                     "underline",
-                    names(&[t("None", "Aucun"), t("Single", "Simple"), t("Double", "Double")]),
+                    names(&[
+                        t("None", "Aucun"),
+                        t("Single", "Simple"),
+                        t("Double", "Double"),
+                    ]),
                     Some(self.underline),
                 )
                 .width(120.0)
@@ -1554,28 +1744,26 @@ impl Render for FontDialog {
             .child(
                 GroupBox::new(t("Effects", "Effets"))
                     .child(
-                        Checkbox::new("strike", t("Strikethrough", "Barré"), self.strike).on_change(cx.listener(
-                            |this, on: &bool, _, cx| {
+                        Checkbox::new("strike", t("Strikethrough", "Barré"), self.strike)
+                            .on_change(cx.listener(|this, on: &bool, _, cx| {
                                 this.strike = *on;
                                 cx.notify();
-                            },
-                        )),
+                            })),
                     )
                     .child(
-                        Checkbox::new("super", t("Superscript", "Exposant"), self.script == 1).on_change(cx.listener(
-                            |this, on: &bool, _, cx| {
+                        Checkbox::new("super", t("Superscript", "Exposant"), self.script == 1)
+                            .on_change(cx.listener(|this, on: &bool, _, cx| {
                                 this.script = if *on { 1 } else { 0 };
                                 cx.notify();
-                            },
-                        )),
+                            })),
                     )
                     .child(
-                        Checkbox::new("sub", t("Subscript", "Indice"), self.script == 2).on_change(cx.listener(
-                            |this, on: &bool, _, cx| {
+                        Checkbox::new("sub", t("Subscript", "Indice"), self.script == 2).on_change(
+                            cx.listener(|this, on: &bool, _, cx| {
                                 this.script = if *on { 2 } else { 0 };
                                 cx.notify();
-                            },
-                        )),
+                            }),
+                        ),
                     ),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
@@ -1595,7 +1783,10 @@ mod tests {
         assert_eq!(parse_area("$A$1:$C$9;$E$1:$F$9", fr), Some(ranges.clone()));
         assert_eq!(parse_area("a1:c9 , Feuil1!E1:F9", fr), Some(ranges));
         assert_eq!(parse_area("", en), Some(Vec::new()));
-        assert_eq!(parse_area("B:B", en), Some(vec![Rect::new(0, 1, MAX_ROWS - 1, 1)]));
+        assert_eq!(
+            parse_area("B:B", en),
+            Some(vec![Rect::new(0, 1, MAX_ROWS - 1, 1)])
+        );
         assert_eq!(parse_area("A1:", en), None);
         assert_eq!(parse_area("Budget", en), None);
     }
@@ -1629,7 +1820,10 @@ mod tests {
 
     #[test]
     fn font_codes() {
-        assert_eq!(font_code("Arial", "Bold", Some(14), 0, false, 0), "&\"Arial,Bold\"&14");
+        assert_eq!(
+            font_code("Arial", "Bold", Some(14), 0, false, 0),
+            "&\"Arial,Bold\"&14"
+        );
         assert_eq!(
             font_code("Calibri", "Gras italique", None, 2, true, 1),
             "&\"Calibri,Gras italique\"&E&S&X"

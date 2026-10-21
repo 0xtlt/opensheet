@@ -13,18 +13,23 @@ mod subtotal;
 #[cfg(test)]
 mod ui_tests;
 
-use super::{Command, Cx, Feature, Intent, PaintLayer, Painter, ViewMode, Zone, ZoneEvent, ZoneResponse};
+use super::{
+    Command, Cx, Feature, Intent, PaintLayer, Painter, ViewMode, Zone, ZoneEvent, ZoneResponse,
+};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::{Draw, GridLayout};
 use crate::i18n::{t, t_ctx};
 use crate::ribbon::{launcher_group, rows};
 use crate::shell::Alert;
 use crate::theme::{self, c};
-use gpui::{AnyElement, App, Context, Entity, KeyBinding, MouseButton, SharedString, Stateful, Window, actions, div, prelude::*, px};
+use gpui::{
+    AnyElement, App, Context, Entity, KeyBinding, MouseButton, SharedString, Stateful, Window,
+    actions, div, prelude::*, px,
+};
+use opensheet_engine::Rect;
 use opensheet_engine::outline::{Axis, Group, OutlineError};
 use opensheet_engine::protect::Action;
 use opensheet_engine::workbook::Sheet;
-use opensheet_engine::Rect;
 use std::ops::Range;
 
 pub struct Outline;
@@ -63,11 +68,17 @@ impl Command for Cmd {
         }
         match self {
             Cmd::GroupMenu => {
-                let entries = vec![MenuEntry::command(Cmd::Group, app), MenuEntry::command(Cmd::AutoOutline, app)];
+                let entries = vec![
+                    MenuEntry::command(Cmd::Group, app),
+                    MenuEntry::command(Cmd::AutoOutline, app),
+                ];
                 app.open_command_menu(entries, 200.0, window, cx);
             }
             Cmd::UngroupMenu => {
-                let entries = vec![MenuEntry::command(Cmd::Ungroup, app), MenuEntry::command(Cmd::ClearOutline, app)];
+                let entries = vec![
+                    MenuEntry::command(Cmd::Ungroup, app),
+                    MenuEntry::command(Cmd::ClearOutline, app),
+                ];
                 app.open_command_menu(entries, 200.0, window, cx);
             }
             Cmd::Group => {
@@ -79,7 +90,9 @@ impl Command for Cmd {
             Cmd::AutoOutline => auto_outline(app, cx),
             Cmd::ClearOutline => {
                 let sheet = app.sheet;
-                if app.may(Intent::ChangeSheet, cx) && app.wb.clear_outline(sheet, selected_area(app)).is_ok() {
+                if app.may(Intent::ChangeSheet, cx)
+                    && app.wb.clear_outline(sheet, selected_area(app)).is_ok()
+                {
                     app.commit(Cmd::ClearOutline.label(), cx);
                 }
             }
@@ -98,7 +111,10 @@ impl Command for Cmd {
     fn enabled(self, app: &ExcelApp) -> bool {
         // Excel greys the outline commands out on a protected sheet, and
         // Subtotal inside a table as well.
-        let free = app.wb.permits(&Action::ChangeSheet { sheet: app.sheet }).is_ok();
+        let free = app
+            .wb
+            .permits(&Action::ChangeSheet { sheet: app.sheet })
+            .is_ok();
         match self {
             Cmd::Subtotal => {
                 let (row, col) = app.active();
@@ -144,7 +160,12 @@ fn span(rect: Rect, axis: Axis) -> (u32, u32) {
 
 /// Group or Ungroup: at once on whole rows or columns, after the Rows /
 /// Columns question (the dialog returned) on cells.
-fn group_selection(app: &mut ExcelApp, ungroup: bool, window: &mut Window, cx: &mut Cx) -> Option<Entity<dialogs::GroupDialog>> {
+fn group_selection(
+    app: &mut ExcelApp,
+    ungroup: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<dialogs::GroupDialog>> {
     match selected_axis(app.sel().current()) {
         Some(axis) => {
             apply_group(app, axis, ungroup, cx);
@@ -161,13 +182,28 @@ pub(crate) fn apply_group(app: &mut ExcelApp, axis: Axis, ungroup: bool, cx: &mu
     }
     let sheet = app.sheet;
     let (lo, hi) = span(app.sel().current(), axis);
-    let done = if ungroup { app.wb.outline_ungroup(sheet, axis, lo, hi) } else { app.wb.outline_group(sheet, axis, lo, hi) };
+    let done = if ungroup {
+        app.wb.outline_ungroup(sheet, axis, lo, hi)
+    } else {
+        app.wb.outline_group(sheet, axis, lo, hi)
+    };
     match done {
         Ok(()) => {
-            let label = if ungroup { Cmd::UngroupMenu.label() } else { Cmd::GroupMenu.label() };
+            let label = if ungroup {
+                Cmd::UngroupMenu.label()
+            } else {
+                Cmd::GroupMenu.label()
+            };
             app.commit(label, cx);
         }
-        Err(OutlineError::TooDeep) => warn(app, t("Cannot group that selection.", "Impossible de grouper cette sélection."), cx),
+        Err(OutlineError::TooDeep) => warn(
+            app,
+            t(
+                "Cannot group that selection.",
+                "Impossible de grouper cette sélection.",
+            ),
+            cx,
+        ),
         Err(_) if app.wb.sheets[sheet].outline.is_empty() => warn(
             app,
             t(
@@ -178,7 +214,10 @@ pub(crate) fn apply_group(app: &mut ExcelApp, axis: Axis, ungroup: bool, cx: &mu
         ),
         Err(_) => warn(
             app,
-            t("Cannot ungroup that selection.", "Impossible de dissocier le groupe de cette sélection."),
+            t(
+                "Cannot ungroup that selection.",
+                "Impossible de dissocier le groupe de cette sélection.",
+            ),
             cx,
         ),
     }
@@ -191,7 +230,11 @@ pub(crate) fn auto_outline(app: &mut ExcelApp, cx: &mut Cx) {
     let sheet = app.sheet;
     match app.wb.auto_outline(sheet, selected_area(app)) {
         Ok(()) => app.commit(Cmd::AutoOutline.label(), cx),
-        Err(_) => warn(app, t("Cannot create an outline.", "Impossible de créer un plan."), cx),
+        Err(_) => warn(
+            app,
+            t("Cannot create an outline.", "Impossible de créer un plan."),
+            cx,
+        ),
     }
 }
 
@@ -203,7 +246,14 @@ fn detail(app: &mut ExcelApp, show: bool, cx: &mut Cx) {
         return;
     }
     match app.wb.outline_detail(sheet, selection, show) {
-        Ok(()) => app.commit(if show { Cmd::ShowDetail.label() } else { Cmd::HideDetail.label() }, cx),
+        Ok(()) => app.commit(
+            if show {
+                Cmd::ShowDetail.label()
+            } else {
+                Cmd::HideDetail.label()
+            },
+            cx,
+        ),
         Err(_) => warn(
             app,
             t(
@@ -232,24 +282,44 @@ fn toggle_symbols(app: &mut ExcelApp, cx: &mut Cx) {
         app.alert(alert, cx);
         return;
     }
-    app.wb.set_outline_settings(sheet, outline.summary_below, outline.summary_right, !outline.show_symbols);
+    app.wb.set_outline_settings(
+        sheet,
+        outline.summary_below,
+        outline.summary_right,
+        !outline.show_symbols,
+    );
     app.commit(Cmd::ToggleSymbols.label(), cx);
 }
 
 /// Fold or unfold a group, as a click on its button does.
 fn fold(app: &mut ExcelApp, axis: Axis, group: Group, collapse: bool, cx: &mut Cx) {
-    let intent = if axis == Axis::Rows { Intent::FormatRows } else { Intent::FormatColumns };
+    let intent = if axis == Axis::Rows {
+        Intent::FormatRows
+    } else {
+        Intent::FormatColumns
+    };
     if !app.may(intent, cx) {
         return;
     }
     let sheet = app.sheet;
     app.wb.outline_set_collapsed(sheet, axis, &group, collapse);
-    app.commit(if collapse { Cmd::HideDetail.label() } else { Cmd::ShowDetail.label() }, cx);
+    app.commit(
+        if collapse {
+            Cmd::HideDetail.label()
+        } else {
+            Cmd::ShowDetail.label()
+        },
+        cx,
+    );
 }
 
 /// A click on a level button.
 fn show_level(app: &mut ExcelApp, axis: Axis, level: u8, cx: &mut Cx) {
-    let intent = if axis == Axis::Rows { Intent::FormatRows } else { Intent::FormatColumns };
+    let intent = if axis == Axis::Rows {
+        Intent::FormatRows
+    } else {
+        Intent::FormatColumns
+    };
     if !app.may(intent, cx) {
         return;
     }
@@ -282,8 +352,17 @@ fn margins(sheet: &Sheet, zoom: f32, headings: (f32, f32)) -> (f32, f32) {
         return (0.0, 0.0);
     }
     let u = unit(zoom);
-    let room = |deepest: u8| if deepest > 0 { (deepest as f32 + 1.0) * u + PAD } else { 0.0 };
-    let (mut w, mut h) = (room(outline.rows.max_level()), room(outline.cols.max_level()));
+    let room = |deepest: u8| {
+        if deepest > 0 {
+            (deepest as f32 + 1.0) * u + PAD
+        } else {
+            0.0
+        }
+    };
+    let (mut w, mut h) = (
+        room(outline.rows.max_level()),
+        room(outline.cols.max_level()),
+    );
     if w > 0.0 && headings.1 < u {
         h += u;
     }
@@ -298,7 +377,11 @@ pub(crate) fn adjust_layout(app: &ExcelApp, layout: &mut GridLayout) {
     if app.view_mode() == ViewMode::PageLayout {
         return;
     }
-    let (w, h) = margins(&app.wb.sheets[app.sheet], layout.zoom, (layout.header_w, layout.header_h));
+    let (w, h) = margins(
+        &app.wb.sheets[app.sheet],
+        layout.zoom,
+        (layout.header_w, layout.header_h),
+    );
     layout.margin_w = w;
     layout.margin_h = h;
     layout.header_w += w;
@@ -384,11 +467,17 @@ impl Strip<'_> {
         match self.axis {
             Axis::Rows => {
                 let edge = l.header_h + l.frozen_h;
-                [(0..l.frozen_rows, l.header_h, edge), (l.scrolled_rows(), edge, l.height())]
+                [
+                    (0..l.frozen_rows, l.header_h, edge),
+                    (l.scrolled_rows(), edge, l.height()),
+                ]
             }
             Axis::Cols => {
                 let edge = l.header_w + l.frozen_w;
-                [(0..l.frozen_cols, l.header_w, edge), (l.scrolled_cols(), edge, l.width())]
+                [
+                    (0..l.frozen_cols, l.header_w, edge),
+                    (l.scrolled_cols(), edge, l.width()),
+                ]
             }
         }
     }
@@ -415,20 +504,24 @@ impl Strip<'_> {
                 continue;
             }
             let clip = self.boxed((lo, hi), (0.0, self.depth()));
-            let mut push = |shape: Shape, along: (f32, f32), across: (f32, f32), hit: Option<Hit>| {
-                out.push(Symbol {
-                    shape,
-                    rect: self.boxed(along, across),
-                    clip,
-                    hit,
-                });
-            };
+            let mut push =
+                |shape: Shape, along: (f32, f32), across: (f32, f32), hit: Option<Hit>| {
+                    out.push(Symbol {
+                        shape,
+                        rect: self.boxed(along, across),
+                        clip,
+                        hit,
+                    });
+                };
             let (first_shown, last_shown) = (range.start, range.end - 1);
             for group in lines.groups(first_shown, last_shown) {
                 let centre = self.across(group.level);
                 let collapsed = self.sheet.outline_collapsed(self.axis, &group);
                 // The button, on the summary when it is in this strip and shown.
-                let summary = self.sheet.outline_summary(self.axis, &group).filter(|s| range.contains(s) && self.size(*s) > 0.0);
+                let summary = self
+                    .sheet
+                    .outline_summary(self.axis, &group)
+                    .filter(|s| range.contains(s) && self.size(*s) > 0.0);
                 let button = summary.map(|s| self.start(s) + (self.size(s) / 2.0).floor());
                 if let Some(middle) = button {
                     push(
@@ -445,8 +538,16 @@ impl Strip<'_> {
                 // a tick, to the button.
                 let begins = group.first >= first_shown;
                 let ends = group.last <= last_shown;
-                let top = if begins { self.start(group.first) + 2.0 } else { lo - 2.0 };
-                let bottom = if ends { self.start(group.last) + self.size(group.last) - 2.0 } else { hi + 2.0 };
+                let top = if begins {
+                    self.start(group.first) + 2.0
+                } else {
+                    lo - 2.0
+                };
+                let bottom = if ends {
+                    self.start(group.last) + self.size(group.last) - 2.0
+                } else {
+                    hi + 2.0
+                };
                 let (from, to) = match (after, button) {
                     (true, Some(middle)) => (top, middle - half),
                     (false, Some(middle)) => (middle + half + 1.0, bottom),
@@ -468,8 +569,16 @@ impl Strip<'_> {
                 if self.size(index) <= 0.0 || !lines.summarized_by(index, after).is_empty() {
                     continue;
                 }
-                let (middle, centre) = (self.start(index) + (self.size(index) / 2.0).floor(), self.across(level + 1));
-                push(Shape::Dot, (middle - 1.0, middle + 1.0), (centre - 1.0, centre + 1.0), None);
+                let (middle, centre) = (
+                    self.start(index) + (self.size(index) / 2.0).floor(),
+                    self.across(level + 1),
+                );
+                push(
+                    Shape::Dot,
+                    (middle - 1.0, middle + 1.0),
+                    (centre - 1.0, centre + 1.0),
+                    None,
+                );
             }
         }
     }
@@ -483,7 +592,11 @@ impl Strip<'_> {
             Axis::Rows => (l.margin_h, l.header_h),
             Axis::Cols => (l.margin_w, l.header_w),
         };
-        let band = if header - margin >= self.unit { (margin, header) } else { (header - self.unit, header) };
+        let band = if header - margin >= self.unit {
+            (margin, header)
+        } else {
+            (header - self.unit, header)
+        };
         let middle = ((band.0 + band.1) / 2.0).floor();
         let half = self.half();
         let clip = match self.axis {
@@ -494,8 +607,18 @@ impl Strip<'_> {
             let centre = self.across(level);
             // Across the margin as the bars are; beside the headings the other way.
             let rect = match self.axis {
-                Axis::Rows => (centre - half, middle - half, centre + half + 1.0, middle + half + 1.0),
-                Axis::Cols => (middle - half, centre - half, middle + half + 1.0, centre + half + 1.0),
+                Axis::Rows => (
+                    centre - half,
+                    middle - half,
+                    centre + half + 1.0,
+                    middle + half + 1.0,
+                ),
+                Axis::Cols => (
+                    middle - half,
+                    centre - half,
+                    middle + half + 1.0,
+                    centre + half + 1.0,
+                ),
             };
             out.push(Symbol {
                 shape: Shape::Level(level),
@@ -609,7 +732,14 @@ impl Feature for Outline {
         }
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         let Some(hit) = zone.payload::<Hit>() else {
             return ZoneResponse::Ignored;
         };
@@ -631,7 +761,11 @@ impl Feature for Outline {
 pub fn ribbon_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
     let compact = crate::ribbon_fold::level() >= 3;
     let small = |id: &'static str, cmd: Cmd, cx: &mut Cx| -> AnyElement {
-        if compact { app.cmd_icon(id, cmd, cx) } else { app.cmd_labeled(id, cmd, false, cx) }
+        if compact {
+            app.cmd_icon(id, cmd, cx)
+        } else {
+            app.cmd_labeled(id, cmd, false, cx)
+        }
     };
     launcher_group(
         t_ctx("group", "Outline", "Plan"),
@@ -646,15 +780,21 @@ pub fn ribbon_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
                 small("dt-show-detail", Cmd::ShowDetail, cx),
                 small("dt-hide-detail", Cmd::HideDetail, cx),
             ])),
-        Some(app.launcher("dt-outline-settings", Cmd::Settings.label(), cx, |app, window, cx| {
-            app.run_command(Cmd::Settings, window, cx)
-        })),
+        Some(app.launcher(
+            "dt-outline-settings",
+            Cmd::Settings.label(),
+            cx,
+            |app, window, cx| app.run_command(Cmd::Settings, window, cx),
+        )),
     )
 }
 
 // ---------------------------------------------------------------- shortcuts
 
-actions!(outline, [GroupSelection, UngroupSelection, ToggleOutlineSymbols]);
+actions!(
+    outline,
+    [GroupSelection, UngroupSelection, ToggleOutlineSymbols]
+);
 
 /// Excel's shortcuts: ⌥⇧→ groups, ⌥⇧← ungroups (⌘⇧K and ⌘⇧J on the Mac
 /// as well), ⌃8 shows or hides the outline symbols.
@@ -671,11 +811,15 @@ pub fn bind_keys(cx: &mut App) {
 
 /// Make the window answer the shortcuts of `bind_keys`.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
-    root.on_action(cx.listener(|app, _: &GroupSelection, window, cx| app.run_command(Cmd::Group, window, cx)))
-        .on_action(cx.listener(|app, _: &UngroupSelection, window, cx| app.run_command(Cmd::Ungroup, window, cx)))
-        .on_action(cx.listener(|app, _: &ToggleOutlineSymbols, window, cx| {
-            app.run_command(Cmd::ToggleSymbols, window, cx)
-        }))
+    root.on_action(
+        cx.listener(|app, _: &GroupSelection, window, cx| app.run_command(Cmd::Group, window, cx)),
+    )
+    .on_action(cx.listener(|app, _: &UngroupSelection, window, cx| {
+        app.run_command(Cmd::Ungroup, window, cx)
+    }))
+    .on_action(cx.listener(|app, _: &ToggleOutlineSymbols, window, cx| {
+        app.run_command(Cmd::ToggleSymbols, window, cx)
+    }))
 }
 
 #[cfg(test)]
@@ -707,7 +851,11 @@ mod tests {
     }
 
     fn of(symbols: &[Symbol], wanted: fn(&Shape) -> bool) -> Vec<Symbol> {
-        symbols.iter().copied().filter(|s| wanted(&s.shape)).collect()
+        symbols
+            .iter()
+            .copied()
+            .filter(|s| wanted(&s.shape))
+            .collect()
     }
 
     #[test]
@@ -719,7 +867,10 @@ mod tests {
         assert_eq!(margins(sheet, 1.0, (0.0, 0.0)), (3.0 * 16.0 + PAD, 16.0));
         assert_eq!(margins(sheet, 2.0, (60.0, 40.0)).0, 3.0 * 24.0 + PAD);
         wb.outline_group(0, Axis::Cols, 2, 3).unwrap();
-        assert_eq!(margins(&wb.sheets[0], 1.0, (30.0, 20.0)), (3.0 * 16.0 + PAD, 2.0 * 16.0 + PAD));
+        assert_eq!(
+            margins(&wb.sheets[0], 1.0, (30.0, 20.0)),
+            (3.0 * 16.0 + PAD, 2.0 * 16.0 + PAD)
+        );
         let o = wb.sheets[0].outline.clone();
         wb.set_outline_settings(0, o.summary_below, o.summary_right, false);
         assert_eq!(margins(&wb.sheets[0], 1.0, (30.0, 20.0)), (0.0, 0.0));
@@ -734,22 +885,43 @@ mod tests {
         let levels = of(&all, |s| matches!(s, Shape::Level(_)));
         assert_eq!(levels.len(), 3);
         assert_eq!(levels[1].hit, Some(Hit::Level(Axis::Rows, 2)));
-        assert!(levels.iter().all(|s| s.rect.1 >= l.margin_h && s.rect.3 <= l.header_h && s.rect.2 <= l.margin_w));
+        assert!(
+            levels.iter().all(|s| s.rect.1 >= l.margin_h
+                && s.rect.3 <= l.header_h
+                && s.rect.2 <= l.margin_w)
+        );
         assert!(levels[0].rect.0 < levels[1].rect.0 && levels[1].rect.0 < levels[2].rect.0);
         // A − button on each summary row, in the column of its level.
         let buttons = of(&all, |s| matches!(s, Shape::Button { .. }));
         assert_eq!(buttons.len(), 3);
-        let outer = Group { level: 1, first: 1, last: 8 };
-        let on_row = |s: &Symbol, row: u32| s.rect.1 >= l.row_y(row) && s.rect.3 <= l.row_y(row) + l.row_h(row);
-        let grand = buttons.iter().find(|s| s.hit == Some(Hit::Fold(Axis::Rows, outer, true))).unwrap();
+        let outer = Group {
+            level: 1,
+            first: 1,
+            last: 8,
+        };
+        let on_row = |s: &Symbol, row: u32| {
+            s.rect.1 >= l.row_y(row) && s.rect.3 <= l.row_y(row) + l.row_h(row)
+        };
+        let grand = buttons
+            .iter()
+            .find(|s| s.hit == Some(Hit::Fold(Axis::Rows, outer, true)))
+            .unwrap();
         assert!(on_row(grand, 9));
         assert_eq!(grand.shape, Shape::Button { collapsed: false });
         let inner = buttons.iter().find(|s| on_row(s, 4)).unwrap();
-        assert!(inner.rect.0 > grand.rect.2, "deeper levels lie to the right");
+        assert!(
+            inner.rect.0 > grand.rect.2,
+            "deeper levels lie to the right"
+        );
         // A bar per group, from the top of its first row, with a tick.
         let lines = of(&all, |s| matches!(s, Shape::Line));
         assert_eq!(lines.len(), 6);
-        let bar = lines.iter().find(|s| s.hit == Some(Hit::Fold(Axis::Rows, outer, true)) && s.rect.2 - s.rect.0 == 1.0).unwrap();
+        let bar = lines
+            .iter()
+            .find(|s| {
+                s.hit == Some(Hit::Fold(Axis::Rows, outer, true)) && s.rect.2 - s.rect.0 == 1.0
+            })
+            .unwrap();
         assert_eq!(bar.rect.1, l.row_y(1) + 2.0);
         assert_eq!(bar.rect.3, grand.rect.1);
         // Dots beside the rows of detail, none on the summaries of groups.
@@ -766,9 +938,15 @@ mod tests {
         let l = layout(&wb, 1.0, 0.0);
         let all = symbols(&wb.sheets[0], &l);
         let buttons = of(&all, |s| matches!(s, Shape::Button { .. }));
-        let folded: Vec<&Symbol> = buttons.iter().filter(|s| s.shape == Shape::Button { collapsed: true }).collect();
+        let folded: Vec<&Symbol> = buttons
+            .iter()
+            .filter(|s| s.shape == Shape::Button { collapsed: true })
+            .collect();
         assert_eq!(folded.len(), 2);
-        assert!(matches!(folded[0].hit, Some(Hit::Fold(Axis::Rows, _, false))));
+        assert!(matches!(
+            folded[0].hit,
+            Some(Hit::Fold(Axis::Rows, _, false))
+        ));
         // Only the outer bar is left, and the dots of the two summaries.
         assert_eq!(of(&all, |s| matches!(s, Shape::Line)).len(), 2);
         assert_eq!(of(&all, |s| matches!(s, Shape::Dot)).len(), 0);
@@ -782,11 +960,19 @@ mod tests {
         // Scrolled by two rows: rows 4 and 5 are under the frozen ones.
         let l = layout(&wb, 1.0, 40.0);
         let all = symbols(&wb.sheets[0], &l);
-        let outer = Group { level: 1, first: 1, last: 8 };
+        let outer = Group {
+            level: 1,
+            first: 1,
+            last: 8,
+        };
         let bars: Vec<Symbol> = all
             .iter()
             .copied()
-            .filter(|s| s.shape == Shape::Line && s.hit == Some(Hit::Fold(Axis::Rows, outer, true)) && s.rect.2 - s.rect.0 == 1.0)
+            .filter(|s| {
+                s.shape == Shape::Line
+                    && s.hit == Some(Hit::Fold(Axis::Rows, outer, true))
+                    && s.rect.2 - s.rect.0 == 1.0
+            })
             .collect();
         // One piece in each strip, meeting at the freeze line.
         assert_eq!(bars.len(), 2);
@@ -810,22 +996,56 @@ mod tests {
         wb.commit("setup");
         let l = layout(&wb, 1.0, 0.0);
         let all = symbols(&wb.sheets[0], &l);
-        let rows = Group { level: 1, first: 2, last: 4 };
-        let button = all.iter().find(|s| s.hit == Some(Hit::Fold(Axis::Rows, rows, true)) && matches!(s.shape, Shape::Button { .. })).unwrap();
+        let rows = Group {
+            level: 1,
+            first: 2,
+            last: 4,
+        };
+        let button = all
+            .iter()
+            .find(|s| {
+                s.hit == Some(Hit::Fold(Axis::Rows, rows, true))
+                    && matches!(s.shape, Shape::Button { .. })
+            })
+            .unwrap();
         assert!(button.rect.1 >= l.row_y(1) && button.rect.3 <= l.row_y(2));
-        let bar = all.iter().find(|s| s.shape == Shape::Line && s.hit == Some(Hit::Fold(Axis::Rows, rows, true)) && s.rect.2 - s.rect.0 == 1.0).unwrap();
+        let bar = all
+            .iter()
+            .find(|s| {
+                s.shape == Shape::Line
+                    && s.hit == Some(Hit::Fold(Axis::Rows, rows, true))
+                    && s.rect.2 - s.rect.0 == 1.0
+            })
+            .unwrap();
         assert_eq!(bar.rect.1, button.rect.3);
         assert_eq!(bar.rect.3, l.row_y(4) + l.row_h(4) - 2.0);
         // The columns' outline lies above the headings, its button on
         // the column before the group.
-        let cols = Group { level: 1, first: 2, last: 3 };
-        let button = all.iter().find(|s| s.hit == Some(Hit::Fold(Axis::Cols, cols, true)) && matches!(s.shape, Shape::Button { .. })).unwrap();
+        let cols = Group {
+            level: 1,
+            first: 2,
+            last: 3,
+        };
+        let button = all
+            .iter()
+            .find(|s| {
+                s.hit == Some(Hit::Fold(Axis::Cols, cols, true))
+                    && matches!(s.shape, Shape::Button { .. })
+            })
+            .unwrap();
         assert!(button.rect.0 >= l.col_x(1) && button.rect.2 <= l.col_x(2));
         assert!(button.rect.3 <= l.margin_h);
         let levels = of(&all, |s| matches!(s, Shape::Level(_)));
         assert_eq!(levels.len(), 4);
         // The columns' level buttons stand beside the row headings.
-        let col_levels: Vec<&Symbol> = levels.iter().filter(|s| matches!(s.hit, Some(Hit::Level(Axis::Cols, _)))).collect();
-        assert!(col_levels.iter().all(|s| s.rect.0 >= l.margin_w && s.rect.2 <= l.header_w && s.rect.3 <= l.margin_h));
+        let col_levels: Vec<&Symbol> = levels
+            .iter()
+            .filter(|s| matches!(s.hit, Some(Hit::Level(Axis::Cols, _))))
+            .collect();
+        assert!(
+            col_levels.iter().all(|s| s.rect.0 >= l.margin_w
+                && s.rect.2 <= l.header_w
+                && s.rect.3 <= l.margin_h)
+        );
     }
 }

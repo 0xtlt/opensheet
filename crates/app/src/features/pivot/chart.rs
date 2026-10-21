@@ -11,14 +11,19 @@
 use super::filter::{self, FilterButton};
 use super::{Cmd, Pivots, active_pivot, entry, open_menu_at, pane, perform};
 use crate::app::{ExcelApp, MenuEntry};
-use crate::features::{Cx, Intent, Painter, Zone, ZoneEvent, ZoneResponse, chart_format, charts, index_of, object_id, slicers};
+use crate::features::{
+    Cx, Intent, Painter, Zone, ZoneEvent, ZoneResponse, chart_format, charts, index_of, object_id,
+    slicers,
+};
 use crate::i18n::t;
 use crate::ribbon::{group, row};
 use crate::shell::Alert;
 use crate::theme::c;
 use gpui::{AnyElement, IntoElement, MouseButton, Styled, Window};
 use opensheet_engine::chart::{Chart, ChartKind};
-use opensheet_engine::pivot::{Area, ChartButtonKind, PivotChartFields, PivotTable, chart_kind_allowed};
+use opensheet_engine::pivot::{
+    Area, ChartButtonKind, PivotChartFields, PivotTable, chart_kind_allowed,
+};
 
 pub(super) const TAB: &str = "pivot-chart-analyze";
 
@@ -70,7 +75,10 @@ pub(super) fn insert(app: &mut ExcelApp, cx: &mut Cx) {
                 chart.anchor = place.anchor;
                 chart.offset = place.offset;
             });
-            app.commit(t("Insert PivotChart", "Insérer un graphique croisé dynamique"), cx);
+            app.commit(
+                t("Insert PivotChart", "Insérer un graphique croisé dynamique"),
+                cx,
+            );
             app.select_object(Some(object_id(&charts::Charts, id)), cx);
             app.context_tab = Some(TAB);
         }
@@ -86,7 +94,12 @@ fn selected_link(app: &ExcelApp) -> Option<(u32, [bool; 4])> {
 
 /// Show or hide field buttons of the selected PivotChart: one kind, or
 /// all of them (`None`).
-pub(super) fn show_buttons(app: &mut ExcelApp, kind: Option<ChartButtonKind>, shown: bool, cx: &mut Cx) {
+pub(super) fn show_buttons(
+    app: &mut ExcelApp,
+    kind: Option<ChartButtonKind>,
+    shown: bool,
+    cx: &mut Cx,
+) {
     let Some((id, _)) = selected_link(app) else {
         return;
     };
@@ -110,20 +123,52 @@ pub(super) fn buttons_menu_entries(app: &ExcelApp) -> Vec<MenuEntry> {
         return Vec::new();
     };
     let labels = [
-        (ChartButtonKind::Filter, t("Show Report Filter Field Buttons", "Afficher les boutons de champ Filtre de rapport")),
-        (ChartButtonKind::Legend, t("Show Legend Field Buttons", "Afficher les boutons du champ Légende")),
-        (ChartButtonKind::Axis, t("Show Axis Field Buttons", "Afficher les boutons du champ Axe")),
-        (ChartButtonKind::Value, t("Show Value Field Buttons", "Afficher les boutons du champ Valeur")),
+        (
+            ChartButtonKind::Filter,
+            t(
+                "Show Report Filter Field Buttons",
+                "Afficher les boutons de champ Filtre de rapport",
+            ),
+        ),
+        (
+            ChartButtonKind::Legend,
+            t(
+                "Show Legend Field Buttons",
+                "Afficher les boutons du champ Légende",
+            ),
+        ),
+        (
+            ChartButtonKind::Axis,
+            t(
+                "Show Axis Field Buttons",
+                "Afficher les boutons du champ Axe",
+            ),
+        ),
+        (
+            ChartButtonKind::Value,
+            t(
+                "Show Value Field Buttons",
+                "Afficher les boutons du champ Valeur",
+            ),
+        ),
     ];
     let mut entries: Vec<MenuEntry> = labels
         .into_iter()
         .map(|(kind, label)| {
             let on = shown[kind as usize];
-            entry(label, move |app, _, cx| show_buttons(app, Some(kind), !on, cx)).checked(on)
+            entry(label, move |app, _, cx| {
+                show_buttons(app, Some(kind), !on, cx)
+            })
+            .checked(on)
         })
         .collect();
     entries.push(MenuEntry::separator());
-    entries.push(entry(t("Hide All", "Masquer tout"), |app, _, cx| show_buttons(app, None, false, cx)).disabled(!shown.contains(&true)));
+    entries.push(
+        entry(t("Hide All", "Masquer tout"), |app, _, cx| {
+            show_buttons(app, None, false, cx)
+        })
+        .disabled(!shown.contains(&true)),
+    );
     entries
 }
 
@@ -135,13 +180,21 @@ pub(super) fn buttons_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 /// Refresh, or empty, the PivotTable of the selected PivotChart.
 pub(super) fn refresh(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     if let Some(id) = chart_pivot(app).map(|p| p.id) {
-        perform(app, t("Refresh", "Actualiser"), window, cx, move |app, overwrite| app.wb.pivot_refresh(id, overwrite));
+        perform(
+            app,
+            t("Refresh", "Actualiser"),
+            window,
+            cx,
+            move |app, overwrite| app.wb.pivot_refresh(id, overwrite),
+        );
     }
 }
 
 pub(super) fn clear(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     if let Some(id) = chart_pivot(app).map(|p| p.id) {
-        super::update(app, id, t("Clear All", "Effacer tout"), window, cx, |p| p.clear());
+        super::update(app, id, t("Clear All", "Effacer tout"), window, cx, |p| {
+            p.clear()
+        });
     }
 }
 
@@ -159,17 +212,30 @@ pub(super) fn tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
         .into_any_element(),
         group(
             t("Data", "Données"),
-            row(vec![app.cmd_large("pc-refresh", Cmd::ChartRefresh, false, cx), app.cmd_large("pc-clear", Cmd::ChartClear, false, cx)]),
+            row(vec![
+                app.cmd_large("pc-refresh", Cmd::ChartRefresh, false, cx),
+                app.cmd_large("pc-clear", Cmd::ChartClear, false, cx),
+            ]),
         )
         .into_any_element(),
         group(
             t("Actions", "Actions"),
-            row(vec![app.cmd_large("pc-move", chart_format::Cmd::MoveChart, false, cx)]),
+            row(vec![app.cmd_large(
+                "pc-move",
+                chart_format::Cmd::MoveChart,
+                false,
+                cx,
+            )]),
         )
         .into_any_element(),
         group(
             t("Show", "Afficher"),
-            row(vec![app.cmd_large("pc-buttons", Cmd::ChartFieldButtons, true, cx)]),
+            row(vec![app.cmd_large(
+                "pc-buttons",
+                Cmd::ChartFieldButtons,
+                true,
+                cx,
+            )]),
         )
         .border_r_0()
         .into_any_element(),
@@ -191,17 +257,37 @@ pub(super) struct FieldButton {
 /// filter fields at the top left with the value fields under them, the
 /// legend fields at the top right, the axis fields at the bottom left.
 /// `shown`: the kinds that are not hidden.
-pub(super) fn field_buttons(fields: &PivotChartFields, shown: [bool; 4], size: (f32, f32), width_of: &dyn Fn(&str) -> f32) -> Vec<FieldButton> {
+pub(super) fn field_buttons(
+    fields: &PivotChartFields,
+    shown: [bool; 4],
+    size: (f32, f32),
+    width_of: &dyn Fn(&str) -> f32,
+) -> Vec<FieldButton> {
     const H: f32 = 20.0;
     const GAP: f32 = 4.0;
     let mut out = Vec::new();
     let mut line = |kind: ChartButtonKind, y: f32, from_right: bool| -> bool {
-        let list = if shown[kind as usize] { fields.of(kind) } else { &[] };
+        let list = if shown[kind as usize] {
+            fields.of(kind)
+        } else {
+            &[]
+        };
         // A value field button has no drop-down arrow.
-        let arrow = if kind == ChartButtonKind::Value { 12.0 } else { 26.0 };
-        let widths: Vec<f32> = list.iter().map(|(_, caption)| width_of(caption) + arrow).collect();
+        let arrow = if kind == ChartButtonKind::Value {
+            12.0
+        } else {
+            26.0
+        };
+        let widths: Vec<f32> = list
+            .iter()
+            .map(|(_, caption)| width_of(caption) + arrow)
+            .collect();
         let total: f32 = widths.iter().sum::<f32>() + GAP * widths.len().saturating_sub(1) as f32;
-        let mut x = if from_right { (size.0 - GAP - total).max(GAP) } else { GAP };
+        let mut x = if from_right {
+            (size.0 - GAP - total).max(GAP)
+        } else {
+            GAP
+        };
         for ((index, caption), w) in list.iter().zip(widths) {
             out.push(FieldButton {
                 rect: (x, y, (x + w).min(size.0 - 2.0), y + H),
@@ -213,7 +299,11 @@ pub(super) fn field_buttons(fields: &PivotChartFields, shown: [bool; 4], size: (
         }
         !list.is_empty()
     };
-    let below = if line(ChartButtonKind::Filter, GAP, false) { 2.0 * GAP + H } else { GAP };
+    let below = if line(ChartButtonKind::Filter, GAP, false) {
+        2.0 * GAP + H
+    } else {
+        GAP
+    };
     line(ChartButtonKind::Value, below, false);
     line(ChartButtonKind::Legend, GAP, true);
     line(ChartButtonKind::Axis, size.1 - GAP - H, false);
@@ -248,18 +338,33 @@ pub(crate) fn paint_buttons(p: &mut Painter, chart: &Chart, rect: (f32, f32, f32
     let z = p.zoom();
     let font = 11.0 * z;
     let fields = pivot.chart_fields();
-    let buttons = field_buttons(&fields, link.shown, chart.size, &|caption| f32::from(p.shape(caption, 11.0, c(0), false).width));
+    let buttons = field_buttons(&fields, link.shown, chart.size, &|caption| {
+        f32::from(p.shape(caption, 11.0, c(0), false).width)
+    });
     // The zones belong to this feature, whoever owns the chart.
     let owner = std::mem::replace(&mut p.owner, index_of(&Pivots));
     for (rank, button) in buttons.into_iter().enumerate() {
         let (x0, y0) = (rect.0 + button.rect.0 * z, rect.1 + button.rect.1 * z);
         let (x1, y1) = (rect.0 + button.rect.2 * z, rect.1 + button.rect.3 * z);
         p.rounded(x0, y0, x1, y1, 2.0, c(0xE7E6E6), Some(c(0xA6A6A6)));
-        p.text(&button.caption, x0 + 6.0 * z, y0 + ((y1 - y0) - font * 1.25) / 2.0, font, c(0x262626));
+        p.text(
+            &button.caption,
+            x0 + 6.0 * z,
+            y0 + ((y1 - y0) - font * 1.25) / 2.0,
+            font,
+            c(0x262626),
+        );
         if button.kind != ChartButtonKind::Value {
             // The arrow of the drop-down, as on the buttons of the report.
             let (ax, ay) = (x1 - 10.0 * z, (y0 + y1) / 2.0);
-            p.polygon(&[(ax - 3.5 * z, ay - 2.0 * z), (ax + 3.5 * z, ay - 2.0 * z), (ax, ay + 2.5 * z)], c(0x595959));
+            p.polygon(
+                &[
+                    (ax - 3.5 * z, ay - 2.0 * z),
+                    (ax + 3.5 * z, ay - 2.0 * z),
+                    (ax, ay + 2.5 * z),
+                ],
+                c(0x595959),
+            );
         }
         p.zone(
             (x0, y0, x1, y1),
@@ -279,7 +384,13 @@ pub(crate) fn paint_buttons(p: &mut Painter, chart: &Chart, rect: (f32, f32, f32
 /// A press on a field button: the chart is selected and the button opens
 /// its list — the drop-down of the field, or the menu of the value field.
 /// `None` when the zone is not a field button.
-pub(super) fn button_mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> Option<ZoneResponse> {
+pub(super) fn button_mouse_down(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<ZoneResponse> {
     let hit = zone.payload::<ButtonZone>()?;
     // The other buttons select the chart and open its menu.
     if ev.button != MouseButton::Left {
@@ -300,13 +411,23 @@ pub(super) fn button_mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent,
     match hit.kind {
         ChartButtonKind::Value => {
             if app.may(Intent::UsePivotTable, cx) {
-                let entries = pane::entry_menu_entries(app, hit.pivot, Area::Values, hit.index, false);
+                let entries =
+                    pane::entry_menu_entries(app, hit.pivot, Area::Values, hit.index, false);
                 open_menu_at(app, anchor, entries, cx);
             }
         }
         _ => {
             let button = FilterButton::Chart(hit.chart, hit.rank);
-            filter::toggle_drop_down_at(app, hit.pivot, &[hit.index], button, anchor, Some(ev.position), window, cx);
+            filter::toggle_drop_down_at(
+                app,
+                hit.pivot,
+                &[hit.index],
+                button,
+                anchor,
+                Some(ev.position),
+                window,
+                cx,
+            );
         }
     }
     Some(ZoneResponse::Handled)

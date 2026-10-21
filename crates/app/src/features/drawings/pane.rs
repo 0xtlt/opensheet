@@ -5,29 +5,36 @@
 //! change; with several drawings selected the Format pane shows the one
 //! selected last and changes them all.
 
-use super::geometry::normalise_angle;
-use super::tabs::{self, dashes, in_units, length_field, set_side};
-use crate::widgets::text_area::{AreaEvent, TextArea};
 use super::adjust;
+use super::geometry::normalise_angle;
 use super::styles;
-use super::{Cmd, DrawingUi, edit, edit_drawing, edit_picture, edit_shape, is_picture, reset_picture, selected};
+use super::tabs::{self, dashes, in_units, length_field, set_side};
+use super::{
+    Cmd, DrawingUi, edit, edit_drawing, edit_picture, edit_shape, is_picture, reset_picture,
+    selected,
+};
 use crate::app::ExcelApp;
 use crate::features::{self, Command, Cx, Intent, ObjectId, ZMove};
-use crate::objects::{engine_ref, object_of};
 use crate::i18n::{lang, t, t_ctx};
+use crate::objects::{engine_ref, object_of};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
+use crate::widgets::text_area::{AreaEvent, TextArea};
 use crate::widgets::{
-    self, Button, Checkbox, ColorButton, GroupBox, NumberField, RadioGroup, Select, TabStrip, labeled,
+    self, Button, Checkbox, ColorButton, GroupBox, NumberField, RadioGroup, Select, TabStrip,
+    labeled,
 };
 use gpui::{
-    AnyElement, Context, Entity, Focusable, MouseButton, MouseDownEvent, SharedString, Subscription, WeakEntity, Window,
-    div, prelude::*, px,
+    AnyElement, Context, Entity, Focusable, MouseButton, MouseDownEvent, SharedString,
+    Subscription, WeakEntity, Window, div, prelude::*, px,
 };
 use opensheet_engine::drawing::{
-    Drawing, Glow, LineEnd, NEUTRAL_TEMPERATURE, ObjectRef, Placement, Recolor, SEPIA, ShadowPreset, TextAnchor,
+    Drawing, Glow, LineEnd, NEUTRAL_TEMPERATURE, ObjectRef, Placement, Recolor, SEPIA,
+    ShadowPreset, TextAnchor,
 };
-use opensheet_engine::picture_style::{Artistic, ArtisticKind, Bevel, BevelPreset, Camera, Reflection};
+use opensheet_engine::picture_style::{
+    Artistic, ArtisticKind, Bevel, BevelPreset, Camera, Reflection,
+};
 use opensheet_engine::style::Color;
 
 pub(super) const FORMAT: &str = "drawing-format";
@@ -47,11 +54,19 @@ pub(super) struct PaneState {
 pub(super) fn keep_descriptions(app: &mut ExcelApp, cx: &mut Cx) {
     let panes = &app.ext_mut::<DrawingUi>().panes;
     let typed = [
-        panes.format.as_ref().and_then(|pane| pane.read(cx).typed_description(cx)),
-        panes.alt_text.as_ref().and_then(|pane| pane.read(cx).typed_description(cx)),
+        panes
+            .format
+            .as_ref()
+            .and_then(|pane| pane.read(cx).typed_description(cx)),
+        panes
+            .alt_text
+            .as_ref()
+            .and_then(|pane| pane.read(cx).typed_description(cx)),
     ];
     for (id, text) in typed.into_iter().flatten() {
-        edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| drawing.alt_text = text);
+        edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| {
+            drawing.alt_text = text
+        });
     }
 }
 
@@ -114,10 +129,13 @@ fn description_box(area: &Entity<TextArea>, height: f32) -> gpui::Div {
         .line_height(px(17.))
         .overflow_hidden()
         // A click below the text still lands in the box.
-        .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, window, cx| {
-            window.focus(&field.read(cx).focus_handle(cx));
-            field.update(cx, |field, cx| field.caret_to_point(event.position, cx));
-        })
+        .on_mouse_down(
+            MouseButton::Left,
+            move |event: &MouseDownEvent, window, cx| {
+                window.focus(&field.read(cx).focus_handle(cx));
+                field.update(cx, |field, cx| field.caret_to_point(event.position, cx));
+            },
+        )
         .child(area.clone())
 }
 
@@ -229,7 +247,9 @@ impl Look {
     /// shown after the field.
     fn range(self) -> (f64, f64, f64, &'static str) {
         match self {
-            Look::ShadowTransparency | Look::GlowTransparency | Look::Transparency => (0.0, 100.0, 1.0, "%"),
+            Look::ShadowTransparency | Look::GlowTransparency | Look::Transparency => {
+                (0.0, 100.0, 1.0, "%")
+            }
             Look::ShadowSize => (1.0, 200.0, 1.0, "%"),
             Look::ShadowBlur | Look::SoftEdge => (0.0, 100.0, 1.0, "pt"),
             Look::ShadowAngle => (0.0, 359.9, 1.0, "°"),
@@ -238,7 +258,9 @@ impl Look {
             Look::Brightness | Look::Contrast => (-100.0, 100.0, 1.0, "%"),
             Look::Saturation => (0.0, 400.0, 1.0, "%"),
             Look::Temperature => (1500.0, 11500.0, 100.0, "K"),
-            Look::ReflectionTransparency | Look::ReflectionSize | Look::ArtisticTransparency => (0.0, 100.0, 1.0, "%"),
+            Look::ReflectionTransparency | Look::ReflectionSize | Look::ArtisticTransparency => {
+                (0.0, 100.0, 1.0, "%")
+            }
             Look::ReflectionBlur => (0.0, 100.0, 0.5, "pt"),
             Look::ReflectionDistance => (0.0, 100.0, 1.0, "pt"),
             Look::BevelWidth | Look::BevelHeight => (0.0, 1584.0, 1.0, "pt"),
@@ -257,7 +279,10 @@ impl Look {
         let glow = drawing.effects.glow;
         let picture = drawing.as_picture().map(|picture| picture.adjust);
         // What the first change would start from, as for the shadow.
-        let reflection = drawing.effects.reflection.unwrap_or(Reflection::presets()[0]);
+        let reflection = drawing
+            .effects
+            .reflection
+            .unwrap_or(Reflection::presets()[0]);
         let bevel = drawing.effects.bevel;
         let rotation = drawing.effects.rotation.unwrap_or(styles::FLAT);
         let artistic = drawing.as_picture().and_then(|picture| picture.artistic);
@@ -272,7 +297,10 @@ impl Look {
             Look::RotationY => rotation.y,
             Look::RotationZ => rotation.z,
             Look::Perspective => rotation.perspective,
-            Look::BorderWidth => drawing.as_picture()?.outline.map_or(0.0, |outline| outline.width),
+            Look::BorderWidth => drawing
+                .as_picture()?
+                .outline
+                .map_or(0.0, |outline| outline.width),
             Look::ArtisticTransparency => artistic?.transparency * 100.0,
             Look::ArtisticAmount => artistic?.amount,
             Look::ShadowTransparency => shadow.transparency * 100.0,
@@ -300,18 +328,24 @@ impl Look {
         let glow_label = t("Glow", "Lumière");
         let reflection_label = t_ctx("effect", "Reflection", "Réflexion");
         let reflect = |app: &mut ExcelApp, cx: &mut Cx, change: &dyn Fn(&mut Reflection)| {
-            adjust::set_effects(app, reflection_label, cx, |effects| change(effects.reflection.get_or_insert(Reflection::presets()[0])));
+            adjust::set_effects(app, reflection_label, cx, |effects| {
+                change(effects.reflection.get_or_insert(Reflection::presets()[0]))
+            });
         };
         let bevel_label = t("Bevel", "Biseau");
         // A picture turned back to lie flat, seen in parallel, is not
         // turned at all.
-        let turn = |app: &mut ExcelApp, cx: &mut Cx, change: &dyn Fn(&mut opensheet_engine::picture_style::Rotation3d)| {
-            adjust::set_effects(app, t("3-D Rotation", "Rotation 3D"), cx, |effects| {
-                let mut rotation = effects.rotation.unwrap_or(styles::FLAT);
-                change(&mut rotation);
-                effects.rotation = (!rotation.is_flat() || rotation.perspective > 0.0).then_some(rotation);
-            });
-        };
+        let turn =
+            |app: &mut ExcelApp,
+             cx: &mut Cx,
+             change: &dyn Fn(&mut opensheet_engine::picture_style::Rotation3d)| {
+                adjust::set_effects(app, t("3-D Rotation", "Rotation 3D"), cx, |effects| {
+                    let mut rotation = effects.rotation.unwrap_or(styles::FLAT);
+                    change(&mut rotation);
+                    effects.rotation =
+                        (!rotation.is_flat() || rotation.perspective > 0.0).then_some(rotation);
+                });
+            };
         let artistic_label = t("Artistic Effects", "Effets artistiques");
         match self {
             Look::ReflectionTransparency => reflect(app, cx, &|r| r.transparency = value / 100.0),
@@ -350,7 +384,9 @@ impl Look {
                     }
                 });
             }
-            Look::ShadowTransparency => adjust::set_shadow(app, cx, |shadow| shadow.transparency = value / 100.0),
+            Look::ShadowTransparency => {
+                adjust::set_shadow(app, cx, |shadow| shadow.transparency = value / 100.0)
+            }
             Look::ShadowSize => adjust::set_shadow(app, cx, |shadow| shadow.size = value / 100.0),
             Look::ShadowBlur => adjust::set_shadow(app, cx, |shadow| shadow.blur = value),
             Look::ShadowAngle => adjust::set_shadow(app, cx, |shadow| shadow.angle = value),
@@ -368,19 +404,38 @@ impl Look {
                 }
             }),
             Look::SoftEdge => {
-                adjust::set_effects(app, t("Soft Edges", "Bordures adoucies"), cx, |effects| effects.soft_edge = value)
+                adjust::set_effects(app, t("Soft Edges", "Bordures adoucies"), cx, |effects| {
+                    effects.soft_edge = value
+                })
             }
-            Look::Brightness => {
-                adjust::adjust(app, t("Picture Corrections", "Corrections de l'image"), cx, |a| a.brightness = value / 100.0)
+            Look::Brightness => adjust::adjust(
+                app,
+                t("Picture Corrections", "Corrections de l'image"),
+                cx,
+                |a| a.brightness = value / 100.0,
+            ),
+            Look::Contrast => adjust::adjust(
+                app,
+                t("Picture Corrections", "Corrections de l'image"),
+                cx,
+                |a| a.contrast = value / 100.0,
+            ),
+            Look::Saturation => {
+                adjust::adjust(app, t("Picture Color", "Couleur de l'image"), cx, |a| {
+                    a.saturation = value / 100.0
+                })
             }
-            Look::Contrast => {
-                adjust::adjust(app, t("Picture Corrections", "Corrections de l'image"), cx, |a| a.contrast = value / 100.0)
+            Look::Temperature => {
+                adjust::adjust(app, t("Picture Color", "Couleur de l'image"), cx, |a| {
+                    a.temperature = value
+                })
             }
-            Look::Saturation => adjust::adjust(app, t("Picture Color", "Couleur de l'image"), cx, |a| a.saturation = value / 100.0),
-            Look::Temperature => adjust::adjust(app, t("Picture Color", "Couleur de l'image"), cx, |a| a.temperature = value),
-            Look::Transparency => {
-                adjust::adjust(app, t("Picture Transparency", "Transparence d'image"), cx, |a| a.transparency = value / 100.0)
-            }
+            Look::Transparency => adjust::adjust(
+                app,
+                t("Picture Transparency", "Transparence d'image"),
+                cx,
+                |a| a.transparency = value / 100.0,
+            ),
         }
     }
 }
@@ -450,11 +505,18 @@ impl FormatPane {
             (Field::Rotation, &rotation),
             (Field::LineWidth, &line_width),
         ];
-        fields.extend(Look::ALL.iter().zip(&looks).map(|(look, input)| (Field::Look(*look), input)));
+        fields.extend(
+            Look::ALL
+                .iter()
+                .zip(&looks)
+                .map(|(look, input)| (Field::Look(*look), input)),
+        );
         for (field, input) in fields {
-            subscriptions.push(cx.subscribe(input, move |this, input, event: &InputEvent, cx| {
-                this.on_field(field, &input, event, cx)
-            }));
+            subscriptions.push(
+                cx.subscribe(input, move |this, input, event: &InputEvent, cx| {
+                    this.on_field(field, &input, event, cx)
+                }),
+            );
         }
         FormatPane {
             app: app.downgrade(),
@@ -472,7 +534,9 @@ impl FormatPane {
 
     /// Change the selected drawings from a control of the pane.
     fn change(&self, label: &'static str, cx: &mut Context<Self>, change: impl Fn(&mut Drawing)) {
-        self.app.update(cx, |app, cx| edit(app, label, cx, change)).ok();
+        self.app
+            .update(cx, |app, cx| edit(app, label, cx, change))
+            .ok();
     }
 
     /// The drawing the description box was filled from and what was typed
@@ -486,14 +550,24 @@ impl FormatPane {
     fn apply_alt_text(&mut self, cx: &mut Context<Self>) {
         if let Some((id, typed)) = self.typed_description(cx) {
             self.app
-                .update(cx, |app, cx| edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| drawing.alt_text = typed))
+                .update(cx, |app, cx| {
+                    edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| {
+                        drawing.alt_text = typed
+                    })
+                })
                 .ok();
         }
     }
 
     /// A number was confirmed in a field (Return, Tab, leaving it) or
     /// stepped with its spinner.
-    fn on_field(&mut self, field: Field, input: &Entity<TextInput>, event: &InputEvent, cx: &mut Context<Self>) {
+    fn on_field(
+        &mut self,
+        field: Field,
+        input: &Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
         let confirmed = match event {
             InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => true,
             // The spinner leaves the whole number selected; typing does
@@ -504,7 +578,9 @@ impl FormatPane {
             }
             _ => false,
         };
-        let (Some(typed), Some(shown), true) = (input.read(cx).number(), self.shown.clone(), confirmed) else {
+        let (Some(typed), Some(shown), true) =
+            (input.read(cx).number(), self.shown.clone(), confirmed)
+        else {
             return;
         };
         match field {
@@ -512,23 +588,34 @@ impl FormatPane {
                 let height = field == Field::Height;
                 let current = if height { shown.height } else { shown.width };
                 if (typed - current).abs() > 0.004 && typed > 0.0 {
-                    self.app.update(cx, |app, cx| set_side(app, height, typed, cx)).ok();
+                    self.app
+                        .update(cx, |app, cx| set_side(app, height, typed, cx))
+                        .ok();
                 }
             }
             Field::Rotation => {
                 let angle = normalise_angle(typed as f32);
                 if (angle - shown.rotation).abs() > 0.004 {
-                    self.change(t("Rotate Object", "Faire pivoter l'objet"), cx, |drawing| drawing.rotation = angle);
+                    self.change(t("Rotate Object", "Faire pivoter l'objet"), cx, |drawing| {
+                        drawing.rotation = angle
+                    });
                 }
             }
             Field::LineWidth => {
                 let points = typed as f32;
                 if shown.line_width != Some(points) {
-                    self.app.update(cx, |app, cx| tabs::set_outline(app, cx, |outline| outline.width = points)).ok();
+                    self.app
+                        .update(cx, |app, cx| {
+                            tabs::set_outline(app, cx, |outline| outline.width = points)
+                        })
+                        .ok();
                 }
             }
             Field::Look(look) => {
-                let was = Look::ALL.iter().position(|other| *other == look).and_then(|i| shown.looks[i]);
+                let was = Look::ALL
+                    .iter()
+                    .position(|other| *other == look)
+                    .and_then(|i| shown.looks[i]);
                 if was.is_some_and(|was| (typed - was).abs() > 0.004) {
                     self.app.update(cx, |app, cx| look.set(app, typed, cx)).ok();
                 }
@@ -541,13 +628,21 @@ impl FormatPane {
 
     /// Fill the fields from the drawing when it changed, leaving alone the
     /// one being typed in.
-    fn sync(&mut self, drawing: Option<(&Drawing, (f64, f64))>, window: &Window, cx: &mut Context<Self>) {
+    fn sync(
+        &mut self,
+        drawing: Option<(&Drawing, (f64, f64))>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let now = drawing.map(|(drawing, size)| Shown {
             id: drawing.id,
             width: in_units(size.0),
             height: in_units(size.1),
             rotation: drawing.rotation,
-            line_width: drawing.as_shape().and_then(|shape| shape.outline).map(|outline| outline.width),
+            line_width: drawing
+                .as_shape()
+                .and_then(|shape| shape.outline)
+                .map(|outline| outline.width),
             alt_text: drawing.alt_text.clone(),
             looks: Look::ALL.iter().map(|look| look.of(drawing)).collect(),
         });
@@ -555,12 +650,22 @@ impl FormatPane {
             return;
         }
         let decimal = lang().locale().decimal_sep;
-        let number = |value: Option<f64>| value.map(|v| widgets::number_text(v, decimal)).unwrap_or_default();
+        let number = |value: Option<f64>| {
+            value
+                .map(|v| widgets::number_text(v, decimal))
+                .unwrap_or_default()
+        };
         let mut fields = vec![
             (&self.height, number(now.as_ref().map(|n| n.height))),
             (&self.width, number(now.as_ref().map(|n| n.width))),
-            (&self.rotation, number(now.as_ref().map(|n| n.rotation as f64))),
-            (&self.line_width, number(now.as_ref().and_then(|n| n.line_width).map(f64::from))),
+            (
+                &self.rotation,
+                number(now.as_ref().map(|n| n.rotation as f64)),
+            ),
+            (
+                &self.line_width,
+                number(now.as_ref().and_then(|n| n.line_width).map(f64::from)),
+            ),
         ];
         for (i, input) in self.looks.iter().enumerate() {
             fields.push((input, number(now.as_ref().and_then(|n| n.looks[i]))));
@@ -584,7 +689,8 @@ impl FormatPane {
         let is_line = shape.preset.is_line();
         let outline = shape.outline;
         let dash_names: Vec<SharedString> = dashes().iter().map(|(_, name)| item(name)).collect();
-        let dash = outline.and_then(|outline| dashes().iter().position(|(dash, _)| *dash == outline.dash));
+        let dash =
+            outline.and_then(|outline| dashes().iter().position(|(dash, _)| *dash == outline.dash));
         let end_index = |end: LineEnd| LineEnd::ALL.iter().position(|other| *other == end);
         let mut page = div().flex().flex_col().gap(px(14.));
         if !is_line {
@@ -593,31 +699,44 @@ impl FormatPane {
                     .child(
                         RadioGroup::new(
                             "dw-fill-kind",
-                            vec![item(t("No fill", "Aucun remplissage")), item(t("Solid fill", "Remplissage uni"))],
+                            vec![
+                                item(t("No fill", "Aucun remplissage")),
+                                item(t("Solid fill", "Remplissage uni")),
+                            ],
                             Some(shape.fill.is_some() as usize),
                         )
                         .disabled(locked)
-                        .on_change(cx.listener(|this, choice: &usize, _, cx| {
-                            let solid = *choice == 1;
-                            this.app
-                                .update(cx, |app, cx| {
-                                    let now = selected(app).and_then(Drawing::as_shape).and_then(|shape| shape.fill);
-                                    if solid != now.is_some() {
-                                        tabs::set_fill(app, solid.then_some(Color(0x156082)), cx);
-                                    }
-                                })
-                                .ok();
-                        })),
+                        .on_change(cx.listener(
+                            |this, choice: &usize, _, cx| {
+                                let solid = *choice == 1;
+                                this.app
+                                    .update(cx, |app, cx| {
+                                        let now = selected(app)
+                                            .and_then(Drawing::as_shape)
+                                            .and_then(|shape| shape.fill);
+                                        if solid != now.is_some() {
+                                            tabs::set_fill(
+                                                app,
+                                                solid.then_some(Color(0x156082)),
+                                                cx,
+                                            );
+                                        }
+                                    })
+                                    .ok();
+                            },
+                        )),
                     )
                     .children(shape.fill.map(|fill| {
                         labeled(
                             t("Color", "Couleur"),
-                            ColorButton::new("dw-fill-color", Some(Some(fill))).more(&self.app).on_pick(cx.listener(
-                                |this, color: &Option<Color>, _, cx| {
+                            ColorButton::new("dw-fill-color", Some(Some(fill)))
+                                .more(&self.app)
+                                .on_pick(cx.listener(|this, color: &Option<Color>, _, cx| {
                                     let color = *color;
-                                    this.app.update(cx, |app, cx| tabs::set_fill(app, color, cx)).ok();
-                                },
-                            )),
+                                    this.app
+                                        .update(cx, |app, cx| tabs::set_fill(app, color, cx))
+                                        .ok();
+                                })),
                         )
                         .justify_between()
                     })),
@@ -626,7 +745,10 @@ impl FormatPane {
         let mut line = GroupBox::new(t_ctx("shape", "Line", "Trait")).child(
             RadioGroup::new(
                 "dw-line-kind",
-                vec![item(t("No line", "Aucun trait")), item(t("Solid line", "Trait plein"))],
+                vec![
+                    item(t("No line", "Aucun trait")),
+                    item(t("Solid line", "Trait plein")),
+                ],
                 Some(outline.is_some() as usize),
             )
             .disabled(locked)
@@ -634,7 +756,9 @@ impl FormatPane {
                 let solid = *choice == 1;
                 this.app
                     .update(cx, |app, cx| {
-                        let now = selected(app).and_then(Drawing::as_shape).and_then(|shape| shape.outline);
+                        let now = selected(app)
+                            .and_then(Drawing::as_shape)
+                            .and_then(|shape| shape.outline);
                         if solid != now.is_some() {
                             tabs::set_outline_color(app, solid.then_some(Color::BLACK), cx);
                         }
@@ -644,34 +768,43 @@ impl FormatPane {
         );
         if let Some(outline) = outline {
             let set_end = |start: bool| {
-                cx.listener(move |this: &mut FormatPane, choice: &usize, _: &mut Window, cx: &mut Context<FormatPane>| {
-                    let Some(end) = LineEnd::ALL.get(*choice).copied() else {
-                        return;
-                    };
-                    this.app
-                        .update(cx, |app, cx| {
-                            tabs::set_outline(app, cx, |outline| {
-                                if start {
-                                    outline.start = end;
-                                } else {
-                                    outline.end = end;
-                                }
+                cx.listener(
+                    move |this: &mut FormatPane,
+                          choice: &usize,
+                          _: &mut Window,
+                          cx: &mut Context<FormatPane>| {
+                        let Some(end) = LineEnd::ALL.get(*choice).copied() else {
+                            return;
+                        };
+                        this.app
+                            .update(cx, |app, cx| {
+                                tabs::set_outline(app, cx, |outline| {
+                                    if start {
+                                        outline.start = end;
+                                    } else {
+                                        outline.end = end;
+                                    }
+                                })
                             })
-                        })
-                        .ok();
-                })
+                            .ok();
+                    },
+                )
             };
             line = line
                 .child(
                     labeled(
                         t("Color", "Couleur"),
-                        ColorButton::new("dw-line-color", Some(Some(outline.color))).more(&self.app).on_pick(cx.listener(
-                            |this, color: &Option<Color>, _, cx| {
+                        ColorButton::new("dw-line-color", Some(Some(outline.color)))
+                            .more(&self.app)
+                            .on_pick(cx.listener(|this, color: &Option<Color>, _, cx| {
                                 if let Some(color) = *color {
-                                    this.app.update(cx, |app, cx| tabs::set_outline_color(app, Some(color), cx)).ok();
+                                    this.app
+                                        .update(cx, |app, cx| {
+                                            tabs::set_outline_color(app, Some(color), cx)
+                                        })
+                                        .ok();
                                 }
-                            },
-                        )),
+                            })),
                     )
                     .justify_between(),
                 )
@@ -698,7 +831,9 @@ impl FormatPane {
                                     return;
                                 };
                                 this.app
-                                    .update(cx, |app, cx| tabs::set_outline(app, cx, |outline| outline.dash = dash))
+                                    .update(cx, |app, cx| {
+                                        tabs::set_outline(app, cx, |outline| outline.dash = dash)
+                                    })
                                     .ok();
                             })),
                     )
@@ -731,7 +866,10 @@ impl FormatPane {
 
     /// A number of the Effects or Picture page with its label and unit.
     fn look_field(&self, look: Look, label: &'static str) -> gpui::Div {
-        let index = Look::ALL.iter().position(|other| *other == look).unwrap_or(0);
+        let index = Look::ALL
+            .iter()
+            .position(|other| *other == look)
+            .unwrap_or(0);
         let id: SharedString = format!("dw-look-{index}").into();
         labeled(
             label,
@@ -751,14 +889,21 @@ impl FormatPane {
         let shadow = drawing.effects.shadow;
         let mut presets = vec![item(t("No Shadow", "Aucune ombre"))];
         let locale = lang().locale();
-        presets.extend(ShadowPreset::ALL.iter().map(|preset| item(preset.name(locale))));
+        presets.extend(
+            ShadowPreset::ALL
+                .iter()
+                .map(|preset| item(preset.name(locale))),
+        );
         // The preset the shadow is, the first one for a shadow changed
         // by hand.
         let preset = match shadow {
             None => 0,
             Some(shadow) => ShadowPreset::ALL
                 .iter()
-                .position(|preset| preset.shadow().angle == shadow.angle && (preset.shadow().distance == 0.0) == (shadow.distance == 0.0))
+                .position(|preset| {
+                    preset.shadow().angle == shadow.angle
+                        && (preset.shadow().distance == 0.0) == (shadow.distance == 0.0)
+                })
                 .map_or(1, |i| i + 1),
         };
         let shadow_box = GroupBox::new(t("Shadow", "Ombre"))
@@ -769,9 +914,16 @@ impl FormatPane {
                         .width(190.0)
                         .disabled(locked)
                         .on_change(cx.listener(|this, choice: &usize, _, cx| {
-                            let made = choice.checked_sub(1).and_then(|i| ShadowPreset::ALL.get(i)).map(|preset| preset.shadow());
+                            let made = choice
+                                .checked_sub(1)
+                                .and_then(|i| ShadowPreset::ALL.get(i))
+                                .map(|preset| preset.shadow());
                             this.app
-                                .update(cx, |app, cx| adjust::set_effects(app, t("Shadow", "Ombre"), cx, |effects| effects.shadow = made))
+                                .update(cx, |app, cx| {
+                                    adjust::set_effects(app, t("Shadow", "Ombre"), cx, |effects| {
+                                        effects.shadow = made
+                                    })
+                                })
                                 .ok();
                         })),
                 )
@@ -780,13 +932,22 @@ impl FormatPane {
             .child(
                 labeled(
                     t("Color", "Couleur"),
-                    ColorButton::new("dw-shadow-color", Some(Some(adjust::shadow_of(drawing).color))).more(&self.app).on_pick(
-                        cx.listener(|this, color: &Option<Color>, _, cx| {
+                    ColorButton::new(
+                        "dw-shadow-color",
+                        Some(Some(adjust::shadow_of(drawing).color)),
+                    )
+                    .more(&self.app)
+                    .on_pick(cx.listener(
+                        |this, color: &Option<Color>, _, cx| {
                             if let Some(color) = *color {
-                                this.app.update(cx, |app, cx| adjust::set_shadow(app, cx, |shadow| shadow.color = color)).ok();
+                                this.app
+                                    .update(cx, |app, cx| {
+                                        adjust::set_shadow(app, cx, |shadow| shadow.color = color)
+                                    })
+                                    .ok();
                             }
-                        }),
-                    ),
+                        },
+                    )),
                 )
                 .justify_between(),
             )
@@ -800,8 +961,9 @@ impl FormatPane {
             .child(
                 labeled(
                     t("Color", "Couleur"),
-                    ColorButton::new("dw-glow-color", Some(Some(glow.color))).more(&self.app).on_pick(cx.listener(
-                        |this, color: &Option<Color>, _, cx| {
+                    ColorButton::new("dw-glow-color", Some(Some(glow.color)))
+                        .more(&self.app)
+                        .on_pick(cx.listener(|this, color: &Option<Color>, _, cx| {
                             let Some(color) = *color else {
                                 return;
                             };
@@ -810,22 +972,32 @@ impl FormatPane {
                                     adjust::set_effects(app, t("Glow", "Lumière"), cx, |effects| {
                                         // A colour for a drawing without
                                         // glow gives it Excel's smallest.
-                                        let glow = effects.glow.get_or_insert(Glow { radius: 5.0, ..DEFAULT_GLOW });
+                                        let glow = effects.glow.get_or_insert(Glow {
+                                            radius: 5.0,
+                                            ..DEFAULT_GLOW
+                                        });
                                         glow.color = color;
                                     })
                                 })
                                 .ok();
-                        },
-                    )),
+                        })),
                 )
                 .justify_between(),
             )
             .child(self.look_field(Look::GlowSize, t("Size", "Taille")))
             .child(self.look_field(Look::GlowTransparency, t("Transparency", "Transparence")));
-        let mut page = div().flex().flex_col().gap(px(14.)).child(shadow_box).child(glow_box);
+        let mut page = div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .child(shadow_box)
+            .child(glow_box);
         if is_picture(drawing) {
             page = page
-                .child(GroupBox::new(t("Soft Edges", "Bordures adoucies")).child(self.look_field(Look::SoftEdge, t("Size", "Taille"))))
+                .child(
+                    GroupBox::new(t("Soft Edges", "Bordures adoucies"))
+                        .child(self.look_field(Look::SoftEdge, t("Size", "Taille"))),
+                )
                 .child(self.reflection_box(drawing, locked, cx))
                 .child(self.bevel_box(drawing, locked, cx))
                 .child(self.rotation_box(drawing, locked, cx));
@@ -843,7 +1015,10 @@ impl FormatPane {
         // hand.
         let chosen = match drawing.effects.reflection {
             None => Some(0),
-            Some(reflection) => presets.iter().position(|preset| *preset == reflection).map(|i| i + 1),
+            Some(reflection) => presets
+                .iter()
+                .position(|preset| *preset == reflection)
+                .map(|i| i + 1),
         };
         GroupBox::new(t_ctx("effect", "Reflection", "Réflexion"))
             .child(
@@ -856,14 +1031,22 @@ impl FormatPane {
                             let made = choice.checked_sub(1).and_then(|i| presets.get(i)).copied();
                             this.app
                                 .update(cx, |app, cx| {
-                                    adjust::set_effects(app, t_ctx("effect", "Reflection", "Réflexion"), cx, |effects| effects.reflection = made)
+                                    adjust::set_effects(
+                                        app,
+                                        t_ctx("effect", "Reflection", "Réflexion"),
+                                        cx,
+                                        |effects| effects.reflection = made,
+                                    )
                                 })
                                 .ok();
                         })),
                 )
                 .justify_between(),
             )
-            .child(self.look_field(Look::ReflectionTransparency, t("Transparency", "Transparence")))
+            .child(self.look_field(
+                Look::ReflectionTransparency,
+                t("Transparency", "Transparence"),
+            ))
             .child(self.look_field(Look::ReflectionSize, t("Size", "Taille")))
             .child(self.look_field(Look::ReflectionBlur, t("Blur", "Flou")))
             .child(self.look_field(Look::ReflectionDistance, t("Distance", "Distance")))
@@ -873,10 +1056,17 @@ impl FormatPane {
     fn bevel_box(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> GroupBox {
         let locale = lang().locale();
         let mut names = vec![item(t("No Bevel", "Aucun biseau"))];
-        names.extend(BevelPreset::ALL.iter().map(|preset| item(preset.name(locale))));
+        names.extend(
+            BevelPreset::ALL
+                .iter()
+                .map(|preset| item(preset.name(locale))),
+        );
         let chosen = match drawing.effects.bevel {
             None => 0,
-            Some(bevel) => BevelPreset::ALL.iter().position(|preset| *preset == bevel.preset).map_or(0, |i| i + 1),
+            Some(bevel) => BevelPreset::ALL
+                .iter()
+                .position(|preset| *preset == bevel.preset)
+                .map_or(0, |i| i + 1),
         };
         GroupBox::new(t("3-D Format", "Format 3D"))
             .child(
@@ -887,7 +1077,10 @@ impl FormatPane {
                         .disabled(locked)
                         .on_change(cx.listener(|this, choice: &usize, _, cx| {
                             // Another profile keeps the size the bevel has.
-                            let preset = choice.checked_sub(1).and_then(|i| BevelPreset::ALL.get(i)).copied();
+                            let preset = choice
+                                .checked_sub(1)
+                                .and_then(|i| BevelPreset::ALL.get(i))
+                                .copied();
                             this.app
                                 .update(cx, |app, cx| {
                                     adjust::set_effects(app, t("Bevel", "Biseau"), cx, |effects| {
@@ -914,7 +1107,10 @@ impl FormatPane {
         names.extend(Camera::ALL.iter().map(|camera| item(camera.name(locale))));
         let chosen = match drawing.effects.rotation {
             None => Some(0),
-            Some(rotation) => Camera::ALL.iter().position(|camera| camera.rotation() == rotation).map(|i| i + 1),
+            Some(rotation) => Camera::ALL
+                .iter()
+                .position(|camera| camera.rotation() == rotation)
+                .map(|i| i + 1),
         };
         GroupBox::new(t("3-D Rotation", "Rotation 3D"))
             .child(
@@ -924,10 +1120,18 @@ impl FormatPane {
                         .width(190.0)
                         .disabled(locked)
                         .on_change(cx.listener(|this, choice: &usize, _, cx| {
-                            let made = choice.checked_sub(1).and_then(|i| Camera::ALL.get(i)).map(|camera| camera.rotation());
+                            let made = choice
+                                .checked_sub(1)
+                                .and_then(|i| Camera::ALL.get(i))
+                                .map(|camera| camera.rotation());
                             this.app
                                 .update(cx, |app, cx| {
-                                    adjust::set_effects(app, t("3-D Rotation", "Rotation 3D"), cx, |effects| effects.rotation = made)
+                                    adjust::set_effects(
+                                        app,
+                                        t("3-D Rotation", "Rotation 3D"),
+                                        cx,
+                                        |effects| effects.rotation = made,
+                                    )
                                 })
                                 .ok();
                         })),
@@ -947,22 +1151,33 @@ impl FormatPane {
             .child(
                 labeled(
                     t("Color", "Couleur"),
-                    ColorButton::new("dw-border-color", Some(outline.map(|outline| outline.color)))
-                        .none_label(t("No line", "Aucun trait"))
-                        .more(&self.app)
-                        .on_pick(cx.listener(|this, color: &Option<Color>, _, cx| {
+                    ColorButton::new(
+                        "dw-border-color",
+                        Some(outline.map(|outline| outline.color)),
+                    )
+                    .none_label(t("No line", "Aucun trait"))
+                    .more(&self.app)
+                    .on_pick(cx.listener(
+                        |this, color: &Option<Color>, _, cx| {
                             let color = *color;
                             this.app
                                 .update(cx, |app, cx| {
                                     styles::set_border(app, cx, |outline| match color {
                                         Some(color) => {
-                                            outline.get_or_insert(opensheet_engine::drawing::Outline::solid(color, 1.0)).color = color;
+                                            outline
+                                                .get_or_insert(
+                                                    opensheet_engine::drawing::Outline::solid(
+                                                        color, 1.0,
+                                                    ),
+                                                )
+                                                .color = color;
                                         }
                                         None => *outline = None,
                                     })
                                 })
                                 .ok();
-                        })),
+                        },
+                    )),
                 )
                 .justify_between(),
             )
@@ -976,7 +1191,13 @@ impl FormatPane {
         let artistic = drawing.as_picture().and_then(|picture| picture.artistic);
         let mut names = vec![item(t_ctx("artistic", "None", "Aucun"))];
         names.extend(ArtisticKind::ALL.iter().map(|kind| item(kind.name(locale))));
-        let chosen = artistic.and_then(|artistic| ArtisticKind::ALL.iter().position(|kind| *kind == artistic.kind)).map_or(0, |i| i + 1);
+        let chosen = artistic
+            .and_then(|artistic| {
+                ArtisticKind::ALL
+                    .iter()
+                    .position(|kind| *kind == artistic.kind)
+            })
+            .map_or(0, |i| i + 1);
         let label = t("Artistic Effects", "Effets artistiques");
         let mut group = GroupBox::new(label).child(
             labeled(
@@ -985,9 +1206,14 @@ impl FormatPane {
                     .width(170.0)
                     .disabled(locked)
                     .on_change(cx.listener(move |this, choice: &usize, _, cx| {
-                        let made = choice.checked_sub(1).and_then(|i| ArtisticKind::ALL.get(i)).map(|kind| Artistic::preset(*kind));
+                        let made = choice
+                            .checked_sub(1)
+                            .and_then(|i| ArtisticKind::ALL.get(i))
+                            .map(|kind| Artistic::preset(*kind));
                         this.app
-                            .update(cx, |app, cx| edit_picture(app, label, cx, |picture| picture.artistic = made))
+                            .update(cx, |app, cx| {
+                                edit_picture(app, label, cx, |picture| picture.artistic = made)
+                            })
                             .ok();
                     })),
             )
@@ -995,19 +1221,28 @@ impl FormatPane {
         );
         if let Some(artistic) = artistic {
             group = group
-                .child(self.look_field(Look::ArtisticTransparency, t("Transparency", "Transparence")))
+                .child(self.look_field(
+                    Look::ArtisticTransparency,
+                    t("Transparency", "Transparence"),
+                ))
                 .child(self.look_field(Look::ArtisticAmount, artistic.kind.amount_name(locale)))
-                .child(div().flex().child(Button::new("dw-reset-artistic", t("Reset", "Rétablir")).disabled(locked).on_click(cx.listener(
-                    move |this, _, _, cx| {
-                        this.app
-                            .update(cx, |app, cx| {
-                                edit_picture(app, label, cx, |picture| {
-                                    picture.artistic = picture.artistic.map(|artistic| Artistic::preset(artistic.kind));
-                                })
-                            })
-                            .ok();
-                    },
-                ))));
+                .child(
+                    div().flex().child(
+                        Button::new("dw-reset-artistic", t("Reset", "Rétablir"))
+                            .disabled(locked)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.app
+                                    .update(cx, |app, cx| {
+                                        edit_picture(app, label, cx, |picture| {
+                                            picture.artistic = picture
+                                                .artistic
+                                                .map(|artistic| Artistic::preset(artistic.kind));
+                                        })
+                                    })
+                                    .ok();
+                            })),
+                    ),
+                );
         }
         group
     }
@@ -1017,12 +1252,19 @@ impl FormatPane {
         let Some(adjust) = drawing.as_picture().map(|picture| picture.adjust) else {
             return div().into_any_element();
         };
-        let reset = |id: &'static str, cx: &mut Context<Self>, undo: fn(&mut opensheet_engine::drawing::PictureAdjust), label: &'static str| {
-            div().flex().child(Button::new(id, t("Reset", "Rétablir")).disabled(locked).on_click(cx.listener(
-                move |this, _, _, cx| {
-                    this.app.update(cx, |app, cx| adjust::adjust(app, label, cx, undo)).ok();
-                },
-            )))
+        let reset = |id: &'static str,
+                     cx: &mut Context<Self>,
+                     undo: fn(&mut opensheet_engine::drawing::PictureAdjust),
+                     label: &'static str| {
+            div().flex().child(
+                Button::new(id, t("Reset", "Rétablir"))
+                    .disabled(locked)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.app
+                            .update(cx, |app, cx| adjust::adjust(app, label, cx, undo))
+                            .ok();
+                    })),
+            )
         };
         let corrections_label = t("Picture Corrections", "Corrections de l'image");
         let color_label = t("Picture Color", "Couleur de l'image");
@@ -1032,9 +1274,14 @@ impl FormatPane {
             (t("Grayscale", "Nuances de gris"), Recolor::Grayscale),
             (t("Sepia", "Sépia"), Recolor::Duotone(SEPIA.0, SEPIA.1)),
             (t("Washout", "Estompé"), Recolor::Washout),
-            (t("Black and White", "Noir et blanc"), Recolor::BlackAndWhite(0.5)),
+            (
+                t("Black and White", "Noir et blanc"),
+                Recolor::BlackAndWhite(0.5),
+            ),
         ];
-        let recolor = recolors.iter().position(|(_, recolor)| *recolor == adjust.recolor);
+        let recolor = recolors
+            .iter()
+            .position(|(_, recolor)| *recolor == adjust.recolor);
         let corrections = GroupBox::new(corrections_label)
             .child(self.look_field(Look::Brightness, t("Brightness", "Luminosité")))
             .child(self.look_field(Look::Contrast, t("Contrast", "Contraste")))
@@ -1053,17 +1300,27 @@ impl FormatPane {
             .child(
                 labeled(
                     t("Recolor", "Recolorier"),
-                    Select::new("dw-recolor", recolors.iter().map(|(name, _)| item(name)).collect(), recolor)
-                        .width(170.0)
-                        .disabled(locked)
-                        .on_change(cx.listener(move |this, choice: &usize, _, cx| {
+                    Select::new(
+                        "dw-recolor",
+                        recolors.iter().map(|(name, _)| item(name)).collect(),
+                        recolor,
+                    )
+                    .width(170.0)
+                    .disabled(locked)
+                    .on_change(cx.listener(
+                        move |this, choice: &usize, _, cx| {
                             let Some((_, recolor)) = recolors.get(*choice).copied() else {
                                 return;
                             };
                             this.app
-                                .update(cx, |app, cx| adjust::adjust(app, color_label, cx, |adjust| adjust.recolor = recolor))
+                                .update(cx, |app, cx| {
+                                    adjust::adjust(app, color_label, cx, |adjust| {
+                                        adjust.recolor = recolor
+                                    })
+                                })
                                 .ok();
-                        })),
+                        },
+                    )),
                 )
                 .justify_between(),
             )
@@ -1091,17 +1348,38 @@ impl FormatPane {
             .into_any_element()
     }
 
-    fn size_and_properties(&self, drawing: &Drawing, locked: bool, cx: &mut Context<Self>) -> AnyElement {
-        let takes_text = drawing.as_shape().is_some_and(|shape| !shape.preset.is_line());
+    fn size_and_properties(
+        &self,
+        drawing: &Drawing,
+        locked: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let takes_text = drawing
+            .as_shape()
+            .is_some_and(|shape| !shape.preset.is_line());
         let mut size = GroupBox::new(t("Size", "Taille"))
-            .child(length_field("dw-pane-height", t("Height", "Hauteur"), &self.height))
-            .child(length_field("dw-pane-width", t("Width", "Largeur"), &self.width))
+            .child(length_field(
+                "dw-pane-height",
+                t("Height", "Hauteur"),
+                &self.height,
+            ))
+            .child(length_field(
+                "dw-pane-width",
+                t("Width", "Largeur"),
+                &self.width,
+            ))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(4.))
-                    .child(div().w(px(52.)).flex_none().text_size(px(11.5)).child(t("Rotation", "Rotation")))
+                    .child(
+                        div()
+                            .w(px(52.))
+                            .flex_none()
+                            .text_size(px(11.5))
+                            .child(t("Rotation", "Rotation")),
+                    )
                     .child(NumberField::new("dw-pane-rotation", &self.rotation).width(72.0))
                     .child("°"),
             )
@@ -1114,15 +1392,25 @@ impl FormatPane {
                 .disabled(locked)
                 .on_change(cx.listener(|this, on: &bool, _, cx| {
                     let on = *on;
-                    this.change(t("Lock aspect ratio", "Garder les proportions"), cx, |drawing| drawing.lock_aspect = on);
+                    this.change(
+                        t("Lock aspect ratio", "Garder les proportions"),
+                        cx,
+                        |drawing| drawing.lock_aspect = on,
+                    );
                 })),
             );
         if is_picture(drawing) {
-            size = size.child(div().flex().child(Button::new("dw-reset", t("Reset", "Rétablir")).disabled(locked).on_click(
-                cx.listener(|this, _, _, cx| {
-                    this.app.update(cx, |app, cx| reset_picture(app, true, cx)).ok();
-                }),
-            )));
+            size = size.child(
+                div().flex().child(
+                    Button::new("dw-reset", t("Reset", "Rétablir"))
+                        .disabled(locked)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.app
+                                .update(cx, |app, cx| reset_picture(app, true, cx))
+                                .ok();
+                        })),
+                ),
+            );
         }
         let placement = Placement::ALL.iter().position(|p| *p == drawing.placement);
         let properties = GroupBox::new(t("Properties", "Propriétés"))
@@ -1130,36 +1418,66 @@ impl FormatPane {
                 RadioGroup::new(
                     "dw-placement",
                     vec![
-                        item(t("Move and size with cells", "Déplacer et dimensionner avec les cellules")),
-                        item(t("Move but don't size with cells", "Déplacer sans dimensionner avec les cellules")),
-                        item(t("Don't move or size with cells", "Ne pas déplacer ou dimensionner avec les cellules")),
+                        item(t(
+                            "Move and size with cells",
+                            "Déplacer et dimensionner avec les cellules",
+                        )),
+                        item(t(
+                            "Move but don't size with cells",
+                            "Déplacer sans dimensionner avec les cellules",
+                        )),
+                        item(t(
+                            "Don't move or size with cells",
+                            "Ne pas déplacer ou dimensionner avec les cellules",
+                        )),
                     ],
                     placement,
                 )
                 .disabled(locked)
                 .on_change(cx.listener(|this, choice: &usize, _, cx| {
                     if let Some(placement) = Placement::ALL.get(*choice).copied() {
-                        this.change(t("Object Positioning", "Position de l'objet"), cx, |drawing| drawing.placement = placement);
+                        this.change(
+                            t("Object Positioning", "Position de l'objet"),
+                            cx,
+                            |drawing| drawing.placement = placement,
+                        );
                     }
                 })),
             )
             .child(
-                Checkbox::new("dw-print", t("Print object", "Imprimer l'objet"), drawing.print)
-                    .disabled(locked)
-                    .on_change(cx.listener(|this, on: &bool, _, cx| {
-                        let on = *on;
-                        this.change(t("Print object", "Imprimer l'objet"), cx, |drawing| drawing.print = on);
-                    })),
+                Checkbox::new(
+                    "dw-print",
+                    t("Print object", "Imprimer l'objet"),
+                    drawing.print,
+                )
+                .disabled(locked)
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    let on = *on;
+                    this.change(t("Print object", "Imprimer l'objet"), cx, |drawing| {
+                        drawing.print = on
+                    });
+                })),
             )
             .child(
-                Checkbox::new("dw-locked", t_ctx("object", "Locked", "Verrouillé"), drawing.locked)
-                    .disabled(locked)
-                    .on_change(cx.listener(|this, on: &bool, _, cx| {
-                        let on = *on;
-                        this.change(t_ctx("object", "Locked", "Verrouillé"), cx, |drawing| drawing.locked = on);
-                    })),
+                Checkbox::new(
+                    "dw-locked",
+                    t_ctx("object", "Locked", "Verrouillé"),
+                    drawing.locked,
+                )
+                .disabled(locked)
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    let on = *on;
+                    this.change(t_ctx("object", "Locked", "Verrouillé"), cx, |drawing| {
+                        drawing.locked = on
+                    });
+                })),
             );
-        let mut page = div().flex().flex_col().gap(px(14.)).child(size).child(properties);
+        let mut page = div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .child(size)
+            .child(properties);
         if let (true, Some(shape)) = (takes_text, drawing.as_shape()) {
             let anchor = TextAnchor::ALL.iter().position(|a| *a == shape.anchor);
             page = page.child(
@@ -1168,21 +1486,32 @@ impl FormatPane {
                         t("Vertical alignment", "Alignement vertical"),
                         Select::new(
                             "dw-anchor",
-                            vec![item(t("Top", "Haut")), item(t("Middle", "Milieu")), item(t("Bottom", "Bas"))],
+                            vec![
+                                item(t("Top", "Haut")),
+                                item(t("Middle", "Milieu")),
+                                item(t("Bottom", "Bas")),
+                            ],
                             anchor,
                         )
                         .width(110.0)
                         .disabled(locked)
-                        .on_change(cx.listener(|this, choice: &usize, _, cx| {
-                            let Some(anchor) = TextAnchor::ALL.get(*choice).copied() else {
-                                return;
-                            };
-                            this.app
-                                .update(cx, |app, cx| {
-                                    edit_shape(app, t("Vertical alignment", "Alignement vertical"), cx, |shape| shape.anchor = anchor)
-                                })
-                                .ok();
-                        })),
+                        .on_change(cx.listener(
+                            |this, choice: &usize, _, cx| {
+                                let Some(anchor) = TextAnchor::ALL.get(*choice).copied() else {
+                                    return;
+                                };
+                                this.app
+                                    .update(cx, |app, cx| {
+                                        edit_shape(
+                                            app,
+                                            t("Vertical alignment", "Alignement vertical"),
+                                            cx,
+                                            |shape| shape.anchor = anchor,
+                                        )
+                                    })
+                                    .ok();
+                            },
+                        )),
                     )
                     .justify_between(),
                 ),
@@ -1190,7 +1519,11 @@ impl FormatPane {
         }
         page.child(
             GroupBox::new(t("Alt Text", "Texte de remplacement"))
-                .child(div().text_color(c(theme::TEXT_MUTED)).child(t("Description", "Description")))
+                .child(
+                    div()
+                        .text_color(c(theme::TEXT_MUTED))
+                        .child(t("Description", "Description")),
+                )
                 .child(description_box(&self.alt_text, 84.0)),
         )
         .into_any_element()
@@ -1205,9 +1538,17 @@ impl Render for FormatPane {
             let app = app.read(cx);
             let drawing = selected(app)?;
             let frame = app.wb.drawing_frame(app.sheet, drawing.id)?;
-            Some((drawing.clone(), (frame.width, frame.height), !tabs::editable(app)))
+            Some((
+                drawing.clone(),
+                (frame.width, frame.height),
+                !tabs::editable(app),
+            ))
         });
-        self.sync(state.as_ref().map(|(drawing, size, _)| (drawing, *size)), window, cx);
+        self.sync(
+            state.as_ref().map(|(drawing, size, _)| (drawing, *size)),
+            window,
+            cx,
+        );
         let Some((drawing, _, locked)) = state else {
             return div()
                 .p(px(14.))
@@ -1220,15 +1561,25 @@ impl Render for FormatPane {
         };
         // The pages of its kind; the one last shown when it has it.
         let sections = Section::of(&drawing);
-        let section = if sections.contains(&self.section) { self.section } else { Section::Size };
+        let section = if sections.contains(&self.section) {
+            self.section
+        } else {
+            Section::Size
+        };
         let page = match section {
             Section::Fill => self.fill_and_line(&drawing, locked, cx),
             Section::Effects => self.effects(&drawing, locked, cx),
             Section::Size => self.size_and_properties(&drawing, locked, cx),
             Section::Picture => self.picture(&drawing, locked, cx),
         };
-        let titles: Vec<SharedString> = sections.iter().map(|section| item(section.title())).collect();
-        let shown = sections.iter().position(|other| *other == section).unwrap_or(0);
+        let titles: Vec<SharedString> = sections
+            .iter()
+            .map(|section| item(section.title()))
+            .collect();
+        let shown = sections
+            .iter()
+            .position(|other| *other == section)
+            .unwrap_or(0);
         div()
             .id("dw-format-pane")
             .size_full()
@@ -1239,12 +1590,14 @@ impl Render for FormatPane {
             .flex_col()
             .gap(px(12.))
             .child(
-                TabStrip::new("dw-format-tabs", titles, shown).on_change(cx.listener(move |this, choice: &usize, _, cx| {
-                    if let Some(section) = sections.get(*choice) {
-                        this.section = *section;
-                        cx.notify();
-                    }
-                })),
+                TabStrip::new("dw-format-tabs", titles, shown).on_change(cx.listener(
+                    move |this, choice: &usize, _, cx| {
+                        if let Some(section) = sections.get(*choice) {
+                            this.section = *section;
+                            cx.notify();
+                        }
+                    },
+                )),
             )
             .child(page)
             .into_any_element()
@@ -1259,7 +1612,12 @@ pub(super) fn open_format(app: &mut ExcelApp, section: Section, _window: &mut Wi
 
 fn show_format(app: &mut ExcelApp, section: Section, cx: &mut Cx) {
     let title = title_for(app);
-    let existing = app.ext_mut::<DrawingUi>().panes.format.clone().filter(|_| app.pane_open(FORMAT));
+    let existing = app
+        .ext_mut::<DrawingUi>()
+        .panes
+        .format
+        .clone()
+        .filter(|_| app.pane_open(FORMAT));
     let view = match existing {
         Some(view) => {
             view.update(cx, |pane, cx| {
@@ -1329,7 +1687,11 @@ impl AltTextPane {
     fn apply(&mut self, cx: &mut Context<Self>) {
         if let Some((id, typed)) = self.typed_description(cx) {
             self.app
-                .update(cx, |app, cx| edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| drawing.alt_text = typed))
+                .update(cx, |app, cx| {
+                    edit_drawing(app, id, Cmd::AltText.label(), cx, |drawing| {
+                        drawing.alt_text = typed
+                    })
+                })
                 .ok();
         }
     }
@@ -1346,11 +1708,19 @@ impl Render for AltTextPane {
         let typing = self.text.read(cx).focus_handle(cx).is_focused(window);
         let same_drawing = matches!((&now, &self.shown), (Some((a, _)), Some((b, _))) if a == b);
         if now != self.shown && !(typing && same_drawing) {
-            let text = now.as_ref().map(|(_, text)| text.clone()).unwrap_or_default();
+            let text = now
+                .as_ref()
+                .map(|(_, text)| text.clone())
+                .unwrap_or_default();
             self.text.update(cx, |area, cx| area.set_text(text, cx));
             self.shown = now.clone();
         }
-        let mut pane = div().p(px(12.)).flex().flex_col().gap(px(8.)).line_height(px(17.));
+        let mut pane = div()
+            .p(px(12.))
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .line_height(px(17.));
         if now.is_none() {
             return pane
                 .text_color(c(theme::TEXT_MUTED))
@@ -1488,7 +1858,10 @@ pub(super) fn selection_rows(app: &ExcelApp) -> Vec<Row> {
 /// Show or hide objects of the current sheet, as one undo step; those
 /// that are hidden leave the selection.
 pub(super) fn set_hidden(app: &mut ExcelApp, objects: &[ObjectRef], hidden: bool, cx: &mut Cx) {
-    if !objects.iter().all(|object| app.may(Intent::EditObject(Some(object_of(*object))), cx)) {
+    if !objects
+        .iter()
+        .all(|object| app.may(Intent::EditObject(Some(object_of(*object))), cx))
+    {
         return;
     }
     if hidden {
@@ -1500,7 +1873,14 @@ pub(super) fn set_hidden(app: &mut ExcelApp, objects: &[ObjectRef], hidden: bool
         app.select_objects(&kept, cx);
     }
     if app.wb.set_objects_hidden(app.sheet, objects, hidden) {
-        app.commit(if hidden { t("Hide Object", "Masquer l'objet") } else { t("Show Object", "Afficher l'objet") }, cx);
+        app.commit(
+            if hidden {
+                t("Hide Object", "Masquer l'objet")
+            } else {
+                t("Show Object", "Afficher l'objet")
+            },
+            cx,
+        );
     }
 }
 
@@ -1511,7 +1891,10 @@ pub(super) fn move_in_stack(app: &mut ExcelApp, moved: ObjectRef, target: Object
         return;
     }
     let mut order = app.wb.object_stack(app.sheet);
-    let (Some(from), Some(to)) = (order.iter().position(|o| *o == moved), order.iter().position(|o| *o == target)) else {
+    let (Some(from), Some(to)) = (
+        order.iter().position(|o| *o == moved),
+        order.iter().position(|o| *o == target),
+    ) else {
         return;
     };
     order.remove(from);
@@ -1529,11 +1912,18 @@ impl SelectionPane {
         let field = widgets::input(cx, row.name.to_string());
         field.update(cx, |field, cx| field.select_all_text(cx));
         window.focus(&field.read(cx).focus_handle(cx));
-        let subscription = cx.subscribe_in(&field, window, |this, _, event: &InputEvent, _, cx| match event {
-            InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => this.end_rename(true, cx),
-            InputEvent::Escape => this.end_rename(false, cx),
-            _ => {}
-        });
+        let subscription =
+            cx.subscribe_in(
+                &field,
+                window,
+                |this, _, event: &InputEvent, _, cx| match event {
+                    InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => {
+                        this.end_rename(true, cx)
+                    }
+                    InputEvent::Escape => this.end_rename(false, cx),
+                    _ => {}
+                },
+            );
         self.rename = Some((object, field));
         self._subscriptions.truncate(1);
         self._subscriptions.push(subscription);
@@ -1548,7 +1938,9 @@ impl SelectionPane {
         if keep {
             self.app
                 .update(cx, |app, cx| {
-                    if app.may(Intent::EditObject(Some(object_of(object))), cx) && app.wb.rename_object(app.sheet, object, &name) {
+                    if app.may(Intent::EditObject(Some(object_of(object))), cx)
+                        && app.wb.rename_object(app.sheet, object, &name)
+                    {
                         app.commit(t("Rename Object", "Renommer l'objet"), cx);
                     }
                 })
@@ -1558,7 +1950,10 @@ impl SelectionPane {
     }
 
     fn row(&self, index: usize, row: &Row, cx: &mut Context<Self>) -> AnyElement {
-        let renaming = self.rename.as_ref().filter(|(object, _)| Some(*object) == row.object);
+        let renaming = self
+            .rename
+            .as_ref()
+            .filter(|(object, _)| Some(*object) == row.object);
         let name: AnyElement = match renaming {
             Some((_, field)) => widgets::TextField::new(field).into_any_element(),
             None => div()
@@ -1581,22 +1976,24 @@ impl SelectionPane {
             .when(row.selected, |d| d.bg(c(theme::ACCENT_LIGHT)))
             .when(!row.selected, |d| d.hover(|s| s.bg(c(theme::HOVER))))
             .child(div().flex_1().overflow_hidden().child(name))
-            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
-                if event.click_count() >= 2 {
-                    this.begin_rename(&clicked, window, cx);
-                    return;
-                }
-                // What does not show cannot be selected.
-                if clicked.hidden {
-                    return;
-                }
-                let extend = event.modifiers().shift || event.modifiers().platform;
-                this.app
-                    .update(cx, |app, cx| {
-                        app.click_object(clicked.id, extend, cx);
-                    })
-                    .ok();
-            }));
+            .on_click(
+                cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
+                    if event.click_count() >= 2 {
+                        this.begin_rename(&clicked, window, cx);
+                        return;
+                    }
+                    // What does not show cannot be selected.
+                    if clicked.hidden {
+                        return;
+                    }
+                    let extend = event.modifiers().shift || event.modifiers().platform;
+                    this.app
+                        .update(cx, |app, cx| {
+                            app.click_object(clicked.id, extend, cx);
+                        })
+                        .ok();
+                }),
+            );
         if let Some(object) = row.object {
             let hidden = row.hidden;
             let dragged = DraggedRow {
@@ -1604,11 +2001,15 @@ impl SelectionPane {
                 name: row.name.clone(),
             };
             line = line
-                .on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragName(dragged.name.clone())))
+                .on_drag(dragged, |dragged, _, _, cx| {
+                    cx.new(|_| DragName(dragged.name.clone()))
+                })
                 .drag_over::<DraggedRow>(|style, _, _, _| style.bg(c(theme::HOVER)))
                 .on_drop(cx.listener(move |this, dragged: &DraggedRow, _, cx| {
                     let moved = dragged.object;
-                    this.app.update(cx, |app, cx| move_in_stack(app, moved, object, cx)).ok();
+                    this.app
+                        .update(cx, |app, cx| move_in_stack(app, moved, object, cx))
+                        .ok();
                 }))
                 .child(
                     div()
@@ -1619,10 +2020,20 @@ impl SelectionPane {
                         .justify_center()
                         .rounded(px(3.))
                         .hover(|s| s.bg(c(theme::PRESSED)))
-                        .child(crate::view::icon("eye", 14.0, if hidden { theme::TEXT_DISABLED } else { theme::TEXT }))
+                        .child(crate::view::icon(
+                            "eye",
+                            14.0,
+                            if hidden {
+                                theme::TEXT_DISABLED
+                            } else {
+                                theme::TEXT
+                            },
+                        ))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
-                            this.app.update(cx, |app, cx| set_hidden(app, &[object], !hidden, cx)).ok();
+                            this.app
+                                .update(cx, |app, cx| set_hidden(app, &[object], !hidden, cx))
+                                .ok();
                         })),
                 );
         }
@@ -1632,7 +2043,11 @@ impl SelectionPane {
 
 impl Render for SelectionPane {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let rows = self.app.upgrade().map(|app| selection_rows(app.read(cx))).unwrap_or_default();
+        let rows = self
+            .app
+            .upgrade()
+            .map(|app| selection_rows(app.read(cx)))
+            .unwrap_or_default();
         let any_selected = rows.iter().any(|row| row.selected);
         let all: Vec<ObjectRef> = rows.iter().filter_map(|row| row.object).collect();
         let reorder = |id: &'static str, icon: &'static str, mv: ZMove, cx: &mut Context<Self>| {
@@ -1646,18 +2061,34 @@ impl Render for SelectionPane {
                 .border_1()
                 .border_color(c(theme::BORDER))
                 .when(any_selected, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                .child(crate::view::icon(icon, 14.0, if any_selected { theme::TEXT } else { theme::TEXT_DISABLED }))
+                .child(crate::view::icon(
+                    icon,
+                    14.0,
+                    if any_selected {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_DISABLED
+                    },
+                ))
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    this.app.update(cx, |app, cx| app.reorder_object(mv, cx)).ok();
+                    this.app
+                        .update(cx, |app, cx| app.reorder_object(mv, cx))
+                        .ok();
                 }))
         };
         let show = |id: &'static str, label: &'static str, hidden: bool, cx: &mut Context<Self>| {
             let all = all.clone();
             Button::new(id, label).on_click(cx.listener(move |this, _, _, cx| {
-                this.app.update(cx, |app, cx| set_hidden(app, &all, hidden, cx)).ok();
+                this.app
+                    .update(cx, |app, cx| set_hidden(app, &all, hidden, cx))
+                    .ok();
             }))
         };
-        let list: Vec<AnyElement> = rows.iter().enumerate().map(|(index, row)| self.row(index, row, cx)).collect();
+        let list: Vec<AnyElement> = rows
+            .iter()
+            .enumerate()
+            .map(|(index, row)| self.row(index, row, cx))
+            .collect();
         div()
             .p(px(12.))
             .size_full()
@@ -1669,11 +2100,26 @@ impl Render for SelectionPane {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .child(show("dw-sel-show-all", t("Show All", "Afficher tout"), false, cx))
-                    .child(show("dw-sel-hide-all", t("Hide All", "Masquer tout"), true, cx))
+                    .child(show(
+                        "dw-sel-show-all",
+                        t("Show All", "Afficher tout"),
+                        false,
+                        cx,
+                    ))
+                    .child(show(
+                        "dw-sel-hide-all",
+                        t("Hide All", "Masquer tout"),
+                        true,
+                        cx,
+                    ))
                     .child(div().flex_1())
                     .child(reorder("dw-sel-forward", "chevron-up", ZMove::Forward, cx))
-                    .child(reorder("dw-sel-backward", "chevron-down", ZMove::Backward, cx)),
+                    .child(reorder(
+                        "dw-sel-backward",
+                        "chevron-down",
+                        ZMove::Backward,
+                        cx,
+                    )),
             )
             .child(
                 div()

@@ -4,8 +4,8 @@
 
 use crate::theme::ca;
 use gpui::{
-    App, Bounds, ContentMask, Corners, Font, FontStyle, FontWeight, Hsla, ImageFormat, PathBuilder, Pixels, Point,
-    RenderImage, SharedString, TextRun, Window, fill, point, px, size,
+    App, Bounds, ContentMask, Corners, Font, FontStyle, FontWeight, Hsla, ImageFormat, PathBuilder,
+    Pixels, Point, RenderImage, SharedString, TextRun, Window, fill, point, px, size,
 };
 use opensheet_print::{Image, Op, Paint, Path, Scene, Segment};
 use std::sync::Arc;
@@ -39,7 +39,9 @@ pub(crate) fn prepare(scene: Scene, cx: &App) -> Prepared {
 /// An image of a page as a file GPUI can decode.
 fn screen_image(image: &Image) -> gpui::Image {
     match &image.pixels {
-        opensheet_print::Pixels::Jpeg(bytes) => gpui::Image::from_bytes(ImageFormat::Jpeg, bytes.clone()),
+        opensheet_print::Pixels::Jpeg(bytes) => {
+            gpui::Image::from_bytes(ImageFormat::Jpeg, bytes.clone())
+        }
         opensheet_print::Pixels::Rgb(data) => {
             gpui::Image::from_bytes(ImageFormat::Png, png(image.width, image.height, 3, data))
         }
@@ -167,7 +169,8 @@ impl Brush<'_> {
 
     fn masked(&mut self, f: impl FnOnce(&mut Window)) {
         let bounds = self.state.clip;
-        self.window.with_content_mask(Some(ContentMask { bounds }), f);
+        self.window
+            .with_content_mask(Some(ContentMask { bounds }), f);
     }
 
     fn trace(&self, builder: &mut PathBuilder, path: &Path) {
@@ -208,7 +211,12 @@ impl Brush<'_> {
                 && corners[1].1 == corners[2].1
                 && corners[2].0 == corners[3].0
                 && corners[3].1 == corners[0].1);
-        square.then(|| Bounds::from_corners(self.at(corners[0].0, corners[0].1), self.at(corners[2].0, corners[2].1)))
+        square.then(|| {
+            Bounds::from_corners(
+                self.at(corners[0].0, corners[0].1),
+                self.at(corners[2].0, corners[2].1),
+            )
+        })
     }
 
     /// A straight line along the pixel grid, as a rectangle: thin lines
@@ -262,7 +270,8 @@ impl Brush<'_> {
                 })
                 .collect();
             let straight = points.len() >= 2
-                && points.len() + matches!(path.segments.last(), Some(Segment::Close)) as usize == path.segments.len()
+                && points.len() + matches!(path.segments.last(), Some(Segment::Close)) as usize
+                    == path.segments.len()
                 && points
                     .windows(2)
                     .all(|pair| pair[0].x == pair[1].x || pair[0].y == pair[1].y);
@@ -355,15 +364,28 @@ impl Brush<'_> {
         let width = f32::from(line.width).ceil() + 2.0;
         let height = (pixels * 1.25).round();
         let baseline = f32::from(line.ascent);
-        let path = crate::chart_view::text_asset_path(width, height, baseline, pixels, face.bold(), &font.family, &shown);
+        let path = crate::chart_view::text_asset_path(
+            width,
+            height,
+            baseline,
+            pixels,
+            face.bold(),
+            &font.family,
+            &shown,
+        );
         // The shape centres the text in its box: put the start of the
         // baseline on the point, then turn around it.
         let advance = f32::from(line.width);
         let bounds = Bounds::new(
-            point(start.x - px((width - advance) / 2.0), start.y - px(baseline)),
+            point(
+                start.x - px((width - advance) / 2.0),
+                start.y - px(baseline),
+            ),
             size(px(width), px(height)),
         );
-        self.masked(|window| crate::chart_view::paint_turned(path, bounds, start, turn, ink, window, cx));
+        self.masked(|window| {
+            crate::chart_view::paint_turned(path, bounds, start, turn, ink, window, cx)
+        });
     }
 }
 
@@ -400,9 +422,16 @@ pub(crate) fn paint(page: &Prepared, bounds: Bounds<Pixels>, window: &mut Window
                     brush.at(rect.right(), rect.bottom()),
                     brush.at(rect.x, rect.bottom()),
                 ];
-                let min = |f: fn(&Point<Pixels>) -> Pixels| corners.iter().map(f).fold(px(f32::MAX), Pixels::min);
-                let max = |f: fn(&Point<Pixels>) -> Pixels| corners.iter().map(f).fold(px(f32::MIN), Pixels::max);
-                let around = Bounds::from_corners(point(min(|p| p.x), min(|p| p.y)), point(max(|p| p.x), max(|p| p.y)));
+                let min = |f: fn(&Point<Pixels>) -> Pixels| {
+                    corners.iter().map(f).fold(px(f32::MAX), Pixels::min)
+                };
+                let max = |f: fn(&Point<Pixels>) -> Pixels| {
+                    corners.iter().map(f).fold(px(f32::MIN), Pixels::max)
+                };
+                let around = Bounds::from_corners(
+                    point(min(|p| p.x), min(|p| p.y)),
+                    point(max(|p| p.x), max(|p| p.y)),
+                );
                 brush.state.clip = brush.state.clip.intersect(&around);
             }
             Op::Transform(matrix) => brush.state.matrix = compose(brush.state.matrix, *matrix),
@@ -422,7 +451,10 @@ pub(crate) fn paint(page: &Prepared, bounds: Bounds<Pixels>, window: &mut Window
                     continue;
                 };
                 let decoded = decoded.clone();
-                let place = Bounds::from_corners(brush.at(rect.x, rect.y), brush.at(rect.right(), rect.bottom()));
+                let place = Bounds::from_corners(
+                    brush.at(rect.x, rect.y),
+                    brush.at(rect.right(), rect.bottom()),
+                );
                 brush.masked(|window| {
                     let _ = window.paint_image(place, Corners::default(), decoded, 0, false);
                 });
@@ -442,13 +474,19 @@ mod tests {
         // Scale first, then shift: (3, 4) → (6, 8) → (16, 28).
         let m = compose(shift, double);
         assert_eq!(
-            (m[0] * 3.0 + m[2] * 4.0 + m[4], m[1] * 3.0 + m[3] * 4.0 + m[5]),
+            (
+                m[0] * 3.0 + m[2] * 4.0 + m[4],
+                m[1] * 3.0 + m[3] * 4.0 + m[5]
+            ),
             (16.0, 28.0)
         );
         // The other way round: (3, 4) → (13, 24) → (26, 48).
         let m = compose(double, shift);
         assert_eq!(
-            (m[0] * 3.0 + m[2] * 4.0 + m[4], m[1] * 3.0 + m[3] * 4.0 + m[5]),
+            (
+                m[0] * 3.0 + m[2] * 4.0 + m[4],
+                m[1] * 3.0 + m[3] * 4.0 + m[5]
+            ),
             (26.0, 48.0)
         );
     }
@@ -457,13 +495,19 @@ mod tests {
     fn raw_pixels_make_a_png() {
         // Two pixels, red then blue.
         let file = png(2, 1, 3, &[255, 0, 0, 0, 0, 255]);
-        assert_eq!(&file[..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert_eq!(
+            &file[..8],
+            &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+        );
         assert_eq!(&file[12..16], b"IHDR");
         assert_eq!(&file[16..24], &[0, 0, 0, 2, 0, 0, 0, 1]);
         // The print crate reads it back to the same pixels.
         let image = Image::from_file_bytes(&file).unwrap();
         assert_eq!((image.width, image.height), (2, 1));
-        assert_eq!(image.pixels, opensheet_print::Pixels::Rgb(vec![255, 0, 0, 0, 0, 255]));
+        assert_eq!(
+            image.pixels,
+            opensheet_print::Pixels::Rgb(vec![255, 0, 0, 0, 0, 255])
+        );
         let file = png(1, 2, 4, &[1, 2, 3, 4, 5, 6, 7, 8]);
         let image = Image::from_file_bytes(&file).unwrap();
         assert_eq!(

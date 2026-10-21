@@ -14,10 +14,10 @@ mod functions;
 mod goto;
 mod links;
 
-pub use audit::{shown_formula, shows_formulas};
-pub use functions::function_arguments;
 #[cfg(test)]
 pub(crate) use audit::error_cells;
+pub use audit::{shown_formula, shows_formulas};
+pub use functions::function_arguments;
 pub(crate) use goto::{Kinds, Special, select_special};
 
 use self::audit::Trace;
@@ -75,8 +75,15 @@ impl Command for Cmd {
         // Insert Function works on the formula being typed; the others
         // work on the sheet, once the entry in progress is stored. Menus
         // only open: their entries come back here.
-        let menu = matches!(self, Cmd::RemoveArrowsMenu | Cmd::ErrorCheckingMenu | Cmd::CalcOptions);
-        if !menu && self != Cmd::InsertFunction && app.is_editing() && !app.commit_edit(None, window, cx) {
+        let menu = matches!(
+            self,
+            Cmd::RemoveArrowsMenu | Cmd::ErrorCheckingMenu | Cmd::CalcOptions
+        );
+        if !menu
+            && self != Cmd::InsertFunction
+            && app.is_editing()
+            && !app.commit_edit(None, window, cx)
+        {
             return;
         }
         match self {
@@ -119,7 +126,9 @@ impl Command for Cmd {
                 app.open_command_menu(entries, 370.0, window, cx);
             }
             Cmd::CalcAutomatic => set_calc_mode(app, CalcMode::Automatic, cx),
-            Cmd::CalcAutomaticExceptTables => set_calc_mode(app, CalcMode::AutomaticExceptTables, cx),
+            Cmd::CalcAutomaticExceptTables => {
+                set_calc_mode(app, CalcMode::AutomaticExceptTables, cx)
+            }
             Cmd::CalcManual => set_calc_mode(app, CalcMode::Manual, cx),
             Cmd::CalcNow => {
                 calc::calculate_now(app);
@@ -137,7 +146,9 @@ impl Command for Cmd {
             Cmd::ShowFormulas => audit::shows_formulas(app),
             Cmd::WatchWindow => audit::watch_open(app),
             Cmd::CalcAutomatic => calc::calc_mode(app) == CalcMode::Automatic,
-            Cmd::CalcAutomaticExceptTables => calc::calc_mode(app) == CalcMode::AutomaticExceptTables,
+            Cmd::CalcAutomaticExceptTables => {
+                calc::calc_mode(app) == CalcMode::AutomaticExceptTables
+            }
             Cmd::CalcManual => calc::calc_mode(app) == CalcMode::Manual,
             _ => false,
         }
@@ -147,7 +158,10 @@ impl Command for Cmd {
         match self {
             // Tracer arrows are objects drawn on the sheet: a protected
             // sheet allows them only with "Edit objects", as in Excel.
-            Cmd::TracePrecedents | Cmd::TraceDependents | Cmd::TraceError | Cmd::RemoveArrowsMenu => {
+            Cmd::TracePrecedents
+            | Cmd::TraceDependents
+            | Cmd::TraceError
+            | Cmd::RemoveArrowsMenu => {
                 let drawing = Action::EditObject {
                     sheet: app.sheet,
                     locked: true,
@@ -230,14 +244,28 @@ impl Feature for Misc {
 
 /// A one-row button of the Formulas tab: with its label, or the icon alone
 /// when the window is short of room.
-fn tool(app: &ExcelApp, id: &'static str, cmd: Cmd, dropdown: bool, compact: bool, cx: &mut Cx) -> AnyElement {
-    if compact { app.cmd_icon(id, cmd, cx) } else { app.cmd_labeled(id, cmd, dropdown, cx) }
+fn tool(
+    app: &ExcelApp,
+    id: &'static str,
+    cmd: Cmd,
+    dropdown: bool,
+    compact: bool,
+    cx: &mut Cx,
+) -> AnyElement {
+    if compact {
+        app.cmd_icon(id, cmd, cx)
+    } else {
+        app.cmd_labeled(id, cmd, dropdown, cx)
+    }
 }
 
 /// The Formula Auditing group of the Formulas tab. As the window narrows
 /// the tracing commands lose their labels first, then the others.
 pub fn auditing_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
-    let (tracing, others) = (crate::ribbon_fold::level() >= 2, crate::ribbon_fold::level() >= 4);
+    let (tracing, others) = (
+        crate::ribbon_fold::level() >= 2,
+        crate::ribbon_fold::level() >= 4,
+    );
     group(
         t("Formula Auditing", "Vérification des formules"),
         div()
@@ -245,13 +273,48 @@ pub fn auditing_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
             .items_center()
             .gap(px(2.))
             .child(rows(vec![
-                tool(app, "fx-precedents", Cmd::TracePrecedents, false, tracing, cx),
-                tool(app, "fx-dependents", Cmd::TraceDependents, false, tracing, cx),
-                tool(app, "fx-remove-arrows", Cmd::RemoveArrowsMenu, true, tracing, cx),
+                tool(
+                    app,
+                    "fx-precedents",
+                    Cmd::TracePrecedents,
+                    false,
+                    tracing,
+                    cx,
+                ),
+                tool(
+                    app,
+                    "fx-dependents",
+                    Cmd::TraceDependents,
+                    false,
+                    tracing,
+                    cx,
+                ),
+                tool(
+                    app,
+                    "fx-remove-arrows",
+                    Cmd::RemoveArrowsMenu,
+                    true,
+                    tracing,
+                    cx,
+                ),
             ]))
             .child(rows(vec![
-                tool(app, "fx-show-formulas", Cmd::ShowFormulas, false, others, cx),
-                tool(app, "fx-error-checking", Cmd::ErrorCheckingMenu, true, others, cx),
+                tool(
+                    app,
+                    "fx-show-formulas",
+                    Cmd::ShowFormulas,
+                    false,
+                    others,
+                    cx,
+                ),
+                tool(
+                    app,
+                    "fx-error-checking",
+                    Cmd::ErrorCheckingMenu,
+                    true,
+                    others,
+                    cx,
+                ),
                 tool(app, "fx-evaluate", Cmd::EvaluateFormula, false, others, cx),
             ]))
             .child(app.cmd_large("fx-watch", Cmd::WatchWindow, false, cx)),
@@ -281,7 +344,15 @@ pub fn calculation_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
 
 actions!(
     formulas,
-    [GoTo, InsertFunction, ShowFormulas, CalculateNow, CalculateSheet, PasteName, CreateNames]
+    [
+        GoTo,
+        InsertFunction,
+        ShowFormulas,
+        CalculateNow,
+        CalculateSheet,
+        PasteName,
+        CreateNames
+    ]
 );
 
 /// The shortcuts of the formula tools and of defined names.
@@ -312,12 +383,22 @@ pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Statefu
         }
     }
     root.on_action(cx.listener(|app, _: &GoTo, window, cx| app.run_command(Cmd::GoTo, window, cx)))
-        .on_action(cx.listener(|app, _: &ShowFormulas, window, cx| app.run_command(Cmd::ShowFormulas, window, cx)))
-        .on_action(cx.listener(|app, _: &CalculateNow, window, cx| app.run_command(Cmd::CalcNow, window, cx)))
-        .on_action(cx.listener(|app, _: &CalculateSheet, window, cx| app.run_command(Cmd::CalcSheet, window, cx)))
+        .on_action(cx.listener(|app, _: &ShowFormulas, window, cx| {
+            app.run_command(Cmd::ShowFormulas, window, cx)
+        }))
+        .on_action(cx.listener(|app, _: &CalculateNow, window, cx| {
+            app.run_command(Cmd::CalcNow, window, cx)
+        }))
+        .on_action(cx.listener(|app, _: &CalculateSheet, window, cx| {
+            app.run_command(Cmd::CalcSheet, window, cx)
+        }))
         .on_action(cx.listener(|app, _: &CreateNames, window, cx| {
             app.run_command(names::Cmd::CreateFromSelection, window, cx)
         }))
-        .on_action(cx.listener(|app, _: &InsertFunction, window, cx| on_formula(app, Cmd::InsertFunction, window, cx)))
-        .on_action(cx.listener(|app, _: &PasteName, window, cx| on_formula(app, names::Cmd::PasteNames, window, cx)))
+        .on_action(cx.listener(|app, _: &InsertFunction, window, cx| {
+            on_formula(app, Cmd::InsertFunction, window, cx)
+        }))
+        .on_action(cx.listener(|app, _: &PasteName, window, cx| {
+            on_formula(app, names::Cmd::PasteNames, window, cx)
+        }))
 }

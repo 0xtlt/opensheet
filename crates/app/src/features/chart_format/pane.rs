@@ -3,7 +3,8 @@
 //! chart, and every change is applied at once, as one undo step.
 
 use super::fields::{
-    self, Field, MARKER_SHAPES, fill_of, is_lined, labels_mut, line_of, line_of_mut, marker_mut, set_fill, text_of,
+    self, Field, MARKER_SHAPES, fill_of, is_lined, labels_mut, line_of, line_of_mut, marker_mut,
+    set_fill, text_of,
 };
 use crate::app::ExcelApp;
 use crate::chart_view;
@@ -11,11 +12,17 @@ use crate::features::charts::elements::{axis_name, is_horizontal};
 use crate::i18n::t;
 use crate::text_input::{InputEvent, NavKey, TextInput};
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, Checkbox, ColorButton, RadioGroup, Select, TabStrip, TextField, icon};
-use gpui::{AnyElement, Context, Entity, Focusable, FontWeight, Render, SharedString, Subscription, WeakEntity, Window, div, prelude::*, px};
+use crate::widgets::{
+    self, Button, Checkbox, ColorButton, RadioGroup, Select, TabStrip, TextField, icon,
+};
+use gpui::{
+    AnyElement, Context, Entity, Focusable, FontWeight, Render, SharedString, Subscription,
+    WeakEntity, Window, div, prelude::*, px,
+};
 use opensheet_engine::chart::{
-    AxisCrossing, Chart, ChartTitle, Dash, DataLabels, DataTable, DisplayUnit, ErrorAmount, ErrorDirection, Family,
-    Fill, LabelPosition, LegendPos, Marker, MarkerShape, TickLabels, TickMark, TrendKind, View3D,
+    AxisCrossing, Chart, ChartTitle, Dash, DataLabels, DataTable, DisplayUnit, ErrorAmount,
+    ErrorDirection, Family, Fill, LabelPosition, LegendPos, Marker, MarkerShape, TickLabels,
+    TickMark, TrendKind, View3D,
 };
 use opensheet_engine::chart_layout::{AxisId, ChartElement, Scale};
 use opensheet_engine::format::{self, FormatKind};
@@ -125,17 +132,57 @@ fn unit_names() -> Vec<SharedString> {
 /// The number formats of the "Category" list, with the code each applies.
 fn number_categories(locale: &Locale) -> Vec<(&'static str, FormatKind, String)> {
     vec![
-        (t("General", "Standard"), FormatKind::General, "General".into()),
-        (crate::i18n::t_ctx("format", "Number", "Nombre"), FormatKind::Number, "#,##0.00".into()),
-        (t("Currency", "Monétaire"), FormatKind::Currency, locale.currency_format.into()),
-        (t("Accounting", "Comptabilité"), FormatKind::Accounting, locale.accounting_format.into()),
-        (t("Date", "Date"), FormatKind::Date, locale.short_date_format.into()),
-        (t("Time", "Heure"), FormatKind::Time, locale.time_format.into()),
-        (t("Percentage", "Pourcentage"), FormatKind::Percent, "0.00%".into()),
-        (t("Fraction", "Fraction"), FormatKind::Fraction, "# ?/?".into()),
-        (t("Scientific", "Scientifique"), FormatKind::Scientific, "0.00E+00".into()),
+        (
+            t("General", "Standard"),
+            FormatKind::General,
+            "General".into(),
+        ),
+        (
+            crate::i18n::t_ctx("format", "Number", "Nombre"),
+            FormatKind::Number,
+            "#,##0.00".into(),
+        ),
+        (
+            t("Currency", "Monétaire"),
+            FormatKind::Currency,
+            locale.currency_format.into(),
+        ),
+        (
+            t("Accounting", "Comptabilité"),
+            FormatKind::Accounting,
+            locale.accounting_format.into(),
+        ),
+        (
+            t("Date", "Date"),
+            FormatKind::Date,
+            locale.short_date_format.into(),
+        ),
+        (
+            t("Time", "Heure"),
+            FormatKind::Time,
+            locale.time_format.into(),
+        ),
+        (
+            t("Percentage", "Pourcentage"),
+            FormatKind::Percent,
+            "0.00%".into(),
+        ),
+        (
+            t("Fraction", "Fraction"),
+            FormatKind::Fraction,
+            "# ?/?".into(),
+        ),
+        (
+            t("Scientific", "Scientifique"),
+            FormatKind::Scientific,
+            "0.00E+00".into(),
+        ),
         (t("Text", "Texte"), FormatKind::Text, "@".into()),
-        (t("Custom", "Personnalisé"), FormatKind::Custom, String::new()),
+        (
+            t("Custom", "Personnalisé"),
+            FormatKind::Custom,
+            String::new(),
+        ),
     ]
 }
 
@@ -159,7 +206,12 @@ impl FormatPane {
     }
 
     /// Change the selected chart; `f` gets its selected element.
-    fn apply(&mut self, undo: &'static str, cx: &mut Context<Self>, f: impl FnOnce(&mut Chart, ChartElement)) {
+    fn apply(
+        &mut self,
+        undo: &'static str,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut Chart, ChartElement),
+    ) {
         self.app
             .update(cx, |app, cx| {
                 let element = app.chart_element();
@@ -184,7 +236,11 @@ impl FormatPane {
 
     /// Store what a field holds, when it says something new.
     pub(super) fn commit_field(&mut self, field: Field, cx: &mut Context<Self>) {
-        let Some(text) = self.fields.get(&field).map(|input| input.read(cx).text().to_string()) else {
+        let Some(text) = self
+            .fields
+            .get(&field)
+            .map(|input| input.read(cx).text().to_string())
+        else {
             return;
         };
         if self.reads.get(&field) == Some(&text) {
@@ -198,10 +254,19 @@ impl FormatPane {
         };
         self.app
             .update(cx, |app, cx| {
-                let Some(chart) = app.selected_chart().filter(|chart| chart.id == shown_chart) else { return };
+                let Some(chart) = app.selected_chart().filter(|chart| chart.id == shown_chart)
+                else {
+                    return;
+                };
                 let mut changed = chart.clone();
-                if fields::set(&mut changed, element, field, &text, app.wb.locale) && changed != *chart {
-                    app.edit_chart(t("Format Chart", "Mise en forme du graphique"), cx, |chart| *chart = changed);
+                if fields::set(&mut changed, element, field, &text, app.wb.locale)
+                    && changed != *chart
+                {
+                    app.edit_chart(
+                        t("Format Chart", "Mise en forme du graphique"),
+                        cx,
+                        |chart| *chart = changed,
+                    );
                 }
             })
             .ok();
@@ -210,10 +275,16 @@ impl FormatPane {
 
     fn on_field_event(&mut self, field: Field, ev: &InputEvent, cx: &mut Context<Self>) {
         match ev {
-            InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => self.commit_field(field, cx),
+            InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => {
+                self.commit_field(field, cx)
+            }
             // Up and Down step a number like the arrows beside it.
-            InputEvent::Navigate { key: NavKey::Up, .. } => self.step_field(field, 1.0, cx),
-            InputEvent::Navigate { key: NavKey::Down, .. } => self.step_field(field, -1.0, cx),
+            InputEvent::Navigate {
+                key: NavKey::Up, ..
+            } => self.step_field(field, 1.0, cx),
+            InputEvent::Navigate {
+                key: NavKey::Down, ..
+            } => self.step_field(field, -1.0, cx),
             _ => {}
         }
     }
@@ -221,30 +292,50 @@ impl FormatPane {
     /// Step a numeric field up or down and apply the result at once. The
     /// field shows its unit ("219 %"), so the number is read here.
     pub(super) fn step_field(&mut self, field: Field, steps: f64, cx: &mut Context<Self>) {
-        let (Some((min, max, step)), Some(input)) = (field.spin(), self.fields.get(&field).cloned()) else {
+        let (Some((min, max, step)), Some(input)) =
+            (field.spin(), self.fields.get(&field).cloned())
+        else {
             return;
         };
         let sep = crate::i18n::lang().locale().decimal_sep;
-        let current = fields::parse_number(input.read(cx).text(), sep).unwrap_or(min.max(0.0).min(max));
+        let current =
+            fields::parse_number(input.read(cx).text(), sep).unwrap_or(min.max(0.0).min(max));
         let next = (current + steps * step).clamp(min, max);
-        input.update(cx, |input, cx| input.set_text(widgets::number_text(next, sep), cx));
+        input.update(cx, |input, cx| {
+            input.set_text(widgets::number_text(next, sep), cx)
+        });
         self.commit_field(field, cx);
     }
 
     /// The input of a field, showing what the chart says unless the user
     /// is typing in it.
-    fn input(&mut self, field: Field, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Entity<TextInput> {
+    fn input(
+        &mut self,
+        field: Field,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<TextInput> {
         let input = match self.fields.get(&field) {
             Some(input) => input.clone(),
             None => {
                 let input = widgets::input(cx, "");
-                self._subscriptions
-                    .push(cx.subscribe(&input, move |this, _, ev: &InputEvent, cx| this.on_field_event(field, ev, cx)));
+                self._subscriptions.push(
+                    cx.subscribe(&input, move |this, _, ev: &InputEvent, cx| {
+                        this.on_field_event(field, ev, cx)
+                    }),
+                );
                 self.fields.insert(field, input.clone());
                 input
             }
         };
-        let text = fields::value(&shown.chart, shown.element, field, shown.scale.as_ref(), shown.locale);
+        let text = fields::value(
+            &shown.chart,
+            shown.element,
+            field,
+            shown.scale.as_ref(),
+            shown.locale,
+        );
         let stale = {
             let input = input.read(cx);
             (self.refill || !input.focus_handle(cx).is_focused(window)) && input.text() != text
@@ -257,11 +348,21 @@ impl FormatPane {
     }
 
     /// A label with a numeric field on its right.
-    fn number(&mut self, label: &'static str, field: Field, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn number(
+        &mut self,
+        label: &'static str,
+        field: Field,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let input = self.input(field, shown, window, cx);
         let mut control = TextField::new(&input).width(88.0);
         if field.spin().is_some() {
-            let arrow = |name: &'static str, icon_name: &'static str, steps: f64, cx: &mut Context<Self>| {
+            let arrow = |name: &'static str,
+                         icon_name: &'static str,
+                         steps: f64,
+                         cx: &mut Context<Self>| {
                 div()
                     .id((name, field as usize))
                     .w(px(14.))
@@ -338,10 +439,12 @@ impl FormatPane {
     ) -> AnyElement {
         row(
             label,
-            Select::new(id, options, selected).width(150.0).on_change(cx.listener(move |this, ix: &usize, _, cx| {
-                let ix = *ix;
-                this.apply(undo, cx, |chart, element| set(chart, element, ix));
-            })),
+            Select::new(id, options, selected)
+                .width(150.0)
+                .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                    let ix = *ix;
+                    this.apply(undo, cx, |chart, element| set(chart, element, ix));
+                })),
         )
     }
 
@@ -366,7 +469,12 @@ impl FormatPane {
     }
 
     /// A titled group of controls that folds.
-    fn section(&mut self, title: &'static str, cx: &mut Context<Self>, children: Vec<AnyElement>) -> AnyElement {
+    fn section(
+        &mut self,
+        title: &'static str,
+        cx: &mut Context<Self>,
+        children: Vec<AnyElement>,
+    ) -> AnyElement {
         let open = !self.folded.contains(title);
         div()
             .flex()
@@ -382,7 +490,15 @@ impl FormatPane {
                     .items_center()
                     .gap(px(6.))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(icon(if open { "chevron-down" } else { "chevron-right" }, 10.0, theme::TEXT_MUTED))
+                    .child(icon(
+                        if open {
+                            "chevron-down"
+                        } else {
+                            "chevron-right"
+                        },
+                        10.0,
+                        theme::TEXT_MUTED,
+                    ))
                     .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if !this.folded.remove(title) {
@@ -391,14 +507,30 @@ impl FormatPane {
                         cx.notify();
                     })),
             )
-            .when(open, |d| d.child(div().pl(px(26.)).pr(px(10.)).pb(px(10.)).flex().flex_col().gap(px(7.)).children(children)))
+            .when(open, |d| {
+                d.child(
+                    div()
+                        .pl(px(26.))
+                        .pr(px(10.))
+                        .pb(px(10.))
+                        .flex()
+                        .flex_col()
+                        .gap(px(7.))
+                        .children(children),
+                )
+            })
             .into_any_element()
     }
 
     // ---- sections -----------------------------------------------------------
 
     /// "Fill": none, solid, automatic, and the colour.
-    fn fill_section(&mut self, shown: &Shown, with_none: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn fill_section(
+        &mut self,
+        shown: &Shown,
+        with_none: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let fill = fill_of(&shown.chart, shown.element).unwrap_or_default();
         let undo = t("Fill", "Remplissage");
         let mut body = Vec::new();
@@ -410,7 +542,11 @@ impl FormatPane {
             };
             body.push(self.radio(
                 "fill-kind",
-                &[t("No fill", "Aucun remplissage"), t("Solid fill", "Remplissage uni"), t("Automatic", "Automatique")],
+                &[
+                    t("No fill", "Aucun remplissage"),
+                    t("Solid fill", "Remplissage uni"),
+                    t("Automatic", "Automatique"),
+                ],
                 Some(selected),
                 undo,
                 cx,
@@ -429,13 +565,23 @@ impl FormatPane {
             let chart = &shown.chart;
             // A solid fill starts from the colour the series has now.
             let current = match shown.element {
-                ChartElement::Series(s) | ChartElement::Point(s, _) => crate::theme::document_theme().chart_color(s as usize),
+                ChartElement::Series(s) | ChartElement::Point(s, _) => {
+                    crate::theme::document_theme().chart_color(s as usize)
+                }
                 _ => Color::WHITE,
             };
-            let current = shown.element.series().and_then(|s| chart.series.get(s)).and_then(|s| s.color).unwrap_or(current);
+            let current = shown
+                .element
+                .series()
+                .and_then(|s| chart.series.get(s))
+                .and_then(|s| s.color)
+                .unwrap_or(current);
             body.push(self.radio(
                 "fill-kind",
-                &[t("Solid fill", "Remplissage uni"), t("Automatic", "Automatique")],
+                &[
+                    t("Solid fill", "Remplissage uni"),
+                    t("Automatic", "Automatique"),
+                ],
                 Some(selected),
                 undo,
                 cx,
@@ -453,9 +599,11 @@ impl FormatPane {
             Fill::Solid(color) => Some(color),
             _ => None,
         };
-        body.push(self.color("fill-color", color, undo, cx, |chart, element, color| {
-            set_fill(chart, element, color.map_or(Fill::Auto, Fill::Solid))
-        }));
+        body.push(
+            self.color("fill-color", color, undo, cx, |chart, element, color| {
+                set_fill(chart, element, color.map_or(Fill::Auto, Fill::Solid))
+            }),
+        );
         if let ChartElement::Series(_) = shown.element {
             let chart = &shown.chart;
             if chart.kind.is_round() || chart.series.len() == 1 {
@@ -464,19 +612,35 @@ impl FormatPane {
                 } else {
                     t("Vary colors by point", "Variation des couleurs par point")
                 };
-                body.push(self.check("vary", label, chart.varies_colors(), undo, cx, |chart, _, on| chart.vary_colors = Some(on)));
+                body.push(self.check(
+                    "vary",
+                    label,
+                    chart.varies_colors(),
+                    undo,
+                    cx,
+                    |chart, _, on| chart.vary_colors = Some(on),
+                ));
             }
         }
         self.section(t("Fill", "Remplissage"), cx, body)
     }
 
     /// "Border" / "Line": none, solid, automatic, colour, width, dash.
-    fn line_section(&mut self, title: &'static str, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn line_section(
+        &mut self,
+        title: &'static str,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let Some(line) = line_of(&shown.chart, shown.element).cloned() else {
             return div().into_any_element();
         };
         let undo = title;
-        let automatic = line.shown.is_none() && line.color.is_none() && line.width.is_none() && line.dash == Dash::Solid;
+        let automatic = line.shown.is_none()
+            && line.color.is_none()
+            && line.width.is_none()
+            && line.dash == Dash::Solid;
         let selected = match line.shown {
             Some(false) => 0,
             _ if automatic => 2,
@@ -485,7 +649,11 @@ impl FormatPane {
         let mut body = vec![
             self.radio(
                 "line-kind",
-                &[t("No line", "Aucun trait"), t("Solid line", "Trait plein"), t("Automatic", "Automatique")],
+                &[
+                    t("No line", "Aucun trait"),
+                    t("Solid line", "Trait plein"),
+                    t("Automatic", "Automatique"),
+                ],
                 Some(selected),
                 undo,
                 cx,
@@ -499,14 +667,20 @@ impl FormatPane {
                     }
                 },
             ),
-            self.color("line-color", line.color, undo, cx, |chart, element, color| {
-                if let Some(line) = line_of_mut(chart, element) {
-                    line.color = color;
-                    if color.is_some() && line.shown == Some(false) {
-                        line.shown = Some(true);
+            self.color(
+                "line-color",
+                line.color,
+                undo,
+                cx,
+                |chart, element, color| {
+                    if let Some(line) = line_of_mut(chart, element) {
+                        line.color = color;
+                        if color.is_some() && line.shown == Some(false) {
+                            line.shown = Some(true);
+                        }
                     }
-                }
-            }),
+                },
+            ),
             self.number(t("Width", "Largeur"), Field::LineWidth, shown, window, cx),
             self.select(
                 "line-dash",
@@ -527,11 +701,19 @@ impl FormatPane {
             if is_lined(chart, s as usize) && chart.kind.family() != Family::Radar {
                 let series = &chart.series[s as usize];
                 let smooth = series.smooth_for(chart.series_kind(series));
-                body.push(self.check("smooth", t("Smoothed line", "Lissage"), smooth, undo, cx, |chart, element, on| {
-                    if let Some(series) = element.series().and_then(|s| chart.series.get_mut(s)) {
-                        series.smooth = Some(on);
-                    }
-                }));
+                body.push(self.check(
+                    "smooth",
+                    t("Smoothed line", "Lissage"),
+                    smooth,
+                    undo,
+                    cx,
+                    |chart, element, on| {
+                        if let Some(series) = element.series().and_then(|s| chart.series.get_mut(s))
+                        {
+                            series.smooth = Some(on);
+                        }
+                    },
+                ));
             }
         }
         self.section(title, cx, body)
@@ -539,14 +721,22 @@ impl FormatPane {
 
     /// "Text Options": the colour of the text of the selected element and
     /// its font (of every text of the chart, for the chart area).
-    fn text_tab(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> (&'static str, Vec<AnyElement>) {
+    fn text_tab(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (&'static str, Vec<AnyElement>) {
         let text = text_of(&shown.chart, shown.element).unwrap_or_default();
         let fill = t("Text Fill", "Remplissage du texte");
         let color = text.color;
         let fill_body = vec![
             self.radio(
                 "text-fill-kind",
-                &[t("Solid fill", "Remplissage uni"), t("Automatic", "Automatique")],
+                &[
+                    t("Solid fill", "Remplissage uni"),
+                    t("Automatic", "Automatique"),
+                ],
                 Some(color.is_none() as usize),
                 fill,
                 cx,
@@ -562,23 +752,68 @@ impl FormatPane {
         ];
         let font = t("Font", "Police");
         let name = self.input(Field::FontName, shown, window, cx);
-        let style = |this: &Self, id: &'static str, label: &'static str, on: Option<bool>, cx: &mut Context<Self>, set: fn(&mut opensheet_engine::chart::TextFormat, Option<bool>)| {
-            this.check(id, label, on == Some(true), label, cx, move |chart, element, on| {
-                element.format_text(chart, |text| set(text, on.then_some(true)));
-            })
-        };
+        let style =
+            |this: &Self,
+             id: &'static str,
+             label: &'static str,
+             on: Option<bool>,
+             cx: &mut Context<Self>,
+             set: fn(&mut opensheet_engine::chart::TextFormat, Option<bool>)| {
+                this.check(
+                    id,
+                    label,
+                    on == Some(true),
+                    label,
+                    cx,
+                    move |chart, element, on| {
+                        element.format_text(chart, |text| set(text, on.then_some(true)));
+                    },
+                )
+            };
         let font_body = vec![
             row(font, TextField::new(&name).width(150.0)),
             self.number(t("Size", "Taille"), Field::FontSize, shown, window, cx),
-            style(self, "text-bold", t("Bold", "Gras"), text.bold, cx, |text, on| text.bold = on),
-            style(self, "text-italic", t("Italic", "Italique"), text.italic, cx, |text, on| text.italic = on),
-            style(self, "text-underline", t("Underline", "Souligné"), text.underline, cx, |text, on| text.underline = on),
+            style(
+                self,
+                "text-bold",
+                t("Bold", "Gras"),
+                text.bold,
+                cx,
+                |text, on| text.bold = on,
+            ),
+            style(
+                self,
+                "text-italic",
+                t("Italic", "Italique"),
+                text.italic,
+                cx,
+                |text, on| text.italic = on,
+            ),
+            style(
+                self,
+                "text-underline",
+                t("Underline", "Souligné"),
+                text.underline,
+                cx,
+                |text, on| text.underline = on,
+            ),
         ];
-        (t("Text Options", "Options de texte"), vec![self.section(fill, cx, fill_body), self.section(font, cx, font_body)])
+        (
+            t("Text Options", "Options de texte"),
+            vec![
+                self.section(fill, cx, fill_body),
+                self.section(font, cx, font_body),
+            ],
+        )
     }
 
     /// "Marker": options, fill and border of the markers of a series.
-    fn marker_sections(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn marker_sections(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let ChartElement::Series(s) = shown.element else {
             return Vec::new();
         };
@@ -602,17 +837,28 @@ impl FormatPane {
         let options = vec![
             self.radio(
                 "marker-kind",
-                &[t("Automatic", "Automatique"), t("None", "Aucun"), t("Built-in", "Prédéfini")],
+                &[
+                    t("Automatic", "Automatique"),
+                    t("None", "Aucun"),
+                    t("Built-in", "Prédéfini"),
+                ],
                 Some(selected),
                 undo,
                 cx,
                 move |chart, element, ix| {
-                    let Some(series) = element.series().and_then(|s| chart.series.get_mut(s)) else { return };
+                    let Some(series) = element.series().and_then(|s| chart.series.get_mut(s))
+                    else {
+                        return;
+                    };
                     series.marker = match ix {
                         0 => None,
                         1 => Some(Marker::new(MarkerShape::None)),
                         _ => Some(Marker {
-                            shape: if marker.shape == MarkerShape::None { MarkerShape::Circle } else { marker.shape },
+                            shape: if marker.shape == MarkerShape::None {
+                                MarkerShape::Circle
+                            } else {
+                                marker.shape
+                            },
                             ..marker.clone()
                         }),
                     };
@@ -622,7 +868,9 @@ impl FormatPane {
                 "marker-shape",
                 t("Type", "Type"),
                 marker_names(),
-                MARKER_SHAPES.iter().position(|m| *m == series.marker_for(kind).shape),
+                MARKER_SHAPES
+                    .iter()
+                    .position(|m| *m == series.marker_for(kind).shape),
                 undo,
                 cx,
                 move |chart, element, ix| edit(chart, element, &|m| m.shape = MARKER_SHAPES[ix]),
@@ -630,12 +878,20 @@ impl FormatPane {
             self.number(t("Size", "Taille"), Field::MarkerSize, shown, window, cx),
         ];
         let marker = series.marker_for(kind);
-        let fill = vec![self.color("marker-fill", marker.fill, undo, cx, move |chart, element, color| {
-            edit(chart, element, &|m| m.fill = color)
-        })];
-        let border = vec![self.color("marker-line", marker.line, undo, cx, move |chart, element, color| {
-            edit(chart, element, &|m| m.line = color)
-        })];
+        let fill = vec![self.color(
+            "marker-fill",
+            marker.fill,
+            undo,
+            cx,
+            move |chart, element, color| edit(chart, element, &|m| m.fill = color),
+        )];
+        let border = vec![self.color(
+            "marker-line",
+            marker.line,
+            undo,
+            cx,
+            move |chart, element, color| edit(chart, element, &|m| m.line = color),
+        )];
         vec![
             self.section(t("Marker Options", "Options de marqueur"), cx, options),
             self.section(t("Marker Fill", "Remplissage des marqueurs"), cx, fill),
@@ -643,18 +899,29 @@ impl FormatPane {
         ]
     }
 
-    fn series_options(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn series_options(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let chart = &shown.chart;
         let undo = t("Series Options", "Options des séries");
         let mut body = Vec::new();
         let series = shown.element.series().and_then(|s| chart.series.get(s));
         let kind = series.map_or(chart.kind, |s| chart.series_kind(s));
-        let two_axes = !chart.kind.is_3d() && !chart.kind.is_round() && chart.kind.family() != Family::Radar;
+        let two_axes =
+            !chart.kind.is_3d() && !chart.kind.is_round() && chart.kind.family() != Family::Radar;
         if let (Some(series), true, ChartElement::Series(_)) = (series, two_axes, shown.element) {
-            body.push(widgets::label(t("Plot Series On", "Tracer la série avec")).into_any_element());
+            body.push(
+                widgets::label(t("Plot Series On", "Tracer la série avec")).into_any_element(),
+            );
             body.push(self.radio(
                 "series-axis",
-                &[t("Primary Axis", "Axe principal"), t("Secondary Axis", "Axe secondaire")],
+                &[
+                    t("Primary Axis", "Axe principal"),
+                    t("Secondary Axis", "Axe secondaire"),
+                ],
                 Some(series.secondary as usize),
                 undo,
                 cx,
@@ -668,12 +935,30 @@ impl FormatPane {
         match kind.family() {
             Family::Column | Family::Bar => {
                 if !kind.is_3d() {
-                    body.push(self.number(t("Series Overlap", "Superposition de séries"), Field::Overlap, shown, window, cx));
+                    body.push(self.number(
+                        t("Series Overlap", "Superposition de séries"),
+                        Field::Overlap,
+                        shown,
+                        window,
+                        cx,
+                    ));
                 }
-                body.push(self.number(t("Gap Width", "Largeur de l'intervalle"), Field::GapWidth, shown, window, cx));
+                body.push(self.number(
+                    t("Gap Width", "Largeur de l'intervalle"),
+                    Field::GapWidth,
+                    shown,
+                    window,
+                    cx,
+                ));
             }
             Family::Pie | Family::Doughnut => {
-                body.push(self.number(t("Angle of first slice", "Angle du premier secteur"), Field::FirstSlice, shown, window, cx));
+                body.push(self.number(
+                    t("Angle of first slice", "Angle du premier secteur"),
+                    Field::FirstSlice,
+                    shown,
+                    window,
+                    cx,
+                ));
                 if kind.family() == Family::Pie {
                     let label = match shown.element {
                         ChartElement::Point(..) => t("Point Explosion", "Éclatement des points"),
@@ -681,26 +966,53 @@ impl FormatPane {
                     };
                     body.push(self.number(label, Field::Explosion, shown, window, cx));
                 } else {
-                    body.push(self.number(t("Doughnut Hole Size", "Taille du centre"), Field::HoleSize, shown, window, cx));
+                    body.push(self.number(
+                        t("Doughnut Hole Size", "Taille du centre"),
+                        Field::HoleSize,
+                        shown,
+                        window,
+                        cx,
+                    ));
                 }
             }
             Family::Bubble => {
-                body.push(self.number(t("Scale bubble size to", "Échelle de la bulle"), Field::BubbleScale, shown, window, cx));
+                body.push(self.number(
+                    t("Scale bubble size to", "Échelle de la bulle"),
+                    Field::BubbleScale,
+                    shown,
+                    window,
+                    cx,
+                ));
             }
             _ => {}
         }
         if body.is_empty() {
-            body.push(widgets::label(t("No options for this series.", "Aucune option pour cette série.")).text_color(c(theme::TEXT_MUTED)).into_any_element());
+            body.push(
+                widgets::label(t(
+                    "No options for this series.",
+                    "Aucune option pour cette série.",
+                ))
+                .text_color(c(theme::TEXT_MUTED))
+                .into_any_element(),
+            );
         }
         self.section(undo, cx, body)
     }
 
-    fn axis_sections(&mut self, id: AxisId, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn axis_sections(
+        &mut self,
+        id: AxisId,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let chart = &shown.chart;
         let axis = id.of(&chart.axes).clone();
         let undo = t("Format Axis", "Format de l'axe");
         let numeric = !id.is_category() || chart.kind.is_xy();
-        let edit = move |chart: &mut Chart, f: &dyn Fn(&mut opensheet_engine::chart::Axis)| f(id.of_mut(&mut chart.axes));
+        let edit = move |chart: &mut Chart, f: &dyn Fn(&mut opensheet_engine::chart::Axis)| {
+            f(id.of_mut(&mut chart.axes))
+        };
         let mut options = Vec::new();
         // The other axis of the pair: the one that crosses this one.
         let other = match id {
@@ -721,12 +1033,20 @@ impl FormatPane {
         };
         if numeric {
             // A bound set by hand can be handed back to Excel.
-            let bound = |this: &mut Self, label: &'static str, field: Field, set: bool, reset: fn(&mut opensheet_engine::chart::Axis), cx: &mut Context<Self>, window: &mut Window| {
+            let bound = |this: &mut Self,
+                         label: &'static str,
+                         field: Field,
+                         set: bool,
+                         reset: fn(&mut opensheet_engine::chart::Axis),
+                         cx: &mut Context<Self>,
+                         window: &mut Window| {
                 let input = this.input(field, shown, window, cx);
                 let state: AnyElement = if set {
                     Button::new(("axis-reset", field as usize), t("Reset", "Rétablir"))
                         .width(84.0)
-                        .on_click(cx.listener(move |this, _, _, cx| this.apply(undo, cx, |chart, _| edit(chart, &reset))))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.apply(undo, cx, |chart, _| edit(chart, &reset))
+                        }))
                         .into_any_element()
                 } else {
                     // Wide enough for the French word on one line.
@@ -747,16 +1067,64 @@ impl FormatPane {
                     .child(state)
                     .into_any_element()
             };
-            options.push(widgets::label(t("Bounds", "Limites")).font_weight(FontWeight::SEMIBOLD).into_any_element());
-            options.push(bound(self, t("Minimum", "Minimum"), Field::AxisMin, axis.min.is_some(), |a| a.min = None, cx, window));
-            options.push(bound(self, t("Maximum", "Maximum"), Field::AxisMax, axis.max.is_some(), |a| a.max = None, cx, window));
-            options.push(widgets::label(t("Units", "Unités")).font_weight(FontWeight::SEMIBOLD).into_any_element());
-            options.push(bound(self, t("Major", "Principale"), Field::AxisMajor, axis.major_unit.is_some(), |a| a.major_unit = None, cx, window));
-            options.push(bound(self, t("Minor", "Secondaire"), Field::AxisMinor, axis.minor_unit.is_some(), |a| a.minor_unit = None, cx, window));
-            options.push(widgets::label(crosses).font_weight(FontWeight::SEMIBOLD).into_any_element());
+            options.push(
+                widgets::label(t("Bounds", "Limites"))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .into_any_element(),
+            );
+            options.push(bound(
+                self,
+                t("Minimum", "Minimum"),
+                Field::AxisMin,
+                axis.min.is_some(),
+                |a| a.min = None,
+                cx,
+                window,
+            ));
+            options.push(bound(
+                self,
+                t("Maximum", "Maximum"),
+                Field::AxisMax,
+                axis.max.is_some(),
+                |a| a.max = None,
+                cx,
+                window,
+            ));
+            options.push(
+                widgets::label(t("Units", "Unités"))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .into_any_element(),
+            );
+            options.push(bound(
+                self,
+                t("Major", "Principale"),
+                Field::AxisMajor,
+                axis.major_unit.is_some(),
+                |a| a.major_unit = None,
+                cx,
+                window,
+            ));
+            options.push(bound(
+                self,
+                t("Minor", "Secondaire"),
+                Field::AxisMinor,
+                axis.minor_unit.is_some(),
+                |a| a.minor_unit = None,
+                cx,
+                window,
+            ));
+            options.push(
+                widgets::label(crosses)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .into_any_element(),
+            );
             options.push(self.radio(
                 "axis-cross",
-                &[t("Automatic", "Automatique"), t("Axis value", "Valeur de l'axe"), t("Maximum axis value", "Valeur maximale de l'axe")],
+                &[
+                    t("Automatic", "Automatique"),
+                    t("Axis value", "Valeur de l'axe"),
+                    t("Maximum axis value", "Valeur maximale de l'axe"),
+                ],
                 Some(crossing),
                 undo,
                 cx,
@@ -771,7 +1139,13 @@ impl FormatPane {
                 },
             ));
             if crossing == 1 {
-                options.push(self.number(t("Axis value", "Valeur de l'axe"), Field::AxisCross, shown, window, cx));
+                options.push(self.number(
+                    t("Axis value", "Valeur de l'axe"),
+                    Field::AxisCross,
+                    shown,
+                    window,
+                    cx,
+                ));
             }
             options.push(self.select(
                 "axis-units",
@@ -785,7 +1159,10 @@ impl FormatPane {
             if axis.display_unit != DisplayUnit::None {
                 options.push(self.check(
                     "axis-unit-label",
-                    t("Show display units label on chart", "Afficher l'étiquette des unités d'affichage sur le graphique"),
+                    t(
+                        "Show display units label on chart",
+                        "Afficher l'étiquette des unités d'affichage sur le graphique",
+                    ),
                     axis.display_unit_label,
                     undo,
                     cx,
@@ -812,7 +1189,11 @@ impl FormatPane {
                 move |chart, _, on| edit(chart, &|a| a.reversed = on),
             ));
         } else {
-            options.push(widgets::label(crosses).font_weight(FontWeight::SEMIBOLD).into_any_element());
+            options.push(
+                widgets::label(crosses)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .into_any_element(),
+            );
             options.push(self.radio(
                 "axis-cross",
                 &[
@@ -834,7 +1215,13 @@ impl FormatPane {
                 },
             ));
             if crossing == 1 {
-                options.push(self.number(t("At category number", "À la catégorie numéro"), Field::AxisCross, shown, window, cx));
+                options.push(self.number(
+                    t("At category number", "À la catégorie numéro"),
+                    Field::AxisCross,
+                    shown,
+                    window,
+                    cx,
+                ));
             }
             options.push(self.check(
                 "axis-reverse",
@@ -846,8 +1233,20 @@ impl FormatPane {
             ));
         }
 
-        const TICKS: [TickMark; 4] = [TickMark::None, TickMark::Inside, TickMark::Outside, TickMark::Cross];
-        let tick_names = || names(&[t("None", "Aucun"), t("Inside", "À l'intérieur"), t("Outside", "À l'extérieur"), t("Cross", "Sur l'axe")]);
+        const TICKS: [TickMark; 4] = [
+            TickMark::None,
+            TickMark::Inside,
+            TickMark::Outside,
+            TickMark::Cross,
+        ];
+        let tick_names = || {
+            names(&[
+                t("None", "Aucun"),
+                t("Inside", "À l'intérieur"),
+                t("Outside", "À l'extérieur"),
+                t("Cross", "Sur l'axe"),
+            ])
+        };
         let ticks = vec![
             self.select(
                 "axis-major-ticks",
@@ -868,11 +1267,21 @@ impl FormatPane {
                 move |chart, _, ix| edit(chart, &|a| a.minor_ticks = TICKS[ix]),
             ),
         ];
-        const LABELS: [TickLabels; 4] = [TickLabels::NextToAxis, TickLabels::High, TickLabels::Low, TickLabels::None];
+        const LABELS: [TickLabels; 4] = [
+            TickLabels::NextToAxis,
+            TickLabels::High,
+            TickLabels::Low,
+            TickLabels::None,
+        ];
         let labels = vec![self.select(
             "axis-labels",
             t("Label Position", "Position de l'étiquette"),
-            names(&[t("Next to Axis", "À côté de l'axe"), t("High", "Haut"), t("Low", "Bas"), t("None", "Aucun")]),
+            names(&[
+                t("Next to Axis", "À côté de l'axe"),
+                t("High", "Haut"),
+                t("Low", "Bas"),
+                t("None", "Aucun"),
+            ]),
             LABELS.iter().position(|l| *l == axis.labels),
             undo,
             cx,
@@ -890,7 +1299,13 @@ impl FormatPane {
     }
 
     /// "Number": the category, the format code, linked to source or not.
-    fn number_section(&mut self, code: Option<&str>, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn number_section(
+        &mut self,
+        code: Option<&str>,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let undo = t("Number Format", "Format de nombre");
         let categories = number_categories(shown.locale);
         let kind = match format::format_kind(code.unwrap_or("General")) {
@@ -900,39 +1315,54 @@ impl FormatPane {
         let store = store_number_format;
         let codes: Vec<String> = categories.iter().map(|(_, _, code)| code.clone()).collect();
         let input = self.input(Field::NumberFormat, shown, window, cx);
-        let body = vec![
-            self.select(
-                "number-category",
-                t("Category", "Catégorie"),
-                categories.iter().map(|(name, ..)| (*name).into()).collect(),
-                categories.iter().position(|(_, k, _)| *k == kind),
-                undo,
-                cx,
-                move |chart, element, ix| {
-                    // "Custom" keeps the code as it is, for the user to change.
-                    if !codes[ix].is_empty() {
-                        store(chart, element, (ix > 0).then(|| codes[ix].clone()));
-                    }
-                },
-            ),
-            widgets::label(t("Format Code", "Code de format")).into_any_element(),
-            div()
-                .flex()
-                .gap(px(6.))
-                .child(TextField::new(&input))
-                .child(Button::new("number-add", t("Add", "Ajouter")).width(64.0).on_click(cx.listener(|this, _, _, cx| {
-                    this.commit_field(Field::NumberFormat, cx)
-                })))
-                .into_any_element(),
-            self.check("number-linked", t("Linked to source", "Lier à la source"), code.is_none(), undo, cx, move |chart, element, on| {
-                if on {
-                    store(chart, element, None);
-                }
-            }),
-            Button::new("number-more", t("More Number Formats…", "Autres formats numériques…"))
+        let body =
+            vec![
+                self.select(
+                    "number-category",
+                    t("Category", "Catégorie"),
+                    categories.iter().map(|(name, ..)| (*name).into()).collect(),
+                    categories.iter().position(|(_, k, _)| *k == kind),
+                    undo,
+                    cx,
+                    move |chart, element, ix| {
+                        // "Custom" keeps the code as it is, for the user to change.
+                        if !codes[ix].is_empty() {
+                            store(chart, element, (ix > 0).then(|| codes[ix].clone()));
+                        }
+                    },
+                ),
+                widgets::label(t("Format Code", "Code de format")).into_any_element(),
+                div()
+                    .flex()
+                    .gap(px(6.))
+                    .child(TextField::new(&input))
+                    .child(
+                        Button::new("number-add", t("Add", "Ajouter"))
+                            .width(64.0)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.commit_field(Field::NumberFormat, cx)
+                            })),
+                    )
+                    .into_any_element(),
+                self.check(
+                    "number-linked",
+                    t("Linked to source", "Lier à la source"),
+                    code.is_none(),
+                    undo,
+                    cx,
+                    move |chart, element, on| {
+                        if on {
+                            store(chart, element, None);
+                        }
+                    },
+                ),
+                Button::new(
+                    "number-more",
+                    t("More Number Formats…", "Autres formats numériques…"),
+                )
                 .on_click(cx.listener(|this, _, window, cx| this.open_number_dialog(window, cx)))
                 .into_any_element(),
-        ];
+            ];
         self.section(t("Number", "Nombre"), cx, body)
     }
 
@@ -942,32 +1372,64 @@ impl FormatPane {
         let weak = self.app.clone();
         self.app
             .update(cx, |app, cx| {
-                let Some(chart) = app.selected_chart() else { return };
+                let Some(chart) = app.selected_chart() else {
+                    return;
+                };
                 let element = app.chart_element();
                 let code = match element {
                     ChartElement::Axis(id) => id.of(&chart.axes).number_format.clone(),
-                    _ => element.series().and_then(|s| chart.series.get(s)).and_then(|s| chart.labels_for(s)).and_then(|l| l.number_format.clone()),
+                    _ => element
+                        .series()
+                        .and_then(|s| chart.series.get(s))
+                        .and_then(|s| chart.labels_for(s))
+                        .and_then(|l| l.number_format.clone()),
                 };
                 let code = code.unwrap_or_else(|| "General".to_string());
-                crate::features::format_cells::open_number_format(app, &code, Value::Number(1234.5), window, cx, move |code, _, cx| {
-                    let code = (!code.eq_ignore_ascii_case("General")).then(|| code.to_string());
-                    weak.update(cx, |app, cx| {
-                        app.edit_chart(t("Number Format", "Format de nombre"), cx, |chart| store_number_format(chart, element, code));
-                    })
-                    .ok();
-                });
+                crate::features::format_cells::open_number_format(
+                    app,
+                    &code,
+                    Value::Number(1234.5),
+                    window,
+                    cx,
+                    move |code, _, cx| {
+                        let code =
+                            (!code.eq_ignore_ascii_case("General")).then(|| code.to_string());
+                        weak.update(cx, |app, cx| {
+                            app.edit_chart(t("Number Format", "Format de nombre"), cx, |chart| {
+                                store_number_format(chart, element, code)
+                            });
+                        })
+                        .ok();
+                    },
+                );
             })
             .ok();
     }
 
-    fn label_sections(&mut self, series: usize, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn label_sections(
+        &mut self,
+        series: usize,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let chart = &shown.chart;
-        let Some(labels) = chart.series.get(series).and_then(|s| chart.labels_for(s)).cloned() else {
+        let Some(labels) = chart
+            .series
+            .get(series)
+            .and_then(|s| chart.labels_for(s))
+            .cloned()
+        else {
             return Vec::new();
         };
         let undo = t("Format Data Labels", "Format des étiquettes de données");
         let (xy, round) = (chart.kind.is_xy(), chart.kind.is_round());
-        let part = |this: &Self, id: &'static str, label: &'static str, on: bool, cx: &mut Context<Self>, set: fn(&mut DataLabels, bool)| {
+        let part = |this: &Self,
+                    id: &'static str,
+                    label: &'static str,
+                    on: bool,
+                    cx: &mut Context<Self>,
+                    set: fn(&mut DataLabels, bool)| {
             this.check(id, label, on, undo, cx, move |chart, element, on| {
                 if let Some(labels) = labels_mut(chart, element) {
                     set(labels, on);
@@ -975,20 +1437,51 @@ impl FormatPane {
             })
         };
         let mut options = vec![
-            widgets::label(t("Label Contains", "Texte de l'étiquette")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
-            part(self, "label-series", t("Series Name", "Nom de série"), labels.series_name, cx, |l, on| l.series_name = on),
+            widgets::label(t("Label Contains", "Texte de l'étiquette"))
+                .font_weight(FontWeight::SEMIBOLD)
+                .into_any_element(),
+            part(
+                self,
+                "label-series",
+                t("Series Name", "Nom de série"),
+                labels.series_name,
+                cx,
+                |l, on| l.series_name = on,
+            ),
             part(
                 self,
                 "label-category",
-                if xy { t("X Value", "Valeur X") } else { t("Category Name", "Nom de catégorie") },
+                if xy {
+                    t("X Value", "Valeur X")
+                } else {
+                    t("Category Name", "Nom de catégorie")
+                },
                 labels.category,
                 cx,
                 |l, on| l.category = on,
             ),
-            part(self, "label-value", if xy { t("Y Value", "Valeur Y") } else { t("Value", "Valeur") }, labels.value, cx, |l, on| l.value = on),
+            part(
+                self,
+                "label-value",
+                if xy {
+                    t("Y Value", "Valeur Y")
+                } else {
+                    t("Value", "Valeur")
+                },
+                labels.value,
+                cx,
+                |l, on| l.value = on,
+            ),
         ];
         if round {
-            options.push(part(self, "label-percent", t("Percentage", "Pourcentage"), labels.percent, cx, |l, on| l.percent = on));
+            options.push(part(
+                self,
+                "label-percent",
+                t("Percentage", "Pourcentage"),
+                labels.percent,
+                cx,
+                |l, on| l.percent = on,
+            ));
             options.push(part(
                 self,
                 "label-leader",
@@ -999,12 +1492,27 @@ impl FormatPane {
             ));
         }
         if chart.kind.family() == Family::Bubble {
-            options.push(part(self, "label-size", t("Bubble Size", "Taille de la bulle"), labels.bubble_size, cx, |l, on| l.bubble_size = on));
+            options.push(part(
+                self,
+                "label-size",
+                t("Bubble Size", "Taille de la bulle"),
+                labels.bubble_size,
+                cx,
+                |l, on| l.bubble_size = on,
+            ));
         }
-        options.push(part(self, "label-key", t("Legend key", "Symbole de légende"), labels.legend_key, cx, |l, on| l.legend_key = on));
+        options.push(part(
+            self,
+            "label-key",
+            t("Legend key", "Symbole de légende"),
+            labels.legend_key,
+            cx,
+            |l, on| l.legend_key = on,
+        ));
         // The separators Excel lists; the first is the automatic one.
         let auto = format!("{} ", shown.locale.arg_sep);
-        let separators: [Option<&'static str>; 5] = [None, Some("; "), Some(". "), Some("\n"), Some(" ")];
+        let separators: [Option<&'static str>; 5] =
+            [None, Some("; "), Some(". "), Some("\n"), Some(" ")];
         let separator_names = vec![
             SharedString::from(match shown.locale.arg_sep {
                 ',' => t(", (comma)", ", (virgule)"),
@@ -1020,14 +1528,26 @@ impl FormatPane {
             Some(text) if text == auto => Some(0),
             Some(text) => separators.iter().position(|s| *s == Some(text)),
         };
-        options.push(self.select("label-separator", t("Separator", "Séparateur"), separator_names, current, undo, cx, move |chart, element, ix| {
-            if let Some(labels) = labels_mut(chart, element) {
-                labels.separator = separators[ix].map(str::to_string);
-            }
-        }));
+        options.push(self.select(
+            "label-separator",
+            t("Separator", "Séparateur"),
+            separator_names,
+            current,
+            undo,
+            cx,
+            move |chart, element, ix| {
+                if let Some(labels) = labels_mut(chart, element) {
+                    labels.separator = separators[ix].map(str::to_string);
+                }
+            },
+        ));
         let positions = crate::features::charts::label_positions(chart);
         if !positions.is_empty() {
-            options.push(widgets::label(t("Label Position", "Position de l'étiquette")).font_weight(FontWeight::SEMIBOLD).into_any_element());
+            options.push(
+                widgets::label(t("Label Position", "Position de l'étiquette"))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .into_any_element(),
+            );
             let places: Vec<LabelPosition> = positions.iter().map(|(p, _)| *p).collect();
             let titles: Vec<&'static str> = positions.iter().map(|(_, name)| *name).collect();
             // Automatic is one of them: Excel shows it ticked.
@@ -1037,12 +1557,23 @@ impl FormatPane {
                 Family::Pie => LabelPosition::BestFit,
                 _ => LabelPosition::Right,
             };
-            let at = if labels.position == LabelPosition::Auto { automatic } else { labels.position };
-            options.push(self.radio("label-position", &titles, places.iter().position(|p| *p == at), undo, cx, move |chart, element, ix| {
-                if let Some(labels) = labels_mut(chart, element) {
-                    labels.position = places[ix];
-                }
-            }));
+            let at = if labels.position == LabelPosition::Auto {
+                automatic
+            } else {
+                labels.position
+            };
+            options.push(self.radio(
+                "label-position",
+                &titles,
+                places.iter().position(|p| *p == at),
+                undo,
+                cx,
+                move |chart, element, ix| {
+                    if let Some(labels) = labels_mut(chart, element) {
+                        labels.position = places[ix];
+                    }
+                },
+            ));
         }
         vec![
             self.section(t("Label Options", "Options d'étiquette"), cx, options),
@@ -1050,17 +1581,34 @@ impl FormatPane {
         ]
     }
 
-    fn trendline_options(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn trendline_options(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let ChartElement::Trendline(s, i) = shown.element else {
             return div().into_any_element();
         };
-        let Some(trend) = shown.chart.series.get(s as usize).and_then(|x| x.trendlines.get(i as usize)).cloned() else {
+        let Some(trend) = shown
+            .chart
+            .series
+            .get(s as usize)
+            .and_then(|x| x.trendlines.get(i as usize))
+            .cloned()
+        else {
             return div().into_any_element();
         };
         let undo = t("Format Trendline", "Format de courbe de tendance");
-        let edit = |chart: &mut Chart, element: ChartElement, f: &dyn Fn(&mut opensheet_engine::chart::Trendline)| {
+        let edit = |chart: &mut Chart,
+                    element: ChartElement,
+                    f: &dyn Fn(&mut opensheet_engine::chart::Trendline)| {
             if let ChartElement::Trendline(s, i) = element {
-                if let Some(trend) = chart.series.get_mut(s as usize).and_then(|x| x.trendlines.get_mut(i as usize)) {
+                if let Some(trend) = chart
+                    .series
+                    .get_mut(s as usize)
+                    .and_then(|x| x.trendlines.get_mut(i as usize))
+                {
                     f(trend);
                 }
             }
@@ -1100,44 +1648,99 @@ impl FormatPane {
             },
         )];
         match trend.kind {
-            TrendKind::Polynomial(_) => body.push(self.number(crate::i18n::t_ctx("trendline", "Order", "Degré"), Field::TrendOrder, shown, window, cx)),
-            TrendKind::MovingAverage(_) => body.push(self.number(t("Period", "Période"), Field::TrendPeriod, shown, window, cx)),
+            TrendKind::Polynomial(_) => body.push(self.number(
+                crate::i18n::t_ctx("trendline", "Order", "Degré"),
+                Field::TrendOrder,
+                shown,
+                window,
+                cx,
+            )),
+            TrendKind::MovingAverage(_) => body.push(self.number(
+                t("Period", "Période"),
+                Field::TrendPeriod,
+                shown,
+                window,
+                cx,
+            )),
             _ => {}
         }
-        body.push(widgets::label(t("Trendline Name", "Nom de la courbe de tendance")).font_weight(FontWeight::SEMIBOLD).into_any_element());
+        body.push(
+            widgets::label(t("Trendline Name", "Nom de la courbe de tendance"))
+                .font_weight(FontWeight::SEMIBOLD)
+                .into_any_element(),
+        );
         body.push(self.radio(
             "trend-name",
             &[t("Automatic", "Automatique"), t("Custom", "Personnalisé")],
             Some(trend.name.is_some() as usize),
             undo,
             cx,
-            move |chart, element, ix| edit(chart, element, &|t| t.name = (ix == 1).then(|| t.name.clone().unwrap_or_default())),
+            move |chart, element, ix| {
+                edit(chart, element, &|t| {
+                    t.name = (ix == 1).then(|| t.name.clone().unwrap_or_default())
+                })
+            },
         ));
         if trend.name.is_some() {
             let input = self.input(Field::TrendName, shown, window, cx);
-            body.push(div().flex().child(TextField::new(&input)).into_any_element());
+            body.push(
+                div()
+                    .flex()
+                    .child(TextField::new(&input))
+                    .into_any_element(),
+            );
         }
         let moving = matches!(trend.kind, TrendKind::MovingAverage(_));
         if !moving {
-            body.push(widgets::label(t("Forecast", "Prévision")).font_weight(FontWeight::SEMIBOLD).into_any_element());
-            body.push(self.number(t("Forward (periods)", "Suivant (périodes)"), Field::Forward, shown, window, cx));
-            body.push(self.number(t("Backward (periods)", "En arrière (périodes)"), Field::Backward, shown, window, cx));
-            if matches!(trend.kind, TrendKind::Linear | TrendKind::Polynomial(_) | TrendKind::Exponential) {
+            body.push(
+                widgets::label(t("Forecast", "Prévision"))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .into_any_element(),
+            );
+            body.push(self.number(
+                t("Forward (periods)", "Suivant (périodes)"),
+                Field::Forward,
+                shown,
+                window,
+                cx,
+            ));
+            body.push(self.number(
+                t("Backward (periods)", "En arrière (périodes)"),
+                Field::Backward,
+                shown,
+                window,
+                cx,
+            ));
+            if matches!(
+                trend.kind,
+                TrendKind::Linear | TrendKind::Polynomial(_) | TrendKind::Exponential
+            ) {
                 body.push(self.check(
                     "trend-intercept",
                     t("Set Intercept", "Définir l'interception"),
                     trend.intercept.is_some(),
                     undo,
                     cx,
-                    move |chart, element, on| edit(chart, element, &|t| t.intercept = on.then_some(0.0)),
+                    move |chart, element, on| {
+                        edit(chart, element, &|t| t.intercept = on.then_some(0.0))
+                    },
                 ));
                 if trend.intercept.is_some() {
-                    body.push(self.number(t("Intercept", "Interception"), Field::Intercept, shown, window, cx));
+                    body.push(self.number(
+                        t("Intercept", "Interception"),
+                        Field::Intercept,
+                        shown,
+                        window,
+                        cx,
+                    ));
                 }
             }
             body.push(self.check(
                 "trend-equation",
-                t("Display Equation on chart", "Afficher l'équation sur le graphique"),
+                t(
+                    "Display Equation on chart",
+                    "Afficher l'équation sur le graphique",
+                ),
                 trend.show_equation,
                 undo,
                 cx,
@@ -1155,20 +1758,41 @@ impl FormatPane {
                 move |chart, element, on| edit(chart, element, &|t| t.show_r2 = on),
             ));
         }
-        self.section(t("Trendline Options", "Options de courbe de tendance"), cx, body)
+        self.section(
+            t("Trendline Options", "Options de courbe de tendance"),
+            cx,
+            body,
+        )
     }
 
-    fn error_bar_options(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn error_bar_options(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let ChartElement::ErrorBars(s, i) = shown.element else {
             return div().into_any_element();
         };
-        let Some(bars) = shown.chart.series.get(s as usize).and_then(|x| x.error_bars.get(i as usize)).cloned() else {
+        let Some(bars) = shown
+            .chart
+            .series
+            .get(s as usize)
+            .and_then(|x| x.error_bars.get(i as usize))
+            .cloned()
+        else {
             return div().into_any_element();
         };
         let undo = t("Format Error Bars", "Format des barres d'erreur");
-        let edit = |chart: &mut Chart, element: ChartElement, f: &dyn Fn(&mut opensheet_engine::chart::ErrorBars)| {
+        let edit = |chart: &mut Chart,
+                    element: ChartElement,
+                    f: &dyn Fn(&mut opensheet_engine::chart::ErrorBars)| {
             if let ChartElement::ErrorBars(s, i) = element {
-                if let Some(bars) = chart.series.get_mut(s as usize).and_then(|x| x.error_bars.get_mut(i as usize)) {
+                if let Some(bars) = chart
+                    .series
+                    .get_mut(s as usize)
+                    .and_then(|x| x.error_bars.get_mut(i as usize))
+                {
                     f(bars);
                 }
             }
@@ -1179,32 +1803,49 @@ impl FormatPane {
             ErrorAmount::StdDev(_) => 2,
             ErrorAmount::StdErr => 3,
         };
-        const DIRECTIONS: [ErrorDirection; 3] = [ErrorDirection::Both, ErrorDirection::Minus, ErrorDirection::Plus];
+        const DIRECTIONS: [ErrorDirection; 3] = [
+            ErrorDirection::Both,
+            ErrorDirection::Minus,
+            ErrorDirection::Plus,
+        ];
         let title = if bars.horizontal {
             t("Horizontal Error Bar", "Barre d'erreur horizontale")
         } else {
             t("Vertical Error Bar", "Barre d'erreur verticale")
         };
         let mut body = vec![
-            widgets::label(t("Direction", "Direction")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
+            widgets::label(t("Direction", "Direction"))
+                .font_weight(FontWeight::SEMIBOLD)
+                .into_any_element(),
             self.radio(
                 "error-direction",
-                &[t("Both", "Les deux"), t("Minus", "Moins"), t("Plus", "Plus")],
+                &[
+                    t("Both", "Les deux"),
+                    t("Minus", "Moins"),
+                    t("Plus", "Plus"),
+                ],
                 DIRECTIONS.iter().position(|d| *d == bars.direction),
                 undo,
                 cx,
                 move |chart, element, ix| edit(chart, element, &|b| b.direction = DIRECTIONS[ix]),
             ),
-            widgets::label(t("End Style", "Style d'extrémité")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
+            widgets::label(t("End Style", "Style d'extrémité"))
+                .font_weight(FontWeight::SEMIBOLD)
+                .into_any_element(),
             self.radio(
                 "error-cap",
-                &[t("No Cap", "Sans empattement"), t("Cap", "Avec empattement")],
+                &[
+                    t("No Cap", "Sans empattement"),
+                    t("Cap", "Avec empattement"),
+                ],
                 Some(bars.end_cap as usize),
                 undo,
                 cx,
                 move |chart, element, ix| edit(chart, element, &|b| b.end_cap = ix == 1),
             ),
-            widgets::label(t("Error Amount", "Marge d'erreur")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
+            widgets::label(t("Error Amount", "Marge d'erreur"))
+                .font_weight(FontWeight::SEMIBOLD)
+                .into_any_element(),
             self.radio(
                 "error-amount",
                 &[
@@ -1229,26 +1870,67 @@ impl FormatPane {
             ),
         ];
         match bars.amount {
-            ErrorAmount::Fixed(_) => body.push(self.number(t("Fixed value", "Valeur fixe"), Field::ErrorFixed, shown, window, cx)),
-            ErrorAmount::Percent(_) => body.push(self.number(t("Percentage", "Pourcentage"), Field::ErrorPercent, shown, window, cx)),
-            ErrorAmount::StdDev(_) => body.push(self.number(t("Standard deviation(s)", "Écarts types"), Field::ErrorStdDev, shown, window, cx)),
+            ErrorAmount::Fixed(_) => body.push(self.number(
+                t("Fixed value", "Valeur fixe"),
+                Field::ErrorFixed,
+                shown,
+                window,
+                cx,
+            )),
+            ErrorAmount::Percent(_) => body.push(self.number(
+                t("Percentage", "Pourcentage"),
+                Field::ErrorPercent,
+                shown,
+                window,
+                cx,
+            )),
+            ErrorAmount::StdDev(_) => body.push(self.number(
+                t("Standard deviation(s)", "Écarts types"),
+                Field::ErrorStdDev,
+                shown,
+                window,
+                cx,
+            )),
             ErrorAmount::StdErr => {}
         }
         self.section(title, cx, body)
     }
 
-    fn rotation_section(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn rotation_section(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let chart = &shown.chart;
         let view = chart.view3d_or_default();
         let undo = t("3-D Rotation", "Rotation 3D");
         let pie = chart.kind.family() == Family::Pie;
         let mut body = vec![
-            self.number(t("X Rotation", "Rotation X"), Field::RotationX, shown, window, cx),
-            self.number(t("Y Rotation", "Rotation Y"), Field::RotationY, shown, window, cx),
+            self.number(
+                t("X Rotation", "Rotation X"),
+                Field::RotationX,
+                shown,
+                window,
+                cx,
+            ),
+            self.number(
+                t("Y Rotation", "Rotation Y"),
+                Field::RotationY,
+                shown,
+                window,
+                cx,
+            ),
         ];
         if !pie {
             if !view.right_angle_axes {
-                body.push(self.number(t("Perspective", "Perspective"), Field::Perspective, shown, window, cx));
+                body.push(self.number(
+                    t("Perspective", "Perspective"),
+                    Field::Perspective,
+                    shown,
+                    window,
+                    cx,
+                ));
             }
             body.push(self.check(
                 "view-right-angle",
@@ -1264,17 +1946,30 @@ impl FormatPane {
                 },
             ));
         }
-        body.push(self.number(t("Depth (% of base)", "Profondeur (% de la base)"), Field::Depth, shown, window, cx));
+        body.push(self.number(
+            t("Depth (% of base)", "Profondeur (% de la base)"),
+            Field::Depth,
+            shown,
+            window,
+            cx,
+        ));
         body.push(
             Button::new("view-default", t("Default Rotation", "Rotation par défaut"))
-                .on_click(cx.listener(move |this, _, _, cx| this.apply(undo, cx, |chart, _| chart.view3d = None)))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.apply(undo, cx, |chart, _| chart.view3d = None)
+                }))
                 .into_any_element(),
         );
         self.section(undo, cx, body)
     }
 
     /// The tabs of the pane for an element: (title, sections).
-    fn tabs(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<(&'static str, Vec<AnyElement>)> {
+    fn tabs(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<(&'static str, Vec<AnyElement>)> {
         let mut tabs = self.element_tabs(shown, window, cx);
         // Whatever is written has its "Text Options" page.
         if text_of(&shown.chart, shown.element).is_some() {
@@ -1284,24 +1979,47 @@ impl FormatPane {
     }
 
     /// The pages of options of the selected element itself.
-    fn element_tabs(&mut self, shown: &Shown, window: &mut Window, cx: &mut Context<Self>) -> Vec<(&'static str, Vec<AnyElement>)> {
+    fn element_tabs(
+        &mut self,
+        shown: &Shown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<(&'static str, Vec<AnyElement>)> {
         let chart = &shown.chart;
         let fill_and_line = t("Fill & Line", "Remplissage et contour");
         let border = t("Border", "Bordure");
         match shown.element {
             ChartElement::ChartArea => {
-                let mut tabs = vec![(fill_and_line, vec![self.fill_section(shown, true, cx), self.line_section(border, shown, window, cx)])];
+                let mut tabs = vec![(
+                    fill_and_line,
+                    vec![
+                        self.fill_section(shown, true, cx),
+                        self.line_section(border, shown, window, cx),
+                    ],
+                )];
                 if chart.kind.is_3d() {
-                    tabs.push((t("Effects", "Effets"), vec![self.rotation_section(shown, window, cx)]));
+                    tabs.push((
+                        t("Effects", "Effets"),
+                        vec![self.rotation_section(shown, window, cx)],
+                    ));
                 }
                 let size = vec![
                     self.number(t("Height", "Hauteur"), Field::Height, shown, window, cx),
                     self.number(t("Width", "Largeur"), Field::Width, shown, window, cx),
                 ];
-                tabs.push((t("Size & Properties", "Taille et propriétés"), vec![self.section(t("Size", "Taille"), cx, size)]));
+                tabs.push((
+                    t("Size & Properties", "Taille et propriétés"),
+                    vec![self.section(t("Size", "Taille"), cx, size)],
+                ));
                 tabs
             }
-            ChartElement::PlotArea => vec![(fill_and_line, vec![self.fill_section(shown, true, cx), self.line_section(border, shown, window, cx)])],
+            ChartElement::PlotArea => vec![(
+                fill_and_line,
+                vec![
+                    self.fill_section(shown, true, cx),
+                    self.line_section(border, shown, window, cx),
+                ],
+            )],
             ChartElement::Series(s) => {
                 let mut first = Vec::new();
                 if is_lined(chart, s as usize) {
@@ -1312,53 +2030,104 @@ impl FormatPane {
                     first.push(self.fill_section(shown, false, cx));
                     first.push(self.line_section(border, shown, window, cx));
                 }
-                vec![(fill_and_line, first), (t("Series Options", "Options des séries"), vec![self.series_options(shown, window, cx)])]
+                vec![
+                    (fill_and_line, first),
+                    (
+                        t("Series Options", "Options des séries"),
+                        vec![self.series_options(shown, window, cx)],
+                    ),
+                ]
             }
             ChartElement::Point(..) => vec![
                 (fill_and_line, vec![self.fill_section(shown, false, cx)]),
-                (t("Series Options", "Options des séries"), vec![self.series_options(shown, window, cx)]),
+                (
+                    t("Series Options", "Options des séries"),
+                    vec![self.series_options(shown, window, cx)],
+                ),
             ],
             ChartElement::Axis(id) => vec![
-                (t("Axis Options", "Options d'axe"), self.axis_sections(id, shown, window, cx)),
-                (fill_and_line, vec![self.line_section(t("Line", "Trait"), shown, window, cx)]),
+                (
+                    t("Axis Options", "Options d'axe"),
+                    self.axis_sections(id, shown, window, cx),
+                ),
+                (
+                    fill_and_line,
+                    vec![self.line_section(t("Line", "Trait"), shown, window, cx)],
+                ),
             ],
             ChartElement::MajorGridlines(id) | ChartElement::MinorGridlines(id) => {
                 let axis = id.of(&chart.axes);
                 let undo = t("Gridlines", "Quadrillage");
                 let body = vec![
-                    widgets::label(axis_name(chart, id)).text_color(c(theme::TEXT_MUTED)).into_any_element(),
-                    self.check("grid-major", t("Major Gridlines", "Quadrillage principal"), axis.major_gridlines, undo, cx, move |chart, _, on| {
-                        id.of_mut(&mut chart.axes).major_gridlines = on
-                    }),
-                    self.check("grid-minor", t("Minor Gridlines", "Quadrillage secondaire"), axis.minor_gridlines, undo, cx, move |chart, _, on| {
-                        id.of_mut(&mut chart.axes).minor_gridlines = on
-                    }),
+                    widgets::label(axis_name(chart, id))
+                        .text_color(c(theme::TEXT_MUTED))
+                        .into_any_element(),
+                    self.check(
+                        "grid-major",
+                        t("Major Gridlines", "Quadrillage principal"),
+                        axis.major_gridlines,
+                        undo,
+                        cx,
+                        move |chart, _, on| id.of_mut(&mut chart.axes).major_gridlines = on,
+                    ),
+                    self.check(
+                        "grid-minor",
+                        t("Minor Gridlines", "Quadrillage secondaire"),
+                        axis.minor_gridlines,
+                        undo,
+                        cx,
+                        move |chart, _, on| id.of_mut(&mut chart.axes).minor_gridlines = on,
+                    ),
                 ];
                 let title = match shown.element {
-                    ChartElement::MajorGridlines(_) => t("Major Gridline Options", "Options de quadrillage principal"),
-                    _ => t("Minor Gridline Options", "Options de quadrillage secondaire"),
+                    ChartElement::MajorGridlines(_) => {
+                        t("Major Gridline Options", "Options de quadrillage principal")
+                    }
+                    _ => t(
+                        "Minor Gridline Options",
+                        "Options de quadrillage secondaire",
+                    ),
                 };
                 // As in Excel, how the lines are drawn comes first.
-                vec![(fill_and_line, vec![self.line_section(t("Line", "Trait"), shown, window, cx)]), (title, vec![self.section(title, cx, body)])]
+                vec![
+                    (
+                        fill_and_line,
+                        vec![self.line_section(t("Line", "Trait"), shown, window, cx)],
+                    ),
+                    (title, vec![self.section(title, cx, body)]),
+                ]
             }
             ChartElement::Title => {
                 let undo = t("Chart Title", "Titre du graphique");
                 let input = self.input(Field::Text, shown, window, cx);
                 let body = vec![
-                    widgets::label(t("Title Position", "Position du titre")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
+                    widgets::label(t("Title Position", "Position du titre"))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .into_any_element(),
                     self.radio(
                         "title-position",
-                        &[t("Above Chart", "Au-dessus du graphique"), t("Centered Overlay", "Superposé centré")],
+                        &[
+                            t("Above Chart", "Au-dessus du graphique"),
+                            t("Centered Overlay", "Superposé centré"),
+                        ],
                         Some(chart.title_overlay as usize),
                         undo,
                         cx,
                         |chart, _, ix| chart.title_overlay = ix == 1,
                     ),
-                    widgets::label(t("Text", "Texte")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
-                    div().flex().child(TextField::new(&input)).into_any_element(),
+                    widgets::label(t("Text", "Texte"))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .into_any_element(),
+                    div()
+                        .flex()
+                        .child(TextField::new(&input))
+                        .into_any_element(),
                     self.check(
                         "title-auto",
-                        t("Automatic (the name of the series)", "Automatique (le nom de la série)"),
+                        t(
+                            "Automatic (the name of the series)",
+                            "Automatique (le nom de la série)",
+                        ),
                         chart.title == ChartTitle::Auto,
                         undo,
                         cx,
@@ -1375,20 +2144,39 @@ impl FormatPane {
             ChartElement::AxisTitle(_) => {
                 let input = self.input(Field::Text, shown, window, cx);
                 let body = vec![
-                    widgets::label(t("Text", "Texte")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
-                    div().flex().child(TextField::new(&input)).into_any_element(),
+                    widgets::label(t("Text", "Texte"))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .into_any_element(),
+                    div()
+                        .flex()
+                        .child(TextField::new(&input))
+                        .into_any_element(),
                 ];
                 let title = t("Title Options", "Options de titre");
                 vec![(title, vec![self.section(title, cx, body)])]
             }
             ChartElement::Legend | ChartElement::LegendEntry(_) => {
-                const PLACES: [LegendPos; 5] = [LegendPos::Top, LegendPos::Bottom, LegendPos::Left, LegendPos::Right, LegendPos::TopRight];
+                const PLACES: [LegendPos; 5] = [
+                    LegendPos::Top,
+                    LegendPos::Bottom,
+                    LegendPos::Left,
+                    LegendPos::Right,
+                    LegendPos::TopRight,
+                ];
                 let undo = t("Legend", "Légende");
                 let body = vec![
-                    widgets::label(t("Legend Position", "Position de la légende")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
+                    widgets::label(t("Legend Position", "Position de la légende"))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .into_any_element(),
                     self.radio(
                         "legend-position",
-                        &[t("Top", "Haut"), t("Bottom", "Bas"), t("Left", "Gauche"), t("Right", "Droite"), t("Top Right", "Haut à droite")],
+                        &[
+                            t("Top", "Haut"),
+                            t("Bottom", "Bas"),
+                            t("Left", "Gauche"),
+                            t("Right", "Droite"),
+                            t("Top Right", "Haut à droite"),
+                        ],
                         PLACES.iter().position(|p| *p == chart.legend),
                         undo,
                         cx,
@@ -1414,18 +2202,35 @@ impl FormatPane {
                 let title = t("Legend Options", "Options de légende");
                 vec![(title, vec![self.section(title, cx, body)])]
             }
-            ChartElement::DataLabels(s) => vec![(t("Label Options", "Options d'étiquette"), self.label_sections(s as usize, shown, window, cx))],
+            ChartElement::DataLabels(s) => vec![(
+                t("Label Options", "Options d'étiquette"),
+                self.label_sections(s as usize, shown, window, cx),
+            )],
             ChartElement::Trendline(..) => vec![
-                (t("Trendline Options", "Options de courbe de tendance"), vec![self.trendline_options(shown, window, cx)]),
-                (fill_and_line, vec![self.line_section(t("Line", "Trait"), shown, window, cx)]),
+                (
+                    t("Trendline Options", "Options de courbe de tendance"),
+                    vec![self.trendline_options(shown, window, cx)],
+                ),
+                (
+                    fill_and_line,
+                    vec![self.line_section(t("Line", "Trait"), shown, window, cx)],
+                ),
             ],
             ChartElement::ErrorBars(..) => {
-                vec![(t("Error Bar Options", "Options de barre d'erreur"), vec![self.error_bar_options(shown, window, cx)])]
+                vec![(
+                    t("Error Bar Options", "Options de barre d'erreur"),
+                    vec![self.error_bar_options(shown, window, cx)],
+                )]
             }
             ChartElement::DataTable => {
                 let table = chart.data_table.unwrap_or_default();
                 let undo = t("Data Table", "Table de données");
-                let part = |this: &Self, id: &'static str, label: &'static str, on: bool, cx: &mut Context<Self>, set: fn(&mut DataTable, bool)| {
+                let part = |this: &Self,
+                            id: &'static str,
+                            label: &'static str,
+                            on: bool,
+                            cx: &mut Context<Self>,
+                            set: fn(&mut DataTable, bool)| {
                     this.check(id, label, on, undo, cx, move |chart, _, on| {
                         let mut table = chart.data_table.unwrap_or_default();
                         set(&mut table, on);
@@ -1433,13 +2238,41 @@ impl FormatPane {
                     })
                 };
                 let body = vec![
-                    widgets::label(t("Table Borders", "Bordures de tableau")).font_weight(FontWeight::SEMIBOLD).into_any_element(),
-                    part(self, "table-horizontal", t("Horizontal", "Horizontal"), table.horizontal_lines, cx, |t, on| t.horizontal_lines = on),
-                    part(self, "table-vertical", t("Vertical", "Vertical"), table.vertical_lines, cx, |t, on| t.vertical_lines = on),
-                    part(self, "table-outline", t("Outline", "Contour"), table.outline, cx, |t, on| t.outline = on),
-                    part(self, "table-keys", t("Show legend keys", "Afficher les symboles de légende"), table.legend_keys, cx, |t, on| {
-                        t.legend_keys = on
-                    }),
+                    widgets::label(t("Table Borders", "Bordures de tableau"))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .into_any_element(),
+                    part(
+                        self,
+                        "table-horizontal",
+                        t("Horizontal", "Horizontal"),
+                        table.horizontal_lines,
+                        cx,
+                        |t, on| t.horizontal_lines = on,
+                    ),
+                    part(
+                        self,
+                        "table-vertical",
+                        t("Vertical", "Vertical"),
+                        table.vertical_lines,
+                        cx,
+                        |t, on| t.vertical_lines = on,
+                    ),
+                    part(
+                        self,
+                        "table-outline",
+                        t("Outline", "Contour"),
+                        table.outline,
+                        cx,
+                        |t, on| t.outline = on,
+                    ),
+                    part(
+                        self,
+                        "table-keys",
+                        t("Show legend keys", "Afficher les symboles de légende"),
+                        table.legend_keys,
+                        cx,
+                        |t, on| t.legend_keys = on,
+                    ),
                 ];
                 let title = t("Data Table Options", "Options de table de données");
                 vec![(title, vec![self.section(title, cx, body)])]
@@ -1485,7 +2318,16 @@ impl Render for FormatPane {
                     let data = app.wb.chart_data(app.sheet, chart);
                     let zoom = app.zoom;
                     let size = (chart.size.0 * zoom, chart.size.1 * zoom);
-                    chart_view::layout(chart, &data, size, zoom, window.text_system(), &app.chart_style()).scale(id).cloned()
+                    chart_view::layout(
+                        chart,
+                        &data,
+                        size,
+                        zoom,
+                        window.text_system(),
+                        &app.chart_style(),
+                    )
+                    .scale(id)
+                    .cloned()
                 }
                 _ => None,
             };
@@ -1500,7 +2342,10 @@ impl Render for FormatPane {
             return div()
                 .p(px(14.))
                 .text_color(c(theme::TEXT_MUTED))
-                .child(t("Select a chart to format it.", "Sélectionnez un graphique pour le mettre en forme."))
+                .child(t(
+                    "Select a chart to format it.",
+                    "Sélectionnez un graphique pour le mettre en forme.",
+                ))
                 .into_any_element();
         };
         let key = (shown.chart.id, shown.element);
@@ -1510,7 +2355,11 @@ impl Render for FormatPane {
         self.refill = false;
         let tab = self.tab.min(tabs.len().saturating_sub(1));
         let titles: Vec<SharedString> = tabs.iter().map(|(title, _)| (*title).into()).collect();
-        let sections = tabs.into_iter().nth(tab).map(|(_, sections)| sections).unwrap_or_default();
+        let sections = tabs
+            .into_iter()
+            .nth(tab)
+            .map(|(_, sections)| sections)
+            .unwrap_or_default();
         div()
             .id("chart-format-pane")
             .size_full()
@@ -1518,12 +2367,14 @@ impl Render for FormatPane {
             .flex_col()
             .overflow_y_scroll()
             .when(titles.len() > 1, |d| {
-                d.child(div().px(px(8.)).child(TabStrip::new("chart-format-tabs", titles, tab).on_change(cx.listener(
-                    |this, ix: &usize, _, cx| {
-                        this.tab = *ix;
-                        cx.notify();
-                    },
-                ))))
+                d.child(div().px(px(8.)).child(
+                    TabStrip::new("chart-format-tabs", titles, tab).on_change(cx.listener(
+                        |this, ix: &usize, _, cx| {
+                            this.tab = *ix;
+                            cx.notify();
+                        },
+                    )),
+                ))
             })
             .children(sections)
             .into_any_element()

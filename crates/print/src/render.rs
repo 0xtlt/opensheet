@@ -7,19 +7,22 @@
 //! points from the top-left corner of the paper.
 
 use crate::fonts::{Face, FontDb};
-use crate::{NotesLine, ObjectPainter};
 use crate::image::Image;
 use crate::scene::{Canvas, LineCap, Paint, Path, RectF, Scene, Stroke};
-use opensheet_engine::sparkline::SparkShape;
+use crate::{NotesLine, ObjectPainter};
+use opensheet_engine::comment::{Comment, Note};
 use opensheet_engine::features::CellDisplay;
 use opensheet_engine::format;
-use opensheet_engine::comment::{Comment, Note};
 use opensheet_engine::page::{
-    self, CELL_PADDING, HfContext, HfRun, HfSection, HfSections, HfSlot, INDENT_WIDTH, ObjectKind, Page, PageLayout,
-    PageSetup, Pagination, PrintComments, PrintErrors, Script, Span, axis_offset, visible_col_width,
+    self, CELL_PADDING, HfContext, HfRun, HfSection, HfSections, HfSlot, INDENT_WIDTH, ObjectKind,
+    Page, PageLayout, PageSetup, Pagination, PrintComments, PrintErrors, Script, Span, axis_offset,
+    visible_col_width,
 };
 use opensheet_engine::refs::{MAX_COLS, Rect, cell_name, col_to_letters};
-use opensheet_engine::style::{Border, BorderStyle, Borders, Color, HAlign, Style, StyleId, Underline, VAlign};
+use opensheet_engine::sparkline::SparkShape;
+use opensheet_engine::style::{
+    Border, BorderStyle, Borders, Color, HAlign, Style, StyleId, Underline, VAlign,
+};
 use opensheet_engine::value::Value;
 use opensheet_engine::workbook::{Content, Sheet, Workbook};
 use std::collections::HashSet;
@@ -79,7 +82,12 @@ impl Pane<'_> {
     fn bounds(&self) -> RectF {
         let (c0, c1) = (self.cols[0], self.cols[self.cols.len() - 1]);
         let (r0, r1) = (self.rows[0], self.rows[self.rows.len() - 1]);
-        RectF::new(c0.pos, r0.pos, c1.pos + c1.size - c0.pos, r1.pos + r1.size - r0.pos)
+        RectF::new(
+            c0.pos,
+            r0.pos,
+            c1.pos + c1.size - c0.pos,
+            r1.pos + r1.size - r0.pos,
+        )
     }
 
     /// The cells of the pane as a sheet rectangle.
@@ -105,14 +113,18 @@ impl Pane<'_> {
     fn col_x(&self, sheet: &Sheet, col: u32) -> f64 {
         match self.col_index(col) {
             Some(j) => self.cols[j].pos,
-            None => self.cols[0].pos + (axis_offset(sheet, false, col) - self.origin_px.0) * self.unit,
+            None => {
+                self.cols[0].pos + (axis_offset(sheet, false, col) - self.origin_px.0) * self.unit
+            }
         }
     }
 
     fn row_y(&self, sheet: &Sheet, row: u32) -> f64 {
         match self.row_index(row) {
             Some(i) => self.rows[i].pos,
-            None => self.rows[0].pos + (axis_offset(sheet, true, row) - self.origin_px.1) * self.unit,
+            None => {
+                self.rows[0].pos + (axis_offset(sheet, true, row) - self.origin_px.1) * self.unit
+            }
         }
     }
 
@@ -165,7 +177,13 @@ struct CellText {
 
 /// Break text into lines no wider than `max_width`, at spaces where
 /// possible. Each line says whether it ends a paragraph.
-fn wrap_text(fonts: &FontDb, face: &Arc<Face>, size: f64, text: &str, max_width: f64) -> Vec<(String, bool)> {
+fn wrap_text(
+    fonts: &FontDb,
+    face: &Arc<Face>,
+    size: f64,
+    text: &str,
+    max_width: f64,
+) -> Vec<(String, bool)> {
     let mut out: Vec<(String, bool)> = Vec::new();
     for paragraph in text.split('\n') {
         let paragraph = paragraph.trim_end_matches('\r');
@@ -267,7 +285,15 @@ impl<'a> Renderer<'a> {
 
     /// Lay out the text of the cell at (row, col), which occupies `cell`
     /// on paper (a whole merged area when `merged`).
-    fn plan_text(&self, pane: &Pane, row: u32, col: u32, cell: RectF, merged: bool, style: &Style) -> Option<CellText> {
+    fn plan_text(
+        &self,
+        pane: &Pane,
+        row: u32,
+        col: u32,
+        cell: RectF,
+        merged: bool,
+        style: &Style,
+    ) -> Option<CellText> {
         let wb = self.job.wb;
         let sh = self.sh;
         let value = sh.value_at(row, col);
@@ -281,7 +307,12 @@ impl<'a> Renderer<'a> {
                 PrintErrors::Displayed => {}
                 PrintErrors::Blank => return None,
                 PrintErrors::Dash => text = "--".to_string(),
-                PrintErrors::NA => text = wb.locale.error_name(opensheet_engine::ErrorKind::NA).to_string(),
+                PrintErrors::NA => {
+                    text = wb
+                        .locale
+                        .error_name(opensheet_engine::ErrorKind::NA)
+                        .to_string()
+                }
             }
         }
         if text.is_empty() {
@@ -359,7 +390,10 @@ impl<'a> Renderer<'a> {
                 let spaces = line.matches(' ').count();
                 // Justified lines stretch to both edges, except the last
                 // of each paragraph.
-                let word_gap = if style.h_align == HAlign::Justify && !ends_paragraph && spaces > 0 && width < available
+                let word_gap = if style.h_align == HAlign::Justify
+                    && !ends_paragraph
+                    && spaces > 0
+                    && width < available
                 {
                     (available - width) / spaces as f64
                 } else {
@@ -393,7 +427,10 @@ impl<'a> Renderer<'a> {
         }
         // Rotated text takes the room of its slanted box.
         let angle = style.rotation.clamp(-90, 90) as f64;
-        let (sin, cos) = (angle.to_radians().sin().abs(), angle.to_radians().cos().abs());
+        let (sin, cos) = (
+            angle.to_radians().sin().abs(),
+            angle.to_radians().cos().abs(),
+        );
         let (height, ascent) = line_box(&face, size);
         let (box_w, box_h) = (width * cos + height * sin, width * sin + height * cos);
         if box_w > available + 1e-6 {
@@ -428,7 +465,11 @@ impl<'a> Renderer<'a> {
                         _ => cell.x + (cell.w + box_w) / 2.0 + pad,
                     };
                     let mut edge = cell.right();
-                    while edge < needed - 1e-6 && edge < bounds.right() && last + 1 < MAX_COLS && blank(last + 1) {
+                    while edge < needed - 1e-6
+                        && edge < bounds.right()
+                        && last + 1 < MAX_COLS
+                        && blank(last + 1)
+                    {
                         last += 1;
                         edge += visible_col_width(sh, last) * unit;
                     }
@@ -503,7 +544,14 @@ impl<'a> Renderer<'a> {
                     x += canvas.face_text(&text.face, word, x, line.baseline, text.size, paint);
                 }
             } else {
-                canvas.face_text(&text.face, &line.text, line.x, line.baseline, text.size, paint);
+                canvas.face_text(
+                    &text.face,
+                    &line.text,
+                    line.x,
+                    line.baseline,
+                    text.size,
+                    paint,
+                );
             }
             decorate(
                 canvas,
@@ -539,19 +587,31 @@ impl<'a> Renderer<'a> {
         let bounds = pane.bounds();
         let area = pane.cells();
         let (nr, nc) = (rows.len(), cols.len());
-        let merges: Vec<Rect> = sh.merges.iter().filter(|m| m.intersects(&area)).copied().collect();
-        let merge_of = |row: u32, col: u32| -> Option<usize> { merges.iter().position(|m| m.contains(row, col)) };
+        let merges: Vec<Rect> = sh
+            .merges
+            .iter()
+            .filter(|m| m.intersects(&area))
+            .copied()
+            .collect();
+        let merge_of = |row: u32, col: u32| -> Option<usize> {
+            merges.iter().position(|m| m.contains(row, col))
+        };
 
         // The look of every cell of the pane, and the merged area it is in.
         let mut cells: Vec<(CellDisplay<'a>, Option<usize>)> = Vec::with_capacity(nr * nc);
         for row in rows {
             for col in cols {
-                cells.push((self.display(row.index, col.index), merge_of(row.index, col.index)));
+                cells.push((
+                    self.display(row.index, col.index),
+                    merge_of(row.index, col.index),
+                ));
             }
         }
         let cell = |i: usize, j: usize| &cells[i * nc + j];
-        let merge_styles: Vec<CellDisplay<'a>> = merges.iter().map(|m| self.display(m.r0, m.c0)).collect();
-        let cell_rect = |i: usize, j: usize| RectF::new(cols[j].pos, rows[i].pos, cols[j].size, rows[i].size);
+        let merge_styles: Vec<CellDisplay<'a>> =
+            merges.iter().map(|m| self.display(m.r0, m.c0)).collect();
+        let cell_rect =
+            |i: usize, j: usize| RectF::new(cols[j].pos, rows[i].pos, cols[j].size, rows[i].size);
 
         canvas.save();
         canvas.clip_rect(bounds);
@@ -582,7 +642,10 @@ impl<'a> Renderer<'a> {
                         next.push((j0, j1, color, top));
                     } else {
                         let x = cols[j0].pos;
-                        canvas.fill_rect(RectF::new(x, top, cols[j1].pos + cols[j1].size - x, y - top), color);
+                        canvas.fill_rect(
+                            RectF::new(x, top, cols[j1].pos + cols[j1].size - x, y - top),
+                            color,
+                        );
                     }
                 }
                 for (j0, j1, color) in runs {
@@ -632,7 +695,9 @@ impl<'a> Renderer<'a> {
             let shared = self.job.wb.sparkline_scale(group);
             let dates = self.job.wb.sparkline_dates(group);
             for sparkline in &group.sparklines {
-                let (Some(i), Some(j)) = (pane.row_index(sparkline.row), pane.col_index(sparkline.col)) else {
+                let (Some(i), Some(j)) =
+                    (pane.row_index(sparkline.row), pane.col_index(sparkline.col))
+                else {
                     continue;
                 };
                 if cell(i, j).1.is_some() {
@@ -646,13 +711,40 @@ impl<'a> Renderer<'a> {
                 canvas.clip_rect(r);
                 canvas.translate(r.x, r.y);
                 canvas.scale(pane.unit, pane.unit);
-                for shape in opensheet_engine::sparkline::shapes_at(group, &values, dates.as_deref(), shared, size.0, size.1, 1.0) {
+                for shape in opensheet_engine::sparkline::shapes_at(
+                    group,
+                    &values,
+                    dates.as_deref(),
+                    shared,
+                    size.0,
+                    size.1,
+                    1.0,
+                ) {
                     match shape {
-                        SparkShape::Rect { x0, y0, x1, y1, color } => {
-                            canvas.fill_rect(RectF::new(x0 as f64, y0 as f64, (x1 - x0) as f64, (y1 - y0) as f64), self.ink(color));
+                        SparkShape::Rect {
+                            x0,
+                            y0,
+                            x1,
+                            y1,
+                            color,
+                        } => {
+                            canvas.fill_rect(
+                                RectF::new(
+                                    x0 as f64,
+                                    y0 as f64,
+                                    (x1 - x0) as f64,
+                                    (y1 - y0) as f64,
+                                ),
+                                self.ink(color),
+                            );
                         }
-                        SparkShape::Line { points, color, width } => {
-                            let mut path = Path::new().move_to(points[0].0 as f64, points[0].1 as f64);
+                        SparkShape::Line {
+                            points,
+                            color,
+                            width,
+                        } => {
+                            let mut path =
+                                Path::new().move_to(points[0].0 as f64, points[0].1 as f64);
                             for (x, y) in &points[1..] {
                                 path = path.line_to(*x as f64, *y as f64);
                             }
@@ -683,11 +775,19 @@ impl<'a> Renderer<'a> {
             }
         }
         for (m, display) in merges.iter().zip(&merge_styles) {
-            texts.extend(self.plan_text(&pane, m.r0, m.c0, pane.rect(sh, *m), true, &display.style));
+            texts.extend(self.plan_text(
+                &pane,
+                m.r0,
+                m.c0,
+                pane.rect(sh, *m),
+                true,
+                &display.style,
+            ));
         }
         // Text of cells beside the pane may flow into it.
-        let holds_text =
-            |cell: &opensheet_engine::Cell| matches!(cell.content, Content::Value(_) | Content::Formula(_));
+        let holds_text = |cell: &opensheet_engine::Cell| {
+            matches!(cell.content, Content::Value(_) | Content::Formula(_))
+        };
         for row in rows {
             let before = sh
                 .cells
@@ -795,7 +895,13 @@ impl<'a> Renderer<'a> {
                     match (hidden, start) {
                         (false, None) => start = Some(j),
                         (true, Some(s)) => {
-                            canvas.line(cols[s].pos, y, cols[j - 1].pos + cols[j - 1].size, y, stroke());
+                            canvas.line(
+                                cols[s].pos,
+                                y,
+                                cols[j - 1].pos + cols[j - 1].size,
+                                y,
+                                stroke(),
+                            );
                             start = None;
                         }
                         _ => {}
@@ -810,11 +916,18 @@ impl<'a> Renderer<'a> {
                         || !down[i * (nc + 1) + j].is_none()
                         || (j > 0
                             && j < nc
-                            && (same_merge(cell(i, j - 1).1, cell(i, j).1) || crossed.contains(&(i, j - 1))));
+                            && (same_merge(cell(i, j - 1).1, cell(i, j).1)
+                                || crossed.contains(&(i, j - 1))));
                     match (hidden, start) {
                         (false, None) => start = Some(i),
                         (true, Some(s)) => {
-                            canvas.line(x, rows[s].pos, x, rows[i - 1].pos + rows[i - 1].size, stroke());
+                            canvas.line(
+                                x,
+                                rows[s].pos,
+                                x,
+                                rows[i - 1].pos + rows[i - 1].size,
+                                stroke(),
+                            );
                             start = None;
                         }
                         _ => {}
@@ -830,7 +943,11 @@ impl<'a> Renderer<'a> {
             let y = if i < nr { rows[i].pos } else { bounds.bottom() };
             let mut run: Option<(Border, usize)> = None;
             for j in 0..=nc {
-                let border = if j < nc { across[i * nc + j] } else { Border::NONE };
+                let border = if j < nc {
+                    across[i * nc + j]
+                } else {
+                    Border::NONE
+                };
                 if let Some((b, s)) = run.filter(|(b, _)| *b != border) {
                     edges.push((b, cols[s].pos, y, cols[j - 1].pos + cols[j - 1].size, y));
                     run = None;
@@ -844,7 +961,11 @@ impl<'a> Renderer<'a> {
             let x = if j < nc { cols[j].pos } else { bounds.right() };
             let mut run: Option<(Border, usize)> = None;
             for i in 0..=nr {
-                let border = if i < nr { down[i * (nc + 1) + j] } else { Border::NONE };
+                let border = if i < nr {
+                    down[i * (nc + 1) + j]
+                } else {
+                    Border::NONE
+                };
                 if let Some((b, s)) = run.filter(|(b, _)| *b != border) {
                     edges.push((b, x, rows[s].pos, x, rows[i - 1].pos + rows[i - 1].size));
                     run = None;
@@ -877,7 +998,9 @@ impl<'a> Renderer<'a> {
         let stroke = match border.style {
             BorderStyle::None => return,
             BorderStyle::Hair => Stroke::solid(color, HAIR_WIDTH * s).dashed(&[0.5 * s, 0.5 * s]),
-            BorderStyle::Dotted => Stroke::solid(color, THIN_WIDTH * s).dashed(&[THIN_WIDTH * s, THIN_WIDTH * s]),
+            BorderStyle::Dotted => {
+                Stroke::solid(color, THIN_WIDTH * s).dashed(&[THIN_WIDTH * s, THIN_WIDTH * s])
+            }
             BorderStyle::Dashed => Stroke::solid(color, THIN_WIDTH * s).dashed(&[2.0 * s, s]),
             BorderStyle::Thin => solid(THIN_WIDTH),
             BorderStyle::Medium => solid(MEDIUM_WIDTH),
@@ -913,7 +1036,14 @@ impl<'a> Renderer<'a> {
             let baseline = r.y + (r.h - height) / 2.0 + ascent;
             canvas.save();
             canvas.clip_rect(r);
-            canvas.face_text(&face, text, r.x + (r.w - width) / 2.0, baseline, size, Paint::BLACK);
+            canvas.face_text(
+                &face,
+                text,
+                r.x + (r.w - width) / 2.0,
+                baseline,
+                size,
+                Paint::BLACK,
+            );
             canvas.restore();
         };
         canvas.line(bx, by, bx + bw, by, stroke());
@@ -926,7 +1056,13 @@ impl<'a> Renderer<'a> {
                 &col_to_letters(col.index),
                 RectF::new(col.pos, by, col.size, hh),
             );
-            canvas.line(col.pos + col.size, by, col.pos + col.size, by + hh, stroke());
+            canvas.line(
+                col.pos + col.size,
+                by,
+                col.pos + col.size,
+                by + hh,
+                stroke(),
+            );
         }
         for row in &self.layout.rows {
             label(
@@ -934,7 +1070,13 @@ impl<'a> Renderer<'a> {
                 &(row.index + 1).to_string(),
                 RectF::new(bx, row.pos, hw, row.size),
             );
-            canvas.line(bx, row.pos + row.size, bx + hw, row.pos + row.size, stroke());
+            canvas.line(
+                bx,
+                row.pos + row.size,
+                bx + hw,
+                row.pos + row.size,
+                stroke(),
+            );
         }
     }
 
@@ -967,7 +1109,13 @@ impl<'a> Renderer<'a> {
                 }
                 ObjectKind::Drawing => {
                     if let Some(drawing) = self.sh.drawings.iter().find(|d| d.id == object.id) {
-                        painter.paint_drawing(self.job.wb, self.job.sheet, drawing, (pw, ph), canvas);
+                        painter.paint_drawing(
+                            self.job.wb,
+                            self.job.sheet,
+                            drawing,
+                            (pw, ph),
+                            canvas,
+                        );
                     }
                 }
             }
@@ -987,24 +1135,37 @@ impl<'a> Renderer<'a> {
             let width = ink.width_in((frame.width as f32, frame.height as f32)) as f64 * unit;
             let (ox, oy) = self.layout.to_paper(frame.x, frame.y);
             let reach = width / 2.0;
-            let covered = RectF::new(ox - reach, oy - reach, frame.width * unit + width, frame.height * unit + width);
+            let covered = RectF::new(
+                ox - reach,
+                oy - reach,
+                frame.width * unit + width,
+                frame.height * unit + width,
+            );
             if !covered.intersects(&body) {
                 continue;
             }
-            let points: Vec<(f64, f64)> = opensheet_engine::ink::curve(&ink.points_in((frame.width as f32, frame.height as f32)), 6)
-                .into_iter()
-                .map(|(px, py)| (ox + px as f64 * unit, oy + py as f64 * unit))
-                .collect();
+            let points: Vec<(f64, f64)> = opensheet_engine::ink::curve(
+                &ink.points_in((frame.width as f32, frame.height as f32)),
+                6,
+            )
+            .into_iter()
+            .map(|(px, py)| (ox + px as f64 * unit, oy + py as f64 * unit))
+            .collect();
             let paint = Paint::translucent(self.ink(ink.color), ink.kind.opacity());
             canvas.save();
             canvas.clip_rect(body);
             match points[..] {
                 [] => {}
                 // A dot.
-                [(px, py)] => canvas.fill_path(Path::ellipse(RectF::new(px - reach, py - reach, width, width)), paint),
+                [(px, py)] => canvas.fill_path(
+                    Path::ellipse(RectF::new(px - reach, py - reach, width, width)),
+                    paint,
+                ),
                 _ => canvas.stroke_path(
                     Path::polyline(&points),
-                    Stroke::solid(paint, width).cap(LineCap::Round).join(crate::scene::LineJoin::Round),
+                    Stroke::solid(paint, width)
+                        .cap(LineCap::Round)
+                        .join(crate::scene::LineJoin::Round),
                 ),
             }
             canvas.restore();
@@ -1052,7 +1213,10 @@ impl<'a> Renderer<'a> {
                 let size = pieces.iter().map(|p| p.2).fold(0.0f64, f64::max);
                 let (height, ascent) = match pieces.first() {
                     Some((_, face, _)) => line_box(face, size),
-                    None => line_box(&self.job.fonts.face_for(&Note::font()), Note::font().size_pt() as f64 * self.scale),
+                    None => line_box(
+                        &self.job.fonts.face_for(&Note::font()),
+                        Note::font().size_pt() as f64 * self.scale,
+                    ),
                 };
                 let mut x = rect.x + pad;
                 for (text, face, size) in &pieces {
@@ -1103,7 +1267,9 @@ impl<'a> Renderer<'a> {
                         word
                     };
                     width += fonts.text_width(&face, word, size);
-                    let line = lines.last_mut().expect("there is always a line being filled");
+                    let line = lines
+                        .last_mut()
+                        .expect("there is always a line being filled");
                     match line.last_mut() {
                         Some((text, last, _)) if Arc::ptr_eq(last, &face) => text.push_str(word),
                         _ => line.push((word.to_string(), face.clone(), size)),
@@ -1129,7 +1295,11 @@ impl<'a> Renderer<'a> {
         };
         let default_font = self.job.wb.styles.get(StyleId(0)).font.name.clone();
         for footer in [false, true] {
-            let code = if footer { hf.footer(variant) } else { hf.header(variant) };
+            let code = if footer {
+                hf.footer(variant)
+            } else {
+                hf.header(variant)
+            };
             if code.is_empty() {
                 continue;
             }
@@ -1149,7 +1319,9 @@ impl<'a> Renderer<'a> {
                         footer,
                         section,
                     })
-                    .and_then(|p| crate::image::decode_shared(&p.data).map(|image| (image, p.size)));
+                    .and_then(|p| {
+                        crate::image::decode_shared(&p.data).map(|image| (image, p.size))
+                    });
                 // Lay the lines out: pieces with their width, the height
                 // of each line and the depth of its baseline.
                 let mut lines: Vec<(Vec<Piece>, f64, f64)> = Vec::new();
@@ -1236,7 +1408,17 @@ impl<'a> Renderer<'a> {
                             } => {
                                 let paint = Paint::from(color);
                                 canvas.face_text(&face, &text, x, baseline - rise, size, paint);
-                                decorate(canvas, &face, size, paint, underline, strike, x, baseline - rise, width);
+                                decorate(
+                                    canvas,
+                                    &face,
+                                    size,
+                                    paint,
+                                    underline,
+                                    strike,
+                                    x,
+                                    baseline - rise,
+                                    width,
+                                );
                                 x += width;
                             }
                         }
@@ -1295,7 +1477,13 @@ fn decorate(
         let y = baseline + face.underline_offset() * size;
         canvas.line(x, y, x + width, y, stroke());
         if underline == Underline::Double {
-            canvas.line(x, y + 2.0 * thickness, x + width, y + 2.0 * thickness, stroke());
+            canvas.line(
+                x,
+                y + 2.0 * thickness,
+                x + width,
+                y + 2.0 * thickness,
+                stroke(),
+            );
         }
     }
     if strike {
@@ -1327,7 +1515,10 @@ pub(crate) fn render_as(job: &PageJob, setup: &PageSetup) -> Scene {
     let size = job.pagination.paper;
     let mut canvas = Canvas::new(job.fonts);
     let Some(sh) = job.wb.sheets.get(job.sheet) else {
-        return Scene { size, ops: Vec::new() };
+        return Scene {
+            size,
+            ops: Vec::new(),
+        };
     };
     let renderer = Renderer {
         job,
@@ -1381,7 +1572,12 @@ fn notes_face(wb: &Workbook, fonts: &FontDb) -> (Arc<Face>, Arc<Face>, f64) {
 /// "At end of sheet": the notes and comments of the printed cells, cut
 /// into pages of lines. Each one names its cell, then gives its text (for
 /// a thread, every post after the name of its author).
-pub(crate) fn notes_pages(wb: &Workbook, sheet: usize, pagination: &Pagination, fonts: &FontDb) -> Vec<Vec<NotesLine>> {
+pub(crate) fn notes_pages(
+    wb: &Workbook,
+    sheet: usize,
+    pagination: &Pagination,
+    fonts: &FontDb,
+) -> Vec<Vec<NotesLine>> {
     let Some(sh) = wb.sheets.get(sheet) else {
         return Vec::new();
     };
@@ -1397,7 +1593,11 @@ pub(crate) fn notes_pages(wb: &Workbook, sheet: usize, pagination: &Pagination, 
     let max_width = pagination.printable.2;
     let mut lines: Vec<NotesLine> = Vec::new();
     for ((row, col), comment) in &sh.comments {
-        if !pagination.ranges.iter().any(|range| range.rect.contains(*row, *col)) {
+        if !pagination
+            .ranges
+            .iter()
+            .any(|range| range.rect.contains(*row, *col))
+        {
             continue;
         }
         if !lines.is_empty() {
@@ -1425,7 +1625,9 @@ pub(crate) fn notes_pages(wb: &Workbook, sheet: usize, pagination: &Pagination, 
                 .map(|(text, _)| NotesLine { text, bold: false }),
         );
     }
-    let per_page = (pagination.printable.3 / (LINE_HEIGHT * size)).floor().max(1.0) as usize;
+    let per_page = (pagination.printable.3 / (LINE_HEIGHT * size))
+        .floor()
+        .max(1.0) as usize;
     lines.chunks(per_page).map(<[NotesLine]>::to_vec).collect()
 }
 
@@ -1435,7 +1637,10 @@ pub(crate) fn render_notes(job: &PageJob, lines: &[NotesLine]) -> Scene {
     let size = job.pagination.paper;
     let mut canvas = Canvas::new(job.fonts);
     let Some(sh) = job.wb.sheets.get(job.sheet) else {
-        return Scene { size, ops: Vec::new() };
+        return Scene {
+            size,
+            ops: Vec::new(),
+        };
     };
     let (left, top, width, height) = job.pagination.printable;
     let renderer = Renderer {
@@ -1484,15 +1689,25 @@ mod tests {
         let fonts = FontDb::standard_only();
         let face = fonts.face("Arial", false, false);
         // Helvetica at 10 pt: "aaaa" is 22.24 pt wide, a space 2.78.
-        let wrap = |text: &str, width: f64| -> Vec<(String, bool)> { wrap_text(&fonts, &face, 10.0, text, width) };
-        let lines = |text: &str, width: f64| -> Vec<String> { wrap(text, width).into_iter().map(|(l, _)| l).collect() };
+        let wrap = |text: &str, width: f64| -> Vec<(String, bool)> {
+            wrap_text(&fonts, &face, 10.0, text, width)
+        };
+        let lines = |text: &str, width: f64| -> Vec<String> {
+            wrap(text, width).into_iter().map(|(l, _)| l).collect()
+        };
         assert_eq!(lines("aaaa aaaa aaaa", 50.0), vec!["aaaa aaaa", "aaaa"]);
         assert_eq!(lines("aaaa aaaa aaaa", 23.0), vec!["aaaa", "aaaa", "aaaa"]);
         // A word too long for the line is cut where the line ends.
         assert_eq!(lines("aaaaaaaaaa", 23.0), vec!["aaaa", "aaaa", "aa"]);
-        assert_eq!(lines("aaaa aaaaaaaaaa", 30.0), vec!["aaaa", "aaaaa", "aaaaa"]);
+        assert_eq!(
+            lines("aaaa aaaaaaaaaa", 30.0),
+            vec!["aaaa", "aaaaa", "aaaaa"]
+        );
         // Line breaks typed in the cell are kept, blank lines too.
-        assert_eq!(lines("one\n\ntwo\r\nthree", 500.0), vec!["one", "", "two", "three"]);
+        assert_eq!(
+            lines("one\n\ntwo\r\nthree", 500.0),
+            vec!["one", "", "two", "three"]
+        );
         assert_eq!(
             wrap("aaaa aaaa\nb", 23.0),
             vec![

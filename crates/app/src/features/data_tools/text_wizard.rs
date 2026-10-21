@@ -10,15 +10,17 @@ use crate::i18n::t;
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, Checkbox, GroupBox, RadioGroup, RefEdit, Select, TextField, dialog};
+use crate::widgets::{
+    self, Button, Checkbox, GroupBox, RadioGroup, RefEdit, Select, TextField, dialog,
+};
 use gpui::{
-    Context, Entity, Font, FontStyle, FontWeight, MouseButton, MouseDownEvent, Pixels, Point, SharedString, Window, canvas,
-    div, prelude::*, px,
+    Context, Entity, Font, FontStyle, FontWeight, MouseButton, MouseDownEvent, Pixels, Point,
+    SharedString, Window, canvas, div, prelude::*, px,
 };
 use opensheet_engine::Rect;
 use opensheet_engine::text_columns::{
-    ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextColumnsError, TextImport, field_count, guess_breaks,
-    guess_delimiters, looks_delimited, split_line, text_lines,
+    ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextColumnsError, TextImport, field_count,
+    guess_breaks, guess_delimiters, looks_delimited, split_line, text_lines,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -87,7 +89,12 @@ fn column_starts(rows: &[Vec<String>], columns: usize) -> Vec<usize> {
     let mut at = 0usize;
     for col in 0..columns {
         starts.push(at);
-        let widest = rows.iter().filter_map(|row| row.get(col)).map(|field| field.chars().count()).max().unwrap_or(0);
+        let widest = rows
+            .iter()
+            .filter_map(|row| row.get(col))
+            .map(|field| field.chars().count())
+            .max()
+            .unwrap_or(0);
         // Room for the name of the format in the header of step 3.
         at += widest.clamp(8, MAX_COLUMN) + 2;
     }
@@ -96,7 +103,11 @@ fn column_starts(rows: &[Vec<String>], columns: usize) -> Vec<usize> {
 }
 
 /// Data ▸ Text to Columns: open the wizard on the selected column.
-pub(super) fn open_text_to_columns(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<Entity<Wizard>> {
+pub(super) fn open_text_to_columns(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<Wizard>> {
     let source = app.wb.clamp_to_used(app.sheet, app.sel().current());
     let lines = match app.wb.text_column_lines(app.sheet, source) {
         Ok(lines) => lines,
@@ -105,15 +116,28 @@ pub(super) fn open_text_to_columns(app: &mut ExcelApp, window: &mut Window, cx: 
             return None;
         }
     };
-    let destination = RefStyle::absolute().format(Rect::cell(source.r0, source.c0), &app.wb.sheets[app.sheet].name);
-    Some(app.open_modal(window, cx, move |modal, _, cx| Wizard::new(modal, Purpose::Columns(source), lines, destination, cx)))
+    let destination = RefStyle::absolute().format(
+        Rect::cell(source.r0, source.c0),
+        &app.wb.sheets[app.sheet].name,
+    );
+    Some(app.open_modal(window, cx, move |modal, _, cx| {
+        Wizard::new(modal, Purpose::Columns(source), lines, destination, cx)
+    }))
 }
 
 /// Get Data ▸ From Text/CSV: open the wizard on the text of a file.
-pub(super) fn open_text_import(app: &mut ExcelApp, path: String, text: &str, window: &mut Window, cx: &mut Cx) -> Entity<Wizard> {
+pub(super) fn open_text_import(
+    app: &mut ExcelApp,
+    path: String,
+    text: &str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<Wizard> {
     // Line breaks inside quoted fields belong to their field.
     let lines = text_lines(text, Some('"'));
-    app.open_modal(window, cx, move |modal, _, cx| Wizard::new(modal, Purpose::Import(path), lines, String::new(), cx))
+    app.open_modal(window, cx, move |modal, _, cx| {
+        Wizard::new(modal, Purpose::Import(path), lines, String::new(), cx)
+    })
 }
 
 /// What the wizard cuts.
@@ -131,8 +155,14 @@ fn error_text(error: TextColumnsError) -> &'static str {
             "Microsoft Excel can convert only one column at a time. The range can be many rows tall but no more than one column wide. Try again by selecting cells in one column only.",
             "Microsoft Excel ne peut convertir qu’une colonne à la fois. La plage peut comprendre plusieurs lignes mais une seule colonne. Réessayez en ne sélectionnant les cellules que d’une seule colonne.",
         ),
-        TextColumnsError::NoData => t("No data was selected to parse.", "Aucune donnée à convertir n'a été sélectionnée."),
-        TextColumnsError::OffSheet => t("Destination reference is not valid.", "Référence de destination non valide."),
+        TextColumnsError::NoData => t(
+            "No data was selected to parse.",
+            "Aucune donnée à convertir n'a été sélectionnée.",
+        ),
+        TextColumnsError::OffSheet => t(
+            "Destination reference is not valid.",
+            "Référence de destination non valide.",
+        ),
     }
 }
 
@@ -149,7 +179,13 @@ struct Plan {
 /// Check what Finish asks: the text of `source` cut by `spec` and written
 /// from the destination typed in the wizard. `None` when it cannot be
 /// done; the user has been told why and the wizard stays open.
-fn plan(app: &mut ExcelApp, source: Rect, destination: &str, spec: Spec, cx: &mut Cx) -> Option<Plan> {
+fn plan(
+    app: &mut ExcelApp,
+    source: Rect,
+    destination: &str,
+    spec: Spec,
+    cx: &mut Cx,
+) -> Option<Plan> {
     let sheet = app.sheet;
     let checked = match typed_range(app, destination) {
         Some((on, rect)) if on == sheet => Ok((rect.r0, rect.c0)),
@@ -178,10 +214,25 @@ fn plan(app: &mut ExcelApp, source: Rect, destination: &str, spec: Spec, cx: &mu
 
 /// Write the columns, asking first when data is in the way.
 fn carry_out(app: &mut ExcelApp, plan: Plan, cx: &mut Cx) {
-    let overwrites = app.wb.text_columns_overwrites(plan.sheet, Some(plan.source), plan.dest, &plan.lines, &plan.spec);
+    let overwrites = app.wb.text_columns_overwrites(
+        plan.sheet,
+        Some(plan.source),
+        plan.dest,
+        &plan.lines,
+        &plan.spec,
+    );
     let write = move |app: &mut ExcelApp, cx: &mut Cx| {
-        if app.wb.write_text_columns(plan.sheet, plan.dest, &plan.lines, &plan.spec).is_ok() {
-            app.commit_cells(t("Text to Columns", "Convertir"), &[plan.extent], ChangeCause::Fill, cx);
+        if app
+            .wb
+            .write_text_columns(plan.sheet, plan.dest, &plan.lines, &plan.spec)
+            .is_ok()
+        {
+            app.commit_cells(
+                t("Text to Columns", "Convertir"),
+                &[plan.extent],
+                ChangeCause::Fill,
+                cx,
+            );
         }
     };
     if overwrites {
@@ -231,7 +282,13 @@ pub(super) struct Wizard {
 }
 
 impl Wizard {
-    fn new(modal: Modal, purpose: Purpose, lines: Vec<String>, destination: String, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        purpose: Purpose,
+        lines: Vec<String>,
+        destination: String,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let sample = &lines[..lines.len().min(64)];
         // The order dates are typed in with this interface language.
         let date_order = match crate::i18n::lang().locale().date_order {
@@ -264,7 +321,11 @@ impl Wizard {
             return Layout::FixedWidth(self.breaks.clone());
         }
         let mut delimiters = self.delimiters.clone();
-        delimiters.other = if self.other_on { self.other.read(cx).text().chars().next() } else { None };
+        delimiters.other = if self.other_on {
+            self.other.read(cx).text().chars().next()
+        } else {
+            None
+        };
         Layout::Delimited(delimiters)
     }
 
@@ -277,7 +338,10 @@ impl Wizard {
 
     /// The first line taken (1 is the first there is).
     fn first_row(&self, cx: &Context<Self>) -> u32 {
-        self.first_row.read(cx).number().map_or(1, |n| n.max(1.0) as u32)
+        self.first_row
+            .read(cx)
+            .number()
+            .map_or(1, |n| n.max(1.0) as u32)
     }
 
     /// The lines that are cut: all of them, from "Start import at row".
@@ -294,7 +358,10 @@ impl Wizard {
     /// The shown lines cut into fields.
     fn shown_fields(&self, cx: &Context<Self>) -> Vec<Vec<String>> {
         let layout = self.layout(cx);
-        self.shown(cx).iter().map(|line| split_line(line, &layout)).collect()
+        self.shown(cx)
+            .iter()
+            .map(|line| split_line(line, &layout))
+            .collect()
     }
 
     pub(super) fn go_to_step(&mut self, step: usize, cx: &mut Context<Self>) {
@@ -314,7 +381,11 @@ impl Wizard {
     }
 
     /// Change the delimiters of step 2.
-    pub(super) fn edit_delimiters(&mut self, cx: &mut Context<Self>, change: impl FnOnce(&mut Delimiters)) {
+    pub(super) fn edit_delimiters(
+        &mut self,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut Delimiters),
+    ) {
         change(&mut self.delimiters);
         cx.notify();
     }
@@ -342,7 +413,8 @@ impl Wizard {
 
     #[cfg(test)]
     pub(super) fn set_destination(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.destination.update(cx, |field, cx| field.set_text(text, cx));
+        self.destination
+            .update(cx, |field, cx| field.set_text(text, cx));
     }
 
     #[cfg(test)]
@@ -377,8 +449,15 @@ impl Wizard {
         let Some(index) = self.dragging else {
             return;
         };
-        let low = if index == 0 { 1 } else { self.breaks[index - 1] + 1 };
-        let high = self.breaks.get(index + 1).map_or(usize::MAX, |next| next - 1);
+        let low = if index == 0 {
+            1
+        } else {
+            self.breaks[index - 1] + 1
+        };
+        let high = self
+            .breaks
+            .get(index + 1)
+            .map_or(usize::MAX, |next| next - 1);
         if low <= high {
             self.breaks[index] = at.clamp(low, high);
             cx.notify();
@@ -413,7 +492,8 @@ impl Wizard {
 
     #[cfg(test)]
     pub(super) fn set_first_row(&mut self, row: u32, cx: &mut Context<Self>) {
-        self.first_row.update(cx, |field, cx| field.set_text(row.to_string(), cx));
+        self.first_row
+            .update(cx, |field, cx| field.set_text(row.to_string(), cx));
     }
 
     pub(super) fn finish(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -426,13 +506,17 @@ impl Wizard {
         match self.purpose.clone() {
             Purpose::Columns(source) => {
                 let destination = self.destination.read(cx).text().to_string();
-                let Some(Some(plan)) = self.modal.update_app(cx, |app, cx| plan(app, source, &destination, spec, cx)) else {
+                let Some(Some(plan)) = self
+                    .modal
+                    .update_app(cx, |app, cx| plan(app, source, &destination, spec, cx))
+                else {
                     return;
                 };
                 // The wizard goes away first: the question about data in
                 // the way is asked over the sheet, as in Excel.
                 self.modal.close(window, cx);
-                self.modal.update_app(cx, |app, cx| carry_out(app, plan, cx));
+                self.modal
+                    .update_app(cx, |app, cx| carry_out(app, plan, cx));
             }
             Purpose::Import(path) => {
                 let import = TextImport {
@@ -484,7 +568,14 @@ impl Wizard {
             if step == 0 || (step == 1 && !delimited) {
                 // The text as it is, under the ruler in step 2.
                 for (i, line) in lines.iter().enumerate() {
-                    s.text(line, PAD, top + i as f32 * LINE_H + 1.0, &font, FONT_SIZE, ink);
+                    s.text(
+                        line,
+                        PAD,
+                        top + i as f32 * LINE_H + 1.0,
+                        &font,
+                        FONT_SIZE,
+                        ink,
+                    );
                 }
                 if step == 1 {
                     s.rect(0.0, 0.0, s.width, HEAD_H, c(theme::CHROME_BG));
@@ -492,9 +583,22 @@ impl Wizard {
                     while x_of(tick) < s.width {
                         let tall = tick % 10 == 0;
                         let x = x_of(tick);
-                        s.rect(x, HEAD_H - if tall { 7.0 } else { 3.0 }, x + 1.0, HEAD_H, rule);
+                        s.rect(
+                            x,
+                            HEAD_H - if tall { 7.0 } else { 3.0 },
+                            x + 1.0,
+                            HEAD_H,
+                            rule,
+                        );
                         if tall && tick > 0 {
-                            s.text(&tick.to_string(), x + 2.0, 1.0, &font, 9.0, c(theme::TEXT_MUTED));
+                            s.text(
+                                &tick.to_string(),
+                                x + 2.0,
+                                1.0,
+                                &font,
+                                9.0,
+                                c(theme::TEXT_MUTED),
+                            );
                         }
                         tick += 1;
                     }
@@ -507,7 +611,12 @@ impl Wizard {
             } else {
                 // The fields in columns; in step 3 a header names the
                 // format of each and the selected column is inverted.
-                let columns = fields.iter().map(Vec::len).max().unwrap_or(0).max(formats.len());
+                let columns = fields
+                    .iter()
+                    .map(Vec::len)
+                    .max()
+                    .unwrap_or(0)
+                    .max(formats.len());
                 let starts = column_starts(&fields, columns);
                 for col in 0..columns {
                     let (x0, x1) = (x_of(starts[col]) - 3.0, x_of(starts[col + 1]) - 3.0);
@@ -523,7 +632,14 @@ impl Wizard {
                     for (i, row) in fields.iter().enumerate() {
                         let Some(field) = row.get(col) else { continue };
                         let shown: String = field.chars().take(MAX_COLUMN).collect();
-                        s.text(&shown, x0 + 3.0, top + i as f32 * LINE_H + 1.0, &font, FONT_SIZE, color);
+                        s.text(
+                            &shown,
+                            x0 + 3.0,
+                            top + i as f32 * LINE_H + 1.0,
+                            &font,
+                            FONT_SIZE,
+                            color,
+                        );
                     }
                     s.rect(x1, 0.0, x1 + 1.0, s.height, rule);
                 }
@@ -545,7 +661,16 @@ impl Wizard {
             .w(px(PREVIEW_W))
             .h(px(PREVIEW_H))
             .child(drawing)
-            .child(canvas(move |bounds, _, _| geometry.origin.set(bounds.origin), |_, _, _, _| {}).absolute().top_0().left_0().size_full())
+            .child(
+                canvas(
+                    move |bounds, _, _| geometry.origin.set(bounds.origin),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
+            )
             .child(widgets::drag_tracker(
                 self.dragging.is_some(),
                 move |position, window, cx| on_move(&position, window, cx),
@@ -555,13 +680,18 @@ impl Wizard {
     }
 
     fn step_one(&self, cx: &mut Context<Self>) -> gpui::Div {
-        let kind = if self.delimited { t("Delimited", "Délimité") } else { t("Fixed Width", "Largeur fixe") };
+        let kind = if self.delimited {
+            t("Delimited", "Délimité")
+        } else {
+            t("Fixed Width", "Largeur fixe")
+        };
         let found = t(
             "The Text Wizard has determined that your data is |.",
             "L'Assistant Texte a déterminé que vos données sont de type |.",
         )
         .replace('|', kind);
-        let option = |name: &'static str, what: &'static str| SharedString::from(format!("{name}   {what}"));
+        let option =
+            |name: &'static str, what: &'static str| SharedString::from(format!("{name}   {what}"));
         div()
             .flex()
             .flex_col()
@@ -624,7 +754,11 @@ impl Wizard {
                 )));
         }
         let d = &self.delimiters;
-        let tick = |id: &'static str, text: &'static str, on: bool, set: fn(&mut Delimiters, bool), cx: &mut Context<Self>| {
+        let tick = |id: &'static str,
+                    text: &'static str,
+                    on: bool,
+                    set: fn(&mut Delimiters, bool),
+                    cx: &mut Context<Self>| {
             Checkbox::new(id, text, on).on_change(cx.listener(move |this, on: &bool, _, cx| {
                 let on = *on;
                 this.edit_delimiters(cx, |d| set(d, on));
@@ -641,21 +775,46 @@ impl Wizard {
                 .gap(px(24.))
                 .child(
                     GroupBox::new(t("Delimiters", "Délimiteurs"))
-                        .child(tick("d-tab", t("Tab", "Tabulation"), d.tab, |d, on| d.tab = on, cx))
-                        .child(tick("d-semicolon", t("Semicolon", "Point-virgule"), d.semicolon, |d, on| d.semicolon = on, cx))
-                        .child(tick("d-comma", t("Comma", "Virgule"), d.comma, |d, on| d.comma = on, cx))
-                        .child(tick("d-space", t("Space", "Espace"), d.space, |d, on| d.space = on, cx))
+                        .child(tick(
+                            "d-tab",
+                            t("Tab", "Tabulation"),
+                            d.tab,
+                            |d, on| d.tab = on,
+                            cx,
+                        ))
+                        .child(tick(
+                            "d-semicolon",
+                            t("Semicolon", "Point-virgule"),
+                            d.semicolon,
+                            |d, on| d.semicolon = on,
+                            cx,
+                        ))
+                        .child(tick(
+                            "d-comma",
+                            t("Comma", "Virgule"),
+                            d.comma,
+                            |d, on| d.comma = on,
+                            cx,
+                        ))
+                        .child(tick(
+                            "d-space",
+                            t("Space", "Espace"),
+                            d.space,
+                            |d, on| d.space = on,
+                            cx,
+                        ))
                         .child(
                             div()
                                 .flex()
                                 .items_center()
                                 .gap(px(6.))
-                                .child(Checkbox::new("d-other", t("Other:", "Autre :"), self.other_on).on_change(cx.listener(
-                                    |this, on: &bool, _, cx| {
-                                        this.other_on = *on;
-                                        cx.notify();
-                                    },
-                                )))
+                                .child(
+                                    Checkbox::new("d-other", t("Other:", "Autre :"), self.other_on)
+                                        .on_change(cx.listener(|this, on: &bool, _, cx| {
+                                            this.other_on = *on;
+                                            cx.notify();
+                                        })),
+                                )
                                 .child(TextField::new(&self.other).width(32.0)),
                         ),
                 )
@@ -677,12 +836,18 @@ impl Wizard {
                         ))
                         .child(widgets::labeled(
                             t("Text qualifier:", "Identificateur de texte :"),
-                            Select::new("d-qualifier", vec!["\"".into(), "'".into(), t("{none}", "{aucun}").into()], qualifier)
-                                .width(90.0)
-                                .on_change(cx.listener(|this, index: &usize, _, cx| {
+                            Select::new(
+                                "d-qualifier",
+                                vec!["\"".into(), "'".into(), t("{none}", "{aucun}").into()],
+                                qualifier,
+                            )
+                            .width(90.0)
+                            .on_change(cx.listener(
+                                |this, index: &usize, _, cx| {
                                     let qualifier = QUALIFIERS[(*index).min(QUALIFIERS.len() - 1)];
                                     this.edit_delimiters(cx, |d| d.qualifier = qualifier);
-                                })),
+                                },
+                            )),
                         )),
                 ),
         )
@@ -696,7 +861,10 @@ impl Wizard {
             ColumnFormat::Date(_) => 2,
             ColumnFormat::Skip => 3,
         };
-        let orders: Vec<SharedString> = DateOrder::ALL.iter().map(|order| date_order_label(*order).into()).collect();
+        let orders: Vec<SharedString> = DateOrder::ALL
+            .iter()
+            .map(|order| date_order_label(*order).into())
+            .collect();
         let order = DateOrder::ALL.iter().position(|o| *o == self.date_order);
         div()
             .flex()
@@ -759,11 +927,21 @@ impl Render for Wizard {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let (title, preview) = match &self.purpose {
             Purpose::Columns(_) => (
-                t("Convert Text to Columns Wizard - Step | of 3", "Assistant Conversion - Étape | sur 3"),
-                t("Preview of selected data:", "Aperçu des données sélectionnées :").to_string(),
+                t(
+                    "Convert Text to Columns Wizard - Step | of 3",
+                    "Assistant Conversion - Étape | sur 3",
+                ),
+                t(
+                    "Preview of selected data:",
+                    "Aperçu des données sélectionnées :",
+                )
+                .to_string(),
             ),
             Purpose::Import(path) => (
-                t("Text Import Wizard - Step | of 3", "Assistant Importation de texte - Étape | sur 3"),
+                t(
+                    "Text Import Wizard - Step | of 3",
+                    "Assistant Importation de texte - Étape | sur 3",
+                ),
                 t("Preview of file |.", "Aperçu du fichier |.").replace('|', path),
             ),
         };
@@ -778,11 +956,16 @@ impl Render for Wizard {
         let footer = div()
             .flex()
             .gap(px(8.))
-            .child(Button::new("wizard-cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx)))
+            .child(
+                Button::new("wizard-cancel", t("Cancel", "Annuler"))
+                    .on_click(move |_, window, cx| modal.close(window, cx)),
+            )
             .child(
                 Button::new("wizard-back", t("< Back", "< Précédent"))
                     .disabled(step == 0)
-                    .on_click(cx.listener(|this, _, _, cx| this.go_to_step(this.step.saturating_sub(1), cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.go_to_step(this.step.saturating_sub(1), cx)
+                    })),
             )
             .child(
                 Button::new("wizard-next", t("Next >", "Suivant >"))

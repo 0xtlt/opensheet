@@ -4,7 +4,8 @@ use serde_json::Value as J;
 
 use opensheet_engine::features::Edit;
 use opensheet_engine::filter::{
-    ColorFilter, Condition, Criteria, CustomFilter, CustomOp, DynamicFilter, FilterError, FilterScope, Top10, ValueFilter,
+    ColorFilter, Condition, Criteria, CustomFilter, CustomOp, DynamicFilter, FilterError,
+    FilterScope, Top10, ValueFilter,
 };
 use opensheet_engine::find::{FindOptions, LookIn};
 use opensheet_engine::names::NameScope;
@@ -13,9 +14,14 @@ use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, Rect};
 use opensheet_engine::table::TableOption;
 use opensheet_engine::workbook::{Content, Sheet, SheetVisibility};
 
-use super::util::{color_arg, color_text, parse_color, range_arg, resolve, resolve_areas, table_fail};
+use super::util::{
+    color_arg, color_text, parse_color, range_arg, resolve, resolve_areas, table_fail,
+};
 use super::workbook::{add_name, all_tables, name_in, names_in, sheet_guid, sheet_name_problem};
-use super::{ApiClass, Call, Res, Ret, areas, chart, class, comment, enum_value, object, pivot, shape, state_of, table};
+use super::{
+    ApiClass, Call, Res, Ret, areas, chart, class, comment, enum_value, object, pivot, shape,
+    state_of, table,
+};
 use crate::host::{Host, MAX_SHEETS, rect_from};
 
 /// The sheet a Worksheet object (or one of its parts) stands for.
@@ -49,7 +55,11 @@ fn content_rect(sheet: &Sheet) -> Option<Rect> {
 pub(super) fn used_rect(h: &mut Host, sheet: usize, values_only: bool) -> Option<Rect> {
     h.calculate();
     let sh = &h.wb.sheets[sheet];
-    if values_only { content_rect(sh) } else { sh.used_rect() }
+    if values_only {
+        content_rect(sh)
+    } else {
+        sh.used_rect()
+    }
 }
 
 /// The `completeMatch` and `matchCase` of the criteria of a search.
@@ -89,13 +99,28 @@ fn condition(text: &str) -> Condition {
 }
 
 fn dynamic(call: &Call, name: &str) -> Res<DynamicFilter> {
-    const MONTHS: [&str; 12] =
-        ["January", "Februray", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const MONTHS: [&str; 12] = [
+        "January",
+        "Februray",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
     if let Some(period) = name.strip_prefix("AllDatesInPeriod") {
         if let Some(month) = MONTHS.iter().position(|m| *m == period) {
             return Ok(DynamicFilter::Month(month as u8 + 1));
         }
-        if let Some(quarter) = period.strip_prefix("Quarter").and_then(|q| q.parse::<u8>().ok()) {
+        if let Some(quarter) = period
+            .strip_prefix("Quarter")
+            .and_then(|q| q.parse::<u8>().ok())
+        {
             return Ok(DynamicFilter::Quarter(quarter));
         }
     }
@@ -189,7 +214,10 @@ pub(super) fn criteria_from(call: &Call, criteria: &J) -> Res<Criteria> {
     };
     match text("filterOn").ok_or_else(|| call.invalid())? {
         "Values" => {
-            let values = criteria.get("values").and_then(J::as_array).ok_or_else(|| call.invalid())?;
+            let values = criteria
+                .get("values")
+                .and_then(J::as_array)
+                .ok_or_else(|| call.invalid())?;
             values_filter(call, values)
         }
         "Custom" => Ok(custom_filter(
@@ -201,7 +229,10 @@ pub(super) fn criteria_from(call: &Call, criteria: &J) -> Res<Criteria> {
         "BottomItems" => top_filter(call, count("criterion1")?, false, false),
         "TopPercent" => top_filter(call, count("criterion1")?, true, true),
         "BottomPercent" => top_filter(call, count("criterion1")?, false, true),
-        "Dynamic" => Ok(Criteria::Dynamic(dynamic(call, text("dynamicCriteria").ok_or_else(|| call.invalid())?)?)),
+        "Dynamic" => Ok(Criteria::Dynamic(dynamic(
+            call,
+            text("dynamicCriteria").ok_or_else(|| call.invalid())?,
+        )?)),
         "CellColor" => color(false),
         "FontColor" => color(true),
         "Icon" => Err(call.unsupported("ExcelScript.FilterOn.icon")),
@@ -210,7 +241,14 @@ pub(super) fn criteria_from(call: &Call, criteria: &J) -> Res<Criteria> {
 }
 
 /// Set (or clear) the criterion of a column of a filter.
-pub(super) fn set_criteria(h: &mut Host, call: &Call, sheet: usize, scope: FilterScope, column: i64, criteria: Option<Criteria>) -> Res<()> {
+pub(super) fn set_criteria(
+    h: &mut Host,
+    call: &Call,
+    sheet: usize,
+    scope: FilterScope,
+    column: i64,
+    criteria: Option<Criteria>,
+) -> Res<()> {
     h.permit(call, &Action::UseAutoFilter { sheet })?;
     h.calculate();
     let column = u32::try_from(column).map_err(|_| call.invalid())?;
@@ -222,7 +260,10 @@ pub(super) fn set_criteria(h: &mut Host, call: &Call, sheet: usize, scope: Filte
 }
 
 pub(super) fn auto_filter_object(h: &Host, sheet: usize, table: Option<u32>) -> J {
-    object("AutoFilter", vec![h.sheet_id(sheet).into(), table.unwrap_or(0).into()])
+    object(
+        "AutoFilter",
+        vec![h.sheet_id(sheet).into(), table.unwrap_or(0).into()],
+    )
 }
 
 /// The sheet and the filter an AutoFilter object stands for.

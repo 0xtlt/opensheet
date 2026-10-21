@@ -17,8 +17,8 @@ use crate::theme::{self, c};
 use crate::view::{icon, tooltip};
 use crate::widgets::{self, Button};
 use gpui::{
-    AnyElement, App, Context, Entity, Focusable, FontWeight, PathPromptOptions, SharedString, Subscription, Task, WeakEntity, Window, div,
-    prelude::*, px,
+    AnyElement, App, Context, Entity, Focusable, FontWeight, PathPromptOptions, SharedString,
+    Subscription, Task, WeakEntity, Window, div, prelude::*, px,
 };
 use opensheet_script::{ErrorKind, LogLevel, Script, ScriptError};
 use std::cell::RefCell;
@@ -122,7 +122,11 @@ impl CodeEditorPane {
     /// Do something with the window once whatever is going on is over:
     /// the pane is often asked for something from inside a command of
     /// the window, which cannot be given another one before it returns.
-    fn with_app(&self, cx: &mut Context<Self>, f: impl FnOnce(&mut ExcelApp, &mut Context<ExcelApp>) + 'static) {
+    fn with_app(
+        &self,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut ExcelApp, &mut Context<ExcelApp>) + 'static,
+    ) {
         let app = self.app.clone();
         cx.defer(move |cx| {
             app.update(cx, f).ok();
@@ -130,7 +134,12 @@ impl CodeEditorPane {
     }
 
     /// The same, for what needs the window itself.
-    fn with_app_in(&self, window: &mut Window, cx: &mut Context<Self>, f: impl FnOnce(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>) + 'static) {
+    fn with_app_in(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>) + 'static,
+    ) {
         let app = self.app.clone();
         window.defer(cx, move |window, cx| {
             app.update(cx, |app, cx| f(app, window, cx)).ok();
@@ -152,7 +161,11 @@ impl CodeEditorPane {
     }
 
     fn remember_draft(&self, cx: &App) {
-        let draft = self.open.clone().filter(|_| self.unsaved(cx)).map(|name| (name, self.editor.read(cx).text().to_string()));
+        let draft = self
+            .open
+            .clone()
+            .filter(|_| self.unsaved(cx))
+            .map(|name| (name, self.editor.read(cx).text().to_string()));
         DRAFT.with(|slot| *slot.borrow_mut() = draft);
     }
 
@@ -165,12 +178,17 @@ impl CodeEditorPane {
                 // Check once the typing pauses.
                 self.check = Some(cx.spawn(async move |pane, cx| {
                     cx.background_executor().timer(CHECK_DELAY).await;
-                    let Ok(text) = pane.update(cx, |pane, cx| pane.editor.read(cx).text().to_string()) else {
+                    let Ok(text) =
+                        pane.update(cx, |pane, cx| pane.editor.read(cx).text().to_string())
+                    else {
                         return;
                     };
                     let engine = run::engine();
                     let checked = text.clone();
-                    let problems = cx.background_executor().spawn(async move { engine.check(&checked) }).await;
+                    let problems = cx
+                        .background_executor()
+                        .spawn(async move { engine.check(&checked) })
+                        .await;
                     pane.update(cx, |pane, cx| {
                         // Typed on since: the next check will tell.
                         if pane.editor.read(cx).text() == text {
@@ -187,8 +205,18 @@ impl CodeEditorPane {
 
     fn set_problems(&mut self, problems: Vec<ScriptError>, cx: &mut Context<Self>) {
         // What the checker finds in a script that can run is a warning.
-        let marks = problems.iter().filter_map(|problem| Some((problem.line?, SharedString::from(problem.message.clone()), problem.kind == ErrorKind::Check))).collect();
-        self.editor.update(cx, |editor, cx| editor.set_marks(marks, cx));
+        let marks = problems
+            .iter()
+            .filter_map(|problem| {
+                Some((
+                    problem.line?,
+                    SharedString::from(problem.message.clone()),
+                    problem.kind == ErrorKind::Check,
+                ))
+            })
+            .collect();
+        self.editor
+            .update(cx, |editor, cx| editor.set_marks(marks, cx));
         // A first problem brings its list forward; the last one solved
         // gives the place back to the output.
         if !problems.is_empty() && self.problems.is_empty() {
@@ -222,7 +250,8 @@ impl CodeEditorPane {
             // An error puts the caret where it happened.
             if let (Some((line, column)), Page::Editor) = (failed_at, &self.page) {
                 if self.open.as_deref() == Some(of.as_str()) {
-                    self.editor.update(cx, |editor, cx| editor.go_to_line(line, column, cx));
+                    self.editor
+                        .update(cx, |editor, cx| editor.go_to_line(line, column, cx));
                 }
             }
         }
@@ -233,7 +262,12 @@ impl CodeEditorPane {
 
     /// Do `then` right away when the editor has nothing to lose, else ask
     /// first, as Excel does when a changed script is left.
-    fn leave_script(&mut self, window: &mut Window, cx: &mut Context<Self>, then: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static) {
+    fn leave_script(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) {
         // While actions are recorded the pane shows them: Stop comes first.
         if self.recorder.is_some() {
             self.page = Page::Recording;
@@ -251,7 +285,11 @@ impl CodeEditorPane {
         let (save_pane, discard_pane) = (pane.clone(), pane);
         let alert = Alert::new(
             "OpenSheet",
-            t("Want to save your changes to '{}'?", "Voulez-vous enregistrer les modifications que vous avez apportées à « {} » ?").replace("{}", &name),
+            t(
+                "Want to save your changes to '{}'?",
+                "Voulez-vous enregistrer les modifications que vous avez apportées à « {} » ?",
+            )
+            .replace("{}", &name),
         )
         .warning()
         .button(t("Save", "Enregistrer"), move |_, window, cx| {
@@ -265,22 +303,30 @@ impl CodeEditorPane {
                 })
                 .ok();
         })
-        .button(t("Don't Save", "Ne pas enregistrer"), move |_, window, cx| {
-            discard_pane
-                .update(cx, |pane, cx| {
-                    pane.discard(cx);
-                    discard_then(pane, window, cx);
-                })
-                .ok();
-        })
+        .button(
+            t("Don't Save", "Ne pas enregistrer"),
+            move |_, window, cx| {
+                discard_pane
+                    .update(cx, |pane, cx| {
+                        pane.discard(cx);
+                        discard_then(pane, window, cx);
+                    })
+                    .ok();
+            },
+        )
         .close_button(t("Cancel", "Annuler"));
         self.with_app(cx, move |app, cx| app.alert(alert, cx));
     }
 
     /// Forget the changes of the editor: it shows the file again.
     fn discard(&mut self, cx: &mut Context<Self>) {
-        if let Some(script) = self.open.as_deref().and_then(|name| scripts::load(name).ok()) {
-            self.editor.update(cx, |editor, cx| editor.set_text(&script.body, cx));
+        if let Some(script) = self
+            .open
+            .as_deref()
+            .and_then(|name| scripts::load(name).ok())
+        {
+            self.editor
+                .update(cx, |editor, cx| editor.set_text(&script.body, cx));
         }
         self.problems.clear();
         self.remember_draft(cx);
@@ -296,7 +342,12 @@ impl CodeEditorPane {
     }
 
     /// Show the page of a script.
-    pub(crate) fn show_script(&mut self, script: ScriptRef, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn show_script(
+        &mut self,
+        script: ScriptRef,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.leave_script(window, cx, move |pane, _, cx| {
             pane.page = Page::Script(script.clone());
             pane.trouble = None;
@@ -308,7 +359,10 @@ impl CodeEditorPane {
     fn script_of(&self, script: &ScriptRef) -> Result<Script, String> {
         match script {
             ScriptRef::Mine(name) => scripts::load(name),
-            ScriptRef::Sample(index) => SAMPLES.get(*index).map(|sample| sample.script()).ok_or_else(String::new),
+            ScriptRef::Sample(index) => SAMPLES
+                .get(*index)
+                .map(|sample| sample.script())
+                .ok_or_else(String::new),
         }
     }
 
@@ -316,7 +370,8 @@ impl CodeEditorPane {
     fn open_in_editor(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
         match scripts::load(name) {
             Ok(script) => {
-                self.editor.update(cx, |editor, cx| editor.set_text(&script.body, cx));
+                self.editor
+                    .update(cx, |editor, cx| editor.set_text(&script.body, cx));
                 self.open = Some(script.name);
                 self.page = Page::Editor;
                 self.trouble = None;
@@ -490,7 +545,12 @@ impl CodeEditorPane {
     }
 
     /// Write a copy of a script to a file the user chose.
-    pub(crate) fn export(&mut self, script: &ScriptRef, target: &std::path::Path, cx: &mut Context<Self>) {
+    pub(crate) fn export(
+        &mut self,
+        script: &ScriptRef,
+        target: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) {
         let written = self.script_of(script).and_then(|mut script| {
             // The text being edited is what is exported.
             if self.open.as_deref() == Some(script.name.as_str()) && self.page == Page::Editor {
@@ -526,34 +586,48 @@ impl CodeEditorPane {
             ScriptRef::Mine(name) => name.clone(),
             ScriptRef::Sample(index) => SAMPLES[*index].name().to_string(),
         };
-        let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+        let home = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
         let target = cx.prompt_for_new_path(&home, Some(&format!("{name}.{}", scripts::EXTENSION)));
         cx.spawn(async move |pane, cx| {
             if let Ok(Ok(Some(mut path))) = target.await {
                 if path.extension().is_none() {
                     path.set_extension(scripts::EXTENSION);
                 }
-                pane.update(cx, |pane, cx| pane.export(&script, &path, cx)).ok();
+                pane.update(cx, |pane, cx| pane.export(&script, &path, cx))
+                    .ok();
             }
         })
         .detach();
     }
 
     /// The "…" menu of a script: Rename, Delete, Make a copy, Export.
-    pub(crate) fn menu_entries(&self, script: &ScriptRef, cx: &mut Context<Self>) -> Vec<MenuEntry> {
+    pub(crate) fn menu_entries(
+        &self,
+        script: &ScriptRef,
+        cx: &mut Context<Self>,
+    ) -> Vec<MenuEntry> {
         let pane = cx.weak_entity();
         let mine = matches!(script, ScriptRef::Mine(_));
         let name = match script {
             ScriptRef::Mine(name) => name.clone(),
             ScriptRef::Sample(_) => String::new(),
         };
-        let entry = |label: &'static str, icon_name: &'static str, action: std::rc::Rc<dyn Fn(&mut Self, &mut Window, &mut Context<Self>)>| {
-            let pane = pane.clone();
-            let entry = MenuEntry::new(label, move |_, window, cx| {
-                pane.update(cx, |pane, cx| action(pane, window, cx)).ok();
-            });
-            if icon_name.is_empty() { entry } else { entry.icon(icon_name) }
-        };
+        let entry =
+            |label: &'static str,
+             icon_name: &'static str,
+             action: std::rc::Rc<dyn Fn(&mut Self, &mut Window, &mut Context<Self>)>| {
+                let pane = pane.clone();
+                let entry = MenuEntry::new(label, move |_, window, cx| {
+                    pane.update(cx, |pane, cx| action(pane, window, cx)).ok();
+                });
+                if icon_name.is_empty() {
+                    entry
+                } else {
+                    entry.icon(icon_name)
+                }
+            };
         let (rename_name, delete_name) = (name.clone(), name);
         let (copy_script, export_script) = (script.clone(), script.clone());
         vec![
@@ -563,17 +637,32 @@ impl CodeEditorPane {
                 std::rc::Rc::new(move |pane, window, cx| pane.ask_rename(&rename_name, window, cx)),
             )
             .disabled(!mine),
-            entry(t("Delete", "Supprimer"), "trash", std::rc::Rc::new(move |pane, _, cx| pane.ask_delete(&delete_name, cx))).disabled(!mine),
-            entry(t("Make a Copy", "Créer une copie"), "copy", std::rc::Rc::new(move |pane, _, cx| pane.make_copy(&copy_script, cx))),
+            entry(
+                t("Delete", "Supprimer"),
+                "trash",
+                std::rc::Rc::new(move |pane, _, cx| pane.ask_delete(&delete_name, cx)),
+            )
+            .disabled(!mine),
+            entry(
+                t("Make a Copy", "Créer une copie"),
+                "copy",
+                std::rc::Rc::new(move |pane, _, cx| pane.make_copy(&copy_script, cx)),
+            ),
             MenuEntry::separator(),
-            entry(t("Export…", "Exporter…"), "", std::rc::Rc::new(move |pane, _, cx| pane.ask_export(export_script.clone(), cx))),
+            entry(
+                t("Export…", "Exporter…"),
+                "",
+                std::rc::Rc::new(move |pane, _, cx| pane.ask_export(export_script.clone(), cx)),
+            ),
         ]
     }
 
     fn open_menu(&mut self, script: ScriptRef, window: &mut Window, cx: &mut Context<Self>) {
         let entries = self.menu_entries(&script, cx);
         let position = window.mouse_position();
-        self.with_app(cx, move |app, cx| app.open_context_menu(position, entries, cx));
+        self.with_app(cx, move |app, cx| {
+            app.open_context_menu(position, entries, cx)
+        });
     }
 
     /// The Rename dialog.
@@ -581,7 +670,9 @@ impl CodeEditorPane {
         let pane = cx.weak_entity();
         let name = name.to_string();
         self.with_app_in(window, cx, move |app, window, cx| {
-            app.open_modal(window, cx, |modal, _, cx| RenameDialog::new(modal, pane, name, cx));
+            app.open_modal(window, cx, |modal, _, cx| {
+                RenameDialog::new(modal, pane, name, cx)
+            });
         });
     }
 
@@ -591,7 +682,11 @@ impl CodeEditorPane {
         let target = name.to_string();
         let alert = Alert::new(
             t("Delete Script", "Supprimer le script"),
-            t("Are you sure you want to delete '{}'?", "Êtes-vous sûr de vouloir supprimer « {} » ?").replace("{}", name),
+            t(
+                "Are you sure you want to delete '{}'?",
+                "Êtes-vous sûr de vouloir supprimer « {} » ?",
+            )
+            .replace("{}", name),
         )
         .warning()
         .button(t("Delete", "Supprimer"), move |_, _, cx| {
@@ -606,7 +701,12 @@ impl CodeEditorPane {
     /// Start recording: from now on every change of the workbook is an
     /// action of the list. `recorder` was made by the window, which
     /// cannot be read from here while it runs a command.
-    pub(crate) fn start_recording(&mut self, recorder: Recorder, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn start_recording(
+        &mut self,
+        recorder: Recorder,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.recorder.is_some() {
             self.page = Page::Recording;
             cx.notify();
@@ -619,7 +719,10 @@ impl CodeEditorPane {
                     return;
                 };
                 pane.recorder = Some(recorder);
-                pane.record_watch = pane.app.upgrade().map(|app| cx.observe_in(&app, window, Self::workbook_watched));
+                pane.record_watch = pane
+                    .app
+                    .upgrade()
+                    .map(|app| cx.observe_in(&app, window, Self::workbook_watched));
                 pane.page = Page::Recording;
                 pane.trouble = None;
                 cx.notify();
@@ -629,7 +732,12 @@ impl CodeEditorPane {
 
     /// The window changed while recording: the recorder looks at what
     /// was done to the workbook.
-    fn workbook_watched(&mut self, app: Entity<ExcelApp>, window: &mut Window, cx: &mut Context<Self>) {
+    fn workbook_watched(
+        &mut self,
+        app: Entity<ExcelApp>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(recorder) = &mut self.recorder else {
             return;
         };
@@ -674,13 +782,21 @@ impl CodeEditorPane {
 
     /// "Copy as code": the statements of one action go to the clipboard.
     pub(crate) fn copy_as_code(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(action) = self.recorder.as_ref().and_then(|recorder| recorder.actions.get(index)) {
+        if let Some(action) = self
+            .recorder
+            .as_ref()
+            .and_then(|recorder| recorder.actions.get(index))
+        {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(action.code()));
         }
     }
 
     fn render_recording(&self, cx: &mut Context<Self>) -> AnyElement {
-        let actions = self.recorder.as_ref().map(|recorder| recorder.actions.as_slice()).unwrap_or_default();
+        let actions = self
+            .recorder
+            .as_ref()
+            .map(|recorder| recorder.actions.as_slice())
+            .unwrap_or_default();
         let mut rows: Vec<AnyElement> = Vec::new();
         if actions.is_empty() {
             rows.push(
@@ -697,9 +813,26 @@ impl CodeEditorPane {
         }
         for (index, action) in actions.iter().enumerate() {
             let details: Vec<AnyElement> = if action.recorded {
-                action.steps.iter().map(|step| div().truncate().child(step.comment.clone()).into_any_element()).collect()
+                action
+                    .steps
+                    .iter()
+                    .map(|step| {
+                        div()
+                            .truncate()
+                            .child(step.comment.clone())
+                            .into_any_element()
+                    })
+                    .collect()
             } else {
-                vec![div().text_color(c(0xA4262C)).child(t("This action was not recorded.", "Cette action n'a pas été enregistrée.")).into_any_element()]
+                vec![
+                    div()
+                        .text_color(c(0xA4262C))
+                        .child(t(
+                            "This action was not recorded.",
+                            "Cette action n'a pas été enregistrée.",
+                        ))
+                        .into_any_element(),
+                ]
             };
             rows.push(
                 div()
@@ -713,13 +846,24 @@ impl CodeEditorPane {
                     .gap(px(8.))
                     .rounded(px(4.))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(div().flex_none().w(px(18.)).text_color(c(theme::TEXT_MUTED)).child(format!("{}", index + 1)))
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(18.))
+                            .text_color(c(theme::TEXT_MUTED))
+                            .child(format!("{}", index + 1)),
+                    )
                     .child(
                         div()
                             .flex_1()
                             .min_w(px(0.))
                             .child(div().truncate().child(action.label.clone()))
-                            .child(div().text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).children(details)),
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(c(theme::TEXT_MUTED))
+                                    .children(details),
+                            ),
                     )
                     .when(action.recorded, |d| {
                         d.child(
@@ -735,7 +879,9 @@ impl CodeEditorPane {
                                 .hover(|s| s.bg(c(theme::PRESSED)))
                                 .child(icon("copy", 13.0, theme::TEXT))
                                 .tooltip(tooltip(t("Copy as code", "Copier en tant que code")))
-                                .on_click(cx.listener(move |pane, _, _, cx| pane.copy_as_code(index, cx))),
+                                .on_click(
+                                    cx.listener(move |pane, _, _, cx| pane.copy_as_code(index, cx)),
+                                ),
                         )
                     })
                     .into_any_element(),
@@ -753,7 +899,13 @@ impl CodeEditorPane {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .child(div().flex_none().size(px(9.)).rounded(px(5.)).bg(c(0xD13438)))
+                    .child(
+                        div()
+                            .flex_none()
+                            .size(px(9.))
+                            .rounded(px(5.))
+                            .bg(c(0xD13438)),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -763,13 +915,27 @@ impl CodeEditorPane {
                             .debug_selector(|| "ce-recording".to_string())
                             .child(format!("{}…", t("Recording", "Enregistrement"))),
                     )
-                    .child(Self::tool("ce-rec-stop", "automate-stop", t("Stop", "Arrêter"), t("Stop Recording", "Arrêt de l'enregistrement"), true, cx, |pane, window, cx| {
-                        pane.stop_recording(window, cx)
-                    })),
+                    .child(Self::tool(
+                        "ce-rec-stop",
+                        "automate-stop",
+                        t("Stop", "Arrêter"),
+                        t("Stop Recording", "Arrêt de l'enregistrement"),
+                        true,
+                        cx,
+                        |pane, window, cx| pane.stop_recording(window, cx),
+                    )),
             )
             .children(self.render_trouble())
             .child(Self::heading(t("Recorded actions", "Actions enregistrées")))
-            .child(div().id("ce-rec-list").flex_1().min_h(px(0.)).overflow_y_scroll().pb(px(8.)).children(rows))
+            .child(
+                div()
+                    .id("ce-rec-list")
+                    .flex_1()
+                    .min_h(px(0.))
+                    .overflow_y_scroll()
+                    .pb(px(8.))
+                    .children(rows),
+            )
             .into_any_element()
     }
 
@@ -785,7 +951,11 @@ impl CodeEditorPane {
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> AnyElement {
-        let color = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
+        let color = if enabled {
+            theme::TEXT
+        } else {
+            theme::TEXT_DISABLED
+        };
         div()
             .id(id)
             .debug_selector(|| id.to_string())
@@ -797,8 +967,12 @@ impl CodeEditorPane {
             .gap(px(4.))
             .rounded(px(4.))
             .text_color(c(color))
-            .when(!icon_name.is_empty(), |d| d.child(icon(icon_name, 14.0, color)))
-            .when(!label.is_empty(), |d| d.child(div().whitespace_nowrap().child(label)))
+            .when(!icon_name.is_empty(), |d| {
+                d.child(icon(icon_name, 14.0, color))
+            })
+            .when(!label.is_empty(), |d| {
+                d.child(div().whitespace_nowrap().child(label))
+            })
             .when(enabled, |d| {
                 d.hover(|s| s.bg(c(theme::HOVER)))
                     .active(|s| s.bg(c(theme::PRESSED)))
@@ -820,7 +994,13 @@ impl CodeEditorPane {
     }
 
     /// One script of a list: its name over its description.
-    fn row(index: usize, script: ScriptRef, name: SharedString, description: SharedString, cx: &mut Context<Self>) -> AnyElement {
+    fn row(
+        index: usize,
+        script: ScriptRef,
+        name: SharedString,
+        description: SharedString,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let selector = match &script {
             ScriptRef::Mine(_) => format!("ce-script-{index}"),
             ScriptRef::Sample(_) => format!("ce-sample-{index}"),
@@ -844,10 +1024,20 @@ impl CodeEditorPane {
                     .min_w(px(0.))
                     .child(div().truncate().child(name))
                     .when(!description.is_empty(), |d| {
-                        d.child(div().truncate().text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).child(description))
+                        d.child(
+                            div()
+                                .truncate()
+                                .text_size(px(11.))
+                                .text_color(c(theme::TEXT_MUTED))
+                                .child(description),
+                        )
                     }),
             )
-            .on_click(cx.listener(move |pane, _, window, cx| pane.show_script(script.clone(), window, cx)))
+            .on_click(
+                cx.listener(move |pane, _, window, cx| {
+                    pane.show_script(script.clone(), window, cx)
+                }),
+            )
             .into_any_element()
     }
 
@@ -881,11 +1071,23 @@ impl CodeEditorPane {
             );
         }
         for (index, entry) in mine.into_iter().enumerate() {
-            rows.push(Self::row(index, ScriptRef::Mine(entry.name.clone()), entry.name.into(), entry.description.into(), cx));
+            rows.push(Self::row(
+                index,
+                ScriptRef::Mine(entry.name.clone()),
+                entry.name.into(),
+                entry.description.into(),
+                cx,
+            ));
         }
         rows.push(Self::heading(t("Samples", "Exemples")).into_any_element());
         for (index, sample) in SAMPLES.iter().enumerate() {
-            rows.push(Self::row(index, ScriptRef::Sample(index), sample.name().into(), sample.description().into(), cx));
+            rows.push(Self::row(
+                index,
+                ScriptRef::Sample(index),
+                sample.name().into(),
+                sample.description().into(),
+                cx,
+            ));
         }
         div()
             .size_full()
@@ -898,21 +1100,38 @@ impl CodeEditorPane {
                     .flex()
                     .items_center()
                     .gap(px(2.))
-                    .child(Self::tool("ce-new", "plus", t("New Script", "Nouveau script"), t("New Script", "Nouveau script"), true, cx, |pane, window, cx| {
-                        pane.new_script(window, cx)
-                    }))
+                    .child(Self::tool(
+                        "ce-new",
+                        "plus",
+                        t("New Script", "Nouveau script"),
+                        t("New Script", "Nouveau script"),
+                        true,
+                        cx,
+                        |pane, window, cx| pane.new_script(window, cx),
+                    ))
                     .child(Self::tool(
                         "ce-import",
                         "folder",
                         t("Import…", "Importer…"),
-                        t("Add a script from an .osts file", "Ajouter un script à partir d'un fichier .osts"),
+                        t(
+                            "Add a script from an .osts file",
+                            "Ajouter un script à partir d'un fichier .osts",
+                        ),
                         true,
                         cx,
                         |pane, _, cx| pane.ask_import(cx),
                     )),
             )
             .children(self.render_trouble())
-            .child(div().id("ce-list").flex_1().min_h(px(0.)).overflow_y_scroll().pb(px(8.)).children(rows))
+            .child(
+                div()
+                    .id("ce-list")
+                    .flex_1()
+                    .min_h(px(0.))
+                    .overflow_y_scroll()
+                    .pb(px(8.))
+                    .children(rows),
+            )
             .child(
                 div()
                     .flex_none()
@@ -922,7 +1141,11 @@ impl CodeEditorPane {
                     .border_color(c(theme::BORDER))
                     .text_size(px(10.5))
                     .text_color(c(theme::TEXT_MUTED))
-                    .child(div().truncate().child(scripts::folder().to_string_lossy().to_string())),
+                    .child(
+                        div()
+                            .truncate()
+                            .child(scripts::folder().to_string_lossy().to_string()),
+                    ),
             )
             .into_any_element()
     }
@@ -938,17 +1161,41 @@ impl CodeEditorPane {
                     .gap(px(5.))
                     .text_color(c(theme::ACCENT_DARK))
                     .child(icon("automate-play", 12.0, theme::ACCENT_DARK))
-                    .child(div().truncate().child(format!("{} {name}…", t("Running", "Exécution de"))))
+                    .child(
+                        div()
+                            .truncate()
+                            .child(format!("{} {name}…", t("Running", "Exécution de"))),
+                    )
                     .into_any_element(),
-                Self::tool("ce-stop", "close", t("Stop", "Arrêter"), t("Stop the script", "Arrêter le script"), true, cx, |pane, _, cx| pane.stop(cx)),
+                Self::tool(
+                    "ce-stop",
+                    "close",
+                    t("Stop", "Arrêter"),
+                    t("Stop the script", "Arrêter le script"),
+                    true,
+                    cx,
+                    |pane, _, cx| pane.stop(cx),
+                ),
             ],
-            None => vec![Self::tool("ce-run", "automate-play", t("Run", "Exécuter"), t("Run Script", "Exécuter le script"), true, cx, |pane, window, cx| {
-                pane.run(window, cx)
-            })],
+            None => vec![Self::tool(
+                "ce-run",
+                "automate-play",
+                t("Run", "Exécuter"),
+                t("Run Script", "Exécuter le script"),
+                true,
+                cx,
+                |pane, window, cx| pane.run(window, cx),
+            )],
         }
     }
 
-    fn render_script(&self, script: &ScriptRef, running: Option<&str>, output: Vec<OutputLine>, cx: &mut Context<Self>) -> AnyElement {
+    fn render_script(
+        &self,
+        script: &ScriptRef,
+        running: Option<&str>,
+        output: Vec<OutputLine>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let (name, description) = match self.script_of(script) {
             Ok(found) => (found.name, found.description),
             Err(_) => (String::new(), String::new()),
@@ -977,7 +1224,16 @@ impl CodeEditorPane {
                     .debug_selector(|| "ce-script-name".to_string())
                     .child(name),
             )
-            .when(!description.is_empty(), |d| d.child(div().flex_none().px(px(14.)).pt(px(3.)).text_color(c(theme::TEXT_MUTED)).child(description)))
+            .when(!description.is_empty(), |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .px(px(14.))
+                        .pt(px(3.))
+                        .text_color(c(theme::TEXT_MUTED))
+                        .child(description),
+                )
+            })
             .child(
                 div()
                     .flex_none()
@@ -987,29 +1243,55 @@ impl CodeEditorPane {
                     .items_center()
                     .gap(px(2.))
                     .children(self.run_controls(running, cx))
-                    .child(Self::tool("ce-edit", "ink-pencil", t("Edit", "Modifier"), t("Edit Code", "Modifier le code"), true, cx, |pane, window, cx| {
-                        pane.edit(window, cx)
-                    }))
-                    .child(Self::tool("ce-more", "more", "", t("More options", "Autres options"), true, cx, move |pane, window, cx| {
-                        pane.open_menu(menu_script.clone(), window, cx)
-                    })),
+                    .child(Self::tool(
+                        "ce-edit",
+                        "ink-pencil",
+                        t("Edit", "Modifier"),
+                        t("Edit Code", "Modifier le code"),
+                        true,
+                        cx,
+                        |pane, window, cx| pane.edit(window, cx),
+                    ))
+                    .child(Self::tool(
+                        "ce-more",
+                        "more",
+                        "",
+                        t("More options", "Autres options"),
+                        true,
+                        cx,
+                        move |pane, window, cx| pane.open_menu(menu_script.clone(), window, cx),
+                    )),
             )
             .children(self.render_trouble())
             .child(Self::heading(t("Output", "Sortie")))
-            .child(div().id("ce-page-output").flex_1().min_h(px(0.)).overflow_y_scroll().children(Self::output_rows(&output, false, cx)))
+            .child(
+                div()
+                    .id("ce-page-output")
+                    .flex_1()
+                    .min_h(px(0.))
+                    .overflow_y_scroll()
+                    .children(Self::output_rows(&output, false, cx)),
+            )
             .into_any_element()
     }
 
     /// The lines of the Output list. In the editor a line that names a
     /// line of the script takes the caret there.
-    fn output_rows(output: &[OutputLine], clickable: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn output_rows(
+        output: &[OutputLine],
+        clickable: bool,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         if output.is_empty() {
             return vec![
                 div()
                     .px(px(12.))
                     .py(px(4.))
                     .text_color(c(theme::TEXT_MUTED))
-                    .child(t("Run the script to see its output here.", "Exécutez le script pour afficher sa sortie ici."))
+                    .child(t(
+                        "Run the script to see its output here.",
+                        "Exécutez le script pour afficher sa sortie ici.",
+                    ))
                     .into_any_element(),
             ];
         }
@@ -1023,7 +1305,11 @@ impl CodeEditorPane {
                     OutputKind::Log(LogLevel::Error) | OutputKind::Error => ("✕", 0xA4262C),
                     OutputKind::Note => ("", theme::TEXT_MUTED),
                 };
-                let place = entry.line.map(|line| crate::i18n::labelled(t("Line", "Ligne"), line).replace(": ", " ").replace(" : ", " "));
+                let place = entry.line.map(|line| {
+                    crate::i18n::labelled(t("Line", "Ligne"), line)
+                        .replace(": ", " ")
+                        .replace(" : ", " ")
+                });
                 let (line, column) = (entry.line, entry.column);
                 div()
                     .id(("ce-output", index))
@@ -1036,13 +1322,21 @@ impl CodeEditorPane {
                     .text_color(c(color))
                     .when(!mark.is_empty(), |d| d.child(div().flex_none().child(mark)))
                     .child(div().flex_1().min_w(px(0.)).child(entry.text.clone()))
-                    .children(place.map(|place| div().flex_none().text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).child(place)))
+                    .children(place.map(|place| {
+                        div()
+                            .flex_none()
+                            .text_size(px(11.))
+                            .text_color(c(theme::TEXT_MUTED))
+                            .child(place)
+                    }))
                     .when(clickable && line.is_some(), |d| {
-                        d.hover(|s| s.bg(c(theme::HOVER))).on_click(cx.listener(move |pane, _, window, cx| {
-                            if let Some(line) = line {
-                                pane.go_to(line, column, window, cx);
-                            }
-                        }))
+                        d.hover(|s| s.bg(c(theme::HOVER))).on_click(cx.listener(
+                            move |pane, _, window, cx| {
+                                if let Some(line) = line {
+                                    pane.go_to(line, column, window, cx);
+                                }
+                            },
+                        ))
                     })
                     .into_any_element()
             })
@@ -1050,8 +1344,15 @@ impl CodeEditorPane {
     }
 
     /// Put the caret on a line of the script and give the editor the keys.
-    pub(crate) fn go_to(&mut self, line: u32, column: Option<u32>, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor.update(cx, |editor, cx| editor.go_to_line(line, column, cx));
+    pub(crate) fn go_to(
+        &mut self,
+        line: u32,
+        column: Option<u32>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.editor
+            .update(cx, |editor, cx| editor.go_to_line(line, column, cx));
         window.focus(&self.editor.focus_handle(cx));
     }
 
@@ -1062,7 +1363,10 @@ impl CodeEditorPane {
                     .px(px(12.))
                     .py(px(4.))
                     .text_color(c(theme::TEXT_MUTED))
-                    .child(t("No problems have been detected.", "Aucun problème n'a été détecté."))
+                    .child(t(
+                        "No problems have been detected.",
+                        "Aucun problème n'a été détecté.",
+                    ))
                     .into_any_element(),
             ];
         }
@@ -1086,9 +1390,20 @@ impl CodeEditorPane {
                     .items_start()
                     .gap(px(6.))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(div().flex_none().text_color(c(if warning { 0x8A6100 } else { 0xA4262C })).child(if warning { "⚠" } else { "✕" }))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(c(if warning { 0x8A6100 } else { 0xA4262C }))
+                            .child(if warning { "⚠" } else { "✕" }),
+                    )
                     .child(div().flex_1().min_w(px(0.)).child(problem.message.clone()))
-                    .child(div().flex_none().text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).child(place))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.))
+                            .text_color(c(theme::TEXT_MUTED))
+                            .child(place),
+                    )
                     .on_click(cx.listener(move |pane, _, window, cx| {
                         if let Some(line) = line {
                             pane.go_to(line, column, window, cx);
@@ -1099,7 +1414,12 @@ impl CodeEditorPane {
             .collect()
     }
 
-    fn render_editor(&self, running: Option<&str>, output: Vec<OutputLine>, cx: &mut Context<Self>) -> AnyElement {
+    fn render_editor(
+        &self,
+        running: Option<&str>,
+        output: Vec<OutputLine>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let name = self.open.clone().unwrap_or_default();
         let unsaved = self.unsaved(cx);
         let (line, column) = self.editor.read(cx).caret_position();
@@ -1114,16 +1434,29 @@ impl CodeEditorPane {
                 .flex()
                 .items_center()
                 .border_b_2()
-                .border_color(if on { c(theme::ACCENT) } else { gpui::transparent_black() })
+                .border_color(if on {
+                    c(theme::ACCENT)
+                } else {
+                    gpui::transparent_black()
+                })
                 .when(on, |d| d.font_weight(FontWeight::SEMIBOLD))
-                .when(!on, |d| d.text_color(c(theme::TEXT_MUTED)).hover(|s| s.bg(c(theme::HOVER))))
+                .when(!on, |d| {
+                    d.text_color(c(theme::TEXT_MUTED))
+                        .hover(|s| s.bg(c(theme::HOVER)))
+                })
                 .child(label)
                 .on_click(cx.listener(move |pane, _, _, cx| {
                     pane.bottom = which;
                     cx.notify();
                 }))
         };
-        let count = |label: &'static str, n: usize| if n == 0 { label.to_string() } else { format!("{label} ({n})") };
+        let count = |label: &'static str, n: usize| {
+            if n == 0 {
+                label.to_string()
+            } else {
+                format!("{label} ({n})")
+            }
+        };
         let rows = match self.bottom {
             Bottom::Output => Self::output_rows(&output, true, cx),
             Bottom::Problems => self.problem_rows(cx),
@@ -1139,7 +1472,15 @@ impl CodeEditorPane {
                     .flex()
                     .items_center()
                     .gap(px(2.))
-                    .child(Self::tool("ce-back", "chevron-left", "", t("All Scripts", "Tous les scripts"), true, cx, |pane, window, cx| pane.show_list(window, cx)))
+                    .child(Self::tool(
+                        "ce-back",
+                        "chevron-left",
+                        "",
+                        t("All Scripts", "Tous les scripts"),
+                        true,
+                        cx,
+                        |pane, window, cx| pane.show_list(window, cx),
+                    ))
                     .child(
                         div()
                             .flex_1()
@@ -1151,10 +1492,24 @@ impl CodeEditorPane {
                             .child(if unsaved { format!("{name} *") } else { name }),
                     )
                     .children(self.run_controls(running, cx))
-                    .child(Self::tool("ce-save", "save", "", t("Save Script", "Enregistrer le script"), unsaved, cx, |pane, _, cx| pane.save(cx)))
-                    .child(Self::tool("ce-more", "more", "", t("More options", "Autres options"), true, cx, move |pane, window, cx| {
-                        pane.open_menu(menu_script.clone(), window, cx)
-                    })),
+                    .child(Self::tool(
+                        "ce-save",
+                        "save",
+                        "",
+                        t("Save Script", "Enregistrer le script"),
+                        unsaved,
+                        cx,
+                        |pane, _, cx| pane.save(cx),
+                    ))
+                    .child(Self::tool(
+                        "ce-more",
+                        "more",
+                        "",
+                        t("More options", "Autres options"),
+                        true,
+                        cx,
+                        move |pane, window, cx| pane.open_menu(menu_script.clone(), window, cx),
+                    )),
             )
             .children(self.render_trouble())
             .child(
@@ -1173,18 +1528,40 @@ impl CodeEditorPane {
                     .px(px(4.))
                     .flex()
                     .items_center()
-                    .child(tab("ce-tab-output", count(t("Output", "Sortie"), output.len()), Bottom::Output, cx))
-                    .child(tab("ce-tab-problems", count(t("Problems", "Problèmes"), self.problems.len()), Bottom::Problems, cx))
+                    .child(tab(
+                        "ce-tab-output",
+                        count(t("Output", "Sortie"), output.len()),
+                        Bottom::Output,
+                        cx,
+                    ))
+                    .child(tab(
+                        "ce-tab-problems",
+                        count(t("Problems", "Problèmes"), self.problems.len()),
+                        Bottom::Problems,
+                        cx,
+                    ))
                     .child(div().flex_1())
                     .child(
                         div()
                             .px(px(8.))
                             .text_size(px(11.))
                             .text_color(c(theme::TEXT_MUTED))
-                            .child(format!("{} {line}, {} {column}", t("Ln", "Li"), t("Col", "Col"))),
+                            .child(format!(
+                                "{} {line}, {} {column}",
+                                t("Ln", "Li"),
+                                t("Col", "Col")
+                            )),
                     ),
             )
-            .child(div().id("ce-bottom").flex_none().h(px(120.)).overflow_y_scroll().py(px(3.)).children(rows))
+            .child(
+                div()
+                    .id("ce-bottom")
+                    .flex_none()
+                    .h(px(120.))
+                    .overflow_y_scroll()
+                    .py(px(3.))
+                    .children(rows),
+            )
             .into_any_element()
     }
 }
@@ -1195,7 +1572,11 @@ impl Render for CodeEditorPane {
             Some(app) => {
                 let app = app.read(cx);
                 match app.ext::<Runs>() {
-                    Some(runs) => (runs.running.as_ref().map(|running| running.name.clone()), runs.output.clone(), runs.output_of.clone()),
+                    Some(runs) => (
+                        runs.running.as_ref().map(|running| running.name.clone()),
+                        runs.output.clone(),
+                        runs.output_of.clone(),
+                    ),
                     None => (None, Vec::new(), String::new()),
                 }
             }
@@ -1207,7 +1588,11 @@ impl Render for CodeEditorPane {
             Some(ScriptRef::Sample(index)) => SAMPLES[index].name().to_string(),
             None => String::new(),
         };
-        let output = if shown == output_of { output } else { Vec::new() };
+        let output = if shown == output_of {
+            output
+        } else {
+            Vec::new()
+        };
         let content = match self.page.clone() {
             Page::List => self.render_list(cx),
             Page::Script(script) => self.render_script(&script, running.as_deref(), output, cx),
@@ -1231,7 +1616,12 @@ pub(crate) struct RenameDialog {
 }
 
 impl RenameDialog {
-    fn new(modal: Modal, pane: WeakEntity<CodeEditorPane>, old: String, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        pane: WeakEntity<CodeEditorPane>,
+        old: String,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let name = widgets::input(cx, old.clone());
         name.update(cx, |input, cx| input.select_all_text(cx));
         RenameDialog {
@@ -1251,11 +1641,18 @@ impl RenameDialog {
             return;
         }
         let old = self.old.clone();
-        let renamed = self.pane.update(cx, |pane, cx| pane.rename(&old, &new, cx)).unwrap_or(false);
+        let renamed = self
+            .pane
+            .update(cx, |pane, cx| pane.rename(&old, &new, cx))
+            .unwrap_or(false);
         if renamed {
             self.modal.close(window, cx);
         } else {
-            self.problem = self.pane.update(cx, |pane, _| pane.trouble.take()).ok().flatten();
+            self.problem = self
+                .pane
+                .update(cx, |pane, _| pane.trouble.take())
+                .ok()
+                .flatten();
             cx.notify();
         }
     }
@@ -1273,18 +1670,28 @@ impl Render for RenameDialog {
                     .gap(px(6.))
                     .child(widgets::label(t("Script name", "Nom du script")))
                     .child(div().flex().child(widgets::TextField::new(&self.name)))
-                    .children(self.problem.clone().map(|problem| div().text_color(c(0xA4262C)).child(problem))),
+                    .children(
+                        self.problem
+                            .clone()
+                            .map(|problem| div().text_color(c(0xA4262C)).child(problem)),
+                    ),
             )
             .footer(
                 div()
                     .flex()
                     .justify_end()
                     .gap(px(8.))
-                    .child(Button::new("rename-cancel", t("Cancel", "Annuler")).on_click({
-                        let modal = self.modal.clone();
-                        move |_, window, cx| modal.close(window, cx)
-                    }))
-                    .child(Button::new("rename-ok", t("Rename", "Renommer")).primary().on_click(cx.listener(Self::ok))),
+                    .child(
+                        Button::new("rename-cancel", t("Cancel", "Annuler")).on_click({
+                            let modal = self.modal.clone();
+                            move |_, window, cx| modal.close(window, cx)
+                        }),
+                    )
+                    .child(
+                        Button::new("rename-ok", t("Rename", "Renommer"))
+                            .primary()
+                            .on_click(cx.listener(Self::ok)),
+                    ),
             )
     }
 }

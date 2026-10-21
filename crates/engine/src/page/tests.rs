@@ -50,7 +50,10 @@ fn defaults_follow_excel() {
     assert_eq!(p.paper_size(Locale::fr()), PaperSize::A4);
     assert_eq!(p.paper_size(Locale::de()), PaperSize::A4);
     assert_eq!(p.orientation, Orientation::Portrait);
-    assert_eq!((p.scale, p.fit_to_page, p.fit_width, p.fit_height), (100, false, 1, 1));
+    assert_eq!(
+        (p.scale, p.fit_to_page, p.fit_width, p.fit_height),
+        (100, false, 1, 1)
+    );
     assert_eq!(p.margins, Margins::NORMAL);
     assert_eq!(p.margins.preset(), Some(MarginPreset::Normal));
     assert_eq!(Margins::WIDE.preset(), Some(MarginPreset::Wide));
@@ -74,7 +77,11 @@ fn defaults_follow_excel() {
     for o in [PageOrder::DownThenOver, PageOrder::OverThenDown] {
         assert_eq!(PageOrder::from_ooxml(o.as_ooxml()), o);
     }
-    for c in [PrintComments::None, PrintComments::AtEnd, PrintComments::AsDisplayed] {
+    for c in [
+        PrintComments::None,
+        PrintComments::AtEnd,
+        PrintComments::AsDisplayed,
+    ] {
         assert_eq!(PrintComments::from_ooxml(c.as_ooxml()), c);
     }
     for e in [
@@ -97,12 +104,18 @@ fn print_names_round_trip() {
     p.print_area = vec![Rect::new(0, 0, 8, 2), Rect::cell(4, 4)];
     p.title_rows = Some((0, 1));
     p.title_cols = Some((0, 0));
-    assert_eq!(p.print_area_formula("Sheet1").unwrap(), "Sheet1!$A$1:$C$9,Sheet1!$E$5");
+    assert_eq!(
+        p.print_area_formula("Sheet1").unwrap(),
+        "Sheet1!$A$1:$C$9,Sheet1!$E$5"
+    );
     assert_eq!(
         p.print_area_formula("Q1 'draft'").unwrap(),
         "'Q1 ''draft'''!$A$1:$C$9,'Q1 ''draft'''!$E$5"
     );
-    assert_eq!(p.print_titles_formula("Sheet1").unwrap(), "Sheet1!$A:$A,Sheet1!$1:$2");
+    assert_eq!(
+        p.print_titles_formula("Sheet1").unwrap(),
+        "Sheet1!$A:$A,Sheet1!$1:$2"
+    );
 
     let mut q = PageSetup::default();
     assert!(q.set_print_area_formula("'Q1, ''draft'''!$A$1:$C$9,'Q1, ''draft'''!$E$5"));
@@ -132,7 +145,16 @@ fn letter_portrait_pages() {
     assert_eq!(p.ranges[0].row_bands, vec![(0, 44), (45, 89), (90, 99)]);
     assert_eq!(
         p.ranges[0].row_breaks,
-        vec![PageBreak { at: 45, manual: false }, PageBreak { at: 90, manual: false }]
+        vec![
+            PageBreak {
+                at: 45,
+                manual: false
+            },
+            PageBreak {
+                at: 90,
+                manual: false
+            }
+        ]
     );
     // Down, then over.
     assert_eq!(
@@ -239,7 +261,13 @@ fn manual_breaks_and_hidden_rows() {
     wb.sheets[0].filtered_rows.extend(20..40);
     let p = pages(&wb);
     assert_eq!(p.ranges[0].row_bands, vec![(0, 7), (13, 77), (78, 99)]);
-    assert_eq!(p.ranges[0].row_breaks[0], PageBreak { at: 13, manual: true });
+    assert_eq!(
+        p.ranges[0].row_breaks[0],
+        PageBreak {
+            at: 13,
+            manual: true
+        }
+    );
     // Hidden columns likewise.
     wb.set_cols_hidden(0, 0, 0, true);
     assert_eq!(pages(&wb).ranges[0].col_bands, vec![(1, 1), (2, 4)]);
@@ -250,8 +278,14 @@ fn manual_breaks_and_hidden_rows() {
     assert!(wb.reset_page_breaks(0));
     assert_eq!(pages(&wb).ranges[0].col_bands.len(), 1);
     assert_eq!(breaks_for_selection(Rect::cell(4, 2)), (Some(4), Some(2)));
-    assert_eq!(breaks_for_selection(Rect::new(4, 0, 4, MAX_COLS - 1)), (Some(4), None));
-    assert_eq!(breaks_for_selection(Rect::new(0, 3, MAX_ROWS - 1, 3)), (None, Some(3)));
+    assert_eq!(
+        breaks_for_selection(Rect::new(4, 0, 4, MAX_COLS - 1)),
+        (Some(4), None)
+    );
+    assert_eq!(
+        breaks_for_selection(Rect::new(0, 3, MAX_ROWS - 1, 3)),
+        (None, Some(3))
+    );
     assert_eq!(breaks_for_selection(Rect::cell(0, 0)), (None, None));
 }
 
@@ -318,7 +352,10 @@ fn print_titles_repeat() {
     assert_eq!(layout.rows.len(), 45);
     assert_eq!(layout.rows[0].index, 0);
     assert_eq!(layout.rows[2].index, 45);
-    assert_eq!(layout.cols.iter().map(|s| s.index).collect::<Vec<_>>(), vec![0, 10, 11]);
+    assert_eq!(
+        layout.cols.iter().map(|s| s.index).collect::<Vec<_>>(),
+        vec![0, 10, 11]
+    );
     assert!((layout.body.0 - (50.4 + 48.0)).abs() < 1e-9);
     assert!((layout.body.1 - (54.0 + 30.0)).abs() < 1e-9);
     assert!((layout.col(11).unwrap().pos - (50.4 + 96.0)).abs() < 1e-9);
@@ -373,7 +410,10 @@ fn print_area_selection_and_blank_pages() {
     wb.set_value(0, 0, 11, Value::Number(1.0));
     wb.commit("far cell");
     let p = pages(&wb);
-    assert_eq!(cells(&p), vec![(0, 44, 0, 9), (45, 59, 0, 9), (0, 44, 10, 11)]);
+    assert_eq!(
+        cells(&p),
+        vec![(0, 44, 0, 9), (45, 59, 0, 9), (0, 44, 10, 11)]
+    );
     // Over then down, the blank page is in the middle and prints.
     wb.update_page_setup(0, |p| p.page_order = PageOrder::OverThenDown);
     assert_eq!(pages(&wb).pages.len(), 3);
@@ -427,7 +467,11 @@ fn nothing_to_print() {
     let wb = Workbook::new(Locale::en());
     let p = pages(&wb);
     assert!(p.pages.is_empty() && p.ranges.is_empty());
-    assert!(paginate(&wb, 7, &PaginateOptions::default()).pages.is_empty());
+    assert!(
+        paginate(&wb, 7, &PaginateOptions::default())
+            .pages
+            .is_empty()
+    );
 }
 
 #[test]
@@ -437,7 +481,9 @@ fn formatting_merges_and_objects_extend_the_range() {
     wb.update_style(0, Rect::cell(60, 0), &|s| s.num_fmt = "0.00".into());
     wb.commit("format");
     assert_eq!(pages(&wb).ranges[0].rect, Rect::new(0, 0, 1, 1));
-    wb.update_style(0, Rect::cell(50, 3), &|s| s.fill = Some(crate::style::Color(0xFFFF00)));
+    wb.update_style(0, Rect::cell(50, 3), &|s| {
+        s.fill = Some(crate::style::Color(0xFFFF00))
+    });
     wb.commit("fill");
     assert_eq!(pages(&wb).ranges[0].rect, Rect::new(0, 0, 50, 3));
     // A merged area counts whole.
@@ -467,7 +513,10 @@ fn formatting_merges_and_objects_extend_the_range() {
     assert_eq!(objects.len(), 1);
     assert_eq!(objects[0].kind, ObjectKind::Chart);
     assert_eq!(objects[0].cells(&wb.sheets[0]), Rect::new(60, 3, 74, 10));
-    assert_eq!(objects[0].sheet_box(&wb.sheets[0]), (202.0, 1205.0, 480.0, 288.0));
+    assert_eq!(
+        objects[0].sheet_box(&wb.sheets[0]),
+        (202.0, 1205.0, 480.0, 288.0)
+    );
     assert_eq!(pages(&wb).ranges[0].rect, Rect::new(0, 0, 74, 10));
 }
 
@@ -479,7 +528,10 @@ fn overflowing_text_prints() {
     wb.set_value(0, 0, 0, Value::text("x".repeat(150)));
     wb.set_value(0, 1, 0, Value::text("short"));
     wb.commit("text");
-    assert_eq!(pages(&wb).ranges[0].rect, Rect::cell(0, 0).union(&Rect::cell(1, 0)));
+    assert_eq!(
+        pages(&wb).ranges[0].rect,
+        Rect::cell(0, 0).union(&Rect::cell(1, 0))
+    );
     let opts = PaginateOptions {
         measure: Some(&Fixed),
         ..PaginateOptions::default()
@@ -491,18 +543,27 @@ fn overflowing_text_prints() {
     wb.update_style(0, Rect::cell(0, 0), &|s| s.wrap = true);
     wb.set_value(0, 2, 0, Value::Number(123456789012345.0));
     wb.commit("wrap");
-    assert_eq!(paginate(&wb, 0, &opts).ranges[0].rect, Rect::new(0, 0, 2, 0));
+    assert_eq!(
+        paginate(&wb, 0, &opts).ranges[0].rect,
+        Rect::new(0, 0, 2, 0)
+    );
     // Centred text flows half to each side.
     wb.update_style(0, Rect::cell(0, 0), &|s| {
         s.wrap = false;
         s.h_align = HAlign::Center;
     });
     wb.commit("centre");
-    assert_eq!(paginate(&wb, 0, &opts).ranges[0].rect, Rect::new(0, 0, 2, 8));
+    assert_eq!(
+        paginate(&wb, 0, &opts).ranges[0].rect,
+        Rect::new(0, 0, 2, 8)
+    );
     // The next cell with something in it stops the text.
     wb.set_value(0, 0, 3, Value::Number(1.0));
     wb.commit("stop");
-    assert_eq!(paginate(&wb, 0, &opts).ranges[0].rect, Rect::new(0, 0, 2, 3));
+    assert_eq!(
+        paginate(&wb, 0, &opts).ranges[0].rect,
+        Rect::new(0, 0, 2, 3)
+    );
 }
 
 #[test]
@@ -519,14 +580,20 @@ fn structural_edits_move_the_setup() {
     let p = &wb.sheets[0].page;
     assert_eq!(p.print_area, vec![Rect::new(5, 1, 63, 8)]);
     assert_eq!(p.title_rows, Some((2, 3)));
-    assert_eq!(p.row_breaks.iter().copied().collect::<Vec<_>>(), vec![23, 43]);
+    assert_eq!(
+        p.row_breaks.iter().copied().collect::<Vec<_>>(),
+        vec![23, 43]
+    );
 
     wb.insert_rows(0, 0, 1);
     wb.commit("insert at top");
     let p = &wb.sheets[0].page;
     assert_eq!(p.print_area, vec![Rect::new(6, 1, 64, 8)]);
     assert_eq!(p.title_rows, Some((3, 4)));
-    assert_eq!(p.row_breaks.iter().copied().collect::<Vec<_>>(), vec![24, 44]);
+    assert_eq!(
+        p.row_breaks.iter().copied().collect::<Vec<_>>(),
+        vec![24, 44]
+    );
 
     // Deleting the row under a break deletes the break; the print area
     // and the titles shrink.
@@ -622,7 +689,12 @@ fn dragging_a_page_break() {
     assert!(wb.move_page_break(0, BreakAxis::Rows, 45, 30, None));
     let p = pages(&wb);
     assert_eq!(
-        wb.sheets[0].page.row_breaks.iter().copied().collect::<Vec<_>>(),
+        wb.sheets[0]
+            .page
+            .row_breaks
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         vec![30]
     );
     assert_eq!(p.scale_percent, 100);
@@ -682,7 +754,10 @@ fn pictures_and_shapes_take_room() {
     let objects = floating_objects(&wb.sheets[0]);
     assert_eq!(objects.len(), 1);
     assert_eq!((objects[0].kind, objects[0].id), (ObjectKind::Drawing, id));
-    assert_eq!(objects[0].sheet_box(&wb.sheets[0]), (frame.x, frame.y, 200.0, 90.0));
+    assert_eq!(
+        objects[0].sheet_box(&wb.sheets[0]),
+        (frame.x, frame.y, 200.0, 90.0)
+    );
     assert_eq!(objects[0].cells(&wb.sheets[0]), Rect::new(71, 5, 75, 8));
     assert_eq!(pages(&wb).ranges[0].rect, Rect::new(0, 0, 75, 8));
     // "Print object" off: the shape is not on paper.
@@ -720,7 +795,14 @@ fn whole_sheet_pages() {
     // of the 912 pixels; three more rows fit.
     assert_eq!(&all.row_starts[..4], &[0, 20, 63, 108]);
     // The printed pages are the first of them.
-    assert_eq!(p.ranges[0].row_breaks.iter().map(|b| b.at).collect::<Vec<_>>(), vec![20, 63]);
+    assert_eq!(
+        p.ranges[0]
+            .row_breaks
+            .iter()
+            .map(|b| b.at)
+            .collect::<Vec<_>>(),
+        vec![20, 63]
+    );
 
     // Print titles leave less room on the pages after them.
     wb.reset_page_breaks(0);

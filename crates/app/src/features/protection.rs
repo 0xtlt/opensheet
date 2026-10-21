@@ -13,7 +13,9 @@ mod ui_tests;
 
 pub(crate) use edit_ranges::password_wanted;
 
-use super::{Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PendingEdit, Verdict};
+use super::{
+    Command, ContextMenu, Cx, Feature, Intent, MenuSection, MenuTarget, PendingEdit, Verdict,
+};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::Selection;
 use crate::i18n::t;
@@ -21,7 +23,9 @@ use crate::shell::{Alert, Modal};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
 use crate::widgets::{self, Button, Checkbox, GroupBox, ROW_H, TextField, Tri, dialog, label};
-use gpui::{App, Context, Entity, FocusHandle, KeyDownEvent, SharedString, Window, div, prelude::*, px};
+use gpui::{
+    App, Context, Entity, FocusHandle, KeyDownEvent, SharedString, Window, div, prelude::*, px,
+};
 use opensheet_engine::ops::Direction;
 use opensheet_engine::protect::{Action, Denied, PasswordError, Permission, SheetProtection};
 use opensheet_engine::{Content, Locale, MAX_ROWS, Workbook};
@@ -98,7 +102,9 @@ impl Command for Cmd {
                         ProtectSheet::new(modal, sheet, options, locale, cx)
                     });
                 } else if app.wb.sheet_needs_password(sheet) {
-                    app.open_modal(window, cx, move |modal, _, cx| Unprotect::new(modal, Target::Sheet(sheet), cx));
+                    app.open_modal(window, cx, move |modal, _, cx| {
+                        Unprotect::new(modal, Target::Sheet(sheet), cx)
+                    });
                 } else {
                     let _ = unprotect(app, Target::Sheet(sheet), "", cx);
                 }
@@ -107,7 +113,9 @@ impl Command for Cmd {
                 if !app.wb.protection.is_protected() {
                     app.open_modal(window, cx, ProtectWorkbook::new);
                 } else if app.wb.workbook_needs_password() {
-                    app.open_modal(window, cx, |modal, _, cx| Unprotect::new(modal, Target::Workbook, cx));
+                    app.open_modal(window, cx, |modal, _, cx| {
+                        Unprotect::new(modal, Target::Workbook, cx)
+                    });
                 } else {
                     let _ = unprotect(app, Target::Workbook, "", cx);
                 }
@@ -147,7 +155,12 @@ struct Memory {
 /// The engine's answer to a change the application is about to make on
 /// `sheet`. `object_locked`: whether the object an `EditObject` is about
 /// is locked.
-fn verdict(wb: &Workbook, sheet: usize, intent: &Intent, object_locked: bool) -> Result<(), Denied> {
+fn verdict(
+    wb: &Workbook,
+    sheet: usize,
+    intent: &Intent,
+    object_locked: bool,
+) -> Result<(), Denied> {
     let action = match *intent {
         Intent::EditCells(rect) => {
             return wb.permits(&Action::EditCells {
@@ -199,12 +212,18 @@ const WALK_LIMIT: u64 = 200_000;
 /// simply the neighbouring cell: Tab (an `entry` going left or right)
 /// goes to the next unlocked cell, and so does every key when only
 /// unlocked cells can be selected.
-fn next_cell(wb: &Workbook, sheet: usize, from: (u32, u32), dir: Direction, entry: bool) -> Option<(u32, u32)> {
+fn next_cell(
+    wb: &Workbook,
+    sheet: usize,
+    from: (u32, u32),
+    dir: Direction,
+    entry: bool,
+) -> Option<(u32, u32)> {
     let protection = wb.sheets.get(sheet)?.protection.as_ref()?;
     let horizontal = matches!(dir, Direction::Left | Direction::Right);
     let forward = matches!(dir, Direction::Right | Direction::Down);
-    let confined =
-        !protection.allows(Permission::SelectLockedCells) && protection.allows(Permission::SelectUnlockedCells);
+    let confined = !protection.allows(Permission::SelectLockedCells)
+        && protection.allows(Permission::SelectUnlockedCells);
     if horizontal && (entry || confined) {
         walk_unlocked(wb, sheet, from, forward)
     } else if confined {
@@ -216,7 +235,12 @@ fn next_cell(wb: &Workbook, sheet: usize, from: (u32, u32), dir: Direction, entr
 
 /// The next unlocked cell in reading order that is shown and is not the
 /// merged cell `from` belongs to.
-fn walk_unlocked(wb: &Workbook, sheet: usize, from: (u32, u32), forward: bool) -> Option<(u32, u32)> {
+fn walk_unlocked(
+    wb: &Workbook,
+    sheet: usize,
+    from: (u32, u32),
+    forward: bool,
+) -> Option<(u32, u32)> {
     let sh = &wb.sheets[sheet];
     let home = sh.merge_at(from.0, from.1);
     let mut at = from;
@@ -240,17 +264,28 @@ fn walk_column(wb: &Workbook, sheet: usize, from: (u32, u32), down: bool) -> Opt
     let (row, col) = from;
     // Below the last cell and the last formatted row, only an unlocked
     // column has unlocked cells.
-    let column_open = sh.col_styles.get(&col).is_some_and(|id| !wb.styles.get(*id).locked);
+    let column_open = sh
+        .col_styles
+        .get(&col)
+        .is_some_and(|id| !wb.styles.get(*id).locked);
     let last = if column_open {
         MAX_ROWS - 1
     } else {
         let styled = sh.row_styles.keys().next_back().copied().unwrap_or(0);
-        sh.cells.keys().next_back().map_or(0, |(row, _)| *row).max(styled)
+        sh.cells
+            .keys()
+            .next_back()
+            .map_or(0, |(row, _)| *row)
+            .max(styled)
     };
     let count = last as u64 + 1;
     (1..count.min(WALK_LIMIT))
         .map(|step| {
-            let at = if down { row as u64 + step } else { row as u64 + count - step % count };
+            let at = if down {
+                row as u64 + step
+            } else {
+                row as u64 + count - step % count
+            };
             (at % count) as u32
         })
         .find(|at| !wb.style_at(sheet, *at, col).locked && !sh.is_row_hidden(*at))
@@ -263,7 +298,9 @@ fn walk_column(wb: &Workbook, sheet: usize, from: (u32, u32), down: bool) -> Opt
 fn spares_hidden_content(wb: &Workbook, sheet: usize, row: u32, col: u32, text: &str) -> bool {
     text.is_empty()
         && wb.is_formula_hidden(sheet, row, col)
-        && wb.cell(sheet, row, col).is_some_and(|cell| !matches!(cell.content, Content::Empty))
+        && wb
+            .cell(sheet, row, col)
+            .is_some_and(|cell| !matches!(cell.content, Content::Empty))
 }
 
 /// The first cell a protected sheet lets its users select, for when the
@@ -277,7 +314,10 @@ fn first_selectable(wb: &Workbook, sheet: usize) -> Option<(u32, u32)> {
 }
 
 fn selection_allowed(wb: &Workbook, sheet: usize, selection: &Selection) -> bool {
-    selection.ranges.iter().all(|range| wb.can_select_range(sheet, *range))
+    selection
+        .ranges
+        .iter()
+        .all(|range| wb.can_select_range(sheet, *range))
 }
 
 /// A selection the current sheet does not allow gives way to the active
@@ -306,8 +346,12 @@ impl Feature for Protection {
     fn guard(&self, app: &ExcelApp, intent: &Intent) -> Option<SharedString> {
         // Charts are always locked; pictures and shapes say for themselves.
         let object_locked = match intent {
-            Intent::EditObject(Some(id)) if id.owner == super::index_of(&super::drawings::Drawings) => {
-                app.wb.drawing(app.sheet, id.id).is_none_or(|drawing| drawing.locked)
+            Intent::EditObject(Some(id))
+                if id.owner == super::index_of(&super::drawings::Drawings) =>
+            {
+                app.wb
+                    .drawing(app.sheet, id.id)
+                    .is_none_or(|drawing| drawing.locked)
             }
             _ => true,
         };
@@ -318,7 +362,13 @@ impl Feature for Protection {
 
     // Where the password of a range is asked: a refusal has no window
     // at hand, drawing has.
-    fn overlay_elements(&self, app: &mut ExcelApp, _: &crate::grid::GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<gpui::AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        _: &crate::grid::GridLayout,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<gpui::AnyElement> {
         edit_ranges::ask_pending(app, window, cx);
         Vec::new()
     }
@@ -327,7 +377,13 @@ impl Feature for Protection {
         app.wb.can_select_cell(app.sheet, row, col)
     }
 
-    fn may_commit(&self, app: &mut ExcelApp, edit: &PendingEdit, window: &mut Window, cx: &mut Cx) -> Verdict {
+    fn may_commit(
+        &self,
+        app: &mut ExcelApp,
+        edit: &PendingEdit,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Verdict {
         if spares_hidden_content(&app.wb, edit.sheet, edit.row, edit.col, edit.text) {
             app.cancel_edit(window, cx);
             return Verdict::Hold;
@@ -335,7 +391,13 @@ impl Feature for Protection {
         Verdict::Accept
     }
 
-    fn next_cell(&self, app: &ExcelApp, from: (u32, u32), dir: Direction, entry: bool) -> Option<(u32, u32)> {
+    fn next_cell(
+        &self,
+        app: &ExcelApp,
+        from: (u32, u32),
+        dir: Direction,
+        entry: bool,
+    ) -> Option<(u32, u32)> {
         next_cell(&app.wb, app.sheet, from, dir, entry)
     }
 
@@ -364,7 +426,10 @@ impl Feature for Protection {
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
         if matches!(target, MenuTarget::SheetTab(_)) {
-            menu.add(MenuSection::Format, MenuEntry::command(Cmd::ProtectSheet, app));
+            menu.add(
+                MenuSection::Format,
+                MenuEntry::command(Cmd::ProtectSheet, app),
+            );
         }
     }
 }
@@ -381,8 +446,14 @@ enum Target {
 /// A protection ready to be applied, once its password is confirmed.
 #[derive(Clone, Debug)]
 enum Pending {
-    Sheet { sheet: usize, options: SheetProtection },
-    Workbook { structure: bool, windows: bool },
+    Sheet {
+        sheet: usize,
+        options: SheetProtection,
+    },
+    Workbook {
+        structure: bool,
+        windows: bool,
+    },
 }
 
 impl Pending {
@@ -392,7 +463,9 @@ impl Pending {
                 app.wb.protect_sheet(*sheet, options.clone(), password);
                 settle_selection(app);
             }
-            Pending::Workbook { structure, windows } => app.wb.protect_workbook(*structure, *windows, password),
+            Pending::Workbook { structure, windows } => {
+                app.wb.protect_workbook(*structure, *windows, password)
+            }
         }
         app.refresh(cx);
     }
@@ -400,10 +473,19 @@ impl Pending {
 
 /// Remove a protection; the sheet's options are kept for the next time it
 /// is protected.
-fn unprotect(app: &mut ExcelApp, target: Target, password: &str, cx: &mut Cx) -> Result<(), PasswordError> {
+fn unprotect(
+    app: &mut ExcelApp,
+    target: Target,
+    password: &str,
+    cx: &mut Cx,
+) -> Result<(), PasswordError> {
     match target {
         Target::Sheet(sheet) => {
-            let before = app.wb.sheets.get(sheet).and_then(|sh| sh.protection.clone());
+            let before = app
+                .wb
+                .sheets
+                .get(sheet)
+                .and_then(|sh| sh.protection.clone());
             app.wb.unprotect_sheet(sheet, password)?;
             if let Some(mut options) = before {
                 options.password = None;
@@ -425,13 +507,25 @@ fn password_field<V: 'static>(cx: &mut Context<V>) -> Entity<TextInput> {
 }
 
 /// OK (greyed out while `enabled` is false) and Cancel.
-fn buttons(modal: &Modal, enabled: bool, on_ok: impl Fn(&(), &mut Window, &mut App) + 'static) -> impl IntoElement {
+fn buttons(
+    modal: &Modal,
+    enabled: bool,
+    on_ok: impl Fn(&(), &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
     let modal = modal.clone();
     div()
         .flex()
         .gap(px(8.))
-        .child(Button::new("ok", t("OK", "OK")).primary().disabled(!enabled).on_click(on_ok))
-        .child(Button::new("cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx)))
+        .child(
+            Button::new("ok", t("OK", "OK"))
+                .primary()
+                .disabled(!enabled)
+                .on_click(on_ok),
+        )
+        .child(
+            Button::new("cancel", t("Cancel", "Annuler"))
+                .on_click(move |_, window, cx| modal.close(window, cx)),
+        )
 }
 
 /// Tick or untick a line of the Protect Sheet dialog. As in Excel, locked
@@ -440,8 +534,12 @@ fn toggle_permission(options: &mut SheetProtection, permission: Permission) {
     let allowed = !options.allows(permission);
     options.set(permission, allowed);
     match permission {
-        Permission::SelectLockedCells if allowed => options.set(Permission::SelectUnlockedCells, true),
-        Permission::SelectUnlockedCells if !allowed => options.set(Permission::SelectLockedCells, false),
+        Permission::SelectLockedCells if allowed => {
+            options.set(Permission::SelectUnlockedCells, true)
+        }
+        Permission::SelectUnlockedCells if !allowed => {
+            options.set(Permission::SelectLockedCells, false)
+        }
         _ => {}
     }
 }
@@ -465,7 +563,13 @@ struct ProtectSheet {
 }
 
 impl ProtectSheet {
-    fn new(modal: Modal, sheet: usize, options: SheetProtection, locale: &'static Locale, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        sheet: usize,
+        options: SheetProtection,
+        locale: &'static Locale,
+        cx: &mut Context<Self>,
+    ) -> Self {
         ProtectSheet {
             modal,
             sheet,
@@ -520,13 +624,18 @@ impl ProtectSheet {
         };
         self.cursor = next;
         let height = LIST_ROWS as f32 * ROW_H;
-        self.scroll.update(cx, |scroll, _| scroll.reveal(next, next, ROW_H, height));
+        self.scroll
+            .update(cx, |scroll, _| scroll.reveal(next, next, ROW_H, height));
         cx.stop_propagation();
         cx.notify();
     }
 
     /// The check-list of what the users of the sheet may do.
-    fn permission_list(&self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn permission_list(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
         let locale = self.locale;
         let focused = self.list_focus.is_focused(window);
         let (cursor, enabled) = (self.cursor, self.protect);
@@ -536,24 +645,36 @@ impl ProtectSheet {
             view.update(cx, |this, cx| this.toggle(row, cx)).ok();
         });
         let height = LIST_ROWS as f32 * ROW_H;
-        let rows = widgets::virtual_rows(&self.scroll, Permission::ALL.len(), ROW_H, height, cx, |row| {
-            let permission = Permission::ALL[row];
-            let toggle = toggle.clone();
-            div()
-                .id(("permission", row))
-                .size_full()
-                .px(px(6.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .when(focused && row == cursor, |d| d.bg(c(widgets::SELECTED_BG)))
-                .when(!(focused && row == cursor) && enabled, |d| d.hover(|s| s.bg(c(0xF5F5F5))))
-                .when(!enabled, |d| d.text_color(c(theme::TEXT_DISABLED)))
-                .child(widgets::check_mark(Tri::from(options.allows(permission)), !enabled))
-                .child(div().truncate().child(permission.label(locale)))
-                .on_click(move |_, _, cx| toggle(row, cx))
-                .into_any_element()
-        });
+        let rows = widgets::virtual_rows(
+            &self.scroll,
+            Permission::ALL.len(),
+            ROW_H,
+            height,
+            cx,
+            |row| {
+                let permission = Permission::ALL[row];
+                let toggle = toggle.clone();
+                div()
+                    .id(("permission", row))
+                    .size_full()
+                    .px(px(6.))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .when(focused && row == cursor, |d| d.bg(c(widgets::SELECTED_BG)))
+                    .when(!(focused && row == cursor) && enabled, |d| {
+                        d.hover(|s| s.bg(c(0xF5F5F5)))
+                    })
+                    .when(!enabled, |d| d.text_color(c(theme::TEXT_DISABLED)))
+                    .child(widgets::check_mark(
+                        Tri::from(options.allows(permission)),
+                        !enabled,
+                    ))
+                    .child(div().truncate().child(permission.label(locale)))
+                    .on_click(move |_, _, cx| toggle(row, cx))
+                    .into_any_element()
+            },
+        );
         div()
             .id("permissions")
             .track_focus(&self.list_focus)
@@ -649,27 +770,29 @@ impl Render for ProtectWorkbook {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         dialog(
             &self.modal,
-            t("Protect Structure and Windows", "Protéger la structure et les fenêtres"),
+            t(
+                "Protect Structure and Windows",
+                "Protéger la structure et les fenêtres",
+            ),
         )
         .width(280.0)
         .on_ok(cx.listener(Self::ok))
         .child(
             GroupBox::new(t("Protect workbook for", "Protéger le classeur pour"))
                 .child(
-                    Checkbox::new("structure", t("Structure", "Structure"), self.structure).on_change(cx.listener(
-                        |this, on: &bool, _, cx| {
+                    Checkbox::new("structure", t("Structure", "Structure"), self.structure)
+                        .on_change(cx.listener(|this, on: &bool, _, cx| {
                             this.structure = *on;
                             cx.notify();
-                        },
-                    )),
+                        })),
                 )
                 .child(
-                    Checkbox::new("windows", t("Windows", "Fenêtres"), self.windows).on_change(cx.listener(
-                        |this, on: &bool, _, cx| {
+                    Checkbox::new("windows", t("Windows", "Fenêtres"), self.windows).on_change(
+                        cx.listener(|this, on: &bool, _, cx| {
                             this.windows = *on;
                             cx.notify();
-                        },
-                    )),
+                        }),
+                    ),
                 ),
         )
         .child(
@@ -677,7 +800,10 @@ impl Render for ProtectWorkbook {
                 .flex()
                 .flex_col()
                 .gap(px(4.))
-                .child(label(t("Password (optional):", "Mot de passe (facultatif) :")))
+                .child(label(t(
+                    "Password (optional):",
+                    "Mot de passe (facultatif) :",
+                )))
                 .child(div().flex().child(TextField::new(&self.password))),
         )
         .footer(buttons(
@@ -737,7 +863,8 @@ impl ConfirmPassword {
             return;
         }
         let (pending, password) = (self.pending.clone(), self.password.clone());
-        self.modal.update_app(cx, |app, cx| pending.apply(app, &password, cx));
+        self.modal
+            .update_app(cx, |app, cx| pending.apply(app, &password, cx));
         self.parent.close(window, cx);
     }
 }
@@ -788,7 +915,10 @@ impl Unprotect {
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
             if let Err(error) = unprotect(app, target, &password, cx) {
-                app.alert(Alert::new("OpenSheet", error.message(app.wb.locale)).warning(), cx);
+                app.alert(
+                    Alert::new("OpenSheet", error.message(app.wb.locale)).warning(),
+                    cx,
+                );
             }
         });
     }
@@ -894,24 +1024,48 @@ mod tests {
             }
         }
         // Each refusal has the message of its kind.
-        assert_eq!(verdict(&wb, 0, &Intent::EditCells(rect("A1")), true), Err(Denied::Sheet));
-        assert_eq!(verdict(&wb, 0, &Intent::UseAutoFilter, true), Err(Denied::Filter));
-        assert_eq!(verdict(&wb, 0, &Intent::EditComment, true), Err(Denied::Comment));
-        assert_eq!(verdict(&wb, 0, &Intent::ChangeTable, true), Err(Denied::Table));
+        assert_eq!(
+            verdict(&wb, 0, &Intent::EditCells(rect("A1")), true),
+            Err(Denied::Sheet)
+        );
+        assert_eq!(
+            verdict(&wb, 0, &Intent::UseAutoFilter, true),
+            Err(Denied::Filter)
+        );
+        assert_eq!(
+            verdict(&wb, 0, &Intent::EditComment, true),
+            Err(Denied::Comment)
+        );
+        assert_eq!(
+            verdict(&wb, 0, &Intent::ChangeTable, true),
+            Err(Denied::Table)
+        );
         assert_eq!(verdict(&wb, 0, &Intent::TabColor, true), Err(Denied::Sheet));
         // Unlocked cells take entries, locked ones beside them do not.
-        assert_eq!(verdict(&wb, 0, &Intent::EditCells(rect("B2:C3")), true), Ok(()));
-        assert_eq!(verdict(&wb, 0, &Intent::EditCells(rect("E7")), true), Ok(()));
+        assert_eq!(
+            verdict(&wb, 0, &Intent::EditCells(rect("B2:C3")), true),
+            Ok(())
+        );
+        assert_eq!(
+            verdict(&wb, 0, &Intent::EditCells(rect("E7")), true),
+            Ok(())
+        );
         assert_eq!(
             verdict(&wb, 0, &Intent::EditCells(rect("B2:C4")), true),
             Err(Denied::Sheet)
         );
         // An unlocked picture can be changed, a locked one or a new one not.
         assert_eq!(verdict(&wb, 0, &Intent::EditObject(None), false), Ok(()));
-        assert_eq!(verdict(&wb, 0, &Intent::EditObject(None), true), Err(Denied::Sheet));
+        assert_eq!(
+            verdict(&wb, 0, &Intent::EditObject(None), true),
+            Err(Denied::Sheet)
+        );
         // The other sheets are not concerned.
         let other = wb.add_sheet(1);
-        assert_eq!(verdict(&wb, other, &Intent::EditCells(rect("A1")), true), Ok(()));
+        assert_eq!(
+            verdict(&wb, other, &Intent::EditCells(rect("A1")), true),
+            Ok(())
+        );
     }
 
     #[test]
@@ -934,8 +1088,14 @@ mod tests {
             assert_eq!(verdict(&wb, 0, &intent, true), Ok(()), "{intent:?}");
         }
         // Locked cells are never edited, sorted or deleted.
-        assert_eq!(verdict(&wb, 0, &Intent::EditCells(rect("A1")), true), Err(Denied::Sheet));
-        assert_eq!(verdict(&wb, 0, &Intent::Sort(rect("A1:A3")), true), Err(Denied::Sheet));
+        assert_eq!(
+            verdict(&wb, 0, &Intent::EditCells(rect("A1")), true),
+            Err(Denied::Sheet)
+        );
+        assert_eq!(
+            verdict(&wb, 0, &Intent::Sort(rect("A1:A3")), true),
+            Err(Denied::Sheet)
+        );
         assert_eq!(verdict(&wb, 0, &Intent::Sort(rect("B2:C3")), true), Ok(()));
         assert_eq!(
             verdict(&wb, 0, &Intent::DeleteRows { first: 0, last: 0 }, true),
@@ -946,7 +1106,12 @@ mod tests {
             Ok(())
         );
         // What no permission opens.
-        for intent in [Intent::ToggleAutoFilter, Intent::ChangeTable, Intent::ChangeSheet, Intent::TabColor] {
+        for intent in [
+            Intent::ToggleAutoFilter,
+            Intent::ChangeTable,
+            Intent::ChangeSheet,
+            Intent::TabColor,
+        ] {
             assert!(verdict(&wb, 0, &intent, true).is_err(), "{intent:?}");
         }
     }
@@ -967,7 +1132,11 @@ mod tests {
                     | Intent::HideSheet
                     | Intent::UnhideSheet
             );
-            let expected = if structural { Err(Denied::Workbook) } else { Ok(()) };
+            let expected = if structural {
+                Err(Denied::Workbook)
+            } else {
+                Ok(())
+            };
             assert_eq!(verdict(&wb, 0, &intent, true), expected, "{intent:?}");
         }
         // Windows alone leave the sheets free.
@@ -978,7 +1147,9 @@ mod tests {
     #[test]
     fn tab_goes_to_the_next_unlocked_cell() {
         let mut wb = form();
-        let go = |wb: &Workbook, from: &str, dir: Direction, entry: bool| next_cell(wb, 0, cell(from), dir, entry);
+        let go = |wb: &Workbook, from: &str, dir: Direction, entry: bool| {
+            next_cell(wb, 0, cell(from), dir, entry)
+        };
         // Not protected: the neighbouring cell.
         assert_eq!(go(&wb, "A1", Direction::Right, true), None);
         wb.protect_sheet(0, SheetProtection::default(), "");
@@ -1000,7 +1171,11 @@ mod tests {
     #[test]
     fn only_unlocked_cells_within_reach() {
         let mut wb = form();
-        wb.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectUnlockedCells]), "");
+        wb.protect_sheet(
+            0,
+            SheetProtection::allowing(&[Permission::SelectUnlockedCells]),
+            "",
+        );
         let go = |from: &str, dir: Direction| next_cell(&wb, 0, cell(from), dir, false);
         // The arrows walk the unlocked cells too.
         assert_eq!(go("C2", Direction::Right), Some(cell("E2")));
@@ -1037,11 +1212,20 @@ mod tests {
     fn the_dialog_keeps_the_two_select_boxes_consistent() {
         let mut options = SheetProtection::default();
         toggle_permission(&mut options, Permission::SelectUnlockedCells);
-        assert!(!options.allows(Permission::SelectUnlockedCells) && !options.allows(Permission::SelectLockedCells));
+        assert!(
+            !options.allows(Permission::SelectUnlockedCells)
+                && !options.allows(Permission::SelectLockedCells)
+        );
         toggle_permission(&mut options, Permission::SelectLockedCells);
-        assert!(options.allows(Permission::SelectUnlockedCells) && options.allows(Permission::SelectLockedCells));
+        assert!(
+            options.allows(Permission::SelectUnlockedCells)
+                && options.allows(Permission::SelectLockedCells)
+        );
         toggle_permission(&mut options, Permission::SelectLockedCells);
-        assert!(options.allows(Permission::SelectUnlockedCells) && !options.allows(Permission::SelectLockedCells));
+        assert!(
+            options.allows(Permission::SelectUnlockedCells)
+                && !options.allows(Permission::SelectLockedCells)
+        );
         toggle_permission(&mut options, Permission::Sort);
         assert!(options.allows(Permission::Sort));
         toggle_permission(&mut options, Permission::Sort);

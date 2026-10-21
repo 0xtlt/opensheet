@@ -19,10 +19,22 @@ use opensheet_engine::theme::{ThemeColors, ThemeFonts};
 /// with the names Excel gives them.
 fn slot_rows() -> [(ThemeSlot, &'static str); 12] {
     [
-        (ThemeSlot::Dark1, t("Text/Background - Dark 1", "Texte/arrière-plan - Sombre 1")),
-        (ThemeSlot::Light1, t("Text/Background - Light 1", "Texte/arrière-plan - Clair 1")),
-        (ThemeSlot::Dark2, t("Text/Background - Dark 2", "Texte/arrière-plan - Sombre 2")),
-        (ThemeSlot::Light2, t("Text/Background - Light 2", "Texte/arrière-plan - Clair 2")),
+        (
+            ThemeSlot::Dark1,
+            t("Text/Background - Dark 1", "Texte/arrière-plan - Sombre 1"),
+        ),
+        (
+            ThemeSlot::Light1,
+            t("Text/Background - Light 1", "Texte/arrière-plan - Clair 1"),
+        ),
+        (
+            ThemeSlot::Dark2,
+            t("Text/Background - Dark 2", "Texte/arrière-plan - Sombre 2"),
+        ),
+        (
+            ThemeSlot::Light2,
+            t("Text/Background - Light 2", "Texte/arrière-plan - Clair 2"),
+        ),
         (ThemeSlot::Accent1, t("Accent 1", "Accentuation 1")),
         (ThemeSlot::Accent2, t("Accent 2", "Accentuation 2")),
         (ThemeSlot::Accent3, t("Accent 3", "Accentuation 3")),
@@ -30,21 +42,32 @@ fn slot_rows() -> [(ThemeSlot, &'static str); 12] {
         (ThemeSlot::Accent5, t("Accent 5", "Accentuation 5")),
         (ThemeSlot::Accent6, t("Accent 6", "Accentuation 6")),
         (ThemeSlot::Hyperlink, t("Hyperlink", "Lien hypertexte")),
-        (ThemeSlot::FollowedHyperlink, t("Followed Hyperlink", "Lien hypertexte visité")),
+        (
+            ThemeSlot::FollowedHyperlink,
+            t("Followed Hyperlink", "Lien hypertexte visité"),
+        ),
     ]
 }
 
 /// The name a set is kept under: what was typed, or the name proposed.
 fn typed_name(field: &Entity<TextInput>, proposed: &str, cx: &gpui::App) -> String {
     let typed = field.read(cx).text().trim().to_string();
-    if typed.is_empty() { proposed.to_string() } else { typed }
+    if typed.is_empty() {
+        proposed.to_string()
+    } else {
+        typed
+    }
 }
 
 // ------------------------------------------------------------ Customize Colors
 
 pub(super) fn open_colors(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let colors = app.wb.theme().colors.clone();
-    let taken: Vec<String> = custom_sets().colors.iter().map(|set| set.name.clone()).collect();
+    let taken: Vec<String> = custom_sets()
+        .colors
+        .iter()
+        .map(|set| set.name.clone())
+        .collect();
     let proposed = new_custom_name(&taken);
     app.open_modal(window, cx, move |modal, _, cx| CustomColors {
         name: input(cx, proposed.clone()),
@@ -75,59 +98,65 @@ impl CustomColors {
 
 impl Render for CustomColors {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let rows = slot_rows().into_iter().enumerate().map(|(index, (slot, text))| {
-            let current = Color(self.colors.get(slot));
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(12.))
-                .child(label(text))
-                .child(
-                    ColorButton::new(("theme-slot", index), Some(Some(current)))
-                        .width(86.0)
-                        .more(&self.modal.app)
-                        .on_pick(cx.listener(move |this, color: &Option<Color>, _, cx| {
-                            // A colour of the theme is its own value here:
-                            // the set being made refers to nothing.
-                            if let Some(color) = color {
-                                this.colors.set(slot, color.value());
-                                cx.notify();
-                            }
-                        })),
-                )
-        });
-        dialog(&self.modal, t("Create Theme Colors", "Créer couleurs de thème"))
-            .width(470.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(
+        let rows = slot_rows()
+            .into_iter()
+            .enumerate()
+            .map(|(index, (slot, text))| {
+                let current = Color(self.colors.get(slot));
                 div()
                     .flex()
-                    .gap(px(18.))
+                    .items_center()
+                    .justify_between()
+                    .gap(px(12.))
+                    .child(label(text))
                     .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .flex_col()
-                            .gap(px(4.))
-                            .child(label(t(
-                                "Click on the colored box to change a theme color",
-                                "Cliquez sur la zone colorée pour modifier une couleur de thème",
-                            )))
-                            .children(rows),
+                        ColorButton::new(("theme-slot", index), Some(Some(current)))
+                            .width(86.0)
+                            .more(&self.modal.app)
+                            .on_pick(cx.listener(move |this, color: &Option<Color>, _, cx| {
+                                // A colour of the theme is its own value here:
+                                // the set being made refers to nothing.
+                                if let Some(color) = color {
+                                    this.colors.set(slot, color.value());
+                                    cx.notify();
+                                }
+                            })),
                     )
-                    .child(
-                        div()
-                            .w(px(150.))
-                            .flex()
-                            .flex_col()
-                            .gap(px(6.))
-                            .child(label(t("Preview", "Aperçu")))
-                            .child(sample_page(&self.colors)),
-                    ),
-            )
-            .child(labeled(t("Name:", "Nom :"), TextField::new(&self.name)))
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+            });
+        dialog(
+            &self.modal,
+            t("Create Theme Colors", "Créer couleurs de thème"),
+        )
+        .width(470.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(
+            div()
+                .flex()
+                .gap(px(18.))
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.))
+                        .child(label(t(
+                            "Click on the colored box to change a theme color",
+                            "Cliquez sur la zone colorée pour modifier une couleur de thème",
+                        )))
+                        .children(rows),
+                )
+                .child(
+                    div()
+                        .w(px(150.))
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .child(label(t("Preview", "Aperçu")))
+                        .child(sample_page(&self.colors)),
+                ),
+        )
+        .child(labeled(t("Name:", "Nom :"), TextField::new(&self.name)))
+        .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
@@ -170,9 +199,19 @@ fn sample_page(colors: &ThemeColors) -> gpui::Div {
 
 pub(super) fn open_fonts(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let fonts = app.wb.theme().fonts.clone();
-    let taken: Vec<String> = custom_sets().fonts.iter().map(|pair| pair.name.clone()).collect();
+    let taken: Vec<String> = custom_sets()
+        .fonts
+        .iter()
+        .map(|pair| pair.name.clone())
+        .collect();
     let proposed = new_custom_name(&taken);
-    let names: Vec<SharedString> = app.fonts.names.iter().cloned().map(SharedString::from).collect();
+    let names: Vec<SharedString> = app
+        .fonts
+        .names
+        .iter()
+        .cloned()
+        .map(SharedString::from)
+        .collect();
     let resolver = app.fonts.clone();
     app.open_modal(window, cx, move |modal, _, cx| CustomFonts {
         major: input(cx, fonts.major.to_string()),

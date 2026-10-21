@@ -8,13 +8,14 @@ use crate::grid::{Draw, FontResolver, GridLayout, Layer};
 use crate::i18n::t;
 use crate::theme::{c, ca};
 use gpui::{
-    BorderStyle, Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels, Point, ShapedLine,
-    SharedString, Styled, TextRun, UnderlineStyle, WindowTextSystem, canvas, fill, point, px, quad, size,
+    BorderStyle, Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels,
+    Point, ShapedLine, SharedString, Styled, TextRun, UnderlineStyle, WindowTextSystem, canvas,
+    fill, point, px, quad, size,
 };
 use opensheet_engine::chart::{Chart, ChartData};
 use opensheet_engine::chart_layout::{
-    ChartLayout, Ink, Labels, LayoutOptions, Outline, Prim, Seg, Stroke, TextAnchor, TextMeasure, layout_chart_elements,
-    line_height,
+    ChartLayout, Ink, Labels, LayoutOptions, Outline, Prim, Seg, Stroke, TextAnchor, TextMeasure,
+    layout_chart_elements, line_height,
 };
 use opensheet_engine::{Color, Locale};
 use std::rc::Rc;
@@ -57,8 +58,23 @@ fn unhex(text: &str) -> Option<String> {
 /// `width` × `height` pixels, its baseline `baseline` pixels under the top
 /// of the box (see `text_asset`). The screen and the print preview both
 /// draw turned text through it.
-pub fn text_asset_path(width: f32, height: f32, baseline: f32, size: f32, bold: bool, family: &str, text: &str) -> SharedString {
-    styled_text_asset_path((width, height), baseline, size, (bold, false, false), family, text)
+pub fn text_asset_path(
+    width: f32,
+    height: f32,
+    baseline: f32,
+    size: f32,
+    bold: bool,
+    family: &str,
+    text: &str,
+) -> SharedString {
+    styled_text_asset_path(
+        (width, height),
+        baseline,
+        size,
+        (bold, false, false),
+        family,
+        text,
+    )
 }
 
 /// The same for text that may be bold, in italics and underlined (in that
@@ -81,22 +97,46 @@ fn styled_text_asset_path(
     if style.is_empty() {
         style.push('r');
     }
-    format!("{TEXT_ASSET}{width:.0}/{height:.0}/{baseline:.2}/{size:.2}/{style}/{}/{}.svg", hex(family), hex(text)).into()
+    format!(
+        "{TEXT_ASSET}{width:.0}/{height:.0}/{baseline:.2}/{size:.2}/{style}/{}/{}.svg",
+        hex(family),
+        hex(text)
+    )
+    .into()
 }
 
 /// The SVG image behind an asset path made by `text_asset_path`: one line
 /// of text in a box of its own size. `None` for any other path.
 pub fn text_asset(path: &str) -> Option<Vec<u8>> {
-    let mut parts = path.strip_prefix(TEXT_ASSET)?.strip_suffix(".svg")?.split('/');
+    let mut parts = path
+        .strip_prefix(TEXT_ASSET)?
+        .strip_suffix(".svg")?
+        .split('/');
     let mut number = || parts.next()?.parse::<f32>().ok().filter(|v| v.is_finite());
     let (w, h, baseline, font_size) = (number()?, number()?, number()?, number()?);
     let style = parts.next()?;
-    let weight = if style.contains('b') { "bold" } else { "normal" };
-    let slant = if style.contains('i') { "italic" } else { "normal" };
-    let line = if style.contains('u') { "underline" } else { "none" };
+    let weight = if style.contains('b') {
+        "bold"
+    } else {
+        "normal"
+    };
+    let slant = if style.contains('i') {
+        "italic"
+    } else {
+        "normal"
+    };
+    let line = if style.contains('u') {
+        "underline"
+    } else {
+        "none"
+    };
     let family = unhex(parts.next()?)?;
     let text = unhex(parts.next()?)?;
-    let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('"', "&quot;");
+    let escape = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('"', "&quot;")
+    };
     let svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><text x="{}" y="{baseline}" text-anchor="middle" font-family="{}" font-size="{font_size}" font-weight="{weight}" font-style="{slant}" text-decoration="{line}" xml:space="preserve">{}</text></svg>"#,
         w / 2.0,
@@ -139,8 +179,16 @@ impl Shaper<'_> {
             family: self.family(look.family),
             features: Default::default(),
             fallbacks: None,
-            weight: if bold { FontWeight::BOLD } else { FontWeight::NORMAL },
-            style: if italic { FontStyle::Italic } else { FontStyle::Normal },
+            weight: if bold {
+                FontWeight::BOLD
+            } else {
+                FontWeight::NORMAL
+            },
+            style: if italic {
+                FontStyle::Italic
+            } else {
+                FontStyle::Normal
+            },
         }
     }
 
@@ -167,11 +215,25 @@ impl Shaper<'_> {
         let w = f32::from(self.shape(text, size, gpui::black(), look).width).ceil() + 2.0;
         let h = line_height(size);
         let font_id = self.ts.resolve_font(&self.font(look));
-        let (ascent, descent) = (f32::from(self.ts.ascent(font_id, px(size))), f32::from(self.ts.descent(font_id, px(size))));
+        let (ascent, descent) = (
+            f32::from(self.ts.ascent(font_id, px(size))),
+            f32::from(self.ts.descent(font_id, px(size))),
+        );
         // Where GPUI itself puts the baseline in a line of this height.
         let baseline = (h - ascent - descent) / 2.0 + ascent;
         let style = (look.bold, look.italic, look.underline);
-        (styled_text_asset_path((w, h), baseline, size, style, &self.family(look.family), text), w, h)
+        (
+            styled_text_asset_path(
+                (w, h),
+                baseline,
+                size,
+                style,
+                &self.family(look.family),
+                text,
+            ),
+            w,
+            h,
+        )
     }
 }
 
@@ -180,7 +242,14 @@ impl TextMeasure for Shaper<'_> {
         self.width_styled(text, size, bold, false, None)
     }
 
-    fn width_styled(&self, text: &str, size: f32, bold: bool, italic: bool, family: Option<&str>) -> f32 {
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        bold: bool,
+        italic: bool,
+        family: Option<&str>,
+    ) -> f32 {
         let look = Look {
             bold,
             italic,
@@ -192,7 +261,11 @@ impl TextMeasure for Shaper<'_> {
 }
 
 fn ink(ink: Ink) -> Hsla {
-    if ink.opacity >= 1.0 { c(ink.color.value()) } else { ca(ink.color.value(), ink.opacity.max(0.0)) }
+    if ink.opacity >= 1.0 {
+        c(ink.color.value())
+    } else {
+        ca(ink.color.value(), ink.opacity.max(0.0))
+    }
 }
 
 /// Converts the engine's primitives, whose origin is the corner of the
@@ -224,7 +297,12 @@ impl Converter<'_> {
 
     fn stroke_path(&mut self, segs: &[Seg], stroke: &Stroke) {
         let mut builder = PathBuilder::stroke(px(stroke.width));
-        let dashes: Vec<Pixels> = stroke.dash.pattern().iter().map(|d| px((d * stroke.width).max(1.0))).collect();
+        let dashes: Vec<Pixels> = stroke
+            .dash
+            .pattern()
+            .iter()
+            .map(|d| px((d * stroke.width).max(1.0)))
+            .collect();
         if !dashes.is_empty() {
             builder = builder.dash_array(&dashes);
         }
@@ -249,7 +327,14 @@ impl Converter<'_> {
 
     fn push(&mut self, prim: &Prim) {
         match prim {
-            Prim::Rect { x, y, w, h, fill: inside, stroke } => {
+            Prim::Rect {
+                x,
+                y,
+                w,
+                h,
+                fill: inside,
+                stroke,
+            } => {
                 let bounds = self.bounds(*x, *y, *w, *h);
                 match (inside, stroke) {
                     (Some(inside), None) => self.items.push(Draw::Quad(fill(bounds, ink(*inside)))),
@@ -267,14 +352,25 @@ impl Converter<'_> {
                         if let Some(inside) = inside {
                             self.items.push(Draw::Quad(fill(bounds, ink(*inside))));
                         }
-                        let outline =
-                            [Seg::Move(*x, *y), Seg::Line(x + w, *y), Seg::Line(x + w, y + h), Seg::Line(*x, y + h), Seg::Close];
+                        let outline = [
+                            Seg::Move(*x, *y),
+                            Seg::Line(x + w, *y),
+                            Seg::Line(x + w, y + h),
+                            Seg::Line(*x, y + h),
+                            Seg::Close,
+                        ];
                         self.stroke_path(&outline, stroke);
                     }
                     (None, None) => {}
                 }
             }
-            Prim::Line { x0, y0, x1, y1, stroke } => {
+            Prim::Line {
+                x0,
+                y0,
+                x1,
+                y1,
+                stroke,
+            } => {
                 let solid = stroke.dash.pattern().is_empty();
                 let thick = stroke.width.round().max(1.0);
                 if solid && y0 == y1 {
@@ -290,7 +386,11 @@ impl Converter<'_> {
                     self.stroke_path(&[Seg::Move(*x0, *y0), Seg::Line(*x1, *y1)], stroke);
                 }
             }
-            Prim::Path { segs, fill: inside, stroke } => {
+            Prim::Path {
+                segs,
+                fill: inside,
+                stroke,
+            } => {
                 if let Some(inside) = inside {
                     self.fill_path(segs, ink(*inside));
                 }
@@ -385,7 +485,14 @@ pub fn chart_labels() -> Labels<'static> {
 
 /// Lay a chart out in a box of `size` pixels on screen, keeping track of
 /// its elements. `zoom` scales what Excel measures in points.
-pub fn layout(chart: &Chart, data: &ChartData, size: (f32, f32), zoom: f32, ts: &WindowTextSystem, style: &ChartStyle) -> ChartLayout {
+pub fn layout(
+    chart: &Chart,
+    data: &ChartData,
+    size: (f32, f32),
+    zoom: f32,
+    ts: &WindowTextSystem,
+    style: &ChartStyle,
+) -> ChartLayout {
     let shaper = Shaper {
         ts,
         family: style.font.clone(),
@@ -401,7 +508,13 @@ pub fn layout(chart: &Chart, data: &ChartData, size: (f32, f32), zoom: f32, ts: 
 
 /// The display list of a chart laid out by [`layout`], its corner at
 /// `origin` (window coordinates).
-pub fn draws(layout: &ChartLayout, origin: Point<Pixels>, clip: Bounds<Pixels>, ts: &WindowTextSystem, style: &ChartStyle) -> Vec<Draw> {
+pub fn draws(
+    layout: &ChartLayout,
+    origin: Point<Pixels>,
+    clip: Bounds<Pixels>,
+    ts: &WindowTextSystem,
+    style: &ChartStyle,
+) -> Vec<Draw> {
     let mut out = Converter {
         shaper: Shaper {
             ts,
@@ -433,7 +546,12 @@ pub fn outline_draws(outline: &Outline, origin: Point<Pixels>, ts: &WindowTextSy
     };
     for b in &outline.frames {
         out.items.push(Draw::Quad(quad(
-            out.bounds(b[0].round(), b[1].round(), (b[2] - b[0]).round(), (b[3] - b[1]).round()),
+            out.bounds(
+                b[0].round(),
+                b[1].round(),
+                (b[2] - b[0]).round(),
+                (b[3] - b[1]).round(),
+            ),
             px(0.),
             gpui::transparent_black(),
             px(1.),
@@ -462,7 +580,13 @@ pub fn build_chart(
     let (w, h) = (x1 - x0, y1 - y0);
     let origin = grid.to_window(x0, y0);
     let laid = layout(chart, data, (w, h), grid.zoom, ts, style);
-    let items = draws(&laid, origin, Bounds::new(origin, size(px(w), px(h))), ts, style);
+    let items = draws(
+        &laid,
+        origin,
+        Bounds::new(origin, size(px(w), px(h))),
+        ts,
+        style,
+    );
     (laid, items)
 }
 
@@ -489,7 +613,14 @@ pub fn chart_canvas(
             let size = (f32::from(bounds.size.width), f32::from(bounds.size.height));
             let laid = layout(&chart, &data, size, zoom, &ts, &style);
             let items = draws(&laid, bounds.origin, bounds, &ts, &style);
-            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+            crate::grid::paint_layers(
+                vec![Layer {
+                    clip: bounds,
+                    items,
+                }],
+                window,
+                cx,
+            );
         },
     )
     .w(px(width))
@@ -520,10 +651,21 @@ pub fn paint_turned(
 /// The asset path of a line of text to draw turned (`Draw::Turned`), and
 /// the width and the height of its box: for turned text outside charts
 /// (the text of a turned shape).
-pub fn turned_text(ts: &WindowTextSystem, family: SharedString, text: &str, size: f32, bold: bool) -> (SharedString, f32, f32) {
+pub fn turned_text(
+    ts: &WindowTextSystem,
+    family: SharedString,
+    text: &str,
+    size: f32,
+    bold: bool,
+) -> (SharedString, f32, f32) {
     let look = Look {
         bold,
         ..Look::default()
     };
-    Shaper { ts, family, fonts: None }.turned(text, size, look)
+    Shaper {
+        ts,
+        family,
+        fonts: None,
+    }
+    .turned(text, size, look)
 }

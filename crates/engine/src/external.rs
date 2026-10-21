@@ -127,7 +127,11 @@ pub fn sniff(bytes: &[u8], content_type: Option<&str>) -> SourceFormat {
     let head = String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).to_lowercase();
     let head = head.trim_start_matches(['\u{feff}', ' ', '\t', '\r', '\n']);
     let markup = |head: &str| {
-        if head.contains("<html") || head.contains("<!doctype html") || head.contains("<table") || head.contains("<body") {
+        if head.contains("<html")
+            || head.contains("<!doctype html")
+            || head.contains("<table")
+            || head.contains("<body")
+        {
             SourceFormat::Html
         } else {
             SourceFormat::Xml
@@ -156,7 +160,11 @@ pub fn sniff(bytes: &[u8], content_type: Option<&str>) -> SourceFormat {
 /// A piece of an HTML or XML document.
 #[derive(Debug, PartialEq)]
 enum Token {
-    Open { name: String, attrs: Vec<(String, String)>, empty: bool },
+    Open {
+        name: String,
+        attrs: Vec<(String, String)>,
+        empty: bool,
+    },
     Close(String),
     Text(String),
 }
@@ -213,7 +221,10 @@ fn decode_entities(text: &str) -> String {
     while let Some(at) = rest.find('&') {
         out.push_str(&rest[..at]);
         rest = &rest[at..];
-        let end = rest[1..].find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '#')).map(|n| n + 1).unwrap_or(rest.len());
+        let end = rest[1..]
+            .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '#'))
+            .map(|n| n + 1)
+            .unwrap_or(rest.len());
         let name = &rest[1..end];
         let decoded = if let Some(number) = name.strip_prefix('#') {
             let code = match number.strip_prefix(['x', 'X']) {
@@ -222,7 +233,10 @@ fn decode_entities(text: &str) -> String {
             };
             code.and_then(char::from_u32).map(String::from)
         } else {
-            ENTITIES.iter().find(|(known, _)| *known == name).map(|(_, text)| text.to_string())
+            ENTITIES
+                .iter()
+                .find(|(known, _)| *known == name)
+                .map(|(_, text)| text.to_string())
         };
         match decoded {
             Some(text) => {
@@ -266,12 +280,18 @@ fn tokens(src: &str, html: bool) -> Vec<Token> {
         } else if let Some(close) = rest.strip_prefix("</") {
             let end = close.find('>').unwrap_or(close.len());
             let name = close[..end].trim();
-            out.push(Token::Close(if html { name.to_lowercase() } else { name.to_string() }));
+            out.push(Token::Close(if html {
+                name.to_lowercase()
+            } else {
+                name.to_string()
+            }));
             rest = close.get(end + 1..).unwrap_or("");
         } else if rest[1..].starts_with(|ch: char| ch.is_alphabetic() || ch == '_') {
             let (token, after) = open_tag(&rest[1..], html);
             let raw = match &token {
-                Token::Open { name, empty: false, .. } if html && (name == "script" || name == "style") => Some(name.clone()),
+                Token::Open {
+                    name, empty: false, ..
+                } if html && (name == "script" || name == "style") => Some(name.clone()),
                 _ => None,
             };
             out.push(token);
@@ -279,7 +299,9 @@ fn tokens(src: &str, html: bool) -> Vec<Token> {
             if let Some(name) = raw {
                 // Up to the closing tag, whatever is in between.
                 let lower = rest.to_ascii_lowercase();
-                rest = lower.find(&format!("</{name}")).map_or("", |end| &rest[end..]);
+                rest = lower
+                    .find(&format!("</{name}"))
+                    .map_or("", |end| &rest[end..]);
             }
         } else {
             // A lone "<" is text.
@@ -292,8 +314,14 @@ fn tokens(src: &str, html: bool) -> Vec<Token> {
 
 /// Read a start tag from after its `<`; returns it and what follows.
 fn open_tag(src: &str, html: bool) -> (Token, &str) {
-    let name_end = src.find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/').unwrap_or(src.len());
-    let name = if html { src[..name_end].to_lowercase() } else { src[..name_end].to_string() };
+    let name_end = src
+        .find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/')
+        .unwrap_or(src.len());
+    let name = if html {
+        src[..name_end].to_lowercase()
+    } else {
+        src[..name_end].to_string()
+    };
     let mut attrs = Vec::new();
     let mut rest = &src[name_end..];
     let mut empty = false;
@@ -311,13 +339,19 @@ fn open_tag(src: &str, html: bool) -> (Token, &str) {
             rest = after;
             continue;
         }
-        let key_end = rest.find(|ch: char| ch.is_whitespace() || ch == '=' || ch == '>' || ch == '/').unwrap_or(rest.len());
+        let key_end = rest
+            .find(|ch: char| ch.is_whitespace() || ch == '=' || ch == '>' || ch == '/')
+            .unwrap_or(rest.len());
         if key_end == 0 {
             // A stray character: step over it.
             rest = &rest[rest.chars().next().map_or(1, char::len_utf8)..];
             continue;
         }
-        let key = if html { rest[..key_end].to_lowercase() } else { rest[..key_end].to_string() };
+        let key = if html {
+            rest[..key_end].to_lowercase()
+        } else {
+            rest[..key_end].to_string()
+        };
         rest = rest[key_end..].trim_start();
         let mut value = String::new();
         if let Some(after) = rest.strip_prefix('=') {
@@ -328,7 +362,9 @@ fn open_tag(src: &str, html: bool) -> (Token, &str) {
                 value = decode_entities(&body[..end]);
                 rest = body.get(end + 1..).unwrap_or("");
             } else {
-                let end = after.find(|ch: char| ch.is_whitespace() || ch == '>').unwrap_or(after.len());
+                let end = after
+                    .find(|ch: char| ch.is_whitespace() || ch == '>')
+                    .unwrap_or(after.len());
                 value = decode_entities(&after[..end]);
                 rest = &after[end..];
             }
@@ -336,7 +372,11 @@ fn open_tag(src: &str, html: bool) -> (Token, &str) {
         attrs.push((key, value));
     }
     // Elements HTML never closes.
-    let void = html && matches!(name.as_str(), "br" | "hr" | "img" | "input" | "meta" | "link" | "col" | "wbr" | "area" | "base");
+    let void = html
+        && matches!(
+            name.as_str(),
+            "br" | "hr" | "img" | "input" | "meta" | "link" | "col" | "wbr" | "area" | "base"
+        );
     (
         Token::Open {
             name,
@@ -348,7 +388,10 @@ fn open_tag(src: &str, html: bool) -> (Token, &str) {
 }
 
 fn attr<'a>(attrs: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    attrs.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
+    attrs
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
 }
 
 /// Runs of white space become one space; none at the ends.
@@ -450,12 +493,19 @@ pub fn html_tables(html: &str) -> Vec<SourceTable> {
                         if !build.started {
                             new_row(build);
                         }
-                        let span = |name: &str| attr(&attrs, name).and_then(|text| text.trim().parse::<usize>().ok()).unwrap_or(1).clamp(1, 1000);
+                        let span = |name: &str| {
+                            attr(&attrs, name)
+                                .and_then(|text| text.trim().parse::<usize>().ok())
+                                .unwrap_or(1)
+                                .clamp(1, 1000)
+                        };
                         place(build, span("colspan"), span("rowspan"));
                     }
                 }
                 "br" | "p" | "div" | "li" => {
-                    if let Some((_, _, text)) = stack.last_mut().and_then(|build| build.table.cell.as_mut()) {
+                    if let Some((_, _, text)) =
+                        stack.last_mut().and_then(|build| build.table.cell.as_mut())
+                    {
                         text.push(' ');
                     }
                 }
@@ -550,7 +600,11 @@ struct JsonReader<'a> {
 
 impl JsonReader<'_> {
     fn space(&mut self) {
-        while self.src.get(self.at).is_some_and(|byte| byte.is_ascii_whitespace()) {
+        while self
+            .src
+            .get(self.at)
+            .is_some_and(|byte| byte.is_ascii_whitespace())
+        {
             self.at += 1;
         }
     }
@@ -629,10 +683,16 @@ impl JsonReader<'_> {
             b'n' => self.word("null", Json::Null),
             _ => {
                 let start = self.at;
-                while self.src.get(self.at).is_some_and(|byte| matches!(byte, b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')) {
+                while self.src.get(self.at).is_some_and(|byte| {
+                    matches!(byte, b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
+                }) {
                     self.at += 1;
                 }
-                std::str::from_utf8(&self.src[start..self.at]).ok()?.parse().ok().map(Json::Number)
+                std::str::from_utf8(&self.src[start..self.at])
+                    .ok()?
+                    .parse()
+                    .ok()
+                    .map(Json::Number)
             }
         }
     }
@@ -667,10 +727,14 @@ impl JsonReader<'_> {
                             let mut code = self.hex4()?;
                             // Two escapes for a character outside the
                             // basic plane.
-                            if (0xD800..0xDC00).contains(&code) && self.src[self.at..].starts_with(b"\\u") {
+                            if (0xD800..0xDC00).contains(&code)
+                                && self.src[self.at..].starts_with(b"\\u")
+                            {
                                 self.at += 2;
                                 let low = self.hex4()?;
-                                code = 0x10000 + ((code - 0xD800) << 10) + (low.wrapping_sub(0xDC00) & 0x3FF);
+                                code = 0x10000
+                                    + ((code - 0xD800) << 10)
+                                    + (low.wrapping_sub(0xDC00) & 0x3FF);
                             }
                             char::from_u32(code).unwrap_or('\u{fffd}')
                         }
@@ -707,8 +771,14 @@ fn json_scalar(value: &Json) -> Datum {
         Json::List(items) => {
             // A list of plain values fits a cell; a list of records is
             // a table of its own, which the Navigator offers.
-            if items.iter().all(|item| !matches!(item, Json::List(_) | Json::Record(_))) {
-                let texts: Vec<String> = items.iter().map(|item| json_scalar(item).preview()).collect();
+            if items
+                .iter()
+                .all(|item| !matches!(item, Json::List(_) | Json::Record(_)))
+            {
+                let texts: Vec<String> = items
+                    .iter()
+                    .map(|item| json_scalar(item).preview())
+                    .collect();
                 Datum::Exact(Value::text(texts.join(", ")))
             } else {
                 Datum::Exact(Value::text("[List]"))
@@ -722,7 +792,11 @@ fn json_scalar(value: &Json) -> Datum {
 /// `outer.inner`, the way Excel names the columns it expands.
 fn flatten(members: &[(String, Json)], prefix: &str, out: &mut Vec<(String, Datum)>) {
     for (key, value) in members {
-        let name = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
+        let name = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{prefix}.{key}")
+        };
         match value {
             Json::Record(inner) if !inner.is_empty() => flatten(inner, &name, out),
             other => out.push((name, json_scalar(other))),
@@ -733,7 +807,12 @@ fn flatten(members: &[(String, Json)], prefix: &str, out: &mut Vec<(String, Datu
 /// Lay a JSON value out as rows: a list gives a row per item under the
 /// names of the members, a record a row per member.
 fn json_rows(value: &Json) -> Vec<Vec<Datum>> {
-    let header = |names: &[String]| names.iter().map(|name| Datum::Exact(Value::text(name))).collect::<Vec<_>>();
+    let header = |names: &[String]| {
+        names
+            .iter()
+            .map(|name| Datum::Exact(Value::text(name)))
+            .collect::<Vec<_>>()
+    };
     match value {
         Json::List(items) => {
             let mut names: Vec<String> = Vec::new();
@@ -767,7 +846,11 @@ fn json_rows(value: &Json) -> Vec<Vec<Datum>> {
             let mut fields = Vec::new();
             flatten(members, "", &mut fields);
             let mut rows = vec![header(&["Name".to_string(), "Value".to_string()])];
-            rows.extend(fields.into_iter().map(|(name, datum)| vec![Datum::Exact(Value::text(name)), datum]));
+            rows.extend(
+                fields
+                    .into_iter()
+                    .map(|(name, datum)| vec![Datum::Exact(Value::text(name)), datum]),
+            );
             rows
         }
         scalar => vec![vec![json_scalar(scalar)]],
@@ -779,9 +862,15 @@ fn json_rows(value: &Json) -> Vec<Vec<Datum>> {
 fn json_lists<'a>(value: &'a Json, path: &str, depth: usize, out: &mut Vec<(String, &'a Json)>) {
     if let (Json::Record(members), true) = (value, depth < 6) {
         for (key, inner) in members {
-            let name = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+            let name = if path.is_empty() {
+                key.clone()
+            } else {
+                format!("{path}.{key}")
+            };
             match inner {
-                Json::List(items) if items.iter().any(|item| matches!(item, Json::Record(_))) => out.push((name, inner)),
+                Json::List(items) if items.iter().any(|item| matches!(item, Json::Record(_))) => {
+                    out.push((name, inner))
+                }
                 Json::Record(_) => json_lists(inner, &name, depth + 1, out),
                 _ => {}
             }
@@ -857,7 +946,13 @@ fn parse_xml(text: &str) -> Option<Element> {
 /// An element as columns: its attributes, then its children, those of a
 /// child that has children of its own named `child.inner`.
 fn xml_fields(element: &Element, prefix: &str, out: &mut Vec<(String, String)>) {
-    let named = |name: &str| if prefix.is_empty() { name.to_string() } else { format!("{prefix}.{name}") };
+    let named = |name: &str| {
+        if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}.{name}")
+        }
+    };
     for (key, value) in &element.attrs {
         if !key.starts_with("xmlns") {
             out.push((named(&format!("Attribute:{key}")), value.clone()));
@@ -866,7 +961,14 @@ fn xml_fields(element: &Element, prefix: &str, out: &mut Vec<(String, String)>) 
     if element.children.is_empty() {
         let text = tidy(&element.text);
         if !text.is_empty() || element.attrs.is_empty() {
-            out.push((if prefix.is_empty() { element.name.clone() } else { prefix.to_string() }, text));
+            out.push((
+                if prefix.is_empty() {
+                    element.name.clone()
+                } else {
+                    prefix.to_string()
+                },
+                text,
+            ));
         }
         return;
     }
@@ -901,11 +1003,19 @@ fn xml_rows(elements: &[&Element]) -> Vec<Vec<Datum>> {
         }
         records.push(fields);
     }
-    let mut rows = vec![names.iter().map(|name| Datum::Exact(Value::text(name))).collect::<Vec<_>>()];
+    let mut rows = vec![
+        names
+            .iter()
+            .map(|name| Datum::Exact(Value::text(name)))
+            .collect::<Vec<_>>(),
+    ];
     for fields in records {
         let mut row = vec![Datum::Empty; names.len()];
         for (name, text) in fields {
-            if let (Some(col), false) = (names.iter().position(|known| *known == name), text.is_empty()) {
+            if let (Some(col), false) = (
+                names.iter().position(|known| *known == name),
+                text.is_empty(),
+            ) {
                 row[col] = Datum::Auto(text);
             }
         }
@@ -919,7 +1029,11 @@ fn xml_rows(elements: &[&Element]) -> Vec<Vec<Datum>> {
 /// table of one row.
 pub fn xml_tables(text: &str) -> Option<Vec<SourceTable>> {
     let root = parse_xml(text)?;
-    let records: Vec<&Element> = root.children.iter().filter(|child| !child.children.is_empty() || !child.attrs.is_empty()).collect();
+    let records: Vec<&Element> = root
+        .children
+        .iter()
+        .filter(|child| !child.children.is_empty() || !child.attrs.is_empty())
+        .collect();
     if records.is_empty() {
         return Some(vec![SourceTable {
             name: root.name.clone(),
@@ -937,7 +1051,11 @@ pub fn xml_tables(text: &str) -> Option<Vec<SourceTable>> {
         kinds
             .into_iter()
             .map(|kind| {
-                let elements: Vec<&Element> = records.iter().copied().filter(|record| record.name == kind).collect();
+                let elements: Vec<&Element> = records
+                    .iter()
+                    .copied()
+                    .filter(|record| record.name == kind)
+                    .collect();
                 SourceTable {
                     name: kind.to_string(),
                     item: Some(QueryItem::Name(kind.to_string())),
@@ -953,7 +1071,9 @@ pub fn xml_tables(text: &str) -> Option<Vec<SourceTable>> {
 pub fn pick<'a>(tables: &'a [SourceTable], query: &WebQuery) -> Option<&'a SourceTable> {
     match &query.item {
         None => tables.first(),
-        Some(item) => tables.iter().find(|table| table.item.as_ref() == Some(item)),
+        Some(item) => tables
+            .iter()
+            .find(|table| table.item.as_ref() == Some(item)),
     }
 }
 
@@ -961,7 +1081,11 @@ pub fn pick<'a>(tables: &'a [SourceTable], query: &WebQuery) -> Option<&'a Sourc
 
 impl Workbook {
     /// Where `table` would land from `dest`.
-    pub fn source_table_extent(&self, dest: (u32, u32), table: &SourceTable) -> Result<Rect, TextColumnsError> {
+    pub fn source_table_extent(
+        &self,
+        dest: (u32, u32),
+        table: &SourceTable,
+    ) -> Result<Rect, TextColumnsError> {
         let (rows, cols) = (table.rows.len() as u32, table.columns() as u32);
         if rows == 0 || cols == 0 {
             return Err(TextColumnsError::NoData);
@@ -969,7 +1093,12 @@ impl Workbook {
         if dest.0 + rows > MAX_ROWS || dest.1 + cols > MAX_COLS {
             return Err(TextColumnsError::OffSheet);
         }
-        Ok(Rect::new(dest.0, dest.1, dest.0 + rows - 1, dest.1 + cols - 1))
+        Ok(Rect::new(
+            dest.0,
+            dest.1,
+            dest.0 + rows - 1,
+            dest.1 + cols - 1,
+        ))
     }
 
     fn write_source_table(&mut self, sheet: usize, dest: (u32, u32), table: &SourceTable) {
@@ -979,19 +1108,27 @@ impl Workbook {
                 let col = dest.1 + j as u32;
                 match datum {
                     Datum::Empty => self.set_content(sheet, row, col, Content::Empty),
-                    Datum::Exact(value) => self.set_content(sheet, row, col, Content::Value(value.clone())),
+                    Datum::Exact(value) => {
+                        self.set_content(sheet, row, col, Content::Value(value.clone()))
+                    }
                     Datum::Formatted(number, format) => {
                         if self.style_at(sheet, row, col).is_general() {
                             let format: std::sync::Arc<str> = std::sync::Arc::from(format.as_str());
-                            self.update_style(sheet, Rect::cell(row, col), &move |s| s.num_fmt = format.clone());
+                            self.update_style(sheet, Rect::cell(row, col), &move |s| {
+                                s.num_fmt = format.clone()
+                            });
                         }
                         self.set_content(sheet, row, col, Content::Value(Value::Number(*number)));
                     }
                     Datum::Auto(text) => {
                         // Typed as at the keyboard, but what comes from
                         // outside never computes.
-                        let typed = !text.starts_with(['=', '+', '-', '@']) || text.parse::<f64>().is_ok();
-                        if !typed || self.set_cell_text(sheet, row, col, text).is_err() || self.is_formula(sheet, row, col) {
+                        let typed =
+                            !text.starts_with(['=', '+', '-', '@']) || text.parse::<f64>().is_ok();
+                        if !typed
+                            || self.set_cell_text(sheet, row, col, text).is_err()
+                            || self.is_formula(sheet, row, col)
+                        {
                             self.set_content(sheet, row, col, Content::Value(Value::text(text)));
                         }
                     }
@@ -1001,13 +1138,20 @@ impl Workbook {
     }
 
     fn is_formula(&self, sheet: usize, row: u32, col: u32) -> bool {
-        self.cell(sheet, row, col).is_some_and(|cell| matches!(cell.content, Content::Formula(_)))
+        self.cell(sheet, row, col)
+            .is_some_and(|cell| matches!(cell.content, Content::Formula(_)))
     }
 
     /// Load `table` into `sheet` from `dest` and remember the query
     /// there. `import.range` and an empty `import.name` are filled in.
     /// Returns the rectangle written. The caller commits.
-    pub fn import_source_table(&mut self, sheet: usize, dest: (u32, u32), table: &SourceTable, mut import: TextImport) -> Result<Rect, TextColumnsError> {
+    pub fn import_source_table(
+        &mut self,
+        sheet: usize,
+        dest: (u32, u32),
+        table: &SourceTable,
+        mut import: TextImport,
+    ) -> Result<Rect, TextColumnsError> {
         if sheet >= self.sheets.len() {
             return Err(TextColumnsError::NoData);
         }
@@ -1026,8 +1170,18 @@ impl Workbook {
     /// is cleared (with its formats when the query does not preserve
     /// them) and the new written from the same corner. The caller
     /// commits.
-    pub fn refresh_source_table(&mut self, sheet: usize, index: usize, table: &SourceTable) -> Result<Rect, TextColumnsError> {
-        let import = self.sheets.get(sheet).and_then(|sh| sh.text_imports.get(index)).cloned().ok_or(TextColumnsError::NoData)?;
+    pub fn refresh_source_table(
+        &mut self,
+        sheet: usize,
+        index: usize,
+        table: &SourceTable,
+    ) -> Result<Rect, TextColumnsError> {
+        let import = self
+            .sheets
+            .get(sheet)
+            .and_then(|sh| sh.text_imports.get(index))
+            .cloned()
+            .ok_or(TextColumnsError::NoData)?;
         let dest = (import.range.r0, import.range.c0);
         let extent = self.source_table_extent(dest, table)?;
         self.clear_import(sheet, &import);
@@ -1049,21 +1203,38 @@ impl Workbook {
     /// that no other query (the one at `except` aside) and no defined
     /// name has.
     pub fn import_name_free(&self, name: &str, except: (usize, usize)) -> bool {
-        let valid = name.chars().next().is_some_and(|ch| ch.is_alphabetic() || ch == '_')
-            && name.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '.')
+        let valid = name
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+            && name
+                .chars()
+                .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '.')
             && crate::refs::parse_cell_name(name).is_none();
         let key = name.to_uppercase();
         let taken = self.names.contains_key(&key)
             || self.sheets.iter().enumerate().any(|(sheet, on)| {
-                on.names.contains_key(&key) || on.text_imports.iter().enumerate().any(|(index, import)| (sheet, index) != except && import.name.to_uppercase() == key)
+                on.names.contains_key(&key)
+                    || on.text_imports.iter().enumerate().any(|(index, import)| {
+                        (sheet, index) != except && import.name.to_uppercase() == key
+                    })
             });
         valid && !taken
     }
 
     /// Change a query (its name, address, item or properties). The
     /// caller commits.
-    pub fn update_import(&mut self, sheet: usize, index: usize, change: impl FnOnce(&mut TextImport)) {
-        if self.sheets.get(sheet).is_some_and(|sh| index < sh.text_imports.len()) {
+    pub fn update_import(
+        &mut self,
+        sheet: usize,
+        index: usize,
+        change: impl FnOnce(&mut TextImport),
+    ) {
+        if self
+            .sheets
+            .get(sheet)
+            .is_some_and(|sh| index < sh.text_imports.len())
+        {
             self.snapshot();
             change(&mut self.sheets[sheet].text_imports[index]);
         }
@@ -1072,7 +1243,11 @@ impl Workbook {
     /// Forget a query; its data stays on the sheet as plain cells. The
     /// caller commits.
     pub fn remove_import(&mut self, sheet: usize, index: usize) {
-        if self.sheets.get(sheet).is_some_and(|sh| index < sh.text_imports.len()) {
+        if self
+            .sheets
+            .get(sheet)
+            .is_some_and(|sh| index < sh.text_imports.len())
+        {
             self.snapshot();
             self.sheets[sheet].text_imports.remove(index);
         }
@@ -1086,7 +1261,11 @@ mod tests {
     use crate::text_columns::{Delimiters, Layout, Spec};
 
     fn texts(table: &SourceTable) -> Vec<Vec<String>> {
-        table.rows.iter().map(|row| row.iter().map(Datum::preview).collect()).collect()
+        table
+            .rows
+            .iter()
+            .map(|row| row.iter().map(Datum::preview).collect())
+            .collect()
     }
 
     fn query(path: &str, item: Option<QueryItem>) -> TextImport {
@@ -1120,22 +1299,44 @@ mod tests {
         let names: Vec<&str> = tables.iter().map(|table| table.name.as_str()).collect();
         assert_eq!(names, ["Sales & returns", "Table 1", "Table 2"]);
         assert_eq!(tables[0].item, Some(QueryItem::Index(1)));
-        assert_eq!(texts(&tables[0]), [["Name", "Qty", "When"], ["Ann Lee", "1,5", "2024-03-05"], ["Béa", "4", "=1+1"]]);
+        assert_eq!(
+            texts(&tables[0]),
+            [
+                ["Name", "Qty", "When"],
+                ["Ann Lee", "1,5", "2024-03-05"],
+                ["Béa", "4", "=1+1"]
+            ]
+        );
         // Spans leave the cells they cover empty; a nested table is a
         // table of its own and not text of the cell around it.
-        assert_eq!(texts(&tables[1]), [vec!["Wide", "", "Tall"], vec!["a", "b", ""], vec!["outer"]]);
+        assert_eq!(
+            texts(&tables[1]),
+            [vec!["Wide", "", "Tall"], vec!["a", "b", ""], vec!["outer"]]
+        );
         assert_eq!(texts(&tables[2]), [["inner"]]);
         assert!(html_tables("<p>No table here</p>").is_empty());
         // A page that stops in the middle of a table.
-        assert_eq!(texts(&html_tables("<table><tr><td>x<td>y")[0]), [["x", "y"]]);
+        assert_eq!(
+            texts(&html_tables("<table><tr><td>x<td>y")[0]),
+            [["x", "y"]]
+        );
     }
 
     #[test]
     fn json_documents() {
-        assert_eq!(parse_json(r#" {"a": [1, -2.5e1, "xé\n", true, null]} "#), Some(Json::Record(vec![(
-            "a".to_string(),
-            Json::List(vec![Json::Number(1.0), Json::Number(-25.0), Json::Text("xé\n".to_string()), Json::Bool(true), Json::Null]),
-        )])));
+        assert_eq!(
+            parse_json(r#" {"a": [1, -2.5e1, "xé\n", true, null]} "#),
+            Some(Json::Record(vec![(
+                "a".to_string(),
+                Json::List(vec![
+                    Json::Number(1.0),
+                    Json::Number(-25.0),
+                    Json::Text("xé\n".to_string()),
+                    Json::Bool(true),
+                    Json::Null
+                ]),
+            )]))
+        );
         assert_eq!(parse_json("{\"a\": }"), None);
         assert_eq!(parse_json("[1, 2] trailing"), None);
         assert_eq!(parse_json(r#""😀""#), Some(Json::Text("😀".to_string())));
@@ -1148,7 +1349,14 @@ mod tests {
         assert_eq!(
             texts(&tables[0]),
             [
-                vec!["name", "address.city", "address.geo.lat", "tags", "age", "orders"],
+                vec![
+                    "name",
+                    "address.city",
+                    "address.geo.lat",
+                    "tags",
+                    "age",
+                    "orders"
+                ],
                 vec!["Ann", "Paris", "48.8", "a, b", "", ""],
                 vec!["Bob", "Lyon", "", "", "41", "[List]"],
             ]
@@ -1156,13 +1364,45 @@ mod tests {
         assert_eq!(tables[0].rows[1][2], Datum::Exact(Value::Number(48.8)));
 
         // A record: a row per member, and its lists of records as tables.
-        let tables = json_tables(r#"{"total":2,"page":{"size":10},"data":{"items":[{"id":1},{"id":2}]}}"#, "doc").unwrap();
-        assert_eq!(texts(&tables[0]), [["Name", "Value"], ["total", "2"], ["page.size", "10"], ["data.items", "[List]"]]);
+        let tables = json_tables(
+            r#"{"total":2,"page":{"size":10},"data":{"items":[{"id":1},{"id":2}]}}"#,
+            "doc",
+        )
+        .unwrap();
+        assert_eq!(
+            texts(&tables[0]),
+            [
+                ["Name", "Value"],
+                ["total", "2"],
+                ["page.size", "10"],
+                ["data.items", "[List]"]
+            ]
+        );
         assert_eq!(tables[1].name, "data.items");
-        assert_eq!(tables[1].item, Some(QueryItem::Name("data.items".to_string())));
+        assert_eq!(
+            tables[1].item,
+            Some(QueryItem::Name("data.items".to_string()))
+        );
         assert_eq!(texts(&tables[1]), [["id"], ["1"], ["2"]]);
-        assert_eq!(pick(&tables, &WebQuery { item: Some(QueryItem::Name("data.items".to_string())) }).map(|table| table.rows.len()), Some(3));
-        assert!(pick(&tables, &WebQuery { item: Some(QueryItem::Index(4)) }).is_none());
+        assert_eq!(
+            pick(
+                &tables,
+                &WebQuery {
+                    item: Some(QueryItem::Name("data.items".to_string()))
+                }
+            )
+            .map(|table| table.rows.len()),
+            Some(3)
+        );
+        assert!(
+            pick(
+                &tables,
+                &WebQuery {
+                    item: Some(QueryItem::Index(4))
+                }
+            )
+            .is_none()
+        );
         assert!(json_tables("not json", "x").is_none());
     }
 
@@ -1179,28 +1419,54 @@ mod tests {
         assert_eq!(
             texts(&tables[0]),
             [
-                vec!["Attribute:id", "title", "price", "author.first", "author.last", "tag"],
+                vec![
+                    "Attribute:id",
+                    "title",
+                    "price",
+                    "author.first",
+                    "author.last",
+                    "tag"
+                ],
                 vec!["b1", "Dune", "9.5", "Frank", "Herbert", ""],
                 vec!["b2", "War & Peace", "", "", "", "a, b"],
             ]
         );
         assert_eq!(texts(&tables[1]), [["Attribute:city"], ["Paris"]]);
         // Plain values under the root: one row.
-        let flat = xml_tables("<rate><from>EUR</from><to>USD</to><value>1.08</value></rate>").unwrap();
+        let flat =
+            xml_tables("<rate><from>EUR</from><to>USD</to><value>1.08</value></rate>").unwrap();
         assert_eq!(flat[0].item, None);
-        assert_eq!(texts(&flat[0]), [["from", "to", "value"], ["EUR", "USD", "1.08"]]);
+        assert_eq!(
+            texts(&flat[0]),
+            [["from", "to", "value"], ["EUR", "USD", "1.08"]]
+        );
         assert!(xml_tables("").is_none());
     }
 
     #[test]
     fn formats_are_told_apart() {
         assert_eq!(sniff(b"PK\x03\x04rest", None), SourceFormat::Workbook);
-        assert_eq!(sniff(b"\n  <!DOCTYPE HTML><html>", None), SourceFormat::Html);
-        assert_eq!(sniff(b"<?xml version=\"1.0\"?><rows/>", None), SourceFormat::Xml);
-        assert_eq!(sniff(b"<?xml version=\"1.0\"?><html><body/></html>", Some("application/xhtml+xml")), SourceFormat::Html);
+        assert_eq!(
+            sniff(b"\n  <!DOCTYPE HTML><html>", None),
+            SourceFormat::Html
+        );
+        assert_eq!(
+            sniff(b"<?xml version=\"1.0\"?><rows/>", None),
+            SourceFormat::Xml
+        );
+        assert_eq!(
+            sniff(
+                b"<?xml version=\"1.0\"?><html><body/></html>",
+                Some("application/xhtml+xml")
+            ),
+            SourceFormat::Html
+        );
         assert_eq!(sniff(b" [1]", None), SourceFormat::Json);
         assert_eq!(sniff(b"a,b\n1,2", None), SourceFormat::Text);
-        assert_eq!(sniff(b"a,b\n1,2", Some("application/json; charset=utf-8")), SourceFormat::Json);
+        assert_eq!(
+            sniff(b"a,b\n1,2", Some("application/json; charset=utf-8")),
+            SourceFormat::Json
+        );
         assert_eq!(sniff(b"[x],b", Some("text/csv")), SourceFormat::Text);
     }
 
@@ -1208,7 +1474,17 @@ mod tests {
     fn load_and_refresh_a_table() {
         let mut w = Workbook::new(Locale::fr());
         let tables = html_tables(PAGE);
-        let extent = w.import_source_table(0, (1, 1), &tables[0], query("http://127.0.0.1:1/sales/report.html?year=2024", Some(QueryItem::Index(1)))).unwrap();
+        let extent = w
+            .import_source_table(
+                0,
+                (1, 1),
+                &tables[0],
+                query(
+                    "http://127.0.0.1:1/sales/report.html?year=2024",
+                    Some(QueryItem::Index(1)),
+                ),
+            )
+            .unwrap();
         w.commit("Import Data");
         assert_eq!(extent, Rect::parse("B2:D4").unwrap());
         assert_eq!(w.sheets[0].text_imports[0].name, "report");
@@ -1224,7 +1500,10 @@ mod tests {
         let smaller = SourceTable {
             name: String::new(),
             item: None,
-            rows: vec![vec![Datum::Auto("Name".into())], vec![Datum::Auto("-12".into())]],
+            rows: vec![
+                vec![Datum::Auto("Name".into())],
+                vec![Datum::Auto("-12".into())],
+            ],
         };
         let extent = w.refresh_source_table(0, 0, &smaller).unwrap();
         w.commit("Refresh");
@@ -1234,14 +1513,20 @@ mod tests {
         assert_eq!(w.sheets[0].text_imports[0].range, extent);
         w.undo();
         assert_eq!(w.value_at(0, 3, 3), Value::text("=1+1"));
-        assert_eq!(w.sheets[0].text_imports[0].range, Rect::parse("B2:D4").unwrap());
+        assert_eq!(
+            w.sheets[0].text_imports[0].range,
+            Rect::parse("B2:D4").unwrap()
+        );
 
         let empty = SourceTable {
             name: String::new(),
             item: None,
             rows: Vec::new(),
         };
-        assert_eq!(w.refresh_source_table(0, 0, &empty), Err(TextColumnsError::NoData));
+        assert_eq!(
+            w.refresh_source_table(0, 0, &empty),
+            Err(TextColumnsError::NoData)
+        );
         w.remove_import(0, 0);
         w.commit("Delete");
         assert!(w.sheets[0].text_imports.is_empty());

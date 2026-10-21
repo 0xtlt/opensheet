@@ -13,8 +13,12 @@ use crate::i18n::{t, t_ctx};
 use crate::shell::{Modal, RefStyle};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, ListBox, RefEdit, ScrollArea, Select, TextField, dialog, label};
-use gpui::{AnyElement, Context, Entity, Focusable, FontWeight, SharedString, Window, div, prelude::*, px};
+use crate::widgets::{
+    self, Button, ListBox, RefEdit, ScrollArea, Select, TextField, dialog, label,
+};
+use gpui::{
+    AnyElement, Context, Entity, Focusable, FontWeight, SharedString, Window, div, prelude::*, px,
+};
 use opensheet_engine::eval::Calc;
 use opensheet_engine::functions::{self, Category, FunctionDef};
 use opensheet_engine::parser::parse_formula;
@@ -172,14 +176,31 @@ struct Memory {
 }
 
 /// The list Excel starts with.
-const RECENT_AT_START: [&str; 10] = ["SUM", "AVERAGE", "IF", "HYPERLINK", "COUNT", "MAX", "SIN", "SUMIF", "PMT", "STDEV"];
+const RECENT_AT_START: [&str; 10] = [
+    "SUM",
+    "AVERAGE",
+    "IF",
+    "HYPERLINK",
+    "COUNT",
+    "MAX",
+    "SIN",
+    "SUMIF",
+    "PMT",
+    "STDEV",
+];
 
 static MEMORY: Mutex<Option<Memory>> = Mutex::new(None);
 
 fn with_memory<R>(f: impl FnOnce(&mut Memory) -> R) -> R {
-    let mut guard = MEMORY.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = MEMORY
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let memory = guard.get_or_insert_with(|| Memory {
-        recent: RECENT_AT_START.iter().filter_map(|name| functions::lookup(name)).map(|def| def.name).collect(),
+        recent: RECENT_AT_START
+            .iter()
+            .filter_map(|name| functions::lookup(name))
+            .map(|def| def.name)
+            .collect(),
         category: 0,
     });
     f(memory)
@@ -226,7 +247,13 @@ fn category_name(category: Category) -> &'static str {
 /// 1: all), by their name in the language of the workbook.
 fn functions_in(category: usize, locale: &Locale) -> Vec<&'static FunctionDef> {
     if category == 0 {
-        return with_memory(|memory| memory.recent.iter().filter_map(|name| functions::lookup(name)).collect());
+        return with_memory(|memory| {
+            memory
+                .recent
+                .iter()
+                .filter_map(|name| functions::lookup(name))
+                .collect()
+        });
     }
     let wanted = CATEGORIES.get(category.wrapping_sub(2)).copied();
     let mut list: Vec<&'static FunctionDef> = functions::all()
@@ -241,14 +268,18 @@ fn functions_in(category: usize, locale: &Locale) -> Vec<&'static FunctionDef> {
 /// name (in English or in the language of the workbook) or in what Excel
 /// says about them.
 pub(crate) fn search(query: &str, locale: &Locale) -> Vec<&'static FunctionDef> {
-    let words: Vec<String> = query.split_whitespace().map(|word| word.to_lowercase()).collect();
+    let words: Vec<String> = query
+        .split_whitespace()
+        .map(|word| word.to_lowercase())
+        .collect();
     if words.is_empty() {
         return Vec::new();
     }
     let mut list: Vec<&'static FunctionDef> = functions::all()
         .into_iter()
         .filter(|def| {
-            let mut haystack = format!("{} {}", def.name, locale.fn_to_local(def.name)).to_lowercase();
+            let mut haystack =
+                format!("{} {}", def.name, locale.fn_to_local(def.name)).to_lowercase();
             if let Some(help) = fn_help::help(def.name) {
                 haystack.push(' ');
                 haystack.push_str(&help.description.to_lowercase());
@@ -278,7 +309,11 @@ pub(super) fn insert_function(app: &mut ExcelApp, window: &mut Window, cx: &mut 
         let text = app.wb.formula_bar_text(app.sheet, row, col);
         let first = text
             .starts_with('=')
-            .then(|| calls(&text, app.wb.locale).into_iter().find(|call| function_of(call, app.wb.locale).is_some()))
+            .then(|| {
+                calls(&text, app.wb.locale)
+                    .into_iter()
+                    .find(|call| function_of(call, app.wb.locale).is_some())
+            })
             .flatten();
         if let Some(call) = first {
             app.start_edit(None, EditMode::Edit, EditSource::Cell, window, cx);
@@ -286,7 +321,9 @@ pub(super) fn insert_function(app: &mut ExcelApp, window: &mut Window, cx: &mut 
                 return;
             }
             let caret = call.range.start;
-            app.editor().clone().update(cx, |input, cx| input.set_selection(caret..caret, cx));
+            app.editor()
+                .clone()
+                .update(cx, |input, cx| input.set_selection(caret..caret, cx));
             if open_arguments(app, Restore::CancelEdit, window, cx) {
                 return;
             }
@@ -294,13 +331,20 @@ pub(super) fn insert_function(app: &mut ExcelApp, window: &mut Window, cx: &mut 
         }
     }
     let locale = app.wb.locale;
-    app.open_modal(window, cx, move |modal, _, cx| InsertFunction::new(modal, locale, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        InsertFunction::new(modal, locale, cx)
+    });
 }
 
 /// Put a function into the formula (starting one in a cell that is not
 /// being edited) and open its arguments: what choosing a function in the
 /// Insert Function dialog or in a menu of the Function Library does.
-pub fn function_arguments(app: &mut ExcelApp, function: &'static str, window: &mut Window, cx: &mut Cx) {
+pub fn function_arguments(
+    app: &mut ExcelApp,
+    function: &'static str,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if app.modal_open() {
         return;
     }
@@ -390,17 +434,28 @@ impl InsertFunction {
         // Return in the search box searches; once the answers are there,
         // it takes the one selected.
         let query = self.search.read(cx).text().to_string();
-        if self.search.read(cx).focus_handle(cx).is_focused(window) && !query.trim().is_empty() && query != self.searched {
+        if self.search.read(cx).focus_handle(cx).is_focused(window)
+            && !query.trim().is_empty()
+            && query != self.searched
+        {
             self.go(cx);
             return;
         }
-        let Some(def) = self.selected.and_then(|index| self.listed().get(index).copied()) else {
+        let Some(def) = self
+            .selected
+            .and_then(|index| self.listed().get(index).copied())
+        else {
             return;
         };
-        let category = if self.found.is_some() { self.category.saturating_sub(1) } else { self.category };
+        let category = if self.found.is_some() {
+            self.category.saturating_sub(1)
+        } else {
+            self.category
+        };
         with_memory(|memory| memory.category = category);
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| function_arguments(app, def.name, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| function_arguments(app, def.name, window, cx));
     }
 }
 
@@ -411,35 +466,56 @@ impl Render for InsertFunction {
             t("Most Recently Used", "Les dernières utilisées").into(),
             t_ctx("category", "All", "Toutes").into(),
         ];
-        categories.extend(CATEGORIES.iter().map(|category| SharedString::from(category_name(*category))));
+        categories.extend(
+            CATEGORIES
+                .iter()
+                .map(|category| SharedString::from(category_name(*category))),
+        );
         if self.found.is_some() {
             categories.insert(0, t("Recommended", "Recommandé").into());
         }
         let listed = self.listed();
-        let names: Vec<SharedString> = listed.iter().map(|def| SharedString::from(locale.fn_to_local(def.name))).collect();
+        let names: Vec<SharedString> = listed
+            .iter()
+            .map(|def| SharedString::from(locale.fn_to_local(def.name)))
+            .collect();
         let chosen = self.selected.and_then(|index| listed.get(index).copied());
         let help = chosen.and_then(|def| fn_help::help(def.name));
-        let syntax = chosen.map(|def| fn_help::syntax(def, help, locale)).unwrap_or_default();
-        let description = help.map(|help| help.description.clone()).unwrap_or_default();
+        let syntax = chosen
+            .map(|def| fn_help::syntax(def, help, locale))
+            .unwrap_or_default();
+        let description = help
+            .map(|help| help.description.clone())
+            .unwrap_or_default();
 
         dialog(&self.modal, t("Insert Function", "Insérer une fonction"))
             .width(470.0)
             .on_ok(cx.listener(Self::ok))
-            .child(label(t("Search for a function:", "Recherchez une fonction :")))
+            .child(label(t(
+                "Search for a function:",
+                "Recherchez une fonction :",
+            )))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(8.))
                     .child(TextField::new(&self.search))
-                    .child(Button::new("go", t("Go", "OK")).width(60.0).on_click(cx.listener(|this, _, _, cx| this.go(cx)))),
+                    .child(
+                        Button::new("go", t("Go", "OK"))
+                            .width(60.0)
+                            .on_click(cx.listener(|this, _, _, cx| this.go(cx))),
+                    ),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(label(t("Or select a category:", "Ou sélectionnez une catégorie :")))
+                    .child(label(t(
+                        "Or select a category:",
+                        "Ou sélectionnez une catégorie :",
+                    )))
                     .child(
                         Select::new("category", categories, Some(self.category))
                             .width(220.0)
@@ -450,7 +526,10 @@ impl Render for InsertFunction {
                             })),
                     ),
             )
-            .child(label(t("Select a function:", "Sélectionnez une fonction :")))
+            .child(label(t(
+                "Select a function:",
+                "Sélectionnez une fonction :",
+            )))
             .child(
                 div().flex().child(
                     ListBox::new("functions", names, self.selected)
@@ -472,8 +551,16 @@ impl Render for InsertFunction {
                     .flex_col()
                     .gap(px(4.))
                     .overflow_hidden()
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(SharedString::from(syntax)))
-                    .child(div().line_height(px(16.)).child(SharedString::from(description))),
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(SharedString::from(syntax)),
+                    )
+                    .child(
+                        div()
+                            .line_height(px(16.))
+                            .child(SharedString::from(description)),
+                    ),
             )
             .footer(
                 div()
@@ -485,9 +572,13 @@ impl Render for InsertFunction {
                             .disabled(chosen.is_none())
                             .on_click(cx.listener(Self::ok)),
                     )
-                    .child(Button::new("cancel", t("Cancel", "Annuler")).on_click(cx.listener(|this, _, window, cx| {
-                        this.modal.close(window, cx);
-                    }))),
+                    .child(
+                        Button::new("cancel", t("Cancel", "Annuler")).on_click(cx.listener(
+                            |this, _, window, cx| {
+                                this.modal.close(window, cx);
+                            },
+                        )),
+                    ),
             )
     }
 }
@@ -527,7 +618,9 @@ fn open_arguments(app: &mut ExcelApp, restore: Restore, window: &mut Window, cx:
         restore,
         shown: text,
     };
-    app.open_modal(window, cx, move |modal, _, cx| FunctionArgs::new(modal, init, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        FunctionArgs::new(modal, init, cx)
+    });
     true
 }
 
@@ -561,11 +654,24 @@ fn call_site(text: &str, caret: usize, locale: &Locale) -> Option<CallSite> {
 /// The formula Function Arguments writes back: the call with its
 /// arguments (the empty ones at the end left out) between what came
 /// before and after it.
-fn compose(prefix: &str, def: &FunctionDef, args: &[String], suffix: &str, locale: &Locale) -> String {
-    let used = args.iter().rposition(|arg| !arg.trim().is_empty()).map_or(0, |last| last + 1);
+fn compose(
+    prefix: &str,
+    def: &FunctionDef,
+    args: &[String],
+    suffix: &str,
+    locale: &Locale,
+) -> String {
+    let used = args
+        .iter()
+        .rposition(|arg| !arg.trim().is_empty())
+        .map_or(0, |last| last + 1);
     let args: Vec<&str> = args[..used].iter().map(|arg| arg.trim()).collect();
     let sep = locale.arg_sep.to_string();
-    format!("{prefix}{}({}){suffix}", locale.fn_to_local(def.name), args.join(&sep))
+    format!(
+        "{prefix}{}({}){suffix}",
+        locale.fn_to_local(def.name),
+        args.join(&sep)
+    )
 }
 
 struct ArgsInit {
@@ -588,7 +694,10 @@ pub(crate) fn preview(wb: &Workbook, cell: (usize, u32, u32), text: &str) -> Str
         return String::new();
     }
     match parse_formula(text, wb.locale) {
-        Ok(expr) => names::literal_value(&Calc::eval_once(wb, cell.0, cell.1, cell.2, &expr), wb.locale),
+        Ok(expr) => names::literal_value(
+            &Calc::eval_once(wb, cell.0, cell.1, cell.2, &expr),
+            wb.locale,
+        ),
         Err(_) => t("Invalid", "Non valide").to_string(),
     }
 }
@@ -652,7 +761,11 @@ impl FunctionArgs {
     /// Show as many boxes as the function names, and always one to go on
     /// with while it takes more.
     fn grow(&mut self, cx: &mut Context<Self>) {
-        let filled = self.fields.iter().rposition(|field| !field.read(cx).text().trim().is_empty()).map_or(0, |i| i + 1);
+        let filled = self
+            .fields
+            .iter()
+            .rposition(|field| !field.read(cx).text().trim().is_empty())
+            .map_or(0, |i| i + 1);
         let wanted = fn_help::shown_arguments(self.def, self.help, filled);
         while self.fields.len() < wanted {
             self.add_field(String::new(), cx);
@@ -661,7 +774,11 @@ impl FunctionArgs {
 
     /// The call as the boxes spell it.
     fn call(&self, cx: &Context<Self>) -> String {
-        let args: Vec<String> = self.fields.iter().map(|field| field.read(cx).text().to_string()).collect();
+        let args: Vec<String> = self
+            .fields
+            .iter()
+            .map(|field| field.read(cx).text().to_string())
+            .collect();
         compose("", self.def, &args, "", self.locale)
     }
 
@@ -702,25 +819,37 @@ impl FunctionArgs {
         }
         self.modal.close(window, cx);
         if matches!(restore, Restore::CancelEdit) {
-            self.modal.update_app(cx, |app, cx| app.cancel_edit(window, cx));
+            self.modal
+                .update_app(cx, |app, cx| app.cancel_edit(window, cx));
         }
     }
 
     /// Bring the values shown up to date with the texts of the boxes.
     fn refresh_previews(&mut self, cx: &mut Context<Self>) {
-        let texts: Vec<String> = self.fields.iter().map(|field| field.read(cx).text().to_string()).collect();
+        let texts: Vec<String> = self
+            .fields
+            .iter()
+            .map(|field| field.read(cx).text().to_string())
+            .collect();
         let call = self.call(cx);
         let cell = self.cell;
         self.previews.truncate(texts.len());
         let stale: Vec<usize> = (0..texts.len())
-            .filter(|i| self.previews.get(*i).is_none_or(|(text, _)| *text != texts[*i]))
+            .filter(|i| {
+                self.previews
+                    .get(*i)
+                    .is_none_or(|(text, _)| *text != texts[*i])
+            })
             .collect();
         let result_stale = self.result.0 != call;
         if stale.is_empty() && !result_stale {
             return;
         }
         let fresh = self.modal.read_app(cx, |app| {
-            let values: Vec<String> = stale.iter().map(|i| preview(&app.wb, cell, &texts[*i])).collect();
+            let values: Vec<String> = stale
+                .iter()
+                .map(|i| preview(&app.wb, cell, &texts[*i]))
+                .collect();
             let result = result_stale.then(|| preview(&app.wb, cell, &call));
             (values, result)
         });
@@ -752,13 +881,21 @@ fn capitalized(name: &str) -> String {
 impl Render for FunctionArgs {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.refresh_previews(cx);
-        if let Some(focused) = self.fields.iter().position(|field| field.read(cx).focus_handle(cx).is_focused(window)) {
+        if let Some(focused) = self
+            .fields
+            .iter()
+            .position(|field| field.read(cx).focus_handle(cx).is_focused(window))
+        {
             self.current = focused;
         }
         let args = fn_help::arguments(self.def, self.help, self.fields.len());
         let mut rows: Vec<AnyElement> = Vec::new();
         for (i, (field, arg)) in self.fields.iter().zip(&args).enumerate() {
-            let value = self.previews.get(i).map(|(_, value)| value.clone()).unwrap_or_default();
+            let value = self
+                .previews
+                .get(i)
+                .map(|(_, value)| value.clone())
+                .unwrap_or_default();
             rows.push(
                 div()
                     .h(px(28.))
@@ -772,7 +909,11 @@ impl Render for FunctionArgs {
                             .flex()
                             .justify_end()
                             .when(!arg.optional, |d| d.font_weight(FontWeight::SEMIBOLD))
-                            .child(div().truncate().child(SharedString::from(capitalized(&arg.name)))),
+                            .child(
+                                div()
+                                    .truncate()
+                                    .child(SharedString::from(capitalized(&arg.name))),
+                            ),
                     )
                     .child(RefEdit::new(field, &self.modal).width(190.0))
                     .child(
@@ -786,11 +927,16 @@ impl Render for FunctionArgs {
             );
         }
         let boxes: AnyElement = if rows.len() > 5 {
-            ScrollArea::new("arguments", 5.0 * 28.0).children(rows).into_any_element()
+            ScrollArea::new("arguments", 5.0 * 28.0)
+                .children(rows)
+                .into_any_element()
         } else {
             div().flex().flex_col().children(rows).into_any_element()
         };
-        let description = self.help.map(|help| help.description.clone()).unwrap_or_default();
+        let description = self
+            .help
+            .map(|help| help.description.clone())
+            .unwrap_or_default();
         let about: AnyElement = match args.get(self.current) {
             Some(arg) if !arg.description.is_empty() => div()
                 .flex()
@@ -816,39 +962,62 @@ impl Render for FunctionArgs {
             // Without Excel's texts, the syntax says what goes where.
             _ if self.help.is_none() => div()
                 .text_color(c(theme::TEXT_MUTED))
-                .child(SharedString::from(fn_help::syntax(self.def, None, self.locale)))
+                .child(SharedString::from(fn_help::syntax(
+                    self.def,
+                    None,
+                    self.locale,
+                )))
                 .into_any_element(),
             _ => div().into_any_element(),
         };
         let result = self.result.1.clone();
 
-        dialog(&self.modal, t("Function Arguments", "Arguments de la fonction"))
-            .width(560.0)
-            .on_ok(cx.listener(Self::ok))
-            .on_cancel(cx.listener(Self::cancel))
-            .child(
+        dialog(
+            &self.modal,
+            t("Function Arguments", "Arguments de la fonction"),
+        )
+        .width(560.0)
+        .on_ok(cx.listener(Self::ok))
+        .on_cancel(cx.listener(Self::cancel))
+        .child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(SharedString::from(self.locale.fn_to_local(self.def.name))),
+        )
+        .child(boxes)
+        .child(
+            div().flex().justify_end().pr(px(4.)).child(
                 div()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(SharedString::from(self.locale.fn_to_local(self.def.name))),
-            )
-            .child(boxes)
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .pr(px(4.))
-                    .child(div().w(px(196.)).truncate().child(SharedString::from(format!("= {result}")))),
-            )
-            .child(div().min_h(px(32.)).line_height(px(16.)).child(SharedString::from(description)))
-            .child(div().min_h(px(48.)).child(about))
-            .child(label(format!("{} {result}", t("Formula result =", "Résultat ="))))
-            .footer(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(Button::new("ok", t("OK", "OK")).primary().on_click(cx.listener(Self::ok)))
-                    .child(Button::new("cancel", t("Cancel", "Annuler")).on_click(cx.listener(Self::cancel))),
-            )
+                    .w(px(196.))
+                    .truncate()
+                    .child(SharedString::from(format!("= {result}"))),
+            ),
+        )
+        .child(
+            div()
+                .min_h(px(32.))
+                .line_height(px(16.))
+                .child(SharedString::from(description)),
+        )
+        .child(div().min_h(px(48.)).child(about))
+        .child(label(format!(
+            "{} {result}",
+            t("Formula result =", "Résultat =")
+        )))
+        .footer(
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    Button::new("ok", t("OK", "OK"))
+                        .primary()
+                        .on_click(cx.listener(Self::ok)),
+                )
+                .child(
+                    Button::new("cancel", t("Cancel", "Annuler"))
+                        .on_click(cx.listener(Self::cancel)),
+                ),
+        )
     }
 }
 
@@ -867,7 +1036,10 @@ mod tests {
     #[test]
     fn calls_are_found_with_their_arguments() {
         let en = Locale::en();
-        assert_eq!(calls("=SUM(A1:A3, B2)", en), [call(1..15, "SUM", &["A1:A3", "B2"])]);
+        assert_eq!(
+            calls("=SUM(A1:A3, B2)", en),
+            [call(1..15, "SUM", &["A1:A3", "B2"])]
+        );
         assert_eq!(calls("=RAND()", en), [call(1..7, "RAND", &[])]);
         assert_eq!(calls("=A1+2*(B1-C1)", en), []);
         assert_eq!(
@@ -879,22 +1051,44 @@ mod tests {
             ]
         );
         // Empty arguments are arguments; a union between parentheses is one.
-        assert_eq!(calls("=IF(A1,,2)", en), [call(1..10, "IF", &["A1", "", "2"])]);
-        assert_eq!(calls("=SUM((A1,B1),C1)", en), [call(1..16, "SUM", &["(A1,B1)", "C1"])]);
+        assert_eq!(
+            calls("=IF(A1,,2)", en),
+            [call(1..10, "IF", &["A1", "", "2"])]
+        );
+        assert_eq!(
+            calls("=SUM((A1,B1),C1)", en),
+            [call(1..16, "SUM", &["(A1,B1)", "C1"])]
+        );
         // Sheet names, structured references and dotted names.
         assert_eq!(
             calls("=T.TEST('My (1), sheet'!A1,Table1[[a,b]:[c]])", en),
-            [call(1..45, "T.TEST", &["'My (1), sheet'!A1", "Table1[[a,b]:[c]]"])]
+            [call(
+                1..45,
+                "T.TEST",
+                &["'My (1), sheet'!A1", "Table1[[a,b]:[c]]"]
+            )]
         );
-        assert_eq!(calls("=SUM(T[It's '[x'], y],1)", en), [call(1..24, "SUM", &["T[It's '[x'], y]", "1"])]);
+        assert_eq!(
+            calls("=SUM(T[It's '[x'], y],1)", en),
+            [call(1..24, "SUM", &["T[It's '[x'], y]", "1"])]
+        );
     }
 
     #[test]
     fn calls_follow_the_language_and_unfinished_formulas() {
         let fr = Locale::fr();
-        assert_eq!(calls("=SOMME(1,5;A1)", fr), [call(1..14, "SOMME", &["1,5", "A1"])]);
+        assert_eq!(
+            calls("=SOMME(1,5;A1)", fr),
+            [call(1..14, "SOMME", &["1,5", "A1"])]
+        );
         // Still being typed.
-        assert_eq!(calls("=SI(A1>2;SOMME(B1;", fr), [call(1..18, "SI", &["A1>2", "SOMME(B1;"]), call(9..18, "SOMME", &["B1", ""])]);
+        assert_eq!(
+            calls("=SI(A1>2;SOMME(B1;", fr),
+            [
+                call(1..18, "SI", &["A1>2", "SOMME(B1;"]),
+                call(9..18, "SOMME", &["B1", ""])
+            ]
+        );
         assert_eq!(calls("=SOMME(", fr), [call(1..7, "SOMME", &[])]);
     }
 
@@ -912,7 +1106,14 @@ mod tests {
         assert_eq!(name_at(0), None);
         assert_eq!(name_at(28).as_deref(), Some("ABS"));
         assert_eq!(call_at("=A1+B1", 3, en), None);
-        assert_eq!(function_of(&call_at("=SOMME(A1)", 3, Locale::fr()).unwrap(), Locale::fr()).map(|def| def.name), Some("SUM"));
+        assert_eq!(
+            function_of(
+                &call_at("=SOMME(A1)", 3, Locale::fr()).unwrap(),
+                Locale::fr()
+            )
+            .map(|def| def.name),
+            Some("SUM")
+        );
         assert!(function_of(&call(0..5, "NOPE", &[]), en).is_none());
     }
 
@@ -921,16 +1122,32 @@ mod tests {
         let fr = Locale::fr();
         let text = "=A1+SOMME(B1;C1:C3)*2";
         let site = call_site(text, 12, fr).unwrap();
-        assert_eq!((site.def.name, site.prefix.as_str(), site.suffix.as_str()), ("SUM", "=A1+", "*2"));
+        assert_eq!(
+            (site.def.name, site.prefix.as_str(), site.suffix.as_str()),
+            ("SUM", "=A1+", "*2")
+        );
         assert_eq!(site.args, ["B1", "C1:C3"]);
         // Unchanged arguments give the formula back.
-        assert_eq!(compose(&site.prefix, site.def, &site.args, &site.suffix, fr), text);
+        assert_eq!(
+            compose(&site.prefix, site.def, &site.args, &site.suffix, fr),
+            text
+        );
         // Empty boxes at the end are left out, those in the middle kept.
-        let args = |list: &[&str]| -> Vec<String> { list.iter().map(|arg| arg.to_string()).collect() };
+        let args =
+            |list: &[&str]| -> Vec<String> { list.iter().map(|arg| arg.to_string()).collect() };
         let sum = site.def;
-        assert_eq!(compose("=", sum, &args(&["A1", " ", ""]), "", fr), "=SOMME(A1)");
-        assert_eq!(compose("=", sum, &args(&["", "B2 ", ""]), "", fr), "=SOMME(;B2)");
-        assert_eq!(compose("=", sum, &args(&[]), "+1", Locale::en()), "=SUM()+1");
+        assert_eq!(
+            compose("=", sum, &args(&["A1", " ", ""]), "", fr),
+            "=SOMME(A1)"
+        );
+        assert_eq!(
+            compose("=", sum, &args(&["", "B2 ", ""]), "", fr),
+            "=SOMME(;B2)"
+        );
+        assert_eq!(
+            compose("=", sum, &args(&[]), "+1", Locale::en()),
+            "=SUM()+1"
+        );
         // A call just started, the caret between its parentheses.
         let fresh = call_site("=RECHERCHEV()", 12, fr).unwrap();
         assert_eq!((fresh.def.name, fresh.args.len()), ("VLOOKUP", 0));
@@ -970,14 +1187,23 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
-        let logical = functions_in(2 + CATEGORIES.iter().position(|c| *c == Category::Logical).unwrap(), fr);
+        let logical = functions_in(
+            2 + CATEGORIES
+                .iter()
+                .position(|c| *c == Category::Logical)
+                .unwrap(),
+            fr,
+        );
         assert!(logical.iter().all(|def| def.category == Category::Logical));
         assert!(logical.iter().any(|def| def.name == "IF"));
         // The list Excel starts with, as far as the engine has it.
         assert_eq!(functions_in(0, fr).first().map(|def| def.name), Some("SUM"));
 
         let found: Vec<&str> = search("somme si", fr).iter().map(|def| def.name).collect();
-        assert!(found.contains(&"SUMIF") && found.contains(&"SUMIFS"), "{found:?}");
+        assert!(
+            found.contains(&"SUMIF") && found.contains(&"SUMIFS"),
+            "{found:?}"
+        );
         assert!(search("   ", fr).is_empty());
         assert!(search("zzzzqqq", fr).is_empty());
     }

@@ -23,18 +23,26 @@ fn described(action: &str) -> Option<&'static str> {
         "MoveDown" => t("Select Cell Down", "Sélectionner une cellule vers le bas"),
         "MoveLeft" => t("Select Cell Left", "Sélectionner la cellule de gauche"),
         "MoveRight" => t("Select Cell Right", "Sélectionner la cellule de droite"),
-        "ExtendUp" | "ExtendDown" | "ExtendLeft" | "ExtendRight" => {
-            t("Extend the selection by one cell", "Étendre la sélection d’une cellule")
-        }
-        "JumpUp" | "JumpDown" | "JumpLeft" | "JumpRight" => {
-            t("Move to the edge of the current data region", "Atteindre le bord de la zone de données active")
-        }
+        "ExtendUp" | "ExtendDown" | "ExtendLeft" | "ExtendRight" => t(
+            "Extend the selection by one cell",
+            "Étendre la sélection d’une cellule",
+        ),
+        "JumpUp" | "JumpDown" | "JumpLeft" | "JumpRight" => t(
+            "Move to the edge of the current data region",
+            "Atteindre le bord de la zone de données active",
+        ),
         "ExtendJumpUp" | "ExtendJumpDown" | "ExtendJumpLeft" | "ExtendJumpRight" => t(
             "Extend the selection to the edge of the current data region",
             "Étendre la sélection jusqu’au bord de la zone de données active",
         ),
-        "NextCell" => t("Move Right One Cell", "Déplacer vers la droite d’une cellule"),
-        "PrevCell" => t("Move Left One Cell", "Déplacer vers la gauche d’une cellule"),
+        "NextCell" => t(
+            "Move Right One Cell",
+            "Déplacer vers la droite d’une cellule",
+        ),
+        "PrevCell" => t(
+            "Move Left One Cell",
+            "Déplacer vers la gauche d’une cellule",
+        ),
         "EnterDown" => t("Move Down One Cell", "Descendre d’une cellule"),
         "EnterUp" => t("Move Up One Cell", "Monter d’une cellule"),
         "EditCell" => t("Enter Edit Mode", "Activer le mode d’édition"),
@@ -49,17 +57,35 @@ fn described(action: &str) -> Option<&'static str> {
         "FillRight" => t("Fill Right", "Recopier à droite"),
         "PageUp" => t("Move one screen up", "Remonter d’un écran"),
         "PageDown" => t("Move one screen down", "Descendre d’un écran"),
-        "GoRowStart" => t("Move to the beginning of the row", "Atteindre le début de la ligne"),
+        "GoRowStart" => t(
+            "Move to the beginning of the row",
+            "Atteindre le début de la ligne",
+        ),
         "GoStart" => t("Go to cell A1", "Aller à la cellule A1"),
-        "GoEnd" => t("Go to last cell of the used range", "Atteindre la dernière cellule de la plage utilisée"),
-        "SelectColumn" => t("Select an entire column", "Sélectionner une colonne entière"),
+        "GoEnd" => t(
+            "Go to last cell of the used range",
+            "Atteindre la dernière cellule de la plage utilisée",
+        ),
+        "SelectColumn" => t(
+            "Select an entire column",
+            "Sélectionner une colonne entière",
+        ),
         "SelectRow" => t("Select an entire row", "Sélectionner une ligne entière"),
         "InsertDate" => t("Enter the date", "Insérer la date"),
         "AutoSum" => t("AutoSum", "Somme automatique"),
-        "InsertRows" => t("Insert cells, rows or columns", "Insérer des cellules, des lignes ou des colonnes"),
-        "DeleteRows" => t("Delete cells, rows or columns", "Supprimer des cellules, des lignes ou des colonnes"),
+        "InsertRows" => t(
+            "Insert cells, rows or columns",
+            "Insérer des cellules, des lignes ou des colonnes",
+        ),
+        "DeleteRows" => t(
+            "Delete cells, rows or columns",
+            "Supprimer des cellules, des lignes ou des colonnes",
+        ),
         "Cancel" => t("Cancel an entry", "Annuler une saisie"),
-        "OpenDropDown" => t("Open the drop-down list of the cell", "Ouvrir la liste déroulante de la cellule"),
+        "OpenDropDown" => t(
+            "Open the drop-down list of the cell",
+            "Ouvrir la liste déroulante de la cellule",
+        ),
         "Undo" => t("Undo", "Annuler"),
         "Redo" => t("Redo", "Rétablir"),
         "Bold" => t("Bold", "Gras"),
@@ -118,7 +144,10 @@ pub(crate) fn spaced(name: &str) -> String {
 /// What the action `name` ("opensheet::MoveUp") does, in words.
 pub(crate) fn description(name: &str) -> String {
     let short = name.rsplit("::").next().unwrap_or(name);
-    described(short).map_or_else(|| spaced(short), |text| text.trim_end_matches('…').to_string())
+    described(short).map_or_else(
+        || spaced(short),
+        |text| text.trim_end_matches('…').to_string(),
+    )
 }
 
 /// A key as the Mac writes it.
@@ -167,13 +196,19 @@ pub(crate) fn lines(cx: &App) -> Vec<Line> {
     for binding in keymap.bindings() {
         let listed = match binding.predicate().as_deref() {
             None => true,
-            Some(KeyBindingContextPredicate::Identifier(context)) => CONTEXTS.contains(&context.as_ref()),
+            Some(KeyBindingContextPredicate::Identifier(context)) => {
+                CONTEXTS.contains(&context.as_ref())
+            }
             Some(_) => false,
         };
         if !listed {
             continue;
         }
-        let stroke: Vec<String> = binding.keystrokes().iter().map(|stroke| keys(stroke.inner())).collect();
+        let stroke: Vec<String> = binding
+            .keystrokes()
+            .iter()
+            .map(|stroke| keys(stroke.inner()))
+            .collect();
         let stroke = stroke.join(" ");
         let text = description(binding.action().name());
         match out.iter_mut().find(|line| line.text == text) {
@@ -216,7 +251,10 @@ mod tests {
         // Menu labels lose their dots.
         assert_eq!(description("formulas::GoTo"), "Go To");
         // An action nobody described still has a line.
-        assert_eq!(description("review::CheckSpellingNow"), "Check Spelling Now");
+        assert_eq!(
+            description("review::CheckSpellingNow"),
+            "Check Spelling Now"
+        );
         assert_eq!(spaced("Undo"), "Undo");
     }
 }

@@ -70,7 +70,10 @@ fn password_arg<'a>(call: &Call<'a>, index: usize) -> Res<&'a str> {
 
 /// Whether a password opens a protection (any does when it has none).
 fn opens(protection: &SheetProtection, password: &str) -> bool {
-    protection.password.as_ref().is_none_or(|hash| hash.verify(password))
+    protection
+        .password
+        .as_ref()
+        .is_none_or(|hash| hash.verify(password))
 }
 
 fn hashed(password: &str) -> Option<PasswordHash> {

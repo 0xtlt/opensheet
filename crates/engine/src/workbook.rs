@@ -213,7 +213,10 @@ impl Sheet {
         if self.hidden_cols.contains(&col) {
             return 0.0;
         }
-        self.col_widths.get(&col).copied().unwrap_or(self.default_col_width)
+        self.col_widths
+            .get(&col)
+            .copied()
+            .unwrap_or(self.default_col_width)
     }
 
     /// Row height in pixels at 100 % (0 when hidden by hand or by a filter).
@@ -221,7 +224,10 @@ impl Sheet {
         if self.is_row_hidden(row) {
             return 0.0;
         }
-        self.row_heights.get(&row).copied().unwrap_or(self.default_row_height)
+        self.row_heights
+            .get(&row)
+            .copied()
+            .unwrap_or(self.default_row_height)
     }
 
     /// True when the row is not shown: hidden by hand or by a filter.
@@ -258,7 +264,12 @@ impl Sheet {
         if self.filtered_rows.is_empty() {
             std::borrow::Cow::Borrowed(&self.hidden_rows)
         } else {
-            std::borrow::Cow::Owned(self.hidden_rows.union(&self.filtered_rows).copied().collect())
+            std::borrow::Cow::Owned(
+                self.hidden_rows
+                    .union(&self.filtered_rows)
+                    .copied()
+                    .collect(),
+            )
         }
     }
 
@@ -552,13 +563,15 @@ impl Workbook {
     // ---- lookup ---------------------------------------------------------
 
     pub fn sheet_index(&self, name: &str) -> Option<usize> {
-        self.sheets
-            .iter()
-            .position(|s| s.name.eq_ignore_ascii_case(name) || s.name.to_lowercase() == name.to_lowercase())
+        self.sheets.iter().position(|s| {
+            s.name.eq_ignore_ascii_case(name) || s.name.to_lowercase() == name.to_lowercase()
+        })
     }
 
     pub fn defined_name(&self, name: &str) -> Option<&Expr> {
-        self.names.get(&name.to_uppercase()).map(|d| d.expr.as_ref())
+        self.names
+            .get(&name.to_uppercase())
+            .map(|d| d.expr.as_ref())
     }
 
     pub fn cell(&self, sheet: usize, row: u32, col: u32) -> Option<&Cell> {
@@ -639,7 +652,8 @@ impl Workbook {
         };
         // A cell with nothing in it and no formatting of its own is not stored.
         let inherited = sh.inherited_style(row, col);
-        let mut cell = cell.filter(|c| !(matches!(c.content, Content::Empty) && c.style == inherited));
+        let mut cell =
+            cell.filter(|c| !(matches!(c.content, Content::Empty) && c.style == inherited));
         let current = sh.cells.get(&(row, col));
         if crate::recalc::same_content(current, cell.as_ref()) {
             // The same formula keeps the result it has: only a change of
@@ -702,7 +716,7 @@ impl Workbook {
                     sheets: self.sheets.clone(),
                     names: self.names.clone(),
                     cell_styles: self.cell_styles.clone(),
-                theme: self.theme_arc(),
+                    theme: self.theme_arc(),
                 }));
             }
         }
@@ -710,7 +724,10 @@ impl Workbook {
         // the snapshot is paired with. Kept, it would be replayed over that
         // state by a redo, and bring back what a later change of the sheets
         // had moved or removed (a value typed, then its row deleted).
-        if let Some(at) = changes.iter().position(|ch| matches!(ch, Change::Sheets { .. })) {
+        if let Some(at) = changes
+            .iter()
+            .position(|ch| matches!(ch, Change::Sheets { .. }))
+        {
             changes.truncate(at + 1);
         }
         self.undo_stack.push(UndoEntry {
@@ -812,7 +829,8 @@ impl Workbook {
                             new.value = old.value.clone();
                         }
                     } else {
-                        let replaced = current.is_some_and(|c| matches!(c.content, Content::Formula(_)));
+                        let replaced =
+                            current.is_some_and(|c| matches!(c.content, Content::Formula(_)));
                         wb.calc.touch(*sheet, pos.0, pos.1, replaced);
                     }
                     match target {
@@ -976,7 +994,13 @@ impl Workbook {
     /// percentages, booleans or plain text. A number format is applied when
     /// the entry implies one (dates, percentages, currency) and the cell is
     /// still "General".
-    pub fn set_cell_text(&mut self, sheet: usize, row: u32, col: u32, text: &str) -> Result<(), ParseError> {
+    pub fn set_cell_text(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        text: &str,
+    ) -> Result<(), ParseError> {
         let Some(sh) = self.sheets.get(sheet) else {
             return Ok(());
         };
@@ -1025,10 +1049,7 @@ impl Workbook {
             return;
         };
         let cell = match sh.cells.get(&(row, col)) {
-            Some(c) => Cell {
-                style,
-                ..c.clone()
-            },
+            Some(c) => Cell { style, ..c.clone() },
             None => Cell {
                 content: Content::Empty,
                 value: Value::Empty,
@@ -1084,7 +1105,11 @@ impl Workbook {
         if sheet >= self.sheets.len() {
             return;
         }
-        let filtered: Vec<u32> = self.sheets[sheet].filtered_rows.range(rect.r0..=rect.r1).copied().collect();
+        let filtered: Vec<u32> = self.sheets[sheet]
+            .filtered_rows
+            .range(rect.r0..=rect.r1)
+            .copied()
+            .collect();
         let is_filtered = |row: u32| filtered.binary_search(&row).is_ok();
         let mut memo: HashMap<StyleId, StyleId> = HashMap::new();
         let mut map = |wb: &mut Workbook, id: StyleId| -> StyleId {
@@ -1105,7 +1130,9 @@ impl Workbook {
                 // The cells of filtered rows that have no formatting of
                 // their own, in the columns that hold something: they must
                 // not take the new formatting of their column.
-                let last = self.sheets[sheet].used_rect().map_or(rect.c0, |used| used.c1.min(rect.c1));
+                let last = self.sheets[sheet]
+                    .used_rect()
+                    .map_or(rect.c0, |used| used.c1.min(rect.c1));
                 let mut kept: Vec<(u32, u32, StyleId)> = Vec::new();
                 for &row in &filtered {
                     let sh = &self.sheets[sheet];
@@ -1119,7 +1146,11 @@ impl Workbook {
                     }
                 }
                 for col in rect.c0..=rect.c1 {
-                    let cur = self.sheets[sheet].col_styles.get(&col).copied().unwrap_or_default();
+                    let cur = self.sheets[sheet]
+                        .col_styles
+                        .get(&col)
+                        .copied()
+                        .unwrap_or_default();
                     let new = map(self, cur);
                     self.set_col_style(sheet, col, Some(new));
                 }
@@ -1131,7 +1162,11 @@ impl Workbook {
                 // Where a formatted column crosses these rows, the cell must
                 // keep the column's formatting plus the change: give it a
                 // real cell before the row style takes precedence.
-                let cols: Vec<(u32, StyleId)> = self.sheets[sheet].col_styles.iter().map(|(c, s)| (*c, *s)).collect();
+                let cols: Vec<(u32, StyleId)> = self.sheets[sheet]
+                    .col_styles
+                    .iter()
+                    .map(|(c, s)| (*c, *s))
+                    .collect();
                 for row in rect.r0..=rect.r1 {
                     if self.sheets[sheet].row_styles.contains_key(&row) || is_filtered(row) {
                         continue;
@@ -1144,7 +1179,11 @@ impl Workbook {
                     }
                 }
                 for row in (rect.r0..=rect.r1).filter(|r| !is_filtered(*r)) {
-                    let cur = self.sheets[sheet].row_styles.get(&row).copied().unwrap_or_default();
+                    let cur = self.sheets[sheet]
+                        .row_styles
+                        .get(&row)
+                        .copied()
+                        .unwrap_or_default();
                     let new = map(self, cur);
                     self.set_row_style(sheet, row, Some(new));
                 }
@@ -1199,7 +1238,9 @@ impl Workbook {
         let keys: Vec<(u32, u32)> = if contents || formats {
             sh.cells
                 .range((rect.r0, 0)..=(rect.r1, u32::MAX))
-                .filter(|((r, c), _)| *c >= rect.c0 && *c <= rect.c1 && !sh.filtered_rows.contains(r))
+                .filter(|((r, c), _)| {
+                    *c >= rect.c0 && *c <= rect.c1 && !sh.filtered_rows.contains(r)
+                })
                 .map(|(k, _)| *k)
                 .collect()
         } else {
@@ -1208,7 +1249,11 @@ impl Workbook {
         for (r, c) in keys {
             let cell = self.sheets[sheet].cells[&(r, c)].clone();
             let new = Cell {
-                content: if contents { Content::Empty } else { cell.content },
+                content: if contents {
+                    Content::Empty
+                } else {
+                    cell.content
+                },
                 value: if contents { Value::Empty } else { cell.value },
                 style: if formats { StyleId(0) } else { cell.style },
             };
@@ -1426,7 +1471,12 @@ impl Workbook {
             n += 1;
         }
         // Charts on the copy plot the copy's own cells, with fresh ids.
-        let mut next_id = self.sheets.iter().flat_map(|s| s.charts.iter().map(|c| c.id)).max().unwrap_or(0);
+        let mut next_id = self
+            .sheets
+            .iter()
+            .flat_map(|s| s.charts.iter().map(|c| c.id))
+            .max()
+            .unwrap_or(0);
         let new_name = copy.name.clone();
         // Formulas that named the original sheet in full read the copy.
         for cell in copy.cells.values_mut() {
@@ -1490,7 +1540,9 @@ impl Workbook {
         if forward {
             (index + 1..self.sheets.len()).find(|i| self.sheets[*i].is_visible())
         } else {
-            (0..index.min(self.sheets.len())).rev().find(|i| self.sheets[*i].is_visible())
+            (0..index.min(self.sheets.len()))
+                .rev()
+                .find(|i| self.sheets[*i].is_visible())
         }
     }
 
@@ -1504,7 +1556,10 @@ impl Workbook {
         if sheet.visibility == visibility {
             return true;
         }
-        if visibility != SheetVisibility::Visible && sheet.is_visible() && self.visible_sheet_count() <= 1 {
+        if visibility != SheetVisibility::Visible
+            && sheet.is_visible()
+            && self.visible_sheet_count() <= 1
+        {
             return false;
         }
         self.snapshot();
@@ -1521,7 +1576,11 @@ impl Workbook {
 
     /// Give a sheet a background picture, or (`None`) take it away.
     /// Returns false when there is no such sheet.
-    pub fn set_sheet_background(&mut self, sheet: usize, picture: Option<crate::drawing::Picture>) -> bool {
+    pub fn set_sheet_background(
+        &mut self,
+        sheet: usize,
+        picture: Option<crate::drawing::Picture>,
+    ) -> bool {
         if sheet >= self.sheets.len() {
             return false;
         }

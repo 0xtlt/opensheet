@@ -21,7 +21,10 @@ use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::view::icon;
 use crate::widgets::{self, Button, ListBox, Select};
-use gpui::{AnyElement, Context, Entity, FontWeight, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, Context, Entity, FontWeight, SharedString, Subscription, Window, div, prelude::*,
+    px,
+};
 use opensheet_io::vba::{Macro, ModuleKind, Project, read_project};
 use std::path::Path;
 use std::rc::Rc;
@@ -40,7 +43,11 @@ pub(crate) struct MacroUi {
 pub(crate) fn project(app: &mut ExcelApp) -> Option<Result<Rc<Project>, String>> {
     let bin = app.wb.vba.project.as_ref()?.bin.clone();
     let ui = app.ext_mut::<MacroUi>();
-    Some(ui.project.get_or_insert_with(|| read_project(&bin).map(Rc::new)).clone())
+    Some(
+        ui.project
+            .get_or_insert_with(|| read_project(&bin).map(Rc::new))
+            .clone(),
+    )
 }
 
 /// The one message about running macros.
@@ -137,23 +144,40 @@ pub(crate) struct MacroDialog {
     _subscriptions: Vec<Subscription>,
 }
 
-pub(crate) fn open_dialog(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Entity<MacroDialog> {
+pub(crate) fn open_dialog(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<MacroDialog> {
     app.popup = None;
     let project = project(app);
     let workbook = app.title.clone();
-    app.open_modal(window, cx, |modal, _, cx| MacroDialog::new(modal, workbook, project, cx))
+    app.open_modal(window, cx, |modal, _, cx| {
+        MacroDialog::new(modal, workbook, project, cx)
+    })
 }
 
 impl MacroDialog {
-    fn new(modal: Modal, workbook: String, project: Option<Result<Rc<Project>, String>>, cx: &mut Context<Self>) -> Self {
+    fn new(
+        modal: Modal,
+        workbook: String,
+        project: Option<Result<Rc<Project>, String>>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let (project, trouble) = match project {
             Some(Ok(project)) => (Some(project), None),
             Some(Err(error)) => (None, Some(error)),
             None => (None, None),
         };
-        let macros = project.as_ref().map(|project| project.macros()).unwrap_or_default();
+        let macros = project
+            .as_ref()
+            .map(|project| project.macros())
+            .unwrap_or_default();
         // The first macro is proposed, as in Excel.
-        let name = widgets::input(cx, macros.first().map(|m| m.name.clone()).unwrap_or_default());
+        let name = widgets::input(
+            cx,
+            macros.first().map(|m| m.name.clone()).unwrap_or_default(),
+        );
         let subscription = cx.subscribe(&name, |_, _, event: &InputEvent, cx| {
             if *event == InputEvent::Changed {
                 cx.notify();
@@ -174,7 +198,9 @@ impl MacroDialog {
     /// The macro whose name is in the box.
     pub(crate) fn selected(&self, cx: &gpui::App) -> Option<usize> {
         let typed = self.name.read(cx).text().trim().to_lowercase();
-        self.macros.iter().position(|m| m.name.to_lowercase() == typed)
+        self.macros
+            .iter()
+            .position(|m| m.name.to_lowercase() == typed)
     }
 
     pub(crate) fn select(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -188,7 +214,8 @@ impl MacroDialog {
     /// Run and Step Into: the one message, the dialog staying open.
     pub(crate) fn run(&mut self, _: &(), _: &mut Window, cx: &mut Context<Self>) {
         if self.selected(cx).is_some() {
-            self.modal.update_app(cx, |app, cx| app.alert(not_run_alert(), cx));
+            self.modal
+                .update_app(cx, |app, cx| app.alert(not_run_alert(), cx));
         }
     }
 
@@ -213,21 +240,39 @@ impl Render for MacroDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.selected(cx);
         let chosen = selected.is_some();
-        let names: Vec<SharedString> = self.macros.iter().map(|m| SharedString::from(m.name.clone())).collect();
-        let scopes: Vec<SharedString> = vec![t("All Open Workbooks", "Tous les classeurs ouverts").into(), self.workbook.clone().into()];
+        let names: Vec<SharedString> = self
+            .macros
+            .iter()
+            .map(|m| SharedString::from(m.name.clone()))
+            .collect();
+        let scopes: Vec<SharedString> = vec![
+            t("All Open Workbooks", "Tous les classeurs ouverts").into(),
+            self.workbook.clone().into(),
+        ];
         debug_assert_eq!(scopes.len(), SCOPES);
         let note = match (&self.trouble, self.project.is_some()) {
             (Some(trouble), _) => Some(format!(
                 "{}\n{trouble}",
-                t("The VBA project of this workbook can't be read.", "Impossible de lire le projet VBA de ce classeur.")
+                t(
+                    "The VBA project of this workbook can't be read.",
+                    "Impossible de lire le projet VBA de ce classeur."
+                )
             )),
-            (None, false) => Some(t("This workbook has no macros.", "Ce classeur ne contient aucune macro.").to_string()),
+            (None, false) => Some(
+                t(
+                    "This workbook has no macros.",
+                    "Ce classeur ne contient aucune macro.",
+                )
+                .to_string(),
+            ),
             (None, true) => None,
         };
         // The dialog of Excel for Mac: the list over "+" and "−", the
         // description and Options, then Cancel apart from the three actions.
         let small = |id: &'static str, label: &'static str| {
-            div().debug_selector(move || id.to_string()).child(Button::new(id, label).width(24.0).disabled(true))
+            div()
+                .debug_selector(move || id.to_string())
+                .child(Button::new(id, label).width(24.0).disabled(true))
         };
         let list = ListBox::new("macro-list", names, selected)
             .width(WIDTH)
@@ -247,10 +292,20 @@ impl Render for MacroDialog {
                     .flex_col()
                     .gap(px(6.))
                     .child(widgets::label(t("Macro name:", "Nom de la macro :")))
-                    .child(div().flex().child(widgets::TextField::new(&self.name).width(WIDTH)))
+                    .child(
+                        div()
+                            .flex()
+                            .child(widgets::TextField::new(&self.name).width(WIDTH)),
+                    )
                     .child(list)
                     // These would change the project: never available.
-                    .child(div().flex().gap(px(2.)).child(small("macro-create", "+")).child(small("macro-delete", "−")))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(2.))
+                            .child(small("macro-create", "+"))
+                            .child(small("macro-delete", "−")),
+                    )
                     .child(
                         div()
                             .flex()
@@ -258,14 +313,16 @@ impl Render for MacroDialog {
                             .gap(px(8.))
                             .pt(px(4.))
                             .child(widgets::label(t("Macros in:", "Macros dans :")))
-                            .child(div().flex_1().min_w(px(0.)).child(
-                                Select::new("macro-scope", scopes, Some(self.scope)).width(WIDTH - 96.0).on_change(cx.listener(
-                                    |this, index: &usize, _, cx| {
-                                        this.scope = *index;
-                                        cx.notify();
-                                    },
-                                )),
-                            )),
+                            .child(
+                                div().flex_1().min_w(px(0.)).child(
+                                    Select::new("macro-scope", scopes, Some(self.scope))
+                                        .width(WIDTH - 96.0)
+                                        .on_change(cx.listener(|this, index: &usize, _, cx| {
+                                            this.scope = *index;
+                                            cx.notify();
+                                        })),
+                                ),
+                            ),
                     )
                     .child(div().mt(px(6.)).h(px(1.)).bg(c(theme::BORDER)))
                     .child(
@@ -282,30 +339,58 @@ impl Render for MacroDialog {
                                     .flex_col()
                                     .gap(px(3.))
                                     .child(widgets::label(t("Description:", "Description :")))
-                                    .children(note.map(|note| div().text_color(c(theme::TEXT_MUTED)).child(note))),
+                                    .children(note.map(|note| {
+                                        div().text_color(c(theme::TEXT_MUTED)).child(note)
+                                    })),
                             )
-                            .child(div().debug_selector(|| "macro-options".to_string()).child(
-                                Button::new("macro-options", t("Options...", "Options...")).width(84.0).disabled(true),
-                            )),
+                            .child(
+                                div().debug_selector(|| "macro-options".to_string()).child(
+                                    Button::new("macro-options", t("Options...", "Options..."))
+                                        .width(84.0)
+                                        .disabled(true),
+                                ),
+                            ),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .child(div().debug_selector(|| "macro-cancel".to_string()).child(
-                                Button::new("macro-cancel", t("Cancel", "Annuler")).width(84.0).on_click(cx.listener(Self::close)),
-                            ))
+                            .child(
+                                div().debug_selector(|| "macro-cancel".to_string()).child(
+                                    Button::new("macro-cancel", t("Cancel", "Annuler"))
+                                        .width(84.0)
+                                        .on_click(cx.listener(Self::close)),
+                                ),
+                            )
                             .child(div().flex_1())
-                            .child(div().debug_selector(|| "macro-step".to_string()).child(
-                                Button::new("macro-step", t("Step Into", "Pas à pas")).disabled(!chosen).on_click(cx.listener(Self::run)),
-                            ))
-                            .child(div().debug_selector(|| "macro-edit".to_string()).child(
-                                Button::new("macro-edit", crate::i18n::t_ctx("macro", "Edit", "Modifier")).width(84.0).disabled(!chosen).on_click(cx.listener(Self::edit)),
-                            ))
-                            .child(div().debug_selector(|| "macro-run".to_string()).child(
-                                Button::new("macro-run", t("Run", "Exécuter")).width(84.0).primary().disabled(!chosen).on_click(cx.listener(Self::run)),
-                            )),
+                            .child(
+                                div().debug_selector(|| "macro-step".to_string()).child(
+                                    Button::new("macro-step", t("Step Into", "Pas à pas"))
+                                        .disabled(!chosen)
+                                        .on_click(cx.listener(Self::run)),
+                                ),
+                            )
+                            .child(
+                                div().debug_selector(|| "macro-edit".to_string()).child(
+                                    Button::new(
+                                        "macro-edit",
+                                        crate::i18n::t_ctx("macro", "Edit", "Modifier"),
+                                    )
+                                    .width(84.0)
+                                    .disabled(!chosen)
+                                    .on_click(cx.listener(Self::edit)),
+                                ),
+                            )
+                            .child(
+                                div().debug_selector(|| "macro-run".to_string()).child(
+                                    Button::new("macro-run", t("Run", "Exécuter"))
+                                        .width(84.0)
+                                        .primary()
+                                        .disabled(!chosen)
+                                        .on_click(cx.listener(Self::run)),
+                                ),
+                            ),
                     ),
             )
     }
@@ -326,13 +411,21 @@ pub(crate) struct VbaViewer {
 fn macro_line(code: &str, name: &str) -> Option<u32> {
     // "Sheet1.Refresh" is the macro Refresh of the module Sheet1.
     let name = name.rsplit('.').next().unwrap_or(name).to_lowercase();
-    code.lines().position(|line| {
-        // What follows a quote is a remark.
-        let line = line.split('\'').next().unwrap_or(line);
-        let words: Vec<String> = line.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty()).map(str::to_lowercase).collect();
-        words.iter().position(|w| w == "sub").is_some_and(|at| words.get(at + 1) == Some(&name) && words[..at].iter().all(|w| w == "public" || w == "static"))
-    })
-    .map(|index| index as u32 + 1)
+    code.lines()
+        .position(|line| {
+            // What follows a quote is a remark.
+            let line = line.split('\'').next().unwrap_or(line);
+            let words: Vec<String> = line
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|w| !w.is_empty())
+                .map(str::to_lowercase)
+                .collect();
+            words.iter().position(|w| w == "sub").is_some_and(|at| {
+                words.get(at + 1) == Some(&name)
+                    && words[..at].iter().all(|w| w == "public" || w == "static")
+            })
+        })
+        .map(|index| index as u32 + 1)
 }
 
 pub(crate) fn open_viewer(
@@ -344,8 +437,14 @@ pub(crate) fn open_viewer(
     cx: &mut Cx,
 ) -> Entity<VbaViewer> {
     app.open_modal(window, cx, |modal, _, cx| {
-        let code = project.modules.get(module).map(|m| m.code()).unwrap_or_default();
-        let line = macro_name.as_deref().and_then(|name| macro_line(&code, name));
+        let code = project
+            .modules
+            .get(module)
+            .map(|m| m.code())
+            .unwrap_or_default();
+        let line = macro_name
+            .as_deref()
+            .and_then(|name| macro_line(&code, name));
         let editor = cx.new(|cx| {
             let mut editor = CodeEditor::viewer(&code, Language::Vba, cx);
             if let Some(line) = line {
@@ -371,7 +470,8 @@ impl VbaViewer {
         if let Some(found) = self.project.modules.get(module) {
             self.module = module;
             let code = found.code();
-            self.editor.update(cx, |editor, cx| editor.set_text(&code, cx));
+            self.editor
+                .update(cx, |editor, cx| editor.set_text(&code, cx));
             cx.notify();
         }
     }
@@ -394,8 +494,17 @@ fn module_label(kind: ModuleKind, name: &str) -> String {
 
 impl Render for VbaViewer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let modules: Vec<SharedString> = self.project.modules.iter().map(|m| module_label(m.kind, &m.name).into()).collect();
-        let title = format!("{} — {}", self.project.name, t("Read-Only", "Lecture seule"));
+        let modules: Vec<SharedString> = self
+            .project
+            .modules
+            .iter()
+            .map(|m| module_label(m.kind, &m.name).into())
+            .collect();
+        let title = format!(
+            "{} — {}",
+            self.project.name,
+            t("Read-Only", "Lecture seule")
+        );
         widgets::dialog(&self.modal, title)
             .width(820.0)
             .on_ok(cx.listener(Self::close))
@@ -434,13 +543,20 @@ impl Render for VbaViewer {
 /// The extension a new file of this workbook is proposed with: a
 /// workbook that carries macros is a macro-enabled one.
 pub(crate) fn default_extension(app: &ExcelApp) -> &'static str {
-    if app.wb.has_vba_project() { "xlsm" } else { "xlsx" }
+    if app.wb.has_vba_project() {
+        "xlsm"
+    } else {
+        "xlsx"
+    }
 }
 
 /// True when writing the workbook to `path` would leave its macros out:
 /// a workbook file of a kind that cannot hold them.
 pub(crate) fn loses_macros(app: &ExcelApp, path: &Path) -> bool {
-    let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
     app.wb.has_vba_project() && matches!(extension.as_str(), "xlsx" | "xltx")
 }
 
@@ -466,7 +582,9 @@ pub(crate) fn macro_free_alert(path: std::path::PathBuf) -> Alert {
     );
     Alert::new("OpenSheet", message)
         .warning()
-        .button(t("Yes", "Oui"), move |app, _, cx| app.write_unasked(path.clone(), cx))
+        .button(t("Yes", "Oui"), move |app, _, cx| {
+            app.write_unasked(path.clone(), cx)
+        })
         .close_button(t("No", "Non"))
         .default_button(1)
 }

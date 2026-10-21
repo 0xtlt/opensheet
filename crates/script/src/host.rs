@@ -115,7 +115,13 @@ impl Host {
     pub fn range(&self, sheet: usize, rect: Rect) -> J {
         object(
             "Range",
-            vec![self.sheet_id(sheet).into(), rect.r0.into(), rect.c0.into(), rect.r1.into(), rect.c1.into()],
+            vec![
+                self.sheet_id(sheet).into(),
+                rect.r0.into(),
+                rect.c0.into(),
+                rect.r1.into(),
+                rect.c1.into(),
+            ],
         )
     }
 
@@ -133,7 +139,8 @@ impl Host {
     }
 
     pub fn sheet_added(&mut self, index: usize) {
-        self.sheet_ids.insert(index.min(self.sheet_ids.len()), self.next_sheet_id);
+        self.sheet_ids
+            .insert(index.min(self.sheet_ids.len()), self.next_sheet_id);
         self.next_sheet_id += 1;
         self.restructured();
     }
@@ -143,7 +150,9 @@ impl Host {
         if id == self.active {
             // As in Excel, the next sheet with a tab comes in front (the
             // one before for the last).
-            let next = self.wb.nearest_visible_sheet(index.min(self.sheet_ids.len() - 1));
+            let next = self
+                .wb
+                .nearest_visible_sheet(index.min(self.sheet_ids.len() - 1));
             self.active = self.sheet_id(next);
             self.selection = Rect::cell(0, 0);
             self.active_cell = (0, 0);
@@ -173,16 +182,22 @@ impl Host {
     /// already holds, or a new one.
     pub fn cond_handle(&mut self, sheet: usize, index: usize) -> i64 {
         let key = Some((self.sheet_id(sheet), index));
-        let at = self.cond_formats.iter().position(|held| *held == key).unwrap_or_else(|| {
-            self.cond_formats.push(key);
-            self.cond_formats.len() - 1
-        });
+        let at = self
+            .cond_formats
+            .iter()
+            .position(|held| *held == key)
+            .unwrap_or_else(|| {
+                self.cond_formats.push(key);
+                self.cond_formats.len() - 1
+            });
         at as i64
     }
 
     /// The sheet and the place of the rule a handle stands for.
     pub fn cond_format(&self, call: &Call, handle: i64) -> Res<(usize, usize)> {
-        let held = usize::try_from(handle).ok().and_then(|at| self.cond_formats.get(at).copied().flatten());
+        let held = usize::try_from(handle)
+            .ok()
+            .and_then(|at| self.cond_formats.get(at).copied().flatten());
         let (id, index) = held.ok_or_else(|| call.gone())?;
         let sheet = self.sheet(call, id)?;
         if index >= self.wb.sheets[sheet].cond_formats.len() {
@@ -321,5 +336,6 @@ pub(crate) fn rect_from(r0: i64, c0: i64, rows: i64, cols: i64) -> Option<Rect> 
         return None;
     }
     let (r1, c1) = (r0 + rows - 1, c0 + cols - 1);
-    (r1 < MAX_ROWS as i64 && c1 < MAX_COLS as i64).then(|| Rect::new(r0 as u32, c0 as u32, r1 as u32, c1 as u32))
+    (r1 < MAX_ROWS as i64 && c1 < MAX_COLS as i64)
+        .then(|| Rect::new(r0 as u32, c0 as u32, r1 as u32, c1 as u32))
 }

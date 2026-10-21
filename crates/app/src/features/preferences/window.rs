@@ -15,11 +15,15 @@ use crate::features::{Command, Cx};
 use crate::i18n::t;
 use crate::shell::{Modal, RefStyle};
 use crate::text_input::{InputEvent, TextInput};
-use crate::widgets::text_area::{AreaEvent, TextArea};
 use crate::theme::{self, c};
 use crate::view::{icon, tooltip};
-use crate::widgets::{self, Button, Checkbox, GroupBox, NumberField, RadioGroup, Select, TextField, dialog, label};
-use gpui::{AnyElement, App, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px};
+use crate::widgets::text_area::{AreaEvent, TextArea};
+use crate::widgets::{
+    self, Button, Checkbox, GroupBox, NumberField, RadioGroup, Select, TextField, dialog, label,
+};
+use gpui::{
+    AnyElement, App, Context, Entity, SharedString, Subscription, Window, div, prelude::*, px,
+};
 use opensheet_engine::ops::Direction;
 use opensheet_engine::{CalcMode, IterativeCalc};
 
@@ -149,10 +153,17 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 }
 
 /// Open the window on the page of panes (`None`) or on one pane.
-pub(super) fn open_on(app: &mut ExcelApp, pane: Option<Pane>, window: &mut Window, cx: &mut Cx) -> Entity<PreferencesWindow> {
+pub(super) fn open_on(
+    app: &mut ExcelApp,
+    pane: Option<Pane>,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<PreferencesWindow> {
     app.popup = None;
     let state = shown(app);
-    app.open_modal(window, cx, |modal, _, cx| PreferencesWindow::new(modal, state, pane, cx))
+    app.open_modal(window, cx, |modal, _, cx| {
+        PreferencesWindow::new(modal, state, pane, cx)
+    })
 }
 
 pub(super) struct PreferencesWindow {
@@ -176,7 +187,12 @@ pub(super) struct PreferencesWindow {
     pub(super) max_change: Entity<TextInput>,
 }
 
-const DIRECTIONS: [Direction; 4] = [Direction::Down, Direction::Right, Direction::Up, Direction::Left];
+const DIRECTIONS: [Direction; 4] = [
+    Direction::Down,
+    Direction::Right,
+    Direction::Up,
+    Direction::Left,
+];
 
 fn direction_label(direction: Direction) -> &'static str {
     match direction {
@@ -187,19 +203,29 @@ fn direction_label(direction: Direction) -> &'static str {
     }
 }
 
-const MODES: [CalcMode; 3] = [CalcMode::Automatic, CalcMode::AutomaticExceptTables, CalcMode::Manual];
+const MODES: [CalcMode; 3] = [
+    CalcMode::Automatic,
+    CalcMode::AutomaticExceptTables,
+    CalcMode::Manual,
+];
 
 impl PreferencesWindow {
-    pub(super) fn new(modal: Modal, shown: Shown, pane: Option<Pane>, cx: &mut Context<Self>) -> Self {
+    pub(super) fn new(
+        modal: Modal,
+        shown: Shown,
+        pane: Option<Pane>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let s = &shown.settings;
         let replace_from = widgets::input(cx, "");
         let replace_with = widgets::input(cx, "");
         // The list follows what is typed over it, and so do its buttons.
-        let redraw = |_: &mut Self, _: Entity<TextInput>, event: &InputEvent, cx: &mut Context<Self>| {
-            if matches!(event, InputEvent::Changed) {
-                cx.notify();
-            }
-        };
+        let redraw =
+            |_: &mut Self, _: Entity<TextInput>, event: &InputEvent, cx: &mut Context<Self>| {
+                if matches!(event, InputEvent::Changed) {
+                    cx.notify();
+                }
+            };
         let list_entries = cx.new(|cx| {
             let mut area = TextArea::field(cx);
             area.min_rows = 9;
@@ -226,10 +252,28 @@ impl PreferencesWindow {
             _subscriptions: subscriptions,
             user_name: widgets::input(cx, s.user_name.clone()),
             font_size: widgets::number_input(cx, Some(s.default_font_size as f64), 1.0, 409.0, 1.0),
-            sheets: widgets::number_input(cx, Some(s.sheets_in_new_workbook as f64), 1.0, 255.0, 1.0),
+            sheets: widgets::number_input(
+                cx,
+                Some(s.sheets_in_new_workbook as f64),
+                1.0,
+                255.0,
+                1.0,
+            ),
             places: widgets::number_input(cx, Some(s.decimal_places as f64), -300.0, 300.0, 1.0),
-            max_iterations: widgets::number_input(cx, Some(shown.iterative.max_iterations as f64), 1.0, 32767.0, 1.0),
-            max_change: widgets::number_input(cx, Some(shown.iterative.max_change), 0.0, f64::MAX, 0.001),
+            max_iterations: widgets::number_input(
+                cx,
+                Some(shown.iterative.max_iterations as f64),
+                1.0,
+                32767.0,
+                1.0,
+            ),
+            max_change: widgets::number_input(
+                cx,
+                Some(shown.iterative.max_change),
+                0.0,
+                f64::MAX,
+                0.001,
+            ),
             shown,
         }
     }
@@ -266,8 +310,10 @@ impl PreferencesWindow {
         let number = |field: &Entity<TextInput>, cx: &App| field.read(cx).number();
         let user_name = self.user_name.read(cx).text().trim().to_string();
         let font_size = number(&self.font_size, cx).filter(|size| (1.0..=409.0).contains(size));
-        let sheets = number(&self.sheets, cx).filter(|count| (1.0..=255.0).contains(count) && count.fract() == 0.0);
-        let places = number(&self.places, cx).filter(|places| (-300.0..=300.0).contains(places) && places.fract() == 0.0);
+        let sheets = number(&self.sheets, cx)
+            .filter(|count| (1.0..=255.0).contains(count) && count.fract() == 0.0);
+        let places = number(&self.places, cx)
+            .filter(|places| (-300.0..=300.0).contains(places) && places.fract() == 0.0);
         self.set(cx, |settings| {
             settings.user_name = user_name.clone();
             if let Some(size) = font_size {
@@ -280,8 +326,10 @@ impl PreferencesWindow {
                 settings.decimal_places = places as i32;
             }
         });
-        let iterations = number(&self.max_iterations, cx).filter(|n| (1.0..=32767.0).contains(n) && n.fract() == 0.0);
-        let change = number(&self.max_change, cx).filter(|change| change.is_finite() && *change >= 0.0);
+        let iterations = number(&self.max_iterations, cx)
+            .filter(|n| (1.0..=32767.0).contains(n) && n.fract() == 0.0);
+        let change =
+            number(&self.max_change, cx).filter(|change| change.is_finite() && *change >= 0.0);
         if let Some(iterations) = iterations {
             self.shown.iterative.max_iterations = iterations as u32;
         }
@@ -363,7 +411,11 @@ impl PreferencesWindow {
                 Ok(pane) => (pane.title(), pane.icon(), Some(pane)),
                 Err(name) => (name, "more", None),
             };
-            let color = if pane.is_some() { theme::TEXT } else { theme::TEXT_DISABLED };
+            let color = if pane.is_some() {
+                theme::TEXT
+            } else {
+                theme::TEXT_DISABLED
+            };
             div()
                 .id(SharedString::from(format!("prefs-{name}")))
                 .w(px(104.))
@@ -382,14 +434,19 @@ impl PreferencesWindow {
                     Some(pane) => tile
                         .hover(|s| s.bg(c(theme::HOVER)))
                         .on_click(cx.listener(move |this, _, _, cx| this.go(Some(pane), cx))),
-                    None => tile.tooltip(tooltip(t("Not available in OpenSheet", "Non disponible dans OpenSheet"))),
+                    None => tile.tooltip(tooltip(t(
+                        "Not available in OpenSheet",
+                        "Non disponible dans OpenSheet",
+                    ))),
                 })
                 .into_any_element()
         };
         let mut column = div().flex().flex_col().gap(px(10.));
         for (title, entries) in page() {
             let tiles: Vec<AnyElement> = entries.into_iter().map(|entry| tile(entry, cx)).collect();
-            column = column.child(GroupBox::new(title).child(div().flex().flex_wrap().gap(px(4.)).children(tiles)));
+            column = column.child(
+                GroupBox::new(title).child(div().flex().flex_wrap().gap(px(4.)).children(tiles)),
+            );
         }
         column.into_any_element()
     }
@@ -404,37 +461,63 @@ impl PreferencesWindow {
         cx: &mut Context<Self>,
         change: impl Fn(&mut Self, bool, &mut Window, &mut Context<Self>) + 'static,
     ) -> Checkbox {
-        Checkbox::new(id, text, on).on_change(cx.listener(move |this, on: &bool, window, cx| change(this, *on, window, cx)))
+        Checkbox::new(id, text, on).on_change(
+            cx.listener(move |this, on: &bool, window, cx| change(this, *on, window, cx)),
+        )
     }
 
     fn render_general(&self, cx: &mut Context<Self>) -> AnyElement {
         let s = &self.shown.settings;
         // The font of the engine first, then those of the machine.
         let mut fonts: Vec<SharedString> = vec![self.shown.engine_font.clone().into()];
-        fonts.extend(self.shown.fonts.iter().filter(|name| **name != self.shown.engine_font).map(|name| SharedString::from(name.clone())));
-        let chosen = if s.default_font.is_empty() { Some(0) } else { fonts.iter().position(|name| name.as_ref() == s.default_font) };
+        fonts.extend(
+            self.shown
+                .fonts
+                .iter()
+                .filter(|name| **name != self.shown.engine_font)
+                .map(|name| SharedString::from(name.clone())),
+        );
+        let chosen = if s.default_font.is_empty() {
+            Some(0)
+        } else {
+            fonts
+                .iter()
+                .position(|name| name.as_ref() == s.default_font)
+        };
         let names = fonts.clone();
         div()
             .flex()
             .flex_col()
             .gap(px(12.))
-            .child(
-                GroupBox::new(t("Personalize", "Personnaliser"))
-                    .child(row(t("User name:", "Nom d'utilisateur :"), TextField::new(&self.user_name).width(240.0))),
-            )
+            .child(GroupBox::new(t("Personalize", "Personnaliser")).child(row(
+                t("User name:", "Nom d'utilisateur :"),
+                TextField::new(&self.user_name).width(240.0),
+            )))
             .child(
                 GroupBox::new(t("Settings", "Paramètres"))
                     .child(row(
                         t("Default font:", "Police par défaut :"),
-                        Select::new("prefs-font", fonts, chosen).width(240.0).on_change(cx.listener(move |this, index: &usize, _, cx| {
-                            // The first entry is the engine's own font.
-                            let name = if *index == 0 { String::new() } else { names[*index].to_string() };
-                            this.set(cx, |settings| settings.default_font = name.clone());
-                        })),
+                        Select::new("prefs-font", fonts, chosen)
+                            .width(240.0)
+                            .on_change(cx.listener(move |this, index: &usize, _, cx| {
+                                // The first entry is the engine's own font.
+                                let name = if *index == 0 {
+                                    String::new()
+                                } else {
+                                    names[*index].to_string()
+                                };
+                                this.set(cx, |settings| settings.default_font = name.clone());
+                            })),
                     ))
-                    .child(row(t("Font size:", "Taille de la police :"), NumberField::new("prefs-font-size", &self.font_size).width(70.0)))
                     .child(row(
-                        t("Sheets in new workbooks:", "Feuilles dans les nouveaux classeurs :"),
+                        t("Font size:", "Taille de la police :"),
+                        NumberField::new("prefs-font-size", &self.font_size).width(70.0),
+                    ))
+                    .child(row(
+                        t(
+                            "Sheets in new workbooks:",
+                            "Feuilles dans les nouveaux classeurs :",
+                        ),
                         NumberField::new("prefs-sheets", &self.sheets).width(70.0),
                     )),
             )
@@ -447,7 +530,11 @@ impl PreferencesWindow {
                             .w(px(240.))
                             .truncate()
                             .text_color(c(theme::TEXT_MUTED))
-                            .child(crate::features::automate::scripts_folder().to_string_lossy().to_string()),
+                            .child(
+                                crate::features::automate::scripts_folder()
+                                    .to_string_lossy()
+                                    .to_string(),
+                            ),
                     ))
                     .child(
                         div()
@@ -455,19 +542,37 @@ impl PreferencesWindow {
                             .justify_end()
                             .gap(px(8.))
                             .child(
-                                Button::new("prefs-scripts-default", t("Use Default", "Par défaut"))
-                                    .disabled(s.scripts_folder.is_empty())
-                                    .on_click(cx.listener(|this, _, _, cx| this.set_scripts_folder(None, cx))),
+                                Button::new(
+                                    "prefs-scripts-default",
+                                    t("Use Default", "Par défaut"),
+                                )
+                                .disabled(s.scripts_folder.is_empty())
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.set_scripts_folder(None, cx)),
+                                ),
                             )
-                            .child(Button::new("prefs-scripts-choose", t("Choose…", "Choisir…")).on_click(cx.listener(|this, _, _, cx| this.choose_scripts_folder(cx)))),
+                            .child(
+                                Button::new("prefs-scripts-choose", t("Choose…", "Choisir…"))
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| {
+                                            this.choose_scripts_folder(cx)
+                                        }),
+                                    ),
+                            ),
                     ),
             )
             .into_any_element()
     }
 
     /// Keep the scripts in another folder (`None`: the application's own).
-    pub(super) fn set_scripts_folder(&mut self, folder: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
-        let text = folder.map(|folder| folder.to_string_lossy().to_string()).unwrap_or_default();
+    pub(super) fn set_scripts_folder(
+        &mut self,
+        folder: Option<std::path::PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        let text = folder
+            .map(|folder| folder.to_string_lossy().to_string())
+            .unwrap_or_default();
         self.set(cx, |settings| settings.scripts_folder = text.clone());
     }
 
@@ -481,7 +586,10 @@ impl PreferencesWindow {
         });
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(paths))) = paths.await {
-                this.update(cx, |this, cx| this.set_scripts_folder(paths.into_iter().next(), cx)).ok();
+                this.update(cx, |this, cx| {
+                    this.set_scripts_folder(paths.into_iter().next(), cx)
+                })
+                .ok();
             }
         })
         .detach();
@@ -569,8 +677,13 @@ impl PreferencesWindow {
 
     fn render_edit(&self, cx: &mut Context<Self>) -> AnyElement {
         let s = &self.shown.settings;
-        let directions: Vec<SharedString> = DIRECTIONS.iter().map(|direction| direction_label(*direction).into()).collect();
-        let direction = DIRECTIONS.iter().position(|direction| *direction == s.move_direction);
+        let directions: Vec<SharedString> = DIRECTIONS
+            .iter()
+            .map(|direction| direction_label(*direction).into())
+            .collect();
+        let direction = DIRECTIONS
+            .iter()
+            .position(|direction| *direction == s.move_direction);
         div()
             .flex()
             .flex_col()
@@ -628,7 +741,11 @@ impl PreferencesWindow {
         let shown = &self.shown;
         let modes: Vec<SharedString> = vec![
             t("Automatic", "Automatique").into(),
-            t("Automatic except for data tables", "Automatique sauf dans les tables de données").into(),
+            t(
+                "Automatic except for data tables",
+                "Automatique sauf dans les tables de données",
+            )
+            .into(),
             t("Manual", "Manuel").into(),
         ];
         let mode = MODES.iter().position(|mode| *mode == shown.calc_mode);
@@ -769,7 +886,8 @@ impl Render for PreferencesWindow {
             Some(Pane::Tables) => self.render_tables(cx),
         };
         let back = self.pane.is_some().then(|| {
-            Button::new("prefs-show-all", t("Show All", "Tout afficher")).on_click(cx.listener(|this, _, _, cx| this.go(None, cx)))
+            Button::new("prefs-show-all", t("Show All", "Tout afficher"))
+                .on_click(cx.listener(|this, _, _, cx| this.go(None, cx)))
         });
         dialog(&self.modal, title)
             .width(580.0)
@@ -782,7 +900,11 @@ impl Render for PreferencesWindow {
                     .flex()
                     .justify_between()
                     .child(div().children(back))
-                    .child(Button::new("prefs-close", t("Close", "Fermer")).primary().on_click(cx.listener(Self::close))),
+                    .child(
+                        Button::new("prefs-close", t("Close", "Fermer"))
+                            .primary()
+                            .on_click(cx.listener(Self::close)),
+                    ),
             )
     }
 }

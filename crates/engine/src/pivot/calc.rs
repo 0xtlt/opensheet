@@ -44,24 +44,40 @@ fn placeholder_index(name: &str) -> Option<usize> {
 /// True for a name that reads as one in a formula without quotes.
 fn is_plain(name: &str) -> bool {
     let mut chars = name.chars();
-    let starts = chars.next().is_some_and(|ch| ch.is_alphabetic() || ch == '_');
+    let starts = chars
+        .next()
+        .is_some_and(|ch| ch.is_alphabetic() || ch == '_');
     let word = name.chars().all(|ch| ch.is_alphanumeric() || ch == '_');
     // "Q1" and "ABC12" would read as cells, "TRUE" as a value.
-    let letters = name.chars().take_while(|ch| ch.is_ascii_alphabetic()).count();
-    let cell = letters > 0 && letters <= 3 && letters < name.len() && name[letters..].chars().all(|ch| ch.is_ascii_digit());
+    let letters = name
+        .chars()
+        .take_while(|ch| ch.is_ascii_alphabetic())
+        .count();
+    let cell = letters > 0
+        && letters <= 3
+        && letters < name.len()
+        && name[letters..].chars().all(|ch| ch.is_ascii_digit());
     let word_value = matches!(name.to_uppercase().as_str(), "TRUE" | "FALSE");
     starts && word && !cell && !word_value
 }
 
 /// A name as a formula writes it.
 fn quoted(name: &str) -> String {
-    if is_plain(name) { name.to_string() } else { format!("'{}'", name.replace('\'', "''")) }
+    if is_plain(name) {
+        name.to_string()
+    } else {
+        format!("'{}'", name.replace('\'', "''"))
+    }
 }
 
 /// Swap the names of a formula for placeholders: quoted names, and words
 /// that are one of `names` (compared without case) and no function.
 fn to_placeholders(text: &str, names: &[String]) -> String {
-    let find = |name: &str| names.iter().position(|known| known.to_lowercase() == name.to_lowercase());
+    let find = |name: &str| {
+        names
+            .iter()
+            .position(|known| known.to_lowercase() == name.to_lowercase())
+    };
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -109,7 +125,9 @@ fn to_placeholders(text: &str, names: &[String]) -> String {
             i = j;
         } else if ch.is_alphabetic() || ch == '_' {
             let mut j = i;
-            while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '.') {
+            while j < chars.len()
+                && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '.')
+            {
                 j += 1;
             }
             let word: String = chars[i..j].iter().collect();
@@ -155,8 +173,33 @@ fn from_placeholders(text: &str, names: &[String]) -> String {
 fn refused_function(name: &str) -> bool {
     matches!(
         name,
-        "RAND" | "RANDBETWEEN" | "RANDARRAY" | "NOW" | "TODAY" | "GETPIVOTDATA" | "OFFSET" | "INDIRECT" | "CELL" | "INFO"
-    ) || (name.len() > 1 && name.starts_with('D') && matches!(&name[1..], "SUM" | "COUNT" | "COUNTA" | "AVERAGE" | "MAX" | "MIN" | "GET" | "PRODUCT" | "STDEV" | "STDEVP" | "VAR" | "VARP"))
+        "RAND"
+            | "RANDBETWEEN"
+            | "RANDARRAY"
+            | "NOW"
+            | "TODAY"
+            | "GETPIVOTDATA"
+            | "OFFSET"
+            | "INDIRECT"
+            | "CELL"
+            | "INFO"
+    ) || (name.len() > 1
+        && name.starts_with('D')
+        && matches!(
+            &name[1..],
+            "SUM"
+                | "COUNT"
+                | "COUNTA"
+                | "AVERAGE"
+                | "MAX"
+                | "MIN"
+                | "GET"
+                | "PRODUCT"
+                | "STDEV"
+                | "STDEVP"
+                | "VAR"
+                | "VARP"
+        ))
 }
 
 impl CalcFormula {
@@ -168,16 +211,21 @@ impl CalcFormula {
         if text.trim().is_empty() {
             return Err(PivotError::BadFormula);
         }
-        let expr = parse_formula(&to_placeholders(text, names), locale).map_err(|_| PivotError::BadFormula)?;
+        let expr = parse_formula(&to_placeholders(text, names), locale)
+            .map_err(|_| PivotError::BadFormula)?;
         let mut uses: Vec<usize> = Vec::new();
         let mut fault: Option<PivotError> = None;
         expr.walk(&mut |e| match e {
-            Expr::Name(name) => match placeholder_index(name).filter(|index| *index < names.len()) {
-                Some(index) if !uses.contains(&index) => uses.push(index),
-                Some(_) => {}
-                None => fault = fault.take().or(Some(PivotError::FormulaReference)),
-            },
-            Expr::Func(name, _) if refused_function(name) => fault = fault.take().or(Some(PivotError::FormulaFunction)),
+            Expr::Name(name) => {
+                match placeholder_index(name).filter(|index| *index < names.len()) {
+                    Some(index) if !uses.contains(&index) => uses.push(index),
+                    Some(_) => {}
+                    None => fault = fault.take().or(Some(PivotError::FormulaReference)),
+                }
+            }
+            Expr::Func(name, _) if refused_function(name) => {
+                fault = fault.take().or(Some(PivotError::FormulaFunction))
+            }
             Expr::Ref(_)
             | Expr::Ref3D(_)
             | Expr::RefError(_)
@@ -212,16 +260,25 @@ impl CalcFormula {
 
     /// Compute the formula. `value` gives what each name stands for;
     /// `scratch` is any workbook, for the functions.
-    pub(crate) fn compute(&self, value: &dyn Fn(usize) -> Result<f64, ErrorKind>, scratch: &Workbook) -> Value {
+    pub(crate) fn compute(
+        &self,
+        value: &dyn Fn(usize) -> Result<f64, ErrorKind>,
+        scratch: &Workbook,
+    ) -> Value {
         // Plain arithmetic, which is nearly every formula, without the
         // machinery of the evaluator.
-        fn quick(e: &Expr, value: &dyn Fn(usize) -> Result<f64, ErrorKind>) -> Option<Result<f64, ErrorKind>> {
+        fn quick(
+            e: &Expr,
+            value: &dyn Fn(usize) -> Result<f64, ErrorKind>,
+        ) -> Option<Result<f64, ErrorKind>> {
             Some(match e {
                 Expr::Number(n) => Ok(*n),
                 Expr::Name(name) => value(placeholder_index(name)?),
                 Expr::Paren(inner) => quick(inner, value)?,
                 Expr::Percent(inner) => quick(inner, value)?.map(|n| n / 100.0),
-                Expr::Unary(op, inner) => quick(inner, value)?.map(|n| if *op == UnaryOp::Neg { -n } else { n }),
+                Expr::Unary(op, inner) => {
+                    quick(inner, value)?.map(|n| if *op == UnaryOp::Neg { -n } else { n })
+                }
                 Expr::Binary(op, a, b) => {
                     let (a, b) = (quick(a, value)?, quick(b, value)?);
                     match (a, b) {
@@ -284,7 +341,9 @@ impl PivotCache {
                 .iter()
                 .map(|v| match v {
                     Value::Text(s) => s.to_string(),
-                    Value::Number(_) => crate::format::format_value(v, "General", Locale::en()).text,
+                    Value::Number(_) => {
+                        crate::format::format_value(v, "General", Locale::en()).text
+                    }
                     Value::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_string(),
                     _ => String::new(),
                 })
@@ -295,12 +354,19 @@ impl PivotCache {
     /// The index of a calculated item among the items of its field.
     pub fn calc_item_index(&self, item: &CalcItem) -> Option<u32> {
         let key = item_key(&Value::text(&item.name));
-        self.fields.get(item.field)?.shared.iter().position(|v| item_key(v) == key).map(|x| x as u32)
+        self.fields
+            .get(item.field)?
+            .shared
+            .iter()
+            .position(|v| item_key(v) == key)
+            .map(|x| x as u32)
     }
 
     /// True when the item `x` of `field` is a calculated one.
     pub fn is_calc_item(&self, field: usize, x: u32) -> bool {
-        self.calc_items.iter().any(|item| item.field == field && self.calc_item_index(item) == Some(x))
+        self.calc_items
+            .iter()
+            .any(|item| item.field == field && self.calc_item_index(item) == Some(x))
     }
 
     /// The fields a calculated field computes from, directly or through
@@ -338,7 +404,11 @@ impl PivotCache {
             }
         }
         for item in &old.calc_items {
-            let Some(field) = old.fields.get(item.field).and_then(|f| self.field_index(&f.name)) else {
+            let Some(field) = old
+                .fields
+                .get(item.field)
+                .and_then(|f| self.field_index(&f.name))
+            else {
                 continue;
             };
             let key = item_key(&Value::text(&item.name));
@@ -379,7 +449,11 @@ impl PivotTable {
             .enumerate()
             .filter_map(|(k, f)| {
                 let formula = f.formula.as_ref()?;
-                Some((k, f.name.clone(), CalcFormula::localized(formula, &names, locale)))
+                Some((
+                    k,
+                    f.name.clone(),
+                    CalcFormula::localized(formula, &names, locale),
+                ))
             })
             .collect()
     }
@@ -393,7 +467,11 @@ impl PivotTable {
             .filter(|item| item.field == field)
             .filter_map(|item| {
                 let x = self.cache.calc_item_index(item)?;
-                Some((x, item.name.clone(), CalcFormula::localized(&item.formula, &names, locale)))
+                Some((
+                    x,
+                    item.name.clone(),
+                    CalcFormula::localized(&item.formula, &names, locale),
+                ))
             })
             .collect()
     }
@@ -406,7 +484,11 @@ impl PivotTable {
             .iter()
             .map(|item| {
                 let names = self.cache.item_names(item.field);
-                format!("{} = {}", quoted(&item.name), CalcFormula::localized(&item.formula, &names, locale))
+                format!(
+                    "{} = {}",
+                    quoted(&item.name),
+                    CalcFormula::localized(&item.formula, &names, locale)
+                )
             })
             .collect()
     }
@@ -421,15 +503,30 @@ impl PivotTable {
             return Some(PivotError::ItemsInPageField);
         }
         let averaged = |f: Aggregation| {
-            matches!(f, Aggregation::Average | Aggregation::StdDev | Aggregation::StdDevp | Aggregation::Var | Aggregation::Varp)
+            matches!(
+                f,
+                Aggregation::Average
+                    | Aggregation::StdDev
+                    | Aggregation::StdDevp
+                    | Aggregation::Var
+                    | Aggregation::Varp
+            )
         };
         if self.data_fields.iter().any(|d| averaged(d.function)) {
             return Some(PivotError::ItemsWithAverages);
         }
-        if self.fields.iter().any(|f| matches!(f.subtotals, Subtotals::Custom(_))) {
+        if self
+            .fields
+            .iter()
+            .any(|f| matches!(f.subtotals, Subtotals::Custom(_)))
+        {
             return Some(PivotError::ItemsWithCustomSubtotals);
         }
-        let repeated = self.data_fields.iter().enumerate().any(|(k, d)| self.data_fields[..k].iter().any(|e| e.field == d.field));
+        let repeated = self
+            .data_fields
+            .iter()
+            .enumerate()
+            .any(|(k, d)| self.data_fields[..k].iter().any(|e| e.field == d.field));
         repeated.then_some(PivotError::ItemsWithRepeatedField)
     }
 }
@@ -458,7 +555,13 @@ impl Workbook {
     /// another formula ("Add" and "Modify" of Insert Calculated Field).
     /// The formula is in the workbook's language. A new field joins the
     /// values of PivotTable `id`, as in Excel. Returns its index.
-    pub fn pivot_set_calculated_field(&mut self, id: u32, name: &str, formula: &str, overwrite: bool) -> Result<usize, PivotError> {
+    pub fn pivot_set_calculated_field(
+        &mut self,
+        id: u32,
+        name: &str,
+        formula: &str,
+        overwrite: bool,
+    ) -> Result<usize, PivotError> {
         let locale = self.locale;
         let name = name.trim();
         let (_, p) = self.pivot(id).ok_or(PivotError::NoSuchPivot)?;
@@ -496,7 +599,12 @@ impl Workbook {
     }
 
     /// Delete a calculated field; the formulas naming it then read #NAME?.
-    pub fn pivot_delete_calculated_field(&mut self, id: u32, field: usize, overwrite: bool) -> Result<(), PivotError> {
+    pub fn pivot_delete_calculated_field(
+        &mut self,
+        id: u32,
+        field: usize,
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (_, p) = self.pivot(id).ok_or(PivotError::NoSuchPivot)?;
         let mut cache = (*p.cache).clone();
         if cache.fields.get(field).is_none_or(|f| f.formula.is_none()) {
@@ -521,7 +629,14 @@ impl Workbook {
 
     /// Add a calculated item named `name` to a field, or give the one of
     /// that name another formula. Returns the item.
-    pub fn pivot_set_calculated_item(&mut self, id: u32, field: usize, name: &str, formula: &str, overwrite: bool) -> Result<u32, PivotError> {
+    pub fn pivot_set_calculated_item(
+        &mut self,
+        id: u32,
+        field: usize,
+        name: &str,
+        formula: &str,
+        overwrite: bool,
+    ) -> Result<u32, PivotError> {
         let locale = self.locale;
         let name = name.trim();
         let (_, p) = self.pivot(id).ok_or(PivotError::NoSuchPivot)?;
@@ -536,15 +651,27 @@ impl Workbook {
         }
         let mut cache = (*p.cache).clone();
         let key = item_key(&Value::text(name));
-        let at = cache.calc_items.iter().position(|item| item.field == field && item_key(&Value::text(&item.name)) == key);
-        if at.is_none() && cache.fields[field].shared.iter().any(|v| item_key(v) == key) {
+        let at = cache
+            .calc_items
+            .iter()
+            .position(|item| item.field == field && item_key(&Value::text(&item.name)) == key);
+        if at.is_none()
+            && cache.fields[field]
+                .shared
+                .iter()
+                .any(|v| item_key(v) == key)
+        {
             return Err(PivotError::FormulaNameTaken);
         }
         if at.is_none() {
             cache.fields[field].shared.push(Value::text(name));
         }
         let names = cache.item_names(field);
-        let own = cache.fields[field].shared.iter().position(|v| item_key(v) == key).unwrap_or(0);
+        let own = cache.fields[field]
+            .shared
+            .iter()
+            .position(|v| item_key(v) == key)
+            .unwrap_or(0);
         let parsed = CalcFormula::parse(formula, &names, locale)?;
         if parsed.uses.contains(&own) {
             return Err(PivotError::FormulaCircular);
@@ -563,7 +690,13 @@ impl Workbook {
     }
 
     /// Delete the calculated item `x` of a field.
-    pub fn pivot_delete_calculated_item(&mut self, id: u32, field: usize, x: u32, overwrite: bool) -> Result<(), PivotError> {
+    pub fn pivot_delete_calculated_item(
+        &mut self,
+        id: u32,
+        field: usize,
+        x: u32,
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (_, p) = self.pivot(id).ok_or(PivotError::NoSuchPivot)?;
         let mut cache = (*p.cache).clone();
         let at = cache
@@ -585,7 +718,12 @@ impl Workbook {
 
     /// Put the calculated items in another solve order: `order` lists
     /// their present positions in the order wanted.
-    pub fn pivot_set_solve_order(&mut self, id: u32, order: &[usize], overwrite: bool) -> Result<(), PivotError> {
+    pub fn pivot_set_solve_order(
+        &mut self,
+        id: u32,
+        order: &[usize],
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (_, p) = self.pivot(id).ok_or(PivotError::NoSuchPivot)?;
         let mut cache = (*p.cache).clone();
         let mut sorted = order.to_vec();
@@ -600,7 +738,11 @@ impl Workbook {
     /// "List Formulas": write the calculated fields and items of a
     /// PivotTable on a new sheet put before its own; returns the index of
     /// that sheet.
-    pub fn pivot_list_formulas(&mut self, id: u32, labels: &ListLabels) -> Result<usize, PivotError> {
+    pub fn pivot_list_formulas(
+        &mut self,
+        id: u32,
+        labels: &ListLabels,
+    ) -> Result<usize, PivotError> {
         let locale = self.locale;
         let (si, p) = self.pivot(id).ok_or(PivotError::NoSuchPivot)?;
         let p = p.clone();
@@ -613,20 +755,52 @@ impl Workbook {
         };
         let text = |s: &str| Value::text(s);
         put(self, row, &[text(&labels.calculated_field)]);
-        put(self, row + 1, &[text(&labels.solve_order), text(&labels.field), text(&labels.formula)]);
+        put(
+            self,
+            row + 1,
+            &[
+                text(&labels.solve_order),
+                text(&labels.field),
+                text(&labels.formula),
+            ],
+        );
         row += 2;
         for (k, (_, name, formula)) in p.calculated_fields(locale).into_iter().enumerate() {
-            put(self, row, &[Value::Number(k as f64 + 1.0), text(&name), text(&format!("={formula}"))]);
+            put(
+                self,
+                row,
+                &[
+                    Value::Number(k as f64 + 1.0),
+                    text(&name),
+                    text(&format!("={formula}")),
+                ],
+            );
             row += 1;
         }
         row += 1;
         put(self, row, &[text(&labels.calculated_item)]);
-        put(self, row + 1, &[text(&labels.solve_order), text(&labels.item), text(&labels.formula)]);
+        put(
+            self,
+            row + 1,
+            &[
+                text(&labels.solve_order),
+                text(&labels.item),
+                text(&labels.formula),
+            ],
+        );
         row += 2;
         for (k, item) in p.cache.calc_items.iter().enumerate() {
             let names = p.cache.item_names(item.field);
             let formula = CalcFormula::localized(&item.formula, &names, locale);
-            put(self, row, &[Value::Number(k as f64 + 1.0), text(&quoted(&item.name)), text(&format!("={formula}"))]);
+            put(
+                self,
+                row,
+                &[
+                    Value::Number(k as f64 + 1.0),
+                    text(&quoted(&item.name)),
+                    text(&format!("={formula}")),
+                ],
+            );
             row += 1;
         }
         row += 2;

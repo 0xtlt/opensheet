@@ -6,15 +6,16 @@
 //! Escape are left to the dialog.
 
 use crate::text_input::{
-    self, AltEnter, Backspace, Copy, Cut, Delete, Down, End, Enter, Home, Left, Paste, Right, SelectAll, SelectEnd,
-    SelectHome, SelectLeft, SelectRight, ShiftEnter, Up,
+    self, AltEnter, Backspace, Copy, Cut, Delete, Down, End, Enter, Home, Left, Paste, Right,
+    SelectAll, SelectEnd, SelectHome, SelectLeft, SelectRight, ShiftEnter, Up,
 };
 use crate::theme::{self, c};
 use gpui::{
-    App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, FocusHandle, GlobalElementId, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PaintQuad, Pixels, Point, SharedString, Style, TextAlign, TextRun, UTF16Selection, Window, WrappedLine,
-    div, fill, point, prelude::*, px, relative, rgb, rgba, size,
+    App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, ElementId, ElementInputHandler,
+    Entity, EntityInputHandler, FocusHandle, GlobalElementId, LayoutId, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, SharedString, Style,
+    TextAlign, TextRun, UTF16Selection, Window, WrappedLine, div, fill, point, prelude::*, px,
+    relative, rgb, rgba, size,
 };
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
@@ -44,7 +45,9 @@ fn point_for(lines: &[WrappedLine], index: usize, line_height: Pixels) -> Point<
     let mut top = px(0.);
     for line in lines {
         if index <= start + line.len() {
-            let at = line.position_for_index(index - start, line_height).unwrap_or_default();
+            let at = line
+                .position_for_index(index - start, line_height)
+                .unwrap_or_default();
             return point(at.x, top + at.y);
         }
         start += line.len() + 1;
@@ -114,7 +117,11 @@ impl TextArea {
     }
 
     fn caret(&self) -> usize {
-        if self.reversed { self.selection.start } else { self.selection.end }
+        if self.reversed {
+            self.selection.start
+        } else {
+            self.selection.end
+        }
     }
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -168,14 +175,17 @@ impl TextArea {
     /// The position one line above or below the caret.
     fn vertical(&self, down: bool) -> usize {
         let at = point_for(&self.lines, self.caret(), self.line_height);
-        let y = if down { at.y + self.line_height * 1.5 } else { at.y - self.line_height * 0.5 };
+        let y = if down {
+            at.y + self.line_height * 1.5
+        } else {
+            at.y - self.line_height * 0.5
+        };
         if y < px(0.) {
             return 0;
         }
-        let total = self
-            .lines
-            .iter()
-            .fold(px(0.), |height, line| height + line.size(self.line_height).height);
+        let total = self.lines.iter().fold(px(0.), |height, line| {
+            height + line.size(self.line_height).height
+        });
         if y >= total {
             return self.text.len();
         }
@@ -186,7 +196,9 @@ impl TextArea {
     fn paragraph(&self) -> Range<usize> {
         let caret = self.caret();
         let start = self.text[..caret].rfind('\n').map_or(0, |at| at + 1);
-        let end = self.text[caret..].find('\n').map_or(self.text.len(), |at| caret + at);
+        let end = self.text[caret..]
+            .find('\n')
+            .map_or(self.text.len(), |at| caret + at);
         start..end
     }
 
@@ -205,12 +217,20 @@ impl TextArea {
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
-        let to = if self.selection.is_empty() { self.previous_boundary(self.caret()) } else { self.selection.start };
+        let to = if self.selection.is_empty() {
+            self.previous_boundary(self.caret())
+        } else {
+            self.selection.start
+        };
         self.move_to(to, cx);
     }
 
     fn right(&mut self, _: &Right, _: &mut Window, cx: &mut Context<Self>) {
-        let to = if self.selection.is_empty() { self.next_boundary(self.caret()) } else { self.selection.end };
+        let to = if self.selection.is_empty() {
+            self.next_boundary(self.caret())
+        } else {
+            self.selection.end
+        };
         self.move_to(to, cx);
     }
 
@@ -273,13 +293,17 @@ impl TextArea {
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selection.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(self.text[self.selection.clone()].to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(
+                self.text[self.selection.clone()].to_string(),
+            ));
         }
     }
 
     fn cut(&mut self, _: &Cut, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selection.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(self.text[self.selection.clone()].to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(
+                self.text[self.selection.clone()].to_string(),
+            ));
             self.replace(None, "", cx);
         }
     }
@@ -289,7 +313,10 @@ impl TextArea {
         let Some(bounds) = self.bounds else {
             return 0;
         };
-        let local = point(position.x - bounds.left(), position.y - bounds.top() + self.scroll);
+        let local = point(
+            position.x - bounds.left(),
+            position.y - bounds.top() + self.scroll,
+        );
         index_for(&self.lines, local, self.line_height)
     }
 
@@ -326,7 +353,10 @@ impl TextArea {
     }
 
     fn offset_to_utf16(&self, offset: usize) -> usize {
-        self.text[..offset.min(self.text.len())].chars().map(char::len_utf16).sum()
+        self.text[..offset.min(self.text.len())]
+            .chars()
+            .map(char::len_utf16)
+            .sum()
     }
 
     fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
@@ -351,7 +381,12 @@ impl EntityInputHandler for TextArea {
         Some(self.text[range].to_string())
     }
 
-    fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<UTF16Selection> {
+    fn selected_text_range(
+        &mut self,
+        _: bool,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<UTF16Selection> {
         Some(UTF16Selection {
             range: self.range_to_utf16(&self.selection),
             reversed: self.reversed,
@@ -366,7 +401,13 @@ impl EntityInputHandler for TextArea {
         self.marked = None;
     }
 
-    fn replace_text_in_range(&mut self, range_utf16: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+    fn replace_text_in_range(
+        &mut self,
+        range_utf16: Option<Range<usize>>,
+        text: &str,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let range = range_utf16
             .as_ref()
             .map(|range| self.range_from_utf16(range))
@@ -386,7 +427,9 @@ impl EntityInputHandler for TextArea {
             .as_ref()
             .map(|range| self.range_from_utf16(range))
             .or(self.marked.clone());
-        let start = range.as_ref().map_or(self.selection.start, |range| range.start);
+        let start = range
+            .as_ref()
+            .map_or(self.selection.start, |range| range.start);
         self.replace(range, text, cx);
         let caret = self.caret();
         self.marked = (caret > start).then_some(start..caret);
@@ -407,7 +450,12 @@ impl EntityInputHandler for TextArea {
         ))
     }
 
-    fn character_index_for_point(&mut self, position: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
+    fn character_index_for_point(
+        &mut self,
+        position: Point<Pixels>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<usize> {
         Some(self.offset_to_utf16(self.index_at(position)))
     }
 }
@@ -448,7 +496,12 @@ impl Render for TextArea {
 
 /// The frame around a text area: `height` pixels tall, as wide as the room
 /// left in its row.
-pub fn text_box(area: &Entity<TextArea>, height: f32, window: &Window, cx: &App) -> impl IntoElement + use<> {
+pub fn text_box(
+    area: &Entity<TextArea>,
+    height: f32,
+    window: &Window,
+    cx: &App,
+) -> impl IntoElement + use<> {
     let focused = area.read(cx).focus.is_focused(window);
     div()
         .flex_1()
@@ -549,7 +602,10 @@ impl Element for AreaElement {
         }
         let origin = point(bounds.left(), bounds.top() - scroll);
         let caret = fill(
-            Bounds::new(point(origin.x + at.x, origin.y + at.y), size(px(1.), line_height)),
+            Bounds::new(
+                point(origin.x + at.x, origin.y + at.y),
+                size(px(1.), line_height),
+            ),
             rgb(0x000000),
         );
 
@@ -592,7 +648,11 @@ impl Element for AreaElement {
         cx: &mut App,
     ) {
         let focus = self.area.read(cx).focus.clone();
-        window.handle_input(&focus, ElementInputHandler::new(bounds, self.area.clone()), cx);
+        window.handle_input(
+            &focus,
+            ElementInputHandler::new(bounds, self.area.clone()),
+            cx,
+        );
         let focused = focus.is_focused(window);
         let lines = std::mem::take(&mut prepaint.lines);
         let (line_height, scroll) = (prepaint.line_height, prepaint.scroll);
@@ -604,7 +664,14 @@ impl Element for AreaElement {
             }
             let mut y = bounds.top() - scroll;
             for line in &lines {
-                let _ = line.paint(point(bounds.left(), y), line_height, TextAlign::Left, None, window, cx);
+                let _ = line.paint(
+                    point(bounds.left(), y),
+                    line_height,
+                    TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                );
                 y += line.size(line_height).height;
             }
             if focused {

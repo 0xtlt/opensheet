@@ -58,7 +58,10 @@ fn start_tags(text: &str) -> Vec<(usize, usize)> {
 
 /// The name of the element a start tag opens, without its prefix.
 fn tag_name(tag: &str) -> &str {
-    let name = tag[1..].split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("");
+    let name = tag[1..]
+        .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .next()
+        .unwrap_or("");
     name.rsplit(':').next().unwrap_or(name)
 }
 
@@ -79,7 +82,10 @@ fn attributes(tag: &str) -> Vec<(&str, usize, usize, usize)> {
             at += 1;
         }
         let name_start = at;
-        while at < bytes.len() && !bytes[at].is_ascii_whitespace() && !matches!(bytes[at], b'=' | b'>' | b'/') {
+        while at < bytes.len()
+            && !bytes[at].is_ascii_whitespace()
+            && !matches!(bytes[at], b'=' | b'>' | b'/')
+        {
             at += 1;
         }
         let name = &tag[name_start..at];
@@ -100,7 +106,9 @@ fn attributes(tag: &str) -> Vec<(&str, usize, usize, usize)> {
             continue;
         };
         let value_start = at + 1;
-        let value_end = tag[value_start..].find(quote as char).map_or(tag.len(), |i| value_start + i);
+        let value_end = tag[value_start..]
+            .find(quote as char)
+            .map_or(tag.len(), |i| value_start + i);
         out.push((name, value_start, value_end, name_start));
         at = value_end + 1;
     }
@@ -108,16 +116,25 @@ fn attributes(tag: &str) -> Vec<(&str, usize, usize, usize)> {
 }
 
 fn attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    attributes(tag).into_iter().find(|(n, ..)| *n == name).map(|(_, start, end, _)| &tag[start..end])
+    attributes(tag)
+        .into_iter()
+        .find(|(n, ..)| *n == name)
+        .map(|(_, start, end, _)| &tag[start..end])
 }
 
 /// A length of a document in pixels at 96 per inch. `None` for a
 /// percentage, which is a share of something the document does not say.
 fn length(text: &str) -> Option<f32> {
     let text = text.trim();
-    let split = text.find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))).unwrap_or(text.len());
+    let split = text
+        .find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')))
+        .unwrap_or(text.len());
     // "em" ends in a letter a number may hold: the unit starts there.
-    let split = if text[..split].ends_with(['e', 'E']) { split - 1 } else { split };
+    let split = if text[..split].ends_with(['e', 'E']) {
+        split - 1
+    } else {
+        split
+    };
     let value: f32 = text[..split].parse().ok()?;
     let factor = match text[split..].trim() {
         "" | "px" => 1.0,
@@ -142,7 +159,11 @@ pub fn svg_size(data: &[u8]) -> Option<(f32, f32)> {
     let (start, end) = root_tag(text)?;
     let tag = &text[start..end];
     let view_box = attribute(tag, "viewBox").and_then(|value| {
-        let numbers: Vec<f32> = value.split([' ', ',']).filter(|part| !part.is_empty()).filter_map(|part| part.parse().ok()).collect();
+        let numbers: Vec<f32> = value
+            .split([' ', ','])
+            .filter(|part| !part.is_empty())
+            .filter_map(|part| part.parse().ok())
+            .collect();
         match numbers[..] {
             [_, _, width, height] if width > 0.0 && height > 0.0 => Some((width, height)),
             _ => None,
@@ -181,7 +202,11 @@ pub fn resized(data: &[u8], width: f32, height: f32) -> Option<Vec<u8>> {
             _ => {}
         }
     }
-    let close = if root.ends_with("/>") { root.len() - 2 } else { root.len() - 1 };
+    let close = if root.ends_with("/>") {
+        root.len() - 2
+    } else {
+        root.len() - 1
+    };
     let mut added = format!(" width=\"{width}\" height=\"{height}\" preserveAspectRatio=\"none\"");
     if !has_view_box {
         added.push_str(&format!(" viewBox=\"0 0 {} {}\"", natural.0, natural.1));
@@ -206,7 +231,9 @@ impl Repaint {
         let hex = |color: Color| format!("#{:06X}", color.value() & 0xFF_FFFF);
         match self {
             Repaint::Fill(color) => vec![("fill", color.map_or("none".to_string(), hex))],
-            Repaint::Outline(Some((color, width))) => vec![("stroke", hex(color)), ("stroke-width", format!("{width}"))],
+            Repaint::Outline(Some((color, width))) => {
+                vec![("stroke", hex(color)), ("stroke-width", format!("{width}"))]
+            }
             Repaint::Outline(None) => vec![("stroke", "none".to_string())],
         }
     }
@@ -229,7 +256,9 @@ fn repaint_declarations(style: &str, repaint: Repaint) -> String {
         let end = rest.find([';', '}', '{']).unwrap_or(rest.len());
         let declaration = &rest[..end];
         let replaced = declaration.split_once(':').and_then(|(name, value)| {
-            let (_, new) = properties.iter().find(|(property, _)| *property == name.trim())?;
+            let (_, new) = properties
+                .iter()
+                .find(|(property, _)| *property == name.trim())?;
             (!repaint.keeps(name.trim(), value)).then(|| format!("{name}:{new}"))
         });
         out.push_str(replaced.as_deref().unwrap_or(declaration));
@@ -250,7 +279,9 @@ fn repaint_tag(tag: &str, repaint: Repaint, root: bool) -> String {
         let value = &tag[start..end];
         if name == "style" {
             edits.push((start, end, repaint_declarations(value, repaint)));
-        } else if let Some((property, new)) = properties.iter().find(|(property, _)| *property == name) {
+        } else if let Some((property, new)) =
+            properties.iter().find(|(property, _)| *property == name)
+        {
             seen.push(*property);
             if !repaint.keeps(name, value) {
                 edits.push((start, end, new.clone()));
@@ -265,18 +296,32 @@ fn repaint_tag(tag: &str, repaint: Repaint, root: bool) -> String {
         // The colour of the theme this paint is, if it is one: kept on
         // the document, where other applications pass it over.
         let (note, reference) = repaint.note();
-        if let Some((_, _, value_end, name_start)) = attributes(&out).into_iter().find(|(name, ..)| *name == note) {
+        if let Some((_, _, value_end, name_start)) = attributes(&out)
+            .into_iter()
+            .find(|(name, ..)| *name == note)
+        {
             // With the blank before it.
             out.replace_range(name_start - 1..value_end + 1, "");
         }
         // What the parts that say nothing inherit.
-        let close = if out.ends_with("/>") { out.len() - 2 } else { out.len() - 1 };
+        let close = if out.ends_with("/>") {
+            out.len() - 2
+        } else {
+            out.len() - 1
+        };
         let mut added = String::new();
-        for (property, value) in properties.iter().filter(|(property, _)| !seen.contains(property)) {
+        for (property, value) in properties
+            .iter()
+            .filter(|(property, _)| !seen.contains(property))
+        {
             added.push_str(&format!(" {property}=\"{value}\""));
         }
         if let Some(reference) = reference {
-            added.push_str(&format!(" {note}=\"{} {}\"", reference.slot.index(), reference.tint));
+            added.push_str(&format!(
+                " {note}=\"{} {}\"",
+                reference.slot.index(),
+                reference.tint
+            ));
         }
         out.insert_str(close, &added);
     }
@@ -317,8 +362,13 @@ pub fn rethemed(data: &[u8], theme: &Theme) -> Option<Vec<u8>> {
         out = repaint(data, Repaint::Fill(Some(fill)));
     }
     if let Some(stroke) = reference(THEME_STROKE) {
-        let width = attribute(tag, "stroke-width").and_then(|width| width.parse().ok()).unwrap_or(1.0);
-        out = repaint(out.as_deref().unwrap_or(data), Repaint::Outline(Some((stroke, width))));
+        let width = attribute(tag, "stroke-width")
+            .and_then(|width| width.parse().ok())
+            .unwrap_or(1.0);
+        out = repaint(
+            out.as_deref().unwrap_or(data),
+            Repaint::Outline(Some((stroke, width))),
+        );
     }
     out.filter(|new| new != data)
 }
@@ -326,7 +376,11 @@ pub fn rethemed(data: &[u8], theme: &Theme) -> Option<Vec<u8>> {
 /// True when a fill or an outline of the document follows the theme.
 pub fn follows_theme(data: &[u8]) -> bool {
     std::str::from_utf8(data).ok().is_some_and(|text| {
-        root_tag(text).is_some_and(|(start, end)| attribute(&text[start..end], THEME_FILL).or(attribute(&text[start..end], THEME_STROKE)).is_some())
+        root_tag(text).is_some_and(|(start, end)| {
+            attribute(&text[start..end], THEME_FILL)
+                .or(attribute(&text[start..end], THEME_STROKE))
+                .is_some()
+        })
     })
 }
 
@@ -363,18 +417,26 @@ mod tests {
     #[test]
     fn documents_are_recognised_and_measured() {
         assert!(is_svg(ICON.as_bytes()));
-        assert!(!is_svg(b"<html><svg/></html>") && !is_svg(b"\x89PNG\r\n\x1a\n") && !is_svg(b"svg"));
+        assert!(
+            !is_svg(b"<html><svg/></html>") && !is_svg(b"\x89PNG\r\n\x1a\n") && !is_svg(b"svg")
+        );
         // A width alone: the height follows the view box.
         assert_eq!(svg_size(ICON.as_bytes()), Some((192.0, 96.0)));
         let sized = |attributes: &str| svg_size(format!("<svg {attributes}/>").as_bytes());
         assert_eq!(sized(r#"width="72pt" height="25.4mm""#), Some((96.0, 96.0)));
         assert_eq!(sized(r#"viewBox="0,0,24,12""#), Some((24.0, 12.0)));
-        assert_eq!(sized(r#"width="100%" height="50%" viewBox="0 0 10 20""#), Some((10.0, 20.0)));
+        assert_eq!(
+            sized(r#"width="100%" height="50%" viewBox="0 0 10 20""#),
+            Some((10.0, 20.0))
+        );
         assert_eq!(sized(r#"width="1.5em""#), Some((24.0, 150.0)));
         assert_eq!(sized(""), Some((300.0, 150.0)));
         assert_eq!(svg_size(b"<svgx/>"), None);
         // A `>` inside a value does not end its tag.
-        assert_eq!(svg_size(br#"<svg:svg data-x="a>b" width='10' height="20">"#), Some((10.0, 20.0)));
+        assert_eq!(
+            svg_size(br#"<svg:svg data-x="a>b" width='10' height="20">"#),
+            Some((10.0, 20.0))
+        );
     }
 
     #[test]
@@ -385,13 +447,17 @@ mod tests {
         assert_eq!(svg_size(wide.as_bytes()), Some((300.0, 20.0)));
         // A document without a view box gets the one its size implies.
         let bare = text(br#"<svg height="10" width="40"><rect/></svg>"#, 8.0, 8.0);
-        assert_eq!(bare, r#"<svg   width="8" height="8" preserveAspectRatio="none" viewBox="0 0 40 10"><rect/></svg>"#);
+        assert_eq!(
+            bare,
+            r#"<svg   width="8" height="8" preserveAspectRatio="none" viewBox="0 0 40 10"><rect/></svg>"#
+        );
         assert_eq!(resized(b"<p/>", 1.0, 1.0), None);
     }
 
     #[test]
     fn fills_and_outlines_are_repainted() {
-        let text = |repaint_as| String::from_utf8(repaint(ICON.as_bytes(), repaint_as).unwrap()).unwrap();
+        let text =
+            |repaint_as| String::from_utf8(repaint(ICON.as_bytes(), repaint_as).unwrap()).unwrap();
         let red = text(Repaint::Fill(Some(Color(0xC00000))));
         // The root, the style sheet, attributes and inline styles; what is
         // not filled stays empty, and nothing else moves.
@@ -399,35 +465,67 @@ mod tests {
         assert!(red.contains(".a{fill:#C00000;stroke:red}"));
         assert!(red.contains(r##"fill='#C00000' style="fill-opacity:.5;fill:#C00000""##));
         assert!(red.contains(r#"<rect fill="none" stroke-width="3""#));
-        assert!(red.starts_with(r#"<?xml version="1.0"?><!-- an icon --><svg"#) && red.ends_with("</svg>"));
+        assert!(
+            red.starts_with(r#"<?xml version="1.0"?><!-- an icon --><svg"#)
+                && red.ends_with("</svg>")
+        );
         // No fill empties everything.
         let empty = text(Repaint::Fill(None));
         assert_eq!(empty.matches("none").count(), 5, "{empty}");
         let outlined = text(Repaint::Outline(Some((Color(0x0070C0), 1.5))));
-        assert!(outlined.contains(r##"width="2in" stroke="#0070C0" stroke-width="1.5">"##), "{outlined}");
-        assert!(outlined.contains(".a{fill:#123456;stroke:#0070C0}") && outlined.contains(r#"stroke-width="1.5" width="5""#));
+        assert!(
+            outlined.contains(r##"width="2in" stroke="#0070C0" stroke-width="1.5">"##),
+            "{outlined}"
+        );
+        assert!(
+            outlined.contains(".a{fill:#123456;stroke:#0070C0}")
+                && outlined.contains(r#"stroke-width="1.5" width="5""#)
+        );
         let bare = text(Repaint::Outline(None));
         assert!(bare.contains(r#"width="2in" stroke="none">"#) && bare.contains("stroke:none}"));
         // Repainting twice is repainting once.
-        let twice = String::from_utf8(repaint(red.as_bytes(), Repaint::Fill(Some(Color(0xC00000)))).unwrap()).unwrap();
+        let twice = String::from_utf8(
+            repaint(red.as_bytes(), Repaint::Fill(Some(Color(0xC00000)))).unwrap(),
+        )
+        .unwrap();
         assert_eq!(twice, red);
         assert_eq!(repaint(b"not a picture", Repaint::Fill(None)), None);
         // A colour of the theme is remembered, and follows it.
         let theme = Theme::default();
         let accent = theme.accent(2, 0.0);
         let themed = text(Repaint::Fill(Some(accent)));
-        assert!(themed.contains(&format!(r##"fill="#{}" data-theme-fill="5 0">"##, accent.to_hex())), "{themed}");
+        assert!(
+            themed.contains(&format!(
+                r##"fill="#{}" data-theme-fill="5 0">"##,
+                accent.to_hex()
+            )),
+            "{themed}"
+        );
         assert!(follows_theme(themed.as_bytes()) && !follows_theme(red.as_bytes()));
         assert_eq!(rethemed(themed.as_bytes(), &theme), None);
         let other = Theme::office_2013();
-        assert_ne!(other.accent(2, 0.0).value(), accent.value(), "two themes that differ");
+        assert_ne!(
+            other.accent(2, 0.0).value(),
+            accent.value(),
+            "two themes that differ"
+        );
         let moved = String::from_utf8(rethemed(themed.as_bytes(), &other).unwrap()).unwrap();
-        assert!(moved.contains(&format!(r##"fill="#{}" data-theme-fill="5 0">"##, other.accent(2, 0.0).to_hex())), "{moved}");
+        assert!(
+            moved.contains(&format!(
+                r##"fill="#{}" data-theme-fill="5 0">"##,
+                other.accent(2, 0.0).to_hex()
+            )),
+            "{moved}"
+        );
         // A plain colour forgets the theme.
-        let plain = String::from_utf8(repaint(moved.as_bytes(), Repaint::Fill(Some(Color(0x112233)))).unwrap()).unwrap();
+        let plain = String::from_utf8(
+            repaint(moved.as_bytes(), Repaint::Fill(Some(Color(0x112233)))).unwrap(),
+        )
+        .unwrap();
         assert!(!plain.contains("data-theme") && rethemed(plain.as_bytes(), &other).is_none());
         // A document closed in its own tag.
-        let single = String::from_utf8(repaint(b"<svg width='1'/>", Repaint::Fill(None)).unwrap()).unwrap();
+        let single =
+            String::from_utf8(repaint(b"<svg width='1'/>", Repaint::Fill(None)).unwrap()).unwrap();
         assert_eq!(single, "<svg width='1' fill=\"none\"/>");
     }
 }

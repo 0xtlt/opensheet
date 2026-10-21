@@ -61,7 +61,10 @@ enum TextMatch {
 #[derive(Clone, Debug, PartialEq)]
 enum Operand {
     Number(f64),
-    Text { pattern: String, how: TextMatch },
+    Text {
+        pattern: String,
+        how: TextMatch,
+    },
     Bool(bool),
     Error(ErrorKind),
     /// Nothing after the operator (`"="`, `"<>"`): truly empty cells.
@@ -436,10 +439,12 @@ pub fn scan(
 pub fn matching_numbers(target: &Grid, grids: &[Grid], criteria: &[Criteria]) -> R<Vec<f64>> {
     let mut out = Vec::new();
     let mut err = None;
-    scan(grids, criteria, Some(target), |r, c| match target.get(r, c) {
-        Value::Number(n) => out.push(*n),
-        Value::Error(e) if err.is_none() => err = Some(*e),
-        _ => {}
+    scan(grids, criteria, Some(target), |r, c| {
+        match target.get(r, c) {
+            Value::Number(n) => out.push(*n),
+            Value::Error(e) if err.is_none() => err = Some(*e),
+            _ => {}
+        }
     });
     match err {
         Some(e) => Err(e),
@@ -525,7 +530,10 @@ pub fn lift(
         }
     }
     if !any {
-        let scalars: Vec<Option<Value>> = vals.into_iter().map(|v| v.map(Value::into_scalar)).collect();
+        let scalars: Vec<Option<Value>> = vals
+            .into_iter()
+            .map(|v| v.map(Value::into_scalar))
+            .collect();
         return f(&scalars);
     }
     let mut out = Array::new(rows, cols);
@@ -838,7 +846,13 @@ mod tests {
     fn ranges_on_another_sheet() {
         // Sheet2 uses a single row while Sheet1 uses five: the criteria
         // range is materialised smaller than the range being summed.
-        let mut w = wb(&[("B1", "1"), ("B2", "2"), ("B3", "3"), ("B4", "4"), ("B5", "5")]);
+        let mut w = wb(&[
+            ("B1", "1"),
+            ("B2", "2"),
+            ("B3", "3"),
+            ("B4", "4"),
+            ("B5", "5"),
+        ]);
         let other = w.add_sheet(1);
         w.set_cell_text(other, 0, 0, "x").unwrap();
         for (row, formula) in [
@@ -869,9 +883,17 @@ mod tests {
     #[test]
     fn matrix_argument() {
         assert_eq!(num("MDETERM({1,2;3,4})"), -2.0);
-        assert_eq!(eval("MDETERM({1,\"a\";3,4})"), Value::Error(ErrorKind::Value));
+        assert_eq!(
+            eval("MDETERM({1,\"a\";3,4})"),
+            Value::Error(ErrorKind::Value)
+        );
         // Blank cells make a matrix invalid.
-        let w = wb(&[("A1", "1"), ("B2", "1"), ("D1", "=MDETERM(A1:B2)"), ("D2", "=MDETERM(A1:B3)")]);
+        let w = wb(&[
+            ("A1", "1"),
+            ("B2", "1"),
+            ("D1", "=MDETERM(A1:B2)"),
+            ("D2", "=MDETERM(A1:B3)"),
+        ]);
         assert_eq!(val(&w, "D1"), Value::Error(ErrorKind::Value));
         assert_eq!(val(&w, "D2"), Value::Error(ErrorKind::Value));
     }

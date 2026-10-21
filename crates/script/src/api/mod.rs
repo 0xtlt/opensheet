@@ -143,7 +143,11 @@ impl<'a> Call<'a> {
     }
 
     pub fn opt_str(&self, index: usize) -> Res<Option<&'a str>> {
-        if self.has(index) { self.str(index).map(Some) } else { Ok(None) }
+        if self.has(index) {
+            self.str(index).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn num(&self, index: usize) -> Res<f64> {
@@ -153,11 +157,19 @@ impl<'a> Call<'a> {
     /// A whole number.
     pub fn int(&self, index: usize) -> Res<i64> {
         let n = self.num(index)?;
-        if n.fract() == 0.0 && n.abs() < 1e15 { Ok(n as i64) } else { Err(self.invalid()) }
+        if n.fract() == 0.0 && n.abs() < 1e15 {
+            Ok(n as i64)
+        } else {
+            Err(self.invalid())
+        }
     }
 
     pub fn opt_int(&self, index: usize) -> Res<Option<i64>> {
-        if self.has(index) { self.int(index).map(Some) } else { Ok(None) }
+        if self.has(index) {
+            self.int(index).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn bool(&self, index: usize) -> Res<bool> {
@@ -165,11 +177,18 @@ impl<'a> Call<'a> {
     }
 
     pub fn opt_bool(&self, index: usize) -> Res<Option<bool>> {
-        if self.has(index) { self.bool(index).map(Some) } else { Ok(None) }
+        if self.has(index) {
+            self.bool(index).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn array(&self, index: usize) -> Res<&'a [J]> {
-        self.arg(index).as_array().map(Vec::as_slice).ok_or_else(|| self.invalid())
+        self.arg(index)
+            .as_array()
+            .map(Vec::as_slice)
+            .ok_or_else(|| self.invalid())
     }
 
     /// A number of the state of the object the call is made on.
@@ -279,7 +298,11 @@ pub(crate) fn enum_value<'a>(call: &Call<'a>, index: usize, name: &str) -> Res<O
         .iter()
         .find(|e| e.name == name)
         .is_some_and(|e| e.members.iter().any(|(_, value)| *value == text));
-    if known { Ok(Some(text)) } else { Err(call.invalid()) }
+    if known {
+        Ok(Some(text))
+    } else {
+        Err(call.invalid())
+    }
 }
 
 /// The members that answered a call in this process, for the test that
@@ -294,5 +317,8 @@ pub(crate) fn note_call(class: &'static str, member: &'static str) {
 }
 
 pub(crate) fn called() -> Vec<(&'static str, &'static str)> {
-    CALLED.lock().map(|called| called.iter().copied().collect()).unwrap_or_default()
+    CALLED
+        .lock()
+        .map(|called| called.iter().copied().collect())
+        .unwrap_or_default()
 }

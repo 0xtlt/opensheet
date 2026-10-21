@@ -31,7 +31,12 @@ pub enum ChartButtonKind {
 }
 
 impl ChartButtonKind {
-    pub const ALL: [ChartButtonKind; 4] = [ChartButtonKind::Filter, ChartButtonKind::Legend, ChartButtonKind::Axis, ChartButtonKind::Value];
+    pub const ALL: [ChartButtonKind; 4] = [
+        ChartButtonKind::Filter,
+        ChartButtonKind::Legend,
+        ChartButtonKind::Axis,
+        ChartButtonKind::Value,
+    ];
 }
 
 /// A chart bound to a PivotTable.
@@ -47,7 +52,10 @@ pub struct PivotChartLink {
 impl PivotChartLink {
     /// A link showing every field button, as a new PivotChart does.
     pub fn new(chart: u32) -> PivotChartLink {
-        PivotChartLink { chart, shown: [true; 4] }
+        PivotChartLink {
+            chart,
+            shown: [true; 4],
+        }
     }
 
     pub fn shows(&self, kind: ChartButtonKind) -> bool {
@@ -128,13 +136,25 @@ impl PivotTable {
     /// The captions of the field buttons of a PivotChart of this table.
     pub fn chart_fields(&self) -> PivotChartFields {
         let captions = |list: &[super::AxisField]| -> Vec<(usize, String)> {
-            list.iter().filter_map(|a| a.field()).map(|f| (f, self.field_caption(f).to_string())).collect()
+            list.iter()
+                .filter_map(|a| a.field())
+                .map(|f| (f, self.field_caption(f).to_string()))
+                .collect()
         };
         PivotChartFields {
-            filters: self.page_fields.iter().map(|p| (p.field, self.field_caption(p.field).to_string())).collect(),
+            filters: self
+                .page_fields
+                .iter()
+                .map(|p| (p.field, self.field_caption(p.field).to_string()))
+                .collect(),
             legend: captions(&self.col_fields),
             axis: captions(&self.row_fields),
-            values: self.data_fields.iter().enumerate().map(|(k, d)| (k, d.name.clone())).collect(),
+            values: self
+                .data_fields
+                .iter()
+                .enumerate()
+                .map(|(k, d)| (k, d.name.clone()))
+                .collect(),
         }
     }
 
@@ -142,12 +162,18 @@ impl PivotTable {
     /// levels; `None` when the rows have a single field (the cells of the
     /// labels then say everything).
     pub fn chart_points(&self, locale: &Locale) -> Option<PivotChartPoints> {
-        let depth = self.row_fields.iter().filter(|a| a.field().is_some()).count();
+        let depth = self
+            .row_fields
+            .iter()
+            .filter(|a| a.field().is_some())
+            .count();
         if depth < 2 || self.data_fields.is_empty() {
             return None;
         }
         let lines = self.report.lines(true, self);
-        let first = lines.iter().position(|line| line.kind == ReportLineKind::Item)?;
+        let first = lines
+            .iter()
+            .position(|line| line.kind == ReportLineKind::Item)?;
         let mut points = PivotChartPoints {
             outer_levels: vec![Vec::new(); depth - 1],
             ..Default::default()
@@ -167,7 +193,9 @@ impl PivotTable {
             for (level, texts) in points.outer_levels.iter_mut().enumerate() {
                 // Level 0 is next to the innermost one.
                 let at = (depth - 2).checked_sub(level).filter(|at| *at < last);
-                let same = |at: usize| before.is_some_and(|b| b.len() > at && b[..=at] == line.items[..=at]);
+                let same = |at: usize| {
+                    before.is_some_and(|b| b.len() > at && b[..=at] == line.items[..=at])
+                };
                 texts.push(match at {
                     Some(at) if !same(at) => text(at),
                     _ => String::new(),
@@ -189,9 +217,15 @@ impl PivotTable {
         let (first_row, first_col) = (report.first_data_row(), report.first_data_col());
         let plotted = |rows: bool| -> Vec<u32> {
             let lines = report.lines(rows, self);
-            let items: Vec<u32> = (0..lines.len() as u32).filter(|k| lines[*k as usize].kind == ReportLineKind::Item).collect();
+            let items: Vec<u32> = (0..lines.len() as u32)
+                .filter(|k| lines[*k as usize].kind == ReportLineKind::Item)
+                .collect();
             // A report without fields on the axis has one line of values.
-            if items.is_empty() && lines.len() == 1 { vec![0] } else { items }
+            if items.is_empty() && lines.len() == 1 {
+                vec![0]
+            } else {
+                items
+            }
         };
         let (rows, cols) = (plotted(true), plotted(false));
         let (Some(r0), Some(r1)) = (rows.first(), rows.last()) else {
@@ -200,8 +234,10 @@ impl PivotTable {
         // The rows from the first item to the last: with several row
         // fields the lines between them come along.
         let (top, bottom) = (body.r0 + first_row + r0, body.r0 + first_row + r1);
-        let labels = (first_col > 0).then(|| Rect::new(top, body.c0, bottom, body.c0 + first_col - 1));
-        let single = self.col_fields.iter().all(|a| a.field().is_none()) && self.data_fields.len() == 1;
+        let labels =
+            (first_col > 0).then(|| Rect::new(top, body.c0, bottom, body.c0 + first_col - 1));
+        let single =
+            self.col_fields.iter().all(|a| a.field().is_none()) && self.data_fields.len() == 1;
         cols.into_iter()
             .filter_map(|c| {
                 let col = body.c0 + first_col + c;
@@ -210,9 +246,14 @@ impl PivotTable {
                 series.name = if single {
                     // "Total", as Excel names the only series (seen by
                     // opening the same PivotChart in Excel).
-                    SeriesName::Text(super::text::caption(super::text::Caption::Total, locale).to_string())
+                    SeriesName::Text(
+                        super::text::caption(super::text::Caption::Total, locale).to_string(),
+                    )
                 } else {
-                    match (first_row > 0).then(|| range(sheet, Rect::cell(body.r0 + first_row - 1, col))).flatten() {
+                    match (first_row > 0)
+                        .then(|| range(sheet, Rect::cell(body.r0 + first_row - 1, col)))
+                        .flatten()
+                    {
                         Some(cell) => SeriesName::Cell(cell),
                         None => SeriesName::None,
                     }
@@ -241,7 +282,12 @@ impl Workbook {
 
     /// Put a chart of PivotTable `pivot` on `sheet`; returns its id. The
     /// caller places it (`update_chart`).
-    pub fn add_pivot_chart(&mut self, sheet: usize, pivot: u32, kind: ChartKind) -> Result<u32, PivotError> {
+    pub fn add_pivot_chart(
+        &mut self,
+        sheet: usize,
+        pivot: u32,
+        kind: ChartKind,
+    ) -> Result<u32, PivotError> {
         if !chart_kind_allowed(kind) {
             return Err(PivotError::ChartKind);
         }
@@ -252,7 +298,9 @@ impl Workbook {
         if chart.series.len() > 1 {
             chart.legend = LegendPos::Right;
         }
-        let id = self.add_chart(sheet, chart).ok_or(PivotError::NoSuchPivot)?;
+        let id = self
+            .add_chart(sheet, chart)
+            .ok_or(PivotError::NoSuchPivot)?;
         if let Some(p) = self.sheets[si].pivots.iter_mut().find(|p| p.id == pivot) {
             p.charts.push(PivotChartLink::new(id));
         }
@@ -265,7 +313,12 @@ impl Workbook {
     }
 
     /// Show or hide one kind of field buttons of a PivotChart.
-    pub fn set_pivot_chart_button_kind(&mut self, chart: u32, kind: ChartButtonKind, shown: bool) -> bool {
+    pub fn set_pivot_chart_button_kind(
+        &mut self,
+        chart: u32,
+        kind: ChartButtonKind,
+        shown: bool,
+    ) -> bool {
         self.edit_pivot_chart_link(chart, |link| link.shown[kind as usize] = shown)
     }
 
@@ -298,7 +351,11 @@ impl Workbook {
             let links: Vec<u32> = p.charts.iter().map(|link| link.chart).collect();
             let mut alive = Vec::new();
             for sheet in &mut self.sheets {
-                for chart in sheet.charts.iter_mut().filter(|chart| links.contains(&chart.id)) {
+                for chart in sheet
+                    .charts
+                    .iter_mut()
+                    .filter(|chart| links.contains(&chart.id))
+                {
                     alive.push(chart.id);
                     let old = std::mem::take(&mut chart.series);
                     chart.series = series

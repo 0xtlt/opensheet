@@ -32,7 +32,9 @@ fn list() -> Workbook {
         }
     }
     let short: Arc<str> = Arc::from(wb.locale.short_date_format);
-    wb.update_style(0, Rect::new(1, 2, 6, 2), &move |s| s.num_fmt = short.clone());
+    wb.update_style(0, Rect::new(1, 2, 6, 2), &move |s| {
+        s.num_fmt = short.clone()
+    });
     wb.update_style(0, Rect::new(0, 0, 0, 3), &|s| s.font.bold = true);
     wb.set_cell_text(0, 0, 5, "alone").unwrap();
     wb.commit("fill");
@@ -84,7 +86,10 @@ fn records_found_uses_excel_wording() {
 
 #[test]
 fn sort_entries_follow_what_the_column_holds() {
-    assert_eq!(sort_labels(ColumnKind::Text), ("Sort A to Z", "Sort Z to A"));
+    assert_eq!(
+        sort_labels(ColumnKind::Text),
+        ("Sort A to Z", "Sort Z to A")
+    );
     assert_eq!(
         sort_labels(ColumnKind::Number),
         ("Sort Smallest to Largest", "Sort Largest to Smallest")
@@ -140,10 +145,24 @@ fn criteria_are_summarised_for_the_tip_of_a_button() {
         criteria_summary(Some(&between), false, en),
         "Greater than or equal to \"3\" and Less than \"7.5\""
     );
-    let begins = Criteria::Custom(CustomFilter::one(Condition::new(Comparison::BeginsWith, "ap", en)));
-    assert_eq!(criteria_summary(Some(&begins), false, en), "Begins with \"ap\"");
-    let after = Criteria::Custom(CustomFilter::one(Condition::new(Comparison::Greater, "1/31/2026", en)));
-    assert_eq!(criteria_summary(Some(&after), true, en), "After \"1/31/2026\"");
+    let begins = Criteria::Custom(CustomFilter::one(Condition::new(
+        Comparison::BeginsWith,
+        "ap",
+        en,
+    )));
+    assert_eq!(
+        criteria_summary(Some(&begins), false, en),
+        "Begins with \"ap\""
+    );
+    let after = Criteria::Custom(CustomFilter::one(Condition::new(
+        Comparison::Greater,
+        "1/31/2026",
+        en,
+    )));
+    assert_eq!(
+        criteria_summary(Some(&after), true, en),
+        "After \"1/31/2026\""
+    );
     let top = Criteria::Top10(Top10::new(false, true, 25.0));
     assert_eq!(criteria_summary(Some(&top), false, en), "Bottom 25 percent");
     assert_eq!(
@@ -151,11 +170,21 @@ fn criteria_are_summarised_for_the_tip_of_a_button() {
         "March"
     );
     assert_eq!(
-        criteria_summary(Some(&Criteria::Dynamic(DynamicFilter::Quarter(2))), false, en),
+        criteria_summary(
+            Some(&Criteria::Dynamic(DynamicFilter::Quarter(2))),
+            false,
+            en
+        ),
         "Quarter 2"
     );
-    let no_fill = Criteria::Color(ColorFilter { color: None, font: false });
-    assert_eq!(criteria_summary(Some(&no_fill), false, en), "Equals a cell color (No Fill)");
+    let no_fill = Criteria::Color(ColorFilter {
+        color: None,
+        font: false,
+    });
+    assert_eq!(
+        criteria_summary(Some(&no_fill), false, en),
+        "Equals a cell color (No Fill)"
+    );
 }
 
 #[test]
@@ -169,12 +198,24 @@ fn month_names_take_a_capital_in_every_language() {
 
 #[test]
 fn the_button_sits_in_the_corner_of_its_cell() {
-    assert_eq!(button_box((100.0, 20.0, 180.0, 40.0), 1.0), Some((162.0, 22.0, 178.0, 38.0)));
+    assert_eq!(
+        button_box((100.0, 20.0, 180.0, 40.0), 1.0),
+        Some((162.0, 22.0, 178.0, 38.0))
+    );
     // It grows with the zoom...
-    assert_eq!(button_box((0.0, 0.0, 200.0, 50.0), 2.0), Some((166.0, 16.0, 198.0, 48.0)));
+    assert_eq!(
+        button_box((0.0, 0.0, 200.0, 50.0), 2.0),
+        Some((166.0, 16.0, 198.0, 48.0))
+    );
     // ...shrinks in a low row or a narrow column, and leaves a hidden one.
-    assert_eq!(button_box((0.0, 0.0, 80.0, 12.0), 1.0), Some((69.0, 1.0, 78.0, 10.0)));
-    assert_eq!(button_box((0.0, 0.0, 10.0, 20.0), 1.0), Some((1.0, 11.0, 8.0, 18.0)));
+    assert_eq!(
+        button_box((0.0, 0.0, 80.0, 12.0), 1.0),
+        Some((69.0, 1.0, 78.0, 10.0))
+    );
+    assert_eq!(
+        button_box((0.0, 0.0, 10.0, 20.0), 1.0),
+        Some((1.0, 11.0, 8.0, 18.0))
+    );
     assert_eq!(button_box((0.0, 0.0, 0.0, 20.0), 1.0), None);
     assert_eq!(button_box((0.0, 0.0, 80.0, 0.0), 1.0), None);
 }
@@ -183,7 +224,10 @@ fn the_button_sits_in_the_corner_of_its_cell() {
 fn only_the_buttons_in_view_are_drawn() {
     let wb = filtered_list();
     assert_eq!(buttons_in(&wb, 0, Rect::new(0, 0, 30, 30)).len(), 4);
-    let some: Vec<u32> = buttons_in(&wb, 0, Rect::new(0, 2, 30, 30)).iter().map(|b| b.col).collect();
+    let some: Vec<u32> = buttons_in(&wb, 0, Rect::new(0, 2, 30, 30))
+        .iter()
+        .map(|b| b.col)
+        .collect();
     assert_eq!(some, [2, 3]);
     // The header row is scrolled out of view.
     assert!(buttons_in(&wb, 0, Rect::new(1, 0, 30, 30)).is_empty());
@@ -194,7 +238,11 @@ fn the_tip_of_a_button_names_its_column_and_criterion() {
     let mut wb = filtered_list();
     let button = wb.filter_button_at(0, 0, 1).unwrap();
     assert_eq!(button_tip(&wb, 0, &button), "Quantity:\n(Showing All)");
-    let above = Criteria::Custom(CustomFilter::one(Condition::new(Comparison::Greater, "5", wb.locale)));
+    let above = Criteria::Custom(CustomFilter::one(Condition::new(
+        Comparison::Greater,
+        "5",
+        wb.locale,
+    )));
     wb.set_filter_criteria(0, FilterScope::Sheet, 1, Some(above));
     assert_eq!(button_tip(&wb, 0, &button), "Quantity:\nGreater than \"5\"");
 }
@@ -212,8 +260,14 @@ fn a_single_cell_stands_for_the_block_around_it() {
         })
     );
     // A lone cell has nothing to sort with.
-    assert_eq!(sort_plan(&wb, 0, Rect::cell(0, 5), (0, 5)), SortPlan::Nothing);
-    assert_eq!(sort_plan(&wb, 0, Rect::cell(20, 20), (20, 20)), SortPlan::Nothing);
+    assert_eq!(
+        sort_plan(&wb, 0, Rect::cell(0, 5), (0, 5)),
+        SortPlan::Nothing
+    );
+    assert_eq!(
+        sort_plan(&wb, 0, Rect::cell(20, 20), (20, 20)),
+        SortPlan::Nothing
+    );
 }
 
 #[test]
@@ -254,10 +308,19 @@ fn cells_of_a_filtered_list_stand_for_the_whole_list() {
         scope: FilterScope::Sheet,
         range: Rect::new(0, 0, 6, 3),
     };
-    assert_eq!(sort_plan(&wb, 0, Rect::cell(4, 2), (4, 2)), SortPlan::Sort(target));
-    assert_eq!(sort_plan(&wb, 0, Rect::new(1, 1, 6, 1), (1, 1)), SortPlan::Sort(target));
+    assert_eq!(
+        sort_plan(&wb, 0, Rect::cell(4, 2), (4, 2)),
+        SortPlan::Sort(target)
+    );
+    assert_eq!(
+        sort_plan(&wb, 0, Rect::new(1, 1, 6, 1), (1, 1)),
+        SortPlan::Sort(target)
+    );
     // Half in, half out: Excel refuses.
-    assert_eq!(sort_plan(&wb, 0, Rect::new(4, 2, 9, 2), (4, 2)), SortPlan::StraddlesFilter);
+    assert_eq!(
+        sort_plan(&wb, 0, Rect::new(4, 2, 9, 2), (4, 2)),
+        SortPlan::StraddlesFilter
+    );
 }
 
 #[test]
@@ -273,8 +336,13 @@ fn a_table_is_sorted_whole_with_or_without_its_buttons() {
             range,
         })
     );
-    wb.set_table_option(0, id, opensheet_engine::table::TableOption::FilterButton, false)
-        .unwrap();
+    wb.set_table_option(
+        0,
+        id,
+        opensheet_engine::table::TableOption::FilterButton,
+        false,
+    )
+    .unwrap();
     wb.commit("buttons off");
     assert_eq!(
         sort_plan(&wb, 0, Rect::cell(2, 0), (2, 0)),
@@ -288,7 +356,10 @@ fn a_table_is_sorted_whole_with_or_without_its_buttons() {
 #[test]
 fn expanding_a_selection_takes_the_block_it_touches() {
     let wb = list();
-    assert_eq!(block_around(&wb, 0, Rect::new(2, 2, 3, 2)), Rect::new(0, 0, 6, 3));
+    assert_eq!(
+        block_around(&wb, 0, Rect::new(2, 2, 3, 2)),
+        Rect::new(0, 0, 6, 3)
+    );
     // Nothing but blanks: nothing to expand to.
     let blank = Rect::new(10, 10, 12, 10);
     assert_eq!(block_around(&wb, 0, blank), blank);
@@ -297,7 +368,8 @@ fn expanding_a_selection_takes_the_block_it_touches() {
 #[test]
 fn sorting_through_a_filter_puts_the_arrow_on_its_button() {
     let mut wb = filtered_list();
-    wb.sort_by_filter(0, FilterScope::Sheet, 1, SortOn::Values, true).unwrap();
+    wb.sort_by_filter(0, FilterScope::Sheet, 1, SortOn::Values, true)
+        .unwrap();
     wb.commit("sort");
     let quantities: Vec<String> = (1..=6).map(|row| wb.display_text(0, row, 1).text).collect();
     assert_eq!(quantities, ["10", "7", "7", "4", "3", "1"]);
@@ -348,7 +420,10 @@ fn filtering_by_the_selected_cell_keeps_the_rows_like_it() {
     );
     assert_eq!(
         criterion_like(&wb, 0, 2, 3, By::CellColor),
-        Criteria::Color(ColorFilter { color: None, font: false })
+        Criteria::Color(ColorFilter {
+            color: None,
+            font: false
+        })
     );
 
     let like = criterion_like(&wb, 0, 2, 0, By::Value);
@@ -367,7 +442,10 @@ fn a_cell_knows_the_filtered_column_it_is_in() {
     assert_eq!(filter_column_at(&wb, 0, 4, 5), None);
     let top = Criteria::Top10(Top10::new(true, false, 2.0));
     wb.set_filter_criteria(0, FilterScope::Sheet, 1, Some(top));
-    assert_eq!(filter_column_at(&wb, 0, 0, 1).map(|found| found.3), Some(true));
+    assert_eq!(
+        filter_column_at(&wb, 0, 0, 1).map(|found| found.3),
+        Some(true)
+    );
 }
 
 // ------------------------------------------------- the menu of a drop-down
@@ -391,7 +469,10 @@ fn a_text_column_offers_text_filters() {
     // Nothing is filtered and every cell looks the same.
     assert!(find(&menu, "Clear Filter From \"Fruit\"").disabled);
     assert!(find(&menu, "Filter by Color").disabled);
-    assert_eq!(labels(children(find(&menu, "Sort by Color"))), ["Custom Sort…"]);
+    assert_eq!(
+        labels(children(find(&menu, "Sort by Color"))),
+        ["Custom Sort…"]
+    );
     assert_eq!(
         labels(children(find(&menu, "Text Filters"))),
         [
@@ -408,14 +489,20 @@ fn a_text_column_offers_text_filters() {
         ]
     );
     let begins = find(children(find(&menu, "Text Filters")), "Begins With…");
-    assert_eq!(begins.kind, EntryKind::Act(Act::Custom(Comparison::BeginsWith, None)));
+    assert_eq!(
+        begins.kind,
+        EntryKind::Act(Act::Custom(Comparison::BeginsWith, None))
+    );
 }
 
 #[test]
 fn a_number_column_offers_number_filters() {
     let wb = filtered_list();
     let menu = entries(&dropdown(&wb, 1), 1, wb.locale);
-    assert_eq!(&labels(&menu)[..2], ["Sort Smallest to Largest", "Sort Largest to Smallest"]);
+    assert_eq!(
+        &labels(&menu)[..2],
+        ["Sort Smallest to Largest", "Sort Largest to Smallest"]
+    );
     let filters = children(find(&menu, "Number Filters"));
     assert_eq!(
         labels(filters),
@@ -438,7 +525,10 @@ fn a_number_column_offers_number_filters() {
     );
     assert_eq!(
         find(filters, "Between…").kind,
-        EntryKind::Act(Act::Custom(Comparison::GreaterOrEqual, Some(Comparison::LessOrEqual)))
+        EntryKind::Act(Act::Custom(
+            Comparison::GreaterOrEqual,
+            Some(Comparison::LessOrEqual)
+        ))
     );
     assert_eq!(find(filters, "Top 10…").kind, EntryKind::Act(Act::Top10));
     assert_eq!(
@@ -451,7 +541,10 @@ fn a_number_column_offers_number_filters() {
 fn a_date_column_offers_date_filters() {
     let wb = filtered_list();
     let menu = entries(&dropdown(&wb, 2), 2, wb.locale);
-    assert_eq!(&labels(&menu)[..2], ["Sort Oldest to Newest", "Sort Newest to Oldest"]);
+    assert_eq!(
+        &labels(&menu)[..2],
+        ["Sort Oldest to Newest", "Sort Newest to Oldest"]
+    );
     let filters = children(find(&menu, "Date Filters"));
     assert_eq!(
         labels(filters),
@@ -490,9 +583,25 @@ fn a_date_column_offers_date_filters() {
     );
     let period = children(find(filters, "All Dates in the Period"));
     assert_eq!(period.len(), 17);
-    assert_eq!(&labels(period)[..6], ["Quarter 1", "Quarter 2", "Quarter 3", "Quarter 4", "-", "January"]);
-    assert_eq!(period[16].kind, EntryKind::Act(Act::Dynamic(DynamicFilter::Month(12))));
-    assert_eq!(find(filters, "Before…").kind, EntryKind::Act(Act::Custom(Comparison::Less, None)));
+    assert_eq!(
+        &labels(period)[..6],
+        [
+            "Quarter 1",
+            "Quarter 2",
+            "Quarter 3",
+            "Quarter 4",
+            "-",
+            "January"
+        ]
+    );
+    assert_eq!(
+        period[16].kind,
+        EntryKind::Act(Act::Dynamic(DynamicFilter::Month(12)))
+    );
+    assert_eq!(
+        find(filters, "Before…").kind,
+        EntryKind::Act(Act::Custom(Comparison::Less, None))
+    );
 }
 
 #[test]
@@ -505,7 +614,8 @@ fn the_menu_shows_what_is_in_use() {
         and: true,
     };
     wb.set_filter_criteria(0, scope, 1, Some(Criteria::Custom(between.clone())));
-    wb.sort_by_filter(0, scope, 1, SortOn::Values, false).unwrap();
+    wb.sort_by_filter(0, scope, 1, SortOn::Values, false)
+        .unwrap();
     let menu = entries(&dropdown(&wb, 1), 1, wb.locale);
     assert!(find(&menu, "Sort Smallest to Largest").checked);
     assert!(!find(&menu, "Sort Largest to Smallest").checked);
@@ -516,20 +626,36 @@ fn the_menu_shows_what_is_in_use() {
     assert!(!find(children(filters), "Custom Filter…").checked);
 
     // Either of two conditions is no entry of the menu: "Custom Filter".
-    let either = CustomFilter { and: false, ..between };
+    let either = CustomFilter {
+        and: false,
+        ..between
+    };
     wb.set_filter_criteria(0, scope, 1, Some(Criteria::Custom(either)));
     let menu = entries(&dropdown(&wb, 1), 1, wb.locale);
     let filters = children(find(&menu, "Number Filters"));
     assert!(!find(filters, "Between…").checked);
     assert!(find(filters, "Custom Filter…").checked);
 
-    wb.set_filter_criteria(0, scope, 1, Some(Criteria::Top10(Top10::new(true, false, 3.0))));
+    wb.set_filter_criteria(
+        0,
+        scope,
+        1,
+        Some(Criteria::Top10(Top10::new(true, false, 3.0))),
+    );
     let menu = entries(&dropdown(&wb, 1), 1, wb.locale);
     assert!(find(children(find(&menu, "Number Filters")), "Top 10…").checked);
 
-    wb.set_filter_criteria(0, scope, 2, Some(Criteria::Dynamic(DynamicFilter::Quarter(1))));
+    wb.set_filter_criteria(
+        0,
+        scope,
+        2,
+        Some(Criteria::Dynamic(DynamicFilter::Quarter(1))),
+    );
     let menu = entries(&dropdown(&wb, 2), 2, wb.locale);
-    let period = find(children(find(&menu, "Date Filters")), "All Dates in the Period");
+    let period = find(
+        children(find(&menu, "Date Filters")),
+        "All Dates in the Period",
+    );
     assert!(period.checked);
     assert!(find(children(period), "Quarter 1").checked);
 }
@@ -538,7 +664,9 @@ fn the_menu_shows_what_is_in_use() {
 fn colours_are_offered_when_the_cells_differ() {
     let mut wb = filtered_list();
     wb.update_style(0, Rect::cell(2, 3), &|s| s.fill = Some(Color(0xFFFF00)));
-    wb.update_style(0, Rect::cell(4, 3), &|s| s.font.color = Some(Color(0xC00000)));
+    wb.update_style(0, Rect::cell(4, 3), &|s| {
+        s.font.color = Some(Color(0xC00000))
+    });
     wb.commit("colours");
     let menu = entries(&dropdown(&wb, 3), 3, wb.locale);
     let sort = children(find(&menu, "Sort by Color"));
@@ -561,7 +689,10 @@ fn colours_are_offered_when_the_cells_differ() {
         sort[1].kind,
         EntryKind::Act(Act::SortColor(SortOn::CellColor(Some(Color(0xFFFF00)))))
     );
-    assert_eq!(sort[5].kind, EntryKind::Act(Act::SortColor(SortOn::FontColor(None))));
+    assert_eq!(
+        sort[5].kind,
+        EntryKind::Act(Act::SortColor(SortOn::FontColor(None)))
+    );
 
     let by_color = find(&menu, "Filter by Color");
     assert!(!by_color.disabled && !by_color.checked);
@@ -599,7 +730,10 @@ fn rows_text(list: &ValueList) -> Vec<String> {
 fn the_list_shows_the_values_and_the_blanks() {
     let wb = filtered_list();
     let list = ValueList::new(dropdown(&wb, 0), wb.locale);
-    assert_eq!(rows_text(&list), ["(Select All)", "apple", "cherry", "fig", "pear", "(Blanks)"]);
+    assert_eq!(
+        rows_text(&list),
+        ["(Select All)", "apple", "cherry", "fig", "pear", "(Blanks)"]
+    );
     assert_eq!(list.state(Row::All), Tri::On);
     assert!(list.can_apply());
     assert!(!list.has_tree());
@@ -643,12 +777,28 @@ fn dates_are_listed_as_a_tree() {
     list.set_expanded(Row::Year(0), true);
     assert_eq!(
         rows_text(&list),
-        ["(Select All)", "2026", "January", "February", "March", "2025"]
+        [
+            "(Select All)",
+            "2026",
+            "January",
+            "February",
+            "March",
+            "2025"
+        ]
     );
     list.set_expanded(Row::Month(0, 1), true);
     assert_eq!(
         rows_text(&list),
-        ["(Select All)", "2026", "January", "February", "11", "12", "March", "2025"]
+        [
+            "(Select All)",
+            "2026",
+            "January",
+            "February",
+            "11",
+            "12",
+            "March",
+            "2025"
+        ]
     );
     assert_eq!(list.depth(Row::Year(0)), 0);
     assert_eq!(list.depth(Row::Month(0, 1)), 1);
@@ -730,7 +880,10 @@ fn searching_narrows_the_list_and_ticks_what_it_finds() {
 
     // Emptied, the list is back as it opened.
     list.set_search("");
-    assert_eq!(rows_text(&list), ["(Select All)", "apple", "cherry", "fig", "pear", "(Blanks)"]);
+    assert_eq!(
+        rows_text(&list),
+        ["(Select All)", "apple", "cherry", "fig", "pear", "(Blanks)"]
+    );
     assert_eq!(list.state(Row::Item(3)), Tri::On);
     assert_eq!(list.state(Row::Item(0)), Tri::Off);
 }
@@ -799,7 +952,10 @@ fn searching_finds_dates_by_year_month_or_day() {
 
 #[test]
 fn the_comparisons_are_worded_for_dates() {
-    let numbers: Vec<&str> = comparisons(ColumnKind::Number).iter().map(|(_, name)| *name).collect();
+    let numbers: Vec<&str> = comparisons(ColumnKind::Number)
+        .iter()
+        .map(|(_, name)| *name)
+        .collect();
     assert_eq!(
         numbers,
         [
@@ -833,7 +989,13 @@ fn the_custom_dialog_opens_on_what_was_asked() {
         false,
         en,
     );
-    assert_eq!(between.comparisons, [Some(Comparison::GreaterOrEqual), Some(Comparison::LessOrEqual)]);
+    assert_eq!(
+        between.comparisons,
+        [
+            Some(Comparison::GreaterOrEqual),
+            Some(Comparison::LessOrEqual)
+        ]
+    );
     assert!(between.and && between.operands == [String::new(), String::new()]);
     // From "Custom Filter..." on an unfiltered column.
     let fresh = Fields::opening(None, None, false, en);
@@ -845,7 +1007,10 @@ fn the_custom_dialog_opens_on_what_was_asked() {
         and: false,
     });
     let fields = Fields::opening(Some(&custom), None, false, Locale::by_id("fr"));
-    assert_eq!(fields.comparisons, [Some(Comparison::Contains), Some(Comparison::Less)]);
+    assert_eq!(
+        fields.comparisons,
+        [Some(Comparison::Contains), Some(Comparison::Less)]
+    );
     assert_eq!(fields.operands, ["a".to_string(), "2,5".to_string()]);
     assert!(!fields.and);
 }
@@ -858,12 +1023,24 @@ fn the_custom_dialog_makes_one_or_two_conditions() {
         operands: operands.map(str::to_string),
         and,
     };
-    let one = fields([Some(Comparison::BeginsWith), None], ["ap", "ignored"], true);
+    let one = fields(
+        [Some(Comparison::BeginsWith), None],
+        ["ap", "ignored"],
+        true,
+    );
     assert_eq!(
         one.criteria(en),
-        Some(Criteria::Custom(CustomFilter::one(Condition::new(Comparison::BeginsWith, "ap", en))))
+        Some(Criteria::Custom(CustomFilter::one(Condition::new(
+            Comparison::BeginsWith,
+            "ap",
+            en
+        ))))
     );
-    let two = fields([Some(Comparison::Greater), Some(Comparison::Less)], [" 3 ", "7"], false);
+    let two = fields(
+        [Some(Comparison::Greater), Some(Comparison::Less)],
+        [" 3 ", "7"],
+        false,
+    );
     assert_eq!(
         two.criteria(en),
         Some(Criteria::Custom(CustomFilter {
@@ -876,10 +1053,21 @@ fn the_custom_dialog_makes_one_or_two_conditions() {
     let second = fields([None, Some(Comparison::Contains)], ["x", "pp"], true);
     assert_eq!(
         second.criteria(en),
-        Some(Criteria::Custom(CustomFilter::one(Condition::new(Comparison::Contains, "pp", en))))
+        Some(Criteria::Custom(CustomFilter::one(Condition::new(
+            Comparison::Contains,
+            "pp",
+            en
+        ))))
     );
     // A comparison without operand is dropped, unless it asks for blanks.
-    let half = fields([Some(Comparison::GreaterOrEqual), Some(Comparison::LessOrEqual)], ["3", ""], true);
+    let half = fields(
+        [
+            Some(Comparison::GreaterOrEqual),
+            Some(Comparison::LessOrEqual),
+        ],
+        ["3", ""],
+        true,
+    );
     assert_eq!(
         half.criteria(en),
         Some(Criteria::Custom(CustomFilter::one(Condition::new(
@@ -891,7 +1079,11 @@ fn the_custom_dialog_makes_one_or_two_conditions() {
     let blanks = fields([Some(Comparison::Equals), None], ["", ""], true);
     assert_eq!(
         blanks.criteria(en),
-        Some(Criteria::Custom(CustomFilter::one(Condition::new(Comparison::Equals, "", en))))
+        Some(Criteria::Custom(CustomFilter::one(Condition::new(
+            Comparison::Equals,
+            "",
+            en
+        ))))
     );
     // Nothing chosen: the filter is cleared.
     assert_eq!(fields([None, None], ["3", "4"], true).criteria(en), None);
@@ -901,7 +1093,10 @@ fn the_custom_dialog_makes_one_or_two_conditions() {
 fn a_custom_filter_applies_and_reads_back() {
     let mut wb = filtered_list();
     let fields = Fields {
-        comparisons: [Some(Comparison::GreaterOrEqual), Some(Comparison::LessOrEqual)],
+        comparisons: [
+            Some(Comparison::GreaterOrEqual),
+            Some(Comparison::LessOrEqual),
+        ],
         operands: ["2/1/2026".to_string(), "2/28/2026".to_string()],
         and: true,
     };
@@ -910,16 +1105,29 @@ fn a_custom_filter_applies_and_reads_back() {
     wb.commit("filter");
     assert_eq!(wb.filter_record_count(0, FilterScope::Sheet), Some((2, 6)));
     let data = dropdown(&wb, 2);
-    assert_eq!(Fields::opening(data.criteria.as_ref(), None, true, wb.locale), fields);
+    assert_eq!(
+        Fields::opening(data.criteria.as_ref(), None, true, wb.locale),
+        fields
+    );
 }
 
 #[test]
 fn the_value_boxes_suggest_the_values_of_the_column() {
     let wb = filtered_list();
-    assert_eq!(suggestions(&dropdown(&wb, 0), wb.locale), ["apple", "cherry", "fig", "pear"]);
+    assert_eq!(
+        suggestions(&dropdown(&wb, 0), wb.locale),
+        ["apple", "cherry", "fig", "pear"]
+    );
     assert_eq!(
         suggestions(&dropdown(&wb, 2), wb.locale),
-        ["12/24/2025", "1/5/2026", "2/11/2026", "2/12/2026", "3/1/2026", "3/2/2026"]
+        [
+            "12/24/2025",
+            "1/5/2026",
+            "2/11/2026",
+            "2/12/2026",
+            "3/1/2026",
+            "3/2/2026"
+        ]
     );
 }
 
@@ -985,8 +1193,14 @@ fn the_sort_dialog_remembers_the_last_sort_of_the_same_cells() {
 #[test]
 fn the_sort_dialog_opens_on_the_sort_of_a_filter() {
     let mut wb = filtered_list();
-    wb.sort_by_filter(0, FilterScope::Sheet, 2, SortOn::FontColor(Some(Color(0xC00000))), true)
-        .unwrap();
+    wb.sort_by_filter(
+        0,
+        FilterScope::Sheet,
+        2,
+        SortOn::FontColor(Some(Color(0xC00000))),
+        true,
+    )
+    .unwrap();
     let target = SortTarget::Filter {
         scope: FilterScope::Sheet,
         range: Rect::new(0, 0, 6, 3),
@@ -1062,7 +1276,10 @@ fn the_keys_are_named_after_headers_letters_or_rows() {
     wb.set_cell_text(0, 0, 3, "").unwrap();
     wb.commit("blank header");
     let mut setup = Setup::opening(&wb, 0, range_target(), None);
-    assert_eq!(sort::key_names(&wb, 0, &setup), ["Fruit", "Quantity", "Picked", "(Column D)"]);
+    assert_eq!(
+        sort::key_names(&wb, 0, &setup),
+        ["Fruit", "Quantity", "Picked", "(Column D)"]
+    );
     setup.has_header = false;
     assert_eq!(
         sort::key_names(&wb, 0, &setup),
@@ -1083,7 +1300,9 @@ fn the_keys_are_named_after_headers_letters_or_rows() {
 fn a_key_tells_its_kind_and_its_colours() {
     let mut wb = list();
     wb.update_style(0, Rect::cell(2, 1), &|s| s.fill = Some(Color(0xFFFF00)));
-    wb.update_style(0, Rect::cell(4, 1), &|s| s.font.color = Some(Color(0xC00000)));
+    wb.update_style(0, Rect::cell(4, 1), &|s| {
+        s.font.color = Some(Color(0xC00000))
+    });
     wb.commit("colours");
     let setup = Setup::opening(&wb, 0, range_target(), None);
     let quantity = sort::facts(&wb, 0, &setup, Some(1));
@@ -1092,8 +1311,14 @@ fn a_key_tells_its_kind_and_its_colours() {
     assert_eq!(quantity.font_colors, [None, Some(Color(0xC00000))]);
     assert_eq!(sort::facts(&wb, 0, &setup, Some(2)).kind, ColumnKind::Date);
     assert_eq!(sort::facts(&wb, 0, &setup, None).kind, ColumnKind::Text);
-    assert_eq!(sort::orders(ColumnKind::Number), ["Smallest to Largest", "Largest to Smallest"]);
-    assert_eq!(sort::orders(ColumnKind::Date), ["Oldest to Newest", "Newest to Oldest"]);
+    assert_eq!(
+        sort::orders(ColumnKind::Number),
+        ["Smallest to Largest", "Largest to Smallest"]
+    );
+    assert_eq!(
+        sort::orders(ColumnKind::Date),
+        ["Oldest to Newest", "Newest to Oldest"]
+    );
     assert_eq!(sort::orders(ColumnKind::Text), ["A to Z", "Z to A"]);
 }
 
@@ -1115,7 +1340,10 @@ fn the_sort_dialog_sorts_a_range_on_several_levels() {
     setup.apply(&mut wb, 0, spec).unwrap();
     wb.commit("sort");
     let fruits: Vec<String> = (0..=6).map(|row| wb.display_text(0, row, 0).text).collect();
-    assert_eq!(fruits, ["Fruit", "apple", "", "fig", "cherry", "pear", "apple"]);
+    assert_eq!(
+        fruits,
+        ["Fruit", "apple", "", "fig", "cherry", "pear", "apple"]
+    );
 }
 
 #[test]
@@ -1161,7 +1389,10 @@ fn remove_duplicates_acts_on_the_block_or_the_table() {
             fixed_header: false,
         }
     );
-    assert_eq!(duplicates::plan(&wb, 0, Rect::cell(30, 9), (30, 9)), Plan::Nothing);
+    assert_eq!(
+        duplicates::plan(&wb, 0, Rect::cell(30, 9), (30, 9)),
+        Plan::Nothing
+    );
     // Part of a block: the rest may follow.
     let part = Rect::new(1, 0, 6, 1);
     assert_eq!(
@@ -1211,15 +1442,29 @@ fn remove_duplicates_lists_headers_or_letters() {
 fn remove_duplicates_reports_with_excel_wording() {
     let mut wb = list();
     // Rows repeating an earlier fruit go: one "apple".
-    let outcome = wb.remove_duplicates(0, Rect::new(0, 0, 6, 3), &[0], true).unwrap();
+    let outcome = wb
+        .remove_duplicates(0, Rect::new(0, 0, 6, 3), &[0], true)
+        .unwrap();
     wb.commit("duplicates");
-    assert_eq!(outcome, DuplicatesRemoved { removed: 1, remaining: 5 });
+    assert_eq!(
+        outcome,
+        DuplicatesRemoved {
+            removed: 1,
+            remaining: 5
+        }
+    );
     assert_eq!(
         duplicates::outcome_message(outcome),
         "1 duplicate values found and removed; 5 unique values remain. Note that counts may include empty cells, spaces, etc."
     );
-    let none = DuplicatesRemoved { removed: 0, remaining: 5 };
-    assert_eq!(duplicates::outcome_message(none), "No duplicate values found.");
+    let none = DuplicatesRemoved {
+        removed: 0,
+        remaining: 5,
+    };
+    assert_eq!(
+        duplicates::outcome_message(none),
+        "No duplicate values found."
+    );
 }
 
 // --------------------------------------------- the context menu, as entries
@@ -1233,15 +1478,23 @@ fn submenu(entry: &MenuEntry) -> &[MenuEntry] {
 }
 
 fn names(entries: &[MenuEntry]) -> Vec<String> {
-    entries.iter().map(|entry| entry.label.to_string()).collect()
+    entries
+        .iter()
+        .map(|entry| entry.label.to_string())
+        .collect()
 }
 
 #[test]
 fn the_context_menu_of_a_cell_has_filter_and_sort_submenus() {
     let mut wb = filtered_list();
-    let menu = |wb: &Workbook, row: u32, col: u32| cell_menu(wb, 0, row, col, entry("Reapply"), entry("Custom Sort…"));
+    let menu = |wb: &Workbook, row: u32, col: u32| {
+        cell_menu(wb, 0, row, col, entry("Reapply"), entry("Custom Sort…"))
+    };
     let [filter, sort] = menu(&wb, 2, 1);
-    assert_eq!((filter.label.as_ref(), sort.label.as_ref()), ("Filter", "Sort"));
+    assert_eq!(
+        (filter.label.as_ref(), sort.label.as_ref()),
+        ("Filter", "Sort")
+    );
     assert_eq!(
         names(submenu(&filter)),
         [
@@ -1265,7 +1518,10 @@ fn the_context_menu_of_a_cell_has_filter_and_sort_submenus() {
         ]
     );
     // The sort entries are worded for the cell: a date, a text.
-    assert_eq!(names(submenu(&menu(&wb, 2, 2)[1]))[0], "Sort Oldest to Newest");
+    assert_eq!(
+        names(submenu(&menu(&wb, 2, 2)[1]))[0],
+        "Sort Oldest to Newest"
+    );
     assert_eq!(names(submenu(&menu(&wb, 2, 0)[1]))[1], "Sort Z to A");
 
     let top = Criteria::Top10(Top10::new(true, false, 2.0));

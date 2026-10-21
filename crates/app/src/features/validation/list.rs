@@ -8,7 +8,10 @@ use crate::features::{ChangeCause, Cx, Intent};
 use crate::i18n::t;
 use crate::theme::{self, c};
 use crate::widgets::{self, ROW_H, ScrollState};
-use gpui::{Context, Entity, FocusHandle, KeyDownEvent, SharedString, WeakEntity, Window, div, prelude::*, px};
+use gpui::{
+    Context, Entity, FocusHandle, KeyDownEvent, SharedString, WeakEntity, Window, div, prelude::*,
+    px,
+};
 use opensheet_engine::validation::ListItem;
 use opensheet_engine::{MAX_ROWS, Rect, Value, Workbook};
 
@@ -110,7 +113,9 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> bool
     });
     if let Some(at) = cursor {
         let scroll = view.read(cx).scroll.clone();
-        scroll.update(cx, |scroll, _| scroll.reveal(at, at, ROW_H, VISIBLE as f32 * ROW_H));
+        scroll.update(cx, |scroll, _| {
+            scroll.reveal(at, at, ROW_H, VISIBLE as f32 * ROW_H)
+        });
     }
     let focus = view.read(cx).focus.clone();
     app.open_popup_view(app.cell_anchor(rect), view, cx);
@@ -138,7 +143,8 @@ impl DropList {
     fn move_to(&mut self, line: usize, cx: &mut Context<Self>) {
         self.cursor = Some(line);
         let height = self.height();
-        self.scroll.update(cx, |scroll, _| scroll.reveal(line, line, ROW_H, height));
+        self.scroll
+            .update(cx, |scroll, _| scroll.reveal(line, line, ROW_H, height));
         cx.notify();
     }
 
@@ -152,7 +158,11 @@ impl DropList {
             ("up" | "down" | "pageup" | "pagedown" | "home", _) => 0,
             ("end", _) => last,
             _ => {
-                let typed = ev.keystroke.key_char.as_deref().filter(|ch| !ch.trim().is_empty());
+                let typed = ev
+                    .keystroke
+                    .key_char
+                    .as_deref()
+                    .filter(|ch| !ch.trim().is_empty());
                 match typed.filter(|_| widgets::plain(ev)) {
                     Some(letter) => match line_starting_with(&self.items, letter, self.cursor) {
                         Some(line) => line,
@@ -180,7 +190,12 @@ impl DropList {
                 }
                 // The value of the line, not its text: a date stays a date.
                 app.wb.set_value(sheet, row, col, item.value);
-                app.commit_cells(t("Typing", "Saisie"), &[Rect::cell(row, col)], ChangeCause::Typing, cx);
+                app.commit_cells(
+                    t("Typing", "Saisie"),
+                    &[Rect::cell(row, col)],
+                    ChangeCause::Typing,
+                    cx,
+                );
             })
             .ok();
     }
@@ -190,7 +205,11 @@ impl Render for DropList {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let cursor = self.cursor;
         let height = self.height();
-        let texts: Vec<SharedString> = self.items.iter().map(|item| item.text.clone().into()).collect();
+        let texts: Vec<SharedString> = self
+            .items
+            .iter()
+            .map(|item| item.text.clone().into())
+            .collect();
         let view = cx.entity().downgrade();
         let rows = widgets::virtual_rows(&self.scroll, texts.len(), ROW_H, height, cx, |line| {
             let view = view.clone();
@@ -200,7 +219,9 @@ impl Render for DropList {
                 .px(px(5.))
                 .flex()
                 .items_center()
-                .when(cursor == Some(line), |d| d.bg(c(theme::ACCENT)).text_color(c(0xFFFFFF)))
+                .when(cursor == Some(line), |d| {
+                    d.bg(c(theme::ACCENT)).text_color(c(0xFFFFFF))
+                })
                 .when(cursor != Some(line), |d| d.hover(|s| s.bg(c(theme::HOVER))))
                 .child(div().truncate().child(texts[line].clone()))
                 .on_click(move |_, window, cx| {

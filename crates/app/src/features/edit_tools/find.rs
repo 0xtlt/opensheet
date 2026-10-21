@@ -2,8 +2,8 @@
 //! searching itself is the engine's (`find.rs`); here are the choices the
 //! user makes, where a search starts and what Excel says when it ends.
 
-use crate::app::ExcelApp;
 use super::named;
+use crate::app::ExcelApp;
 use crate::features::{ChangeCause, Cx, Intent};
 use crate::i18n::t;
 use crate::shell::{Alert, Modal};
@@ -13,8 +13,8 @@ use crate::widgets::{self, Button, Checkbox, ListBox, Select, TabStrip, TextFiel
 use gpui::{Context, Entity, Focusable, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::Rect;
 use opensheet_engine::find::{BrokenFormula, FindOptions, Found, LookIn, Place, Search};
-use std::rc::Rc;
 use opensheet_engine::protect::Action;
+use std::rc::Rc;
 
 /// The choices of the dialog, kept from one search to the next as Excel
 /// keeps them; the find bar searches with them too.
@@ -54,7 +54,11 @@ fn within(app: &ExcelApp) -> Vec<Rect> {
         [range] => range.is_single() || sheet.merge_at(sel.active.0, sel.active.1) == Some(*range),
         _ => false,
     };
-    if one_cell { Vec::new() } else { sel.ranges.clone() }
+    if one_cell {
+        Vec::new()
+    } else {
+        sel.ranges.clone()
+    }
 }
 
 /// Make a cell found the active cell: inside the selection when the
@@ -67,7 +71,12 @@ fn show(app: &mut ExcelApp, place: Place, window: &mut Window, cx: &mut Cx) {
     if !within(app).is_empty() && app.sel().contains(row, col) {
         let view = &mut app.views[sheet];
         // The range holding the cell becomes the current one.
-        if let Some(index) = view.sel.ranges.iter().position(|range| range.contains(row, col)) {
+        if let Some(index) = view
+            .sel
+            .ranges
+            .iter()
+            .position(|range| range.contains(row, col))
+        {
             let range = view.sel.ranges.remove(index);
             view.sel.ranges.push(range);
         }
@@ -108,7 +117,13 @@ fn broken_formula(app: &mut ExcelApp, broken: &BrokenFormula, cx: &mut Cx) {
 
 /// Find Next (Find Previous with `backward`). False, after saying so,
 /// when the text is nowhere.
-pub(super) fn find_next(app: &mut ExcelApp, choices: &Choices, backward: bool, window: &mut Window, cx: &mut Cx) -> bool {
+pub(super) fn find_next(
+    app: &mut ExcelApp,
+    choices: &Choices,
+    backward: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> bool {
     *app.ext_mut::<Choices>() = choices.clone();
     let ranges = within(app);
     let search = Search {
@@ -148,7 +163,12 @@ pub(super) struct Results {
 }
 
 /// Every cell holding the text, in the order of the search.
-pub(super) fn find_all(app: &ExcelApp, choices: &Choices, within: &[Rect], sheet: usize) -> Vec<Found> {
+pub(super) fn find_all(
+    app: &ExcelApp,
+    choices: &Choices,
+    within: &[Rect],
+    sheet: usize,
+) -> Vec<Found> {
     let search = Search {
         needle: &choices.find,
         options: &choices.options,
@@ -156,7 +176,11 @@ pub(super) fn find_all(app: &ExcelApp, choices: &Choices, within: &[Rect], sheet
         within,
     };
     let sheet = sheet.min(app.wb.sheets.len().saturating_sub(1));
-    app.wb.find_everywhere(&search, sheet).into_iter().map(|place| app.wb.found(place)).collect()
+    app.wb
+        .find_everywhere(&search, sheet)
+        .into_iter()
+        .map(|place| app.wb.found(place))
+        .collect()
 }
 
 /// The search of the find bar: the next cell holding `needle`, with the
@@ -165,13 +189,19 @@ pub(super) fn find_all(app: &ExcelApp, choices: &Choices, within: &[Rect], sheet
 pub fn find_bar_next(app: &mut ExcelApp, needle: &str, cx: &mut Cx) {
     let choices = choices(app);
     let (row, col) = app.active();
-    match app.wb.find_next(app.sheet, (row, col), needle, &choices.options) {
+    match app
+        .wb
+        .find_next(app.sheet, (row, col), needle, &choices.options)
+    {
         Some((row, col)) => {
             // A match answers an earlier "no match" message.
             app.status_message = None;
             app.select_cell(row, col, cx);
         }
-        None => app.set_status(t("No match for “{}”", "Aucune occurrence de « {} »").replace("{}", needle), cx),
+        None => app.set_status(
+            t("No match for “{}”", "Aucune occurrence de « {} »").replace("{}", needle),
+            cx,
+        ),
     }
 }
 
@@ -193,12 +223,22 @@ pub(super) fn replace(app: &mut ExcelApp, choices: &Choices, window: &mut Window
     let (row, col) = app.active();
     let here = (app.sheet, row, col);
     let in_scope = ranges.is_empty() || ranges.iter().any(|range| range.contains(row, col));
-    if in_scope && app.wb.replacement_text(here, &search, &choices.replace).is_some() {
+    if in_scope
+        && app
+            .wb
+            .replacement_text(here, &search, &choices.replace)
+            .is_some()
+    {
         if !app.may(Intent::EditCells(Rect::cell(row, col)), cx) {
             return;
         }
         match app.wb.replace_at(here, &search, &choices.replace) {
-            Ok(_) => app.commit_cells(t("Replace", "Remplacer"), &[Rect::cell(row, col)], ChangeCause::Typing, cx),
+            Ok(_) => app.commit_cells(
+                t("Replace", "Remplacer"),
+                &[Rect::cell(row, col)],
+                ChangeCause::Typing,
+                cx,
+            ),
             Err(broken) => {
                 broken_formula(app, &broken, cx);
                 return;
@@ -233,11 +273,23 @@ pub(super) fn replace_all(app: &mut ExcelApp, choices: &Choices, window: &mut Wi
         look_in: LookIn::Formulas,
         ..choices.options.clone()
     };
-    let hits = app.wb.find_everywhere(&Search { options: &formulas, ..search }, sheet);
+    let hits = app.wb.find_everywhere(
+        &Search {
+            options: &formulas,
+            ..search
+        },
+        sheet,
+    );
     let mut locked: Option<Place> = None;
     for place in hits {
         let cell = [Rect::cell(place.1, place.2)];
-        let editable = app.wb.permits(&Action::EditCells { sheet: place.0, ranges: &cell }).is_ok();
+        let editable = app
+            .wb
+            .permits(&Action::EditCells {
+                sheet: place.0,
+                ranges: &cell,
+            })
+            .is_ok();
         if !editable {
             locked.get_or_insert(place);
         } else if place.0 == sheet && !app.may(Intent::EditCells(cell[0]), cx) {
@@ -255,7 +307,10 @@ pub(super) fn replace_all(app: &mut ExcelApp, choices: &Choices, window: &mut Wi
             let message: SharedString = match locked {
                 Some((sheet, row, col)) => {
                     let cell = [Rect::cell(row, col)];
-                    match app.wb.permits(&Action::EditCells { sheet, ranges: &cell }) {
+                    match app.wb.permits(&Action::EditCells {
+                        sheet,
+                        ranges: &cell,
+                    }) {
                         Err(denied) => denied.message(app.wb.locale).into(),
                         Ok(()) => nothing_to_replace().into(),
                     }
@@ -310,7 +365,11 @@ pub(super) struct FindReplace {
 /// The entries of "Look in" on each tab: a replacement always works on
 /// formulas.
 fn look_in_choices(replacing: bool) -> Vec<LookIn> {
-    if replacing { vec![LookIn::Formulas] } else { vec![LookIn::Formulas, LookIn::Values, LookIn::Comments] }
+    if replacing {
+        vec![LookIn::Formulas]
+    } else {
+        vec![LookIn::Formulas, LookIn::Values, LookIn::Comments]
+    }
 }
 
 fn look_in_label(look_in: LookIn) -> &'static str {
@@ -326,7 +385,9 @@ impl FindReplace {
     /// dialog shows no list.
     #[cfg(test)]
     pub(super) fn listed(&self) -> Option<Vec<Place>> {
-        self.results.as_ref().map(|results| results.rows.iter().map(|found| found.place).collect())
+        self.results
+            .as_ref()
+            .map(|results| results.rows.iter().map(|found| found.place).collect())
     }
 
     fn choices(&self, cx: &Context<Self>) -> Choices {
@@ -351,7 +412,8 @@ impl FindReplace {
         if choices.find.is_empty() {
             return;
         }
-        self.modal.update_app(cx, |app, cx| find_next(app, &choices, backward, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| find_next(app, &choices, backward, window, cx));
     }
 
     /// Find All: list every cell holding the text under the dialog.
@@ -394,12 +456,20 @@ impl FindReplace {
         let fresh = self.modal.read_app(cx, |app| {
             (app.wb.generation != results.generation).then(|| {
                 let rows = find_all(app, &results.choices, &results.within, results.sheet);
-                (rows, app.wb.generation, SharedString::from(app.title.clone()))
+                (
+                    rows,
+                    app.wb.generation,
+                    SharedString::from(app.title.clone()),
+                )
             })
         });
         if let Some(Some((rows, generation, book))) = fresh {
-            let picked = results.picked.and_then(|i| results.rows.get(i)).map(|found| found.place);
-            results.picked = picked.and_then(|place| rows.iter().position(|found| found.place == place));
+            let picked = results
+                .picked
+                .and_then(|i| results.rows.get(i))
+                .map(|found| found.place);
+            results.picked =
+                picked.and_then(|place| rows.iter().position(|found| found.place == place));
             results.rows = Rc::new(rows);
             results.generation = generation;
             results.book = book;
@@ -461,15 +531,37 @@ impl FindReplace {
                     found.value.clone().into(),
                     found.formula.clone().into(),
                 ];
-                let mut line = div().flex().debug_selector(move || format!("find-result-{i}"));
+                let mut line = div()
+                    .flex()
+                    .debug_selector(move || format!("find-result-{i}"));
                 for (text, (_, width)) in texts.into_iter().zip(columns) {
-                    line = line.child(div().w(px(width)).flex_none().pr(px(6.)).truncate().child(text));
+                    line = line.child(
+                        div()
+                            .w(px(width))
+                            .flex_none()
+                            .pr(px(6.))
+                            .truncate()
+                            .child(text),
+                    );
                 }
                 line.into_any_element()
             })
-            .on_change(cx.listener(|this, index: &usize, window, cx| this.pick(*index, window, cx)));
-        let count = format!("{} {}", t("cell(s) found:", "cellule(s) trouvée(s):"), results.rows.len());
-        Some(div().flex().flex_col().child(header).child(list).child(div().pt(px(6.)).child(label(count))))
+            .on_change(
+                cx.listener(|this, index: &usize, window, cx| this.pick(*index, window, cx)),
+            );
+        let count = format!(
+            "{} {}",
+            t("cell(s) found:", "cellule(s) trouvée(s):"),
+            results.rows.len()
+        );
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .child(header)
+                .child(list)
+                .child(div().pt(px(6.)).child(label(count))),
+        )
     }
 
     fn replace_one(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -477,7 +569,8 @@ impl FindReplace {
         if choices.find.is_empty() {
             return;
         }
-        self.modal.update_app(cx, |app, cx| replace(app, &choices, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| replace(app, &choices, window, cx));
     }
 
     fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -485,13 +578,15 @@ impl FindReplace {
         if choices.find.is_empty() {
             return;
         }
-        self.modal.update_app(cx, |app, cx| replace_all(app, &choices, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| replace_all(app, &choices, window, cx));
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // What was typed is there again next time.
         let choices = self.choices(cx);
-        self.modal.update_app(cx, |app, _| *app.ext_mut::<Choices>() = choices);
+        self.modal
+            .update_app(cx, |app, _| *app.ext_mut::<Choices>() = choices);
         self.modal.close(window, cx);
     }
 }
@@ -509,18 +604,37 @@ impl Render for FindReplace {
         let replacing = self.replacing;
         let empty = self.find.read(cx).text().is_empty();
         let looks = look_in_choices(replacing);
-        let look_at = looks.iter().position(|look| *look == self.options.look_in).unwrap_or(0);
-        let look_labels: Vec<SharedString> = looks.iter().map(|look| look_in_label(*look).into()).collect();
+        let look_at = looks
+            .iter()
+            .position(|look| *look == self.options.look_in)
+            .unwrap_or(0);
+        let look_labels: Vec<SharedString> = looks
+            .iter()
+            .map(|look| look_in_label(*look).into())
+            .collect();
         // The labels share a column wide enough for the longest of them.
         let field = |text: &'static str, control: gpui::AnyElement| {
-            div().flex().items_center().gap(px(8.)).child(label(text).w(px(124.))).child(control)
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(label(text).w(px(124.)))
+                .child(control)
         };
         let choice = |text: &'static str, control: Select| {
-            div().flex().items_center().gap(px(8.)).child(label(text).w(px(124.))).child(control.width(150.0))
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(label(text).w(px(124.)))
+                .child(control.width(150.0))
         };
         let within = Select::new(
             "within",
-            vec![t("Sheet", "Feuille").into(), t("Workbook", "Classeur").into()],
+            vec![
+                t("Sheet", "Feuille").into(),
+                t("Workbook", "Classeur").into(),
+            ],
             Some(self.workbook as usize),
         )
         .on_change(cx.listener(|this, index: &usize, _, cx| {
@@ -529,7 +643,10 @@ impl Render for FindReplace {
         }));
         let order = Select::new(
             "order",
-            vec![t("By Rows", "Par ligne").into(), t("By Columns", "Par colonne").into()],
+            vec![
+                t("By Rows", "Par ligne").into(),
+                t("By Columns", "Par colonne").into(),
+            ],
             Some(self.options.by_columns as usize),
         )
         .on_change(cx.listener(|this, index: &usize, _, cx| {
@@ -548,19 +665,27 @@ impl Render for FindReplace {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(Checkbox::new("match-case", t("Match case", "Respecter la casse"), self.options.match_case).on_change(
-                cx.listener(|this, on: &bool, _, cx| {
+            .child(
+                Checkbox::new(
+                    "match-case",
+                    t("Match case", "Respecter la casse"),
+                    self.options.match_case,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
                     this.options.match_case = *on;
                     cx.notify();
-                }),
-            ))
+                })),
+            )
             .child(
-                Checkbox::new("whole-cell", t("Find entire cells only", "Cellule entière"), self.options.whole_cell).on_change(
-                    cx.listener(|this, on: &bool, _, cx| {
-                        this.options.whole_cell = *on;
-                        cx.notify();
-                    }),
-                ),
+                Checkbox::new(
+                    "whole-cell",
+                    t("Find entire cells only", "Cellule entière"),
+                    self.options.whole_cell,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    this.options.whole_cell = *on;
+                    cx.notify();
+                })),
             );
         let mut footer = div().w_full().flex().items_center().gap(px(8.));
         if replacing {
@@ -588,7 +713,8 @@ impl Render for FindReplace {
             ))
             .child(named(
                 "find-close",
-                Button::new("close", t("Close", "Fermer")).on_click(cx.listener(|this, _, window, cx| this.close(window, cx))),
+                Button::new("close", t("Close", "Fermer"))
+                    .on_click(cx.listener(|this, _, window, cx| this.close(window, cx))),
             ))
             .child(named(
                 "find-previous",
@@ -608,17 +734,29 @@ impl Render for FindReplace {
             .on_ok(cx.listener(Self::find_next))
             .on_cancel(cx.listener(|this, _, window, cx| this.close(window, cx)))
             .child(
-                TabStrip::new("tabs", vec![t("Find", "Rechercher").into(), t("Replace", "Remplacer").into()], replacing as usize)
-                    .on_change(cx.listener(|this, index: &usize, _, cx| {
-                        this.replacing = *index == 1;
-                        cx.notify();
-                    })),
+                TabStrip::new(
+                    "tabs",
+                    vec![
+                        t("Find", "Rechercher").into(),
+                        t("Replace", "Remplacer").into(),
+                    ],
+                    replacing as usize,
+                )
+                .on_change(cx.listener(|this, index: &usize, _, cx| {
+                    this.replacing = *index == 1;
+                    cx.notify();
+                })),
             )
-            .child(field(t("Find what:", "Rechercher :"), TextField::new(&self.find).width(480.0).into_any_element()))
+            .child(field(
+                t("Find what:", "Rechercher :"),
+                TextField::new(&self.find).width(480.0).into_any_element(),
+            ))
             .when(replacing, |d| {
                 d.child(field(
                     t("Replace with:", "Remplacer par :"),
-                    TextField::new(&self.replace).width(480.0).into_any_element(),
+                    TextField::new(&self.replace)
+                        .width(480.0)
+                        .into_any_element(),
                 ))
             })
             .child(

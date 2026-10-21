@@ -42,7 +42,11 @@ impl Found {
 pub(crate) fn shown(style: &Style) -> Style {
     let flat = |color: Color| Color(color.value());
     let line = |border: &mut Border| {
-        border.color = if border.is_none() { None } else { Some(flat(border.color.unwrap_or(Color::BLACK))) };
+        border.color = if border.is_none() {
+            None
+        } else {
+            Some(flat(border.color.unwrap_or(Color::BLACK)))
+        };
     };
     let mut out = style.clone();
     out.font.theme = None;
@@ -139,14 +143,21 @@ fn same_size(a: Option<&f32>, b: Option<&f32>, standard_a: f32, standard_b: f32)
 }
 
 /// The keys of two maps, each once.
-fn keys<'a, K: Ord + Copy + 'a, V: 'a>(a: &'a BTreeMap<K, V>, b: &'a BTreeMap<K, V>) -> BTreeSet<K> {
+fn keys<'a, K: Ord + Copy + 'a, V: 'a>(
+    a: &'a BTreeMap<K, V>,
+    b: &'a BTreeMap<K, V>,
+) -> BTreeSet<K> {
     a.keys().chain(b.keys()).copied().collect()
 }
 
 /// Where the corner of a chart is, in pixels from the corner of its sheet.
 fn corner(sheet: &Sheet, chart: &Chart) -> (f64, f64) {
-    let x: f64 = (0..chart.anchor.1).map(|col| sheet.col_width(col) as f64).sum();
-    let y: f64 = (0..chart.anchor.0).map(|row| sheet.row_height(row) as f64).sum();
+    let x: f64 = (0..chart.anchor.1)
+        .map(|col| sheet.col_width(col) as f64)
+        .sum();
+    let y: f64 = (0..chart.anchor.0)
+        .map(|row| sheet.row_height(row) as f64)
+        .sum();
     (x + chart.offset.0 as f64, y + chart.offset.1 as f64)
 }
 
@@ -155,7 +166,11 @@ fn corner(sheet: &Sheet, chart: &Chart) -> (f64, f64) {
 pub(crate) fn same_chart(sheet_a: &Sheet, a: &Chart, sheet_b: &Sheet, b: &Chart) -> bool {
     let (place_a, place_b) = (corner(sheet_a, a), corner(sheet_b, b));
     let near = |x: f64, y: f64| (x - y).abs() <= PLACE_TOLERANCE;
-    if !near(place_a.0, place_b.0) || !near(place_a.1, place_b.1) || !near(a.size.0 as f64, b.size.0 as f64) || !near(a.size.1 as f64, b.size.1 as f64) {
+    if !near(place_a.0, place_b.0)
+        || !near(place_a.1, place_b.1)
+        || !near(a.size.0 as f64, b.size.0 as f64)
+        || !near(a.size.1 as f64, b.size.1 as f64)
+    {
         return false;
     }
     let mut a = a.clone();
@@ -200,13 +215,32 @@ pub(crate) fn validations(sheet: &Sheet) -> Vec<(Rect, Validation)> {
 fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Found) {
     let name = &b.name;
     // Cells: what they hold and how they are formatted.
-    for Pair { pos, contents, styles } in side_by_side(a, b) {
+    for Pair {
+        pos,
+        contents,
+        styles,
+    } in side_by_side(a, b)
+    {
         if contents.0 != contents.1 {
-            found.add(|| format!("{name}!{}: {:?} / {:?}", cell_name(pos.0, pos.1), contents.0, contents.1));
+            found.add(|| {
+                format!(
+                    "{name}!{}: {:?} / {:?}",
+                    cell_name(pos.0, pos.1),
+                    contents.0,
+                    contents.1
+                )
+            });
         }
         if !formats.same(styles.0, styles.1) {
             let (wa, wb) = (formats.a, formats.b);
-            found.add(|| format!("{name}!{} format: {:?} / {:?}", cell_name(pos.0, pos.1), shown(wa.styles.get(styles.0)), shown(wb.styles.get(styles.1))));
+            found.add(|| {
+                format!(
+                    "{name}!{} format: {:?} / {:?}",
+                    cell_name(pos.0, pos.1),
+                    shown(wa.styles.get(styles.0)),
+                    shown(wb.styles.get(styles.1))
+                )
+            });
         }
     }
     for col in keys(&a.col_styles, &b.col_styles) {
@@ -223,13 +257,35 @@ fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Fo
     }
     // Sizes.
     for col in keys(&a.col_widths, &b.col_widths) {
-        if !same_size(a.col_widths.get(&col), b.col_widths.get(&col), a.default_col_width, b.default_col_width) {
-            found.add(|| format!("{name}: width of column {col}: {:?} / {:?}", a.col_widths.get(&col), b.col_widths.get(&col)));
+        if !same_size(
+            a.col_widths.get(&col),
+            b.col_widths.get(&col),
+            a.default_col_width,
+            b.default_col_width,
+        ) {
+            found.add(|| {
+                format!(
+                    "{name}: width of column {col}: {:?} / {:?}",
+                    a.col_widths.get(&col),
+                    b.col_widths.get(&col)
+                )
+            });
         }
     }
     for row in keys(&a.row_heights, &b.row_heights) {
-        if !same_size(a.row_heights.get(&row), b.row_heights.get(&row), a.default_row_height, b.default_row_height) {
-            found.add(|| format!("{name}: height of row {row}: {:?} / {:?}", a.row_heights.get(&row), b.row_heights.get(&row)));
+        if !same_size(
+            a.row_heights.get(&row),
+            b.row_heights.get(&row),
+            a.default_row_height,
+            b.default_row_height,
+        ) {
+            found.add(|| {
+                format!(
+                    "{name}: height of row {row}: {:?} / {:?}",
+                    a.row_heights.get(&row),
+                    b.row_heights.get(&row)
+                )
+            });
         }
     }
     let mut plain = |what: &str, same: bool, a: &dyn std::fmt::Debug, b: &dyn std::fmt::Debug| {
@@ -242,16 +298,62 @@ fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Fo
             });
         }
     };
-    plain("standard width", (a.default_col_width - b.default_col_width).abs() <= SIZE_TOLERANCE, &a.default_col_width, &b.default_col_width);
-    plain("standard height", (a.default_row_height - b.default_row_height).abs() <= SIZE_TOLERANCE, &a.default_row_height, &b.default_row_height);
-    plain("hidden columns", a.hidden_cols == b.hidden_cols, &a.hidden_cols, &b.hidden_cols);
-    plain("hidden rows", a.hidden_rows == b.hidden_rows, &a.hidden_rows, &b.hidden_rows);
-    plain("filtered rows", a.filtered_rows == b.filtered_rows, &a.filtered_rows, &b.filtered_rows);
-    let merges = |sheet: &Sheet| sheet.merges.iter().map(|m| (m.r0, m.c0, m.r1, m.c1)).collect::<BTreeSet<_>>();
+    plain(
+        "standard width",
+        (a.default_col_width - b.default_col_width).abs() <= SIZE_TOLERANCE,
+        &a.default_col_width,
+        &b.default_col_width,
+    );
+    plain(
+        "standard height",
+        (a.default_row_height - b.default_row_height).abs() <= SIZE_TOLERANCE,
+        &a.default_row_height,
+        &b.default_row_height,
+    );
+    plain(
+        "hidden columns",
+        a.hidden_cols == b.hidden_cols,
+        &a.hidden_cols,
+        &b.hidden_cols,
+    );
+    plain(
+        "hidden rows",
+        a.hidden_rows == b.hidden_rows,
+        &a.hidden_rows,
+        &b.hidden_rows,
+    );
+    plain(
+        "filtered rows",
+        a.filtered_rows == b.filtered_rows,
+        &a.filtered_rows,
+        &b.filtered_rows,
+    );
+    let merges = |sheet: &Sheet| {
+        sheet
+            .merges
+            .iter()
+            .map(|m| (m.r0, m.c0, m.r1, m.c1))
+            .collect::<BTreeSet<_>>()
+    };
     plain("merged cells", merges(a) == merges(b), &a.merges, &b.merges);
-    plain("frozen panes", (a.frozen_rows, a.frozen_cols) == (b.frozen_rows, b.frozen_cols), &(a.frozen_rows, a.frozen_cols), &(b.frozen_rows, b.frozen_cols));
-    plain("gridlines", a.show_gridlines == b.show_gridlines, &a.show_gridlines, &b.show_gridlines);
-    plain("headings", a.show_headers == b.show_headers, &a.show_headers, &b.show_headers);
+    plain(
+        "frozen panes",
+        (a.frozen_rows, a.frozen_cols) == (b.frozen_rows, b.frozen_cols),
+        &(a.frozen_rows, a.frozen_cols),
+        &(b.frozen_rows, b.frozen_cols),
+    );
+    plain(
+        "gridlines",
+        a.show_gridlines == b.show_gridlines,
+        &a.show_gridlines,
+        &b.show_gridlines,
+    );
+    plain(
+        "headings",
+        a.show_headers == b.show_headers,
+        &a.show_headers,
+        &b.show_headers,
+    );
     let tab = |sheet: &Sheet| sheet.tab_color.map(|color| color.value());
     plain("tab colour", tab(a) == tab(b), &tab(a), &tab(b));
     // The arrow a sort leaves on a button of the sheet's filter is all a
@@ -262,7 +364,12 @@ fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Fo
             filter
         })
     };
-    plain("filter", filter(a) == filter(b), &a.auto_filter, &b.auto_filter);
+    plain(
+        "filter",
+        filter(a) == filter(b),
+        &a.auto_filter,
+        &b.auto_filter,
+    );
     plain("names", a.names == b.names, &a.names, &b.names);
     // Tables, whatever the order they were made in.
     let tables = |sheet: &Sheet| {
@@ -271,9 +378,17 @@ fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Fo
         tables
     };
     let (tables_a, tables_b) = (tables(a), tables(b));
-    let same_tables = tables_a.len() == tables_b.len() && tables_a.iter().zip(&tables_b).all(|(a, b)| same_table(a, b));
+    let same_tables = tables_a.len() == tables_b.len()
+        && tables_a
+            .iter()
+            .zip(&tables_b)
+            .all(|(a, b)| same_table(a, b));
     plain("tables", same_tables, &tables_a, &tables_b);
-    let same_charts = a.charts.len() == b.charts.len() && a.charts.iter().zip(&b.charts).all(|(ca, cb)| same_chart(a, ca, b, cb));
+    let same_charts = a.charts.len() == b.charts.len()
+        && a.charts
+            .iter()
+            .zip(&b.charts)
+            .all(|(ca, cb)| same_chart(a, ca, b, cb));
     plain("charts", same_charts, &a.charts, &b.charts);
     // What no script changes: it must simply not have moved.
     macro_rules! untouched {
@@ -285,8 +400,18 @@ fn sheet_differences(formats: &mut Formats, a: &Sheet, b: &Sheet, found: &mut Fo
             )*
         };
     }
-    plain("data validation", validations(a) == validations(b), &a.validations, &b.validations);
-    plain("visibility", a.visibility == b.visibility, &a.visibility, &b.visibility);
+    plain(
+        "data validation",
+        validations(a) == validations(b),
+        &a.validations,
+        &b.validations,
+    );
+    plain(
+        "visibility",
+        a.visibility == b.visibility,
+        &a.visibility,
+        &b.visibility,
+    );
     untouched!(
         advanced_filter,
         consolidation,
@@ -317,11 +442,23 @@ fn find(a: &Workbook, b: &Workbook, limit: usize) -> Found {
         limit,
         texts: Vec::new(),
     };
-    let names = |wb: &Workbook| wb.sheets.iter().map(|sheet| sheet.name.clone()).collect::<Vec<_>>();
+    let names = |wb: &Workbook| {
+        wb.sheets
+            .iter()
+            .map(|sheet| sheet.name.clone())
+            .collect::<Vec<_>>()
+    };
     if names(a) != names(b) {
         // Sheets that do not pair up: each counts for all it holds.
-        found.count += 1 + a.sheets.iter().chain(&b.sheets).map(|sheet| sheet.cells.len()).sum::<usize>();
-        found.texts.push(format!("sheets: {:?} / {:?}", names(a), names(b)));
+        found.count += 1 + a
+            .sheets
+            .iter()
+            .chain(&b.sheets)
+            .map(|sheet| sheet.cells.len())
+            .sum::<usize>();
+        found
+            .texts
+            .push(format!("sheets: {:?} / {:?}", names(a), names(b)));
         return found;
     }
     let mut formats = Formats::new(a, b);

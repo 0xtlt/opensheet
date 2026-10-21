@@ -13,8 +13,8 @@ use opensheet_engine::refs::{Rect, parse_cell_name};
 use opensheet_engine::style::{Border, BorderStyle, Color, HAlign, Style, Underline, VAlign};
 use opensheet_engine::{Locale, Workbook};
 use opensheet_print::{
-    Canvas, FontDb, Image, ObjectPainter, Op, Paint, Path, PrintJob, PrintWhat, RectF, Stroke, TextStyle, plan,
-    print_pdf, render_page,
+    Canvas, FontDb, Image, ObjectPainter, Op, Paint, Path, PrintJob, PrintWhat, RectF, Stroke,
+    TextStyle, plan, print_pdf, render_page,
 };
 use std::io::Read;
 use std::path::PathBuf;
@@ -97,7 +97,14 @@ fn page_count(pdf: &[u8]) -> usize {
         .unwrap();
     let table = String::from_utf8_lossy(&pdf[start..]).into_owned();
     let mut lines = table.lines().skip(1);
-    let count: usize = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
+    let count: usize = lines
+        .next()
+        .unwrap()
+        .split(' ')
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
     for (id, line) in lines.take(count).enumerate().skip(1) {
         let offset: usize = line[..10].parse().unwrap();
         assert!(
@@ -117,7 +124,9 @@ fn streams(pdf: &[u8]) -> Vec<Vec<u8>> {
         let start = at + pos + 31;
         let end = start + find(&pdf[start..], b"\nendstream").unwrap();
         let mut data = Vec::new();
-        ZlibDecoder::new(&pdf[start..end]).read_to_end(&mut data).unwrap();
+        ZlibDecoder::new(&pdf[start..end])
+            .read_to_end(&mut data)
+            .unwrap();
         out.push(data);
         at = end;
     }
@@ -133,7 +142,8 @@ fn report() -> Workbook {
     let mut wb = Workbook::new(Locale::en());
     wb.rename_sheet(0, "Sales");
     let heads = [
-        "Region", "Product", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Total", "Notes",
+        "Region", "Product", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+        "Total", "Notes",
     ];
     for (c, head) in heads.iter().enumerate() {
         wb.set_cell_text(0, 0, c as u32, head).unwrap();
@@ -146,7 +156,8 @@ fn report() -> Workbook {
             let v = ((r * 37 + c * 101) % 2000) as f64 - 400.0 + (c as f64) / 4.0;
             wb.set_cell_text(0, r, c, &format!("{v}")).unwrap();
         }
-        wb.set_cell_text(0, r, 12, &format!("=SUM(C{0}:L{0})", r + 1)).unwrap();
+        wb.set_cell_text(0, r, 12, &format!("=SUM(C{0}:L{0})", r + 1))
+            .unwrap();
         if r % 9 == 0 {
             wb.set_cell_text(0, r, 13, "Check with the regional office before closing")
                 .unwrap();
@@ -158,7 +169,9 @@ fn report() -> Workbook {
         s.font.color = Some(Color::WHITE);
         s.h_align = HAlign::Center;
     });
-    style(&mut wb, "C2:M121", |s| s.num_fmt = "#,##0.00;[Red]-#,##0.00".into());
+    style(&mut wb, "C2:M121", |s| {
+        s.num_fmt = "#,##0.00;[Red]-#,##0.00".into()
+    });
     style(&mut wb, "M2:M121", |s| s.font.bold = true);
     wb.apply_borders(
         0,
@@ -209,10 +222,19 @@ fn multi_page_report() {
         // Header, footer and the repeated title row of the second page.
         assert!(text.contains("Sales report"), "{text}");
         assert!(text.contains("10/12/2026 3:45 PM"), "{text}");
-        assert!(text.contains(&format!("Page 2 of {}", plan.pages.len())), "{text}");
+        assert!(
+            text.contains(&format!("Page 2 of {}", plan.pages.len())),
+            "{text}"
+        );
         assert!(text.contains("/Users/ana/Documents/Budget.xlsx"), "{text}");
-        assert!(text.contains("Region") && text.contains("Product"), "{text}");
-        assert!(text.contains("Item 045") || text.contains("Item 046"), "{text}");
+        assert!(
+            text.contains("Region") && text.contains("Product"),
+            "{text}"
+        );
+        assert!(
+            text.contains("Item 045") || text.contains("Item 046"),
+            "{text}"
+        );
         assert!(!text.contains("Item 001"), "{text}");
     }
 
@@ -246,7 +268,12 @@ fn landscape_fit_to_one_page() {
         s.font.bold = true;
         s.fill = Some(Color(0xDDEBF7));
     });
-    wb.apply_borders(0, Rect::parse("A1:R50").unwrap(), BorderPreset::All, Border::thin());
+    wb.apply_borders(
+        0,
+        Rect::parse("A1:R50").unwrap(),
+        BorderPreset::All,
+        Border::thin(),
+    );
     wb.apply_borders(
         0,
         Rect::parse("A1:R50").unwrap(),
@@ -271,7 +298,9 @@ fn landscape_fit_to_one_page() {
     let pagination = &plan.sheets[0].pagination;
     // A4 on its side; 50 rows and the heading row must fit in the
     // height: 487 pt / (51 × 15 pt) = 63 %.
-    assert!((pagination.paper.0 - 841.89).abs() < 0.01 && (pagination.paper.1 - 595.28).abs() < 0.01);
+    assert!(
+        (pagination.paper.0 - 841.89).abs() < 0.01 && (pagination.paper.1 - 595.28).abs() < 0.01
+    );
     assert_eq!(pagination.scale_percent, 63);
     let page = &pagination.pages[0];
     assert!((page.origin.0 + page.size.0 / 2.0 - pagination.paper.0 / 2.0).abs() < 1e-6);
@@ -286,8 +315,10 @@ fn landscape_fit_to_one_page() {
         assert!(text.contains("Page 1 de 1"), "{text}");
         // Column letters and row numbers are printed.
         assert!(
-            text.lines()
-                .any(|l| l.split_whitespace().collect::<Vec<_>>().starts_with(&["A", "B", "C"])),
+            text.lines().any(|l| l
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .starts_with(&["A", "B", "C"])),
             "{text}"
         );
     }
@@ -299,7 +330,11 @@ fn showcase() -> Workbook {
     wb.rename_sheet(0, "Mise en forme");
     let border = |style: BorderStyle, color: Option<Color>| Border { style, color };
 
-    enter(&mut wb, "A1", "Démonstration de la mise en forme à l'impression");
+    enter(
+        &mut wb,
+        "A1",
+        "Démonstration de la mise en forme à l'impression",
+    );
     wb.merge(0, Rect::parse("A1:H1").unwrap());
     style(&mut wb, "A1", |s| {
         s.font.bold = true;
@@ -326,7 +361,12 @@ fn showcase() -> Workbook {
         let row = 2 + 2 * (i as u32 / 4);
         let col = 1 + 2 * (i as u32 % 4);
         wb.set_cell_text(0, row, col, name).unwrap();
-        wb.apply_borders(0, Rect::cell(row, col), BorderPreset::Outside, border(*line, None));
+        wb.apply_borders(
+            0,
+            Rect::cell(row, col),
+            BorderPreset::Outside,
+            border(*line, None),
+        );
     }
     enter(&mut wb, "H5", "Rouge");
     wb.apply_borders(
@@ -338,12 +378,20 @@ fn showcase() -> Workbook {
 
     // Fills and font styles.
     enter(&mut wb, "A7", "Remplissages");
-    for (i, color) in [0xFFFF00u32, 0x92D050, 0x00B0F0, 0xFFC000, 0x7030A0, 0xD9D9D9]
-        .iter()
-        .enumerate()
+    for (i, color) in [
+        0xFFFF00u32,
+        0x92D050,
+        0x00B0F0,
+        0xFFC000,
+        0x7030A0,
+        0xD9D9D9,
+    ]
+    .iter()
+    .enumerate()
     {
         let c = *color;
-        wb.set_cell_text(0, 6, 1 + i as u32, &format!("{c:06X}")).unwrap();
+        wb.set_cell_text(0, 6, 1 + i as u32, &format!("{c:06X}"))
+            .unwrap();
         wb.update_style(0, Rect::cell(6, 1 + i as u32), &move |s| {
             s.fill = Some(Color(c));
             s.h_align = HAlign::Center;
@@ -454,20 +502,35 @@ fn showcase() -> Workbook {
         s.h_align = HAlign::Center;
     });
     wb.set_row_height(0, 14, Some(84.0));
-    wb.apply_borders(0, Rect::parse("B15:H15").unwrap(), BorderPreset::All, Border::thin());
+    wb.apply_borders(
+        0,
+        Rect::parse("B15:H15").unwrap(),
+        BorderPreset::All,
+        Border::thin(),
+    );
 
     // Overflow, clipping and numbers.
     enter(&mut wb, "A17", "Débordement");
-    enter(&mut wb, "B17", "Ce texte déborde sur les cellules vides voisines");
+    enter(
+        &mut wb,
+        "B17",
+        "Ce texte déborde sur les cellules vides voisines",
+    );
     enter(&mut wb, "B18", "Ce texte est coupé par la cellule voisine");
     enter(&mut wb, "C18", "voisine");
-    enter(&mut wb, "H19", "Débordement vers la gauche, aligné à droite");
+    enter(
+        &mut wb,
+        "H19",
+        "Débordement vers la gauche, aligné à droite",
+    );
     style(&mut wb, "H19", |s| s.h_align = HAlign::Right);
     enter(&mut wb, "A21", "Nombres");
     enter(&mut wb, "B21", "1234567,891");
     style(&mut wb, "B21", |s| s.num_fmt = "#,##0.00 €".into());
     enter(&mut wb, "C21", "-1234,5");
-    style(&mut wb, "C21", |s| s.num_fmt = "#,##0.00;[Red]-#,##0.00".into());
+    style(&mut wb, "C21", |s| {
+        s.num_fmt = "#,##0.00;[Red]-#,##0.00".into()
+    });
     enter(&mut wb, "D21", "12/10/2026");
     enter(&mut wb, "E21", "0,256");
     style(&mut wb, "E21", |s| s.num_fmt = "0.0%".into());
@@ -483,7 +546,8 @@ fn showcase() -> Workbook {
     wb.commit("showcase");
     wb.update_page_setup(0, |p| {
         p.header_footer.odd_header =
-            "&L&\"Times New Roman,Italic\"&12Été 2026&C&B&UEn-tête&U&B normal &KFF0000rouge&R&A".into();
+            "&L&\"Times New Roman,Italic\"&12Été 2026&C&B&UEn-tête&U&B normal &KFF0000rouge&R&A"
+                .into();
         p.header_footer.odd_footer = "&LH&Y2&YO et E=mc&X2&X&C&P / &N&R&D\n&T".into();
         p.margins = Margins::NARROW;
         // One page wide whatever the fonts of the machine make of the
@@ -521,7 +585,10 @@ fn formatting_showcase() {
             "VRAI",
             "25,6%",
         ] {
-            assert!(text.contains(expected), "{expected:?} missing from:\n{text}");
+            assert!(
+                text.contains(expected),
+                "{expected:?} missing from:\n{text}"
+            );
         }
         // French numbers group with a narrow no-break space, printed as
         // a space; the negative number is red but reads the same.
@@ -553,7 +620,10 @@ fn formatting_showcase() {
             text.contains("Démonstration de la mise en forme à l'impression"),
             "{text}"
         );
-        assert!(text.contains("Été 2026") && text.contains("Pointillés"), "{text}");
+        assert!(
+            text.contains("Été 2026") && text.contains("Pointillés"),
+            "{text}"
+        );
     }
     // Printed twice, the bytes are the same.
     assert_eq!(pdf, print_pdf(&wb, &plain));
@@ -578,7 +648,12 @@ fn drawing_matches_measuring() {
         .iter()
         .filter_map(|op| match op {
             Op::Text {
-                face, size, x, y, text, ..
+                face,
+                size,
+                x,
+                y,
+                text,
+                ..
             } => Some((text.as_str(), *x, *y, face.text_width(text, *size))),
             _ => None,
         })
@@ -587,14 +662,20 @@ fn drawing_matches_measuring() {
     // B2: columns of 48 pt from the 50.4 pt margin, 2.25 pt of padding.
     let (text, x, y, width) = texts[0];
     assert_eq!(text, "1234.5");
-    assert!((x + width - (50.4 + 96.0 - 2.25)).abs() < 1e-6, "{x} {width}");
+    assert!(
+        (x + width - (50.4 + 96.0 - 2.25)).abs() < 1e-6,
+        "{x} {width}"
+    );
     // Helvetica at 11 pt: six characters, five digits and a period.
     assert!((width - (5.0 * 556.0 + 278.0) * 0.011).abs() < 1e-6);
     // The baseline: the line (1.22 × 11 pt high, the glyphs in its
     // middle) stands on the padding at the bottom of row 2.
     let line = 1.22 * 11.0;
     let ascent = (line - 0.925 * 11.0) / 2.0 + 0.718 * 11.0;
-    assert!((y - (54.0 + 30.0 - 0.75 - line + ascent)).abs() < 1e-6, "{y}");
+    assert!(
+        (y - (54.0 + 30.0 - 0.75 - line + ascent)).abs() < 1e-6,
+        "{y}"
+    );
     let (text, x, _, _) = texts[1];
     assert_eq!(text, "left");
     assert!((x - (50.4 + 96.0 + 2.25)).abs() < 1e-6);
@@ -605,7 +686,10 @@ fn drawing_matches_measuring() {
         .map(|s| String::from_utf8_lossy(&s).into_owned())
         .collect();
     let page = content.iter().find(|s| s.contains(" Tm <")).unwrap();
-    assert!(page.contains("1 0 0 -1 110.512 79.3505 Tm <313233342E35> Tj"), "{page}");
+    assert!(
+        page.contains("1 0 0 -1 110.512 79.3505 Tm <313233342E35> Tj"),
+        "{page}"
+    );
 }
 
 #[test]
@@ -698,10 +782,20 @@ struct Sketch {
 }
 
 impl ObjectPainter for Sketch {
-    fn paint_chart(&self, _wb: &Workbook, _sheet: usize, chart: &Chart, size: (f64, f64), canvas: &mut Canvas) {
+    fn paint_chart(
+        &self,
+        _wb: &Workbook,
+        _sheet: usize,
+        chart: &Chart,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    ) {
         let (w, h) = size;
         canvas.fill_rect(RectF::new(0.0, 0.0, w, h), Color::WHITE);
-        canvas.stroke_rect(RectF::new(0.0, 0.0, w, h), Stroke::solid(Color(0x7F7F7F), 1.0));
+        canvas.stroke_rect(
+            RectF::new(0.0, 0.0, w, h),
+            Stroke::solid(Color(0x7F7F7F), 1.0),
+        );
         let caption = TextStyle {
             family: "Arial",
             bold: true,
@@ -716,14 +810,23 @@ impl ObjectPainter for Sketch {
             let x = 30.0 + i as f64 * 60.0;
             canvas.fill_rect(RectF::new(x, h - 30.0 - bar, 40.0, bar), Color(0x156082));
         }
-        canvas.line(20.0, h - 30.0, 280.0, h - 30.0, Stroke::solid(Color::BLACK, 1.0));
+        canvas.line(
+            20.0,
+            h - 30.0,
+            280.0,
+            h - 30.0,
+            Stroke::solid(Color::BLACK, 1.0),
+        );
         // A quarter of a pie, translucent over a full disc.
         let (cx, cy, r) = (w - 110.0, h / 2.0 + 10.0, 80.0);
         canvas.fill_path(
             Path::ellipse(RectF::new(cx - r, cy - r, 2.0 * r, 2.0 * r)),
             Color(0xE97132),
         );
-        let slice = Path::new().move_to(cx, cy).arc(cx, cy, r, r, -90.0, 90.0).close();
+        let slice = Path::new()
+            .move_to(cx, cy)
+            .arc(cx, cy, r, r, -90.0, 90.0)
+            .close();
         canvas.fill_path(slice.clone(), Paint::translucent(Color(0x196B24), 0.6));
         canvas.stroke_path(slice, Stroke::solid(Color::WHITE, 2.0));
         canvas.image(&self.picture, RectF::new(w - 60.0, 8.0, 48.0, 48.0));
@@ -777,7 +880,11 @@ fn charts_are_painted_by_the_application() {
         .any(|op| matches!(op, Op::Transform(m) if (m[4] - 104.4).abs() < 1e-9 && (m[5] - 87.0).abs() < 1e-9));
     assert!(moved);
     let saves = scene.ops.iter().filter(|op| matches!(op, Op::Save)).count();
-    let restores = scene.ops.iter().filter(|op| matches!(op, Op::Restore)).count();
+    let restores = scene
+        .ops
+        .iter()
+        .filter(|op| matches!(op, Op::Restore))
+        .count();
     assert_eq!(saves, restores);
     let pdf = print_pdf(&wb, &job);
     assert_eq!(page_count(&pdf), 1);
@@ -889,7 +996,10 @@ fn embedded_fonts_are_subsets_with_text_maps() {
     }
     // The embedded font file parses and the widths written for the
     // glyphs are the font's own.
-    let font_file = streams.iter().find(|s| s.starts_with(&[0, 1, 0, 0])).unwrap();
+    let font_file = streams
+        .iter()
+        .find(|s| s.starts_with(&[0, 1, 0, 0]))
+        .unwrap();
     assert!(font_file.len() > 1000);
     let width_of_e = face.text_width("e", 1000.0);
     assert!(
@@ -917,7 +1027,11 @@ fn png(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
     header.extend(width.to_be_bytes());
     header.extend(height.to_be_bytes());
     header.extend([8, 2, 0, 0, 0]);
-    for (kind, body) in [(b"IHDR", &header[..]), (b"IDAT", &data[..]), (b"IEND", &[][..])] {
+    for (kind, body) in [
+        (b"IHDR", &header[..]),
+        (b"IDAT", &data[..]),
+        (b"IEND", &[][..]),
+    ] {
         out.extend((body.len() as u32).to_be_bytes());
         out.extend(kind);
         out.extend(body);
@@ -1012,7 +1126,12 @@ fn header_pictures_and_other_scripts() {
     // mark; the file is still sound.
     let pdf = print_pdf(&wb, &job);
     assert_eq!(page_count(&pdf), 2);
-    assert_eq!(String::from_utf8_lossy(&pdf).matches("/Subtype /Image").count(), 2);
+    assert_eq!(
+        String::from_utf8_lossy(&pdf)
+            .matches("/Subtype /Image")
+            .count(),
+        2
+    );
 
     // With the fonts of this machine, other fonts step in for the
     // characters the cell's font lacks, where there are any.
@@ -1044,10 +1163,12 @@ fn lines_of(scene: &opensheet_print::Scene, width: f64) -> Vec<(f64, f64, f64, f
         .ops
         .iter()
         .filter_map(|op| match op {
-            Op::Stroke { path, stroke } if (stroke.width - width).abs() < 1e-9 => match path.segments[..] {
-                [Segment::MoveTo(x0, y0), Segment::LineTo(x1, y1)] => Some((x0, y0, x1, y1)),
-                _ => None,
-            },
+            Op::Stroke { path, stroke } if (stroke.width - width).abs() < 1e-9 => {
+                match path.segments[..] {
+                    [Segment::MoveTo(x0, y0), Segment::LineTo(x1, y1)] => Some((x0, y0, x1, y1)),
+                    _ => None,
+                }
+            }
             _ => None,
         })
         .collect()
@@ -1096,7 +1217,10 @@ fn gridlines_give_way_to_text_and_merged_cells() {
     // The text of A1 crosses the lines of the cells it flows over, on
     // its row only: it is as wide as the font says.
     let face = fonts.face("Aptos Narrow", false, false);
-    let end = col(0.0) + 2.25 + face.text_width("A long text that flows over its neighbours", 11.0) + 2.25;
+    let end = col(0.0)
+        + 2.25
+        + face.text_width("A long text that flows over its neighbours", 11.0)
+        + 2.25;
     assert!(end > col(3.0) && end < col(5.0));
     for c in [1.0, 2.0, 3.0, 4.0] {
         assert_eq!(
@@ -1104,7 +1228,10 @@ fn gridlines_give_way_to_text_and_merged_cells() {
             col(c) >= end,
             "line after column {c} on row 1"
         );
-        assert!(vertical_at(col(c), row(1.5)), "line after column {c} on row 2");
+        assert!(
+            vertical_at(col(c), row(1.5)),
+            "line after column {c} on row 2"
+        );
     }
     // No lines inside the merged area, lines around it.
     assert!(!vertical_at(col(2.0), row(3.5)) && !vertical_at(col(2.0), row(4.5)));
@@ -1118,7 +1245,10 @@ fn gridlines_give_way_to_text_and_merged_cells() {
     let double = lines_of(&scene, 0.5);
     assert_eq!(double.len(), 2);
     assert!(double.iter().all(|l| (l.0, l.2) == (col(0.0), col(1.0))));
-    assert!((double[0].1 - (row(2.0) - 0.5)).abs() < 1e-9 && (double[1].1 - (row(2.0) + 0.5)).abs() < 1e-9);
+    assert!(
+        (double[0].1 - (row(2.0) - 0.5)).abs() < 1e-9
+            && (double[1].1 - (row(2.0) + 0.5)).abs() < 1e-9
+    );
     // Draft quality leaves the gridlines out.
     wb.update_page_setup(0, |p| p.draft = true);
     assert!(lines_of(&render_page(&wb, &job, &plan, 0).unwrap(), 0.25).is_empty());
@@ -1129,9 +1259,15 @@ fn titles_repeat_and_everything_scales() {
     let mut wb = Workbook::new(Locale::en());
     enter(&mut wb, "A1", "Title");
     for r in 1..100u32 {
-        wb.set_cell_text(0, r, 0, &format!("row {}", r + 1)).unwrap();
+        wb.set_cell_text(0, r, 0, &format!("row {}", r + 1))
+            .unwrap();
     }
-    wb.apply_borders(0, Rect::parse("A1").unwrap(), BorderPreset::Bottom, Border::thin());
+    wb.apply_borders(
+        0,
+        Rect::parse("A1").unwrap(),
+        BorderPreset::Bottom,
+        Border::thin(),
+    );
     wb.set_print_titles(0, Some((0, 0)), None);
     wb.update_page_setup(0, |p| {
         p.scale = 50;
@@ -1158,7 +1294,10 @@ fn titles_repeat_and_everything_scales() {
     let title = texts.iter().find(|t| t.0 == "Title").unwrap();
     assert_eq!(title.1, 5.5);
     let first_own = plan.page(1).unwrap().2.rows.0;
-    let own = texts.iter().find(|t| t.0 == format!("row {}", first_own + 1)).unwrap();
+    let own = texts
+        .iter()
+        .find(|t| t.0 == format!("row {}", first_own + 1))
+        .unwrap();
     assert!((own.2 - title.2 - 7.5).abs() < 1e-9);
     assert!(texts.iter().any(|t| t.0 == "A" && t.1 == 5.5));
     assert!(texts.iter().any(|t| t.0 == "1" && t.1 == 5.5));
@@ -1199,7 +1338,13 @@ fn notes_print_at_the_end_or_where_they_are_shown() {
     enter(&mut wb, "A1", "Ventes");
     enter(&mut wb, "B2", "1200");
     enter(&mut wb, "D30", "fin");
-    wb.set_note(0, 1, 1, "Ana", "Ana:\nChiffre provisoire, à confirmer avec la comptabilité avant la clôture.");
+    wb.set_note(
+        0,
+        1,
+        1,
+        "Ana",
+        "Ana:\nChiffre provisoire, à confirmer avec la comptabilité avant la clôture.",
+    );
     wb.add_comment(0, 0, 0, &Person::new("Luc"), NOW, "Qui valide ?");
     wb.add_reply(0, 0, 0, &Person::new("Ana"), NOW, "Moi.");
     // A note outside the print area is left out.
@@ -1224,7 +1369,10 @@ fn notes_print_at_the_end_or_where_they_are_shown() {
     assert!(p.pages[1].notes && p.page(1).is_none());
     assert_eq!(p.sheet_of(1), Some(0));
     assert_eq!(p.paper(1), p.paper(0));
-    let lines: Vec<&str> = p.sheets[0].notes[0].iter().map(|line| line.text.as_str()).collect();
+    let lines: Vec<&str> = p.sheets[0].notes[0]
+        .iter()
+        .map(|line| line.text.as_str())
+        .collect();
     assert_eq!(lines[0], "Cellule : A1");
     assert_eq!(lines[1], "Commentaire : Luc:");
     assert_eq!(&lines[2..5], &["Qui valide ?", "Ana:", "Moi."]);
@@ -1274,7 +1422,14 @@ fn notes_print_at_the_end_or_where_they_are_shown() {
         .collect();
     assert_eq!(boxes.len(), 1);
     for op in &scene.ops {
-        if let Op::Text { face, size, x, text, .. } = op {
+        if let Op::Text {
+            face,
+            size,
+            x,
+            text,
+            ..
+        } = op
+        {
             if text.starts_with("Chiffre") {
                 assert!(x + face.text_width(text, *size) <= boxes[0].right() + 1e-6);
             }
@@ -1289,12 +1444,32 @@ fn sparklines_print_in_their_cells() {
     let mut wb = Workbook::new(Locale::en());
     // What prints is the block of cells that hold something: F5 brings
     // the cells of the sparklines into it.
-    for (cell, text) in [("A1", "1"), ("B1", "4"), ("C1", "2"), ("A2", "3"), ("B2", "-1"), ("C2", "2"), ("F5", "x")] {
+    for (cell, text) in [
+        ("A1", "1"),
+        ("B1", "4"),
+        ("C1", "2"),
+        ("A2", "3"),
+        ("B2", "-1"),
+        ("C2", "2"),
+        ("F5", "x"),
+    ] {
         enter(&mut wb, cell, text);
     }
     let data = Rect::parse("A1:C2").unwrap();
-    wb.add_sparklines(0, SparklineType::Line, (0, Rect::parse("A1:C1").unwrap()), Rect::parse("E1").unwrap()).unwrap();
-    wb.add_sparklines(0, SparklineType::Column, (0, data), Rect::parse("E3:E4").unwrap()).unwrap();
+    wb.add_sparklines(
+        0,
+        SparklineType::Line,
+        (0, Rect::parse("A1:C1").unwrap()),
+        Rect::parse("E1").unwrap(),
+    )
+    .unwrap();
+    wb.add_sparklines(
+        0,
+        SparklineType::Column,
+        (0, data),
+        Rect::parse("E3:E4").unwrap(),
+    )
+    .unwrap();
     wb.commit("sparklines");
     let fonts = FontDb::standard_only();
     let mut job = job(PrintWhat::Sheet(0));
@@ -1307,7 +1482,9 @@ fn sparklines_print_in_their_cells() {
         .ops
         .iter()
         .filter_map(|op| match op {
-            Op::Stroke { path, stroke } if stroke.paint.color == Color(0x376092) => Some((path, stroke.width)),
+            Op::Stroke { path, stroke } if stroke.paint.color == Color(0x376092) => {
+                Some((path, stroke.width))
+            }
             _ => None,
         })
         .collect();
@@ -1321,8 +1498,16 @@ fn sparklines_print_in_their_cells() {
         .count();
     assert_eq!(bars, 6);
     // Each cell is drawn in its own box, clipped to it.
-    let clips: Vec<&RectF> = scene.ops.iter().filter_map(|op| if let Op::Clip(r) = op { Some(r) } else { None }).collect();
-    let e1 = clips.iter().find(|r| (r.x - (50.4 + 4.0 * 48.0)).abs() < 1e-6 && (r.y - 54.0).abs() < 1e-6 && (r.w - 48.0).abs() < 1e-6);
+    let clips: Vec<&RectF> = scene
+        .ops
+        .iter()
+        .filter_map(|op| if let Op::Clip(r) = op { Some(r) } else { None })
+        .collect();
+    let e1 = clips.iter().find(|r| {
+        (r.x - (50.4 + 4.0 * 48.0)).abs() < 1e-6
+            && (r.y - 54.0).abs() < 1e-6
+            && (r.w - 48.0).abs() < 1e-6
+    });
     assert!(e1.is_some(), "{clips:?}");
     assert!(!print_pdf(&wb, &job).is_empty());
 }
@@ -1333,7 +1518,8 @@ fn the_background_of_a_sheet_is_not_printed() {
     enter(&mut wb, "A1", "Over the background");
     let job = job(PrintWhat::Sheet(0));
     let plain = render_page(&wb, &job, &plan(&wb, &job), 0).unwrap();
-    let picture = opensheet_engine::drawing::Picture::new(png(24, 24, [200, 220, 255])).expect("a PNG image");
+    let picture =
+        opensheet_engine::drawing::Picture::new(png(24, 24, [200, 220, 255])).expect("a PNG image");
     assert!(wb.set_sheet_background(0, Some(picture)));
     wb.commit("background");
     // The page is the same with and without it, down to the last operation.
@@ -1360,11 +1546,23 @@ fn a_range_is_drawn_alone_without_the_furniture_of_a_page() {
     wb.commit("setup");
     let fonts = FontDb::standard_only();
     let range = Rect::parse("B2:C3").unwrap();
-    let scene = render_range(&wb, 0, range, RangeLook::Screen { gridlines: true }, Some(&fonts), None).unwrap();
+    let scene = render_range(
+        &wb,
+        0,
+        range,
+        RangeLook::Screen { gridlines: true },
+        Some(&fonts),
+        None,
+    )
+    .unwrap();
     // The page is the range: three quarters of a point for each pixel.
     let sheet = &wb.sheets[0];
     let width = sheet.col_width(1) as f64 + sheet.col_width(2) as f64;
-    assert!((scene.size.0 - width * 0.75).abs() < 0.01, "{:?}", scene.size);
+    assert!(
+        (scene.size.0 - width * 0.75).abs() < 0.01,
+        "{:?}",
+        scene.size
+    );
     let texts: Vec<&str> = scene
         .ops
         .iter()
@@ -1377,7 +1575,11 @@ fn a_range_is_drawn_alone_without_the_furniture_of_a_page() {
     // headings, nor its other cells.
     assert_eq!(texts, ["Tea", "12.5"]);
     let fills = |scene: &opensheet_print::Scene| {
-        scene.ops.iter().filter(|op| matches!(op, Op::Fill { paint, .. } if paint.color == Color(0xFF0000))).count()
+        scene
+            .ops
+            .iter()
+            .filter(|op| matches!(op, Op::Fill { paint, .. } if paint.color == Color(0xFF0000)))
+            .count()
     };
     assert_eq!(fills(&scene), 1);
     // On screen the gridlines are the pale ones of the window; without
@@ -1392,8 +1594,18 @@ fn a_range_is_drawn_alone_without_the_furniture_of_a_page() {
             })
             .collect()
     };
-    assert!(!lines(&scene).is_empty() && lines(&scene).iter().all(|color| *color == Color(0xE1E1E1)));
-    let bare = render_range(&wb, 0, range, RangeLook::Screen { gridlines: false }, Some(&fonts), None).unwrap();
+    assert!(
+        !lines(&scene).is_empty() && lines(&scene).iter().all(|color| *color == Color(0xE1E1E1))
+    );
+    let bare = render_range(
+        &wb,
+        0,
+        range,
+        RangeLook::Screen { gridlines: false },
+        Some(&fonts),
+        None,
+    )
+    .unwrap();
     assert!(lines(&bare).is_empty());
     // As printed: what the page setup prints, here no gridlines and no
     // colour once the sheet prints in black and white.
@@ -1408,7 +1620,9 @@ fn a_range_is_drawn_alone_without_the_furniture_of_a_page() {
     assert!(render_range(&wb, 0, range, RangeLook::Printed, Some(&fonts), None).is_none());
     // The document is as wide and high as asked.
     let svg = scene_svg(&scene, (300.0, 80.0));
-    assert!(svg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"80\""));
+    assert!(
+        svg.starts_with("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"80\"")
+    );
     assert!(svg.contains(">Tea</text>"));
 }
 
@@ -1420,16 +1634,25 @@ fn the_entire_workbook_leaves_hidden_sheets_out() {
         wb.add_sheet(index);
     }
     for sheet in 0..3 {
-        wb.set_cell_text(sheet, 0, 0, &format!("page of sheet {}", sheet + 1)).unwrap();
+        wb.set_cell_text(sheet, 0, 0, &format!("page of sheet {}", sheet + 1))
+            .unwrap();
     }
     wb.set_sheet_visibility(1, SheetVisibility::Hidden);
     wb.commit("setup");
     let job = job(PrintWhat::Workbook);
     let plan = plan(&wb, &job);
-    assert_eq!(plan.sheets.iter().map(|s| s.sheet).collect::<Vec<_>>(), [0, 2]);
+    assert_eq!(
+        plan.sheets.iter().map(|s| s.sheet).collect::<Vec<_>>(),
+        [0, 2]
+    );
     assert_eq!(plan.pages.len(), 2);
     // Asked for by itself, a hidden sheet still prints.
-    assert_eq!(opensheet_print::plan(&wb, &self::job(PrintWhat::Sheet(1))).pages.len(), 1);
+    assert_eq!(
+        opensheet_print::plan(&wb, &self::job(PrintWhat::Sheet(1)))
+            .pages
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -1441,8 +1664,20 @@ fn ink_strokes_print_over_the_cells() {
     let job = job(PrintWhat::Sheet(0));
     let before = render_page(&wb, &job, &plan(&wb, &job), 0).unwrap();
     // A red pen stroke of three points, and a wide yellow highlight.
-    let pen = wb.draw_ink(0, PenKind::Pen, Color(0xFF0000), 2.0, &[(20.0, 20.0), (60.0, 50.0), (100.0, 20.0)]);
-    let marker = wb.draw_ink(0, PenKind::Highlighter, Color(0xFFFF00), 12.0, &[(10.0, 8.0), (90.0, 8.0)]);
+    let pen = wb.draw_ink(
+        0,
+        PenKind::Pen,
+        Color(0xFF0000),
+        2.0,
+        &[(20.0, 20.0), (60.0, 50.0), (100.0, 20.0)],
+    );
+    let marker = wb.draw_ink(
+        0,
+        PenKind::Highlighter,
+        Color(0xFFFF00),
+        12.0,
+        &[(10.0, 8.0), (90.0, 8.0)],
+    );
     assert!(pen.is_some() && marker.is_some());
     wb.commit("ink");
     let plan = plan(&wb, &job);
@@ -1459,25 +1694,48 @@ fn ink_strokes_print_over_the_cells() {
     // Each in its colour, as translucent as its pen, as wide as drawn
     // (pixels of the sheet are three quarters of a point).
     let (pen_stroke, marker_stroke) = (&strokes[0].1, &strokes[1].1);
-    assert_eq!((pen_stroke.paint.color, pen_stroke.paint.opacity), (Color(0xFF0000), 1.0));
-    assert!((pen_stroke.width - 1.5).abs() < 1e-6, "{}", pen_stroke.width);
-    assert_eq!((marker_stroke.paint.color, marker_stroke.paint.opacity), (Color(0xFFFF00), 0.5));
+    assert_eq!(
+        (pen_stroke.paint.color, pen_stroke.paint.opacity),
+        (Color(0xFF0000), 1.0)
+    );
+    assert!(
+        (pen_stroke.width - 1.5).abs() < 1e-6,
+        "{}",
+        pen_stroke.width
+    );
+    assert_eq!(
+        (marker_stroke.paint.color, marker_stroke.paint.opacity),
+        (Color(0xFFFF00), 0.5)
+    );
     assert!((marker_stroke.width - 9.0).abs() < 1e-6);
     // The pen's line is rounded: more points than were drawn.
     assert!(strokes[0].0.segments.len() > 6);
     // A stroke far below the cells that hold something still prints:
     // the page reaches down to it.
-    let low = wb.draw_ink(0, PenKind::Pen, Color(0x0000FF), 2.0, &[(30.0, 400.0), (80.0, 430.0)]);
+    let low = wb.draw_ink(
+        0,
+        PenKind::Pen,
+        Color(0x0000FF),
+        2.0,
+        &[(30.0, 400.0), (80.0, 430.0)],
+    );
     assert!(low.is_some());
     wb.commit("ink below");
     let reaching = render_page(&wb, &job, &opensheet_print::plan(&wb, &job), 0).unwrap();
-    assert!(reaching.ops.iter().any(|op| matches!(op, Op::Stroke { stroke, .. } if stroke.paint.color == Color(0x0000FF))));
+    assert!(reaching.ops.iter().any(
+        |op| matches!(op, Op::Stroke { stroke, .. } if stroke.paint.color == Color(0x0000FF))
+    ));
     // A draft leaves ink out with the other objects, and black and
     // white prints it black.
     wb.update_page_setup(0, |setup| setup.draft = true);
     wb.commit("draft");
     let draft = render_page(&wb, &job, &plan, 0).unwrap();
-    assert!(!draft.ops.iter().any(|op| matches!(op, Op::Stroke { stroke, .. } if stroke.cap == LineCap::Round)));
+    assert!(
+        !draft
+            .ops
+            .iter()
+            .any(|op| matches!(op, Op::Stroke { stroke, .. } if stroke.cap == LineCap::Round))
+    );
     wb.update_page_setup(0, |setup| {
         setup.draft = false;
         setup.black_and_white = true;

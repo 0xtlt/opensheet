@@ -345,7 +345,10 @@ fn parse_run_properties<'a>(
     palette: &Palette,
     text: &mut TextFormat,
 ) {
-    if let Some(size) = tag.attr_f64("sz").filter(|s| (100.0..=400_000.0).contains(s)) {
+    if let Some(size) = tag
+        .attr_f64("sz")
+        .filter(|s| (100.0..=400_000.0).contains(s))
+    {
         text.size = Some((size / 100.0) as f32);
     }
     if let Some(bold) = tag.attr_bool("b") {
@@ -364,7 +367,10 @@ fn parse_run_properties<'a>(
             }
         }
         "latin" => {
-            if let Some(font) = t.attr("typeface").filter(|f| !f.is_empty() && !f.starts_with('+')) {
+            if let Some(font) = t
+                .attr("typeface")
+                .filter(|f| !f.is_empty() && !f.starts_with('+'))
+            {
                 text.font = Some(Arc::from(&*font));
             }
             r.skip(t);
@@ -484,7 +490,8 @@ impl RawLayout {
             return None;
         }
         let size = |v: Option<f64>, edge: bool, from: f64| {
-            v.map(|v| if edge { v - from } else { v }).filter(|v| sized && *v > 0.0)
+            v.map(|v| if edge { v - from } else { v })
+                .filter(|v| sized && *v > 0.0)
         };
         Some(ManualLayout {
             x,
@@ -860,7 +867,10 @@ fn line_of(stroke: Option<Stroke>, auto_shown: bool, auto_color: Color, auto_wid
     }
     // The automatic colour is the same whether the file says it by its
     // value or by its place in the theme.
-    let color = stroke.paint.color().filter(|c| c.value() != auto_color.value());
+    let color = stroke
+        .paint
+        .color()
+        .filter(|c| c.value() != auto_color.value());
     let width = stroke
         .width
         .filter(|w| (w - auto_width).abs() > WIDTH_TOLERANCE);
@@ -1428,7 +1438,12 @@ struct RawAxis {
 
 /// `<c:majorGridlines>`, `<c:minorGridlines>`: how the lines are drawn,
 /// Excel's own thin grey being automatic.
-fn parse_gridlines<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, automatic: Color) -> Line {
+fn parse_gridlines<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+    automatic: Color,
+) -> Line {
     let mut stroke = None;
     each_child(r, tag, |r, t| match t.name {
         "spPr" => stroke = parse_shape(r, t, palette).line,
@@ -1900,9 +1915,16 @@ impl RawChart {
                 name: d.raw.name,
                 // Labels in several columns are several levels of labels;
                 // the X values of a scatter chart are one line of numbers.
-                categories: d.raw.categories.map(|c| if drawn_as.is_xy() { innermost_level(&c, &values) } else { c }),
+                categories: d.raw.categories.map(|c| {
+                    if drawn_as.is_xy() {
+                        innermost_level(&c, &values)
+                    } else {
+                        c
+                    }
+                }),
                 // A colour that is the automatic one is no colour of its own.
-                color: Some(d.looks.ink).filter(|ink| ink.value() != palette_color_of(&accents, position).value()),
+                color: Some(d.looks.ink)
+                    .filter(|ink| ink.value() != palette_color_of(&accents, position).value()),
                 kind: own_kind,
                 secondary: secondary[d.plot],
                 ..Series::new(values)
@@ -1939,8 +1961,9 @@ impl RawChart {
                 } else {
                     point.shape.fill.color()
                 };
-                let color =
-                    color.filter(|c| !varied || c.value() != palette_color_of(&accents, point.index as usize).value());
+                let color = color.filter(|c| {
+                    !varied || c.value() != palette_color_of(&accents, point.index as usize).value()
+                });
                 let explosion = point.explosion.filter(|_| drawn_as.is_round());
                 if color.is_some() || explosion.is_some() {
                     series.points.push(PointFormat {
@@ -2055,7 +2078,9 @@ impl RawChart {
         // A plot area put somewhere has a size: without one, it is where
         // the chart puts it.
         if let Some(layout) = self.plot_layout.as_ref() {
-            chart.plot_layout = layout.placed(true).filter(|m| m.w.is_some() && m.h.is_some());
+            chart.plot_layout = layout
+                .placed(true)
+                .filter(|m| m.w.is_some() && m.h.is_some());
             chart.plot_layout_outer = chart.plot_layout.is_some() && !layout.inner;
         }
         // The chart area is white in a thin grey frame unless told

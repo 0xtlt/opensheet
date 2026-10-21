@@ -13,7 +13,10 @@ use crate::i18n::t;
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{self, Button, TextField};
-use gpui::{ClipboardItem, Context, Entity, MouseButton, MouseDownEvent, ScrollHandle, SharedString, Subscription, WeakEntity, Window, div, prelude::*, px};
+use gpui::{
+    ClipboardItem, Context, Entity, MouseButton, MouseDownEvent, ScrollHandle, SharedString,
+    Subscription, WeakEntity, Window, div, prelude::*, px,
+};
 use opensheet_engine::Rect;
 
 pub(super) const PANE: &str = "proofing-thesaurus";
@@ -59,16 +62,27 @@ fn part_of_speech(name: &str) -> String {
 /// The heading of a meaning: its first word and what kind of word it is,
 /// as Excel writes it ("cheerful (adj.)").
 pub(super) fn heading(sense: &Sense) -> String {
-    let word = sense.synonyms.first().or(sense.antonyms.first()).cloned().unwrap_or_default();
+    let word = sense
+        .synonyms
+        .first()
+        .or(sense.antonyms.first())
+        .cloned()
+        .unwrap_or_default();
     let kind = part_of_speech(&sense.part_of_speech);
-    if kind.is_empty() { word } else { format!("{word} ({kind})") }
+    if kind.is_empty() {
+        word
+    } else {
+        format!("{word} ({kind})")
+    }
 }
 
 /// The word of the active cell, as the thesaurus is asked for it.
 pub(super) fn word_of_active_cell(app: &ExcelApp) -> String {
     let (row, col) = app.active();
     let text = app.wb.display_text(app.sheet, row, col).text;
-    text.trim().trim_matches(|ch: char| ch.is_ascii_punctuation()).to_string()
+    text.trim()
+        .trim_matches(|ch: char| ch.is_ascii_punctuation())
+        .to_string()
 }
 
 /// Put a word in the active cell in place of what it holds, as one undo
@@ -83,20 +97,30 @@ pub(super) fn insert(app: &mut ExcelApp, word: &str, cx: &mut Cx) -> bool {
     if app.wb.set_cell_text(sheet, row, col, word).is_err() {
         return false;
     }
-    app.commit_cells(t("Thesaurus", "Dictionnaire des synonymes"), &[cell], ChangeCause::Typing, cx);
+    app.commit_cells(
+        t("Thesaurus", "Dictionnaire des synonymes"),
+        &[cell],
+        ChangeCause::Typing,
+        cx,
+    );
     true
 }
 
 impl ThesaurusPane {
     fn new(app: WeakEntity<ExcelApp>, cx: &mut Context<Self>) -> Self {
         let search = widgets::input(cx, "");
-        search.update(cx, |field, _| field.placeholder = t("Search", "Rechercher").into());
-        let subscription = cx.subscribe(&search, |this: &mut ThesaurusPane, field, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Enter { .. }) {
-                let word = field.read(cx).text().to_string();
-                this.look_up(&word, cx);
-            }
+        search.update(cx, |field, _| {
+            field.placeholder = t("Search", "Rechercher").into()
         });
+        let subscription = cx.subscribe(
+            &search,
+            |this: &mut ThesaurusPane, field, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Enter { .. }) {
+                    let word = field.read(cx).text().to_string();
+                    this.look_up(&word, cx);
+                }
+            },
+        );
         ThesaurusPane {
             app,
             search,
@@ -126,7 +150,8 @@ impl ThesaurusPane {
         };
         self.chosen = None;
         self.scroll = ScrollHandle::new();
-        self.search.update(cx, |field, cx| field.set_text(word.clone(), cx));
+        self.search
+            .update(cx, |field, cx| field.set_text(word.clone(), cx));
         self.word = word;
         cx.notify();
     }
@@ -181,7 +206,13 @@ impl ThesaurusPane {
     }
 
     fn results(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
-        let muted = |text: String| div().px(px(4.)).text_color(c(theme::TEXT_MUTED)).child(text).into_any_element();
+        let muted = |text: String| {
+            div()
+                .px(px(4.))
+                .text_color(c(theme::TEXT_MUTED))
+                .child(text)
+                .into_any_element()
+        };
         let plain = |text: &'static str| div().px(px(4.)).child(text).into_any_element();
         match &self.result {
             None => Vec::new(),
@@ -268,10 +299,22 @@ impl Render for ThesaurusPane {
                             .disabled(self.history.is_empty())
                             .on_click(cx.listener(|this, _, _, cx| this.back(cx))),
                     )
-                    .child(div().flex_1().min_w(px(0.)).child(TextField::new(&self.search))),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .child(TextField::new(&self.search)),
+                    ),
             )
             .when(!headword.is_empty(), |d| {
-                d.child(div().flex_none().px(px(16.)).pb(px(4.)).text_size(px(15.)).child(headword))
+                d.child(
+                    div()
+                        .flex_none()
+                        .px(px(16.))
+                        .pb(px(4.))
+                        .text_size(px(15.))
+                        .child(headword),
+                )
             })
             .child(
                 div()
@@ -315,7 +358,11 @@ impl Render for ThesaurusPane {
 /// Review ▸ Thesaurus: open the pane on the word of the active cell.
 pub(super) fn open(app: &mut ExcelApp, cx: &mut Cx) {
     let word = word_of_active_cell(app);
-    let pane = match app.ext::<ThesaurusUi>().and_then(|ui| ui.pane.clone()).filter(|_| app.pane_open(PANE)) {
+    let pane = match app
+        .ext::<ThesaurusUi>()
+        .and_then(|ui| ui.pane.clone())
+        .filter(|_| app.pane_open(PANE))
+    {
         Some(pane) => pane,
         None => {
             let weak = cx.entity().downgrade();
@@ -324,7 +371,12 @@ pub(super) fn open(app: &mut ExcelApp, cx: &mut Cx) {
             pane
         }
     };
-    app.open_pane(PANE, t("Thesaurus", "Dictionnaire des synonymes"), pane.clone(), cx);
+    app.open_pane(
+        PANE,
+        t("Thesaurus", "Dictionnaire des synonymes"),
+        pane.clone(),
+        cx,
+    );
     // The pane reads the application to find its thesaurus: once this
     // command has let go of it.
     cx.defer(move |cx| pane.update(cx, |pane, cx| pane.look_up(&word, cx)));

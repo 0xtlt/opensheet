@@ -10,14 +10,16 @@ use crate::shell::{Alert, Modal, RefStyle};
 use crate::theme::{self, c};
 use crate::widgets::{Button, ListBox, dialog, label};
 use gpui::{
-    AnyElement, Context, FontStyle, FontWeight, HighlightStyle, SharedString, StyledText, UnderlineStyle, WeakEntity,
-    Window, div, prelude::*, px,
+    AnyElement, Context, FontStyle, FontWeight, HighlightStyle, SharedString, StyledText,
+    UnderlineStyle, WeakEntity, Window, div, prelude::*, px,
 };
 use opensheet_engine::eval::Calc;
 use opensheet_engine::format::format_value;
 use opensheet_engine::functions::{self, Kind};
 use opensheet_engine::refs::cell_name;
-use opensheet_engine::{Content, ErrorKind, Expr, Locale, MAX_COLS, Rect, Reference, Sheet, Value, Workbook};
+use opensheet_engine::{
+    Content, ErrorKind, Expr, Locale, MAX_COLS, Rect, Reference, Sheet, Value, Workbook,
+};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
@@ -52,7 +54,11 @@ fn cell_label(wb: &Workbook, sheet: usize, row: u32, col: u32) -> String {
         sheet: true,
         equals: false,
     };
-    let name = wb.sheets.get(sheet).map(|s| s.name.as_str()).unwrap_or_default();
+    let name = wb
+        .sheets
+        .get(sheet)
+        .map(|s| s.name.as_str())
+        .unwrap_or_default();
     style.format(Rect::cell(row, col), name)
 }
 
@@ -78,7 +84,11 @@ pub(super) fn toggle_formulas(app: &mut ExcelApp, cx: &mut Cx) {
 /// for a cell without a formula, which shows its value unformatted.
 pub fn shown_formula(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option<String> {
     let text = wb.formula_text(sheet, row, col)?;
-    Some(if wb.is_formula_hidden(sheet, row, col) { String::new() } else { text })
+    Some(if wb.is_formula_hidden(sheet, row, col) {
+        String::new()
+    } else {
+        text
+    })
 }
 
 /// The columns as Show Formulas lays them out: twice as wide, as in Excel.
@@ -89,11 +99,19 @@ fn doubled_columns(sheet: &Sheet, zoom: f32) -> Axis {
         .find(|col| !sheet.col_widths.contains_key(col) && !sheet.hidden_cols.contains(col))
         .unwrap_or(MAX_COLS - 1);
     let wide = |width: f32| (2.0 * width * zoom).round();
-    let mut sizes: BTreeMap<u32, f32> = sheet.col_widths.iter().map(|(col, width)| (*col, wide(*width))).collect();
+    let mut sizes: BTreeMap<u32, f32> = sheet
+        .col_widths
+        .iter()
+        .map(|(col, width)| (*col, wide(*width)))
+        .collect();
     for col in &sheet.hidden_cols {
         sizes.insert(*col, 0.0);
     }
-    Axis::new(wide(sheet.col_width(plain)).max(1.0), MAX_COLS, sizes.into_iter())
+    Axis::new(
+        wide(sheet.col_width(plain)).max(1.0),
+        MAX_COLS,
+        sizes.into_iter(),
+    )
 }
 
 /// `Feature::adjust_layout`: widen the columns of a sheet showing formulas.
@@ -130,7 +148,12 @@ pub(crate) struct Arrow {
 /// The arrows of Trace Precedents from a cell, `depth` levels deep: one
 /// from each range its formula reads, then from what the formulas in
 /// those ranges read, and so on.
-pub(crate) fn precedent_arrows(wb: &Workbook, sheet: usize, cell: (u32, u32), depth: u32) -> Vec<Arrow> {
+pub(crate) fn precedent_arrows(
+    wb: &Workbook,
+    sheet: usize,
+    cell: (u32, u32),
+    depth: u32,
+) -> Vec<Arrow> {
     let mut arrows: Vec<Arrow> = Vec::new();
     let mut seen: HashSet<(u32, u32)> = HashSet::from([cell]);
     let mut frontier = vec![cell];
@@ -155,7 +178,10 @@ pub(crate) fn precedent_arrows(wb: &Workbook, sheet: usize, cell: (u32, u32), de
                 });
                 for ((row, col), source) in sh.cells.range((from.r0, 0)..=(from.r1, u32::MAX)) {
                     let inside = *col >= from.c0 && *col <= from.c1;
-                    if inside && matches!(source.content, Content::Formula(_)) && seen.insert((*row, *col)) {
+                    if inside
+                        && matches!(source.content, Content::Formula(_))
+                        && seen.insert((*row, *col))
+                    {
                         next.push((*row, *col));
                     }
                 }
@@ -175,7 +201,12 @@ pub(crate) fn precedent_arrows(wb: &Workbook, sheet: usize, cell: (u32, u32), de
 }
 
 /// The arrows of Trace Dependents from a cell, `depth` levels deep.
-pub(crate) fn dependent_arrows(wb: &Workbook, sheet: usize, cell: (u32, u32), depth: u32) -> Vec<Arrow> {
+pub(crate) fn dependent_arrows(
+    wb: &Workbook,
+    sheet: usize,
+    cell: (u32, u32),
+    depth: u32,
+) -> Vec<Arrow> {
     let mut arrows: Vec<Arrow> = Vec::new();
     let mut seen: HashSet<(u32, u32)> = HashSet::from([cell]);
     let mut frontier = vec![cell];
@@ -216,13 +247,18 @@ pub(crate) fn dependent_arrows(wb: &Workbook, sheet: usize, cell: (u32, u32), de
 /// when the formula it points at changes or when its cells move.
 pub(crate) fn arrow_holds(wb: &Workbook, arrow: &Arrow) -> bool {
     match (arrow.from, arrow.to) {
-        (from, Some(to)) => links::precedents(wb, arrow.sheet, to.0, to.1).iter().any(|reference| match from {
-            Some(from) if reference.sheet == arrow.sheet => {
-                wb.clamp_to_used(arrow.sheet, reference.rect) == from || (from.is_single() && reference.rect.contains(from.r0, from.c0))
-            }
-            Some(_) => false,
-            None => reference.sheet != arrow.sheet,
-        }),
+        (from, Some(to)) => {
+            links::precedents(wb, arrow.sheet, to.0, to.1)
+                .iter()
+                .any(|reference| match from {
+                    Some(from) if reference.sheet == arrow.sheet => {
+                        wb.clamp_to_used(arrow.sheet, reference.rect) == from
+                            || (from.is_single() && reference.rect.contains(from.r0, from.c0))
+                    }
+                    Some(_) => false,
+                    None => reference.sheet != arrow.sheet,
+                })
+        }
         (Some(from), None) => links::dependents(wb, Reference::new(arrow.sheet, from))
             .iter()
             .any(|(on, _, _)| *on != arrow.sheet),
@@ -246,13 +282,21 @@ impl Audit {
     fn prune(&self, wb: &Workbook) {
         if self.checked.get() != wb.generation {
             self.checked.set(wb.generation);
-            self.arrows.borrow_mut().retain(|arrow| arrow_holds(wb, arrow));
+            self.arrows
+                .borrow_mut()
+                .retain(|arrow| arrow_holds(wb, arrow));
         }
     }
 
     /// Show one more level of arrows from a cell: the first level whose
     /// arrows are not all there yet.
-    pub(crate) fn trace(&mut self, wb: &Workbook, sheet: usize, cell: (u32, u32), kind: Trace) -> Traced {
+    pub(crate) fn trace(
+        &mut self,
+        wb: &Workbook,
+        sheet: usize,
+        cell: (u32, u32),
+        kind: Trace,
+    ) -> Traced {
         self.prune(wb);
         let mut arrows = self.arrows.borrow_mut();
         let mut known = 0;
@@ -263,9 +307,17 @@ impl Audit {
                 Trace::Dependents => dependent_arrows(wb, sheet, cell, depth),
             };
             if wanted.len() == known {
-                return if depth == 1 { Traced::Nothing } else { Traced::Complete };
+                return if depth == 1 {
+                    Traced::Nothing
+                } else {
+                    Traced::Complete
+                };
             }
-            let missing: Vec<Arrow> = wanted.iter().filter(|arrow| !arrows.contains(arrow)).cloned().collect();
+            let missing: Vec<Arrow> = wanted
+                .iter()
+                .filter(|arrow| !arrows.contains(arrow))
+                .cloned()
+                .collect();
             if !missing.is_empty() {
                 arrows.extend(missing);
                 return Traced::Added;
@@ -389,7 +441,14 @@ fn dashes(p: &mut Painter, from: (f32, f32), to: (f32, f32), color: gpui::Hsla) 
     let mut at = 0.0;
     while at < length {
         let end = (at + dash).min(length);
-        p.polyline(&[(from.0 + ux * at, from.1 + uy * at), (from.0 + ux * end, from.1 + uy * end)], 1.2, color);
+        p.polyline(
+            &[
+                (from.0 + ux * at, from.1 + uy * at),
+                (from.0 + ux * end, from.1 + uy * end),
+            ],
+            1.2,
+            color,
+        );
         at += dash + gap;
     }
 }
@@ -402,7 +461,14 @@ fn head(p: &mut Painter, from: (f32, f32), tip: (f32, f32), color: gpui::Hsla) {
     let size = (8.0 * p.zoom()).clamp(6.0, 14.0);
     let back = (tip.0 - ux * size, tip.1 - uy * size);
     let half = size * 0.42;
-    p.polygon(&[tip, (back.0 - uy * half, back.1 + ux * half), (back.0 + uy * half, back.1 - ux * half)], color);
+    p.polygon(
+        &[
+            tip,
+            (back.0 - uy * half, back.1 + ux * half),
+            (back.0 + uy * half, back.1 - ux * half),
+        ],
+        color,
+    );
 }
 
 /// The little sheet that stands for cells of another sheet.
@@ -431,16 +497,26 @@ pub(super) fn paint(p: &mut Painter) {
     let black = c(0x000000);
     for arrow in arrows.iter().filter(|arrow| arrow.sheet == app.sheet) {
         let first = |range: Rect| p.cell_box(Rect::cell(range.r0, range.c0));
-        let boxes = (arrow.from.map(first), arrow.to.map(|(row, col)| p.cell_box(Rect::cell(row, col))));
+        let boxes = (
+            arrow.from.map(first),
+            arrow.to.map(|(row, col)| p.cell_box(Rect::cell(row, col))),
+        );
         let Some((start, end, dashed)) = arrow_line(boxes.0, boxes.1, p.zoom()) else {
             continue;
         };
         // Nothing of it in this pane.
         let (left, right) = (start.0.min(end.0), start.0.max(end.0));
         let (top, bottom) = (start.1.min(end.1), start.1.max(end.1));
-        let range_box = arrow.from.filter(|from| !from.is_single()).map(|from| p.cell_box(from));
-        let in_view = |(x0, y0, x1, y1): (f32, f32, f32, f32)| x1 >= p.clip.0 && x0 <= p.clip.2 && y1 >= p.clip.1 && y0 <= p.clip.3;
-        if !in_view((left - 16.0, top - 16.0, right + 16.0, bottom + 16.0)) && !range_box.is_some_and(in_view) {
+        let range_box = arrow
+            .from
+            .filter(|from| !from.is_single())
+            .map(|from| p.cell_box(from));
+        let in_view = |(x0, y0, x1, y1): (f32, f32, f32, f32)| {
+            x1 >= p.clip.0 && x0 <= p.clip.2 && y1 >= p.clip.1 && y0 <= p.clip.3
+        };
+        if !in_view((left - 16.0, top - 16.0, right + 16.0, bottom + 16.0))
+            && !range_box.is_some_and(in_view)
+        {
             continue;
         }
         if let Some((x0, y0, x1, y1)) = range_box {
@@ -468,7 +544,11 @@ pub(super) fn paint(p: &mut Painter) {
 
 /// The cells of a sheet whose formula results in an error, in reading
 /// order, without those the user chose to ignore.
-pub(crate) fn error_cells(wb: &Workbook, sheet: usize, ignored: &HashSet<(String, u32, u32)>) -> Vec<(u32, u32)> {
+pub(crate) fn error_cells(
+    wb: &Workbook,
+    sheet: usize,
+    ignored: &HashSet<(String, u32, u32)>,
+) -> Vec<(u32, u32)> {
     let Some(sh) = wb.sheets.get(sheet) else {
         return Vec::new();
     };
@@ -486,9 +566,17 @@ pub(crate) fn error_cells(wb: &Workbook, sheet: usize, ignored: &HashSet<(String
 
 /// The error cell Error Checking goes to from `from`: the next one in
 /// reading order (`from` itself when `inclusive`), or the previous one.
-pub(crate) fn next_error(errors: &[(u32, u32)], from: (u32, u32), forward: bool, inclusive: bool) -> Option<(u32, u32)> {
+pub(crate) fn next_error(
+    errors: &[(u32, u32)],
+    from: (u32, u32),
+    forward: bool,
+    inclusive: bool,
+) -> Option<(u32, u32)> {
     if forward {
-        errors.iter().copied().find(|cell| *cell > from || (inclusive && *cell == from))
+        errors
+            .iter()
+            .copied()
+            .find(|cell| *cell > from || (inclusive && *cell == from))
     } else {
         errors.iter().copied().rev().find(|cell| *cell < from)
     }
@@ -498,7 +586,10 @@ pub(crate) fn next_error(errors: &[(u32, u32)], from: (u32, u32), forward: bool,
 fn error_text(kind: ErrorKind) -> (&'static str, &'static str) {
     match kind {
         ErrorKind::Div0 => (
-            t("Divide by Zero Error", "Erreur lors de la division par zéro"),
+            t(
+                "Divide by Zero Error",
+                "Erreur lors de la division par zéro",
+            ),
             t(
                 "The formula or function used is dividing by zero or empty cells.",
                 "La formule ou la fonction utilisée effectue une division par zéro ou par des cellules vides.",
@@ -506,7 +597,10 @@ fn error_text(kind: ErrorKind) -> (&'static str, &'static str) {
         ),
         ErrorKind::Name => (
             t("Invalid Name Error", "Erreur due à un nom non valide"),
-            t("The formula contains unrecognized text.", "La formule contient du texte non reconnu."),
+            t(
+                "The formula contains unrecognized text.",
+                "La formule contient du texte non reconnu.",
+            ),
         ),
         ErrorKind::Value => (
             t("Error in Value", "Erreur de valeur"),
@@ -516,14 +610,20 @@ fn error_text(kind: ErrorKind) -> (&'static str, &'static str) {
             ),
         ),
         ErrorKind::Ref => (
-            t("Invalid Cell Reference Error", "Erreur due à une référence de cellule non valide"),
+            t(
+                "Invalid Cell Reference Error",
+                "Erreur due à une référence de cellule non valide",
+            ),
             t(
                 "Moving or deleting cells caused an invalid cell reference, or function is returning reference error.",
                 "Déplacer ou supprimer des cellules provoque une référence de cellule non valide, ou la fonction renvoie une erreur de référence.",
             ),
         ),
         ErrorKind::NA => (
-            t("Value Not Available Error", "Erreur due à une valeur non disponible"),
+            t(
+                "Value Not Available Error",
+                "Erreur due à une valeur non disponible",
+            ),
             t(
                 "A value is not available to the formula or function.",
                 "Une valeur n'est pas disponible pour la formule ou la fonction.",
@@ -538,16 +638,28 @@ fn error_text(kind: ErrorKind) -> (&'static str, &'static str) {
         ),
         ErrorKind::Null => (
             t("Null Error", "Erreur de valeur nulle"),
-            t("The ranges in the formula do not intersect.", "Les plages de la formule ne se coupent pas."),
+            t(
+                "The ranges in the formula do not intersect.",
+                "Les plages de la formule ne se coupent pas.",
+            ),
         ),
         ErrorKind::Spill => (
-            t("Spill range isn't blank", "La plage propagée n'est pas vide"),
+            t(
+                "Spill range isn't blank",
+                "La plage propagée n'est pas vide",
+            ),
             t(
                 "A cell we need to spill data into isn't blank.",
                 "Une cellule dans laquelle nous avons besoin de propager des données n'est pas vide.",
             ),
         ),
-        ErrorKind::Calc => (t("Formula Results in Error", "La formule a abouti à une erreur"), ""),
+        ErrorKind::Calc => (
+            t(
+                "Formula Results in Error",
+                "La formule a abouti à une erreur",
+            ),
+            "",
+        ),
     }
 }
 
@@ -564,13 +676,17 @@ fn check_complete(app: &mut ExcelApp, cx: &mut Cx) {
 
 fn errors_of(app: &ExcelApp) -> Vec<(u32, u32)> {
     let none = HashSet::new();
-    let ignored = app.ext::<Audit>().map(|audit| &audit.ignored).unwrap_or(&none);
+    let ignored = app
+        .ext::<Audit>()
+        .map(|audit| &audit.ignored)
+        .unwrap_or(&none);
     error_cells(&app.wb, app.sheet, ignored)
 }
 
 pub(super) fn open_error_checking(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let errors = errors_of(app);
-    let Some(first) = next_error(&errors, app.active(), true, true).or(errors.first().copied()) else {
+    let Some(first) = next_error(&errors, app.active(), true, true).or(errors.first().copied())
+    else {
         check_complete(app, cx);
         return;
     };
@@ -591,7 +707,9 @@ impl ErrorChecking {
             let from = app.active();
             if ignore {
                 let name = app.wb.sheets[app.sheet].name.clone();
-                app.ext_mut::<Audit>().ignored.insert((name, from.0, from.1));
+                app.ext_mut::<Audit>()
+                    .ignored
+                    .insert((name, from.0, from.1));
             }
             match next_error(&errors_of(app), from, forward, false) {
                 Some(cell) => app.select_cell(cell.0, cell.1, cx),
@@ -606,13 +724,15 @@ impl ErrorChecking {
 
     fn steps(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| open_evaluate(app, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| open_evaluate(app, window, cx));
     }
 
     fn edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.modal.close(window, cx);
-        self.modal
-            .update_app(cx, |app, cx| app.start_edit(None, EditMode::Edit, EditSource::FormulaBar, window, cx));
+        self.modal.update_app(cx, |app, cx| {
+            app.start_edit(None, EditMode::Edit, EditSource::FormulaBar, window, cx)
+        });
     }
 }
 
@@ -640,7 +760,10 @@ impl Render for ErrorChecking {
                             .flex()
                             .flex_col()
                             .gap(px(6.))
-                            .child(label(t("Error in cell {}", "Erreur dans la cellule {}").replace("{}", &cell)))
+                            .child(label(
+                                t("Error in cell {}", "Erreur dans la cellule {}")
+                                    .replace("{}", &cell),
+                            ))
                             .child(div().truncate().child(SharedString::from(formula)))
                             .child(div().h(px(6.)))
                             .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
@@ -652,16 +775,30 @@ impl Render for ErrorChecking {
                             .flex_col()
                             .gap(px(6.))
                             .child(
-                                button("steps", t("Show Calculation Steps...", "Afficher les étapes du calcul..."))
-                                    .on_click(cx.listener(|this, _, window, cx| this.steps(window, cx))),
+                                button(
+                                    "steps",
+                                    t(
+                                        "Show Calculation Steps...",
+                                        "Afficher les étapes du calcul...",
+                                    ),
+                                )
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.steps(window, cx)),
+                                ),
                             )
                             .child(
-                                button("ignore", t("Ignore Error", "Ignorer l'erreur"))
-                                    .on_click(cx.listener(|this, _, window, cx| this.step(true, true, window, cx))),
+                                button("ignore", t("Ignore Error", "Ignorer l'erreur")).on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        this.step(true, true, window, cx)
+                                    }),
+                                ),
                             )
                             .child(
-                                button("edit", t("Edit in Formula Bar", "Modifier dans la barre de formule"))
-                                    .on_click(cx.listener(|this, _, window, cx| this.edit(window, cx))),
+                                button(
+                                    "edit",
+                                    t("Edit in Formula Bar", "Modifier dans la barre de formule"),
+                                )
+                                .on_click(cx.listener(|this, _, window, cx| this.edit(window, cx))),
                             ),
                     ),
             )
@@ -670,13 +807,16 @@ impl Render for ErrorChecking {
                     .flex()
                     .gap(px(8.))
                     .child(
-                        Button::new("previous", t("Previous", "Précédent"))
-                            .on_click(cx.listener(|this, _, window, cx| this.step(false, false, window, cx))),
+                        Button::new("previous", t("Previous", "Précédent")).on_click(
+                            cx.listener(|this, _, window, cx| this.step(false, false, window, cx)),
+                        ),
                     )
                     .child(
                         Button::new("next", crate::i18n::t_ctx("dialog", "Next", "Suivant"))
                             .primary()
-                            .on_click(cx.listener(|this, _, window, cx| this.step(true, false, window, cx))),
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.step(true, false, window, cx)
+                            })),
                     ),
             )
     }
@@ -689,7 +829,11 @@ type Path = Vec<usize>;
 
 fn children(expr: &Expr) -> Vec<&Expr> {
     match expr {
-        Expr::Unary(_, e) | Expr::Percent(e) | Expr::Paren(e) | Expr::Spill(e) | Expr::Implicit(e) => vec![e],
+        Expr::Unary(_, e)
+        | Expr::Percent(e)
+        | Expr::Paren(e)
+        | Expr::Spill(e)
+        | Expr::Implicit(e) => vec![e],
         Expr::Binary(_, a, b) | Expr::Intersect(a, b) => vec![a, b],
         Expr::Func(_, args) | Expr::Union(args) => args.iter().collect(),
         _ => Vec::new(),
@@ -708,8 +852,19 @@ fn replaced(expr: &Expr, path: &[usize], new: &Expr) -> Expr {
     let Some((first, rest)) = path.split_first() else {
         return new.clone();
     };
-    let sub = |child: &Expr, index: usize| Box::new(if index == *first { replaced(child, rest, new) } else { child.clone() });
-    let each = |list: &[Expr]| list.iter().enumerate().map(|(i, child)| *sub(child, i)).collect();
+    let sub = |child: &Expr, index: usize| {
+        Box::new(if index == *first {
+            replaced(child, rest, new)
+        } else {
+            child.clone()
+        })
+    };
+    let each = |list: &[Expr]| {
+        list.iter()
+            .enumerate()
+            .map(|(i, child)| *sub(child, i))
+            .collect()
+    };
     match expr {
         Expr::Unary(op, e) => Expr::Unary(*op, sub(e, 0)),
         Expr::Percent(e) => Expr::Percent(sub(e, 0)),
@@ -737,7 +892,13 @@ fn under(index: usize, path: Option<Path>) -> Option<Path> {
 /// left for its function to read (`SUM(A1:A3)` is one step).
 fn next_part(expr: &Expr, as_value: bool) -> Option<Path> {
     match expr {
-        Expr::Number(_) | Expr::Text(_) | Expr::Bool(_) | Expr::Error(_) | Expr::Missing | Expr::Value(_) | Expr::Array(_) => None,
+        Expr::Number(_)
+        | Expr::Text(_)
+        | Expr::Bool(_)
+        | Expr::Error(_)
+        | Expr::Missing
+        | Expr::Value(_)
+        | Expr::Array(_) => None,
         Expr::Ref(_)
         | Expr::Ref3D(_)
         | Expr::RefError(_)
@@ -756,7 +917,9 @@ fn next_part(expr: &Expr, as_value: bool) -> Option<Path> {
             .or(Some(Vec::new())),
         // Only the test of IF is worked out before IF itself, which then
         // gives way to one of its branches.
-        Expr::Func(name, args) if &**name == "IF" && !args.is_empty() => under(0, next_part(&args[0], true)).or(Some(Vec::new())),
+        Expr::Func(name, args) if &**name == "IF" && !args.is_empty() => {
+            under(0, next_part(&args[0], true)).or(Some(Vec::new()))
+        }
         Expr::Func(name, args) => {
             // Functions of single values see their arguments as values.
             let scalar = functions::lookup(name).is_some_and(|def| def.kind == Kind::Scalar);
@@ -776,9 +939,13 @@ fn value_expr(value: Value) -> Expr {
         other => Expr::Value(other.clone()),
     };
     match &value {
-        Value::Array(array) if array.len() <= 64 && array.cols > 0 => {
-            Expr::Array(array.data.chunks(array.cols).map(|row| row.iter().map(literal).collect()).collect())
-        }
+        Value::Array(array) if array.len() <= 64 && array.cols > 0 => Expr::Array(
+            array
+                .data
+                .chunks(array.cols)
+                .map(|row| row.iter().map(literal).collect())
+                .collect(),
+        ),
         Value::Empty => Expr::Number(0.0),
         _ => Expr::Value(value),
     }
@@ -800,10 +967,16 @@ impl Frame {
         // A formula hidden by the protection of its sheet is not shown
         // step by step either: the cell reads as its value.
         let expr = match wb.cell(cell.0, cell.1, cell.2).map(|c| &c.content) {
-            Some(Content::Formula(expr)) if !wb.is_formula_hidden(cell.0, cell.1, cell.2) => Some((**expr).clone()),
+            Some(Content::Formula(expr)) if !wb.is_formula_hidden(cell.0, cell.1, cell.2) => {
+                Some((**expr).clone())
+            }
             _ => None,
         };
-        Frame { cell, expr, last: None }
+        Frame {
+            cell,
+            expr,
+            last: None,
+        }
     }
 
     /// The part evaluated next.
@@ -828,7 +1001,11 @@ impl Evaluation {
 
     /// Nothing is left to evaluate.
     pub fn finished(&self) -> bool {
-        self.frames.len() <= 1 && self.frames.first().is_none_or(|frame| frame.next().is_none())
+        self.frames.len() <= 1
+            && self
+                .frames
+                .first()
+                .is_none_or(|frame| frame.next().is_none())
     }
 
     /// The cell the next step would read, if it is a single cell holding a
@@ -843,8 +1020,10 @@ impl Evaluation {
         let is_reference = matches!(part, Expr::Ref(_) | Expr::Name(_) | Expr::SheetName(..));
         let cell = (reference.sheet, reference.rect.r0, reference.rect.c0);
         // A formula to show: not one the protection of its sheet hides.
-        let formula = matches!(wb.cell(cell.0, cell.1, cell.2).map(|c| &c.content), Some(Content::Formula(_)))
-            && !wb.is_formula_hidden(cell.0, cell.1, cell.2);
+        let formula = matches!(
+            wb.cell(cell.0, cell.1, cell.2).map(|c| &c.content),
+            Some(Content::Formula(_))
+        ) && !wb.is_formula_hidden(cell.0, cell.1, cell.2);
         (is_reference && reference.is_single() && formula).then_some(cell)
     }
 
@@ -875,7 +1054,9 @@ impl Evaluation {
                 .and_then(|test| args.get(if test { 1 } else { 2 }))
                 .filter(|branch| !matches!(branch, Expr::Missing));
                 match branch {
-                    Some(branch) if next_part(branch, true).is_some_and(|path| !path.is_empty()) => {
+                    Some(branch)
+                        if next_part(branch, true).is_some_and(|path| !path.is_empty()) =>
+                    {
                         Expr::Paren(Box::new(branch.clone()))
                     }
                     Some(branch) if next_part(branch, true).is_some() => branch.clone(),
@@ -911,7 +1092,11 @@ const MARK: &str = "\u{E000}\u{E001}";
 
 /// The text of an expression (with its `=`) and the bytes of one of its
 /// parts in it.
-pub(crate) fn text_and_span(expr: &Expr, path: Option<&[usize]>, locale: &Locale) -> (String, Option<Range<usize>>) {
+pub(crate) fn text_and_span(
+    expr: &Expr,
+    path: Option<&[usize]>,
+    locale: &Locale,
+) -> (String, Option<Range<usize>>) {
     let plain = || (format!("={}", expr.to_text(locale)), None);
     let Some((path, part)) = path.and_then(|path| Some((path, node_at(expr, path)?))) else {
         return plain();
@@ -929,7 +1114,11 @@ pub(super) fn open_evaluate(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx
     let (row, col) = app.active();
     let cell = (app.sheet, row, col);
     let evaluation = Evaluation::start(&app.wb, cell);
-    app.open_modal(window, cx, move |modal, _, _| Evaluate { modal, cell, evaluation });
+    app.open_modal(window, cx, move |modal, _, _| Evaluate {
+        modal,
+        cell,
+        evaluation,
+    });
 }
 
 struct Evaluate {
@@ -940,9 +1129,14 @@ struct Evaluate {
 
 impl Evaluate {
     /// Run a step that needs the workbook.
-    fn with_workbook(&mut self, cx: &mut Context<Self>, step: impl FnOnce(&mut Evaluation, &Workbook)) {
+    fn with_workbook(
+        &mut self,
+        cx: &mut Context<Self>,
+        step: impl FnOnce(&mut Evaluation, &Workbook),
+    ) {
         let mut evaluation = std::mem::take(&mut self.evaluation);
-        self.modal.read_app(cx, |app| step(&mut evaluation, &app.wb));
+        self.modal
+            .read_app(cx, |app| step(&mut evaluation, &app.wb));
         self.evaluation = evaluation;
         cx.notify();
     }
@@ -951,7 +1145,9 @@ impl Evaluate {
         let cell = self.cell;
         if self.evaluation.finished() {
             // The button reads Restart.
-            self.with_workbook(cx, |evaluation, wb| *evaluation = Evaluation::start(wb, cell));
+            self.with_workbook(cx, |evaluation, wb| {
+                *evaluation = Evaluation::start(wb, cell)
+            });
         } else {
             self.with_workbook(cx, |evaluation, wb| evaluation.evaluate(wb));
         }
@@ -963,24 +1159,31 @@ impl Render for Evaluate {
         let evaluation = &self.evaluation;
         let shown = self.modal.read_app(cx, |app| {
             let wb = &app.wb;
-            let lines: Vec<(String, String, Option<Range<usize>>, Option<Range<usize>>)> = evaluation
-                .frames
-                .iter()
-                .enumerate()
-                .map(|(i, frame)| {
-                    let (sheet, row, col) = frame.cell;
-                    let reference = cell_label(wb, sheet, row, col);
-                    let Some(expr) = &frame.expr else {
-                        let value = format_value(&wb.value_at(sheet, row, col), "General", wb.locale).text;
-                        return (reference, value, None, None);
-                    };
-                    // Only the formula in front has a next step.
-                    let next = if i + 1 == evaluation.frames.len() { frame.next() } else { None };
-                    let (text, underlined) = text_and_span(expr, next.as_deref(), wb.locale);
-                    let (_, italic) = text_and_span(expr, frame.last.as_deref(), wb.locale);
-                    (reference, text, underlined, italic)
-                })
-                .collect();
+            let lines: Vec<(String, String, Option<Range<usize>>, Option<Range<usize>>)> =
+                evaluation
+                    .frames
+                    .iter()
+                    .enumerate()
+                    .map(|(i, frame)| {
+                        let (sheet, row, col) = frame.cell;
+                        let reference = cell_label(wb, sheet, row, col);
+                        let Some(expr) = &frame.expr else {
+                            let value =
+                                format_value(&wb.value_at(sheet, row, col), "General", wb.locale)
+                                    .text;
+                            return (reference, value, None, None);
+                        };
+                        // Only the formula in front has a next step.
+                        let next = if i + 1 == evaluation.frames.len() {
+                            frame.next()
+                        } else {
+                            None
+                        };
+                        let (text, underlined) = text_and_span(expr, next.as_deref(), wb.locale);
+                        let (_, italic) = text_and_span(expr, frame.last.as_deref(), wb.locale);
+                        (reference, text, underlined, italic)
+                    })
+                    .collect();
             (lines, evaluation.step_target(wb).is_some())
         });
         let (lines, can_step_in) = shown.unwrap_or_default();
@@ -991,10 +1194,17 @@ impl Render for Evaluate {
             Some(frame) if frame.expr.is_none() => {
                 let empty = self
                     .modal
-                    .read_app(cx, |app| app.wb.value_at(frame.cell.0, frame.cell.1, frame.cell.2).is_empty())
+                    .read_app(cx, |app| {
+                        app.wb
+                            .value_at(frame.cell.0, frame.cell.1, frame.cell.2)
+                            .is_empty()
+                    })
                     .unwrap_or(true);
                 if empty {
-                    t("The cell currently being evaluated is empty.", "La cellule en cours d'évaluation est vide.")
+                    t(
+                        "The cell currently being evaluated is empty.",
+                        "La cellule en cours d'évaluation est vide.",
+                    )
                 } else {
                     t(
                         "The cell currently being evaluated contains a constant.",
@@ -1027,8 +1237,12 @@ impl Render for Evaluate {
                 // Highlights go in order and do not overlap: the next
                 // step wins over the last result.
                 match (underlined, italic) {
-                    (Some(next), Some(last)) if last.end <= next.start => highlights.extend([(last, slanted), (next, underline)]),
-                    (Some(next), Some(last)) if next.end <= last.start => highlights.extend([(next, underline), (last, slanted)]),
+                    (Some(next), Some(last)) if last.end <= next.start => {
+                        highlights.extend([(last, slanted), (next, underline)])
+                    }
+                    (Some(next), Some(last)) if next.end <= last.start => {
+                        highlights.extend([(next, underline), (last, slanted)])
+                    }
                     (Some(next), _) => highlights.push((next, underline)),
                     (None, Some(last)) => highlights.push((last, slanted)),
                     (None, None) => {}
@@ -1062,41 +1276,77 @@ impl Render for Evaluate {
                     .into_any_element()
             })
             .collect();
-        dialog(&self.modal, t_ctx("title", "Evaluate Formula", "Évaluation de formule"))
-            .width(560.0)
-            .on_ok(cx.listener(Self::evaluate))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(div().w(px(120.)).flex_none().child(label(t("Reference:", "Référence :"))))
-                    .child(label(t("Evaluation:", "Évaluation :"))),
-            )
-            .child(div().min_h(px(120.)).flex().flex_col().gap(px(6.)).children(rows))
-            .child(div().min_h(px(34.)).line_height(px(16.)).text_color(c(theme::TEXT_MUTED)).child(note))
-            .footer(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(
-                        Button::new("evaluate", if finished { t("Restart", "Redémarrer") } else { t("Evaluate", "Évaluer") })
-                            .primary()
-                            .on_click(cx.listener(Self::evaluate)),
+        dialog(
+            &self.modal,
+            t_ctx("title", "Evaluate Formula", "Évaluation de formule"),
+        )
+        .width(560.0)
+        .on_ok(cx.listener(Self::evaluate))
+        .child(
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .w(px(120.))
+                        .flex_none()
+                        .child(label(t("Reference:", "Référence :"))),
+                )
+                .child(label(t("Evaluation:", "Évaluation :"))),
+        )
+        .child(
+            div()
+                .min_h(px(120.))
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .children(rows),
+        )
+        .child(
+            div()
+                .min_h(px(34.))
+                .line_height(px(16.))
+                .text_color(c(theme::TEXT_MUTED))
+                .child(note),
+        )
+        .footer(
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    Button::new(
+                        "evaluate",
+                        if finished {
+                            t("Restart", "Redémarrer")
+                        } else {
+                            t("Evaluate", "Évaluer")
+                        },
                     )
-                    .child(
-                        Button::new("step-in", t("Step In", "Pas à pas détaillé"))
-                            .disabled(!can_step_in)
-                            .on_click(cx.listener(|this, _, _, cx| this.with_workbook(cx, |evaluation, wb| evaluation.step_in(wb)))),
-                    )
-                    .child(
-                        Button::new("step-out", t("Step Out", "Pas à pas sortant"))
-                            .disabled(!nested)
-                            .on_click(cx.listener(|this, _, _, cx| this.with_workbook(cx, |evaluation, wb| evaluation.step_out(wb)))),
-                    )
-                    .child(Button::new("close", t("Close", "Fermer")).on_click(cx.listener(|this, _, window, cx| {
-                        this.modal.close(window, cx);
-                    }))),
-            )
+                    .primary()
+                    .on_click(cx.listener(Self::evaluate)),
+                )
+                .child(
+                    Button::new("step-in", t("Step In", "Pas à pas détaillé"))
+                        .disabled(!can_step_in)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.with_workbook(cx, |evaluation, wb| evaluation.step_in(wb))
+                        })),
+                )
+                .child(
+                    Button::new("step-out", t("Step Out", "Pas à pas sortant"))
+                        .disabled(!nested)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.with_workbook(cx, |evaluation, wb| evaluation.step_out(wb))
+                        })),
+                )
+                .child(
+                    Button::new("close", t("Close", "Fermer")).on_click(cx.listener(
+                        |this, _, window, cx| {
+                            this.modal.close(window, cx);
+                        },
+                    )),
+                ),
+        )
     }
 }
 
@@ -1113,7 +1363,10 @@ pub(super) fn toggle_watch_window(app: &mut ExcelApp, cx: &mut Cx) {
         return;
     }
     let weak = cx.weak_entity();
-    let view = cx.new(|_| WatchWindow { app: weak, selected: None });
+    let view = cx.new(|_| WatchWindow {
+        app: weak,
+        selected: None,
+    });
     app.open_pane(WATCH_PANE, t("Watch Window", "Fenêtre Espion"), view, cx);
 }
 
@@ -1130,7 +1383,12 @@ pub(crate) fn watch_lines(wb: &Workbook, watches: &[(String, u32, u32)]) -> Vec<
                     wb.display_text(index, *row, *col).text,
                     shown_formula(wb, index, *row, *col).unwrap_or_default(),
                 ],
-                None => [sheet.clone(), cell, wb.locale.error_name(ErrorKind::Ref).to_string(), String::new()],
+                None => [
+                    sheet.clone(),
+                    cell,
+                    wb.locale.error_name(ErrorKind::Ref).to_string(),
+                    String::new(),
+                ],
             }
         })
         .collect()
@@ -1143,7 +1401,9 @@ const WATCH_WIDTHS: [f32; 3] = [70.0, 50.0, 70.0];
 fn watch_column(text: SharedString, index: usize) -> gpui::Div {
     div()
         .px(px(4.))
-        .when_some(WATCH_WIDTHS.get(index), |d, width| d.w(px(*width)).flex_none())
+        .when_some(WATCH_WIDTHS.get(index), |d, width| {
+            d.w(px(*width)).flex_none()
+        })
         .when(index >= WATCH_WIDTHS.len(), |d| d.flex_1().min_w(px(0.)))
         .truncate()
         .child(text)
@@ -1172,7 +1432,11 @@ impl WatchWindow {
                         sheet
                             .cells
                             .range((range.r0, 0)..=(range.r1, u32::MAX))
-                            .filter(|((_, col), cell)| *col >= range.c0 && *col <= range.c1 && !matches!(cell.content, Content::Empty))
+                            .filter(|((_, col), cell)| {
+                                *col >= range.c0
+                                    && *col <= range.c1
+                                    && !matches!(cell.content, Content::Empty)
+                            })
                             .map(|(at, _)| *at),
                     );
                 }
@@ -1207,11 +1471,18 @@ impl WatchWindow {
     fn go_to(&mut self, index: usize, cx: &mut Context<Self>) {
         self.app
             .update(cx, |app, cx| {
-                let Some((sheet, row, col)) = app.ext::<Audit>().and_then(|audit| audit.watches.get(index).cloned()) else {
+                let Some((sheet, row, col)) = app
+                    .ext::<Audit>()
+                    .and_then(|audit| audit.watches.get(index).cloned())
+                else {
                     return;
                 };
                 if let Some(sheet) = app.wb.sheet_index(&sheet) {
-                    crate::features::names::select_areas(app, &[Reference::cell(sheet, row, col)], cx);
+                    crate::features::names::select_areas(
+                        app,
+                        &[Reference::cell(sheet, row, col)],
+                        cx,
+                    );
                 }
             })
             .ok();
@@ -1226,13 +1497,24 @@ impl Render for WatchWindow {
             .map(|app| {
                 let app = app.read(cx);
                 let none = Vec::new();
-                let watches = app.ext::<Audit>().map(|audit| &audit.watches).unwrap_or(&none);
+                let watches = app
+                    .ext::<Audit>()
+                    .map(|audit| &audit.watches)
+                    .unwrap_or(&none);
                 watch_lines(&app.wb, watches)
             })
             .unwrap_or_default();
         self.selected = self.selected.filter(|index| *index < lines.len());
-        let names: Vec<SharedString> = lines.iter().map(|line| SharedString::from(line[1].clone())).collect();
-        let titles = [t("Sheet", "Feuille"), t("Cell", "Cellule"), t("Value", "Valeur"), t("Formula", "Formule")];
+        let names: Vec<SharedString> = lines
+            .iter()
+            .map(|line| SharedString::from(line[1].clone()))
+            .collect();
+        let titles = [
+            t("Sheet", "Feuille"),
+            t("Cell", "Cellule"),
+            t("Value", "Valeur"),
+            t("Formula", "Formule"),
+        ];
         let header = div()
             .h(px(22.))
             .px(px(6.))
@@ -1242,7 +1524,12 @@ impl Render for WatchWindow {
             .border_1()
             .border_color(c(0xABABAB))
             .rounded_t(px(3.))
-            .children(titles.into_iter().enumerate().map(|(i, title)| watch_column(title.into(), i)));
+            .children(
+                titles
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, title)| watch_column(title.into(), i)),
+            );
         let rows = std::rc::Rc::new(lines);
         div()
             .p(px(12.))
@@ -1253,7 +1540,10 @@ impl Render for WatchWindow {
                 div()
                     .flex()
                     .gap(px(8.))
-                    .child(Button::new("add-watch", t("Add Watch...", "Ajouter un espion...")).on_click(cx.listener(|this, _, _, cx| this.add(cx))))
+                    .child(
+                        Button::new("add-watch", t("Add Watch...", "Ajouter un espion..."))
+                            .on_click(cx.listener(|this, _, _, cx| this.add(cx))),
+                    )
                     .child(
                         Button::new("delete-watch", t("Delete Watch", "Supprimer un espion"))
                             .disabled(self.selected.is_none())
@@ -1270,14 +1560,18 @@ impl Render for WatchWindow {
                                     .w_full()
                                     .flex()
                                     .items_center()
-                                    .children(rows[index].iter().enumerate().map(|(i, text)| watch_column(SharedString::from(text.clone()), i)))
+                                    .children(rows[index].iter().enumerate().map(|(i, text)| {
+                                        watch_column(SharedString::from(text.clone()), i)
+                                    }))
                                     .into_any_element()
                             })
                             .on_change(cx.listener(|this, index: &usize, _, cx| {
                                 this.selected = Some(*index);
                                 cx.notify();
                             }))
-                            .on_activate(cx.listener(|this, index: &usize, _, cx| this.go_to(*index, cx))),
+                            .on_activate(
+                                cx.listener(|this, index: &usize, _, cx| this.go_to(*index, cx)),
+                            ),
                     ),
                 ),
             )
@@ -1327,7 +1621,12 @@ mod tests {
             let expr = frame.expr.as_ref().unwrap();
             let (text, span) = text_and_span(expr, frame.next().as_deref(), wb.locale);
             out.push(match span {
-                Some(span) => format!("{}[{}]{}", &text[..span.start], &text[span.clone()], &text[span.end..]),
+                Some(span) => format!(
+                    "{}[{}]{}",
+                    &text[..span.start],
+                    &text[span.clone()],
+                    &text[span.end..]
+                ),
                 None => text,
             });
             if evaluation.finished() {
@@ -1347,11 +1646,20 @@ mod tests {
         );
         // A range stays a range for the function that reads it.
         assert_eq!(steps(&wb, "B2"), ["=[SUM(A1:A3)]", "=15"]);
-        assert_eq!(steps(&wb, "B3"), ["=[A1]/A3", "=10/[A3]", "=[10/0]", "=#DIV/0!"]);
+        assert_eq!(
+            steps(&wb, "B3"),
+            ["=[A1]/A3", "=10/[A3]", "=[10/0]", "=#DIV/0!"]
+        );
         // Parentheses stay around their value; a percent sign is a step.
         assert_eq!(
             steps(&wb, "C3"),
-            ["=([A1]+A2)%", "=(10+[A2])%", "=([10+5])%", "=[(15)%]", "=0.15"]
+            [
+                "=([A1]+A2)%",
+                "=(10+[A2])%",
+                "=([10+5])%",
+                "=[(15)%]",
+                "=0.15"
+            ]
         );
     }
 
@@ -1372,7 +1680,10 @@ mod tests {
         let mut low = workbook();
         low.set_cell_text(0, 0, 0, "1").unwrap();
         low.commit("low");
-        assert_eq!(steps(&low, "C1").last().map(String::as_str), Some("=\"low\""));
+        assert_eq!(
+            steps(&low, "C1").last().map(String::as_str),
+            Some("=\"low\"")
+        );
     }
 
     #[test]
@@ -1392,7 +1703,10 @@ mod tests {
         evaluation.step_out(&wb);
         assert_eq!(evaluation.frames.len(), 1);
         let frame = &evaluation.frames[0];
-        assert_eq!(text_and_span(frame.expr.as_ref().unwrap(), None, wb.locale).0, "=IF(20>15,B2*2,\"low\")");
+        assert_eq!(
+            text_and_span(frame.expr.as_ref().unwrap(), None, wb.locale).0,
+            "=IF(20>15,B2*2,\"low\")"
+        );
         assert_eq!(frame.last, Some(vec![0, 0]));
         // A formula stepped into and finished steps out by itself.
         let mut auto = Evaluation::start(&wb, (0, row, col));
@@ -1420,7 +1734,13 @@ mod tests {
         };
         let p = Trace::Precedents;
         let one = precedent_arrows(&wb, 0, (row, col), 1);
-        assert_eq!(one, [arrow(Some("B1"), Some("C1"), p), arrow(Some("B2"), Some("C1"), p)]);
+        assert_eq!(
+            one,
+            [
+                arrow(Some("B1"), Some("C1"), p),
+                arrow(Some("B2"), Some("C1"), p)
+            ]
+        );
         let two = precedent_arrows(&wb, 0, (row, col), 2);
         assert_eq!(
             two[2..],
@@ -1452,7 +1772,14 @@ mod tests {
             trace: d,
         };
         let one = dependent_arrows(&wb, 0, at("A2"), 1);
-        assert_eq!(one, [arrow("A2", Some("B1")), arrow("A2", Some("B2")), arrow("A2", Some("C3"))]);
+        assert_eq!(
+            one,
+            [
+                arrow("A2", Some("B1")),
+                arrow("A2", Some("B2")),
+                arrow("A2", Some("C3"))
+            ]
+        );
         let two = dependent_arrows(&wb, 0, at("A2"), 2);
         assert!(two.contains(&arrow("B1", Some("C1"))) && two.contains(&arrow("B2", None)));
         assert!(dependent_arrows(&wb, 0, at("C1"), 2).is_empty());
@@ -1490,10 +1817,16 @@ mod tests {
         assert_eq!(audit.trace(&wb, 0, c1, Trace::Precedents), Traced::Complete);
         assert_eq!(count(&audit), 5);
         // A constant has no precedents, the last formula no dependents.
-        assert_eq!(audit.trace(&wb, 0, at("A1"), Trace::Precedents), Traced::Nothing);
+        assert_eq!(
+            audit.trace(&wb, 0, at("A1"), Trace::Precedents),
+            Traced::Nothing
+        );
         assert_eq!(audit.trace(&wb, 0, c1, Trace::Dependents), Traced::Nothing);
         // Dependents add to what is shown; arrows of another cell too.
-        assert_eq!(audit.trace(&wb, 0, at("A2"), Trace::Dependents), Traced::Added);
+        assert_eq!(
+            audit.trace(&wb, 0, at("A2"), Trace::Dependents),
+            Traced::Added
+        );
         assert_eq!(count(&audit), 8);
 
         // Remove Dependent Arrows leaves the others; a second time there
@@ -1521,7 +1854,10 @@ mod tests {
         let b = (300.0, 100.0, 364.0, 120.0);
         // A third of the way into each cell, half-way down.
         assert_eq!(touch_point(a, 1.0), (122.0, 50.0));
-        assert_eq!(arrow_line(Some(a), Some(b), 1.0), Some(((122.0, 50.0), (322.0, 110.0), false)));
+        assert_eq!(
+            arrow_line(Some(a), Some(b), 1.0),
+            Some(((122.0, 50.0), (322.0, 110.0), false))
+        );
         // A wide cell is touched near its left edge, and zoom scales it.
         assert_eq!(touch_point((0.0, 0.0, 600.0, 20.0), 1.0).0, 22.0);
         assert_eq!(touch_point((0.0, 0.0, 600.0, 40.0), 2.0), (44.0, 20.0));
@@ -1585,7 +1921,10 @@ mod tests {
         // Show Formulas and the Watch Window show nothing for the cell;
         // Evaluate Formula reads it as a value.
         assert_eq!(shown_formula(&wb, 0, 0, 1).as_deref(), Some(""));
-        assert_eq!(watch_lines(&wb, &[("Sheet1".to_string(), 0, 1)])[0], ["Sheet1", "B1", "20", ""]);
+        assert_eq!(
+            watch_lines(&wb, &[("Sheet1".to_string(), 0, 1)])[0],
+            ["Sheet1", "B1", "20", ""]
+        );
         let evaluation = Evaluation::start(&wb, (0, 0, 1));
         assert!(evaluation.frames[0].expr.is_none() && evaluation.finished());
         // The cell beside it is not hidden.
@@ -1601,7 +1940,11 @@ mod tests {
         let expr = wb.parse_name_formula("=Sheet1!$A$1", 0, 0, 0).unwrap();
         wb.add_name(NameScope::Workbook, "First", expr, "").unwrap();
         wb.commit("name");
-        let watches = [("Sheet1".to_string(), 1, 1), ("Sheet1".to_string(), 0, 0), ("Gone".to_string(), 0, 0)];
+        let watches = [
+            ("Sheet1".to_string(), 1, 1),
+            ("Sheet1".to_string(), 0, 0),
+            ("Gone".to_string(), 0, 0),
+        ];
         let lines = watch_lines(&wb, &watches);
         assert_eq!(lines[0], ["Sheet1", "B2", "15", "=SUM(A1:A3)"]);
         assert_eq!(lines[1], ["Sheet1", "A1", "10", ""]);

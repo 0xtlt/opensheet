@@ -63,8 +63,10 @@ impl Command for Cmd {
                 let entries = builtin::EFFECTS
                     .iter()
                     .map(|name| {
-                        MenuEntry::new(shown_name(name), move |app, _, cx| set_effects(app, name, cx))
-                            .checked(current.eq_ignore_ascii_case(name))
+                        MenuEntry::new(shown_name(name), move |app, _, cx| {
+                            set_effects(app, name, cx)
+                        })
+                        .checked(current.eq_ignore_ascii_case(name))
                     })
                     .collect();
                 app.open_command_menu(entries, 220.0, window, cx);
@@ -111,7 +113,10 @@ pub fn custom_sets() -> ThemesUi {
 /// name.
 fn keep<T>(list: &mut Vec<T>, item: T, name_of: impl Fn(&T) -> &str) {
     let name = name_of(&item).to_string();
-    match list.iter().position(|other| name_of(other).eq_ignore_ascii_case(&name)) {
+    match list
+        .iter()
+        .position(|other| name_of(other).eq_ignore_ascii_case(&name))
+    {
         Some(at) => list[at] = item,
         None => list.push(item),
     }
@@ -185,7 +190,9 @@ pub fn gallery_themes() -> Vec<Theme> {
 pub fn current_theme(theme: &Theme) -> Option<usize> {
     builtin::THEMES.iter().position(|stock| {
         let stock = Theme::from(stock);
-        stock.name == theme.name && stock.colors.same_colors(&theme.colors) && stock.fonts.same_fonts(&theme.fonts)
+        stock.name == theme.name
+            && stock.colors.same_colors(&theme.colors)
+            && stock.fonts.same_fonts(&theme.fonts)
     })
 }
 
@@ -204,7 +211,8 @@ pub struct ColorChoice {
 pub fn color_choices(theme: &Theme, custom: &[ThemeColors]) -> Vec<ColorChoice> {
     let stock = Theme::builtin_colors();
     let mut own: Vec<ThemeColors> = custom.to_vec();
-    let known = |set: &ThemeColors, list: &[ThemeColors]| list.iter().any(|other| other.same_colors(set));
+    let known =
+        |set: &ThemeColors, list: &[ThemeColors]| list.iter().any(|other| other.same_colors(set));
     if !known(&theme.colors, &stock) && !known(&theme.colors, &own) {
         own.insert(0, theme.colors.clone());
     }
@@ -213,10 +221,16 @@ pub fn color_choices(theme: &Theme, custom: &[ThemeColors]) -> Vec<ColorChoice> 
     let mut choice = |colors: ThemeColors, custom: bool| {
         let current = !found && colors.same_colors(&theme.colors);
         found |= current;
-        ColorChoice { colors, custom, current }
+        ColorChoice {
+            colors,
+            custom,
+            current,
+        }
     };
     let own: Vec<ColorChoice> = own.into_iter().map(|colors| choice(colors, true)).collect();
-    own.into_iter().chain(stock.into_iter().map(|colors| choice(colors, false))).collect()
+    own.into_iter()
+        .chain(stock.into_iter().map(|colors| choice(colors, false)))
+        .collect()
 }
 
 /// A font pair of the Fonts menu.
@@ -230,7 +244,8 @@ pub struct FontChoice {
 pub fn font_choices(theme: &Theme, custom: &[ThemeFonts]) -> Vec<FontChoice> {
     let stock = Theme::builtin_fonts();
     let mut own: Vec<ThemeFonts> = custom.to_vec();
-    let known = |pair: &ThemeFonts, list: &[ThemeFonts]| list.iter().any(|other| other.same_fonts(pair));
+    let known =
+        |pair: &ThemeFonts, list: &[ThemeFonts]| list.iter().any(|other| other.same_fonts(pair));
     if !known(&theme.fonts, &stock) && !known(&theme.fonts, &own) {
         own.insert(0, theme.fonts.clone());
     }
@@ -238,10 +253,16 @@ pub fn font_choices(theme: &Theme, custom: &[ThemeFonts]) -> Vec<FontChoice> {
     let mut choice = |fonts: ThemeFonts, custom: bool| {
         let current = !found && fonts.same_fonts(&theme.fonts);
         found |= current;
-        FontChoice { fonts, custom, current }
+        FontChoice {
+            fonts,
+            custom,
+            current,
+        }
     };
     let own: Vec<FontChoice> = own.into_iter().map(|fonts| choice(fonts, true)).collect();
-    own.into_iter().chain(stock.into_iter().map(|fonts| choice(fonts, false))).collect()
+    own.into_iter()
+        .chain(stock.into_iter().map(|fonts| choice(fonts, false)))
+        .collect()
 }
 
 /// The name the Customize dialogs propose for a new set: "Custom 1",
@@ -271,7 +292,8 @@ fn browse(app: &mut ExcelApp, cx: &mut Cx) {
         if let Ok(Ok(Some(paths))) = paths.await
             && let Some(path) = paths.into_iter().next()
         {
-            this.update(cx, |app, cx| load_theme_file(app, path, cx)).ok();
+            this.update(cx, |app, cx| load_theme_file(app, path, cx))
+                .ok();
         }
     })
     .detach();
@@ -307,7 +329,8 @@ fn save_current(app: &mut ExcelApp, cx: &mut Cx) {
             if path.extension().is_none() {
                 path.set_extension("thmx");
             }
-            this.update(cx, |app, cx| save_theme_file(app, path, cx)).ok();
+            this.update(cx, |app, cx| save_theme_file(app, path, cx))
+                .ok();
         }
     })
     .detach();
@@ -325,7 +348,10 @@ pub fn save_theme_file(app: &mut ExcelApp, path: PathBuf, cx: &mut Cx) {
         Ok(()) => app.set_status(t("Saved", "Enregistré"), cx),
         Err(err) => app.alert(
             Alert::new(
-                t("Can't save this file", "Impossible d'enregistrer ce fichier"),
+                t(
+                    "Can't save this file",
+                    "Impossible d'enregistrer ce fichier",
+                ),
                 format!("{}\n\n{}", path.display(), err),
             )
             .warning(),
@@ -360,13 +386,17 @@ mod tests {
         // Colours that are nobody's (a file's): listed first, as custom.
         let mut own = office.clone();
         own.colors.name = "Company".to_string();
-        own.colors.set(opensheet_engine::style::ThemeSlot::Accent1, 0x123456);
+        own.colors
+            .set(opensheet_engine::style::ThemeSlot::Accent1, 0x123456);
         let listed = color_choices(&own, &[]);
         assert_eq!(listed.len(), 25);
         assert!(listed[0].custom && listed[0].current && listed[0].colors.name == "Company");
         // Once kept among the user's sets it is listed once.
         let listed = color_choices(&own, std::slice::from_ref(&own.colors));
-        assert_eq!((listed.len(), listed.iter().filter(|c| c.current).count()), (25, 1));
+        assert_eq!(
+            (listed.len(), listed.iter().filter(|c| c.current).count()),
+            (25, 1)
+        );
         let listed = color_choices(&office, std::slice::from_ref(&own.colors));
         assert!(listed[0].custom && !listed[0].current && listed[1].current);
 
@@ -379,7 +409,10 @@ mod tests {
         assert!(listed[0].custom && listed[0].current && listed.len() == 27);
 
         assert_eq!(new_custom_name(&[]), "Custom 1");
-        assert_eq!(new_custom_name(&["custom 1".to_string(), "Custom 3".to_string()]), "Custom 2");
+        assert_eq!(
+            new_custom_name(&["custom 1".to_string(), "Custom 3".to_string()]),
+            "Custom 2"
+        );
     }
 
     #[test]

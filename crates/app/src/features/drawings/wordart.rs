@@ -26,13 +26,16 @@ use crate::i18n::{t, t_ctx};
 use crate::theme::{self, c, engine_color};
 use crate::widgets::ColorGrid;
 use gpui::{
-    App, Bounds, Context, Font, FontStyle, FontWeight, Pixels, SharedString, StrikethroughStyle, TextRun, TextSystem,
-    UnderlineStyle, WeakEntity, Window, WindowTextSystem, WrappedLine, canvas, div, point, prelude::*, px, size,
+    App, Bounds, Context, Font, FontStyle, FontWeight, Pixels, SharedString, StrikethroughStyle,
+    TextRun, TextSystem, UnderlineStyle, WeakEntity, Window, WindowTextSystem, WrappedLine, canvas,
+    div, point, prelude::*, px, size,
 };
 use opensheet_engine::drawing::{Drawing, Shape, TEXT_MARGIN};
 use opensheet_engine::style::{Color, Font as EngineFont, Style, Underline};
 use opensheet_engine::textwarp::{TextWarp, WarpPreset};
-use opensheet_engine::wordart::{GradientKind, TextEffects, TextGradient, TextOutline, TextReflection, TextShadow, WordArtStyle};
+use opensheet_engine::wordart::{
+    GradientKind, TextEffects, TextGradient, TextOutline, TextReflection, TextShadow, WordArtStyle,
+};
 use std::fmt::Write as _;
 use std::ops::Range;
 
@@ -42,15 +45,29 @@ pub(super) fn gpui_font(font: &EngineFont, fonts: &FontResolver) -> Font {
         family: fonts.resolve(&font.name),
         features: Default::default(),
         fallbacks: None,
-        weight: if font.bold { FontWeight::BOLD } else { FontWeight::NORMAL },
-        style: if font.italic { FontStyle::Italic } else { FontStyle::Normal },
+        weight: if font.bold {
+            FontWeight::BOLD
+        } else {
+            FontWeight::NORMAL
+        },
+        style: if font.italic {
+            FontStyle::Italic
+        } else {
+            FontStyle::Normal
+        },
     }
 }
 
 /// The paragraphs of the text of a shape laid out in a box `width` wide,
 /// run by run, and the number of rows they take. A text that is not
 /// wrapped only breaks where its paragraphs end.
-pub(super) fn wrap(shape: &Shape, look: &TextLook, fonts: &FontResolver, width: f32, ts: &WindowTextSystem) -> (Vec<WrappedLine>, usize) {
+pub(super) fn wrap(
+    shape: &Shape,
+    look: &TextLook,
+    fonts: &FontResolver,
+    width: f32,
+    ts: &WindowTextSystem,
+) -> (Vec<WrappedLine>, usize) {
     let decoration = (look.size / 14.0).max(1.0);
     let runs: Vec<TextRun> = shape
         .text_runs()
@@ -76,10 +93,19 @@ pub(super) fn wrap(shape: &Shape, look: &TextLook, fonts: &FontResolver, width: 
         .collect();
     let wrap_width = shape.wrap.then_some(px(width.max(8.0)));
     let lines: Vec<WrappedLine> = ts
-        .shape_text(SharedString::from(shape.text.clone()), px(look.size), &runs, wrap_width, None)
+        .shape_text(
+            SharedString::from(shape.text.clone()),
+            px(look.size),
+            &runs,
+            wrap_width,
+            None,
+        )
         .map(|lines| lines.into_iter().collect())
         .unwrap_or_default();
-    let rows = lines.iter().map(|line| line.wrap_boundaries().len() + 1).sum();
+    let rows = lines
+        .iter()
+        .map(|line| line.wrap_boundaries().len() + 1)
+        .sum();
     (lines, rows)
 }
 
@@ -156,7 +182,10 @@ impl ArtBlock<'_> {
             .iter()
             .map(|run| {
                 let outline = run.effects.outline.map_or(0.0, |line| line.width);
-                let shadow = run.effects.shadow.map_or(0.0, |shadow| shadow.distance + 2.0 * shadow.blur);
+                let shadow = run
+                    .effects
+                    .shadow
+                    .map_or(0.0, |shadow| shadow.distance + 2.0 * shadow.blur);
                 (outline + shadow) * self.per_point
             })
             .fold(0.0, f32::max);
@@ -189,7 +218,10 @@ impl ArtBlock<'_> {
             if !decoration.is_empty() {
                 let _ = write!(out, r#" text-decoration="{decoration}""#);
             }
-            let stroke_width = run.effects.outline.map(|line| (line.width * self.per_point).max(0.5));
+            let stroke_width = run
+                .effects
+                .outline
+                .map(|line| (line.width * self.per_point).max(0.5));
             match shadow {
                 Some(shadow) if run.effects.shadow.as_ref() == Some(shadow) => {
                     let ink = hex(shadow.color);
@@ -200,7 +232,10 @@ impl ArtBlock<'_> {
                         out.push_str(r#" fill="none""#);
                     }
                     if let Some(width) = stroke_width {
-                        let _ = write!(out, r#" stroke="{ink}" stroke-opacity="{opacity}" stroke-width="{width:.2}" stroke-linejoin="round""#);
+                        let _ = write!(
+                            out,
+                            r#" stroke="{ink}" stroke-opacity="{opacity}" stroke-width="{width:.2}" stroke-linejoin="round""#
+                        );
                     }
                 }
                 Some(_) => out.push_str(r#" fill="none""#),
@@ -211,7 +246,11 @@ impl ArtBlock<'_> {
                         let _ = write!(out, r#" fill="{}""#, hex(run.color));
                     }
                     if let (Some(width), Some(line)) = (stroke_width, run.effects.outline) {
-                        let _ = write!(out, r#" stroke="{}" stroke-width="{width:.2}" stroke-linejoin="round""#, hex(line.color));
+                        let _ = write!(
+                            out,
+                            r#" stroke="{}" stroke-width="{width:.2}" stroke-linejoin="round""#,
+                            hex(line.color)
+                        );
                     }
                 }
             }
@@ -230,7 +269,12 @@ impl ArtBlock<'_> {
             let far_x = (self.pivot.0 + pad).max(self.width + pad - self.pivot.0);
             let far_y = (self.pivot.1 + pad).max(height + pad - self.pivot.1);
             let reach = far_x.hypot(far_y).ceil();
-            (self.pivot.0 - reach, self.pivot.1 - reach, 2.0 * reach, 2.0 * reach)
+            (
+                self.pivot.0 - reach,
+                self.pivot.1 - reach,
+                2.0 * reach,
+                2.0 * reach,
+            )
         } else {
             (-pad, -pad, self.width + 2.0 * pad, height + 2.0 * pad)
         };
@@ -263,7 +307,11 @@ impl ArtBlock<'_> {
         let _ = write!(out, r#"<g transform="translate({:.2} {:.2})""#, -left, -top);
         let _ = write!(out, r#" font-size="{:.2}">"#, self.size);
         if turned {
-            let _ = write!(out, r#"<g transform="rotate({:.2} {:.2} {:.2})">"#, self.turn, self.pivot.0, self.pivot.1);
+            let _ = write!(
+                out,
+                r#"<g transform="rotate({:.2} {:.2} {:.2})">"#,
+                self.turn, self.pivot.0, self.pivot.1
+            );
         }
         let (x, anchor) = match self.align {
             gpui::TextAlign::Left => (0.0, "start"),
@@ -273,11 +321,22 @@ impl ArtBlock<'_> {
         for layer in shadows.iter().map(Some).chain([None]) {
             for (i, row) in self.rows.iter().enumerate() {
                 let y = i as f32 * self.line_height + self.baseline;
-                let _ = write!(out, r#"<text x="{x:.2}" y="{y:.2}" text-anchor="{anchor}" xml:space="preserve""#);
+                let _ = write!(
+                    out,
+                    r#"<text x="{x:.2}" y="{y:.2}" text-anchor="{anchor}" xml:space="preserve""#
+                );
                 if let Some(shadow) = layer {
                     let (dx, dy) = shadow.shift();
-                    let _ = write!(out, r#" transform="translate({:.2} {:.2})""#, dx * self.per_point, dy * self.per_point);
-                    let index = shadows.iter().position(|other| other == shadow).unwrap_or(0);
+                    let _ = write!(
+                        out,
+                        r#" transform="translate({:.2} {:.2})""#,
+                        dx * self.per_point,
+                        dy * self.per_point
+                    );
+                    let index = shadows
+                        .iter()
+                        .position(|other| other == shadow)
+                        .unwrap_or(0);
                     if shadow.blur > 0.0 {
                         let _ = write!(out, r#" filter="url(#s{index})""#);
                     }
@@ -315,10 +374,20 @@ fn art_runs(shape: &Shape, fonts: &FontResolver) -> Vec<ArtRun> {
 
 /// Draw the text of a shape whose letters have an outline, a shadow or no
 /// fill: an image of the whole block, turned with the shape.
-pub(super) fn draw_art(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, fonts: &FontResolver, out: &mut Vec<Draw>) {
+pub(super) fn draw_art(
+    shape: &Shape,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    fonts: &FontResolver,
+    out: &mut Vec<Draw>,
+) {
     let look = paint::text_look(shape, brush.zoom, fonts);
     // Laid out as in the level shape, then turned about its middle.
-    let level = Placed { rotation: 0.0, ..*placed };
+    let level = Placed {
+        rotation: 0.0,
+        ..*placed
+    };
     let (x0, y0, x1, y1) = paint::text_box(shape, &level, natural, brush.zoom);
     let (lines, count) = wrap(shape, &look, fonts, x1 - x0, brush.ts);
     let rows = row_ranges(&lines);
@@ -350,7 +419,10 @@ pub(super) fn draw_art(shape: &Shape, placed: &Placed, natural: (f32, f32), brus
     let Some(image) = svg::image(&document, (false, false), 0) else {
         return;
     };
-    let origin = point(brush.origin.x + px(x0 + left), brush.origin.y + px(top + up));
+    let origin = point(
+        brush.origin.x + px(x0 + left),
+        brush.origin.y + px(top + up),
+    );
     out.push(Draw::Image {
         image,
         bounds: Bounds::new(origin, size(px(width), px(height))),
@@ -363,7 +435,10 @@ pub(super) fn needs_outlines(shape: &Shape) -> bool {
     let looks = || std::iter::once(&shape.effects).chain(shape.runs.iter().map(|run| &run.effects));
     shape.warp.is_some()
         || looks().any(|effects| effects.gradient.is_some() || effects.reflection.is_some())
-        || shape.runs.iter().any(|run| run.font.size != shape.font.size)
+        || shape
+            .runs
+            .iter()
+            .any(|run| run.font.size != shape.font.size)
 }
 
 thread_local! {
@@ -377,13 +452,24 @@ thread_local! {
 /// text whose fonts gave no outlines.
 #[cfg(test)]
 pub(super) fn outlined_documents() -> Vec<Option<String>> {
-    OUTLINED.with_borrow(|known| known.values().map(|made| made.as_ref().map(|(document, _)| document.clone())).collect())
+    OUTLINED.with_borrow(|known| {
+        known
+            .values()
+            .map(|made| made.as_ref().map(|(document, _)| document.clone()))
+            .collect()
+    })
 }
 
 /// Draw the text of a shape as outlines (see `letters.rs`): an image of
 /// the whole text, turned with the shape. False when the fonts of the
 /// text have no outlines to give; it is then drawn the plain way.
-pub(super) fn draw_outlined(shape: &Shape, placed: &Placed, brush: &Brush, fonts: &FontResolver, out: &mut Vec<Draw>) -> bool {
+pub(super) fn draw_outlined(
+    shape: &Shape,
+    placed: &Placed,
+    brush: &Brush,
+    fonts: &FontResolver,
+    out: &mut Vec<Draw>,
+) -> bool {
     use std::hash::{Hash, Hasher};
     let (width, height) = (placed.width().abs(), placed.height().abs());
     let (left, top) = (placed.x0.min(placed.x1), placed.y0.min(placed.y1));
@@ -391,7 +477,15 @@ pub(super) fn draw_outlined(shape: &Shape, placed: &Placed, brush: &Brush, fonts
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     format!(
         "{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
-        shape.text, shape.font, shape.effects, shape.runs, shape.warp, shape.align, shape.anchor, shape.wrap, shape.preset
+        shape.text,
+        shape.font,
+        shape.effects,
+        shape.runs,
+        shape.warp,
+        shape.align,
+        shape.anchor,
+        shape.wrap,
+        shape.preset
     )
     .hash(&mut hasher);
     for value in [width, height, brush.zoom, turn, brush.scale] {
@@ -406,9 +500,17 @@ pub(super) fn draw_outlined(shape: &Shape, placed: &Placed, brush: &Brush, fonts
         known
             .entry(key)
             .or_insert_with(|| {
-                let letters = Letters::of(shape, width as f64, height as f64, brush.zoom as f64, fonts)?;
-                let (document, at) = letters.svg(turn as f64, (width as f64 / 2.0, height as f64 / 2.0), brush.scale as f64);
-                Some((document, (at.0 as f32, at.1 as f32, at.2 as f32, at.3 as f32)))
+                let letters =
+                    Letters::of(shape, width as f64, height as f64, brush.zoom as f64, fonts)?;
+                let (document, at) = letters.svg(
+                    turn as f64,
+                    (width as f64 / 2.0, height as f64 / 2.0),
+                    brush.scale as f64,
+                );
+                Some((
+                    document,
+                    (at.0 as f32, at.1 as f32, at.2 as f32, at.3 as f32),
+                ))
             })
             .clone()
     });
@@ -429,12 +531,25 @@ pub(super) fn draw_outlined(shape: &Shape, placed: &Placed, brush: &Brush, fonts
 /// `height` (pixels at 100 %): warped text and letters with a look a
 /// line of plain text cannot have. False when there is nothing of the
 /// kind, or no outlines: the text is then printed as plain text.
-pub(crate) fn print_outlined(shape: &Shape, default_font: &str, width: f64, height: f64, canvas: &mut opensheet_print::Canvas) -> bool {
+pub(crate) fn print_outlined(
+    shape: &Shape,
+    default_font: &str,
+    width: f64,
+    height: f64,
+    canvas: &mut opensheet_print::Canvas,
+) -> bool {
     if shape.math.is_some() || !(needs_outlines(shape) || shape.has_text_effects()) {
         return false;
     }
-    let family = |name: &std::sync::Arc<str>| if name.is_empty() { default_font.to_string() } else { name.to_string() };
-    let Some(letters) = Letters::with_fonts(shape, width, height, 1.0, &family, canvas.fonts()) else {
+    let family = |name: &std::sync::Arc<str>| {
+        if name.is_empty() {
+            default_font.to_string()
+        } else {
+            name.to_string()
+        }
+    };
+    let Some(letters) = Letters::with_fonts(shape, width, height, 1.0, &family, canvas.fonts())
+    else {
         return false;
     };
     letters.print(canvas);
@@ -448,7 +563,10 @@ pub(crate) fn print_outlined(shape: &Shape, default_font: &str, width: f64, heig
 fn line_width(ts: &TextSystem, font: &Font, size: f32, text: &str) -> f32 {
     let id = ts.resolve_font(font);
     text.chars()
-        .map(|ch| ts.advance(id, px(size), ch).map_or(size * 0.5, |advance| f32::from(advance.width)))
+        .map(|ch| {
+            ts.advance(id, px(size), ch)
+                .map_or(size * 0.5, |advance| f32::from(advance.width))
+        })
         .sum()
 }
 
@@ -467,7 +585,12 @@ pub(super) fn fitted_size(shape: &Shape, fonts: &FontResolver, ts: &TextSystem) 
         for (covered, font, _) in &runs {
             let (from, to) = (covered.start.max(start), covered.end.min(end));
             if from < to {
-                width += line_width(ts, &gpui_font(font, fonts), look_size, &shape.text[from..to]);
+                width += line_width(
+                    ts,
+                    &gpui_font(font, fonts),
+                    look_size,
+                    &shape.text[from..to],
+                );
             }
         }
         widest = widest.max(width);
@@ -475,7 +598,9 @@ pub(super) fn fitted_size(shape: &Shape, fonts: &FontResolver, ts: &TextSystem) 
         start = end + 1;
     }
     (
-        (widest + 2.0 * TEXT_MARGIN.0 + look_size * 0.1).ceil().max(2.0 * TEXT_MARGIN.0 + look_size),
+        (widest + 2.0 * TEXT_MARGIN.0 + look_size * 0.1)
+            .ceil()
+            .max(2.0 * TEXT_MARGIN.0 + look_size),
         (rows as f32 * line_height + 2.0 * TEXT_MARGIN.1).ceil(),
     )
 }
@@ -485,11 +610,17 @@ pub(super) fn fitted_size(shape: &Shape, fonts: &FontResolver, ts: &TextSystem) 
 pub(super) fn fit_to_text(app: &mut ExcelApp, id: u32, cx: &mut Cx) {
     let sheet = app.sheet;
     // A warped text fills the box it is given: the box does not follow it.
-    let Some(shape) = app.wb.drawing(sheet, id).and_then(Drawing::as_shape).filter(|shape| !shape.wrap && shape.warp.is_none()) else {
+    let Some(shape) = app
+        .wb
+        .drawing(sheet, id)
+        .and_then(Drawing::as_shape)
+        .filter(|shape| !shape.wrap && shape.warp.is_none())
+    else {
         return;
     };
     let fitted = fitted_size(shape, &app.fonts, cx.text_system());
-    app.wb.update_drawing(sheet, id, |drawing| drawing.size = fitted);
+    app.wb
+        .update_drawing(sheet, id, |drawing| drawing.size = fitted);
 }
 
 // ---- formatting ----------------------------------------------------------
@@ -498,7 +629,11 @@ pub(super) fn fit_to_text(app: &mut ExcelApp, id: u32, cx: &mut Cx) {
 /// text as it stands in the editor. `None` when no text is being typed or
 /// nothing is selected in it: a command then formats the whole text.
 fn typed_selection(app: &ExcelApp, id: u32, cx: &App) -> Option<(String, Range<usize>)> {
-    let edit = app.ext::<DrawingUi>()?.text.as_ref().filter(|edit| edit.id == id)?;
+    let edit = app
+        .ext::<DrawingUi>()?
+        .text
+        .as_ref()
+        .filter(|edit| edit.id == id)?;
     let area = edit.area.read(cx);
     Some((area.text().to_string(), area.selection()))
 }
@@ -506,7 +641,12 @@ fn typed_selection(app: &ExcelApp, id: u32, cx: &App) -> Option<(String, Range<u
 /// Change the look of the text of the selected shape as one undo step:
 /// of the characters selected in it while it is being typed in, else of
 /// all of it.
-pub(super) fn format(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: &dyn Fn(&mut EngineFont, &mut TextEffects)) -> bool {
+pub(super) fn format(
+    app: &mut ExcelApp,
+    label: &str,
+    cx: &mut Cx,
+    change: &dyn Fn(&mut EngineFont, &mut TextEffects),
+) -> bool {
     // In a graphic, the text of the shapes that are chosen in it.
     let on_letters = |drawing: &mut Drawing| {
         if let Some(shape) = drawing.as_shape_mut() {
@@ -516,16 +656,27 @@ pub(super) fn format(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: &dyn 
     if let Some(done) = super::smartart::format_nodes(app, label, cx, &on_letters) {
         return done;
     }
-    let Some(id) = selected(app).filter(|drawing| drawing.as_shape().is_some()).map(|drawing| drawing.id) else {
+    let Some(id) = selected(app)
+        .filter(|drawing| drawing.as_shape().is_some())
+        .map(|drawing| drawing.id)
+    else {
         return false;
     };
-    format_shape(app, id, label, cx, &|shape, range| shape.format_text(range, change))
+    format_shape(app, id, label, cx, &|shape, range| {
+        shape.format_text(range, change)
+    })
 }
 
 /// Run a change on a shape with the range of its text a formatting
 /// command is meant for; what is being typed is put into the shape first,
 /// so that the range means what the user sees.
-fn format_shape(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: &dyn Fn(&mut Shape, Range<usize>)) -> bool {
+fn format_shape(
+    app: &mut ExcelApp,
+    id: u32,
+    label: &str,
+    cx: &mut Cx,
+    change: &dyn Fn(&mut Shape, Range<usize>),
+) -> bool {
     if !app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
         return false;
     }
@@ -559,8 +710,16 @@ fn format_shape(app: &mut ExcelApp, id: u32, label: &str, cx: &mut Cx, change: &
 /// A formatting command of the Home tab on a shape: `change` is what it
 /// does to a cell style. The font goes to the selected characters (or to
 /// all), the fill and the alignment to the shape.
-pub(super) fn restyle(app: &mut ExcelApp, id: u32, label: &str, change: &dyn Fn(&mut Style), cx: &mut Cx) -> bool {
-    format_shape(app, id, label, cx, &|shape, range| restyle_shape(shape, range, change))
+pub(super) fn restyle(
+    app: &mut ExcelApp,
+    id: u32,
+    label: &str,
+    change: &dyn Fn(&mut Style),
+    cx: &mut Cx,
+) -> bool {
+    format_shape(app, id, label, cx, &|shape, range| {
+        restyle_shape(shape, range, change)
+    })
 }
 
 pub(super) fn restyle_shape(shape: &mut Shape, range: Range<usize>, change: &dyn Fn(&mut Style)) {
@@ -590,22 +749,35 @@ pub(super) fn set_fill(app: &mut ExcelApp, color: Option<Color>, cx: &mut Cx) {
 /// Text Fill ▸ Gradient: fill the letters with a gradient made from
 /// their colour (`build`), or with that one colour again.
 fn set_gradient(app: &mut ExcelApp, build: Option<&dyn Fn(Color) -> TextGradient>, cx: &mut Cx) {
-    format(app, t("Text Gradient", "Dégradé du texte"), cx, &|font, effects| {
-        effects.gradient = build.map(|build| build(font.color.unwrap_or(Color::BLACK)));
-        if effects.gradient.is_some() {
-            effects.hollow = false;
-        }
-    });
+    format(
+        app,
+        t("Text Gradient", "Dégradé du texte"),
+        cx,
+        &|font, effects| {
+            effects.gradient = build.map(|build| build(font.color.unwrap_or(Color::BLACK)));
+            if effects.gradient.is_some() {
+                effects.hollow = false;
+            }
+        },
+    );
 }
 
 fn set_reflection(app: &mut ExcelApp, reflection: Option<TextReflection>, cx: &mut Cx) {
-    format(app, t("Text Reflection", "Reflet du texte"), cx, &|_, effects| effects.reflection = reflection);
+    format(
+        app,
+        t("Text Reflection", "Reflet du texte"),
+        cx,
+        &|_, effects| effects.reflection = reflection,
+    );
 }
 
 /// Text Effects ▸ Transform: warp the text of the selected shape, or
 /// set it level again. A warp of the same kind keeps its adjustments.
 pub(super) fn set_warp(app: &mut ExcelApp, preset: Option<WarpPreset>, cx: &mut Cx) -> bool {
-    let Some(id) = selected(app).filter(|drawing| drawing.as_shape().is_some()).map(|drawing| drawing.id) else {
+    let Some(id) = selected(app)
+        .filter(|drawing| drawing.as_shape().is_some())
+        .map(|drawing| drawing.id)
+    else {
         return false;
     };
     format_shape(app, id, t("Transform", "Transformer"), cx, &|shape, _| {
@@ -616,15 +788,27 @@ pub(super) fn set_warp(app: &mut ExcelApp, preset: Option<WarpPreset>, cx: &mut 
 }
 
 fn set_outline(app: &mut ExcelApp, cx: &mut Cx, change: &dyn Fn(&mut Option<TextOutline>)) {
-    format(app, Cmd::TextOutline.label(), cx, &|_, effects| change(&mut effects.outline));
+    format(app, Cmd::TextOutline.label(), cx, &|_, effects| {
+        change(&mut effects.outline)
+    });
 }
 
 fn set_shadow(app: &mut ExcelApp, shadow: Option<TextShadow>, cx: &mut Cx) {
-    format(app, t("Text Shadow", "Ombre du texte"), cx, &|_, effects| effects.shadow = shadow);
+    format(
+        app,
+        t("Text Shadow", "Ombre du texte"),
+        cx,
+        &|_, effects| effects.shadow = shadow,
+    );
 }
 
 fn apply_style(app: &mut ExcelApp, style: WordArtStyle, cx: &mut Cx) {
-    format(app, t("WordArt Style", "Style WordArt"), cx, &|font, effects| style.apply(font, effects));
+    format(
+        app,
+        t("WordArt Style", "Style WordArt"),
+        cx,
+        &|font, effects| style.apply(font, effects),
+    );
 }
 
 // ---- inserting -----------------------------------------------------------
@@ -637,11 +821,17 @@ pub(super) fn middle_of_view(app: &ExcelApp, size: (f32, f32)) -> (f64, f64) {
     let sheet = &app.wb.sheets[app.sheet];
     let middle = app.current_layout().and_then(|layout| {
         let pane = *paint::panes(&layout).last()?;
-        let (x, y) = ((pane.clip.0 + pane.clip.2) / 2.0, (pane.clip.1 + pane.clip.3) / 2.0);
+        let (x, y) = (
+            (pane.clip.0 + pane.clip.2) / 2.0,
+            (pane.clip.1 + pane.clip.3) / 2.0,
+        );
         Some(paint::sheet_point(&layout, sheet, &pane, x, y))
     });
     match middle {
-        Some((x, y)) => ((x - size.0 as f64 / 2.0).max(0.0), (y - size.1 as f64 / 2.0).max(0.0)),
+        Some((x, y)) => (
+            (x - size.0 as f64 / 2.0).max(0.0),
+            (y - size.1 as f64 / 2.0).max(0.0),
+        ),
         None => sheet.corner_point((app.active(), (0.0, 0.0))),
     }
 }
@@ -711,7 +901,10 @@ fn thumbnail(style: WordArtStyle, side: f32) -> impl IntoElement {
                 let extra = px((size_of_image(&document) - side) / 2.0);
                 let area = Bounds::new(
                     point(bounds.origin.x - extra, bounds.origin.y - extra),
-                    size(bounds.size.width + extra * 2.0, bounds.size.height + extra * 2.0),
+                    size(
+                        bounds.size.width + extra * 2.0,
+                        bounds.size.height + extra * 2.0,
+                    ),
                 );
                 let _ = window.paint_image(area, Default::default(), image, 0, false);
             }
@@ -770,7 +963,13 @@ impl Render for Gallery {
                     .ok();
                 })
         });
-        div().w(px(5.0 * 58.0 + 4.0 * 4.0 + 16.0)).p(px(8.)).flex().flex_wrap().gap(px(4.)).children(buttons)
+        div()
+            .w(px(5.0 * 58.0 + 4.0 * 4.0 + 16.0))
+            .p(px(8.))
+            .flex()
+            .flex_wrap()
+            .gap(px(4.))
+            .children(buttons)
     }
 }
 
@@ -788,11 +987,14 @@ struct OutlineMenu {
 
 impl Render for OutlineMenu {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let current = self
-            .app
-            .upgrade()
-            .and_then(|app| selected(app.read(cx)).and_then(Drawing::as_shape).map(|shape| shape.effects.outline));
-        let apply = |app: &WeakEntity<ExcelApp>, cx: &mut App, change: Box<dyn Fn(&mut Option<TextOutline>)>| {
+        let current = self.app.upgrade().and_then(|app| {
+            selected(app.read(cx))
+                .and_then(Drawing::as_shape)
+                .map(|shape| shape.effects.outline)
+        });
+        let apply = |app: &WeakEntity<ExcelApp>,
+                     cx: &mut App,
+                     change: Box<dyn Fn(&mut Option<TextOutline>)>| {
             app.update(cx, |app, cx| {
                 app.popup = None;
                 set_outline(app, cx, &*change);
@@ -801,43 +1003,65 @@ impl Render for OutlineMenu {
             .ok();
         };
         let app = self.app.clone();
-        let grid = ColorGrid::new("wordart-outline", current.map(|outline| outline.map(|line| line.color)))
-            .none_label(t("No Outline", "Sans contour"))
-            .more(&self.app)
-            .on_pick(move |color: &Option<Color>, _, cx| {
-                let color = *color;
-                apply(
-                    &app,
-                    cx,
-                    Box::new(move |outline| match color {
-                        Some(color) => outline.get_or_insert(TextOutline { color, width: 0.75 }).color = color,
-                        None => *outline = None,
-                    }),
-                );
-            });
-        let weights = tabs::WEIGHTS.iter().enumerate().map(|(i, (points, label))| {
-            let (points, app) = (*points, self.app.clone());
-            let on = current.flatten().is_some_and(|line| line.width == points);
-            div()
-                .id(("wordart-weight", i))
-                .h(px(22.))
-                .px(px(6.))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .rounded(px(3.))
-                .when(on, |d| d.bg(c(theme::TOGGLED)))
-                .hover(|s| s.bg(c(theme::HOVER)))
-                .child(div().w(px(40.)).child(*label))
-                .child(div().w(px(70.)).h(px(pt_to_px(points).max(1.0))).bg(c(0x404040)))
-                .on_click(move |_, _, cx| {
-                    apply(
-                        &app,
-                        cx,
-                        Box::new(move |outline| outline.get_or_insert(TextOutline { color: Color::BLACK, width: points }).width = points),
-                    );
-                })
+        let grid = ColorGrid::new(
+            "wordart-outline",
+            current.map(|outline| outline.map(|line| line.color)),
+        )
+        .none_label(t("No Outline", "Sans contour"))
+        .more(&self.app)
+        .on_pick(move |color: &Option<Color>, _, cx| {
+            let color = *color;
+            apply(
+                &app,
+                cx,
+                Box::new(move |outline| match color {
+                    Some(color) => {
+                        outline
+                            .get_or_insert(TextOutline { color, width: 0.75 })
+                            .color = color
+                    }
+                    None => *outline = None,
+                }),
+            );
         });
+        let weights = tabs::WEIGHTS
+            .iter()
+            .enumerate()
+            .map(|(i, (points, label))| {
+                let (points, app) = (*points, self.app.clone());
+                let on = current.flatten().is_some_and(|line| line.width == points);
+                div()
+                    .id(("wordart-weight", i))
+                    .h(px(22.))
+                    .px(px(6.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .rounded(px(3.))
+                    .when(on, |d| d.bg(c(theme::TOGGLED)))
+                    .hover(|s| s.bg(c(theme::HOVER)))
+                    .child(div().w(px(40.)).child(*label))
+                    .child(
+                        div()
+                            .w(px(70.))
+                            .h(px(pt_to_px(points).max(1.0)))
+                            .bg(c(0x404040)),
+                    )
+                    .on_click(move |_, _, cx| {
+                        apply(
+                            &app,
+                            cx,
+                            Box::new(move |outline| {
+                                outline
+                                    .get_or_insert(TextOutline {
+                                        color: Color::BLACK,
+                                        width: points,
+                                    })
+                                    .width = points
+                            }),
+                        );
+                    })
+            });
         div().p(px(8.)).flex().text_size(px(12.)).child(grid).child(
             div()
                 .ml(px(6.))
@@ -846,7 +1070,13 @@ impl Render for OutlineMenu {
                 .border_color(c(theme::BORDER))
                 .flex()
                 .flex_col()
-                .child(div().h(px(20.)).px(px(6.)).text_color(c(theme::TEXT_MUTED)).child(t("Weight", "Épaisseur")))
+                .child(
+                    div()
+                        .h(px(20.))
+                        .px(px(6.))
+                        .text_color(c(theme::TEXT_MUTED))
+                        .child(t("Weight", "Épaisseur")),
+                )
                 .children(weights),
         )
     }
@@ -861,15 +1091,31 @@ pub(super) fn open_outline(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 /// fall on.
 fn shadows() -> [(&'static str, f32, f32); 9] {
     [
-        (t("Offset: Bottom Right", "Décalage : bas à droite"), 45.0, 3.0),
+        (
+            t("Offset: Bottom Right", "Décalage : bas à droite"),
+            45.0,
+            3.0,
+        ),
         (t("Offset: Bottom", "Décalage : bas"), 90.0, 3.0),
-        (t("Offset: Bottom Left", "Décalage : bas à gauche"), 135.0, 3.0),
+        (
+            t("Offset: Bottom Left", "Décalage : bas à gauche"),
+            135.0,
+            3.0,
+        ),
         (t("Offset: Right", "Décalage : droite"), 0.0, 3.0),
         (t("Offset: Center", "Décalage : centre"), 0.0, 0.0),
         (t("Offset: Left", "Décalage : gauche"), 180.0, 3.0),
-        (t("Offset: Top Right", "Décalage : haut à droite"), 315.0, 3.0),
+        (
+            t("Offset: Top Right", "Décalage : haut à droite"),
+            315.0,
+            3.0,
+        ),
         (t("Offset: Top", "Décalage : haut"), 270.0, 3.0),
-        (t("Offset: Top Left", "Décalage : haut à gauche"), 225.0, 3.0),
+        (
+            t("Offset: Top Left", "Décalage : haut à gauche"),
+            225.0,
+            3.0,
+        ),
     ]
 }
 
@@ -907,7 +1153,9 @@ pub(super) fn warp_name(preset: WarpPreset) -> &'static str {
         WarpPreset::InflateTop => t("Inflate Top", "Gonflé en haut"),
         WarpPreset::DeflateTop => t("Deflate Top", "Compressé en haut"),
         WarpPreset::DeflateInflate => t("Deflate Inflate", "Compressé-gonflé"),
-        WarpPreset::DeflateInflateDeflate => t("Deflate Inflate Deflate", "Compressé-gonflé-compressé"),
+        WarpPreset::DeflateInflateDeflate => {
+            t("Deflate Inflate Deflate", "Compressé-gonflé-compressé")
+        }
         WarpPreset::FadeRight => t("Fade Right", "Rétréci (droite)"),
         WarpPreset::FadeLeft => t("Fade Left", "Rétréci (gauche)"),
         WarpPreset::FadeUp => t("Fade Up", "Rétréci (haut)"),
@@ -922,25 +1170,54 @@ pub(super) fn warp_name(preset: WarpPreset) -> &'static str {
 /// The entries of Reflection Variations, with Excel's names.
 fn reflections() -> [&'static str; 9] {
     [
-        t("Tight Reflection: Touching", "Réflexion rapprochée\u{a0}: contact"),
+        t(
+            "Tight Reflection: Touching",
+            "Réflexion rapprochée\u{a0}: contact",
+        ),
         t("Half Reflection: Touching", "Semi-réflexion\u{a0}: contact"),
-        t("Full Reflection: Touching", "Pleine réflexion\u{a0}: contact"),
-        t("Tight Reflection: 4 point offset", "Réflexion rapprochée\u{a0}: décalage 4 points"),
-        t("Half Reflection: 4 point offset", "Semi-réflexion\u{a0}: décalage 4 points"),
-        t("Full Reflection: 4 point offset", "Pleine réflexion\u{a0}: décalage 4 points"),
-        t("Tight Reflection: 8 point offset", "Réflexion rapprochée\u{a0}: décalage 8 points"),
-        t("Half Reflection: 8 point offset", "Semi-réflexion\u{a0}: décalage 8 points"),
-        t("Full Reflection: 8 point offset", "Pleine réflexion\u{a0}: décalage 8 points"),
+        t(
+            "Full Reflection: Touching",
+            "Pleine réflexion\u{a0}: contact",
+        ),
+        t(
+            "Tight Reflection: 4 point offset",
+            "Réflexion rapprochée\u{a0}: décalage 4 points",
+        ),
+        t(
+            "Half Reflection: 4 point offset",
+            "Semi-réflexion\u{a0}: décalage 4 points",
+        ),
+        t(
+            "Full Reflection: 4 point offset",
+            "Pleine réflexion\u{a0}: décalage 4 points",
+        ),
+        t(
+            "Tight Reflection: 8 point offset",
+            "Réflexion rapprochée\u{a0}: décalage 8 points",
+        ),
+        t(
+            "Half Reflection: 8 point offset",
+            "Semi-réflexion\u{a0}: décalage 8 points",
+        ),
+        t(
+            "Full Reflection: 8 point offset",
+            "Pleine réflexion\u{a0}: décalage 8 points",
+        ),
     ]
 }
 
 /// The Text Effects menu: Shadow, Reflection and Transform, which opens
 /// its gallery.
 pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let effects = selected(app).and_then(Drawing::as_shape).map(|shape| shape.effects);
+    let effects = selected(app)
+        .and_then(Drawing::as_shape)
+        .map(|shape| shape.effects);
     let current = effects.and_then(|effects| effects.shadow);
     let mut entries = vec![
-        MenuEntry::new(t("No Shadow", "Aucune ombre"), |app, _, cx| set_shadow(app, None, cx)).checked(current.is_none()),
+        MenuEntry::new(t("No Shadow", "Aucune ombre"), |app, _, cx| {
+            set_shadow(app, None, cx)
+        })
+        .checked(current.is_none()),
         MenuEntry::separator(),
     ];
     for (name, angle, distance) in shadows() {
@@ -948,15 +1225,26 @@ pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
             distance,
             ..TextShadow::offset(angle)
         };
-        entries.push(MenuEntry::new(name, move |app, _, cx| set_shadow(app, Some(shadow), cx)).checked(current == Some(shadow)));
+        entries.push(
+            MenuEntry::new(name, move |app, _, cx| set_shadow(app, Some(shadow), cx))
+                .checked(current == Some(shadow)),
+        );
     }
     let mirrored = effects.and_then(|effects| effects.reflection);
     let mut mirrors = vec![
-        MenuEntry::new(t("No Reflection", "Aucun reflet"), |app, _, cx| set_reflection(app, None, cx)).checked(mirrored.is_none()),
+        MenuEntry::new(t("No Reflection", "Aucun reflet"), |app, _, cx| {
+            set_reflection(app, None, cx)
+        })
+        .checked(mirrored.is_none()),
         MenuEntry::separator(),
     ];
     for (name, reflection) in reflections().into_iter().zip(TextReflection::PRESETS) {
-        mirrors.push(MenuEntry::new(name, move |app, _, cx| set_reflection(app, Some(reflection), cx)).checked(mirrored == Some(reflection)));
+        mirrors.push(
+            MenuEntry::new(name, move |app, _, cx| {
+                set_reflection(app, Some(reflection), cx)
+            })
+            .checked(mirrored == Some(reflection)),
+        );
     }
     let entries = vec![
         MenuEntry::submenu(t("Shadow", "Ombre"), entries),
@@ -971,15 +1259,51 @@ pub(super) fn open_effects(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 /// The ways a gradient of the Gradient menu runs, with Excel's names.
 fn gradient_kinds() -> [(&'static str, GradientKind); 9] {
     [
-        (t("Linear Diagonal - Top Left to Bottom Right", "Diagonale linéaire - Du coin supérieur gauche au coin inférieur droit"), GradientKind::Linear(45.0)),
-        (t("Linear Down", "Linéaire vers le bas"), GradientKind::Linear(90.0)),
-        (t("Linear Diagonal - Top Right to Bottom Left", "Diagonale linéaire - Du coin supérieur droit au coin inférieur gauche"), GradientKind::Linear(135.0)),
-        (t("Linear Right", "Linéaire vers la droite"), GradientKind::Linear(0.0)),
+        (
+            t(
+                "Linear Diagonal - Top Left to Bottom Right",
+                "Diagonale linéaire - Du coin supérieur gauche au coin inférieur droit",
+            ),
+            GradientKind::Linear(45.0),
+        ),
+        (
+            t("Linear Down", "Linéaire vers le bas"),
+            GradientKind::Linear(90.0),
+        ),
+        (
+            t(
+                "Linear Diagonal - Top Right to Bottom Left",
+                "Diagonale linéaire - Du coin supérieur droit au coin inférieur gauche",
+            ),
+            GradientKind::Linear(135.0),
+        ),
+        (
+            t("Linear Right", "Linéaire vers la droite"),
+            GradientKind::Linear(0.0),
+        ),
         (t("From Center", "Du centre"), GradientKind::FromCentre),
-        (t("Linear Left", "Linéaire vers la gauche"), GradientKind::Linear(180.0)),
-        (t("Linear Diagonal - Bottom Left to Top Right", "Diagonale linéaire - Du coin inférieur gauche au coin supérieur droit"), GradientKind::Linear(315.0)),
-        (t("Linear Up", "Linéaire vers le haut"), GradientKind::Linear(270.0)),
-        (t("Linear Diagonal - Bottom Right to Top Left", "Diagonale linéaire - Du coin inférieur droit au coin supérieur gauche"), GradientKind::Linear(225.0)),
+        (
+            t("Linear Left", "Linéaire vers la gauche"),
+            GradientKind::Linear(180.0),
+        ),
+        (
+            t(
+                "Linear Diagonal - Bottom Left to Top Right",
+                "Diagonale linéaire - Du coin inférieur gauche au coin supérieur droit",
+            ),
+            GradientKind::Linear(315.0),
+        ),
+        (
+            t("Linear Up", "Linéaire vers le haut"),
+            GradientKind::Linear(270.0),
+        ),
+        (
+            t(
+                "Linear Diagonal - Bottom Right to Top Left",
+                "Diagonale linéaire - Du coin inférieur droit au coin supérieur gauche",
+            ),
+            GradientKind::Linear(225.0),
+        ),
     ]
 }
 
@@ -1000,20 +1324,30 @@ pub(super) fn variation(color: Color, dark: bool, kind: GradientKind) -> TextGra
 pub(super) fn open_gradient(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let shape = selected(app).and_then(Drawing::as_shape);
     let current = shape.and_then(|shape| shape.effects.gradient);
-    let color = shape.and_then(|shape| shape.font.color).unwrap_or(Color::BLACK);
+    let color = shape
+        .and_then(|shape| shape.font.color)
+        .unwrap_or(Color::BLACK);
     let variations = |dark: bool| -> Vec<MenuEntry> {
         gradient_kinds()
             .into_iter()
             .map(|(name, kind)| {
-                MenuEntry::new(name, move |app, _, cx| set_gradient(app, Some(&|color| variation(color, dark, kind)), cx))
-                    .checked(current == Some(variation(color, dark, kind)))
+                MenuEntry::new(name, move |app, _, cx| {
+                    set_gradient(app, Some(&|color| variation(color, dark, kind)), cx)
+                })
+                .checked(current == Some(variation(color, dark, kind)))
             })
             .collect()
     };
     let entries = vec![
-        MenuEntry::new(t("No Gradient", "Aucun dégradé"), |app, _, cx| set_gradient(app, None, cx)).checked(current.is_none()),
+        MenuEntry::new(t("No Gradient", "Aucun dégradé"), |app, _, cx| {
+            set_gradient(app, None, cx)
+        })
+        .checked(current.is_none()),
         MenuEntry::separator(),
-        MenuEntry::submenu(t("Light Variations", "Variations claires"), variations(false)),
+        MenuEntry::submenu(
+            t("Light Variations", "Variations claires"),
+            variations(false),
+        ),
         MenuEntry::submenu(t("Dark Variations", "Variations sombres"), variations(true)),
     ];
     app.open_command_menu(entries, 220.0, window, cx);
@@ -1046,7 +1380,12 @@ pub(super) fn gradient_row(app: &WeakEntity<ExcelApp>) -> impl IntoElement + use
 // ---- the Transform gallery -------------------------------------------------
 
 /// The letters the gallery shows in a warp (none: level), in a box.
-fn warp_sample(preset: Option<WarpPreset>, fonts: &FontResolver, box_size: (f32, f32), scale: f32) -> Option<(String, ArtBox)> {
+fn warp_sample(
+    preset: Option<WarpPreset>,
+    fonts: &FontResolver,
+    box_size: (f32, f32),
+    scale: f32,
+) -> Option<(String, ArtBox)> {
     let mut shape = opensheet_engine::drawing::ShapeTool::TextBox.shape();
     shape.text = "abcde".to_string();
     shape.font.set_name("Helvetica");
@@ -1058,7 +1397,10 @@ fn warp_sample(preset: Option<WarpPreset>, fonts: &FontResolver, box_size: (f32,
     shape.warp = preset.map(TextWarp::from);
     let letters = Letters::of(&shape, box_size.0 as f64, box_size.1 as f64, 1.0, fonts)?;
     let (document, at) = letters.svg(0.0, (0.0, 0.0), scale as f64);
-    Some((document, (at.0 as f32, at.1 as f32, at.2 as f32, at.3 as f32)))
+    Some((
+        document,
+        (at.0 as f32, at.1 as f32, at.2 as f32, at.3 as f32),
+    ))
 }
 
 /// The drop-down of Text Effects ▸ Transform: no transform, the warps
@@ -1076,7 +1418,10 @@ impl TransformGallery {
         let fonts = self.fonts.clone();
         let name = preset.map_or(t("No Transform", "Aucune transformation"), warp_name);
         div()
-            .id(("wordart-warp", preset.map_or(0, |preset| 1 + preset as usize)))
+            .id((
+                "wordart-warp",
+                preset.map_or(0, |preset| 1 + preset as usize),
+            ))
             .w(px(BOX.0 + 8.0))
             .h(px(BOX.1 + 8.0))
             .flex()
@@ -1084,7 +1429,11 @@ impl TransformGallery {
             .justify_center()
             .rounded(px(3.))
             .border_1()
-            .border_color(c(if self.current == preset { theme::ACCENT } else { theme::BORDER }))
+            .border_color(c(if self.current == preset {
+                theme::ACCENT
+            } else {
+                theme::BORDER
+            }))
             .bg(c(0xFFFFFF))
             .overflow_hidden()
             .hover(|s| s.border_color(c(theme::ACCENT)))
@@ -1093,11 +1442,16 @@ impl TransformGallery {
                 canvas(
                     |_, _, _| {},
                     move |bounds: Bounds<Pixels>, _, window, _| {
-                        let Some((document, (x, y, w, h))) = warp_sample(preset, &fonts, BOX, window.scale_factor()) else {
+                        let Some((document, (x, y, w, h))) =
+                            warp_sample(preset, &fonts, BOX, window.scale_factor())
+                        else {
                             return;
                         };
                         if let Some(image) = svg::image(&document, (false, false), 0) {
-                            let area = Bounds::new(point(bounds.origin.x + px(x), bounds.origin.y + px(y)), size(px(w), px(h)));
+                            let area = Bounds::new(
+                                point(bounds.origin.x + px(x), bounds.origin.y + px(y)),
+                                size(px(w), px(h)),
+                            );
                             let _ = window.paint_image(area, Default::default(), image, 0, false);
                         }
                     },
@@ -1119,8 +1473,21 @@ impl TransformGallery {
 
 impl Render for TransformGallery {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let heading = |label: &'static str| div().h(px(22.)).flex().items_center().text_color(c(theme::TEXT_MUTED)).child(label);
-        let grid = |presets: &[WarpPreset]| div().flex().flex_wrap().gap(px(4.)).children(presets.iter().map(|preset| self.button(Some(*preset))));
+        let heading = |label: &'static str| {
+            div()
+                .h(px(22.))
+                .flex()
+                .items_center()
+                .text_color(c(theme::TEXT_MUTED))
+                .child(label)
+        };
+        let grid = |presets: &[WarpPreset]| {
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(4.))
+                .children(presets.iter().map(|preset| self.button(Some(*preset))))
+        };
         let (follow, warp) = WarpPreset::ALL.split_at(WarpPreset::FOLLOW_PATH);
         div()
             .id("wordart-transform")
@@ -1142,8 +1509,15 @@ impl Render for TransformGallery {
 pub(super) fn open_transform(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let weak = cx.weak_entity();
     let fonts = app.fonts.clone();
-    let current = selected(app).and_then(Drawing::as_shape).and_then(|shape| shape.warp).map(|warp| warp.preset);
-    tabs::open_dropdown(app, window, cx, |_| TransformGallery { app: weak, fonts, current });
+    let current = selected(app)
+        .and_then(Drawing::as_shape)
+        .and_then(|shape| shape.warp)
+        .map(|warp| warp.preset);
+    tabs::open_dropdown(app, window, cx, |_| TransformGallery {
+        app: weak,
+        fonts,
+        current,
+    });
 }
 
 #[cfg(test)]
@@ -1164,7 +1538,12 @@ mod tests {
         }
     }
 
-    fn block<'a>(text: &'a str, rows: &'a [Range<usize>], runs: &'a [ArtRun], turn: f32) -> ArtBlock<'a> {
+    fn block<'a>(
+        text: &'a str,
+        rows: &'a [Range<usize>],
+        runs: &'a [ArtRun],
+        turn: f32,
+    ) -> ArtBlock<'a> {
         ArtBlock {
             text,
             rows,
@@ -1208,10 +1587,15 @@ mod tests {
         // Room around the block for the shadow: 3 + 2 × 4 points at 2
         // pixels each, and a quarter of the size of the letters.
         assert_eq!((left, top, width, height), (-34.0, -34.0, 368.0, 164.0));
-        assert!(document.contains(r#"width="736" height="328" viewBox="0 0 368 164""#), "{document}");
+        assert!(
+            document.contains(r#"width="736" height="328" viewBox="0 0 368 164""#),
+            "{document}"
+        );
         // The shadow is drawn first, blurred and moved, and only under
         // the run that has one.
-        let shadow = document.find(r#"filter="url(#s0)""#).expect("a shadow layer");
+        let shadow = document
+            .find(r#"filter="url(#s0)""#)
+            .expect("a shadow layer");
         let letters = document.find(r##"fill="#156082""##).expect("the letters");
         assert!(shadow < letters);
         assert!(document.contains(r#"<feGaussianBlur stdDeviation="4.00"/>"#));
@@ -1221,14 +1605,19 @@ mod tests {
         // Rows end without their blanks, text is escaped, fonts are named.
         assert!(document.contains("> &amp; more</tspan>"), "{document}");
         assert!(document.contains("font-family=\"'Aptos &lt;Narrow&gt;', Helvetica"));
-        assert!(document.contains(r#"text-decoration="underline""#) && document.contains(r#"text-anchor="middle""#));
+        assert!(
+            document.contains(r#"text-decoration="underline""#)
+                && document.contains(r#"text-anchor="middle""#)
+        );
         assert_eq!(document.matches("<text ").count(), 4);
         // Turned, the image is the square that holds the block however it
         // is turned about the middle of its shape.
         let (turned, (left, top, width, height)) = block(text, &rows, &runs, 30.0).svg();
         assert!(turned.contains(r#"<g transform="rotate(30.00 150.00 48.00)">"#));
         assert_eq!(width, height);
-        assert!((left + width / 2.0 - 150.0).abs() < 0.01 && (top + height / 2.0 - 48.0).abs() < 0.01);
+        assert!(
+            (left + width / 2.0 - 150.0).abs() < 0.01 && (top + height / 2.0 - 48.0).abs() < 0.01
+        );
         assert!(width >= 2.0 * (184.0f32).hypot(82.0));
     }
 
@@ -1244,7 +1633,13 @@ mod tests {
             style.h_align = opensheet_engine::style::HAlign::Right;
             style.fill = Some(Color(0xFFFF00));
         });
-        assert_eq!((shape.align, shape.fill), (opensheet_engine::drawing::TextAlign::Right, Some(Color(0xFFFF00))));
+        assert_eq!(
+            (shape.align, shape.fill),
+            (
+                opensheet_engine::drawing::TextAlign::Right,
+                Some(Color(0xFFFF00))
+            )
+        );
         assert_eq!(shape.runs.len(), 2);
         // Without a selection the whole text takes the change and the
         // runs keep what tells them apart.

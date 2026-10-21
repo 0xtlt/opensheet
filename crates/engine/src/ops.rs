@@ -82,7 +82,10 @@ impl PasteMode {
 
     /// Whether the cells themselves are written.
     fn cells(self) -> bool {
-        !matches!(self, PasteMode::Comments | PasteMode::Validation | PasteMode::ColumnWidths)
+        !matches!(
+            self,
+            PasteMode::Comments | PasteMode::Validation | PasteMode::ColumnWidths
+        )
     }
 }
 
@@ -271,7 +274,13 @@ impl SelectionStats {
 
 pub use crate::find::FindOptions;
 
-fn shift_keys<V: Clone>(map: &BTreeMap<u32, V>, insert: bool, at: u32, count: u32, max: u32) -> BTreeMap<u32, V> {
+fn shift_keys<V: Clone>(
+    map: &BTreeMap<u32, V>,
+    insert: bool,
+    at: u32,
+    count: u32,
+    max: u32,
+) -> BTreeMap<u32, V> {
     let mut out = BTreeMap::new();
     for (k, v) in map {
         if insert {
@@ -288,7 +297,13 @@ fn shift_keys<V: Clone>(map: &BTreeMap<u32, V>, insert: bool, at: u32, count: u3
     out
 }
 
-pub(crate) fn shift_set(set: &BTreeSet<u32>, insert: bool, at: u32, count: u32, max: u32) -> BTreeSet<u32> {
+pub(crate) fn shift_set(
+    set: &BTreeSet<u32>,
+    insert: bool,
+    at: u32,
+    count: u32,
+    max: u32,
+) -> BTreeSet<u32> {
     let mut out = BTreeSet::new();
     for k in set {
         if insert {
@@ -305,7 +320,14 @@ pub(crate) fn shift_set(set: &BTreeSet<u32>, insert: bool, at: u32, count: u32, 
     out
 }
 
-pub(crate) fn shift_interval(lo: u32, hi: u32, insert: bool, at: u32, count: u32, max: u32) -> Option<(u32, u32)> {
+pub(crate) fn shift_interval(
+    lo: u32,
+    hi: u32,
+    insert: bool,
+    at: u32,
+    count: u32,
+    max: u32,
+) -> Option<(u32, u32)> {
     if insert {
         let nlo = if lo >= at { lo + count } else { lo };
         let nhi = if hi >= at { hi + count } else { hi };
@@ -370,7 +392,9 @@ impl Workbook {
     pub fn copy(&self, sheet: usize, rect: Rect) -> Clip {
         let rect = self.clamp_to_used(sheet, rect);
         let sh = &self.sheets[sheet];
-        let mut rows: Vec<u32> = (rect.r0..=rect.r1).filter(|r| !sh.filtered_rows.contains(r)).collect();
+        let mut rows: Vec<u32> = (rect.r0..=rect.r1)
+            .filter(|r| !sh.filtered_rows.contains(r))
+            .collect();
         if rows.is_empty() {
             rows = (rect.r0..=rect.r1).collect();
         }
@@ -385,7 +409,9 @@ impl Workbook {
                 let value = sh.value_at(r, c);
                 let style = sh.style_id_at(r, c);
                 if !value.is_empty() {
-                    let shown = format::format_value(&value, &self.styles.get(style).num_fmt, self.locale).text;
+                    let shown =
+                        format::format_value(&value, &self.styles.get(style).num_fmt, self.locale)
+                            .text;
                     if shown.contains(['\t', '\n', '"']) {
                         text.push('"');
                         text.push_str(&shown.replace('"', "\"\""));
@@ -418,7 +444,14 @@ impl Workbook {
             .merges
             .iter()
             .filter(|m| whole && rect.contains(m.r0, m.c0) && rect.contains(m.r1, m.c1))
-            .map(|m| Rect::new(m.r0 - rect.r0, m.c0 - rect.c0, m.r1 - rect.r0, m.c1 - rect.c0))
+            .map(|m| {
+                Rect::new(
+                    m.r0 - rect.r0,
+                    m.c0 - rect.c0,
+                    m.r1 - rect.r0,
+                    m.c1 - rect.c0,
+                )
+            })
             .collect();
         Clip {
             sheet,
@@ -449,7 +482,9 @@ impl Workbook {
         let out = Rect::new(dest.r0, dest.c0, dest.r0 + th - 1, dest.c0 + tw - 1);
         let filtered = &self.sheets[sheet].filtered_rows;
         let rows = if ch == 1 && th > 1 && filtered.range(out.r0..=out.r1).next().is_some() {
-            (out.r0..=out.r1).filter(|r| !filtered.contains(r)).collect()
+            (out.r0..=out.r1)
+                .filter(|r| !filtered.contains(r))
+                .collect()
         } else {
             (out.r0..=out.r1).collect()
         };
@@ -472,7 +507,8 @@ impl Workbook {
             return vec![dest];
         }
         let landing = self.landing(sheet, dest, clip);
-        let block = |(_, r0, r1): (usize, u32, u32)| Rect::new(r0, landing.out.c0, r1, landing.out.c1);
+        let block =
+            |(_, r0, r1): (usize, u32, u32)| Rect::new(r0, landing.out.c0, r1, landing.out.c1);
         runs(&landing.rows).into_iter().map(block).collect()
     }
 
@@ -488,7 +524,10 @@ impl Workbook {
             // One row, copied onto every block of rows written.
             return vec![Lay {
                 src: from(clip.rows[0], clip.rows[0]),
-                dests: runs(&landing.rows).into_iter().map(|(_, r0, r1)| onto(r0, r1)).collect(),
+                dests: runs(&landing.rows)
+                    .into_iter()
+                    .map(|(_, r0, r1)| onto(r0, r1))
+                    .collect(),
             }];
         }
         if source.len() == 1 {
@@ -516,7 +555,15 @@ impl Workbook {
 
     /// Copy what the features keep on cells along with them: conditional
     /// formats, validation rules, notes and comments.
-    fn carry(&mut self, src_sheet: usize, sheet: usize, lays: &[Lay], formats: bool, validation: bool, comments: bool) {
+    fn carry(
+        &mut self,
+        src_sheet: usize,
+        sheet: usize,
+        lays: &[Lay],
+        formats: bool,
+        validation: bool,
+        comments: bool,
+    ) {
         for lay in lays.iter().filter(|lay| !lay.dests.is_empty()) {
             if formats {
                 match lay.dests.as_slice() {
@@ -544,7 +591,14 @@ impl Workbook {
     /// `paste`, or with `fill` what the Fill commands do with the same
     /// cells: structured references then move along the columns of their
     /// table (`shifted_for_fill`).
-    fn paste_as(&mut self, sheet: usize, dest: Rect, clip: &Clip, mode: PasteMode, fill: bool) -> Rect {
+    fn paste_as(
+        &mut self,
+        sheet: usize,
+        dest: Rect,
+        clip: &Clip,
+        mode: PasteMode,
+        fill: bool,
+    ) -> Rect {
         if sheet >= self.sheets.len() || clip.rows.is_empty() {
             return dest;
         }
@@ -557,7 +611,9 @@ impl Workbook {
             let Some(source) = self.sheets.get(clip.sheet) else {
                 return out;
             };
-            let widths: Vec<Option<f32>> = (0..cw).map(|i| source.col_widths.get(&(clip.rect.c0 + i)).copied()).collect();
+            let widths: Vec<Option<f32>> = (0..cw)
+                .map(|i| source.col_widths.get(&(clip.rect.c0 + i)).copied())
+                .collect();
             for dc in 0..tw {
                 self.set_col_width(sheet, out.c0 + dc, widths[(dc % cw) as usize]);
             }
@@ -587,7 +643,10 @@ impl Workbook {
                 for top in (0..landing.rows.len()).step_by(ch) {
                     for tc in (0..tw).step_by(cw as usize) {
                         for m in &clip.merges {
-                            let rows = (landing.rows.get(top + m.r0 as usize), landing.rows.get(top + m.r1 as usize));
+                            let rows = (
+                                landing.rows.get(top + m.r0 as usize),
+                                landing.rows.get(top + m.r1 as usize),
+                            );
                             if let (Some(&r0), Some(&r1)) = rows {
                                 let r = Rect::new(r0, out.c0 + tc + m.c0, r1, out.c0 + tc + m.c1);
                                 if r.c1 < MAX_COLS {
@@ -630,7 +689,9 @@ impl Workbook {
                 let existing = self.sheets[sheet].cells.get(&(row, col)).cloned();
                 let cur_style = self.sheets[sheet].style_id_at(row, col);
                 let content = |wb: &Workbook| match src.map(|s| &s.content) {
-                    Some(Content::Formula(e)) if fill => Content::Formula(Arc::new(wb.shifted_for_fill(e, d_row, d_col))),
+                    Some(Content::Formula(e)) if fill => {
+                        Content::Formula(Arc::new(wb.shifted_for_fill(e, d_row, d_col)))
+                    }
                     Some(content) => shift_content(content, d_row, d_col),
                     None => Content::Empty,
                 };
@@ -675,13 +736,20 @@ impl Workbook {
                         style: mix(self, from_style, cur_style),
                     }),
                     // Formats (the last three write no cell and left above).
-                    PasteMode::Formats | PasteMode::Comments | PasteMode::Validation | PasteMode::ColumnWidths => {
-                        Some(Cell {
-                            content: existing.as_ref().map(|c| c.content.clone()).unwrap_or(Content::Empty),
-                            value: existing.as_ref().map(|c| c.value.clone()).unwrap_or_default(),
-                            style: from_style,
-                        })
-                    }
+                    PasteMode::Formats
+                    | PasteMode::Comments
+                    | PasteMode::Validation
+                    | PasteMode::ColumnWidths => Some(Cell {
+                        content: existing
+                            .as_ref()
+                            .map(|c| c.content.clone())
+                            .unwrap_or(Content::Empty),
+                        value: existing
+                            .as_ref()
+                            .map(|c| c.value.clone())
+                            .unwrap_or_default(),
+                        style: from_style,
+                    }),
                 };
                 self.put_cell(sheet, row, col, new);
             }
@@ -702,11 +770,15 @@ impl Workbook {
         shifted.map(&mut |x| match x {
             Expr::Table(mut t) => {
                 let column = match (&t.table, &t.cols) {
-                    (Some(table), TableCols::One(column)) => self.table_by_name(table).map(|(_, table)| {
-                        let at = table.column_index(column)? as i64 + d_col;
-                        let moved = usize::try_from(at).ok().and_then(|i| table.columns.get(i))?;
-                        Some(Arc::<str>::from(moved.name.as_str()))
-                    }),
+                    (Some(table), TableCols::One(column)) => {
+                        self.table_by_name(table).map(|(_, table)| {
+                            let at = table.column_index(column)? as i64 + d_col;
+                            let moved = usize::try_from(at)
+                                .ok()
+                                .and_then(|i| table.columns.get(i))?;
+                            Some(Arc::<str>::from(moved.name.as_str()))
+                        })
+                    }
                     _ => None,
                 };
                 match column {
@@ -728,7 +800,14 @@ impl Workbook {
     /// conditional formats, the validation rules, the notes and the
     /// comments of the cells move with them. As in Excel the whole block
     /// moves, the rows a filter hides too.
-    pub fn move_range(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) -> Rect {
+    pub fn move_range(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest_row: u32,
+        dest_col: u32,
+    ) -> Rect {
         let block = src;
         let src = self.clamp_to_used(src_sheet, src);
         let d_row = dest_row as i64 - src.r0 as i64;
@@ -758,7 +837,9 @@ impl Workbook {
         for ((r, c), cell) in moved {
             let (nr, nc) = (r as i64 + d_row, c as i64 + d_col);
             if nr >= 0 && nc >= 0 && (nr as u32) < MAX_ROWS && (nc as u32) < MAX_COLS {
-                self.sheets[dest_sheet].cells.insert((nr as u32, nc as u32), cell);
+                self.sheets[dest_sheet]
+                    .cells
+                    .insert((nr as u32, nc as u32), cell);
             }
         }
         // Merges travel with the block.
@@ -771,7 +852,9 @@ impl Workbook {
         self.sheets[src_sheet]
             .merges
             .retain(|m| !(src.contains(m.r0, m.c0) && src.contains(m.r1, m.c1)));
-        self.sheets[dest_sheet].merges.retain(|m| !m.intersects(&out));
+        self.sheets[dest_sheet]
+            .merges
+            .retain(|m| !m.intersects(&out));
         for m in merges {
             self.sheets[dest_sheet].merges.push(Rect::new(
                 (m.r0 as i64 + d_row) as u32,
@@ -799,7 +882,9 @@ impl Workbook {
         self.move_comments(src_sheet, block, dest_sheet, dest_row, dest_col);
         // What referred to the moved block follows it.
         if src_sheet == dest_sheet {
-            let follow = |e: &Expr, own: &str, fixed_only: bool| following_move(e, &src_name, own, src, d_row, d_col, fixed_only);
+            let follow = |e: &Expr, own: &str, fixed_only: bool| {
+                following_move(e, &src_name, own, src, d_row, d_col, fixed_only)
+            };
             for sh in &mut self.sheets {
                 let own = sh.name.clone();
                 for cell in sh.cells.values_mut() {
@@ -814,7 +899,10 @@ impl Workbook {
                     def.expr = Arc::new(follow(&def.expr, &own, true));
                 }
                 for rule in &mut sh.validations {
-                    for formula in [&mut rule.formula1, &mut rule.formula2].into_iter().flatten() {
+                    for formula in [&mut rule.formula1, &mut rule.formula2]
+                        .into_iter()
+                        .flatten()
+                    {
                         *formula = Arc::new(follow(formula, &own, true));
                     }
                 }
@@ -866,7 +954,11 @@ impl Workbook {
             return;
         }
         let vertical = dest.c0 == src.c0 && dest.c1 == src.c1;
-        let forward = if vertical { dest.r1 > src.r1 } else { dest.c1 > src.c1 };
+        let forward = if vertical {
+            dest.r1 > src.r1
+        } else {
+            dest.c1 > src.c1
+        };
         let lanes = if vertical { src.cols() } else { src.rows() };
         let n = if vertical { src.rows() } else { src.cols() } as i64;
         let mut targets: Vec<i64> = if vertical {
@@ -920,9 +1012,10 @@ impl Workbook {
                     _ => None,
                 })
                 .collect();
-            let is_date = source.first().and_then(|c| c.as_ref()).is_some_and(|c| {
-                format::is_date_format(&self.styles.get(c.style).num_fmt)
-            });
+            let is_date = source
+                .first()
+                .and_then(|c| c.as_ref())
+                .is_some_and(|c| format::is_date_format(&self.styles.get(c.style).num_fmt));
             let linear = match &numbers {
                 Some(v) if v.len() >= 2 => {
                     // Least-squares fit, as Excel does.
@@ -944,7 +1037,11 @@ impl Workbook {
 
             for (k, t) in targets.iter().enumerate() {
                 // Index along the lane relative to the source start.
-                let idx = if forward { n + k as i64 } else { -(k as i64) - 1 };
+                let idx = if forward {
+                    n + k as i64
+                } else {
+                    -(k as i64) - 1
+                };
                 let (row, col) = if vertical {
                     (*t as u32, src.c0 + lane)
                 } else {
@@ -967,18 +1064,28 @@ impl Workbook {
                     match &model.content {
                         Content::Formula(e) => {
                             let (sr, sc) = pos(si as i64);
-                            let shifted = self.shifted_for_fill(e, row as i64 - sr as i64, col as i64 - sc as i64);
+                            let shifted = self.shifted_for_fill(
+                                e,
+                                row as i64 - sr as i64,
+                                col as i64 - sc as i64,
+                            );
                             cell.content = Content::Formula(Arc::new(shifted));
                         }
                         Content::Value(Value::Text(s)) => {
-                            if let Some(next) = self.next_in_list(s, cycle * n + (si as i64) - si as i64, idx - si as i64, n) {
+                            if let Some(next) = self.next_in_list(
+                                s,
+                                cycle * n + (si as i64) - si as i64,
+                                idx - si as i64,
+                                n,
+                            ) {
                                 cell.content = Content::Value(Value::text(&next));
                                 cell.value = Value::text(&next);
                             } else if let Some((prefix, num, digits)) = split_trailing_number(s) {
                                 // Step between consecutive numbered items in
                                 // the source (default 1).
                                 let step = self.text_series_step(&source, si).unwrap_or(1);
-                                let v = num as i64 + step * cycle * self.numbered_count(&source).max(1) as i64;
+                                let v = num as i64
+                                    + step * cycle * self.numbered_count(&source).max(1) as i64;
                                 if v >= 0 {
                                     let text = format!("{prefix}{:0width$}", v, width = digits);
                                     cell.content = Content::Value(Value::text(&text));
@@ -997,7 +1104,14 @@ impl Workbook {
     /// The blocks of `src` and where the fill handle copies them: `targets`
     /// are the rows (columns) filled, in the order they are filled, each
     /// taking the next line of `src` in turn.
-    fn fill_lays(&self, sheet: usize, src: Rect, vertical: bool, forward: bool, targets: &[i64]) -> Vec<Lay> {
+    fn fill_lays(
+        &self,
+        sheet: usize,
+        src: Rect,
+        vertical: bool,
+        forward: bool,
+        targets: &[i64],
+    ) -> Vec<Lay> {
         let n = if vertical { src.rows() } else { src.cols() };
         let first = if vertical { src.r0 } else { src.c0 };
         // Lines `a..=b` of the source and the lines `t0..=t1` of the sheet,
@@ -1039,15 +1153,25 @@ impl Workbook {
             // each line of the source with the rows that take it.
             along.extend((0..n).map(|line| (line, line, Vec::new())));
             for (k, &t) in targets.iter().enumerate() {
-                let idx = if forward { n as i64 + k as i64 } else { -(k as i64) - 1 };
-                along[idx.rem_euclid(n as i64) as usize].2.push((t as u32, t as u32));
+                let idx = if forward {
+                    n as i64 + k as i64
+                } else {
+                    -(k as i64) - 1
+                };
+                along[idx.rem_euclid(n as i64) as usize]
+                    .2
+                    .push((t as u32, t as u32));
             }
             for (_, _, rows) in &mut along {
                 rows.sort_unstable();
             }
         }
         // Filling sideways leaves the rows a filter hides alone.
-        let bands = if vertical { vec![src] } else { self.sheets[sheet].shown_parts(src) };
+        let bands = if vertical {
+            vec![src]
+        } else {
+            self.sheets[sheet].shown_parts(src)
+        };
         let mut lays = Vec::new();
         for band in &bands {
             for (a, b, places) in &along {
@@ -1103,10 +1227,11 @@ impl Workbook {
             &self.locale.months,
             &self.locale.months_short,
         ];
-        let lists = builtin
-            .iter()
-            .map(|list| list.to_vec())
-            .chain(self.user_lists.iter().map(|list| list.iter().map(String::as_str).collect()));
+        let lists = builtin.iter().map(|list| list.to_vec()).chain(
+            self.user_lists
+                .iter()
+                .map(|list| list.iter().map(String::as_str).collect()),
+        );
         let lower = s.trim_end_matches('.').to_lowercase();
         if lower.is_empty() {
             return None;
@@ -1117,7 +1242,9 @@ impl Workbook {
                 let j = (i as i64 + offset).rem_euclid(len) as usize;
                 let name = list[j];
                 // Preserve the capitalisation style of the source.
-                let out = if s.chars().all(|c| !c.is_lowercase()) && s.chars().any(|c| c.is_uppercase()) {
+                let out = if s.chars().all(|c| !c.is_lowercase())
+                    && s.chars().any(|c| c.is_uppercase())
+                {
                     name.to_uppercase()
                 } else if s.chars().next().is_some_and(|c| c.is_uppercase()) {
                     let mut ch = name.chars();
@@ -1150,7 +1277,13 @@ impl Workbook {
         let last = shown.last().unwrap_or(next);
         // Pasting one row over several skips those a filter hides.
         let clip = self.copy(sheet, Rect::new(first, rect.c0, first, rect.c1));
-        self.paste_as(sheet, Rect::new(next, rect.c0, last, rect.c1), &clip, PasteMode::All, true);
+        self.paste_as(
+            sheet,
+            Rect::new(next, rect.c0, last, rect.c1),
+            &clip,
+            PasteMode::All,
+            true,
+        );
     }
 
     /// Copy the first column of `rect` into the columns to the right
@@ -1218,9 +1351,11 @@ impl Workbook {
             let merges = std::mem::take(&mut sh.merges);
             for m in merges {
                 let adjusted = if row_axis {
-                    shift_interval(m.r0, m.r1, insert, at, count, MAX_ROWS).map(|(a, b)| Rect::new(a, m.c0, b, m.c1))
+                    shift_interval(m.r0, m.r1, insert, at, count, MAX_ROWS)
+                        .map(|(a, b)| Rect::new(a, m.c0, b, m.c1))
                 } else {
-                    shift_interval(m.c0, m.c1, insert, at, count, MAX_COLS).map(|(a, b)| Rect::new(m.r0, a, m.r1, b))
+                    shift_interval(m.c0, m.c1, insert, at, count, MAX_COLS)
+                        .map(|(a, b)| Rect::new(m.r0, a, m.r1, b))
                 };
                 if let Some(r) = adjusted {
                     if !r.is_single() {
@@ -1352,7 +1487,13 @@ impl Workbook {
         }
         match runs.as_slice() {
             [] => {}
-            [(start, count)] => self.structural(sheet, StructuralEdit::DeleteRows { at: *start, count: *count }),
+            [(start, count)] => self.structural(
+                sheet,
+                StructuralEdit::DeleteRows {
+                    at: *start,
+                    count: *count,
+                },
+            ),
             _ => self.delete_row_runs(sheet, &runs),
         }
     }
@@ -1363,8 +1504,11 @@ impl Workbook {
     fn delete_row_runs(&mut self, sheet: usize, runs: &[(u32, u32)]) {
         self.snapshot();
         // Bottom first, so that the rows above keep their numbers.
-        let edits: Vec<StructuralEdit> =
-            runs.iter().rev().map(|&(at, count)| StructuralEdit::DeleteRows { at, count }).collect();
+        let edits: Vec<StructuralEdit> = runs
+            .iter()
+            .rev()
+            .map(|&(at, count)| StructuralEdit::DeleteRows { at, count })
+            .collect();
         crate::table::before_structural_edits(self, sheet, &edits);
         let cut = RowCut::new(runs);
         let edited = self.sheets[sheet].name.clone();
@@ -1374,13 +1518,27 @@ impl Workbook {
             .into_iter()
             .filter_map(|((r, c), cell)| Some(((cut.moved(r)?, c), cell)))
             .collect();
-        sh.row_heights = sh.row_heights.iter().filter_map(|(r, h)| Some((cut.moved(*r)?, *h))).collect();
-        sh.row_styles = sh.row_styles.iter().filter_map(|(r, s)| Some((cut.moved(*r)?, *s))).collect();
-        sh.hidden_rows = sh.hidden_rows.iter().filter_map(|r| cut.moved(*r)).collect();
+        sh.row_heights = sh
+            .row_heights
+            .iter()
+            .filter_map(|(r, h)| Some((cut.moved(*r)?, *h)))
+            .collect();
+        sh.row_styles = sh
+            .row_styles
+            .iter()
+            .filter_map(|(r, s)| Some((cut.moved(*r)?, *s)))
+            .collect();
+        sh.hidden_rows = sh
+            .hidden_rows
+            .iter()
+            .filter_map(|r| cut.moved(*r))
+            .collect();
         // Set aside, so that the hooks below, called run by run, do not
         // shift it thousands of times.
-        let filtered: BTreeSet<u32> =
-            std::mem::take(&mut sh.filtered_rows).iter().filter_map(|r| cut.moved(*r)).collect();
+        let filtered: BTreeSet<u32> = std::mem::take(&mut sh.filtered_rows)
+            .iter()
+            .filter_map(|r| cut.moved(*r))
+            .collect();
         sh.merges = std::mem::take(&mut sh.merges)
             .into_iter()
             .filter_map(|m| {
@@ -1468,7 +1626,11 @@ impl Workbook {
         }
         let rect = self.clamp_to_used(sheet, rect);
         // Cells of a table cannot be merged.
-        if self.sheets[sheet].tables.iter().any(|t| t.range.intersects(&rect)) {
+        if self.sheets[sheet]
+            .tables
+            .iter()
+            .any(|t| t.range.intersects(&rect))
+        {
             return;
         }
         self.snapshot();
@@ -1512,7 +1674,12 @@ impl Workbook {
 
     /// Remove every merged area touching `rect`. Returns true if any existed.
     pub fn unmerge(&mut self, sheet: usize, rect: Rect) -> bool {
-        if sheet >= self.sheets.len() || !self.sheets[sheet].merges.iter().any(|m| m.intersects(&rect)) {
+        if sheet >= self.sheets.len()
+            || !self.sheets[sheet]
+                .merges
+                .iter()
+                .any(|m| m.intersects(&rect))
+        {
             return false;
         }
         self.snapshot();
@@ -1564,7 +1731,11 @@ impl Workbook {
                         b.bottom = line;
                     }
                     BorderPreset::Outside | BorderPreset::ThickOutside => {
-                        let l = if preset == BorderPreset::ThickOutside { thick } else { line };
+                        let l = if preset == BorderPreset::ThickOutside {
+                            thick
+                        } else {
+                            line
+                        };
                         if top_edge {
                             b.top = l;
                         }
@@ -1616,15 +1787,16 @@ impl Workbook {
         }
         // Clearing borders also clears the touching edges of the neighbours.
         if preset == BorderPreset::None {
-            let clear_edge = |wb: &mut Workbook, r: u32, c: u32, f: &dyn Fn(&mut crate::style::Borders)| {
-                let id = wb.sheets[sheet].style_id_at(r, c);
-                let mut s = wb.styles.get(id).clone();
-                f(&mut s.borders);
-                let new = wb.styles.intern(s);
-                if new != id {
-                    wb.set_style_id(sheet, r, c, new);
-                }
-            };
+            let clear_edge =
+                |wb: &mut Workbook, r: u32, c: u32, f: &dyn Fn(&mut crate::style::Borders)| {
+                    let id = wb.sheets[sheet].style_id_at(r, c);
+                    let mut s = wb.styles.get(id).clone();
+                    f(&mut s.borders);
+                    let new = wb.styles.intern(s);
+                    if new != id {
+                        wb.set_style_id(sheet, r, c, new);
+                    }
+                };
             let shown = |wb: &Workbook, row: u32| !wb.sheets[sheet].filtered_rows.contains(&row);
             for c in rect.c0..=rect.c1 {
                 if rect.r0 > 0 && shown(self, rect.r0 - 1) {
@@ -1648,10 +1820,20 @@ impl Workbook {
     // ---- sort -----------------------------------------------------------
 
     /// Sort the rows of `rect` by the values in column `key_col`.
-    pub fn sort_rows(&mut self, sheet: usize, rect: Rect, key_col: u32, ascending: bool, has_header: bool) {
+    pub fn sort_rows(
+        &mut self,
+        sheet: usize,
+        rect: Rect,
+        key_col: u32,
+        ascending: bool,
+        has_header: bool,
+    ) {
         let rect = self.clamp_to_used(sheet, rect);
         let spec = SortSpec {
-            levels: vec![SortLevel::values(key_col.saturating_sub(rect.c0), !ascending)],
+            levels: vec![SortLevel::values(
+                key_col.saturating_sub(rect.c0),
+                !ascending,
+            )],
             has_header,
             ..Default::default()
         };
@@ -1664,7 +1846,12 @@ impl Workbook {
     /// (hidden columns, left to right) stay where they are; formulas move
     /// with their cells and read as if they had been copied there, and
     /// notes and comments move with their cells.
-    pub fn sort_range(&mut self, sheet: usize, rect: Rect, spec: &SortSpec) -> Result<(), SortError> {
+    pub fn sort_range(
+        &mut self,
+        sheet: usize,
+        rect: Rect,
+        spec: &SortSpec,
+    ) -> Result<(), SortError> {
         let Some(sh) = self.sheets.get(sheet) else {
             return Ok(());
         };
@@ -1685,7 +1872,9 @@ impl Workbook {
         let lines: Vec<u32> = if by_rows {
             sh.visible_rows(area.r0, area.r1).collect()
         } else {
-            (area.c0..=area.c1).filter(|c| !sh.hidden_cols.contains(c)).collect()
+            (area.c0..=area.c1)
+                .filter(|c| !sh.hidden_cols.contains(c))
+                .collect()
         };
         if lines.len() < 2 || spec.levels.is_empty() {
             return Ok(());
@@ -1695,8 +1884,10 @@ impl Workbook {
             .levels
             .iter()
             .map(|level| {
-                let list: Option<Vec<String>> =
-                    level.custom_list.as_ref().map(|list| list.iter().map(|s| list_key(s)).collect());
+                let list: Option<Vec<String>> = level
+                    .custom_list
+                    .as_ref()
+                    .map(|list| list.iter().map(|s| list_key(s)).collect());
                 lines
                     .iter()
                     .map(|&line| {
@@ -1717,8 +1908,12 @@ impl Workbook {
                                 };
                                 SortKey::Value(value, place)
                             }
-                            SortOn::CellColor(color) => SortKey::Flag(cell_colors(self, sheet, row, col).0 == color),
-                            SortOn::FontColor(color) => SortKey::Flag(cell_colors(self, sheet, row, col).1 == color),
+                            SortOn::CellColor(color) => {
+                                SortKey::Flag(cell_colors(self, sheet, row, col).0 == color)
+                            }
+                            SortOn::FontColor(color) => {
+                                SortKey::Flag(cell_colors(self, sheet, row, col).1 == color)
+                            }
                         }
                     })
                     .collect()
@@ -1739,14 +1934,22 @@ impl Workbook {
         });
 
         // Lift every line that moves, then set them down in their new places.
-        let across = if by_rows { rect.c0..=rect.c1 } else { rect.r0..=rect.r1 };
+        let across = if by_rows {
+            rect.c0..=rect.c1
+        } else {
+            rect.r0..=rect.r1
+        };
         let mut moves: Vec<(u32, u32, Vec<Option<Cell>>)> = Vec::new();
         for (i, &from) in order.iter().enumerate() {
             let (from, to) = (lines[from], lines[i]);
             if from != to {
                 let cells = across
                     .clone()
-                    .map(|x| sh.cells.get(&if by_rows { (from, x) } else { (x, from) }).cloned())
+                    .map(|x| {
+                        sh.cells
+                            .get(&if by_rows { (from, x) } else { (x, from) })
+                            .cloned()
+                    })
                     .collect();
                 moves.push((from, to, cells));
             }
@@ -1756,7 +1959,11 @@ impl Workbook {
         for (from, to, cells) in moves {
             let delta = to as i64 - from as i64;
             for (x, cell) in across.clone().zip(cells) {
-                let (row, col, d_row, d_col) = if by_rows { (to, x, delta, 0) } else { (x, to, 0, delta) };
+                let (row, col, d_row, d_col) = if by_rows {
+                    (to, x, delta, 0)
+                } else {
+                    (x, to, 0, delta)
+                };
                 let cell = cell.map(|mut c| {
                     if let Content::Formula(e) = &c.content {
                         c.content = Content::Formula(Arc::new(e.shifted(d_row, d_col)));
@@ -1775,7 +1982,12 @@ impl Workbook {
     /// continues them.
     pub fn custom_lists(&self) -> Vec<Vec<String>> {
         let mut lists = Self::builtin_lists(self.locale);
-        lists.extend(self.user_lists.iter().filter(|list| !list.is_empty()).cloned());
+        lists.extend(
+            self.user_lists
+                .iter()
+                .filter(|list| !list.is_empty())
+                .cloned(),
+        );
         lists
     }
 
@@ -1783,7 +1995,11 @@ impl Workbook {
     pub fn builtin_lists(locale: &crate::locale::Locale) -> Vec<Vec<String>> {
         // Weeks start on Sunday in the English lists, on Monday elsewhere.
         let first = if locale.id == "en" { 0 } else { 1 };
-        let days = |names: &[&str; 7]| (0..7).map(|i| names[(i + first) % 7].to_string()).collect::<Vec<_>>();
+        let days = |names: &[&str; 7]| {
+            (0..7)
+                .map(|i| names[(i + first) % 7].to_string())
+                .collect::<Vec<_>>()
+        };
         let months = |names: &[&str; 12]| names.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         vec![
             days(&locale.days_short),
@@ -1806,12 +2022,17 @@ impl Workbook {
         }
         let is_text = |r: u32, c: u32| matches!(sh.value_at(r, c), Value::Text(_));
         let cols = rect.c0..=rect.c1;
-        let labels = cols.clone().all(|c| is_text(rect.r0, c) || sh.is_blank(rect.r0, c))
+        let labels = cols
+            .clone()
+            .all(|c| is_text(rect.r0, c) || sh.is_blank(rect.r0, c))
             && cols.clone().any(|c| is_text(rect.r0, c));
         labels
             && cols.clone().any(|c| {
                 let other_kind = !is_text(rect.r0 + 1, c) && !sh.is_blank(rect.r0 + 1, c);
-                let (head, below) = (self.style_at(sheet, rect.r0, c), self.style_at(sheet, rect.r0 + 1, c));
+                let (head, below) = (
+                    self.style_at(sheet, rect.r0, c),
+                    self.style_at(sheet, rect.r0 + 1, c),
+                );
                 other_kind || head.font.bold != below.font.bold || head.fill != below.fill
             })
     }
@@ -1843,12 +2064,19 @@ impl Workbook {
         let cols: Vec<u32> = if columns.is_empty() {
             (data.c0..=data.c1).collect()
         } else {
-            columns.iter().map(|c| data.c0 + c).filter(|c| *c <= data.c1).collect()
+            columns
+                .iter()
+                .map(|c| data.c0 + c)
+                .filter(|c| *c <= data.c1)
+                .collect()
         };
         let mut seen: HashSet<Vec<String>> = HashSet::new();
         let mut kept: Vec<u32> = Vec::new();
         for row in data.r0..=data.r1 {
-            let key = cols.iter().map(|c| self.display_text(sheet, row, *c).text.to_lowercase()).collect();
+            let key = cols
+                .iter()
+                .map(|c| self.display_text(sheet, row, *c).text.to_lowercase())
+                .collect();
             if seen.insert(key) {
                 kept.push(row);
             }
@@ -1867,7 +2095,8 @@ impl Workbook {
             .find(|t| {
                 t.range.c0 == data.c0
                     && t.range.c1 == data.c1
-                    && t.data_range().is_some_and(|d| d.r0 <= data.r0 && data.r1 <= d.r1)
+                    && t.data_range()
+                        .is_some_and(|d| d.r0 <= data.r0 && data.r1 <= d.r1)
             })
             .map(|t| t.id);
         // The rows that stay close up at the top of the range, with their
@@ -1885,12 +2114,17 @@ impl Workbook {
                 continue;
             }
             for col in data.c0..=data.c1 {
-                let cell = self.sheets[sheet].cells.get(&(from, col)).cloned().map(|mut c| {
-                    if let Content::Formula(e) = &c.content {
-                        c.content = Content::Formula(Arc::new(e.shifted(to as i64 - from as i64, 0)));
-                    }
-                    c
-                });
+                let cell = self.sheets[sheet]
+                    .cells
+                    .get(&(from, col))
+                    .cloned()
+                    .map(|mut c| {
+                        if let Content::Formula(e) = &c.content {
+                            c.content =
+                                Content::Formula(Arc::new(e.shifted(to as i64 - from as i64, 0)));
+                        }
+                        c
+                    });
                 self.put_cell(sheet, to, col, cell);
             }
         }
@@ -1944,10 +2178,20 @@ impl Workbook {
         // Jump to the next non-blank cell in that direction.
         let (er, ec) = sh.content_extent();
         let found = match dir {
-            Direction::Right => (col + 1..=ec).find(|c| !sh.is_blank(row, *c)).map(|c| (row, c)),
-            Direction::Left => (0..col).rev().find(|c| !sh.is_blank(row, *c)).map(|c| (row, c)),
-            Direction::Down => (row + 1..=er).find(|r| !sh.is_blank(*r, col)).map(|r| (r, col)),
-            Direction::Up => (0..row).rev().find(|r| !sh.is_blank(*r, col)).map(|r| (r, col)),
+            Direction::Right => (col + 1..=ec)
+                .find(|c| !sh.is_blank(row, *c))
+                .map(|c| (row, c)),
+            Direction::Left => (0..col)
+                .rev()
+                .find(|c| !sh.is_blank(row, *c))
+                .map(|c| (row, c)),
+            Direction::Down => (row + 1..=er)
+                .find(|r| !sh.is_blank(*r, col))
+                .map(|r| (r, col)),
+            Direction::Up => (0..row)
+                .rev()
+                .find(|r| !sh.is_blank(*r, col))
+                .map(|r| (r, col)),
         };
         found.unwrap_or(match dir {
             Direction::Up => (0, col),
@@ -2011,11 +2255,13 @@ impl Workbook {
             }
             let around = border(rect);
             if around.c1 > rect.c1 {
-                rect = reach(rect, Rect::new(around.r0, around.c1, around.r1, around.c1)).unwrap_or(rect);
+                rect = reach(rect, Rect::new(around.r0, around.c1, around.r1, around.c1))
+                    .unwrap_or(rect);
             }
             let around = border(rect);
             if around.c0 < rect.c0 {
-                rect = reach(rect, Rect::new(around.r0, around.c0, around.r1, around.c0)).unwrap_or(rect);
+                rect = reach(rect, Rect::new(around.r0, around.c0, around.r1, around.c0))
+                    .unwrap_or(rect);
             }
             if rect == before {
                 return rect;
@@ -2079,7 +2325,11 @@ impl Workbook {
         let shown = |row: u32| !any_hidden || !sh.is_row_hidden(row);
         for rect in rects {
             for ((r, c), cell) in sh.cells.range((rect.r0, 0)..=(rect.r1, u32::MAX)) {
-                if *c >= rect.c0 && *c <= rect.c1 && !matches!(cell.content, Content::Empty) && shown(*r) {
+                if *c >= rect.c0
+                    && *c <= rect.c1
+                    && !matches!(cell.content, Content::Empty)
+                    && shown(*r)
+                {
                     visit(&cell.value);
                 }
             }
@@ -2139,7 +2389,8 @@ impl RowCut {
         let Some(last) = runs.checked_sub(1) else {
             return Some(row);
         };
-        (row >= self.ends[last]).then(|| row - (self.before[last] + self.ends[last] - self.starts[last]))
+        (row >= self.ends[last])
+            .then(|| row - (self.before[last] + self.ends[last] - self.starts[last]))
     }
 
     /// What is left of the rows `lo..=hi`; `None` when they all go.
@@ -2162,7 +2413,8 @@ impl RowCut {
         }
         let end = r.end.unwrap_or(r.start);
         let flipped = r.start.row > end.row;
-        let Some((lo, hi)) = self.interval(r.start.row.min(end.row), r.start.row.max(end.row)) else {
+        let Some((lo, hi)) = self.interval(r.start.row.min(end.row), r.start.row.max(end.row))
+        else {
             // The sheet is still there, its cells are not: `Sheet2!#REF!`.
             return match &r.sheet {
                 Some(sheet) => Expr::RefError(sheet.clone()),
@@ -2334,7 +2586,10 @@ pub fn parse_tsv(text: &str) -> Vec<Vec<String>> {
 
 /// Convenience for building formulas programmatically (AutoSum).
 pub fn sum_formula(rect: Rect) -> Expr {
-    Expr::Func(Arc::from("SUM"), vec![Expr::Ref(crate::ast::RefExpr::range(rect))])
+    Expr::Func(
+        Arc::from("SUM"),
+        vec![Expr::Ref(crate::ast::RefExpr::range(rect))],
+    )
 }
 
 #[cfg(test)]
@@ -2351,7 +2606,9 @@ mod tests {
 
     /// What column `col` displays in rows `r0..=r1` (1-based, as on screen).
     fn column(w: &Workbook, col: u32, r0: u32, r1: u32) -> Vec<String> {
-        (r0 - 1..r1).map(|r| w.display_text(0, r, col).text).collect()
+        (r0 - 1..r1)
+            .map(|r| w.display_text(0, r, col).text)
+            .collect()
     }
 
     fn sort(w: &mut Workbook, range: &str, levels: Vec<SortLevel>, has_header: bool) {
@@ -2385,13 +2642,17 @@ mod tests {
         // errors in their original order, the blank last.
         assert_eq!(
             column(&w, 0, 1, 12),
-            ["1", "3", "A", "a", "b", "École", "zoo", "FALSE", "TRUE", "#N/A", "#DIV/0!", ""]
+            [
+                "1", "3", "A", "a", "b", "École", "zoo", "FALSE", "TRUE", "#N/A", "#DIV/0!", ""
+            ]
         );
         let mut w = wb(&cells);
         sort(&mut w, "A1:A12", vec![SortLevel::values(0, true)], false);
         assert_eq!(
             column(&w, 0, 1, 12),
-            ["#N/A", "#DIV/0!", "TRUE", "FALSE", "zoo", "École", "b", "A", "a", "3", "1", ""]
+            [
+                "#N/A", "#DIV/0!", "TRUE", "FALSE", "zoo", "École", "b", "A", "a", "3", "1", ""
+            ]
         );
         assert!(w.undo());
         assert_eq!(column(&w, 0, 1, 4), ["3", "b", "TRUE", "#N/A"]);
@@ -2412,7 +2673,12 @@ mod tests {
             ("B5", "2"),
         ];
         let mut w = wb(&cells);
-        sort(&mut w, "A1:B5", vec![SortLevel::values(0, false), SortLevel::values(1, true)], true);
+        sort(
+            &mut w,
+            "A1:B5",
+            vec![SortLevel::values(0, false), SortLevel::values(1, true)],
+            true,
+        );
         assert_eq!(column(&w, 0, 1, 5), ["Team", "Blue", "blue", "Red", "red"]);
         assert_eq!(column(&w, 1, 1, 5), ["Score", "5", "2", "7", "1"]);
 
@@ -2446,7 +2712,14 @@ mod tests {
 
     #[test]
     fn custom_lists() {
-        let mut w = wb(&[("A1", "Wed"), ("A2", "mon"), ("A3", "Sun"), ("A4", "other"), ("A5", "Tue."), ("A6", "also")]);
+        let mut w = wb(&[
+            ("A1", "Wed"),
+            ("A2", "mon"),
+            ("A3", "Sun"),
+            ("A4", "other"),
+            ("A5", "Tue."),
+            ("A6", "also"),
+        ]);
         let lists = w.custom_lists();
         assert_eq!(lists[0], ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
         assert_eq!(lists[3][0], "January");
@@ -2456,9 +2729,15 @@ mod tests {
         };
         // In the order of the list; what is not in it comes after.
         sort(&mut w, "A1:A6", vec![level(false)], false);
-        assert_eq!(column(&w, 0, 1, 6), ["Sun", "mon", "Tue.", "Wed", "also", "other"]);
+        assert_eq!(
+            column(&w, 0, 1, 6),
+            ["Sun", "mon", "Tue.", "Wed", "also", "other"]
+        );
         sort(&mut w, "A1:A6", vec![level(true)], false);
-        assert_eq!(column(&w, 0, 1, 6), ["other", "also", "Wed", "Tue.", "mon", "Sun"]);
+        assert_eq!(
+            column(&w, 0, 1, 6),
+            ["other", "also", "Wed", "Tue.", "mon", "Sun"]
+        );
 
         let mut fr = Workbook::new(Locale::fr());
         fr.set_cell_text(0, 0, 0, "x").unwrap();
@@ -2470,8 +2749,19 @@ mod tests {
 
     #[test]
     fn the_lists_of_the_user_sort_and_fill() {
-        let mut w = wb(&[("A1", "South"), ("A2", "north"), ("A3", "West"), ("A4", "East"), ("C1", "north"), ("D1", "WEST"), ("E1", "Mon")]);
-        w.user_lists = vec![vec!["North".into(), "East".into(), "South".into(), "West".into()], Vec::new()];
+        let mut w = wb(&[
+            ("A1", "South"),
+            ("A2", "north"),
+            ("A3", "West"),
+            ("A4", "East"),
+            ("C1", "north"),
+            ("D1", "WEST"),
+            ("E1", "Mon"),
+        ]);
+        w.user_lists = vec![
+            vec!["North".into(), "East".into(), "South".into(), "West".into()],
+            Vec::new(),
+        ];
         let lists = w.custom_lists();
         // After the four built-in ones; an empty list is none.
         assert_eq!(lists.len(), 5);
@@ -2485,7 +2775,10 @@ mod tests {
         // The fill handle continues the list, around its end, in the
         // capitals of what was typed.
         w.autofill(0, rect("C1"), rect("C1:C6"));
-        assert_eq!(column(&w, 2, 1, 6), ["north", "east", "south", "west", "north", "east"]);
+        assert_eq!(
+            column(&w, 2, 1, 6),
+            ["north", "east", "south", "west", "north", "east"]
+        );
         w.autofill(0, rect("D1"), rect("D1:D3"));
         assert_eq!(column(&w, 3, 1, 3), ["WEST", "NORTH", "EAST"]);
         // The built-in lists still come first.
@@ -2507,16 +2800,39 @@ mod tests {
             custom_list: None,
         };
         // On top: the others keep their order under them.
-        sort(&mut w, "A1:A4", vec![level(SortOn::CellColor(Some(yellow)), false)], false);
+        sort(
+            &mut w,
+            "A1:A4",
+            vec![level(SortOn::CellColor(Some(yellow)), false)],
+            false,
+        );
         assert_eq!(column(&w, 0, 1, 4), ["b", "d", "a", "c"]);
         assert_eq!(w.style_at(0, 0, 0).fill, Some(yellow));
         // On bottom.
-        sort(&mut w, "A1:A4", vec![level(SortOn::CellColor(Some(yellow)), true)], false);
+        sort(
+            &mut w,
+            "A1:A4",
+            vec![level(SortOn::CellColor(Some(yellow)), true)],
+            false,
+        );
         assert_eq!(column(&w, 0, 1, 4), ["a", "c", "b", "d"]);
-        sort(&mut w, "A1:A4", vec![level(SortOn::FontColor(Some(red)), false)], false);
+        sort(
+            &mut w,
+            "A1:A4",
+            vec![level(SortOn::FontColor(Some(red)), false)],
+            false,
+        );
         assert_eq!(column(&w, 0, 1, 4), ["c", "a", "b", "d"]);
         // "No fill" first, then by value.
-        sort(&mut w, "A1:A4", vec![level(SortOn::CellColor(None), false), SortLevel::values(0, true)], false);
+        sort(
+            &mut w,
+            "A1:A4",
+            vec![
+                level(SortOn::CellColor(None), false),
+                SortLevel::values(0, true),
+            ],
+            false,
+        );
         assert_eq!(column(&w, 0, 1, 4), ["c", "a", "d", "b"]);
     }
 
@@ -2542,7 +2858,11 @@ mod tests {
         };
         w.sort_range(0, rect("A1:C3"), &spec).unwrap();
         w.commit("sort");
-        let row = |r: u32| (0..3).map(|c| w.display_text(0, r, c).text).collect::<Vec<_>>();
+        let row = |r: u32| {
+            (0..3)
+                .map(|c| w.display_text(0, r, c).text)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(row(0), ["a", "b", "c"]);
         assert_eq!(row(1), ["1", "2", "3"]);
         assert_eq!(row(2), ["10", "20", "30"]);
@@ -2576,11 +2896,24 @@ mod tests {
             levels: vec![SortLevel::values(0, false)],
             ..Default::default()
         };
-        assert_eq!(w.sort_range(0, rect("A1:B4"), &spec), Err(SortError::MergedCells));
-        assert_eq!(w.remove_duplicates(0, rect("A1:B4"), &[], false), Err(SortError::MergedCells));
+        assert_eq!(
+            w.sort_range(0, rect("A1:B4"), &spec),
+            Err(SortError::MergedCells)
+        );
+        assert_eq!(
+            w.remove_duplicates(0, rect("A1:B4"), &[], false),
+            Err(SortError::MergedCells)
+        );
         // A merge in the header row is not in the way.
         assert_eq!(
-            w.sort_range(0, rect("A3:B4"), &SortSpec { has_header: true, ..spec }),
+            w.sort_range(
+                0,
+                rect("A3:B4"),
+                &SortSpec {
+                    has_header: true,
+                    ..spec
+                }
+            ),
             Ok(())
         );
     }
@@ -2607,12 +2940,21 @@ mod tests {
         let out = w.remove_duplicates(0, rect("A1:B6"), &[], true).unwrap();
         w.commit("dedupe");
         assert_eq!((out.removed, out.remaining), (2, 3));
-        assert_eq!(column(&w, 0, 1, 7), ["Name", "Ann", "Bob", "Ann", "", "", "below"]);
-        assert_eq!(column(&w, 1, 1, 6), ["City", "Paris", "Rome", "Oslo", "", ""]);
+        assert_eq!(
+            column(&w, 0, 1, 7),
+            ["Name", "Ann", "Bob", "Ann", "", "", "below"]
+        );
+        assert_eq!(
+            column(&w, 1, 1, 6),
+            ["City", "Paris", "Rome", "Oslo", "", ""]
+        );
         // Cells beside the range do not move.
         assert_eq!(w.display_text(0, 2, 2).text, "beside");
         assert!(w.undo());
-        assert_eq!(column(&w, 0, 1, 7), ["Name", "Ann", "Bob", "ann", "Ann", "Bob", "below"]);
+        assert_eq!(
+            column(&w, 0, 1, 7),
+            ["Name", "Ann", "Bob", "ann", "Ann", "Bob", "below"]
+        );
 
         // On the first column only.
         let out = w.remove_duplicates(0, rect("A1:B6"), &[0], true).unwrap();
@@ -2630,9 +2972,19 @@ mod tests {
         // Cells are compared by what they display.
         let mut w = wb(&[("A1", "1"), ("A2", "1"), ("A3", "=A1+A2")]);
         w.update_style(0, rect("A2"), &|s| s.num_fmt = "0.00".into());
-        assert_eq!(w.remove_duplicates(0, rect("A1:A2"), &[], false).unwrap().removed, 0);
+        assert_eq!(
+            w.remove_duplicates(0, rect("A1:A2"), &[], false)
+                .unwrap()
+                .removed,
+            0
+        );
         w.update_style(0, rect("A1"), &|s| s.num_fmt = "0.00".into());
-        assert_eq!(w.remove_duplicates(0, rect("A1:A2"), &[], false).unwrap().removed, 1);
+        assert_eq!(
+            w.remove_duplicates(0, rect("A1:A2"), &[], false)
+                .unwrap()
+                .removed,
+            1
+        );
     }
 
     /// A list in A1:B6 filtered to the rows where B > 2: rows 3 and 5 (1-based)
@@ -2654,9 +3006,21 @@ mod tests {
         ]);
         w.toggle_auto_filter(0, Rect::cell(0, 0)).unwrap();
         let more = Condition::new(Comparison::Greater, "2", Locale::en());
-        w.set_filter_criteria(0, FilterScope::Sheet, 1, Some(Criteria::Custom(CustomFilter::one(more))));
+        w.set_filter_criteria(
+            0,
+            FilterScope::Sheet,
+            1,
+            Some(Criteria::Custom(CustomFilter::one(more))),
+        );
         w.commit("filter");
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2, 4]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2, 4]
+        );
         w
     }
 
@@ -2719,11 +3083,28 @@ mod tests {
         w.commit("delete");
         assert_eq!(column(&w, 0, 1, 4), ["Item", "b", "d", ""]);
         assert_eq!(column(&w, 1, 1, 4), ["Qty", "1", "2", "9"]);
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [1, 2]);
-        assert_eq!(w.auto_filter(0, FilterScope::Sheet).unwrap().range, rect("A1:B4"));
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
+        assert_eq!(
+            w.auto_filter(0, FilterScope::Sheet).unwrap().range,
+            rect("A1:B4")
+        );
         assert!(w.undo());
         assert_eq!(column(&w, 1, 1, 6), ["Qty", "5", "1", "7", "2", "9"]);
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2, 4]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2, 4]
+        );
 
         // Without a filter everything goes, as before.
         w.clear_filters(0, FilterScope::Sheet);
@@ -2747,7 +3128,8 @@ mod tests {
             ]);
             for r in 1..=30u32 {
                 w.set_value(0, r, 0, Value::Number(r as f64));
-                w.set_cell_text(0, r, 1, &format!("=A{}*2+A{}", r + 1, (r + 3).min(31))).unwrap();
+                w.set_cell_text(0, r, 1, &format!("=A{}*2+A{}", r + 1, (r + 3).min(31)))
+                    .unwrap();
             }
             w.set_cell_text(0, 40, 0, "=A3+A4").unwrap();
             w.set_row_height(0, 7, Some(33.0));
@@ -2757,7 +3139,10 @@ mod tests {
             w.set_rows_hidden(0, 14, 15, true);
             w.commit("setup");
             w.toggle_auto_filter(0, Rect::cell(0, 0)).unwrap();
-            let shown: Vec<String> = (1..=30).filter(|n| n % 3 == 0).map(|n| n.to_string()).collect();
+            let shown: Vec<String> = (1..=30)
+                .filter(|n| n % 3 == 0)
+                .map(|n| n.to_string())
+                .collect();
             let criteria = Criteria::Values(crate::filter::ValueFilter {
                 values: shown,
                 ..Default::default()
@@ -2770,7 +3155,9 @@ mod tests {
         batch.delete_rows(0, 2, 26);
         batch.commit("delete");
         let mut stepwise = build();
-        let runs: Vec<u32> = (2..28).filter(|r| !stepwise.sheets[0].filtered_rows.contains(r)).collect();
+        let runs: Vec<u32> = (2..28)
+            .filter(|r| !stepwise.sheets[0].filtered_rows.contains(r))
+            .collect();
         assert!(runs.len() > 5);
         for row in runs.into_iter().rev() {
             stepwise.delete_rows(0, row, 1);
@@ -2797,7 +3184,10 @@ mod tests {
     fn status_bar_counts_what_is_shown() {
         let mut w = filtered();
         let st = w.selection_stats(0, &[rect("B2:B6")]);
-        assert_eq!((st.count, st.numeric_count, st.sum, st.min, st.max), (3, 3, 21.0, 5.0, 9.0));
+        assert_eq!(
+            (st.count, st.numeric_count, st.sum, st.min, st.max),
+            (3, 3, 21.0, 5.0, 9.0)
+        );
         w.set_rows_hidden(0, 5, 5, true);
         let st = w.selection_stats(0, &[rect("A1:B6")]);
         assert_eq!((st.count, st.numeric_count, st.sum), (6, 2, 12.0));
@@ -2870,7 +3260,11 @@ mod tests {
                 w.set_value(0, next(14), next(14), Value::Number(1.0));
             }
             for (row, col) in (0..16).flat_map(|r| (0..16).map(move |c| (r, c))) {
-                assert_eq!(w.current_region(0, row, col), ring_by_ring(&w, row, col), "{density}: {row}, {col}");
+                assert_eq!(
+                    w.current_region(0, row, col),
+                    ring_by_ring(&w, row, col),
+                    "{density}: {row}, {col}"
+                );
             }
         }
         // A long list is one walk down, from wherever it starts.

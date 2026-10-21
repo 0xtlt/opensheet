@@ -19,11 +19,11 @@ use super::{
     OUTLINE_WIDTH, Plot, SLICE_OUTLINE_WIDTH, TICK_LABELS, TICK_MARKS, TREND_WIDTH, Track, foreign,
     innermost_level, is_stroked, list_separator, name_cell, name_of, series_line,
 };
+use crate::xlsx::color::push_drawing_color;
 use crate::xlsx::points_to_px;
 use crate::xlsx::write::{
     MAX_COL_WIDTH_PX, MAX_ROW_HEIGHT_PT, NS_DOC_REL, NS_PKG_REL, push_number,
 };
-use crate::xlsx::color::push_drawing_color;
 use crate::xlsx::xml::{XML_DECL, push_attr, push_cell_text, push_text};
 use opensheet_engine::ast::{CellRef, RefExpr};
 use opensheet_engine::chart::{
@@ -311,7 +311,13 @@ fn placeable(layout: &&ManualLayout) -> bool {
 /// `rest` (attributes the element always has, such as `lang`).
 /// `size` and `bold` are what stands for an automatic size and weight
 /// where they are spelled out all the same.
-fn run_properties(element: &str, text: &TextFormat, rest: &str, size: Option<u32>, bold: Option<bool>) -> String {
+fn run_properties(
+    element: &str,
+    text: &TextFormat,
+    rest: &str,
+    size: Option<u32>,
+    bold: Option<bool>,
+) -> String {
     let mut x = format!("<a:{element}{rest}");
     let size = text
         .size
@@ -1041,7 +1047,11 @@ impl ChartWriter<'_> {
         w!(x, "</c:f><c:multiLvlStrCache><c:ptCount val=\"{points}\"/>");
         for level in levels {
             x.push_str("<c:lvl>");
-            for (index, text) in level.iter().enumerate().filter(|(_, text)| !text.is_empty()) {
+            for (index, text) in level
+                .iter()
+                .enumerate()
+                .filter(|(_, text)| !text.is_empty())
+            {
                 w!(x, "<c:pt idx=\"{index}\"><c:v>");
                 push_cell_text(x, text);
                 x.push_str("</c:v></c:pt>");
@@ -1068,9 +1078,15 @@ impl ChartWriter<'_> {
         let rect = self.wb.clamp_to_used(sheet, r.rect());
         let text = |row: u32, col: u32| self.wb.display_text(sheet, row, col).text;
         let levels: Vec<Vec<String>> = if in_columns {
-            (rect.c0..=rect.c1).rev().map(|col| (rect.r0..=rect.r1).map(|row| text(row, col)).collect()).collect()
+            (rect.c0..=rect.c1)
+                .rev()
+                .map(|col| (rect.r0..=rect.r1).map(|row| text(row, col)).collect())
+                .collect()
         } else {
-            (rect.r0..=rect.r1).rev().map(|row| (rect.c0..=rect.c1).map(|col| text(row, col)).collect()).collect()
+            (rect.r0..=rect.r1)
+                .rev()
+                .map(|row| (rect.c0..=rect.c1).map(|col| text(row, col)).collect())
+                .collect()
         };
         let points = if in_columns { rect.rows() } else { rect.cols() } as usize;
         let levels: Vec<&[String]> = levels.iter().map(Vec::as_slice).collect();
@@ -1144,7 +1160,8 @@ impl ChartWriter<'_> {
         }
         let marker = s.marker_for(kind);
         for (index, point) in points {
-            let varied = ((index as u64) < count).then(|| self.wb.theme().chart_color(index as usize));
+            let varied =
+                ((index as u64) < count).then(|| self.wb.theme().chart_color(index as usize));
             let color = point.and_then(|p| p.color).or(varied);
             // Only slices can be pulled out.
             let explosion = point.and_then(|p| p.explosion).filter(|_| plot.is_round());
@@ -1332,7 +1349,9 @@ impl ChartWriter<'_> {
         // looks like is always spelled out, whatever the type of the
         // chart would give it, and so is its automatic colour, which is
         // the engine's for the theme of the workbook.
-        let ink = s.color.unwrap_or_else(|| self.wb.theme().chart_color(index));
+        let ink = s
+            .color
+            .unwrap_or_else(|| self.wb.theme().chart_color(index));
         // Where every point has a colour of its own, each says which.
         let varied = chart.varies_colors() && (chart.kind.is_round() || chart.series.len() == 1);
         // Excel reads a series along one row or one column.
@@ -1424,7 +1443,9 @@ impl ChartWriter<'_> {
             if plot.is_xy() {
                 self.push_axis_data(x, &innermost_level(r, &plotted));
             } else if let Some(points) = &pivot_points {
-                let levels: Vec<&[String]> = std::iter::once(points.labels.as_slice()).chain(points.outer_levels.iter().map(Vec::as_slice)).collect();
+                let levels: Vec<&[String]> = std::iter::once(points.labels.as_slice())
+                    .chain(points.outer_levels.iter().map(Vec::as_slice))
+                    .collect();
                 self.push_multi_level(x, r, points.keep.len(), &levels);
             } else if let Some(in_columns) = category_levels(r.rect(), plotted.rect()) {
                 self.push_label_block(x, r, in_columns);

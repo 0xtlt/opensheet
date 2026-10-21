@@ -17,7 +17,12 @@ pub enum AxisId {
 }
 
 impl AxisId {
-    pub const ALL: [AxisId; 4] = [AxisId::Category, AxisId::Value, AxisId::SecondaryCategory, AxisId::SecondaryValue];
+    pub const ALL: [AxisId; 4] = [
+        AxisId::Category,
+        AxisId::Value,
+        AxisId::SecondaryCategory,
+        AxisId::SecondaryValue,
+    ];
 
     pub fn is_secondary(self) -> bool {
         matches!(self, AxisId::SecondaryCategory | AxisId::SecondaryValue)
@@ -109,7 +114,10 @@ impl ChartElement {
             ChartElement::Axis(axis) => Some(&axis.of(&chart.axes).text),
             ChartElement::AxisTitle(axis) => Some(&axis.of(&chart.axes).title_text),
             ChartElement::DataLabels(s) => {
-                let own = chart.series.get(s as usize).and_then(|series| series.labels.as_ref());
+                let own = chart
+                    .series
+                    .get(s as usize)
+                    .and_then(|series| series.labels.as_ref());
                 Some(own.map_or(&chart.label_options.text, |labels| &labels.text))
             }
             _ => None,
@@ -128,7 +136,11 @@ impl ChartElement {
     /// Change the text of an element; with the chart area, every text of
     /// the chart, as Excel does. The labels of a series that follows the
     /// chart's become its own first. Returns whether there was a text.
-    pub fn format_text(self, chart: &mut crate::chart::Chart, f: impl Fn(&mut crate::chart::TextFormat)) -> bool {
+    pub fn format_text(
+        self,
+        chart: &mut crate::chart::Chart,
+        f: impl Fn(&mut crate::chart::TextFormat),
+    ) -> bool {
         match self {
             ChartElement::ChartArea => chart.text_formats_mut().into_iter().for_each(f),
             ChartElement::Title => f(&mut chart.title_text),
@@ -213,18 +225,36 @@ impl Tagger {
     }
 
     pub fn area(&mut self, element: ChartElement, rect: (f32, f32, f32, f32)) {
-        self.boxes.push((element, [rect.0.min(rect.2), rect.1.min(rect.3), rect.0.max(rect.2), rect.1.max(rect.3)]));
+        self.boxes.push((
+            element,
+            [
+                rect.0.min(rect.2),
+                rect.1.min(rect.3),
+                rect.0.max(rect.2),
+                rect.1.max(rect.3),
+            ],
+        ));
     }
 
     pub fn anchor(&mut self, element: ChartElement, x: f32, y: f32, pick: bool) {
-        self.anchors.push(Anchor { element, x, y, pick });
+        self.anchors.push(Anchor {
+            element,
+            x,
+            y,
+            pick,
+        });
     }
 
     pub fn scale(&mut self, axis: AxisId, scale: &Scale) {
         self.scales.push((axis, scale.clone()));
     }
 
-    pub fn finish(self, prims: Vec<Prim>, size: (f32, f32), measure: &dyn TextMeasure) -> ChartLayout {
+    pub fn finish(
+        self,
+        prims: Vec<Prim>,
+        size: (f32, f32),
+        measure: &dyn TextMeasure,
+    ) -> ChartLayout {
         let mut tags = Vec::with_capacity(prims.len());
         let mut span = 0;
         for i in 0..prims.len() {
@@ -256,14 +286,25 @@ fn extent(prim: &Prim, measure: &dyn TextMeasure) -> [f32; 4] {
         Prim::Rect { x, y, w, h, .. } => [*x, *y, x + w, y + h],
         Prim::Line { x0, y0, x1, y1, .. } => [x0.min(*x1), y0.min(*y1), x0.max(*x1), y0.max(*y1)],
         Prim::Path { segs, .. } => {
-            let mut b = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
+            let mut b = [
+                f32::INFINITY,
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::NEG_INFINITY,
+            ];
             for (x, y) in flatten(segs).into_iter().flatten() {
                 b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
             }
             if b[0] > b[2] { [0.0; 4] } else { b }
         }
         Prim::Text(run) => {
-            let w = measure.width_styled(&run.text, run.size, run.bold, run.italic, run.font.as_deref());
+            let w = measure.width_styled(
+                &run.text,
+                run.size,
+                run.bold,
+                run.italic,
+                run.font.as_deref(),
+            );
             let h = line_height(run.size);
             let left = match run.anchor {
                 TextAnchor::Start => run.x,
@@ -275,8 +316,18 @@ fn extent(prim: &Prim, measure: &dyn TextMeasure) -> [f32; 4] {
             } else {
                 // Turned around its anchor: the corners of the box, turned.
                 let (sin, cos) = run.rotation.to_radians().sin_cos();
-                let mut b = [f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY];
-                for (dx, dy) in [(left - run.x, -h / 2.0), (left - run.x + w, -h / 2.0), (left - run.x + w, h / 2.0), (left - run.x, h / 2.0)] {
+                let mut b = [
+                    f32::INFINITY,
+                    f32::INFINITY,
+                    f32::NEG_INFINITY,
+                    f32::NEG_INFINITY,
+                ];
+                for (dx, dy) in [
+                    (left - run.x, -h / 2.0),
+                    (left - run.x + w, -h / 2.0),
+                    (left - run.x + w, h / 2.0),
+                    (left - run.x, h / 2.0),
+                ] {
                     let (x, y) = (run.x + dx * cos - dy * sin, run.y + dx * sin + dy * cos);
                     b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
                 }
@@ -300,12 +351,17 @@ fn flatten(segs: &[Seg]) -> Vec<Vec<(f32, f32)>> {
             }
             Seg::Line(x, y) => run.push((x, y)),
             Seg::Cubic(ax, ay, bx, by, x, y) => {
-                let Some(&(sx, sy)) = run.last() else { continue };
+                let Some(&(sx, sy)) = run.last() else {
+                    continue;
+                };
                 for k in 1..=8 {
                     let t = k as f32 / 8.0;
                     let u = 1.0 - t;
                     let (a, b, c, d) = (u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t);
-                    run.push((a * sx + b * ax + c * bx + d * x, a * sy + b * ay + c * by + d * y));
+                    run.push((
+                        a * sx + b * ax + c * bx + d * x,
+                        a * sy + b * ay + c * by + d * y,
+                    ));
                 }
             }
             Seg::Close => {
@@ -338,7 +394,11 @@ fn inside_polygon(points: &[(f32, f32)], x: f32, y: f32) -> bool {
 fn segment_distance(a: (f32, f32), b: (f32, f32), x: f32, y: f32) -> f32 {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let len2 = dx * dx + dy * dy;
-    let t = if len2 > 0.0 { (((x - a.0) * dx + (y - a.1) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+    let t = if len2 > 0.0 {
+        (((x - a.0) * dx + (y - a.1) * dy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     ((x - a.0 - t * dx).powi(2) + (y - a.1 - t * dy).powi(2)).sqrt()
 }
 
@@ -357,14 +417,24 @@ impl ChartLayout {
         }
         match &self.prims[i] {
             Prim::Rect { .. } | Prim::Text(_) => in_box(&self.extents[i], x, y, 1.0),
-            Prim::Line { x0, y0, x1, y1, stroke } => segment_distance((*x0, *y0), (*x1, *y1), x, y) <= REACH.max(stroke.width / 2.0),
+            Prim::Line {
+                x0,
+                y0,
+                x1,
+                y1,
+                stroke,
+            } => segment_distance((*x0, *y0), (*x1, *y1), x, y) <= REACH.max(stroke.width / 2.0),
             Prim::Path { segs, fill, stroke } => {
                 let runs = flatten(segs);
                 if fill.is_some() && runs.iter().any(|run| inside_polygon(run, x, y)) {
                     return true;
                 }
                 let reach = REACH.max(stroke.map_or(0.0, |s| s.width / 2.0));
-                stroke.is_some() && runs.iter().any(|run| run.windows(2).any(|w| segment_distance(w[0], w[1], x, y) <= reach))
+                stroke.is_some()
+                    && runs.iter().any(|run| {
+                        run.windows(2)
+                            .any(|w| segment_distance(w[0], w[1], x, y) <= reach)
+                    })
             }
         }
     }
@@ -380,21 +450,32 @@ impl ChartLayout {
         let mut out: Option<[f32; 4]> = None;
         for (i, tag) in self.tags.iter().enumerate() {
             let own = match element {
-                ChartElement::Legend => matches!(tag, ChartElement::Legend | ChartElement::LegendEntry(_)),
-                ChartElement::Series(s) => matches!(tag, ChartElement::Series(t) | ChartElement::Point(t, _) if *t == s),
+                ChartElement::Legend => {
+                    matches!(tag, ChartElement::Legend | ChartElement::LegendEntry(_))
+                }
+                ChartElement::Series(s) => {
+                    matches!(tag, ChartElement::Series(t) | ChartElement::Point(t, _) if *t == s)
+                }
                 _ => *tag == element,
             };
             if own {
                 let b = self.extents[i];
                 out = Some(match out {
-                    Some(o) => [o[0].min(b[0]), o[1].min(b[1]), o[2].max(b[2]), o[3].max(b[3])],
+                    Some(o) => [
+                        o[0].min(b[0]),
+                        o[1].min(b[1]),
+                        o[2].max(b[2]),
+                        o[3].max(b[3]),
+                    ],
                     None => b,
                 });
             }
         }
         // Text is given some air, as Excel's frames do.
         let pad = match element {
-            ChartElement::Title | ChartElement::AxisTitle(_) | ChartElement::Legend => super::FRAME_PAD,
+            ChartElement::Title | ChartElement::AxisTitle(_) | ChartElement::Legend => {
+                super::FRAME_PAD
+            }
             _ => 0.0,
         };
         out.map(|b| [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad])
@@ -420,10 +501,18 @@ impl ChartLayout {
             None
         };
         // What is written over the plot comes first.
-        if let Some(hit) = boxed(&|e| matches!(e, ChartElement::Title | ChartElement::AxisTitle(_) | ChartElement::LegendEntry(_))) {
+        if let Some(hit) = boxed(&|e| {
+            matches!(
+                e,
+                ChartElement::Title | ChartElement::AxisTitle(_) | ChartElement::LegendEntry(_)
+            )
+        }) {
             return hit;
         }
-        if self.bounds(ChartElement::Legend).is_some_and(|b| in_box(&b, x, y, 0.0)) {
+        if self
+            .bounds(ChartElement::Legend)
+            .is_some_and(|b| in_box(&b, x, y, 0.0))
+        {
             return ChartElement::Legend;
         }
         // Then the marks, topmost first; a point without a shape of its
@@ -446,11 +535,16 @@ impl ChartLayout {
                 return self.tags[i];
             }
         }
-        if let Some(hit) = boxed(&|e| matches!(e, ChartElement::Axis(_) | ChartElement::DataTable)) {
+        if let Some(hit) = boxed(&|e| matches!(e, ChartElement::Axis(_) | ChartElement::DataTable))
+        {
             return hit;
         }
         for i in (0..self.prims.len()).rev() {
-            if matches!(self.tags[i], ChartElement::MajorGridlines(_) | ChartElement::MinorGridlines(_)) && self.on_prim(i, x, y) {
+            if matches!(
+                self.tags[i],
+                ChartElement::MajorGridlines(_) | ChartElement::MinorGridlines(_)
+            ) && self.on_prim(i, x, y)
+            {
                 return self.tags[i];
             }
         }
@@ -486,28 +580,45 @@ impl ChartLayout {
 
     /// The data label under a point: (series, point).
     pub fn data_label_at(&self, x: f32, y: f32) -> Option<(u32, u32)> {
-        self.labels.iter().rev().find(|(i, ..)| in_box(&self.extents[*i], x, y, 2.0)).map(|(_, s, k)| (*s, *k))
+        self.labels
+            .iter()
+            .rev()
+            .find(|(i, ..)| in_box(&self.extents[*i], x, y, 2.0))
+            .map(|(_, s, k)| (*s, *k))
     }
 
     /// The box of the data label of a point.
     pub fn data_label_box(&self, series: u32, point: u32) -> Option<[f32; 4]> {
-        self.labels.iter().find(|(_, s, k)| *s == series && *k == point).map(|(i, ..)| self.extents[*i])
+        self.labels
+            .iter()
+            .find(|(_, s, k)| *s == series && *k == point)
+            .map(|(i, ..)| self.extents[*i])
     }
 
     /// The scale an axis was drawn with: its bounds and units, automatic
     /// or not. `None` for an axis of categories.
     pub fn scale(&self, axis: AxisId) -> Option<&Scale> {
-        self.scales.iter().find(|(id, _)| *id == axis).map(|(_, scale)| scale)
+        self.scales
+            .iter()
+            .find(|(id, _)| *id == axis)
+            .map(|(_, scale)| scale)
     }
 
     /// The frames and handles a selected element shows.
     pub fn outline(&self, element: ChartElement) -> Outline {
         let mut out = Outline::default();
         let own = |tag: ChartElement| match element {
-            ChartElement::Series(s) => matches!(tag, ChartElement::Series(t) | ChartElement::Point(t, _) if t == s),
+            ChartElement::Series(s) => {
+                matches!(tag, ChartElement::Series(t) | ChartElement::Point(t, _) if t == s)
+            }
             _ => tag == element,
         };
-        out.handles = self.anchors.iter().filter(|a| own(a.element)).map(|a| (a.x, a.y)).collect();
+        out.handles = self
+            .anchors
+            .iter()
+            .filter(|a| own(a.element))
+            .map(|a| (a.x, a.y))
+            .collect();
         if !out.handles.is_empty() {
             return out;
         }
@@ -525,11 +636,13 @@ impl ChartLayout {
             _ => out.frames.extend(self.bounds(element)),
         }
         for b in &out.frames {
-            out.handles.extend([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])]);
+            out.handles
+                .extend([(b[0], b[1]), (b[2], b[1]), (b[2], b[3]), (b[0], b[3])]);
             // Areas that can be resized in Excel show handles on their edges too.
             if matches!(element, ChartElement::PlotArea | ChartElement::Legend) {
                 let (mx, my) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
-                out.handles.extend([(mx, b[1]), (b[2], my), (mx, b[3]), (b[0], my)]);
+                out.handles
+                    .extend([(mx, b[1]), (b[2], my), (mx, b[3]), (b[0], my)]);
             }
         }
         out

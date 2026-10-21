@@ -91,7 +91,8 @@ fn percent_decode(text: &str) -> String {
 }
 
 fn has_prefix(text: &str, prefix: &str) -> bool {
-    text.get(..prefix.len()).is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+    text.get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
 }
 
 impl Hyperlink {
@@ -122,7 +123,11 @@ impl Hyperlink {
     /// A link that writes an e-mail.
     pub fn email(range: Rect, address: &str, subject: &str) -> Hyperlink {
         let address = address.trim();
-        let address = if has_prefix(address, "mailto:") { &address[7..] } else { address };
+        let address = if has_prefix(address, "mailto:") {
+            &address[7..]
+        } else {
+            address
+        };
         let mut target = format!("mailto:{address}");
         if !subject.is_empty() {
             target.push_str("?subject=");
@@ -140,7 +145,10 @@ impl Hyperlink {
             LinkKind::Place
         } else if has_prefix(&self.address, "mailto:") {
             LinkKind::Email
-        } else if ["http://", "https://", "ftp://"].iter().any(|scheme| has_prefix(&self.address, scheme)) {
+        } else if ["http://", "https://", "ftp://"]
+            .iter()
+            .any(|scheme| has_prefix(&self.address, scheme))
+        {
             LinkKind::Web
         } else {
             LinkKind::File
@@ -156,7 +164,10 @@ impl Hyperlink {
         let (address, query) = rest.split_once('?').unwrap_or((rest, ""));
         let subject = query
             .split('&')
-            .find_map(|part| part.split_once('=').filter(|(key, _)| key.eq_ignore_ascii_case("subject")))
+            .find_map(|part| {
+                part.split_once('=')
+                    .filter(|(key, _)| key.eq_ignore_ascii_case("subject"))
+            })
             .map(|(_, subject)| percent_decode(subject))
             .unwrap_or_default();
         Some((percent_decode(address), subject))
@@ -209,8 +220,13 @@ pub fn auto_link(text: &str) -> Option<String> {
     let host_ok = domain.contains('.')
         && !domain.starts_with('.')
         && !domain.ends_with('.')
-        && domain.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-');
-    let name_ok = !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || "._%+-".contains(c));
+        && domain
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '-');
+    let name_ok = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || "._%+-".contains(c));
     (host_ok && name_ok).then(|| format!("mailto:{text}"))
 }
 
@@ -248,7 +264,10 @@ fn carve(links: &mut Vec<Hyperlink>, ranges: &[Rect]) -> usize {
             }
             touched += 1;
             for piece in minus(link.range, range) {
-                kept.push(Hyperlink { range: piece, ..link.clone() });
+                kept.push(Hyperlink {
+                    range: piece,
+                    ..link.clone()
+                });
             }
         }
         *links = kept;
@@ -277,7 +296,12 @@ fn renamed_place(location: &str, old: &str, new: &str) -> Option<String> {
 impl Workbook {
     /// The link on a cell.
     pub fn hyperlink_at(&self, sheet: usize, row: u32, col: u32) -> Option<&Hyperlink> {
-        self.sheets.get(sheet)?.hyperlinks.iter().rev().find(|link| link.range.contains(row, col))
+        self.sheets
+            .get(sheet)?
+            .hyperlinks
+            .iter()
+            .rev()
+            .find(|link| link.range.contains(row, col))
     }
 
     /// Put a link on its range, in place of those that were on these
@@ -298,7 +322,11 @@ impl Workbook {
         let Some(sh) = self.sheets.get(sheet) else {
             return 0;
         };
-        if !sh.hyperlinks.iter().any(|link| ranges.iter().any(|range| range.intersects(&link.range))) {
+        if !sh
+            .hyperlinks
+            .iter()
+            .any(|link| ranges.iter().any(|range| range.intersects(&link.range)))
+        {
             return 0;
         }
         self.snapshot();
@@ -338,20 +366,45 @@ impl Workbook {
 
     /// Copy the links of a block with it (the links of the cells written
     /// are replaced), as a paste does.
-    pub fn copy_hyperlinks(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
+    pub fn copy_hyperlinks(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest_row: u32,
+        dest_col: u32,
+    ) {
         self.carry_hyperlinks(src_sheet, src, dest_sheet, dest_row, dest_col, false);
     }
 
     /// Move the links of a block with it, as cut and paste does.
-    pub fn move_hyperlinks(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
+    pub fn move_hyperlinks(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest_row: u32,
+        dest_col: u32,
+    ) {
         self.carry_hyperlinks(src_sheet, src, dest_sheet, dest_row, dest_col, true);
     }
 
-    fn carry_hyperlinks(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32, moved: bool) {
+    fn carry_hyperlinks(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest_row: u32,
+        dest_col: u32,
+        moved: bool,
+    ) {
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return;
         }
-        let (d_row, d_col) = (dest_row as i64 - src.r0 as i64, dest_col as i64 - src.c0 as i64);
+        let (d_row, d_col) = (
+            dest_row as i64 - src.r0 as i64,
+            dest_col as i64 - src.c0 as i64,
+        );
         let landing = Rect::new(
             dest_row,
             dest_col,
@@ -370,10 +423,16 @@ impl Workbook {
                     (part.c1 as i64 + d_col) as u32,
                 )
                 .intersection(&landing)?;
-                Some(Hyperlink { range, ..link.clone() })
+                Some(Hyperlink {
+                    range,
+                    ..link.clone()
+                })
             })
             .collect();
-        let overwritten = self.sheets[dest_sheet].hyperlinks.iter().any(|link| link.range.intersects(&landing));
+        let overwritten = self.sheets[dest_sheet]
+            .hyperlinks
+            .iter()
+            .any(|link| link.range.intersects(&landing));
         if carried.is_empty() && !overwritten {
             return;
         }
@@ -424,10 +483,12 @@ impl Workbook {
     pub fn link_tip_at(&self, sheet: usize, row: u32, col: u32) -> Option<String> {
         match self.hyperlink_at(sheet, row, col) {
             Some(link) => Some(link.screen_tip()),
-            None => self.formula_link(sheet, row, col).map(|action| match action {
-                LinkAction::Open(target) => target,
-                LinkAction::GoTo(place) => place,
-            }),
+            None => self
+                .formula_link(sheet, row, col)
+                .map(|action| match action {
+                    LinkAction::Open(target) => target,
+                    LinkAction::GoTo(place) => place,
+                }),
         }
     }
 }
@@ -449,9 +510,11 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     sheet.hyperlinks.retain_mut(|link| {
         let range = &mut link.range;
         if rows {
-            shift_interval(range.r0, range.r1, insert, at, count, MAX_ROWS).map(|(r0, r1)| (range.r0, range.r1) = (r0, r1))
+            shift_interval(range.r0, range.r1, insert, at, count, MAX_ROWS)
+                .map(|(r0, r1)| (range.r0, range.r1) = (r0, r1))
         } else {
-            shift_interval(range.c0, range.c1, insert, at, count, MAX_COLS).map(|(c0, c1)| (range.c0, range.c1) = (c0, c1))
+            shift_interval(range.c0, range.c1, insert, at, count, MAX_COLS)
+                .map(|(c0, c1)| (range.c0, range.c1) = (c0, c1))
         }
         .is_some()
     });
@@ -459,7 +522,11 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
 
 /// Links to a place on the renamed sheet name it anew.
 pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
-    for link in sheet.hyperlinks.iter_mut().filter(|link| link.address.is_empty()) {
+    for link in sheet
+        .hyperlinks
+        .iter_mut()
+        .filter(|link| link.address.is_empty())
+    {
         if let Some(location) = renamed_place(&link.location, old, new) {
             link.location = location;
         }
@@ -499,7 +566,11 @@ mod tests {
     }
 
     fn ranges(w: &Workbook, sheet: usize) -> Vec<String> {
-        let mut out: Vec<String> = w.sheets[sheet].hyperlinks.iter().map(|link| link.range.name()).collect();
+        let mut out: Vec<String> = w.sheets[sheet]
+            .hyperlinks
+            .iter()
+            .map(|link| link.range.name())
+            .collect();
         out.sort();
         out
     }
@@ -507,27 +578,65 @@ mod tests {
     #[test]
     fn the_kinds_of_links() {
         let web = Hyperlink::external(rect("A1"), "https://example.org/page#part");
-        assert_eq!((web.kind(), web.address.as_str(), web.location.as_str()), (LinkKind::Web, "https://example.org/page", "part"));
-        assert_eq!(web.action(), LinkAction::Open("https://example.org/page#part".into()));
-        assert_eq!(Hyperlink::external(rect("A1"), "Reports/2024.xlsx").kind(), LinkKind::File);
+        assert_eq!(
+            (web.kind(), web.address.as_str(), web.location.as_str()),
+            (LinkKind::Web, "https://example.org/page", "part")
+        );
+        assert_eq!(
+            web.action(),
+            LinkAction::Open("https://example.org/page#part".into())
+        );
+        assert_eq!(
+            Hyperlink::external(rect("A1"), "Reports/2024.xlsx").kind(),
+            LinkKind::File
+        );
         let place = Hyperlink::place(rect("A1"), "Sheet2!B3");
         assert_eq!(place.kind(), LinkKind::Place);
         assert_eq!(place.action(), LinkAction::GoTo("Sheet2!B3".into()));
         assert_eq!(place.screen_tip(), "Sheet2!B3");
         let mail = Hyperlink::email(rect("A1"), "ann@example.org", "Budget 2024 & co");
         assert_eq!(mail.kind(), LinkKind::Email);
-        assert_eq!(mail.address, "mailto:ann@example.org?subject=Budget%202024%20%26%20co");
-        assert_eq!(mail.email_parts(), Some(("ann@example.org".into(), "Budget 2024 & co".into())));
-        assert_eq!(Hyperlink::email(rect("A1"), "mailto:bob@example.org", "").address, "mailto:bob@example.org");
+        assert_eq!(
+            mail.address,
+            "mailto:ann@example.org?subject=Budget%202024%20%26%20co"
+        );
+        assert_eq!(
+            mail.email_parts(),
+            Some(("ann@example.org".into(), "Budget 2024 & co".into()))
+        );
+        assert_eq!(
+            Hyperlink::email(rect("A1"), "mailto:bob@example.org", "").address,
+            "mailto:bob@example.org"
+        );
     }
 
     #[test]
     fn what_autoformat_takes_for_a_link() {
-        assert_eq!(auto_link("https://example.org/a?b=1").as_deref(), Some("https://example.org/a?b=1"));
-        assert_eq!(auto_link("www.example.org").as_deref(), Some("http://www.example.org/"));
-        assert_eq!(auto_link("ann.lee@example.org").as_deref(), Some("mailto:ann.lee@example.org"));
-        assert_eq!(auto_link("mailto:ann@example.org").as_deref(), Some("mailto:ann@example.org"));
-        for plain in ["see www.example.org", "http://", "a@b", "@SUM(A1)", "price@", "example.org", ""] {
+        assert_eq!(
+            auto_link("https://example.org/a?b=1").as_deref(),
+            Some("https://example.org/a?b=1")
+        );
+        assert_eq!(
+            auto_link("www.example.org").as_deref(),
+            Some("http://www.example.org/")
+        );
+        assert_eq!(
+            auto_link("ann.lee@example.org").as_deref(),
+            Some("mailto:ann.lee@example.org")
+        );
+        assert_eq!(
+            auto_link("mailto:ann@example.org").as_deref(),
+            Some("mailto:ann@example.org")
+        );
+        for plain in [
+            "see www.example.org",
+            "http://",
+            "a@b",
+            "@SUM(A1)",
+            "price@",
+            "example.org",
+            "",
+        ] {
             assert_eq!(auto_link(plain), None, "{plain}");
         }
     }
@@ -537,12 +646,21 @@ mod tests {
         let mut w = wb(&[("A1", "site")]);
         w.set_hyperlink(0, Hyperlink::external(rect("A1:B2"), "https://example.org"));
         w.commit("link");
-        assert_eq!(w.hyperlink_at(0, 1, 1).map(|link| link.address.as_str()), Some("https://example.org"));
+        assert_eq!(
+            w.hyperlink_at(0, 1, 1).map(|link| link.address.as_str()),
+            Some("https://example.org")
+        );
         // A link set inside another takes its cells from it.
         w.set_hyperlink(0, Hyperlink::place(rect("B2"), "Sheet1!D4"));
         w.commit("link");
-        assert_eq!(w.hyperlink_at(0, 1, 1).map(Hyperlink::kind), Some(LinkKind::Place));
-        assert_eq!(w.hyperlink_at(0, 0, 1).map(Hyperlink::kind), Some(LinkKind::Web));
+        assert_eq!(
+            w.hyperlink_at(0, 1, 1).map(Hyperlink::kind),
+            Some(LinkKind::Place)
+        );
+        assert_eq!(
+            w.hyperlink_at(0, 0, 1).map(Hyperlink::kind),
+            Some(LinkKind::Web)
+        );
         assert_eq!(w.remove_hyperlinks(0, &[rect("A1:A9")]), 2);
         w.commit("remove");
         assert_eq!(ranges(&w, 0), ["B1", "B2"]);
@@ -585,12 +703,18 @@ mod tests {
     fn links_travel_with_copied_and_moved_cells() {
         let mut w = wb(&[("A1", "x"), ("D1", "old")]);
         w.set_hyperlink(0, Hyperlink::external(rect("A1"), "https://example.org"));
-        w.set_hyperlink(0, Hyperlink::external(rect("D1"), "https://old.example.org"));
+        w.set_hyperlink(
+            0,
+            Hyperlink::external(rect("D1"), "https://old.example.org"),
+        );
         w.commit("links");
         w.copy_hyperlinks(0, rect("A1:B2"), 0, 0, 3);
         w.commit("copy");
         assert_eq!(ranges(&w, 0), ["A1", "D1"]);
-        assert_eq!(w.hyperlink_at(0, 0, 3).unwrap().address, "https://example.org");
+        assert_eq!(
+            w.hyperlink_at(0, 0, 3).unwrap().address,
+            "https://example.org"
+        );
         w.move_hyperlinks(0, rect("A1"), 0, 9, 0);
         w.commit("move");
         assert_eq!(ranges(&w, 0), ["A10", "D1"]);
@@ -606,21 +730,38 @@ mod tests {
             ("A1", "example.org"),
             ("B1", "=HYPERLINK(\"https://\"&A1,\"Site\")"),
             ("B2", "=HYPERLINK(\"#Sheet1!C3\")"),
-            ("B3", "=IF(TRUE,HYPERLINK(\"mailto:ann@example.org\",\"Ann\"),\"\")"),
+            (
+                "B3",
+                "=IF(TRUE,HYPERLINK(\"mailto:ann@example.org\",\"Ann\"),\"\")",
+            ),
             ("B4", "=1+1"),
         ]);
-        assert_eq!(w.link_action_at(0, 0, 1), Some(LinkAction::Open("https://example.org".into())));
-        assert_eq!(w.link_action_at(0, 1, 1), Some(LinkAction::GoTo("Sheet1!C3".into())));
-        assert_eq!(w.link_action_at(0, 2, 1), Some(LinkAction::Open("mailto:ann@example.org".into())));
+        assert_eq!(
+            w.link_action_at(0, 0, 1),
+            Some(LinkAction::Open("https://example.org".into()))
+        );
+        assert_eq!(
+            w.link_action_at(0, 1, 1),
+            Some(LinkAction::GoTo("Sheet1!C3".into()))
+        );
+        assert_eq!(
+            w.link_action_at(0, 2, 1),
+            Some(LinkAction::Open("mailto:ann@example.org".into()))
+        );
         assert_eq!(w.link_action_at(0, 3, 1), None);
-        assert_eq!(w.link_tip_at(0, 0, 1).as_deref(), Some("https://example.org"));
+        assert_eq!(
+            w.link_tip_at(0, 0, 1).as_deref(),
+            Some("https://example.org")
+        );
     }
 
     #[test]
     fn the_look_of_a_link() {
         let mut w = wb(&[("A1", "x"), ("A2", "y")]);
         w.format_as_link(0, rect("A1"), false);
-        w.update_style(0, rect("A2"), &|s| s.font.underline = crate::style::Underline::Single);
+        w.update_style(0, rect("A2"), &|s| {
+            s.font.underline = crate::style::Underline::Single
+        });
         w.commit("format");
         assert!(w.looks_like_link(0, 0, 0));
         assert_eq!(w.cell_style_at(0, 0, 0), "Hyperlink");
@@ -632,6 +773,9 @@ mod tests {
         w.commit("unformat");
         assert_eq!(w.style_at(0, 0, 0), w.styles.default_style());
         // Underlining that was not a link's stays.
-        assert_eq!(w.style_at(0, 1, 0).font.underline, crate::style::Underline::Single);
+        assert_eq!(
+            w.style_at(0, 1, 0).font.underline,
+            crate::style::Underline::Single
+        );
     }
 }

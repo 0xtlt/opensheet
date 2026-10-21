@@ -74,11 +74,19 @@ impl Tool {
 }
 
 /// Run `program` for a tool (see [`Tool::program`]).
-pub(crate) fn run(tool: Tool, program: Option<OsString>, arguments: &[String]) -> io::Result<Output> {
+pub(crate) fn run(
+    tool: Tool,
+    program: Option<OsString>,
+    arguments: &[String],
+) -> io::Result<Output> {
     let Some(program) = program else {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
-            format!("{} is not run here ({} names no stand-in)", tool.usual(), tool.variable()),
+            format!(
+                "{} is not run here ({} names no stand-in)",
+                tool.usual(),
+                tool.variable()
+            ),
         ));
     };
     Command::new(program).args(arguments).output()
@@ -86,7 +94,9 @@ pub(crate) fn run(tool: Tool, program: Option<OsString>, arguments: &[String]) -
 
 /// The program to run: the one the variable names, else the usual one.
 pub(crate) fn chosen(usual: &str, named: Option<OsString>) -> OsString {
-    named.filter(|name| !name.is_empty()).unwrap_or_else(|| usual.into())
+    named
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| usual.into())
 }
 
 #[cfg(test)]
@@ -136,7 +146,12 @@ impl Sides {
 
 /// The names `lpstat -e` lists, one printer on each line.
 pub(crate) fn parse_names(output: &str) -> Vec<String> {
-    output.lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect()
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// The default printer in what `lpstat -d` says. The sentence is
@@ -186,7 +201,9 @@ pub(crate) fn parse_two_sided(output: &str) -> bool {
 }
 
 fn text_of(result: io::Result<Output>) -> String {
-    result.map(|out| String::from_utf8_lossy(&out.stdout).into_owned()).unwrap_or_default()
+    result
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
 }
 
 /// The printers of the system and the default one; none at all when the
@@ -244,7 +261,11 @@ pub(crate) fn lp_arguments(ticket: &Ticket) -> Vec<String> {
     if let Some(sides) = ticket.sides {
         args.extend(["-o".to_string(), format!("sides={}", sides.keyword())]);
     }
-    args.extend(["-t".to_string(), ticket.title.to_string(), ticket.file.to_string()]);
+    args.extend([
+        "-t".to_string(),
+        ticket.title.to_string(),
+        ticket.file.to_string(),
+    ]);
     args
 }
 
@@ -256,7 +277,10 @@ mod tests {
     fn the_environment_names_the_program() {
         assert_eq!(chosen("lp", None), OsString::from("lp"));
         assert_eq!(chosen("lp", Some("".into())), OsString::from("lp"));
-        assert_eq!(chosen("lp", Some("/tmp/stand-in/lp".into())), OsString::from("/tmp/stand-in/lp"));
+        assert_eq!(
+            chosen("lp", Some("/tmp/stand-in/lp".into())),
+            OsString::from("/tmp/stand-in/lp")
+        );
         assert_eq!(Tool::Lp.variable(), "OPENSHEET_LP");
         assert_eq!(Tool::Lpstat.variable(), "OPENSHEET_LPSTAT");
         assert_eq!(Tool::Lpoptions.variable(), "OPENSHEET_LPOPTIONS");
@@ -276,15 +300,27 @@ mod tests {
     fn printers_are_read_whatever_the_language_of_the_system() {
         let names = parse_names("HP_LaserJet_Pro\nCanon_TS5000\n\n");
         assert_eq!(names, vec!["HP_LaserJet_Pro", "Canon_TS5000"]);
-        assert_eq!(parse_default("system default destination: Canon_TS5000\n", &names).as_deref(), Some("Canon_TS5000"));
+        assert_eq!(
+            parse_default("system default destination: Canon_TS5000\n", &names).as_deref(),
+            Some("Canon_TS5000")
+        );
         assert_eq!(
             parse_default("destination système par défaut : HP_LaserJet_Pro\n", &names).as_deref(),
             Some("HP_LaserJet_Pro")
         );
-        assert_eq!(parse_default("no system default destination\n", &names), None);
-        assert_eq!(parse_default("aucune destination système par défaut\n", &names), None);
+        assert_eq!(
+            parse_default("no system default destination\n", &names),
+            None
+        );
+        assert_eq!(
+            parse_default("aucune destination système par défaut\n", &names),
+            None
+        );
         // A printer that was removed is not a default.
-        assert_eq!(parse_default("system default destination: Gone\n", &names), None);
+        assert_eq!(
+            parse_default("system default destination: Gone\n", &names),
+            None
+        );
         assert!(parse_names("").is_empty());
     }
 
@@ -292,9 +328,15 @@ mod tests {
     fn a_printer_is_described_by_lpoptions() {
         let described = "copies=1 device-uri=ipp://hp.local/ipp/print finishings=3 printer-info='HP LaserJet Pro' \
                          printer-is-shared=false printer-location='2nd floor' printer-make-and-model='HP LaserJet'";
-        assert_eq!(option_value(described, "printer-info").as_deref(), Some("HP LaserJet Pro"));
+        assert_eq!(
+            option_value(described, "printer-info").as_deref(),
+            Some("HP LaserJet Pro")
+        );
         assert_eq!(option_value(described, "copies").as_deref(), Some("1"));
-        assert_eq!(option_value(described, "printer-is-shared").as_deref(), Some("false"));
+        assert_eq!(
+            option_value(described, "printer-is-shared").as_deref(),
+            Some("false")
+        );
         assert_eq!(option_value(described, "info"), None);
         assert_eq!(option_value("", "printer-info"), None);
     }
@@ -303,8 +345,12 @@ mod tests {
     fn two_sided_printing_is_read_from_the_options() {
         let laser = "PageSize/Media Size: *A4 Letter Legal\nDuplex/Two-Sided: None *DuplexNoTumble DuplexTumble\nColorModel/Color Mode: *Gray\n";
         assert!(parse_two_sided(laser));
-        assert!(parse_two_sided("sides/Sides: *one-sided two-sided-long-edge two-sided-short-edge\n"));
-        assert!(!parse_two_sided("PageSize/Media Size: *A4 Letter\nDuplex/Two-Sided: *None\n"));
+        assert!(parse_two_sided(
+            "sides/Sides: *one-sided two-sided-long-edge two-sided-short-edge\n"
+        ));
+        assert!(!parse_two_sided(
+            "PageSize/Media Size: *A4 Letter\nDuplex/Two-Sided: *None\n"
+        ));
         assert!(!parse_two_sided("PageSize/Media Size: *A4 Letter\n"));
         assert!(!parse_two_sided(""));
     }
@@ -319,7 +365,18 @@ mod tests {
             title: "Budget",
             file: "/tmp/Budget.pdf",
         };
-        assert_eq!(lp_arguments(&ticket), vec!["-d", "HP_LaserJet_Pro", "-n", "1", "-t", "Budget", "/tmp/Budget.pdf"]);
+        assert_eq!(
+            lp_arguments(&ticket),
+            vec![
+                "-d",
+                "HP_LaserJet_Pro",
+                "-n",
+                "1",
+                "-t",
+                "Budget",
+                "/tmp/Budget.pdf"
+            ]
+        );
         let several = Ticket {
             printer: "P",
             copies: 3,
@@ -330,7 +387,19 @@ mod tests {
         };
         assert_eq!(
             lp_arguments(&several),
-            vec!["-d", "P", "-n", "3", "-o", "collate=false", "-o", "sides=two-sided-short-edge", "-t", "B", "f.pdf"]
+            vec![
+                "-d",
+                "P",
+                "-n",
+                "3",
+                "-o",
+                "collate=false",
+                "-o",
+                "sides=two-sided-short-edge",
+                "-t",
+                "B",
+                "f.pdf"
+            ]
         );
         let one_side = Ticket {
             sides: Some(Sides::One),

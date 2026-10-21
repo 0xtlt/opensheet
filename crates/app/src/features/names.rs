@@ -61,7 +61,10 @@ impl Command for Cmd {
         match self {
             Cmd::Manager => manager::open(app, window, cx),
             Cmd::DefineMenu => {
-                let entries = vec![MenuEntry::command(Cmd::Define, app), MenuEntry::command(Cmd::Apply, app)];
+                let entries = vec![
+                    MenuEntry::command(Cmd::Define, app),
+                    MenuEntry::command(Cmd::Apply, app),
+                ];
                 app.open_command_menu(entries, 200.0, window, cx);
             }
             Cmd::Define => dialogs::open_new_name(app, window, cx),
@@ -70,7 +73,9 @@ impl Command for Cmd {
                 let mut entries: Vec<MenuEntry> = formula_names(&app.wb, app.sheet)
                     .into_iter()
                     .map(|name| {
-                        MenuEntry::new(name.clone(), move |a, window, cx| insert_in_formula(a, &name, window, cx))
+                        MenuEntry::new(name.clone(), move |a, window, cx| {
+                            insert_in_formula(a, &name, window, cx)
+                        })
                     })
                     .collect();
                 if !entries.is_empty() {
@@ -101,7 +106,9 @@ impl Command for Cmd {
     fn enabled(self, app: &ExcelApp) -> bool {
         match self {
             // Excel greys these out on a protected sheet.
-            Cmd::DefineMenu | Cmd::Define | Cmd::Apply | Cmd::CreateFromSelection => locked(app).is_none(),
+            Cmd::DefineMenu | Cmd::Define | Cmd::Apply | Cmd::CreateFromSelection => {
+                locked(app).is_none()
+            }
             Cmd::UseInFormula | Cmd::PasteNames => has_formula_names(&app.wb, app.sheet),
             Cmd::Manager | Cmd::NameBoxList => true,
         }
@@ -217,7 +224,13 @@ pub(crate) enum Column {
 }
 
 impl Column {
-    pub const ALL: [Column; 5] = [Column::Name, Column::Value, Column::RefersTo, Column::Scope, Column::Comment];
+    pub const ALL: [Column; 5] = [
+        Column::Name,
+        Column::Value,
+        Column::RefersTo,
+        Column::Scope,
+        Column::Comment,
+    ];
 
     pub fn title(self) -> &'static str {
         match self {
@@ -249,8 +262,12 @@ impl NameFilter {
     }
 
     fn keeps(&self, row: &NameRow) -> bool {
-        let sheet_scoped = matches!(row.kind, RowKind::Name(NameScope::Sheet(_)) | RowKind::Print(_));
-        self.sheet_scoped.is_none_or(|wanted| wanted == sheet_scoped)
+        let sheet_scoped = matches!(
+            row.kind,
+            RowKind::Name(NameScope::Sheet(_)) | RowKind::Print(_)
+        );
+        self.sheet_scoped
+            .is_none_or(|wanted| wanted == sheet_scoped)
             && self.with_errors.is_none_or(|wanted| wanted == row.error)
             && self.tables.is_none_or(|wanted| wanted == row.is_table())
     }
@@ -264,7 +281,11 @@ fn array_text(values: &mut dyn Iterator<Item = (bool, String)>, locale: &Locale)
     let mut count = 0;
     for (new_row, text) in values {
         if count > 0 {
-            out.push(if new_row { locale.array_row_sep } else { locale.array_col_sep });
+            out.push(if new_row {
+                locale.array_row_sep
+            } else {
+                locale.array_col_sep
+            });
         }
         if count == SHOWN {
             out.push('…');
@@ -283,11 +304,12 @@ pub(crate) fn listed_value(value: &Value, locale: &Locale) -> String {
     let shown = |v: &Value| format_value(v, "General", locale).text;
     match value {
         Value::Array(array) => {
-            let mut items = array
-                .data
-                .iter()
-                .enumerate()
-                .map(|(i, v)| (i > 0 && i % array.cols.max(1) == 0, format!("\"{}\"", shown(v))));
+            let mut items = array.data.iter().enumerate().map(|(i, v)| {
+                (
+                    i > 0 && i % array.cols.max(1) == 0,
+                    format!("\"{}\"", shown(v)),
+                )
+            });
             array_text(&mut items, locale)
         }
         scalar => shown(scalar),
@@ -320,7 +342,11 @@ pub(crate) fn literal_value(value: &Value, locale: &Locale) -> String {
 pub(crate) fn scope_label(wb: &Workbook, scope: NameScope) -> String {
     match scope {
         NameScope::Workbook => t("Workbook", "Classeur").to_string(),
-        NameScope::Sheet(index) => wb.sheets.get(index).map(|s| s.name.clone()).unwrap_or_default(),
+        NameScope::Sheet(index) => wb
+            .sheets
+            .get(index)
+            .map(|s| s.name.clone())
+            .unwrap_or_default(),
     }
 }
 
@@ -367,12 +393,19 @@ pub(crate) fn name_rows(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Vec<
     }
     for (index, sh) in wb.sheets.iter().enumerate() {
         let built_in = [
-            (t("Print_Area", "Zone_d_impression"), sh.page.print_area_formula(&sh.name)),
-            (t("Print_Titles", "Impression_des_titres"), sh.page.print_titles_formula(&sh.name)),
+            (
+                t("Print_Area", "Zone_d_impression"),
+                sh.page.print_area_formula(&sh.name),
+            ),
+            (
+                t("Print_Titles", "Impression_des_titres"),
+                sh.page.print_titles_formula(&sh.name),
+            ),
         ];
         for (name, formula) in built_in {
             // The page setup spells its ranges in English.
-            let Some(expr) = formula.and_then(|formula| parse_formula(&formula, Locale::en()).ok()) else {
+            let Some(expr) = formula.and_then(|formula| parse_formula(&formula, Locale::en()).ok())
+            else {
                 continue;
             };
             let value = match &expr {
@@ -443,7 +476,11 @@ pub(crate) fn visible_names(wb: &Workbook, sheet: usize) -> Vec<String> {
         .into_iter()
         .filter(|name| wb.reference_areas(sheet, 0, 0, name).is_some())
         .collect();
-    names.extend(wb.sheets.iter().flat_map(|sh| sh.tables.iter().map(|table| table.name.clone())));
+    names.extend(
+        wb.sheets
+            .iter()
+            .flat_map(|sh| sh.tables.iter().map(|table| table.name.clone())),
+    );
     names.sort_by(by_name);
     names
 }
@@ -493,7 +530,10 @@ pub(crate) fn select_areas(app: &mut ExcelApp, areas: &[Reference], cx: &mut Cx)
         return false;
     };
     let sheet = first.sheet;
-    if sheet >= app.wb.sheets.len() || areas.iter().any(|area| area.sheet != sheet) || app.is_editing() {
+    if sheet >= app.wb.sheets.len()
+        || areas.iter().any(|area| area.sheet != sheet)
+        || app.is_editing()
+    {
         return false;
     }
     app.deselect_object(cx);
@@ -525,7 +565,12 @@ pub(crate) fn selection_formula(app: &ExcelApp) -> String {
         sheet: true,
         equals: false,
     };
-    let areas: Vec<String> = app.sel().ranges.iter().map(|range| style.format(*range, sheet)).collect();
+    let areas: Vec<String> = app
+        .sel()
+        .ranges
+        .iter()
+        .map(|range| style.format(*range, sheet))
+        .collect();
     format!("={}", areas.join(&app.wb.locale.arg_sep.to_string()))
 }
 
@@ -542,12 +587,21 @@ pub(crate) enum NameBoxAction {
 
 /// Decide what the text typed in the Name Box means, seen from the active
 /// cell of `sheet`.
-pub(crate) fn name_box_action(wb: &Workbook, sheet: usize, active: (u32, u32), text: &str) -> NameBoxAction {
+pub(crate) fn name_box_action(
+    wb: &Workbook,
+    sheet: usize,
+    active: (u32, u32),
+    text: &str,
+) -> NameBoxAction {
     let text = text.trim();
     if let Some(areas) = wb.reference_areas(sheet, active.0, active.1, text) {
         // A selection lives on one sheet.
         let one_sheet = areas.iter().all(|area| area.sheet == areas[0].sheet);
-        return if one_sheet { NameBoxAction::GoTo(areas) } else { NameBoxAction::Refuse };
+        return if one_sheet {
+            NameBoxAction::GoTo(areas)
+        } else {
+            NameBoxAction::Refuse
+        };
     }
     // A name that exists without standing for cells (a constant) is not
     // redefined from here.
@@ -583,10 +637,17 @@ pub fn name_box_entered(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
         app.alert(Alert::new("OpenSheet", message).warning(), cx);
         return false;
     }
-    let Ok(expr) = app.wb.parse_name_formula(&selection_formula(app), app.sheet, row, col) else {
+    let Ok(expr) = app
+        .wb
+        .parse_name_formula(&selection_formula(app), app.sheet, row, col)
+    else {
         return false;
     };
-    if app.wb.add_name(NameScope::Workbook, &name, expr, "").is_err() {
+    if app
+        .wb
+        .add_name(NameScope::Workbook, &name, expr, "")
+        .is_err()
+    {
         return false;
     }
     app.commit(t("Define Name", "Définir un nom"), cx);
@@ -597,11 +658,21 @@ pub fn name_box_entered(app: &mut ExcelApp, text: &str, cx: &mut Cx) -> bool {
 /// not being edited starts a formula with it.
 pub(crate) fn insert_in_formula(app: &mut ExcelApp, name: &str, window: &mut Window, cx: &mut Cx) {
     if !app.is_editing() {
-        app.start_edit(Some(&format!("={name}")), EditMode::Edit, EditSource::Cell, window, cx);
+        app.start_edit(
+            Some(&format!("={name}")),
+            EditMode::Edit,
+            EditSource::Cell,
+            window,
+            cx,
+        );
         return;
     }
     let editor = app.editor().clone();
-    let text = if editor.read(cx).text().is_empty() { format!("={name}") } else { name.to_string() };
+    let text = if editor.read(cx).text().is_empty() {
+        format!("={name}")
+    } else {
+        name.to_string()
+    };
     editor.update(cx, |input, cx| input.insert(&text, window, cx));
     app.focus_editor(window, cx);
 }
@@ -695,12 +766,21 @@ pub(crate) fn label_to_name(label: &str, locale: &Locale) -> Option<String> {
         .trim()
         .chars()
         .take(255)
-        .map(|ch| if ch.is_alphanumeric() || matches!(ch, '_' | '.' | '?' | '\\') { ch } else { '_' })
+        .map(|ch| {
+            if ch.is_alphanumeric() || matches!(ch, '_' | '.' | '?' | '\\') {
+                ch
+            } else {
+                '_'
+            }
+        })
         .collect();
     if name.is_empty() {
         return None;
     }
-    let starts_well = name.chars().next().is_some_and(|ch| ch.is_alphabetic() || ch == '_' || ch == '\\');
+    let starts_well = name
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_alphabetic() || ch == '_' || ch == '\\');
     if !starts_well {
         name.insert(0, '_');
     }
@@ -715,11 +795,26 @@ pub(crate) fn label_to_name(label: &str, locale: &Locale) -> Option<String> {
 /// The names Create Names from Selection makes of `rect`: for each label
 /// of the ticked sides, the cells of its row or column (and for a label in
 /// the corner of two ticked sides, all the cells between the labels).
-pub(crate) fn names_from_labels(wb: &Workbook, sheet: usize, rect: Rect, sides: LabelSides) -> Vec<(String, Rect)> {
+pub(crate) fn names_from_labels(
+    wb: &Workbook,
+    sheet: usize,
+    rect: Rect,
+    sides: LabelSides,
+) -> Vec<(String, Rect)> {
     let rect = wb.clamp_to_used(sheet, rect);
-    let body_rows = (rect.r0 + sides.top as u32, rect.r1.saturating_sub(sides.bottom as u32));
-    let body_cols = (rect.c0 + sides.left as u32, rect.c1.saturating_sub(sides.right as u32));
-    if body_rows.0 > body_rows.1 || body_cols.0 > body_cols.1 || body_rows.1 > rect.r1 || body_cols.1 > rect.c1 {
+    let body_rows = (
+        rect.r0 + sides.top as u32,
+        rect.r1.saturating_sub(sides.bottom as u32),
+    );
+    let body_cols = (
+        rect.c0 + sides.left as u32,
+        rect.c1.saturating_sub(sides.right as u32),
+    );
+    if body_rows.0 > body_rows.1
+        || body_cols.0 > body_cols.1
+        || body_rows.1 > rect.r1
+        || body_cols.1 > rect.c1
+    {
         return Vec::new();
     }
     let label = |row: u32, col: u32| -> Option<String> {
@@ -769,7 +864,13 @@ pub(crate) fn names_from_labels(wb: &Workbook, sheet: usize, rect: Rect, sides: 
 /// `ignore_kind`, `A1` matches a name defined as `$A$1`; without it only
 /// references written like the name's are replaced. Returns how many
 /// formulas changed (the caller commits).
-pub(crate) fn apply_names(wb: &mut Workbook, sheet: usize, ranges: &[Rect], names: &[String], ignore_kind: bool) -> usize {
+pub(crate) fn apply_names(
+    wb: &mut Workbook,
+    sheet: usize,
+    ranges: &[Rect],
+    names: &[String],
+    ignore_kind: bool,
+) -> usize {
     let Some(sh) = wb.sheets.get(sheet) else {
         return 0;
     };
@@ -804,7 +905,9 @@ pub(crate) fn apply_names(wb: &mut Workbook, sheet: usize, ranges: &[Rect], name
             let found = targets.iter().find(|(_, target, target_sheet)| {
                 on == Some(*target_sheet)
                     && target.rect() == reference.rect()
-                    && (ignore_kind || (target.start, target.end, target.kind) == (reference.start, reference.end, reference.kind))
+                    && (ignore_kind
+                        || (target.start, target.end, target.kind)
+                            == (reference.start, reference.end, reference.kind))
             });
             match found {
                 Some((name, _, _)) => Expr::Name(Arc::from(name.as_str())),
@@ -845,8 +948,10 @@ pub(crate) fn paste_list(app: &mut ExcelApp, cx: &mut Cx) {
     }
     for (i, (name, refers_to)) in lines.into_iter().enumerate() {
         // Text, not formulas: the list is there to be read.
-        app.wb.set_value(sheet, row + i as u32, col, Value::text(name));
-        app.wb.set_value(sheet, row + i as u32, col + 1, Value::text(refers_to));
+        app.wb
+            .set_value(sheet, row + i as u32, col, Value::text(name));
+        app.wb
+            .set_value(sheet, row + i as u32, col + 1, Value::text(refers_to));
     }
     let cause = ChangeCause::Paste {
         from: None,
@@ -895,7 +1000,13 @@ mod tests {
     #[test]
     fn rows_list_names_with_values_scopes_and_errors() {
         let mut wb = workbook();
-        define(&mut wb, NameScope::Workbook, "Qty", "=Sheet1!$B$2:$B$3", "units");
+        define(
+            &mut wb,
+            NameScope::Workbook,
+            "Qty",
+            "=Sheet1!$B$2:$B$3",
+            "units",
+        );
         define(&mut wb, NameScope::Workbook, "rate", "=0.2", "");
         define(&mut wb, NameScope::Sheet(1), "Local", "=Sheet1!$A$2", "");
         define(&mut wb, NameScope::Workbook, "Broken", "=1/0", "");
@@ -905,19 +1016,53 @@ mod tests {
         let qty = &rows[2];
         assert_eq!(qty.value, "{\"12\";\"3\"}");
         assert_eq!(qty.refers_to, "=Sheet1!$B$2:$B$3");
-        assert_eq!((qty.scope.as_str(), qty.comment.as_str()), ("Workbook", "units"));
+        assert_eq!(
+            (qty.scope.as_str(), qty.comment.as_str()),
+            ("Workbook", "units")
+        );
         assert_eq!(rows[3].value, "0.2");
-        assert_eq!((rows[1].value.as_str(), rows[1].scope.as_str()), ("Pens", "Sheet2"));
+        assert_eq!(
+            (rows[1].value.as_str(), rows[1].scope.as_str()),
+            ("Pens", "Sheet2")
+        );
         assert!(rows[0].error && rows[0].value == "#DIV/0!");
         assert!(!qty.error);
 
         let only = |filter: NameFilter| -> Vec<String> {
-            filter_rows(rows.clone(), &filter).into_iter().map(|row| row.name).collect()
+            filter_rows(rows.clone(), &filter)
+                .into_iter()
+                .map(|row| row.name)
+                .collect()
         };
-        assert_eq!(only(NameFilter { sheet_scoped: Some(true), ..Default::default() }), ["Local"]);
-        assert_eq!(only(NameFilter { sheet_scoped: Some(false), with_errors: Some(false), ..Default::default() }), ["Qty", "rate"]);
-        assert_eq!(only(NameFilter { with_errors: Some(true), ..Default::default() }), ["Broken"]);
-        assert!(only(NameFilter { tables: Some(true), ..Default::default() }).is_empty());
+        assert_eq!(
+            only(NameFilter {
+                sheet_scoped: Some(true),
+                ..Default::default()
+            }),
+            ["Local"]
+        );
+        assert_eq!(
+            only(NameFilter {
+                sheet_scoped: Some(false),
+                with_errors: Some(false),
+                ..Default::default()
+            }),
+            ["Qty", "rate"]
+        );
+        assert_eq!(
+            only(NameFilter {
+                with_errors: Some(true),
+                ..Default::default()
+            }),
+            ["Broken"]
+        );
+        assert!(
+            only(NameFilter {
+                tables: Some(true),
+                ..Default::default()
+            })
+            .is_empty()
+        );
         assert!(NameFilter::default().is_empty());
 
         let mut sorted = rows.clone();
@@ -935,7 +1080,10 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(rows[0].is_table());
         assert_eq!(rows[0].refers_to, "=Sheet1!$A$2:$C$3");
-        assert_eq!(rows[0].value, "{\"Pens\",\"12\",\"1.5\";\"Ink\",\"3\",\"7\"}");
+        assert_eq!(
+            rows[0].value,
+            "{\"Pens\",\"12\",\"1.5\";\"Ink\",\"3\",\"7\"}"
+        );
         assert_eq!(visible_names(&wb, 1), [rows[0].name.clone()]);
         let body = Selection {
             active: (1, 0),
@@ -967,7 +1115,16 @@ mod tests {
         wb.sheets[1].page.title_rows = Some((0, 0));
         wb.commit("page setup");
         let rows = name_rows(&wb, 0, 0, 0);
-        let shown: Vec<(&str, &str, &str)> = rows.iter().map(|row| (row.name.as_str(), row.scope.as_str(), row.refers_to.as_str())).collect();
+        let shown: Vec<(&str, &str, &str)> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.name.as_str(),
+                    row.scope.as_str(),
+                    row.refers_to.as_str(),
+                )
+            })
+            .collect();
         assert_eq!(
             shown,
             [
@@ -979,7 +1136,11 @@ mod tests {
         assert_eq!(rows[0].kind, RowKind::Print(0));
         assert!(!rows[0].is_name() && !rows[0].is_table());
         // They count as names of their sheet for the Filter menu.
-        let scoped = NameFilter { sheet_scoped: Some(true), tables: Some(false), ..Default::default() };
+        let scoped = NameFilter {
+            sheet_scoped: Some(true),
+            tables: Some(false),
+            ..Default::default()
+        };
         assert_eq!(filter_rows(rows, &scoped).len(), 3);
     }
 
@@ -997,7 +1158,9 @@ mod tests {
         assert_eq!(literal_value(&Value::text("x"), en), "\"x\"");
         assert_eq!(literal_value(&Value::Empty, en), "");
         assert_eq!(listed_value(&Value::text("x"), en), "x");
-        let long = Value::array(opensheet_engine::Array::column((0..40).map(|n| Value::Number(n as f64)).collect()));
+        let long = Value::array(opensheet_engine::Array::column(
+            (0..40).map(|n| Value::Number(n as f64)).collect(),
+        ));
         assert!(literal_value(&long, en).ends_with(";…}"));
     }
 
@@ -1007,7 +1170,13 @@ mod tests {
         define(&mut wb, NameScope::Workbook, "Qty", "=Sheet1!$B$2:$B$3", "");
         define(&mut wb, NameScope::Workbook, "Rate", "=0.2", "");
         define(&mut wb, NameScope::Sheet(1), "qty", "=Sheet2!$A$1", "");
-        define(&mut wb, NameScope::Sheet(1), "Zone", "=Sheet2!$C$3:$D$4", "");
+        define(
+            &mut wb,
+            NameScope::Sheet(1),
+            "Zone",
+            "=Sheet2!$C$3:$D$4",
+            "",
+        );
         assert_eq!(formula_names(&wb, 0), ["Qty", "Rate"]);
         // The sheet's own "qty" hides the workbook's.
         assert_eq!(formula_names(&wb, 1), ["qty", "Rate", "Zone"]);
@@ -1020,11 +1189,30 @@ mod tests {
             anchor: (ranges[0].r0, ranges[0].c0),
             ranges,
         };
-        assert_eq!(selection_name(&wb, 0, &select(vec![Rect::new(1, 1, 2, 1)])), Some("Qty".to_string()));
-        assert_eq!(selection_name(&wb, 0, &select(vec![Rect::new(1, 1, 1, 1)])), None);
-        assert_eq!(selection_name(&wb, 1, &select(vec![Rect::cell(0, 0)])), Some("qty".to_string()));
-        assert_eq!(selection_name(&wb, 1, &select(vec![Rect::new(2, 2, 3, 3)])), Some("Zone".to_string()));
-        assert_eq!(selection_name(&wb, 0, &select(vec![Rect::new(1, 1, 2, 1), Rect::cell(5, 5)])), None);
+        assert_eq!(
+            selection_name(&wb, 0, &select(vec![Rect::new(1, 1, 2, 1)])),
+            Some("Qty".to_string())
+        );
+        assert_eq!(
+            selection_name(&wb, 0, &select(vec![Rect::new(1, 1, 1, 1)])),
+            None
+        );
+        assert_eq!(
+            selection_name(&wb, 1, &select(vec![Rect::cell(0, 0)])),
+            Some("qty".to_string())
+        );
+        assert_eq!(
+            selection_name(&wb, 1, &select(vec![Rect::new(2, 2, 3, 3)])),
+            Some("Zone".to_string())
+        );
+        assert_eq!(
+            selection_name(
+                &wb,
+                0,
+                &select(vec![Rect::new(1, 1, 2, 1), Rect::cell(5, 5)])
+            ),
+            None
+        );
     }
 
     #[test]
@@ -1032,13 +1220,21 @@ mod tests {
         let mut wb = workbook();
         define(&mut wb, NameScope::Workbook, "Qty", "=Sheet1!$B$2:$B$3", "");
         define(&mut wb, NameScope::Workbook, "Rate", "=0.2", "");
-        define(&mut wb, NameScope::Workbook, "Split", "=(Sheet1!$A$1,Sheet2!$A$1)", "");
+        define(
+            &mut wb,
+            NameScope::Workbook,
+            "Split",
+            "=(Sheet1!$A$1,Sheet2!$A$1)",
+            "",
+        );
         define(&mut wb, NameScope::Sheet(1), "Local", "=Sheet2!$C$3", "");
         wb.add_table(0, Rect::new(0, 4, 1, 5), true).unwrap();
         wb.commit("table");
         let table = wb.sheets[0].tables[0].name.clone();
         let act = |sheet: usize, text: &str| name_box_action(&wb, sheet, (0, 0), text);
-        let go = |sheet: usize, range: &str| NameBoxAction::GoTo(vec![Reference::new(sheet, Rect::parse(range).unwrap())]);
+        let go = |sheet: usize, range: &str| {
+            NameBoxAction::GoTo(vec![Reference::new(sheet, Rect::parse(range).unwrap())])
+        };
 
         assert_eq!(act(0, " b2:c3 "), go(0, "B2:C3"));
         assert_eq!(act(0, "Sheet2!D4"), go(1, "D4"));
@@ -1048,10 +1244,21 @@ mod tests {
         assert_eq!(act(1, "Local"), go(1, "C3"));
         // A new name is given to the selection; from another sheet, the
         // sheet's own name is a new one too.
-        assert_eq!(act(0, "Unit_price"), NameBoxAction::Define("Unit_price".to_string()));
+        assert_eq!(
+            act(0, "Unit_price"),
+            NameBoxAction::Define("Unit_price".to_string())
+        );
         assert_eq!(act(0, "Local"), NameBoxAction::Define("Local".to_string()));
         // Constants, names over two sheets and what is not a name.
-        for text in ["Rate", "Split", "my name", "2x", "TRUE", "Sheet9!A1", "=1+1"] {
+        for text in [
+            "Rate",
+            "Split",
+            "my name",
+            "2x",
+            "TRUE",
+            "Sheet9!A1",
+            "=1+1",
+        ] {
             assert_eq!(act(0, text), NameBoxAction::Refuse, "{text}");
         }
     }
@@ -1060,8 +1267,14 @@ mod tests {
     fn labels_become_names() {
         let en = Locale::en();
         let fr = Locale::fr();
-        assert_eq!(label_to_name("Unit price", en).as_deref(), Some("Unit_price"));
-        assert_eq!(label_to_name("  Total (€) ", en).as_deref(), Some("Total____"));
+        assert_eq!(
+            label_to_name("Unit price", en).as_deref(),
+            Some("Unit_price")
+        );
+        assert_eq!(
+            label_to_name("  Total (€) ", en).as_deref(),
+            Some("Total____")
+        );
         assert_eq!(label_to_name("2024", en).as_deref(), Some("_2024"));
         assert_eq!(label_to_name("A1", en).as_deref(), Some("A1_"));
         assert_eq!(label_to_name("TRUE", en).as_deref(), Some("TRUE_"));
@@ -1074,18 +1287,55 @@ mod tests {
     fn label_sides_are_guessed_from_where_the_text_is() {
         let wb = workbook();
         let all = Rect::new(0, 0, 2, 2);
-        assert_eq!(guess_label_sides(&wb, 0, all), LabelSides { top: true, left: true, ..Default::default() });
+        assert_eq!(
+            guess_label_sides(&wb, 0, all),
+            LabelSides {
+                top: true,
+                left: true,
+                ..Default::default()
+            }
+        );
         // Numbers under their headers only.
-        assert_eq!(guess_label_sides(&wb, 0, Rect::new(0, 1, 2, 2)), LabelSides { top: true, ..Default::default() });
+        assert_eq!(
+            guess_label_sides(&wb, 0, Rect::new(0, 1, 2, 2)),
+            LabelSides {
+                top: true,
+                ..Default::default()
+            }
+        );
         // Labels beside their numbers.
-        assert_eq!(guess_label_sides(&wb, 0, Rect::new(1, 0, 2, 2)), LabelSides { left: true, ..Default::default() });
+        assert_eq!(
+            guess_label_sides(&wb, 0, Rect::new(1, 0, 2, 2)),
+            LabelSides {
+                left: true,
+                ..Default::default()
+            }
+        );
         // Numbers only: nothing to go by.
         assert!(!guess_label_sides(&wb, 0, Rect::new(1, 1, 2, 2)).any());
         // Text only: a header over a column, labels beside their texts.
-        assert_eq!(guess_label_sides(&wb, 0, Rect::new(0, 0, 2, 0)), LabelSides { top: true, ..Default::default() });
-        assert_eq!(guess_label_sides(&wb, 0, Rect::new(0, 4, 1, 5)), LabelSides { left: true, ..Default::default() });
+        assert_eq!(
+            guess_label_sides(&wb, 0, Rect::new(0, 0, 2, 0)),
+            LabelSides {
+                top: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            guess_label_sides(&wb, 0, Rect::new(0, 4, 1, 5)),
+            LabelSides {
+                left: true,
+                ..Default::default()
+            }
+        );
         // A whole-column selection is read up to the last used row.
-        assert_eq!(guess_label_sides(&wb, 0, Rect::new(0, 1, opensheet_engine::MAX_ROWS - 1, 2)), LabelSides { top: true, ..Default::default() });
+        assert_eq!(
+            guess_label_sides(&wb, 0, Rect::new(0, 1, opensheet_engine::MAX_ROWS - 1, 2)),
+            LabelSides {
+                top: true,
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -1093,25 +1343,69 @@ mod tests {
         let wb = workbook();
         let all = Rect::new(0, 0, 2, 2);
         let named = |sides: LabelSides| -> Vec<(String, String)> {
-            names_from_labels(&wb, 0, all, sides).into_iter().map(|(name, rect)| (name, rect.name())).collect()
+            names_from_labels(&wb, 0, all, sides)
+                .into_iter()
+                .map(|(name, rect)| (name, rect.name()))
+                .collect()
         };
         let pair = |name: &str, cells: &str| (name.to_string(), cells.to_string());
         assert_eq!(
-            named(LabelSides { top: true, ..Default::default() }),
-            [pair("Item", "A2:A3"), pair("Qty", "B2:B3"), pair("Unit_price", "C2:C3")]
+            named(LabelSides {
+                top: true,
+                ..Default::default()
+            }),
+            [
+                pair("Item", "A2:A3"),
+                pair("Qty", "B2:B3"),
+                pair("Unit_price", "C2:C3")
+            ]
         );
         assert_eq!(
-            named(LabelSides { top: true, left: true, ..Default::default() }),
-            [pair("Qty", "B2:B3"), pair("Unit_price", "C2:C3"), pair("Pens", "B2:C2"), pair("Ink", "B3:C3"), pair("Item", "B2:C3")]
+            named(LabelSides {
+                top: true,
+                left: true,
+                ..Default::default()
+            }),
+            [
+                pair("Qty", "B2:B3"),
+                pair("Unit_price", "C2:C3"),
+                pair("Pens", "B2:C2"),
+                pair("Ink", "B3:C3"),
+                pair("Item", "B2:C3")
+            ]
         );
         assert_eq!(
-            named(LabelSides { left: true, ..Default::default() }),
-            [pair("Item", "B1:C1"), pair("Pens", "B2:C2"), pair("Ink", "B3:C3")]
+            named(LabelSides {
+                left: true,
+                ..Default::default()
+            }),
+            [
+                pair("Item", "B1:C1"),
+                pair("Pens", "B2:C2"),
+                pair("Ink", "B3:C3")
+            ]
         );
         // Numbers make names too, with an underscore in front.
-        assert_eq!(named(LabelSides { bottom: true, ..Default::default() })[1], pair("_3", "B1:B2"));
+        assert_eq!(
+            named(LabelSides {
+                bottom: true,
+                ..Default::default()
+            })[1],
+            pair("_3", "B1:B2")
+        );
         // A single row has no cells left to name.
-        assert!(names_from_labels(&wb, 0, Rect::new(0, 0, 0, 2), LabelSides { top: true, ..Default::default() }).is_empty());
+        assert!(
+            names_from_labels(
+                &wb,
+                0,
+                Rect::new(0, 0, 0, 2),
+                LabelSides {
+                    top: true,
+                    ..Default::default()
+                }
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -1121,7 +1415,8 @@ mod tests {
             define(&mut wb, NameScope::Workbook, "Qty", "=Sheet1!$B$2:$B$3", "");
             define(&mut wb, NameScope::Workbook, "First", "=Sheet1!$C$2", "");
             wb.set_cell_text(0, 4, 0, "=SUM(B2:B3)+C2").unwrap();
-            wb.set_cell_text(0, 5, 0, "=SUM($B$2:$B$3)*$C$2+B2").unwrap();
+            wb.set_cell_text(0, 5, 0, "=SUM($B$2:$B$3)*$C$2+B2")
+                .unwrap();
             wb.commit("formulas");
             wb
         };
@@ -1142,6 +1437,9 @@ mod tests {
         assert_eq!(apply_names(&mut wb, 0, &sheet, &names, true), 0);
         let expr = parse_formula("SUM(B2:B3)", Locale::en()).unwrap();
         wb.set_formula(0, 8, 0, expr);
-        assert_eq!(apply_names(&mut wb, 0, &[Rect::cell(4, 0)], &names, true), 0);
+        assert_eq!(
+            apply_names(&mut wb, 0, &[Rect::cell(4, 0)], &names, true),
+            0
+        );
     }
 }

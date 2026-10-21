@@ -4,7 +4,10 @@
 
 use super::geometry::{self, Placed, Pt};
 use super::paint::{self, Grip, Pane};
-use super::{Drawings, DrawingUi, PICTURE_TAB, SHAPE_TAB, TextStart, begin_text_edit, end_text_edit, selected};
+use super::{
+    DrawingUi, Drawings, PICTURE_TAB, SHAPE_TAB, TextStart, begin_text_edit, end_text_edit,
+    selected,
+};
 use crate::app::ExcelApp;
 use crate::features::{Cx, Intent, Painter, Zone, ZoneEvent, ZoneResponse, object_id};
 use crate::grid::Draw;
@@ -151,7 +154,13 @@ pub(super) fn cropped(
 /// (turned) frame, on a shape on its outline, and inside it when it is
 /// filled or holds text. `p` is a point of the grid element, `placed`
 /// where the drawing is in the pane under it.
-pub(super) fn hits(drawing: &Drawing, placed: &Placed, natural: (f32, f32), zoom: f32, p: Pt) -> bool {
+pub(super) fn hits(
+    drawing: &Drawing,
+    placed: &Placed,
+    natural: (f32, f32),
+    zoom: f32,
+    p: Pt,
+) -> bool {
     match &drawing.kind {
         DrawingKind::Picture(_) | DrawingKind::SmartArt(_) => placed.contains(p),
         DrawingKind::Group(_) => paint::leaves(drawing, placed, zoom)
@@ -160,13 +169,23 @@ pub(super) fn hits(drawing: &Drawing, placed: &Placed, natural: (f32, f32), zoom
         DrawingKind::Shape(shape) => {
             let lines = paint::outline_of(shape, placed, natural);
             let is_line = shape.preset.is_line();
-            let reach = shape.outline.as_ref().map_or(0.0, |outline| paint::stroke_width(outline, zoom) / 2.0)
+            let reach = shape
+                .outline
+                .as_ref()
+                .map_or(0.0, |outline| paint::stroke_width(outline, zoom) / 2.0)
                 + if is_line { 5.0 } else { 3.0 };
-            if lines.iter().any(|line| geometry::distance_to(p, line) <= reach) {
+            if lines
+                .iter()
+                .any(|line| geometry::distance_to(p, line) <= reach)
+            {
                 return true;
             }
             let solid = shape.fill.is_some() || !shape.text.is_empty();
-            !is_line && solid && lines.iter().any(|line| line.closed && geometry::in_polygon(p, &line.points))
+            !is_line
+                && solid
+                && lines
+                    .iter()
+                    .any(|line| line.closed && geometry::in_polygon(p, &line.points))
         }
     }
 }
@@ -220,9 +239,18 @@ pub(super) fn disarm(app: &mut ExcelApp, cx: &mut Cx) -> bool {
 }
 
 /// The frame and the flips of the shape a drag draws.
-fn drawn(tool: ShapeTool, start: (f64, f64), end: (f64, f64), constrain: bool) -> (Frame, bool, bool) {
+fn drawn(
+    tool: ShapeTool,
+    start: (f64, f64),
+    end: (f64, f64),
+    constrain: bool,
+) -> (Frame, bool, bool) {
     if tool.preset().is_line() {
-        let end = if constrain { geometry::constrain_direction(start, end, 45.0) } else { end };
+        let end = if constrain {
+            geometry::constrain_direction(start, end, 45.0)
+        } else {
+            end
+        };
         geometry::line_frame(start, end)
     } else {
         (geometry::drawn_frame(start, end, constrain), false, false)
@@ -239,7 +267,12 @@ pub(super) fn paint_tool(p: &mut Painter) {
         return;
     }
     let layout = p.layout;
-    let cells = (layout.header_w, layout.header_h, layout.width(), layout.height());
+    let cells = (
+        layout.header_w,
+        layout.header_h,
+        layout.width(),
+        layout.height(),
+    );
     if let Some(Drag::Draw {
         tool,
         pane,
@@ -263,13 +296,26 @@ pub(super) fn paint_tool(p: &mut Painter) {
         };
         let preview = Drawing::shape(tool.shape(), (frame.width as f32, frame.height as f32));
         let mut items = Vec::new();
-        paint::draw(&preview, &placed, (frame.width as f32, frame.height as f32), &brush, None, &mut items);
+        paint::draw(
+            &preview,
+            &placed,
+            (frame.width as f32, frame.height as f32),
+            &brush,
+            None,
+            &mut items,
+        );
         p.push(Draw::Clipped { clip, items });
     }
     p.zone(cells, Canvas).cursor(CursorStyle::Crosshair);
 }
 
-pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+pub(super) fn mouse_down(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    _window: &mut Window,
+    cx: &mut Cx,
+) -> ZoneResponse {
     if zone.payload::<Canvas>().is_some() {
         let tool = app.ext::<DrawingUi>().and_then(|ui| ui.tool);
         let (Some(tool), MouseButton::Left) = (tool, ev.button) else {
@@ -316,7 +362,11 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
     let others: Vec<(u32, f32)> = super::selected_ids(app)
         .into_iter()
         .filter(|id| *id != handle.id)
-        .filter_map(|id| app.wb.drawing(app.sheet, id).map(|drawing| (id, drawing.rotation)))
+        .filter_map(|id| {
+            app.wb
+                .drawing(app.sheet, id)
+                .map(|drawing| (id, drawing.rotation))
+        })
         .collect();
     let Some(drawing) = app.wb.drawing(app.sheet, handle.id) else {
         return ZoneResponse::Handled;
@@ -358,7 +408,13 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _windo
 
 /// A press on a member of the selected group (see `Drag::Member`); twice,
 /// it types in the member.
-fn member_down(app: &mut ExcelApp, held: &MemberZone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+fn member_down(
+    app: &mut ExcelApp,
+    held: &MemberZone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> ZoneResponse {
     if ev.button != MouseButton::Left {
         return ZoneResponse::Ignored;
     }
@@ -375,7 +431,10 @@ fn member_down(app: &mut ExcelApp, held: &MemberZone, ev: &ZoneEvent, window: &m
     end_text_edit(app, cx);
     let own = super::member_selected(app) == Some((held.group, member));
     let pane = paint::pane_at(&layout, ev.x, ev.y).unwrap_or_else(|| paint::panes(&layout)[0]);
-    let Some(frame) = app.wb.drawing_frame(app.sheet, if own { member } else { held.group }) else {
+    let Some(frame) = app
+        .wb
+        .drawing_frame(app.sheet, if own { member } else { held.group })
+    else {
         return ZoneResponse::Handled;
     };
     app.ext_mut::<DrawingUi>().drag = Some(Drag::Member {
@@ -418,8 +477,14 @@ pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, cx: &
             }
             let moved = moved || starts;
             if moved {
-                let now = paint::sheet_point(&layout, &app.wb.sheets[sheet_index], &pane, ev.x, ev.y);
-                let to = Frame::new(frame.x + now.0 - pressed.0, frame.y + now.1 - pressed.1, frame.width, frame.height);
+                let now =
+                    paint::sheet_point(&layout, &app.wb.sheets[sheet_index], &pane, ev.x, ev.y);
+                let to = Frame::new(
+                    frame.x + now.0 - pressed.0,
+                    frame.y + now.1 - pressed.1,
+                    frame.width,
+                    frame.height,
+                );
                 app.wb.set_drawing_frame(sheet_index, target, to);
             }
             Drag::Member {
@@ -462,7 +527,17 @@ pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, cx: &
             ..
         } => {
             let now = paint::sheet_point(&layout, &app.wb.sheets[sheet_index], &pane, ev.x, ev.y);
-            drag_grip(app, id, grip, &layout, &pane, (pressed, now), (frame, rotation, flips, lock_aspect), &others, ev);
+            drag_grip(
+                app,
+                id,
+                grip,
+                &layout,
+                &pane,
+                (pressed, now),
+                (frame, rotation, flips, lock_aspect),
+                &others,
+                ev,
+            );
             Drag::Grip {
                 id,
                 grip,
@@ -489,7 +564,15 @@ pub(super) fn mouse_drag(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, cx: &
         } => {
             let now = paint::sheet_point(&layout, &app.wb.sheets[sheet_index], &pane, ev.x, ev.y);
             let delta = (now.0 - pressed.0, now.1 - pressed.1);
-            let (placed, crop) = cropped(grip, frame, rotation, flips, &adjust, delta, ev.modifiers.shift);
+            let (placed, crop) = cropped(
+                grip,
+                frame,
+                rotation,
+                flips,
+                &adjust,
+                delta,
+                ev.modifiers.shift,
+            );
             app.wb.update_drawing(sheet_index, id, |drawing| {
                 drawing.anchor = (0, 0);
                 drawing.offset = (placed.x.max(0.0) as f32, placed.y.max(0.0) as f32);
@@ -534,13 +617,25 @@ fn drag_grip(
     let sheet = app.sheet;
     let (pressed, now) = points;
     let (frame, rotation, flips, lock_aspect) = was;
-    let Modifiers { shift, alt, control, .. } = ev.modifiers;
+    let Modifiers {
+        shift,
+        alt,
+        control,
+        ..
+    } = ev.modifiers;
     match grip {
         Grip::Resize(handle) => {
             let delta = (now.0 - pressed.0, now.1 - pressed.1);
             // A locked picture keeps its proportions from the corners;
             // Shift asks the same of any drawing.
-            let resized = geometry::resize(frame, rotation, handle, delta, lock_aspect || shift, alt || control);
+            let resized = geometry::resize(
+                frame,
+                rotation,
+                handle,
+                delta,
+                lock_aspect || shift,
+                alt || control,
+            );
             app.wb.set_drawing_frame(sheet, id, resized);
             // A member of a group is resized alone.
             if frame.width > 0.0 && frame.height > 0.0 && app.wb.group_of(sheet, id).is_none() {
@@ -551,7 +646,11 @@ fn drag_grip(
         Grip::LineEnd(end) => {
             let (start_point, end_point) = geometry::line_ends(frame, flips.0, flips.1, rotation);
             let fixed = if end { start_point } else { end_point };
-            let moved = if shift { geometry::constrain_direction(fixed, now, 45.0) } else { now };
+            let moved = if shift {
+                geometry::constrain_direction(fixed, now, 45.0)
+            } else {
+                now
+            };
             let (frame, flip_h, flip_v) = if end {
                 geometry::line_frame(fixed, moved)
             } else {
@@ -571,8 +670,16 @@ fn drag_grip(
         // The marks of a picture being cropped have a drag of their own.
         Grip::Crop(_) | Grip::Pan => {}
         Grip::Warp(handle) => {
-            let placed = paint::placed_frame(layout, &app.wb.sheets[sheet], frame, (rotation, flips.0, flips.1), pane);
-            let warp = app.wb.drawing(sheet, id).and_then(|drawing| paint::dragged_warp(drawing, &placed, layout.zoom, handle, (ev.x, ev.y)));
+            let placed = paint::placed_frame(
+                layout,
+                &app.wb.sheets[sheet],
+                frame,
+                (rotation, flips.0, flips.1),
+                pane,
+            );
+            let warp = app.wb.drawing(sheet, id).and_then(|drawing| {
+                paint::dragged_warp(drawing, &placed, layout.zoom, handle, (ev.x, ev.y))
+            });
             if let Some(warp) = warp {
                 app.wb.update_drawing(sheet, id, |drawing| {
                     if let Some(shape) = drawing.as_shape_mut() {
@@ -582,23 +689,42 @@ fn drag_grip(
             }
         }
         Grip::Rotate => {
-            let placed = paint::placed_frame(layout, &app.wb.sheets[sheet], frame, (rotation, flips.0, flips.1), pane);
+            let placed = paint::placed_frame(
+                layout,
+                &app.wb.sheets[sheet],
+                frame,
+                (rotation, flips.0, flips.1),
+                pane,
+            );
             let angle = geometry::drag_angle(placed.centre(), (ev.x, ev.y), shift);
-            app.wb.update_drawing(sheet, id, |drawing| drawing.rotation = angle);
+            app.wb
+                .update_drawing(sheet, id, |drawing| drawing.rotation = angle);
             for (other, was) in others {
                 let turned = geometry::normalise_angle(was + angle - rotation);
-                app.wb.update_drawing(sheet, *other, |drawing| drawing.rotation = turned);
+                app.wb
+                    .update_drawing(sheet, *other, |drawing| drawing.rotation = turned);
             }
         }
     }
 }
 
-pub(super) fn mouse_up(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+pub(super) fn mouse_up(
+    app: &mut ExcelApp,
+    _zone: &Zone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let Some(drag) = app.ext_mut::<DrawingUi>().drag.take() else {
         return;
     };
     match drag {
-        Drag::Member { group, member, moved, .. } => {
+        Drag::Member {
+            group,
+            member,
+            moved,
+            ..
+        } => {
             if moved {
                 app.commit(t("Move Object", "Déplacer l'objet"), cx);
             } else {
@@ -619,7 +745,11 @@ pub(super) fn mouse_up(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, window:
                 drawn(tool, start, end, ev.modifiers.shift)
             } else {
                 let (width, height) = tool.default_size();
-                (Frame::new(start.0, start.1, width as f64, height as f64), false, false)
+                (
+                    Frame::new(start.0, start.1, width as f64, height as f64),
+                    false,
+                    false,
+                )
             };
             insert_shape(app, tool, frame, (flip_h, flip_v), window, cx);
         }
@@ -643,13 +773,22 @@ pub(super) fn mouse_up(app: &mut ExcelApp, _zone: &Zone, ev: &ZoneEvent, window:
 
 /// Add a shape of the gallery in a frame, select it and show its tab; a
 /// text box is ready to be typed in.
-pub(super) fn insert_shape(app: &mut ExcelApp, tool: ShapeTool, frame: Frame, flips: (bool, bool), window: &mut Window, cx: &mut Cx) {
+pub(super) fn insert_shape(
+    app: &mut ExcelApp,
+    tool: ShapeTool,
+    frame: Frame,
+    flips: (bool, bool),
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let sheet = app.sheet;
     let Some(id) = app.wb.add_shape(sheet, tool, frame) else {
         return;
     };
     if flips != (false, false) {
-        app.wb.update_drawing(sheet, id, |drawing| (drawing.flip_h, drawing.flip_v) = flips);
+        app.wb.update_drawing(sheet, id, |drawing| {
+            (drawing.flip_h, drawing.flip_v) = flips
+        });
     }
     app.commit(
         if tool == ShapeTool::TextBox {
@@ -670,14 +809,20 @@ pub(super) fn insert_shape(app: &mut ExcelApp, tool: ShapeTool, frame: Frame, fl
 /// current sheet as one undo step: at a point of the sheet, or on the
 /// active cell, each a little lower and further right than the one
 /// before. The last one is selected.
-pub(super) fn insert_pictures(app: &mut ExcelApp, files: Vec<Vec<u8>>, at: Option<(f64, f64)>, cx: &mut Cx) {
+pub(super) fn insert_pictures(
+    app: &mut ExcelApp,
+    files: Vec<Vec<u8>>,
+    at: Option<(f64, f64)>,
+    cx: &mut Cx,
+) {
     if files.is_empty() || !app.may(Intent::EditObject(None), cx) {
         return;
     }
     // A vector picture is drawn once as it comes in.
     super::svg::install(cx);
     let sheet = app.sheet;
-    let (x, y) = at.unwrap_or_else(|| app.wb.sheets[sheet].corner_point((app.active(), (0.0, 0.0))));
+    let (x, y) =
+        at.unwrap_or_else(|| app.wb.sheets[sheet].corner_point((app.active(), (0.0, 0.0))));
     let mut last = None;
     for (i, bytes) in files.into_iter().enumerate() {
         let Some(picture) = super::icons::picture_from(bytes) else {
@@ -695,7 +840,11 @@ pub(super) fn insert_pictures(app: &mut ExcelApp, files: Vec<Vec<u8>>, at: Optio
     app.commit(t("Insert Picture", "Insérer une image"), cx);
     app.select_object(Some(object_id(&Drawings, id)), cx);
     let vector = selected(app).is_some_and(super::icons::is_graphic);
-    app.context_tab = Some(if vector { super::GRAPHICS_TAB } else { PICTURE_TAB });
+    app.context_tab = Some(if vector {
+        super::GRAPHICS_TAB
+    } else {
+        PICTURE_TAB
+    });
 }
 
 /// Read image files; those that are not pictures are named in a message.
@@ -762,19 +911,33 @@ pub(super) fn pick_pictures(app: &mut ExcelApp, replace: bool, window: &mut Wind
 /// "Change Picture": another image in the frame of the selected picture.
 fn replace_picture(app: &mut ExcelApp, files: Vec<Vec<u8>>, cx: &mut Cx) {
     super::svg::install(cx);
-    let Some(picture) = files.into_iter().next().and_then(super::icons::picture_from) else {
+    let Some(picture) = files
+        .into_iter()
+        .next()
+        .and_then(super::icons::picture_from)
+    else {
         return;
     };
-    super::edit(app, t("Change Picture", "Modifier l'image"), cx, |drawing| {
-        if matches!(drawing.kind, DrawingKind::Picture(_)) {
-            drawing.kind = DrawingKind::Picture(picture.clone());
-        }
-    });
+    super::edit(
+        app,
+        t("Change Picture", "Modifier l'image"),
+        cx,
+        |drawing| {
+            if matches!(drawing.kind, DrawingKind::Picture(_)) {
+                drawing.kind = DrawingKind::Picture(picture.clone());
+            }
+        },
+    );
 }
 
 /// Image files dropped on the cells are inserted where they were dropped;
 /// other files are not for this feature.
-pub(super) fn drop_files(app: &mut ExcelApp, paths: &ExternalPaths, window: &mut Window, cx: &mut Cx) {
+pub(super) fn drop_files(
+    app: &mut ExcelApp,
+    paths: &ExternalPaths,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if app.modal_open() {
         return;
     }
@@ -797,7 +960,13 @@ pub(super) fn drop_files(app: &mut ExcelApp, paths: &ExternalPaths, window: &mut
     let at = app.current_layout().and_then(|layout| {
         let (x, y) = layout.local(window.mouse_position());
         let pane = paint::pane_at(&layout, x, y)?;
-        Some(paint::sheet_point(&layout, &app.wb.sheets[app.sheet], &pane, x, y))
+        Some(paint::sheet_point(
+            &layout,
+            &app.wb.sheets[app.sheet],
+            &pane,
+            x,
+            y,
+        ))
     });
     let files = read_pictures(app, &pictures, cx);
     insert_pictures(app, files, at, cx);
@@ -817,7 +986,8 @@ mod tests {
     fn clicks_select_what_is_drawn() {
         let placed = Placed::plain(0.0, 0.0, 100.0, 100.0);
         let natural = (100.0, 100.0);
-        let hit = |drawing: &Drawing, placed: &Placed, p: Pt| hits(drawing, placed, natural, 1.0, p);
+        let hit =
+            |drawing: &Drawing, placed: &Placed, p: Pt| hits(drawing, placed, natural, 1.0, p);
         // A filled ellipse: inside, not in the corners of its frame.
         let ellipse = shape(ShapeTool::Ellipse);
         assert!(hit(&ellipse, &placed, (50.0, 50.0)));
@@ -834,7 +1004,10 @@ mod tests {
         assert_eq!(line.as_shape().unwrap().preset, ShapePreset::Line);
         assert!(hit(&line, &placed, (50.0, 52.0)));
         assert!(!hit(&line, &placed, (80.0, 20.0)));
-        let flipped = Placed { flip_h: true, ..placed };
+        let flipped = Placed {
+            flip_h: true,
+            ..placed
+        };
         assert!(hit(&line, &flipped, (80.0, 20.0)));
         // A turned rectangle is hit where it was turned to.
         let wide = Placed {
@@ -875,29 +1048,77 @@ mod tests {
         let frame = Frame::new(100.0, 100.0, 200.0, 100.0);
         let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-5);
         // The right side pulled in by 50: a quarter of the image goes.
-        let (placed, crop) = cropped(Grip::Crop(3), frame, 0.0, (false, false), &plain, (-50.0, 0.0), false);
+        let (placed, crop) = cropped(
+            Grip::Crop(3),
+            frame,
+            0.0,
+            (false, false),
+            &plain,
+            (-50.0, 0.0),
+            false,
+        );
         assert_eq!(placed, Frame::new(100.0, 100.0, 150.0, 100.0));
         assert!(near(crop, [0.0, 0.0, 0.25, 0.0]), "{crop:?}");
         // Then the top-left corner in by (30, 20) from there.
         let once = PictureAdjust { crop, ..plain };
-        let (placed, crop) = cropped(Grip::Crop(0), placed, 0.0, (false, false), &once, (30.0, 20.0), false);
+        let (placed, crop) = cropped(
+            Grip::Crop(0),
+            placed,
+            0.0,
+            (false, false),
+            &once,
+            (30.0, 20.0),
+            false,
+        );
         assert_eq!(placed, Frame::new(130.0, 120.0, 120.0, 80.0));
         assert!(near(crop, [0.15, 0.2, 0.25, 0.0]), "{crop:?}");
         // Moving the image right by 20 shows more of its left.
         let twice = PictureAdjust { crop, ..plain };
-        let (still, crop) = cropped(Grip::Pan, placed, 0.0, (false, false), &twice, (20.0, 0.0), false);
+        let (still, crop) = cropped(
+            Grip::Pan,
+            placed,
+            0.0,
+            (false, false),
+            &twice,
+            (20.0, 0.0),
+            false,
+        );
         assert_eq!(still, placed);
         assert!(near(crop, [0.05, 0.2, 0.35, 0.0]), "{crop:?}");
         // A flipped picture: the side dragged on screen is the other
         // side of the image.
-        let (_, crop) = cropped(Grip::Crop(3), frame, 0.0, (true, false), &plain, (-50.0, 0.0), false);
+        let (_, crop) = cropped(
+            Grip::Crop(3),
+            frame,
+            0.0,
+            (true, false),
+            &plain,
+            (-50.0, 0.0),
+            false,
+        );
         assert!(near(crop, [0.25, 0.0, 0.0, 0.0]), "{crop:?}");
         // Turned a quarter, its right side is at the bottom of the
         // screen: dragging up there cuts the right of the image.
-        let (_, crop) = cropped(Grip::Crop(3), frame, 90.0, (false, false), &plain, (0.0, -50.0), false);
+        let (_, crop) = cropped(
+            Grip::Crop(3),
+            frame,
+            90.0,
+            (false, false),
+            &plain,
+            (0.0, -50.0),
+            false,
+        );
         assert!(near(crop, [0.0, 0.0, 0.25, 0.0]), "{crop:?}");
         // Pulled out past the image: room around it.
-        let (_, crop) = cropped(Grip::Crop(7), frame, 0.0, (false, false), &plain, (-20.0, 0.0), false);
+        let (_, crop) = cropped(
+            Grip::Crop(7),
+            frame,
+            0.0,
+            (false, false),
+            &plain,
+            (-20.0, 0.0),
+            false,
+        );
         assert!(near(crop, [-0.1, 0.0, 0.0, 0.0]), "{crop:?}");
     }
 }

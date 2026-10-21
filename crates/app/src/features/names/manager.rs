@@ -2,7 +2,10 @@
 //! the Filter menu and the "Refers to" box that redefines the selected
 //! name in place.
 
-use super::{Column, NameFilter, NameRow, RowKind, dialogs, filter_rows, invalid_reference, locked, name_rows, sort_rows};
+use super::{
+    Column, NameFilter, NameRow, RowKind, dialogs, filter_rows, invalid_reference, locked,
+    name_rows, sort_rows,
+};
 use crate::app::{ExcelApp, MenuEntry};
 use crate::features::Cx;
 use crate::i18n::t;
@@ -37,7 +40,9 @@ fn snapshot(app: &ExcelApp) -> Snapshot {
 
 pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let first = snapshot(app);
-    app.open_modal(window, cx, move |modal, _, cx| Manager::new(modal, first, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        Manager::new(modal, first, cx)
+    });
 }
 
 /// Redefine a name with the text of the "Refers to" box. Returns false,
@@ -55,7 +60,11 @@ fn store_refers(app: &mut ExcelApp, row: &NameRow, text: &str, cx: &mut Cx) -> b
         app.alert(Alert::new("OpenSheet", invalid_reference()).warning(), cx);
         return false;
     };
-    if app.wb.edit_name(scope, &row.name, &row.name, expr, &row.comment).is_err() {
+    if app
+        .wb
+        .edit_name(scope, &row.name, &row.name, expr, &row.comment)
+        .is_err()
+    {
         return false;
     }
     app.commit(t("Edit Name", "Modifier le nom"), cx);
@@ -117,7 +126,9 @@ impl Manager {
 
     /// Filter and sort again, keeping the selected name selected.
     fn arrange(&mut self, cx: &mut Context<Self>) {
-        let kept = self.row().map(|row| (row.kind.clone(), row.name.to_lowercase()));
+        let kept = self
+            .row()
+            .map(|row| (row.kind.clone(), row.name.to_lowercase()));
         let mut rows = filter_rows(self.all.clone(), &self.filter);
         sort_rows(&mut rows, self.sort.0, self.sort.1);
         let found = kept.and_then(|(kind, name)| {
@@ -134,7 +145,10 @@ impl Manager {
     /// Select a row and show what it refers to.
     fn show(&mut self, index: Option<usize>, cx: &mut Context<Self>) {
         self.selected = index;
-        self.refers_original = self.row().map(|row| row.refers_to.clone()).unwrap_or_default();
+        self.refers_original = self
+            .row()
+            .map(|row| row.refers_to.clone())
+            .unwrap_or_default();
         let text = self.refers_original.clone();
         self.refers.update(cx, |input, cx| {
             if input.text() != text {
@@ -146,7 +160,8 @@ impl Manager {
 
     /// The "Refers to" box holds something that was not stored yet.
     fn refers_edited(&self, cx: &Context<Self>) -> bool {
-        self.row().is_some_and(|row| row.is_name()) && self.refers.read(cx).text() != self.refers_original
+        self.row().is_some_and(|row| row.is_name())
+            && self.refers.read(cx).text() != self.refers_original
     }
 
     fn accept_refers(&mut self, cx: &mut Context<Self>) {
@@ -155,7 +170,8 @@ impl Manager {
         };
         let text = self.refers.read(cx).text().to_string();
         // The list is read again at the next frame: the workbook changed.
-        self.modal.update_app(cx, |app, cx| store_refers(app, &row, &text, cx));
+        self.modal
+            .update_app(cx, |app, cx| store_refers(app, &row, &text, cx));
     }
 
     fn cancel_refers(&mut self, cx: &mut Context<Self>) {
@@ -206,17 +222,23 @@ impl Manager {
     }
 
     fn new_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.modal.update_app(cx, |app, cx| dialogs::open_new_name(app, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| dialogs::open_new_name(app, window, cx));
     }
 
     fn edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.locked {
             return;
         }
-        let Some(row) = self.row().filter(|row| row.is_name() || row.is_table()).cloned() else {
+        let Some(row) = self
+            .row()
+            .filter(|row| row.is_name() || row.is_table())
+            .cloned()
+        else {
             return;
         };
-        self.modal.update_app(cx, |app, cx| dialogs::open_edit_name(app, &row, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| dialogs::open_edit_name(app, &row, window, cx));
     }
 
     fn delete(&mut self, cx: &mut Context<Self>) {
@@ -243,7 +265,11 @@ impl Manager {
     }
 
     fn sort_by(&mut self, column: Column, cx: &mut Context<Self>) {
-        self.sort = if self.sort.0 == column { (column, !self.sort.1) } else { (column, true) };
+        self.sort = if self.sort.0 == column {
+            (column, !self.sort.1)
+        } else {
+            (column, true)
+        };
         self.arrange(cx);
     }
 
@@ -263,10 +289,16 @@ impl Manager {
             .checked(checked)
         };
         let entries = vec![
-            entry(t("Clear Filter", "Effacer le filtre"), false, |f, _| *f = NameFilter::default()).disabled(filter.is_empty()),
+            entry(t("Clear Filter", "Effacer le filtre"), false, |f, _| {
+                *f = NameFilter::default()
+            })
+            .disabled(filter.is_empty()),
             MenuEntry::separator(),
             entry(
-                t("Names Scoped to Worksheet", "Noms étendus à la feuille de calcul"),
+                t(
+                    "Names Scoped to Worksheet",
+                    "Noms étendus à la feuille de calcul",
+                ),
                 filter.sheet_scoped == Some(true),
                 |f, on| f.sheet_scoped = on.then_some(true),
             ),
@@ -287,15 +319,20 @@ impl Manager {
                 |f, on| f.with_errors = on.then_some(false),
             ),
             MenuEntry::separator(),
-            entry(t("Defined Names", "Noms définis"), filter.tables == Some(false), |f, on| {
-                f.tables = on.then_some(false)
-            }),
-            entry(t("Table Names", "Noms de tableaux"), filter.tables == Some(true), |f, on| {
-                f.tables = on.then_some(true)
-            }),
+            entry(
+                t("Defined Names", "Noms définis"),
+                filter.tables == Some(false),
+                |f, on| f.tables = on.then_some(false),
+            ),
+            entry(
+                t("Table Names", "Noms de tableaux"),
+                filter.tables == Some(true),
+                |f, on| f.tables = on.then_some(true),
+            ),
         ];
         let position = window.mouse_position();
-        self.modal.update_app(cx, |app, cx| app.open_context_menu(position, entries, cx));
+        self.modal
+            .update_app(cx, |app, cx| app.open_context_menu(position, entries, cx));
     }
 
     fn header(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -316,7 +353,15 @@ impl Manager {
                 .when(i >= WIDTHS.len(), |d| d.flex_1().min_w(px(0.)))
                 .child(div().flex_1().truncate().child(column.title()))
                 .when(sorted == column, |d| {
-                    d.child(icon(if ascending { "chevron-up" } else { "chevron-down" }, 9.0, theme::TEXT_MUTED))
+                    d.child(icon(
+                        if ascending {
+                            "chevron-up"
+                        } else {
+                            "chevron-down"
+                        },
+                        9.0,
+                        theme::TEXT_MUTED,
+                    ))
                 })
                 .on_click(cx.listener(move |this, _, _, cx| this.sort_by(column, cx)));
             cells.push(cell.into_any_element());
@@ -356,8 +401,18 @@ fn line(row: &NameRow) -> AnyElement {
                 .flex()
                 .items_center()
                 .gap(px(5.))
-                .child(icon(if row.is_table() { "table" } else { "tag" }, 12.0, theme::TEXT_MUTED))
-                .child(div().flex_1().min_w(px(0.)).truncate().child(SharedString::from(row.name.clone()))),
+                .child(icon(
+                    if row.is_table() { "table" } else { "tag" },
+                    12.0,
+                    theme::TEXT_MUTED,
+                ))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .truncate()
+                        .child(SharedString::from(row.name.clone())),
+                ),
         )
         .child(cell(&row.value, Some(WIDTHS[1])))
         .child(cell(&row.refers_to, Some(WIDTHS[2])))
@@ -375,7 +430,10 @@ impl Render for Manager {
             }
         }
         let rows = self.rows.clone();
-        let names: Vec<SharedString> = rows.iter().map(|row| SharedString::from(row.name.clone())).collect();
+        let names: Vec<SharedString> = rows
+            .iter()
+            .map(|row| SharedString::from(row.name.clone()))
+            .collect();
         let row = self.row();
         let is_name = row.is_some_and(|row| row.is_name());
         let edited = self.refers_edited(cx);
@@ -396,7 +454,11 @@ impl Render for Manager {
                 .border_color(c(theme::BORDER_STRONG))
                 .bg(c(0xFFFFFF))
                 .when(edited, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                .child(icon(icon_name, 12.0, if edited { color } else { theme::TEXT_DISABLED }))
+                .child(icon(
+                    icon_name,
+                    12.0,
+                    if edited { color } else { theme::TEXT_DISABLED },
+                ))
         };
         let refers: AnyElement = if is_name && !self.locked {
             RefEdit::new(&self.refers, &self.modal).into_any_element()
@@ -413,7 +475,11 @@ impl Render for Manager {
                 .rounded(px(3.))
                 .bg(c(theme::CHROME_BG))
                 .text_color(c(theme::TEXT_MUTED))
-                .child(div().truncate().child(SharedString::from(self.refers_original.clone())))
+                .child(
+                    div()
+                        .truncate()
+                        .child(SharedString::from(self.refers_original.clone())),
+                )
                 .into_any_element()
         };
 
@@ -465,11 +531,15 @@ impl Render for Manager {
                             .border_color(c(0xABABAB))
                             .bg(c(0xFFFFFF))
                             .hover(|s| s.bg(c(theme::HOVER)))
-                            .when(!self.filter.is_empty(), |d| d.font_weight(FontWeight::SEMIBOLD))
+                            .when(!self.filter.is_empty(), |d| {
+                                d.font_weight(FontWeight::SEMIBOLD)
+                            })
                             .child(icon("filter", 12.0, theme::TEXT_MUTED))
                             .child(t("Filter", "Filtrer"))
                             .child(icon("chevron-down", 9.0, theme::TEXT_MUTED))
-                            .on_click(cx.listener(|this, _, window, cx| this.filter_menu(window, cx))),
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.filter_menu(window, cx)),
+                            ),
                     ),
             )
             .child(
@@ -483,7 +553,9 @@ impl Render for Manager {
                                     this.leave(Next::Select(*index), window, cx);
                                 }
                             }))
-                            .on_activate(cx.listener(|this, _: &usize, window, cx| this.edit(window, cx))),
+                            .on_activate(
+                                cx.listener(|this, _: &usize, window, cx| this.edit(window, cx)),
+                            ),
                     ),
                 ),
             )
@@ -502,18 +574,22 @@ impl Render for Manager {
                                 mark("refers-cancel", "close", 0xC42B1C)
                                     .on_click(cx.listener(|this, _, _, cx| this.cancel_refers(cx))),
                             )
-                            .child(mark("refers-accept", "check", theme::ACCENT).on_click(cx.listener(|this, _, _, cx| {
-                                if this.refers_edited(cx) {
-                                    this.accept_refers(cx);
-                                }
-                            })))
+                            .child(mark("refers-accept", "check", theme::ACCENT).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    if this.refers_edited(cx) {
+                                        this.accept_refers(cx);
+                                    }
+                                }),
+                            ))
                             .child(refers),
                     ),
             )
             .footer(
                 Button::new("close", t("Close", "Fermer"))
                     .primary()
-                    .on_click(cx.listener(|this, _, window, cx| this.leave(Next::Close, window, cx))),
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.leave(Next::Close, window, cx)),
+                    ),
             )
     }
 }

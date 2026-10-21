@@ -31,7 +31,8 @@ use std::fmt::Write as _;
 use std::io::{Read, Seek};
 
 const NS_DRAWING: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
-const NS_SHEET_DRAWING: &str = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
+const NS_SHEET_DRAWING: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
 const NS_COMPATIBILITY: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 /// The namespace of the choice only this application takes.
 pub(crate) const NS_INK: &str = "https://opensheet.org/2026/ink";
@@ -46,7 +47,11 @@ const MAX_POINTS: usize = 200_000;
 // ---- writing -------------------------------------------------------------------
 
 fn emu(px: f64) -> i64 {
-    if px.is_finite() { (px * EMU_PER_PX).round() as i64 } else { 0 }
+    if px.is_finite() {
+        (px * EMU_PER_PX).round() as i64
+    } else {
+        0
+    }
 }
 
 fn push_corner(x: &mut String, name: &str, ((row, col), (dx, dy)): Corner) {
@@ -70,7 +75,12 @@ fn push_path(x: &mut String, ink: &Ink) {
         let (px, py) = ink.points[i.clamp(0, ink.points.len() as isize - 1) as usize];
         (px as f64, py as f64)
     };
-    w!(x, "<a:path w=\"{}\" h=\"{}\" fill=\"none\"><a:moveTo>", emu(ink.extent.0 as f64), emu(ink.extent.1 as f64));
+    w!(
+        x,
+        "<a:path w=\"{}\" h=\"{}\" fill=\"none\"><a:moveTo>",
+        emu(ink.extent.0 as f64),
+        emu(ink.extent.1 as f64)
+    );
     push_point(x, at(0));
     x.push_str("</a:moveTo>");
     match ink.points.len() {
@@ -111,7 +121,10 @@ fn push_ink(x: &mut String, sheet: &Sheet, ink: &Ink, id: usize) {
     x.push_str("<xdr:twoCellAnchor editAs=\"oneCell\">");
     push_corner(x, "from", from);
     push_corner(x, "to", to);
-    w!(x, "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"{id}\" name=\"");
+    w!(
+        x,
+        "<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr><xdr:cNvPr id=\"{id}\" name=\""
+    );
     push_attr(x, &ink.name);
     x.push_str("\"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr>");
     w!(
@@ -126,10 +139,19 @@ fn push_ink(x: &mut String, sheet: &Sheet, ink: &Ink, id: usize) {
     push_path(x, ink);
     x.push_str("</a:pathLst></a:custGeom><a:noFill/>");
     let width = ink.width_in((frame.width as f32, frame.height as f32));
-    w!(x, "<a:ln w=\"{}\" cap=\"rnd\"><a:solidFill><a:srgbClr val=\"{:06X}\"", emu(width as f64), ink.color.value() & 0xFF_FFFF);
+    w!(
+        x,
+        "<a:ln w=\"{}\" cap=\"rnd\"><a:solidFill><a:srgbClr val=\"{:06X}\"",
+        emu(width as f64),
+        ink.color.value() & 0xFF_FFFF
+    );
     let opacity = ink.kind.opacity();
     if opacity < 1.0 {
-        w!(x, "><a:alpha val=\"{}\"/></a:srgbClr>", (opacity * 100_000.0).round() as u32);
+        w!(
+            x,
+            "><a:alpha val=\"{}\"/></a:srgbClr>",
+            (opacity * 100_000.0).round() as u32
+        );
     } else {
         x.push_str("/>");
     }
@@ -161,7 +183,11 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>) {
         // The ids of the part go on after those of the charts (from 2)
         // and of the pictures and shapes.
         // (a group takes one, and one for each of its members).
-        let objects: usize = sheet.drawings.iter().map(|drawing| drawing.object_count()).sum();
+        let objects: usize = sheet
+            .drawings
+            .iter()
+            .map(|drawing| drawing.object_count())
+            .sum();
         let first = sheet.charts.len() + objects + 2;
         let mut anchors = String::new();
         for (k, ink) in sheet.inks.iter().enumerate() {
@@ -183,7 +209,11 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>) {
 
 // ---- reading -------------------------------------------------------------------
 
-fn each_child<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, mut child: impl FnMut(&mut Reader<'a>, &Tag<'a>)) {
+fn each_child<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    mut child: impl FnMut(&mut Reader<'a>, &Tag<'a>),
+) {
     if tag.empty {
         return;
     }
@@ -197,7 +227,11 @@ fn each_child<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, mut child: impl FnMut(&mut 
 }
 
 fn px(emu: f64) -> f64 {
-    if emu.is_finite() { (emu / EMU_PER_PX).clamp(-MAX_PX, MAX_PX) } else { 0.0 }
+    if emu.is_finite() {
+        (emu / EMU_PER_PX).clamp(-MAX_PX, MAX_PX)
+    } else {
+        0.0
+    }
 }
 
 fn parse_corner<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Corner {
@@ -245,7 +279,9 @@ struct Anchor {
 
 fn parse_colour(text: &str) -> Option<u32> {
     let hex = text.trim().trim_start_matches('#');
-    (hex.len() == 6).then(|| u32::from_str_radix(hex, 16).ok()).flatten()
+    (hex.len() == 6)
+        .then(|| u32::from_str_radix(hex, 16).ok())
+        .flatten()
 }
 
 /// `<a:path>`: the points its commands end on.
@@ -280,7 +316,12 @@ fn parse_freeform<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Freeform {
     each_child(r, tag, |r, t| match t.name {
         "nvSpPr" => each_child(r, t, |r, c| {
             if c.name == "cNvPr" {
-                shape.name = c.attr("name").unwrap_or_default().chars().filter(|ch| !ch.is_control()).collect();
+                shape.name = c
+                    .attr("name")
+                    .unwrap_or_default()
+                    .chars()
+                    .filter(|ch| !ch.is_control())
+                    .collect();
             }
             r.skip(c);
         }),
@@ -302,7 +343,10 @@ fn parse_freeform<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Freeform {
                 each_child(r, c, |r, fill| match fill.name {
                     "solidFill" => each_child(r, fill, |r, colour| {
                         if colour.name == "srgbClr" {
-                            shape.color = colour.attr("val").and_then(|v| parse_colour(&v)).unwrap_or(0);
+                            shape.color = colour
+                                .attr("val")
+                                .and_then(|v| parse_colour(&v))
+                                .unwrap_or(0);
                         }
                         r.skip(colour);
                     }),
@@ -333,11 +377,19 @@ fn parse_anchor<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Anchor {
         }
         "sp" => anchor.body = Some(Body::Freeform(parse_freeform(r, t))),
         "contentPart" => {
-            anchor.body = t.attr_local("id").filter(|id| !id.is_empty()).map(|id| Body::Part(id.into_owned()));
+            anchor.body = t
+                .attr_local("id")
+                .filter(|id| !id.is_empty())
+                .map(|id| Body::Part(id.into_owned()));
             each_child(r, t, |r, c| match c.name {
                 "nvContentPartPr" => each_child(r, c, |r, n| {
                     if n.name == "cNvPr" {
-                        anchor.name = n.attr("name").unwrap_or_default().chars().filter(|ch| !ch.is_control()).collect();
+                        anchor.name = n
+                            .attr("name")
+                            .unwrap_or_default()
+                            .chars()
+                            .filter(|ch| !ch.is_control())
+                            .collect();
                     }
                     r.skip(n);
                 }),
@@ -356,12 +408,20 @@ fn is_anchor(name: &str) -> bool {
 /// `<mc:AlternateContent>`: this application's own strokes (the choice
 /// names the tool, the fallback holds the shape) and Excel's (the choice
 /// holds the ink, the fallback a picture of it).
-fn parse_alternate<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, out: &mut Vec<(Anchor, Option<PenKind>)>) {
+fn parse_alternate<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    out: &mut Vec<(Anchor, Option<PenKind>)>,
+) {
     let mut own: Option<PenKind> = None;
     each_child(r, tag, |r, branch| match branch.name {
         "Choice" => each_child(r, branch, |r, t| {
             if t.name == "ink" {
-                own = Some(t.attr("kind").and_then(|kind| PenKind::from_file_name(&kind)).unwrap_or_default());
+                own = Some(
+                    t.attr("kind")
+                        .and_then(|kind| PenKind::from_file_name(&kind))
+                        .unwrap_or_default(),
+                );
                 r.skip(t);
             } else if is_anchor(t.name) {
                 let anchor = parse_anchor(r, t);
@@ -491,7 +551,9 @@ fn parse_trace(text: &str, channels: usize) -> Vec<Vec<f64>> {
                     if matches!(bytes[i], b'-' | b'+') {
                         i += 1;
                     }
-                    while i < bytes.len() && (bytes[i].is_ascii_digit() || matches!(bytes[i], b'.' | b'e' | b'E')) {
+                    while i < bytes.len()
+                        && (bytes[i].is_ascii_digit() || matches!(bytes[i], b'.' | b'e' | b'E'))
+                    {
                         i += 1;
                     }
                     if i == start {
@@ -573,13 +635,15 @@ pub(crate) fn parse_inkml(xml: &str) -> Vec<Trace> {
                                 Some("width") => {
                                     let units = p.attr("units").unwrap_or_default();
                                     if let Ok(v) = value.trim().parse::<f64>() {
-                                        brush.width = (length_px(v, &units) as f32).clamp(0.25, 200.0);
+                                        brush.width =
+                                            (length_px(v, &units) as f32).clamp(0.25, 200.0);
                                     }
                                 }
                                 Some("color") => brush.color = parse_colour(&value).unwrap_or(0),
                                 Some("rasterOp") => brush.highlighter |= value.trim() == "maskPen",
                                 Some("transparency") => {
-                                    brush.highlighter |= value.trim().parse::<f64>().is_ok_and(|v| v > 0.0)
+                                    brush.highlighter |=
+                                        value.trim().parse::<f64>().is_ok_and(|v| v > 0.0)
                                 }
                                 _ => {}
                             }
@@ -589,7 +653,11 @@ pub(crate) fn parse_inkml(xml: &str) -> Vec<Trace> {
                     brushes.push(brush);
                 }
                 "trace" => {
-                    let brush_ref = t.attr("brushRef").unwrap_or_default().trim_start_matches('#').to_string();
+                    let brush_ref = t
+                        .attr("brushRef")
+                        .unwrap_or_default()
+                        .trim_start_matches('#')
+                        .to_string();
                     let text = r.text(&t);
                     let count = channels.len().max(2);
                     let (ix, iy) = (
@@ -599,17 +667,29 @@ pub(crate) fn parse_inkml(xml: &str) -> Vec<Trace> {
                     let points: Vec<(f64, f64)> = parse_trace(&text, count)
                         .into_iter()
                         .filter_map(|values| Some((*values.get(ix)?, *values.get(iy)?)))
-                        .map(|(x, y)| (x / resolution.0 * 96.0 / 2.54, y / resolution.1 * 96.0 / 2.54))
+                        .map(|(x, y)| {
+                            (
+                                x / resolution.0 * 96.0 / 2.54,
+                                y / resolution.1 * 96.0 / 2.54,
+                            )
+                        })
                         .collect();
                     if points.is_empty() {
                         continue;
                     }
-                    let brush = brushes.iter().find(|b| b.id == brush_ref).or(brushes.first());
+                    let brush = brushes
+                        .iter()
+                        .find(|b| b.id == brush_ref)
+                        .or(brushes.first());
                     traces.push(Trace {
                         points,
                         width: brush.map_or(2.0, |b| b.width),
                         color: brush.map_or(0, |b| b.color),
-                        kind: if brush.is_some_and(|b| b.highlighter) { PenKind::Highlighter } else { PenKind::Pen },
+                        kind: if brush.is_some_and(|b| b.highlighter) {
+                            PenKind::Highlighter
+                        } else {
+                            PenKind::Pen
+                        },
                     });
                 }
                 _ => {}
@@ -635,8 +715,18 @@ impl Loader {
     }
 
     fn push(&mut self, sheet: &mut Sheet, mut ink: Ink, frame: Frame, name: &str) {
-        let taken = |name: &str| name.is_empty() || sheet.inks.iter().any(|other| other.name.eq_ignore_ascii_case(name));
-        let base = if name.trim().is_empty() { "Ink" } else { name.trim() };
+        let taken = |name: &str| {
+            name.is_empty()
+                || sheet
+                    .inks
+                    .iter()
+                    .any(|other| other.name.eq_ignore_ascii_case(name))
+        };
+        let base = if name.trim().is_empty() {
+            "Ink"
+        } else {
+            name.trim()
+        };
         let mut name = name.to_string();
         let mut number = sheet.inks.len() + 1;
         while taken(&name) {
@@ -647,14 +737,23 @@ impl Loader {
         ink.id = self.next_id;
         self.next_id += 1;
         (ink.anchor, ink.offset) = sheet.corner_at(frame.x.max(0.0), frame.y.max(0.0));
-        ink.size = ((frame.width as f32).max(MIN_EXTENT), (frame.height as f32).max(MIN_EXTENT));
+        ink.size = (
+            (frame.width as f32).max(MIN_EXTENT),
+            (frame.height as f32).max(MIN_EXTENT),
+        );
         sheet.inks.push(ink);
     }
 
     /// Read the ink of the drawing part `sheet_part` relates to as
     /// `drawing_rel` onto `sheet`, whose column widths and row heights are
     /// those of the file already. What makes no sense is left out.
-    pub fn read_sheet<R: Read + Seek>(&mut self, pkg: &mut Package<R>, sheet_part: &str, drawing_rel: Option<&str>, sheet: &mut Sheet) {
+    pub fn read_sheet<R: Read + Seek>(
+        &mut self,
+        pkg: &mut Package<R>,
+        sheet_part: &str,
+        drawing_rel: Option<&str>,
+        sheet: &mut Sheet,
+    ) {
         let Some(drawing_rel) = drawing_rel else {
             return;
         };
@@ -696,7 +795,10 @@ impl Loader {
                         color: Color(shape.color),
                         width: 1.0,
                         points: shape.points.into(),
-                        extent: (shape.extent.0.max(MIN_EXTENT), shape.extent.1.max(MIN_EXTENT)),
+                        extent: (
+                            shape.extent.0.max(MIN_EXTENT),
+                            shape.extent.1.max(MIN_EXTENT),
+                        ),
                         anchor: (0, 0),
                         offset: (0.0, 0.0),
                         size: (0.0, 0.0),
@@ -704,19 +806,32 @@ impl Loader {
                     };
                     // The file gives the line as it is drawn in the frame;
                     // the stroke keeps it at its natural size.
-                    let size = ((frame.width as f32).max(MIN_EXTENT), (frame.height as f32).max(MIN_EXTENT));
+                    let size = (
+                        (frame.width as f32).max(MIN_EXTENT),
+                        (frame.height as f32).max(MIN_EXTENT),
+                    );
                     let grown = ink.width_in(size);
                     ink.width = (shape.width / grown).clamp(0.25, 200.0);
                     self.push(sheet, ink, frame, &shape.name);
                 }
                 Some(Body::Part(id)) => {
-                    let Some(target) = rels.iter().find(|rel| rel.id == id).map(|rel| rel.target.clone()) else {
+                    let Some(target) = rels
+                        .iter()
+                        .find(|rel| rel.id == id)
+                        .map(|rel| rel.target.clone())
+                    else {
                         continue;
                     };
                     let Ok(Some(inkml)) = pkg.read(&target) else {
                         continue;
                     };
-                    self.place_traces(sheet, parse_inkml(&inkml), frame, anchor.locked, &anchor.name);
+                    self.place_traces(
+                        sheet,
+                        parse_inkml(&inkml),
+                        frame,
+                        anchor.locked,
+                        &anchor.name,
+                    );
                 }
                 None => {}
             }
@@ -726,20 +841,41 @@ impl Loader {
     /// Put the traces of one ink object in the frame of its anchor: the
     /// frame is the box of all of them, the thickness of their lines
     /// included.
-    fn place_traces(&mut self, sheet: &mut Sheet, traces: Vec<Trace>, frame: Frame, locked: bool, name: &str) {
+    fn place_traces(
+        &mut self,
+        sheet: &mut Sheet,
+        traces: Vec<Trace>,
+        frame: Frame,
+        locked: bool,
+        name: &str,
+    ) {
         let mut bounds: Option<(f64, f64, f64, f64)> = None;
         for trace in &traces {
             let half = trace.width as f64 / 2.0;
             for (x, y) in &trace.points {
                 let b = bounds.get_or_insert((x - half, y - half, x + half, y + half));
-                *b = (b.0.min(x - half), b.1.min(y - half), b.2.max(x + half), b.3.max(y + half));
+                *b = (
+                    b.0.min(x - half),
+                    b.1.min(y - half),
+                    b.2.max(x + half),
+                    b.3.max(y + half),
+                );
             }
         }
         let Some((bx0, by0, bx1, by1)) = bounds else {
             return;
         };
-        let scale = |have: f64, want: f64| if have > 0.0 && want > 0.0 { want / have } else { 1.0 };
-        let (sx, sy) = (scale(bx1 - bx0, frame.width), scale(by1 - by0, frame.height));
+        let scale = |have: f64, want: f64| {
+            if have > 0.0 && want > 0.0 {
+                want / have
+            } else {
+                1.0
+            }
+        };
+        let (sx, sy) = (
+            scale(bx1 - bx0, frame.width),
+            scale(by1 - by0, frame.height),
+        );
         for trace in traces {
             let points: Vec<(f64, f64)> = trace
                 .points
@@ -747,7 +883,9 @@ impl Loader {
                 .map(|(x, y)| (frame.x + (x - bx0) * sx, frame.y + (y - by0) * sy))
                 .collect();
             let width = trace.width * (sx * sy).sqrt() as f32;
-            if let Some((mut ink, at)) = Ink::through(trace.kind, Color(trace.color), width, &points) {
+            if let Some((mut ink, at)) =
+                Ink::through(trace.kind, Color(trace.color), width, &points)
+            {
                 ink.locked = locked;
                 self.push(sheet, ink, at, name);
             }
@@ -762,9 +900,15 @@ mod tests {
     #[test]
     fn traces_are_read_in_their_three_notations() {
         // Values as they are.
-        assert_eq!(parse_trace("10 20, 30 40", 2), vec![vec![10.0, 20.0], vec![30.0, 40.0]]);
+        assert_eq!(
+            parse_trace("10 20, 30 40", 2),
+            vec![vec![10.0, 20.0], vec![30.0, 40.0]]
+        );
         // Signs separate values; a third channel is carried along.
-        assert_eq!(parse_trace("10-20 5,-3 4 5", 3), vec![vec![10.0, -20.0, 5.0], vec![-3.0, 4.0, 5.0]]);
+        assert_eq!(
+            parse_trace("10-20 5,-3 4 5", 3),
+            vec![vec![10.0, -20.0, 5.0], vec![-3.0, 4.0, 5.0]]
+        );
         // Differences, then differences of differences, then explicit again.
         let points = parse_trace("100 200, '5 '10, 5 10, \"1 \"-2, 0 0, !7 !8", 2);
         assert_eq!(
@@ -779,7 +923,10 @@ mod tests {
             ]
         );
         // A point without both coordinates is left out.
-        assert_eq!(parse_trace("1 2, 3, 4 5", 2), vec![vec![1.0, 2.0], vec![4.0, 5.0]]);
+        assert_eq!(
+            parse_trace("1 2, 3, 4 5", 2),
+            vec![vec![1.0, 2.0], vec![4.0, 5.0]]
+        );
     }
 
     #[test]
@@ -802,7 +949,10 @@ mod tests {
         assert_eq!(traces[0].points, vec![(0.0, 0.0), (96.0, 48.0)]);
         assert_eq!((traces[0].color, traces[0].kind), (0xE71224, PenKind::Pen));
         assert!((traces[0].width - 1.89).abs() < 0.01);
-        assert_eq!((traces[1].color, traces[1].kind), (0xFFFC00, PenKind::Highlighter));
+        assert_eq!(
+            (traces[1].color, traces[1].kind),
+            (0xFFFC00, PenKind::Highlighter)
+        );
         assert_eq!(traces[1].points[1], (96.0, 96.0));
     }
 }

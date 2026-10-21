@@ -1720,7 +1720,9 @@ fn damaged_comment_parts_never_panic() {
 // ---- mentions --------------------------------------------------------------
 
 fn mention(person: &Person, text: &str, name: &str) -> Mention {
-    let start = text.find(name).unwrap_or_else(|| panic!("{name} is not in {text}"));
+    let start = text
+        .find(name)
+        .unwrap_or_else(|| panic!("{name} is not in {text}"));
     Mention {
         person: person.clone(),
         start,
@@ -1825,10 +1827,15 @@ fn mentions_round_trip() {
                 let from = m.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
                 m[from..from + m[from..].find('"').unwrap()].to_string()
             };
-            (value("mentionpersonId"), value("startIndex"), value("length"))
+            (
+                value("mentionpersonId"),
+                value("startIndex"),
+                value("length"),
+            )
         })
         .collect();
-    let place = |who: &str, start: &str, length: &str| (id(who), start.to_string(), length.to_string());
+    let place =
+        |who: &str, start: &str, length: &str| (id(who), start.to_string(), length.to_string());
     assert_eq!(
         places,
         [
@@ -1851,7 +1858,9 @@ fn mentions_round_trip() {
     // A post that names nobody has no `<mentions>`.
     assert!(threads.contains("<text>No mention here.</text></threadedComment>"));
     // The note that stands in for the thread says the names as text.
-    assert!(part(&bytes, "xl/comments1.xml").contains("@Zoë Müller and @sam@example.com checked it."));
+    assert!(
+        part(&bytes, "xl/comments1.xml").contains("@Zoë Müller and @sam@example.com checked it.")
+    );
 }
 
 /// Threads with mentions as Excel 365 writes them: the people named come
@@ -1886,7 +1895,10 @@ fn mentions_from_excel() {
     // Places in bytes here: the chart emoji is four of them.
     assert_eq!(
         thread.first.mentions,
-        [mention(&jane, text, "@Jane Doe"), mention(&ravi, text, "@Ravi Patel")]
+        [
+            mention(&jane, text, "@Jane Doe"),
+            mention(&ravi, text, "@Ravi Patel")
+        ]
     );
     assert_eq!(
         thread.first.pieces(),
@@ -1905,7 +1917,10 @@ fn mentions_from_excel() {
     assert!(thread_at(&wb, 0, "D7").first.mentions.is_empty());
     // The people named are among those the workbook knows.
     let people = wb.people();
-    assert!(people.contains(&jane) && people.contains(&ravi), "{people:?}");
+    assert!(
+        people.contains(&jane) && people.contains(&ravi),
+        "{people:?}"
+    );
 
     // Written back: the same people, the same places.
     let saved = to_bytes(&wb);
@@ -1922,9 +1937,15 @@ fn mentions_from_excel() {
 
     // Damaged in any place, the part still loads.
     let step = (threads.len() / 150).max(1);
-    for cut in (0..threads.len()).step_by(step).filter(|cut| threads.is_char_boundary(*cut)) {
+    for cut in (0..threads.len())
+        .step_by(step)
+        .filter(|cut| threads.is_char_boundary(*cut))
+    {
         let wb = load(&excel_package(&[
-            ("xl/threadedComments/threadedComment1.xml", Some(&threads[..cut])),
+            (
+                "xl/threadedComments/threadedComment1.xml",
+                Some(&threads[..cut]),
+            ),
             ("xl/persons/person.xml", Some(&persons)),
         ]));
         assert_eq!(wb.sheets.len(), 2, "cut at {cut}");

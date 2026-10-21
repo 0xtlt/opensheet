@@ -9,11 +9,11 @@
 //! (the rows and columns of the report, with their subtotals, totals and
 //! blank lines), and the grid is the product of the two lists of lines.
 
-use super::text::{self, Caption};
 use super::calc::CalcFormula;
+use super::text::{self, Caption};
 use super::{
-    Aggregation, AxisField, BaseItem, FieldLayout, FilterKind, LabelFilter, PivotTable, ShowAs, SortOrder, Subtotals,
-    Top10By, ValueFilter,
+    Aggregation, AxisField, BaseItem, FieldLayout, FilterKind, LabelFilter, PivotTable, ShowAs,
+    SortOrder, Subtotals, Top10By, ValueFilter,
 };
 use crate::eval::compare_text;
 use crate::format;
@@ -545,13 +545,19 @@ impl Report {
     pub(crate) fn data_at(&self, r: u32, c: u32, p: &PivotTable) -> Option<usize> {
         let row = self.row_lines.get(r as usize)?;
         let col = self.col_lines.get(c as usize)?;
-        row.data().or(col.data()).or((p.data_fields.len() == 1).then_some(0))
+        row.data()
+            .or(col.data())
+            .or((p.data_fields.len() == 1).then_some(0))
     }
 
     /// Whose number format a cell of the report takes.
     pub(crate) fn format_of(&self, r: u32, c: u32, p: &PivotTable) -> FormatOf {
         let label = |rows: bool, level: u8| {
-            let levels = if rows { &self.row_levels } else { &self.col_levels };
+            let levels = if rows {
+                &self.row_levels
+            } else {
+                &self.col_levels
+            };
             match levels.get(level as usize).and_then(|l| l.field) {
                 Some(f) => FormatOf::Field(f),
                 None => FormatOf::Nothing,
@@ -559,7 +565,10 @@ impl Report {
         };
         match self.tag(r, c) {
             Tag::Value => match self.data_at(r, c, p) {
-                Some(d) if self.row_lines[r as usize].func > 0 || self.col_lines[c as usize].func > 0 => {
+                Some(d)
+                    if self.row_lines[r as usize].func > 0
+                        || self.col_lines[c as usize].func > 0 =>
+                {
                     FormatOf::Subtotal(d)
                 }
                 Some(d) => FormatOf::Data(d),
@@ -575,9 +584,11 @@ impl Report {
     /// in compact form: Excel aligns those to the left, numbers included.
     pub(crate) fn indent(&self, r: u32, c: u32) -> Option<u8> {
         match self.tag(r, c) {
-            Tag::RowLabel(l) | Tag::RowSubtotal(l) => {
-                self.row_levels.get(l as usize).filter(|v| v.compact).map(|v| v.indent)
-            }
+            Tag::RowLabel(l) | Tag::RowSubtotal(l) => self
+                .row_levels
+                .get(l as usize)
+                .filter(|v| v.compact)
+                .map(|v| v.indent),
             _ => None,
         }
     }
@@ -605,8 +616,9 @@ impl Report {
         let Some(lvl) = levels.get(level) else {
             return false;
         };
-        let has_button =
-            |k: usize, l: &Level| l.field.is_some() && axis.iter().skip(k + 1).any(|a| a.field().is_some());
+        let has_button = |k: usize, l: &Level| {
+            l.field.is_some() && axis.iter().skip(k + 1).any(|a| a.field().is_some())
+        };
         if lvl.compact {
             levels
                 .iter()
@@ -692,7 +704,9 @@ impl Calculated {
             .iter()
             .filter_map(|item| {
                 let x = cache.calc_item_index(item)?;
-                let formula = CalcFormula::parse(&item.formula, &cache.item_names(item.field), Locale::en()).ok()?;
+                let formula =
+                    CalcFormula::parse(&item.formula, &cache.item_names(item.field), Locale::en())
+                        .ok()?;
                 Some((item.field, x, formula))
             })
             .collect();
@@ -716,7 +730,9 @@ struct ItemFlags<'a> {
 pub(crate) fn label_text(p: &PivotTable, field: usize, label: &Value, locale: &Locale) -> String {
     match label {
         Value::Number(n) => {
-            let code = p.label_format(field).unwrap_or_else(|| Arc::from("General"));
+            let code = p
+                .label_format(field)
+                .unwrap_or_else(|| Arc::from("General"));
             format::format_number(*n, &code, locale).text
         }
         other => format::format_value(other, "General", locale).text,
@@ -746,7 +762,9 @@ impl LabelFilter {
             LabelFilter::LessThan(s) => cmp(s) == Ordering::Less,
             LabelFilter::LessOrEqual(s) => cmp(s) != Ordering::Greater,
             LabelFilter::Between(a, b) => cmp(a) != Ordering::Less && cmp(b) != Ordering::Greater,
-            LabelFilter::NotBetween(a, b) => cmp(a) == Ordering::Less || cmp(b) == Ordering::Greater,
+            LabelFilter::NotBetween(a, b) => {
+                cmp(a) == Ordering::Less || cmp(b) == Ordering::Greater
+            }
         }
     }
 }
@@ -904,7 +922,9 @@ impl<'a> Engine<'a> {
             .and_then(|f| f.captions.get(item as usize).copied().flatten());
         match (caption, self.p.cache.items(field).get(item as usize)) {
             (Some(c), _) => Value::text(c),
-            (None, Some(Value::Empty) | None) => Value::text(text::caption(Caption::Blank, self.locale)),
+            (None, Some(Value::Empty) | None) => {
+                Value::text(text::caption(Caption::Blank, self.locale))
+            }
             (None, Some(v)) => v.clone(),
         }
     }
@@ -935,7 +955,9 @@ impl<'a> Engine<'a> {
                     let subtotal = match &pf.subtotals {
                         _ if !real_below => Sub::None,
                         Subtotals::None => Sub::None,
-                        Subtotals::Automatic if own_line && pf.subtotal_top && !values_below => Sub::Top,
+                        Subtotals::Automatic if own_line && pf.subtotal_top && !values_below => {
+                            Sub::Top
+                        }
                         Subtotals::Automatic => Sub::Bottom,
                         Subtotals::Custom(fs) if fs.is_empty() => Sub::None,
                         Subtotals::Custom(fs) => Sub::Custom(fs.clone()),
@@ -959,7 +981,9 @@ impl<'a> Engine<'a> {
                         .filter_map(|x| x.field())
                         .next()
                         .and_then(|f| p.fields.get(f));
-                    let layout = neighbour.map(|pf| pf.layout).unwrap_or(FieldLayout::Compact);
+                    let layout = neighbour
+                        .map(|pf| pf.layout)
+                        .unwrap_or(FieldLayout::Compact);
                     Level {
                         field: None,
                         depth,
@@ -993,11 +1017,24 @@ impl<'a> Engine<'a> {
     /// and of everything but the selection of the filter fields.
     fn filter_items(&mut self) {
         let p = self.p;
-        let mut used: Vec<(usize, Option<Option<u32>>)> =
-            p.page_fields.iter().map(|pf| (pf.field, Some(pf.item))).collect();
-        used.extend(self.rows.fields.iter().chain(&self.cols.fields).map(|f| (*f, None)));
+        let mut used: Vec<(usize, Option<Option<u32>>)> = p
+            .page_fields
+            .iter()
+            .map(|pf| (pf.field, Some(pf.item)))
+            .collect();
+        used.extend(
+            self.rows
+                .fields
+                .iter()
+                .chain(&self.cols.fields)
+                .map(|f| (*f, None)),
+        );
         // A slicer or a timeline filters its field wherever it is.
-        let dated = p.filters.iter().filter(|x| matches!(x.kind, FilterKind::Date { .. })).map(|x| x.field);
+        let dated = p
+            .filters
+            .iter()
+            .filter(|x| matches!(x.kind, FilterKind::Date { .. }))
+            .map(|x| x.field);
         for f in p.sliced.iter().copied().chain(dated) {
             if !used.iter().any(|(u, _)| *u == f) {
                 used.push((f, None));
@@ -1117,7 +1154,10 @@ impl<'a> Engine<'a> {
                     by,
                 } => {
                     let (top, count, by) = (*top, *count, *by);
-                    (*data_field, Box::new(move |sibs| top10_rejects(sibs, top, count, by)))
+                    (
+                        *data_field,
+                        Box::new(move |sibs| top10_rejects(sibs, top, count, by)),
+                    )
                 }
             };
             let Some(df) = p.data_fields.get(data) else {
@@ -1230,7 +1270,10 @@ impl<'a> Engine<'a> {
                 continue;
             }
             let next = (self.accs.len() / nd) as u32;
-            let cell = *self.cube.entry(pair(self.rec_row[r], self.rec_col[r])).or_insert(next);
+            let cell = *self
+                .cube
+                .entry(pair(self.rec_row[r], self.rec_col[r]))
+                .or_insert(next);
             if cell == next {
                 self.accs.extend(std::iter::repeat_n(Acc::EMPTY, nd));
             }
@@ -1286,7 +1329,10 @@ impl<'a> Engine<'a> {
         if !self.calc.items.is_empty() && depth < 12 {
             // Where the formulas of two calculated items meet, the last
             // one in solve order gives the value.
-            let hit = [self.calc_item_at(true, rn), self.calc_item_at(false, cn)].into_iter().flatten().max_by_key(|h| h.0);
+            let hit = [self.calc_item_at(true, rn), self.calc_item_at(false, cn)]
+                .into_iter()
+                .flatten()
+                .max_by_key(|h| h.0);
             if let Some((order, rows, level)) = hit {
                 return Some(self.calc_item_value(order, rows, level, (rn, cn), d, f, depth));
             }
@@ -1306,7 +1352,11 @@ impl<'a> Engine<'a> {
         let mut extra: Option<f64> = None;
         for (rows, node) in [(true, rn), (false, cn)] {
             for below in self.calc_items_below(rows, node) {
-                let v = if rows { self.raw_at(below, cn, d, f, depth + 1) } else { self.raw_at(rn, below, d, f, depth + 1) };
+                let v = if rows {
+                    self.raw_at(below, cn, d, f, depth + 1)
+                } else {
+                    self.raw_at(rn, below, d, f, depth + 1)
+                };
                 if let Some(Value::Number(n)) = v {
                     extra = Some(extra.unwrap_or(0.0) + n);
                 }
@@ -1322,7 +1372,9 @@ impl<'a> Engine<'a> {
     /// The value of a calculated field over the records of a cell: its
     /// formula applied to the sums of the fields it names.
     fn calc_field_value(&self, cell: usize, field: usize, depth: u8) -> Value {
-        let (Some(Some(formula)), Some(scratch)) = (self.calc.fields.get(field), &self.calc.scratch) else {
+        let (Some(Some(formula)), Some(scratch)) =
+            (self.calc.fields.get(field), &self.calc.scratch)
+        else {
             return Value::Error(ErrorKind::Name);
         };
         let sum = |used: usize| -> Result<f64, ErrorKind> {
@@ -1341,7 +1393,11 @@ impl<'a> Engine<'a> {
             let Some(slot) = self.calc.summed.iter().position(|f| *f == used) else {
                 return Err(ErrorKind::Name);
             };
-            match self.accs.get(cell * self.stride + self.nd + slot).and_then(|acc| acc.result(Aggregation::Sum)) {
+            match self
+                .accs
+                .get(cell * self.stride + self.nd + slot)
+                .and_then(|acc| acc.result(Aggregation::Sum))
+            {
                 Some(Value::Number(n)) => Ok(n),
                 Some(Value::Error(e)) => Err(e),
                 _ => Ok(0.0),
@@ -1353,7 +1409,11 @@ impl<'a> Engine<'a> {
     /// The fields of an axis that have calculated items, with the depth of
     /// their nodes.
     fn calc_levels(&self, rows: bool) -> impl Iterator<Item = (u8, usize)> + '_ {
-        let fields = if rows { &self.rows.fields } else { &self.cols.fields };
+        let fields = if rows {
+            &self.rows.fields
+        } else {
+            &self.cols.fields
+        };
         fields
             .iter()
             .enumerate()
@@ -1369,7 +1429,11 @@ impl<'a> Engine<'a> {
             .filter_map(|(level, field)| {
                 let a = tree.ancestor(node, level);
                 let item = tree.nodes.get(a as usize)?.item;
-                let order = self.calc.items.iter().position(|(f, x, _)| *f == field && *x == item)?;
+                let order = self
+                    .calc
+                    .items
+                    .iter()
+                    .position(|(f, x, _)| *f == field && *x == item)?;
                 Some((order, rows, level))
             })
             .max_by_key(|h| h.0)
@@ -1389,11 +1453,17 @@ impl<'a> Engine<'a> {
             // Walk down to the level of the field.
             let mut at = vec![node];
             for _ in start.depth..level {
-                at = at.iter().flat_map(|n| tree.nodes[*n as usize].children.iter().copied()).collect();
+                at = at
+                    .iter()
+                    .flat_map(|n| tree.nodes[*n as usize].children.iter().copied())
+                    .collect();
             }
             out.extend(at.into_iter().filter(|n| {
                 let item = tree.nodes[*n as usize].item;
-                self.calc.items.iter().any(|(f, x, _)| *f == field && *x == item)
+                self.calc
+                    .items
+                    .iter()
+                    .any(|(f, x, _)| *f == field && *x == item)
             }));
         }
         out
@@ -1402,23 +1472,45 @@ impl<'a> Engine<'a> {
     /// The value of a cell under a calculated item: its formula applied to
     /// the cells that stand to the other items as this one to its own.
     #[allow(clippy::too_many_arguments)]
-    fn calc_item_value(&self, order: usize, rows: bool, level: u8, at: (u32, u32), d: usize, f: Aggregation, depth: u8) -> Value {
+    fn calc_item_value(
+        &self,
+        order: usize,
+        rows: bool,
+        level: u8,
+        at: (u32, u32),
+        d: usize,
+        f: Aggregation,
+        depth: u8,
+    ) -> Value {
         let (rn, cn) = at;
-        let (Some((_, _, formula)), Some(scratch)) = (self.calc.items.get(order), &self.calc.scratch) else {
+        let (Some((_, _, formula)), Some(scratch)) =
+            (self.calc.items.get(order), &self.calc.scratch)
+        else {
             return Value::Error(ErrorKind::Name);
         };
         let tree = if rows { &self.row_tree } else { &self.col_tree };
-        let index = if rows { &self.row_index } else { &self.col_index };
+        let index = if rows {
+            &self.row_index
+        } else {
+            &self.col_index
+        };
         let Some((own, below)) = self.split(rows, if rows { rn } else { cn }, level) else {
             return Value::Error(ErrorKind::Ref);
         };
         let parent = tree.nodes[own as usize].parent;
         let cell = |item: usize| -> Result<f64, ErrorKind> {
-            let Some(node) = index.get(&pair(parent, item as u32)).and_then(|n| self.descend(rows, *n, &below)) else {
+            let Some(node) = index
+                .get(&pair(parent, item as u32))
+                .and_then(|n| self.descend(rows, *n, &below))
+            else {
                 // The item has nothing here.
                 return Ok(0.0);
             };
-            let v = if rows { self.raw_at(node, cn, d, f, depth + 1) } else { self.raw_at(rn, node, d, f, depth + 1) };
+            let v = if rows {
+                self.raw_at(node, cn, d, f, depth + 1)
+            } else {
+                self.raw_at(rn, node, d, f, depth + 1)
+            };
             match v {
                 Some(Value::Number(n)) => Ok(n),
                 Some(Value::Error(e)) => Err(e),
@@ -1437,7 +1529,12 @@ impl<'a> Engine<'a> {
                 .calc
                 .items
                 .iter()
-                .filter(|(f, x, _)| *f == field && self.visible[field].as_ref().is_none_or(|vis| vis.get(*x as usize).copied().unwrap_or(false)))
+                .filter(|(f, x, _)| {
+                    *f == field
+                        && self.visible[field]
+                            .as_ref()
+                            .is_none_or(|vis| vis.get(*x as usize).copied().unwrap_or(false))
+                })
                 .map(|(_, x, _)| *x)
                 .collect();
             let (tree, index) = if rows {
@@ -1445,13 +1542,19 @@ impl<'a> Engine<'a> {
             } else {
                 (&mut self.col_tree, &mut self.col_index)
             };
-            let parents: Vec<u32> = (0..tree.nodes.len() as u32).filter(|n| tree.nodes[*n as usize].depth + 1 == level).collect();
+            let parents: Vec<u32> = (0..tree.nodes.len() as u32)
+                .filter(|n| tree.nodes[*n as usize].depth + 1 == level)
+                .collect();
             for parent in parents {
                 let siblings = tree.nodes[parent as usize].children.clone();
                 for x in &wanted {
                     let node = tree.child(index, parent, *x);
                     // Copy the shape of what the siblings have below them.
-                    let mut todo: Vec<(u32, u32)> = siblings.iter().filter(|s| **s != node).map(|s| (*s, node)).collect();
+                    let mut todo: Vec<(u32, u32)> = siblings
+                        .iter()
+                        .filter(|s| **s != node)
+                        .map(|s| (*s, node))
+                        .collect();
                     while let Some((from, to)) = todo.pop() {
                         for child in tree.nodes[from as usize].children.clone() {
                             let item = tree.nodes[child as usize].item;
@@ -1515,7 +1618,11 @@ impl<'a> Engine<'a> {
                 .children
                 .iter()
                 .map(|c| {
-                    let value = match pf.sort.by_value.and_then(|d| p.data_fields.get(d).map(|df| (d, df))) {
+                    let value = match pf
+                        .sort
+                        .by_value
+                        .and_then(|d| p.data_fields.get(d).map(|df| (d, df)))
+                    {
                         Some((d, df)) => {
                             let v = if rows {
                                 self.raw(*c, 0, d, df.function)
@@ -1548,7 +1655,11 @@ impl<'a> Engine<'a> {
                 order.then(a.3.cmp(&b.3))
             });
             let sorted: Vec<u32> = keyed.into_iter().map(|k| k.0).collect();
-            let tree = if rows { &mut self.row_tree } else { &mut self.col_tree };
+            let tree = if rows {
+                &mut self.row_tree
+            } else {
+                &mut self.col_tree
+            };
             tree.nodes[n].children = sorted;
         }
     }
@@ -1711,7 +1822,11 @@ impl<'a> Engine<'a> {
                     _ => 0,
                 };
                 for k in 0..functions {
-                    let func = if lvl.subtotal == Sub::Bottom { 0 } else { k as u8 + 1 };
+                    let func = if lvl.subtotal == Sub::Bottom {
+                        0
+                    } else {
+                        k as u8 + 1
+                    };
                     let datas: Vec<u16> = if values_below {
                         (0..self.nd as u16).collect()
                     } else {
@@ -1774,7 +1889,11 @@ impl<'a> Engine<'a> {
 
     /// Follow `below` (innermost first) down from `from`.
     fn descend(&self, rows: bool, from: u32, below: &[u32]) -> Option<u32> {
-        let index = if rows { &self.row_index } else { &self.col_index };
+        let index = if rows {
+            &self.row_index
+        } else {
+            &self.col_index
+        };
         let mut n = from;
         for item in below.iter().rev() {
             n = *index.get(&pair(n, *item))?;
@@ -1786,7 +1905,11 @@ impl<'a> Engine<'a> {
     /// of the base field in `node`.
     fn relative(&self, rows: bool, node: u32, depth: u8, base: BaseItem) -> Rel {
         let tree = if rows { &self.row_tree } else { &self.col_tree };
-        let index = if rows { &self.row_index } else { &self.col_index };
+        let index = if rows {
+            &self.row_index
+        } else {
+            &self.col_index
+        };
         let Some((a, below)) = self.split(rows, node, depth) else {
             return Rel::Above;
         };
@@ -1843,7 +1966,10 @@ impl<'a> Engine<'a> {
         let own = self.raw(rn, cn, d, f);
         let rel = |field: usize, item: BaseItem| -> Option<(Rel, bool)> {
             let (rows, depth) = self.locate(field)?;
-            Some((self.relative(rows, if rows { rn } else { cn }, depth, item), rows))
+            Some((
+                self.relative(rows, if rows { rn } else { cn }, depth, item),
+                rows,
+            ))
         };
         let other = |rows: bool, n: u32| {
             if rows {
@@ -1860,11 +1986,17 @@ impl<'a> Engine<'a> {
             ShowAs::PercentOfRow => ratio(&own, &self.raw(rn, 0, d, f)),
             ShowAs::PercentOfParentRow => {
                 let parent = self.row_tree.nodes[rn as usize].parent;
-                ratio(&own, &self.raw(if parent == NONE { 0 } else { parent }, cn, d, f))
+                ratio(
+                    &own,
+                    &self.raw(if parent == NONE { 0 } else { parent }, cn, d, f),
+                )
             }
             ShowAs::PercentOfParentColumn => {
                 let parent = self.col_tree.nodes[cn as usize].parent;
-                ratio(&own, &self.raw(rn, if parent == NONE { 0 } else { parent }, d, f))
+                ratio(
+                    &own,
+                    &self.raw(rn, if parent == NONE { 0 } else { parent }, d, f),
+                )
             }
             ShowAs::PercentOfParent { field } => {
                 let Some((rows, depth)) = self.locate(field) else {
@@ -1894,7 +2026,9 @@ impl<'a> Engine<'a> {
                 match (number(&own), number(&base)) {
                     (Err(e), _) | (_, Err(e)) => Some(Value::Error(e)),
                     (Ok(None), Ok(None)) => None,
-                    (Ok(a), Ok(b)) if !percent => Some(Value::Number(a.unwrap_or(0.0) - b.unwrap_or(0.0))),
+                    (Ok(a), Ok(b)) if !percent => {
+                        Some(Value::Number(a.unwrap_or(0.0) - b.unwrap_or(0.0)))
+                    }
                     (Ok(_), Ok(None)) => Some(Value::Error(ErrorKind::Null)),
                     (Ok(a), Ok(Some(b))) => Some(match b == 0.0 {
                         true => Value::Error(ErrorKind::Div0),
@@ -1945,7 +2079,9 @@ impl<'a> Engine<'a> {
                 ) {
                     (Ok(Some(a)), Ok(Some(b)), Ok(Some(c)), Ok(Some(e))) => (a, b, c, e),
                     (Ok(None), ..) => return None,
-                    (Err(e), ..) | (_, Err(e), ..) | (_, _, Err(e), _) | (.., Err(e)) => return Some(Value::Error(e)),
+                    (Err(e), ..) | (_, Err(e), ..) | (_, _, Err(e), _) | (.., Err(e)) => {
+                        return Some(Value::Error(e));
+                    }
                     _ => return None,
                 };
                 Some(if row * col == 0.0 {
@@ -2008,11 +2144,9 @@ impl<'a> Engine<'a> {
                 LineKind::Grand => {
                     let text = match p.data_fields.get(line.data as usize) {
                         Some(d) => text::grand_total_of(&d.name, locale),
-                        None => p
-                            .options
-                            .grand_total_caption
-                            .clone()
-                            .unwrap_or_else(|| text::caption(Caption::GrandTotal, locale).to_string()),
+                        None => p.options.grand_total_caption.clone().unwrap_or_else(|| {
+                            text::caption(Caption::GrandTotal, locale).to_string()
+                        }),
                     };
                     out.push((
                         i,
@@ -2036,11 +2170,14 @@ impl<'a> Engine<'a> {
                 // unless its labels are repeated (which compact form, with
                 // one column for all, cannot do). A collapsed item hides
                 // the fields below it.
-                if (lvl.own_line && !(lvl.repeat && !lvl.compact)) || self.identity(rows, line, a) == NONE {
+                if (lvl.own_line && !(lvl.repeat && !lvl.compact))
+                    || self.identity(rows, line, a) == NONE
+                {
                     continue;
                 }
-                let first = previous
-                    .is_none_or(|prev| (0..=a).any(|k| self.identity(rows, prev, k) != self.identity(rows, line, k)));
+                let first = previous.is_none_or(|prev| {
+                    (0..=a).any(|k| self.identity(rows, prev, k) != self.identity(rows, line, k))
+                });
                 if first || lvl.repeat {
                     let tag = if rows {
                         Tag::RowLabel(a as u8)
@@ -2057,14 +2194,18 @@ impl<'a> Engine<'a> {
                     None => format::format_value(&own, "General", locale).text,
                 };
                 let word = match (&axis.levels[level].subtotal, line.func) {
-                    (Sub::Custom(fs), k) if k > 0 => fs.get(k as usize - 1).map(|f| f.label(locale).to_string()),
+                    (Sub::Custom(fs), k) if k > 0 => {
+                        fs.get(k as usize - 1).map(|f| f.label(locale).to_string())
+                    }
                     _ => None,
                 };
                 let text = match (word, p.data_fields.get(line.data as usize)) {
                     (Some(w), _) => text::subtotal_label(&item, &w, locale),
                     // Below "Σ Values" the line already belongs to one
                     // value field; above it, the subtotal names its own.
-                    (None, Some(d)) if axis.values_pos.is_some_and(|v| v > level) => format!("{item} {}", d.name),
+                    (None, Some(d)) if axis.values_pos.is_some_and(|v| v > level) => {
+                        format!("{item} {}", d.name)
+                    }
                     _ => text::subtotal_label(&item, text::caption(Caption::Total, locale), locale),
                 };
                 let tag = if rows {
@@ -2097,9 +2238,9 @@ impl<'a> Engine<'a> {
         let p = self.p;
         let locale = self.locale;
         let pages = self.pages();
-        let (page_rows, page_cols) = pages
-            .iter()
-            .fold((0, 0), |(r, c), cell| (r.max(cell.row + 1), c.max(cell.col + 2)));
+        let (page_rows, page_cols) = pages.iter().fold((0, 0), |(r, c), cell| {
+            (r.max(cell.row + 1), c.max(cell.col + 2))
+        });
         if p.row_fields.is_empty() && p.col_fields.is_empty() && self.nd == 0 {
             return Report {
                 rows: PLACEHOLDER.0,
@@ -2154,7 +2295,8 @@ impl<'a> Engine<'a> {
                     tag,
                     Tag::RowCaption | Tag::ColCaption | Tag::RowHeader(_) | Tag::ColHeader(_)
                 );
-                values[(r * cols + c) as usize] = if caption && !headers { Value::Empty } else { v };
+                values[(r * cols + c) as usize] =
+                    if caption && !headers { Value::Empty } else { v };
                 tags[(r * cols + c) as usize] = tag;
             }
         };
@@ -2170,11 +2312,10 @@ impl<'a> Engine<'a> {
                     .and_then(|f| p.fields.get(f))
                     .is_none_or(|pf| pf.layout == FieldLayout::Compact)
             }) {
-                let text = p
-                    .options
-                    .col_header_caption
-                    .clone()
-                    .unwrap_or_else(|| text::caption(Caption::ColumnLabels, locale).to_string());
+                let text =
+                    p.options.col_header_caption.clone().unwrap_or_else(|| {
+                        text::caption(Caption::ColumnLabels, locale).to_string()
+                    });
                 put(0, label_cols, Tag::ColCaption, Value::from(text));
             } else {
                 for (k, lvl) in self.cols.levels.iter().enumerate() {
@@ -2189,11 +2330,22 @@ impl<'a> Engine<'a> {
         }
         let last_header = header_rows - 1;
         for slot in 0..label_cols {
-            let Some((k, first)) = self.rows.levels.iter().enumerate().find(|(_, l)| l.slot == slot) else {
+            let Some((k, first)) = self
+                .rows
+                .levels
+                .iter()
+                .enumerate()
+                .find(|(_, l)| l.slot == slot)
+            else {
                 continue;
             };
             if first.compact {
-                let text = if self.rows.levels.iter().any(|l| l.slot == slot && l.field.is_some()) {
+                let text = if self
+                    .rows
+                    .levels
+                    .iter()
+                    .any(|l| l.slot == slot && l.field.is_some())
+                {
                     p.options
                         .row_header_caption
                         .clone()
@@ -2203,7 +2355,12 @@ impl<'a> Engine<'a> {
                 };
                 put(last_header, slot, Tag::RowCaption, Value::from(text));
             } else {
-                put(last_header, slot, Tag::RowHeader(k as u8), self.field_caption(first));
+                put(
+                    last_header,
+                    slot,
+                    Tag::RowHeader(k as u8),
+                    self.field_caption(first),
+                );
             }
         }
 
@@ -2257,11 +2414,13 @@ impl<'a> Engine<'a> {
                 None => Value::text(&opts.missing_caption),
             }
         };
-        let custom =
-            |axis: &Axis, line: &Line| match (axis.levels.get(line.level as usize).map(|l| &l.subtotal), line.func) {
-                (Some(Sub::Custom(fs)), k) if k > 0 => fs.get(k as usize - 1).copied(),
-                _ => None,
-            };
+        let custom = |axis: &Axis, line: &Line| match (
+            axis.levels.get(line.level as usize).map(|l| &l.subtotal),
+            line.func,
+        ) {
+            (Some(Sub::Custom(fs)), k) if k > 0 => fs.get(k as usize - 1).copied(),
+            _ => None,
+        };
         if self.nd > 0 {
             for (i, row) in row_lines.iter().enumerate() {
                 if !row.values {
@@ -2277,10 +2436,12 @@ impl<'a> Engine<'a> {
                     let function = custom(&self.rows, row).or(custom(&self.cols, col));
                     let v = match self.shown(row.node, col.node, d, function) {
                         None => missing.clone(),
-                        Some(Value::Error(_)) if opts.show_error => match opts.error_caption.is_empty() {
-                            true => Value::Empty,
-                            false => Value::text(&opts.error_caption),
-                        },
+                        Some(Value::Error(_)) if opts.show_error => {
+                            match opts.error_caption.is_empty() {
+                                true => Value::Empty,
+                                false => Value::text(&opts.error_caption),
+                            }
+                        }
                         Some(v) => v,
                     };
                     put(header_rows + i as u32, label_cols + j as u32, Tag::Value, v);
@@ -2338,7 +2499,9 @@ impl<'a> Engine<'a> {
                 let hidden = p.fields[pf.field].items.iter().any(|it| it.hidden);
                 let value = match pf.item {
                     Some(x) => self.item_value(pf.field, x),
-                    None if hidden => Value::text(text::caption(Caption::MultipleItems, self.locale)),
+                    None if hidden => {
+                        Value::text(text::caption(Caption::MultipleItems, self.locale))
+                    }
                     None => Value::text(text::caption(Caption::All, self.locale)),
                 };
                 PageCell {

@@ -26,8 +26,8 @@ pub(crate) const CT_THEME: &str = "application/vnd.openxmlformats-officedocument
 
 /// The slots of a colour scheme, in the order of a theme part.
 const SLOTS: [&str; 12] = [
-    "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink",
-    "folHlink",
+    "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
+    "hlink", "folHlink",
 ];
 
 /// Fills, lines and effects of the theme (the content of
@@ -78,8 +78,12 @@ fn color_scheme(colors: &ThemeColors) -> String {
         // Black text on a white window are the colours of the system,
         // with the values they have where the system says nothing.
         match (*name, color) {
-            ("dk1", 0x000000) => x.push_str("<a:dk1><a:sysClr val=\"windowText\" lastClr=\"000000\"/></a:dk1>"),
-            ("lt1", 0xFFFFFF) => x.push_str("<a:lt1><a:sysClr val=\"window\" lastClr=\"FFFFFF\"/></a:lt1>"),
+            ("dk1", 0x000000) => {
+                x.push_str("<a:dk1><a:sysClr val=\"windowText\" lastClr=\"000000\"/></a:dk1>")
+            }
+            ("lt1", 0xFFFFFF) => {
+                x.push_str("<a:lt1><a:sysClr val=\"window\" lastClr=\"FFFFFF\"/></a:lt1>")
+            }
             _ => {
                 w!(x, "<a:{name}><a:srgbClr val=\"{color:06X}\"/></a:{name}>");
             }
@@ -109,11 +113,17 @@ fn font_scheme(fonts: &ThemeFonts) -> String {
 
 /// The theme part of a workbook.
 pub(crate) fn xml(theme: &Theme) -> String {
-    if let Some(part) = theme.source.as_deref().and_then(|source| respliced(source, theme)) {
+    if let Some(part) = theme
+        .source
+        .as_deref()
+        .and_then(|source| respliced(source, theme))
+    {
         return part;
     }
     let mut x = String::from(XML_DECL);
-    x.push_str("<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" name=\"");
+    x.push_str(
+        "<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" name=\"",
+    );
     push_attr(&mut x, &theme.name);
     x.push_str("\"><a:themeElements>");
     x.push_str(&color_scheme(&theme.colors));
@@ -122,7 +132,9 @@ pub(crate) fn xml(theme: &Theme) -> String {
     push_attr(&mut x, &theme.effects);
     x.push_str("\">");
     x.push_str(FORMATS);
-    x.push_str("</a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>");
+    x.push_str(
+        "</a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>",
+    );
     x
 }
 
@@ -188,7 +200,8 @@ fn respliced(source: &str, theme: &Theme) -> Option<String> {
         && whole.colors == theme.colors
         && whole.fonts == theme.fonts
         && whole.effects == theme.effects;
-    (same && !part.contains(" r:embed=") && !part.contains(" r:link=") && !part.contains(" r:id=")).then_some(part)
+    (same && !part.contains(" r:embed=") && !part.contains(" r:link=") && !part.contains(" r:id="))
+        .then_some(part)
 }
 
 /// Read a theme part. What it does not say is as in the Office theme of
@@ -231,19 +244,21 @@ pub(crate) fn parse(xml: &str) -> Theme {
                 }
                 "objectDefaults" | "extraClrSchemeLst" | "custClrLst" | "extLst" => r.skip(&t),
                 "srgbClr" if in_colors => {
-                    if let (Some(i), Some(rgb)) = (slot, t.attr("val").and_then(|v| parse_rgb(&v))) {
+                    if let (Some(i), Some(rgb)) = (slot, t.attr("val").and_then(|v| parse_rgb(&v)))
+                    {
                         colors[i] = rgb;
                     }
                 }
                 "sysClr" if in_colors => {
                     if let Some(i) = slot {
-                        let rgb = t.attr("lastClr").and_then(|v| parse_rgb(&v)).or_else(|| {
-                            match t.attr("val").as_deref() {
+                        let rgb = t
+                            .attr("lastClr")
+                            .and_then(|v| parse_rgb(&v))
+                            .or_else(|| match t.attr("val").as_deref() {
                                 Some("windowText") => Some(0x000000),
                                 Some("window") => Some(0xFFFFFF),
                                 _ => None,
-                            }
-                        });
+                            });
                         if let Some(rgb) = rgb {
                             colors[i] = rgb;
                         }
@@ -259,7 +274,11 @@ pub(crate) fn parse(xml: &str) -> Theme {
                 "latin" if in_fonts => {
                     let typeface = t.attr("typeface").filter(|name| !name.trim().is_empty());
                     if let (Some(major), Some(name)) = (role, typeface) {
-                        let font = if major { &mut theme.fonts.major } else { &mut theme.fonts.minor };
+                        let font = if major {
+                            &mut theme.fonts.major
+                        } else {
+                            &mut theme.fonts.minor
+                        };
                         *font = Arc::from(name.as_ref());
                     }
                 }
@@ -288,7 +307,11 @@ pub fn read_thmx<R: Read + Seek>(reader: R) -> crate::Result<Theme> {
     // Where the files of Office have their theme, then where a workbook
     // has its own.
     let mut xml = None;
-    for part in ["theme/theme/theme1.xml", "theme/theme1.xml", "xl/theme/theme1.xml"] {
+    for part in [
+        "theme/theme/theme1.xml",
+        "theme/theme1.xml",
+        "xl/theme/theme1.xml",
+    ] {
         xml = package.read(part)?;
         if xml.is_some() {
             break;
@@ -332,7 +355,8 @@ pub fn write_thmx<W: Write + Seek>(theme: &Theme, writer: W) -> crate::Result<W>
     );
     let part = xml(theme);
     let mut zip = zip::ZipWriter::new(writer);
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
     for (name, content) in [
         ("[Content_Types].xml", TYPES),
         ("_rels/.rels", RELS),
@@ -358,12 +382,21 @@ mod tests {
         assert_eq!(read.colors.part_order()[0], 0x000000);
         assert_eq!(read.colors.part_order()[1], 0xFFFFFF);
         assert_eq!(read.colors.part_order()[4], 0x156082, "accent 1");
-        assert_eq!((read.name.as_str(), read.colors.name.as_str(), read.effects.as_str()), ("Office Theme", "Office", "Office"));
+        assert_eq!(
+            (
+                read.name.as_str(),
+                read.colors.name.as_str(),
+                read.effects.as_str()
+            ),
+            ("Office Theme", "Office", "Office")
+        );
         assert_eq!(read.fonts, office.fonts);
         assert_eq!(read.colors, office.colors);
         assert!(xml.contains("<a:accent6><a:srgbClr val=\"4EA72E\"/></a:accent6>"));
         assert!(xml.contains("<a:dk1><a:sysClr val=\"windowText\" lastClr=\"000000\"/></a:dk1>"));
-        assert!(xml.contains("<a:latin typeface=\"Aptos Narrow\" panose=\"02110004020202020204\"/>"));
+        assert!(
+            xml.contains("<a:latin typeface=\"Aptos Narrow\" panose=\"02110004020202020204\"/>")
+        );
         // Three fills, three lines, three effects and three background
         // fills: a theme with fewer is refused.
         let children = |list: &str| {
@@ -434,11 +467,17 @@ mod tests {
         let part = foreign();
         let theme = parse(&part);
         assert_eq!(theme.name, "Corporate");
-        assert_eq!((theme.colors.name.as_str(), theme.rgb(ThemeSlot::Accent1)), ("Corporate colours", 0xE4002B));
+        assert_eq!(
+            (theme.colors.name.as_str(), theme.rgb(ThemeSlot::Accent1)),
+            ("Corporate colours", 0xE4002B)
+        );
         // The colour of a fill of the effects is not a colour of the theme.
         assert_eq!(theme.rgb(ThemeSlot::Dark1), 0x101820);
         assert_eq!(theme.rgb(ThemeSlot::FollowedHyperlink), 0x551A8B);
-        assert_eq!((&*theme.fonts.major, &*theme.fonts.minor), ("Georgia", "Verdana"));
+        assert_eq!(
+            (&*theme.fonts.major, &*theme.fonts.minor),
+            ("Georgia", "Verdana")
+        );
         assert_eq!(theme.effects, "Corporate effects");
         // Untouched: the same part, to the letter.
         assert_eq!(xml(&theme), part);
@@ -487,8 +526,13 @@ mod tests {
         read.source = theme.source.clone();
         assert_eq!(read, theme);
         // A part that cannot be taken apart is written afresh.
-        let odd = parse("<theme name=\"Bare\"><clrScheme name=\"c\"><accent1><srgbClr val=\"010203\"/></accent1></clrScheme></theme>");
-        assert_eq!((odd.name.as_str(), odd.rgb(ThemeSlot::Accent1)), ("Bare", 0x010203));
+        let odd = parse(
+            "<theme name=\"Bare\"><clrScheme name=\"c\"><accent1><srgbClr val=\"010203\"/></accent1></clrScheme></theme>",
+        );
+        assert_eq!(
+            (odd.name.as_str(), odd.rgb(ThemeSlot::Accent1)),
+            ("Bare", 0x010203)
+        );
         assert!(xml(&odd).starts_with(XML_DECL));
     }
 
@@ -496,13 +540,18 @@ mod tests {
     fn theme_files() {
         let mut theme = Theme::builtin("Facet").unwrap();
         theme.name = "Mine".to_string();
-        let bytes = write_thmx(&theme, std::io::Cursor::new(Vec::new())).unwrap().into_inner();
+        let bytes = write_thmx(&theme, std::io::Cursor::new(Vec::new()))
+            .unwrap()
+            .into_inner();
         let mut read = read_thmx(std::io::Cursor::new(&bytes)).unwrap();
         read.source = None;
         assert_eq!(read, theme);
         // Not a theme file.
         assert!(read_thmx(std::io::Cursor::new(b"nothing".to_vec())).is_err());
-        let empty = zip::ZipWriter::new(std::io::Cursor::new(Vec::new())).finish().unwrap().into_inner();
+        let empty = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()))
+            .finish()
+            .unwrap()
+            .into_inner();
         assert!(read_thmx(std::io::Cursor::new(empty)).is_err());
     }
 
@@ -510,7 +559,9 @@ mod tests {
     /// is one: each reads as the theme the engine has under its name.
     #[test]
     fn the_theme_files_of_excel_are_the_built_in_themes() {
-        let folder = std::path::Path::new("/Applications/Microsoft Excel.app/Contents/Resources/Office Themes");
+        let folder = std::path::Path::new(
+            "/Applications/Microsoft Excel.app/Contents/Resources/Office Themes",
+        );
         for stock in builtin::THEMES {
             let Ok(file) = std::fs::File::open(folder.join(format!("{}.thmx", stock.name))) else {
                 continue;

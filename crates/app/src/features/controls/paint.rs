@@ -61,8 +61,17 @@ pub(crate) struct Geometry {
 impl Geometry {
     /// `control`: the control as it shows now (its state resolved against
     /// the cells).
-    pub(crate) fn of(control: &FormControl, rect: (f32, f32, f32, f32), zoom: f32, lines: u32, top: u32) -> Geometry {
-        let (lo, hi) = (control.min.min(control.max) as f32, control.min.max(control.max) as f32);
+    pub(crate) fn of(
+        control: &FormControl,
+        rect: (f32, f32, f32, f32),
+        zoom: f32,
+        lines: u32,
+        top: u32,
+    ) -> Geometry {
+        let (lo, hi) = (
+            control.min.min(control.max) as f32,
+            control.min.max(control.max) as f32,
+        );
         let span = (hi - lo).max(1.0);
         Geometry {
             kind: control.kind,
@@ -72,7 +81,8 @@ impl Geometry {
             lines,
             top,
             fraction: ((control.value as f32 - lo) / span).clamp(0.0, 1.0),
-            page: (control.page.max(1) as f32 / (span + control.page.max(1) as f32)).clamp(0.05, 1.0),
+            page: (control.page.max(1) as f32 / (span + control.page.max(1) as f32))
+                .clamp(0.05, 1.0),
         }
     }
 
@@ -101,15 +111,27 @@ impl Geometry {
 
     /// How far along its bar a point of the grid element is.
     pub(crate) fn along(&self, x: f32, y: f32) -> f32 {
-        if self.horizontal { x - self.rect.0 } else { y - self.rect.1 }
+        if self.horizontal {
+            x - self.rect.0
+        } else {
+            y - self.rect.1
+        }
     }
 
     /// The value of a scroll bar whose thumb begins at `start` along it.
     pub(crate) fn value_at(&self, control: &FormControl, start: f32) -> i32 {
         let room = self.bar().0 - 2.0 * self.arrow() - self.thumb_length();
-        let fraction = if room > 0.0 { ((start - self.arrow()) / room).clamp(0.0, 1.0) } else { 0.0 };
+        let fraction = if room > 0.0 {
+            ((start - self.arrow()) / room).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         let (lo, hi) = (control.min.min(control.max), control.min.max(control.max));
-        stepped(control, lo + (fraction * (hi - lo) as f32).round() as i32, 0)
+        stepped(
+            control,
+            lo + (fraction * (hi - lo) as f32).round() as i32,
+            0,
+        )
     }
 
     /// How many lines of a list box show at once.
@@ -125,10 +147,18 @@ impl Geometry {
             ControlKind::ListBox => {
                 let row = ((y - self.rect.1 - 1.0) / (LINE * self.zoom)).floor();
                 let line = self.top + row.max(0.0) as u32 + 1;
-                if row >= 0.0 && line <= self.lines { Part::Line(line) } else { Part::Nothing }
+                if row >= 0.0 && line <= self.lines {
+                    Part::Line(line)
+                } else {
+                    Part::Nothing
+                }
             }
             ControlKind::SpinButton => {
-                if y < (self.rect.1 + self.rect.3) / 2.0 { Part::Less } else { Part::More }
+                if y < (self.rect.1 + self.rect.3) / 2.0 {
+                    Part::Less
+                } else {
+                    Part::More
+                }
             }
             ControlKind::ScrollBar => {
                 let (at, length) = (self.along(x, y), self.bar().0);
@@ -153,17 +183,41 @@ impl Geometry {
 fn triangle(p: &mut Painter, cx: f32, cy: f32, size: f32, direction: u8) {
     let s = size;
     let points = match direction {
-        0 => [(cx - s, cy + s * 0.6), (cx + s, cy + s * 0.6), (cx, cy - s * 0.6)],
-        1 => [(cx - s, cy - s * 0.6), (cx + s, cy - s * 0.6), (cx, cy + s * 0.6)],
-        2 => [(cx + s * 0.6, cy - s), (cx + s * 0.6, cy + s), (cx - s * 0.6, cy)],
-        _ => [(cx - s * 0.6, cy - s), (cx - s * 0.6, cy + s), (cx + s * 0.6, cy)],
+        0 => [
+            (cx - s, cy + s * 0.6),
+            (cx + s, cy + s * 0.6),
+            (cx, cy - s * 0.6),
+        ],
+        1 => [
+            (cx - s, cy - s * 0.6),
+            (cx + s, cy - s * 0.6),
+            (cx, cy + s * 0.6),
+        ],
+        2 => [
+            (cx + s * 0.6, cy - s),
+            (cx + s * 0.6, cy + s),
+            (cx - s * 0.6, cy),
+        ],
+        _ => [
+            (cx - s * 0.6, cy - s),
+            (cx - s * 0.6, cy + s),
+            (cx + s * 0.6, cy),
+        ],
     };
     p.polygon(&points, c(INK));
 }
 
 /// A raised button face.
 fn face(p: &mut Painter, x0: f32, y0: f32, x1: f32, y1: f32, down: bool) {
-    p.rounded(x0, y0, x1, y1, 2.0, c(if down { FACE_DOWN } else { FACE }), Some(c(EDGE)));
+    p.rounded(
+        x0,
+        y0,
+        x1,
+        y1,
+        2.0,
+        c(if down { FACE_DOWN } else { FACE }),
+        Some(c(EDGE)),
+    );
 }
 
 /// Text on one line, its middle at `cy`.
@@ -183,7 +237,11 @@ pub(super) fn control(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32)) {
     let (x0, y0, x1, y1) = rect;
     let (cy, size) = ((y0 + y1) / 2.0, TEXT * z);
     let held = pressed_part(app, id);
-    let items = if control.kind.has_list() { app.wb.control_items(app.sheet, control) } else { Vec::new() };
+    let items = if control.kind.has_list() {
+        app.wb.control_items(app.sheet, control)
+    } else {
+        Vec::new()
+    };
     let top = list_top(app, id);
     let geometry = Geometry::of(&now, rect, z, items.len() as u32, top);
     // What is drawn stays in the box of the control.
@@ -192,7 +250,14 @@ pub(super) fn control(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32)) {
         ControlKind::Button => {
             face(p, x0, y0, x1, y1, held == Some(Part::Face));
             let width = f32::from(p.shape(&now.text, size, c(INK), false).width);
-            line(p, &now.text, ((x0 + x1 - width) / 2.0).max(x0 + 2.0 * z), cy, size, INK);
+            line(
+                p,
+                &now.text,
+                ((x0 + x1 - width) / 2.0).max(x0 + 2.0 * z),
+                cy,
+                size,
+                INK,
+            );
         }
         ControlKind::CheckBox | ControlKind::OptionButton => {
             let side = 13.0 * z;
@@ -200,13 +265,29 @@ pub(super) fn control(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32)) {
             let down = held == Some(Part::Face);
             if control.kind == ControlKind::CheckBox {
                 p.rect(bx, by, bx + side, by + side, c(EDGE));
-                p.rect(bx + 1.0, by + 1.0, bx + side - 1.0, by + side - 1.0, c(if down { FACE_DOWN } else { FIELD }));
+                p.rect(
+                    bx + 1.0,
+                    by + 1.0,
+                    bx + side - 1.0,
+                    by + side - 1.0,
+                    c(if down { FACE_DOWN } else { FIELD }),
+                );
                 match now.checked {
                     CheckState::Checked => {
-                        let tick = [(bx + side * 0.22, by + side * 0.52), (bx + side * 0.42, by + side * 0.72), (bx + side * 0.8, by + side * 0.26)];
+                        let tick = [
+                            (bx + side * 0.22, by + side * 0.52),
+                            (bx + side * 0.42, by + side * 0.72),
+                            (bx + side * 0.8, by + side * 0.26),
+                        ];
                         p.polyline(&tick, 1.6 * z, c(INK));
                     }
-                    CheckState::Mixed => p.rect(bx + 3.0 * z, by + 3.0 * z, bx + side - 3.0 * z, by + side - 3.0 * z, c(EDGE)),
+                    CheckState::Mixed => p.rect(
+                        bx + 3.0 * z,
+                        by + 3.0 * z,
+                        bx + side - 3.0 * z,
+                        by + side - 3.0 * z,
+                        c(EDGE),
+                    ),
                     CheckState::Unchecked => {}
                 }
             } else {
@@ -223,7 +304,11 @@ pub(super) fn control(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32)) {
             // The frame starts below the middle of the caption and leaves
             // room for it.
             let top_y = y0 + size * 0.6;
-            let width = if now.text.is_empty() { 0.0 } else { f32::from(p.shape(&now.text, size, c(INK), false).width) + 6.0 * z };
+            let width = if now.text.is_empty() {
+                0.0
+            } else {
+                f32::from(p.shape(&now.text, size, c(INK), false).width) + 6.0 * z
+            };
             let (gap0, gap1) = (x0 + 6.0 * z, (x0 + 6.0 * z + width).min(x1));
             p.rect(x0, top_y, gap0, top_y + 1.0, c(EDGE));
             p.rect(gap1, top_y, x1, top_y + 1.0, c(EDGE));
@@ -239,7 +324,11 @@ pub(super) fn control(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32)) {
             p.rect(x0, y0, x1, y1, c(EDGE));
             p.rect(x0 + 1.0, y0 + 1.0, x1 - 1.0, y1 - 1.0, c(FIELD));
             let arrow = (y1 - y0).min(18.0 * z);
-            if let Some(item) = now.selected.checked_sub(1).and_then(|k| items.get(k as usize)) {
+            if let Some(item) = now
+                .selected
+                .checked_sub(1)
+                .and_then(|k| items.get(k as usize))
+            {
                 line(p, item, x0 + 4.0 * z, cy, size, INK);
             }
             face(p, x1 - arrow, y0 + 1.0, x1 - 1.0, y1 - 1.0, false);
@@ -249,13 +338,31 @@ pub(super) fn control(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32)) {
             p.rect(x0, y0, x1, y1, c(EDGE));
             p.rect(x0 + 1.0, y0 + 1.0, x1 - 1.0, y1 - 1.0, c(FIELD));
             let row_h = LINE * z;
-            for (k, item) in items.iter().enumerate().skip(top as usize).take(geometry.lines_shown() as usize + 1) {
+            for (k, item) in items
+                .iter()
+                .enumerate()
+                .skip(top as usize)
+                .take(geometry.lines_shown() as usize + 1)
+            {
                 let ry = y0 + 1.0 + (k as u32 - top) as f32 * row_h;
                 let chosen = now.selected == k as u32 + 1;
                 if chosen {
-                    p.rect(x0 + 1.0, ry, x1 - 1.0, (ry + row_h).min(y1 - 1.0), c(CHOSEN));
+                    p.rect(
+                        x0 + 1.0,
+                        ry,
+                        x1 - 1.0,
+                        (ry + row_h).min(y1 - 1.0),
+                        c(CHOSEN),
+                    );
                 }
-                line(p, item, x0 + 4.0 * z, ry + row_h / 2.0, size, if chosen { FIELD } else { INK });
+                line(
+                    p,
+                    item,
+                    x0 + 4.0 * z,
+                    ry + row_h / 2.0,
+                    size,
+                    if chosen { FIELD } else { INK },
+                );
             }
         }
         ControlKind::SpinButton => {
@@ -269,28 +376,52 @@ pub(super) fn control(p: &mut Painter, id: u32, rect: (f32, f32, f32, f32)) {
         ControlKind::ScrollBar => {
             p.rect(x0, y0, x1, y1, c(EDGE));
             p.rect(x0 + 1.0, y0 + 1.0, x1 - 1.0, y1 - 1.0, c(0xE4E4E4));
-            let (arrow, start, length) = (geometry.arrow(), geometry.thumb_start(), geometry.thumb_length());
+            let (arrow, start, length) = (
+                geometry.arrow(),
+                geometry.thumb_start(),
+                geometry.thumb_length(),
+            );
             let mark = (geometry.bar().1 * 0.22).max(2.0);
             if geometry.horizontal {
                 face(p, x0, y0, x0 + arrow, y1, false);
                 face(p, x1 - arrow, y0, x1, y1, false);
                 triangle(p, x0 + arrow / 2.0, cy, mark, 2);
                 triangle(p, x1 - arrow / 2.0, cy, mark, 3);
-                face(p, x0 + start, y0, x0 + start + length, y1, held == Some(Part::Thumb));
+                face(
+                    p,
+                    x0 + start,
+                    y0,
+                    x0 + start + length,
+                    y1,
+                    held == Some(Part::Thumb),
+                );
             } else {
                 let cx = (x0 + x1) / 2.0;
                 face(p, x0, y0, x1, y0 + arrow, false);
                 face(p, x0, y1 - arrow, x1, y1, false);
                 triangle(p, cx, y0 + arrow / 2.0, mark, 0);
                 triangle(p, cx, y1 - arrow / 2.0, mark, 1);
-                face(p, x0, y0 + start, x1, y0 + start + length, held == Some(Part::Thumb));
+                face(
+                    p,
+                    x0,
+                    y0 + start,
+                    x1,
+                    y0 + start + length,
+                    held == Some(Part::Thumb),
+                );
             }
         }
     }
     let items = std::mem::replace(&mut p.items, outer);
     if !items.is_empty() {
-        let clip = p.layout.bounds_px(x0.max(p.clip.0), y0.max(p.clip.1), x1.min(p.clip.2), y1.min(p.clip.3));
+        let clip = p.layout.bounds_px(
+            x0.max(p.clip.0),
+            y0.max(p.clip.1),
+            x1.min(p.clip.2),
+            y1.min(p.clip.3),
+        );
         p.push(Draw::Clipped { clip, items });
     }
-    p.zone(rect, ControlZone { id, rect, zoom: z }).cursor(gpui::CursorStyle::Arrow);
+    p.zone(rect, ControlZone { id, rect, zoom: z })
+        .cursor(gpui::CursorStyle::Arrow);
 }

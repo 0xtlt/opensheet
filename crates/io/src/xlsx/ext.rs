@@ -36,7 +36,10 @@ impl SheetExtensions {
             return;
         }
         let head = ext.split('>').next().unwrap_or("");
-        let rank = ORDER.iter().position(|uri| head.contains(uri)).unwrap_or(ORDER.len());
+        let rank = ORDER
+            .iter()
+            .position(|uri| head.contains(uri))
+            .unwrap_or(ORDER.len());
         self.entries.push((rank, ext));
     }
 
@@ -62,12 +65,18 @@ mod tests {
     fn extensions_come_out_in_excels_order() {
         let mut list = SheetExtensions::default();
         list.push("<ext uri=\"{unknown}\"/>".into());
-        list.push(format!("<ext xmlns:x14=\"ns\" uri=\"{}\"><x14:sparklineGroups/></ext>", ORDER[2]));
+        list.push(format!(
+            "<ext xmlns:x14=\"ns\" uri=\"{}\"><x14:sparklineGroups/></ext>",
+            ORDER[2]
+        ));
         list.push(String::new());
         list.push(format!("<ext uri=\"{}\"/>", ORDER[0]));
         let mut x = String::new();
         list.write(&mut x);
-        let places: Vec<usize> = [ORDER[0], ORDER[2], "{unknown}"].iter().map(|uri| x.find(uri).unwrap()).collect();
+        let places: Vec<usize> = [ORDER[0], ORDER[2], "{unknown}"]
+            .iter()
+            .map(|uri| x.find(uri).unwrap())
+            .collect();
         assert!(places[0] < places[1] && places[1] < places[2], "{x}");
         assert!(x.starts_with("<extLst><ext") && x.ends_with("</extLst>"));
         let mut none = String::new();

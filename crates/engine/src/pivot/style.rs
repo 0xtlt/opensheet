@@ -128,7 +128,11 @@ fn tint(color: u32, amount: f32) -> Color {
     } else {
         l * (1.0 - amount) + amount
     };
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let channel = |t: f32| {
         let t = t.rem_euclid(1.0);
@@ -218,7 +222,11 @@ fn builtin(name: &str, accents: &[u32; 6]) -> Option<Built> {
         .find_map(|(k, f)| rest.strip_prefix(f).map(|n| (k, n)))?;
     let number: usize = number.parse().ok().filter(|n| (1..=28).contains(n))?;
     let (variant, column) = ((number - 1) / 7, (number - 1) % 7);
-    let base = if column == 0 { NEUTRAL } else { accents[column - 1] };
+    let base = if column == 0 {
+        NEUTRAL
+    } else {
+        accents[column - 1]
+    };
     let solid = Color(base);
     let (t80, t60, t40) = (tint(base, 0.8), tint(base, 0.6), tint(base, 0.4));
     let (s25, s50) = (tint(base, -0.25), tint(base, -0.5));
@@ -436,7 +444,13 @@ fn builtin(name: &str, accents: &[u32; 6]) -> Option<Built> {
 
 /// The looks of the parts the cell (`r`, `c`) of a report belongs to, the
 /// more specific over the more general.
-fn patch(style: &PivotStyle, report: &Report, accents: &[u32; 6], r: u32, c: u32) -> Option<StylePatch> {
+fn patch(
+    style: &PivotStyle,
+    report: &Report,
+    accents: &[u32; 6],
+    r: u32,
+    c: u32,
+) -> Option<StylePatch> {
     let built = builtin(&style.name, accents)?;
     let (rows, cols) = report.size();
     if report.placeholder || r >= rows || c >= cols {
@@ -489,7 +503,13 @@ pub fn style_patch_at(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option
         .pivots
         .iter()
         .find_map(|p| p.location.filter(|b| b.contains(row, col)).map(|b| (p, b)))?;
-    patch(&p.style, &p.report, &accents_of(wb.theme()), row - body.r0, col - body.c0)
+    patch(
+        &p.style,
+        &p.report,
+        &accents_of(wb.theme()),
+        row - body.r0,
+        col - body.c0,
+    )
 }
 
 #[cfg(test)]

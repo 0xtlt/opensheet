@@ -23,8 +23,8 @@ use crate::theme::{self, c};
 use crate::view::tooltip;
 use crate::widgets::{self, Button, ColorGrid, ListBox, ScrollArea};
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, Pixels, RenderImage, SharedString, Subscription, WeakEntity, Window, canvas, div,
-    prelude::*, px,
+    AnyElement, App, Bounds, Context, Entity, Pixels, RenderImage, SharedString, Subscription,
+    WeakEntity, Window, canvas, div, prelude::*, px,
 };
 use opensheet_engine::drawing::{Drawing, DrawingKind, Picture};
 use opensheet_engine::style::Color;
@@ -42,7 +42,11 @@ const FALLBACK_SIDE: f32 = 1024.0;
 fn fallback(document: &[u8]) -> Option<Vec<u8>> {
     let (width, height) = svg_size(document)?;
     let fit = (FALLBACK_SIDE / width.max(height)).min(2.0);
-    let sized = resized(document, (width * fit).round().max(1.0), (height * fit).round().max(1.0))?;
+    let sized = resized(
+        document,
+        (width * fit).round().max(1.0),
+        (height * fit).round().max(1.0),
+    )?;
     let bitmap = svg::rasterize(&sized)?;
     // Back to red, green, blue: the order of a file.
     let mut pixels = bitmap.data;
@@ -51,7 +55,9 @@ fn fallback(document: &[u8]) -> Option<Vec<u8>> {
     }
     let image = image::RgbaImage::from_raw(bitmap.width, bitmap.height, pixels)?;
     let mut png = Cursor::new(Vec::new());
-    image::DynamicImage::ImageRgba8(image).write_to(&mut png, image::ImageFormat::Png).ok()?;
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .ok()?;
     Some(png.into_inner())
 }
 
@@ -64,19 +70,29 @@ pub(super) fn vector(document: Vec<u8>) -> Option<Picture> {
 /// The picture a file holds: a vector picture for an SVG document, a
 /// bitmap for an image file.
 pub(super) fn picture_from(bytes: Vec<u8>) -> Option<Picture> {
-    if is_svg(&bytes) { vector(bytes) } else { Picture::new(bytes) }
+    if is_svg(&bytes) {
+        vector(bytes)
+    } else {
+        Picture::new(bytes)
+    }
 }
 
 /// True for a vector picture: it gets the "Graphics Format" tab.
 pub(super) fn is_graphic(drawing: &Drawing) -> bool {
-    drawing.as_picture().is_some_and(|picture| picture.svg.is_some())
+    drawing
+        .as_picture()
+        .is_some_and(|picture| picture.svg.is_some())
 }
 
 /// What to paint for a vector picture that stands upright or on a side:
 /// its document drawn at the size it is shown, so that it is sharp at any
 /// zoom. `None` for bitmaps, and for a picture turned by an odd angle,
 /// which is painted from its image like any picture.
-pub(super) fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
+pub(super) fn image_for(
+    picture: &Picture,
+    placed: &Placed,
+    scale: f32,
+) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
     let document = picture.svg.as_deref()?;
     let quarters = (placed.rotation / 90.0).round();
     if (placed.rotation - quarters * 90.0).abs() >= 0.05 {
@@ -84,7 +100,11 @@ pub(super) fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Optio
     }
     let (width, height) = (placed.width().abs() * scale, placed.height().abs() * scale);
     let fit = (svg::MAX_SIDE / width.max(height).max(1.0)).min(1.0);
-    let sized = resized(document, (width * fit).round().max(1.0), (height * fit).round().max(1.0))?;
+    let sized = resized(
+        document,
+        (width * fit).round().max(1.0),
+        (height * fit).round().max(1.0),
+    )?;
     let image = svg::image(
         std::str::from_utf8(&sized).ok()?,
         (placed.flip_h, placed.flip_v),
@@ -109,7 +129,10 @@ struct Fallbacks {
 pub(super) fn follow_theme(app: &mut ExcelApp) {
     let theme = app.wb.theme_arc();
     let known = app.ext_mut::<Fallbacks>();
-    let changed = known.theme.as_ref().is_some_and(|before| !Arc::ptr_eq(before, &theme));
+    let changed = known
+        .theme
+        .as_ref()
+        .is_some_and(|before| !Arc::ptr_eq(before, &theme));
     known.theme = Some(theme);
     if !changed {
         return;
@@ -119,7 +142,11 @@ pub(super) fn follow_theme(app: &mut ExcelApp) {
             let DrawingKind::Picture(picture) = &mut drawing.kind else {
                 continue;
             };
-            let Some(document) = picture.svg.clone().filter(|document| opensheet_engine::svg::follows_theme(document)) else {
+            let Some(document) = picture
+                .svg
+                .clone()
+                .filter(|document| opensheet_engine::svg::follows_theme(document))
+            else {
                 continue;
             };
             if let Some(mut remade) = vector(document.to_vec()) {
@@ -177,8 +204,16 @@ fn replace_with(app: &mut ExcelApp, icon: &Icon, cx: &mut Cx) {
 
 /// Graphics Fill and Graphics Outline: the document of the selected
 /// graphic is repainted, and the image that stands for it made anew.
-pub(super) fn repaint_selected(app: &mut ExcelApp, label: &str, change: Repaint, cx: &mut Cx) -> bool {
-    let Some(document) = selected(app).and_then(Drawing::as_picture).and_then(|picture| picture.svg.clone()) else {
+pub(super) fn repaint_selected(
+    app: &mut ExcelApp,
+    label: &str,
+    change: Repaint,
+    cx: &mut Cx,
+) -> bool {
+    let Some(document) = selected(app)
+        .and_then(Drawing::as_picture)
+        .and_then(|picture| picture.svg.clone())
+    else {
         return false;
     };
     svg::install(cx);
@@ -187,7 +222,11 @@ pub(super) fn repaint_selected(app: &mut ExcelApp, label: &str, change: Repaint,
     };
     edit(app, label, cx, |drawing| {
         // The graphic that was repainted, not what is selected with it.
-        let Some(old) = drawing.as_picture().filter(|old| old.svg.as_ref().is_some_and(|svg| Arc::ptr_eq(svg, &document))) else {
+        let Some(old) = drawing.as_picture().filter(|old| {
+            old.svg
+                .as_ref()
+                .is_some_and(|svg| Arc::ptr_eq(svg, &document))
+        }) else {
             return;
         };
         // How it is adjusted and cropped stays.
@@ -201,7 +240,8 @@ pub(super) fn repaint_selected(app: &mut ExcelApp, label: &str, change: Repaint,
 
 /// A pictogram drawn in a square of `side` pixels, in `ink`.
 fn thumbnail(icon: &Icon, side: f32, ink: u32) -> impl IntoElement {
-    let document = repaint(icon.svg().as_bytes(), Repaint::Fill(Some(Color(ink)))).unwrap_or_default();
+    let document =
+        repaint(icon.svg().as_bytes(), Repaint::Fill(Some(Color(ink)))).unwrap_or_default();
     canvas(
         |_, _, _| {},
         move |bounds: Bounds<Pixels>, _, window, _| {
@@ -226,7 +266,11 @@ fn matching(icons: &[Icon], category: Option<usize>, search: &str) -> Vec<usize>
         .enumerate()
         .filter(|(_, icon)| category.is_none_or(|category| icon.category == category))
         .filter(|(_, icon)| {
-            let names = format!("{} {}", icon.name.to_lowercase(), icon.english.to_lowercase());
+            let names = format!(
+                "{} {}",
+                icon.name.to_lowercase(),
+                icon.english.to_lowercase()
+            );
             words.iter().all(|word| names.contains(word.as_str()))
         })
         .map(|(index, _)| index)
@@ -280,7 +324,11 @@ impl IconsDialog {
     }
 
     pub(super) fn insert(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let chosen: Vec<&Icon> = self.chosen.iter().filter_map(|index| self.icons.get(*index)).collect();
+        let chosen: Vec<&Icon> = self
+            .chosen
+            .iter()
+            .filter_map(|index| self.icons.get(*index))
+            .collect();
         if chosen.is_empty() {
             return;
         }
@@ -322,7 +370,11 @@ impl Render for IconsDialog {
                     .justify_center()
                     .rounded(px(4.))
                     .border_2()
-                    .border_color(if on { c(theme::ACCENT) } else { gpui::transparent_black() })
+                    .border_color(if on {
+                        c(theme::ACCENT)
+                    } else {
+                        gpui::transparent_black()
+                    })
                     .when(on, |d| d.bg(c(theme::TOGGLED)))
                     .hover(|s| s.bg(c(theme::HOVER)))
                     .child(thumbnail(icon, 40.0, 0x262626))
@@ -338,15 +390,28 @@ impl Render for IconsDialog {
                 .items_center()
                 .justify_center()
                 .text_color(c(theme::TEXT_MUTED))
-                .child(t("No icons match your search.", "Aucune icône ne correspond à votre recherche."))
+                .child(t(
+                    "No icons match your search.",
+                    "Aucune icône ne correspond à votre recherche.",
+                ))
                 .into_any_element()
         } else {
-            div().flex().flex_wrap().gap(px(4.)).p(px(4.)).children(cells).into_any_element()
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(px(4.))
+                .p(px(4.))
+                .children(cells)
+                .into_any_element()
         };
         let label = if self.chosen.is_empty() || self.replace {
             t_ctx("button", "Insert", "Insérer").to_string()
         } else {
-            format!("{} ({})", t_ctx("button", "Insert", "Insérer"), self.chosen.len())
+            format!(
+                "{} ({})",
+                t_ctx("button", "Insert", "Insérer"),
+                self.chosen.len()
+            )
         };
         let modal = self.modal.clone();
         widgets::dialog(&self.modal, t("Icons", "Icônes"))
@@ -363,13 +428,19 @@ impl Render for IconsDialog {
                             .flex()
                             .gap(px(8.))
                             .child(
-                                ListBox::new("icon-categories", categories, Some(self.category.map_or(0, |category| category + 1)))
-                                    .width(190.0)
-                                    .height(340.0)
-                                    .on_change(cx.listener(|this, index: &usize, _, cx| {
+                                ListBox::new(
+                                    "icon-categories",
+                                    categories,
+                                    Some(self.category.map_or(0, |category| category + 1)),
+                                )
+                                .width(190.0)
+                                .height(340.0)
+                                .on_change(cx.listener(
+                                    |this, index: &usize, _, cx| {
                                         this.category = index.checked_sub(1);
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             )
                             .child(
                                 div()
@@ -391,14 +462,22 @@ impl Render for IconsDialog {
                             .disabled(self.chosen.is_empty())
                             .on_click(cx.listener(Self::insert)),
                     )
-                    .child(Button::new("icons-cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx))),
+                    .child(
+                        Button::new("icons-cancel", t("Cancel", "Annuler"))
+                            .on_click(move |_, window, cx| modal.close(window, cx)),
+                    ),
             )
     }
 }
 
 /// Open the Icons dialog; with `replace`, for the icon that takes the
 /// place of the selected graphic.
-pub(super) fn open_dialog(app: &mut ExcelApp, replace: bool, window: &mut Window, cx: &mut Cx) -> Option<Entity<IconsDialog>> {
+pub(super) fn open_dialog(
+    app: &mut ExcelApp,
+    replace: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<IconsDialog>> {
     if app.is_editing() && !app.commit_edit(None, window, cx) {
         return None;
     }
@@ -410,7 +489,9 @@ pub(super) fn open_dialog(app: &mut ExcelApp, replace: bool, window: &mut Window
     if !app.may(intent, cx) {
         return None;
     }
-    Some(app.open_modal(window, cx, move |modal, _, cx| IconsDialog::new(modal, replace, cx)))
+    Some(app.open_modal(window, cx, move |modal, _, cx| {
+        IconsDialog::new(modal, replace, cx)
+    }))
 }
 
 // ---- the tab -------------------------------------------------------------
@@ -432,18 +513,22 @@ struct PaintMenu {
 
 impl Render for PaintMenu {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let apply = |app: &WeakEntity<ExcelApp>, cx: &mut App, label: &'static str, change: Repaint| {
-            app.update(cx, |app, cx| {
-                app.popup = None;
-                repaint_selected(app, label, change, cx);
-                cx.notify();
-            })
-            .ok();
-        };
+        let apply =
+            |app: &WeakEntity<ExcelApp>, cx: &mut App, label: &'static str, change: Repaint| {
+                app.update(cx, |app, cx| {
+                    app.popup = None;
+                    repaint_selected(app, label, change, cx);
+                    cx.notify();
+                })
+                .ok();
+            };
         let (part, app) = (self.part, self.app.clone());
         let (none, label) = match part {
             Part::Fill => (t("No Fill", "Aucun remplissage"), Cmd::GraphicsFill.label()),
-            Part::Outline => (t("No Outline", "Sans contour"), Cmd::GraphicsOutline.label()),
+            Part::Outline => (
+                t("No Outline", "Sans contour"),
+                Cmd::GraphicsOutline.label(),
+            ),
         };
         let grid = ColorGrid::new("graphics-colors", None)
             .none_label(none)
@@ -466,7 +551,11 @@ pub(super) fn open_paint(app: &mut ExcelApp, part: Part, window: &mut Window, cx
 }
 
 /// The groups of the "Graphics Format" tab.
-pub(super) fn graphics_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+pub(super) fn graphics_tab(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Vec<AnyElement> {
     vec![
         group(
             t_ctx("graphic", "Change", "Modifier"),
@@ -485,27 +574,39 @@ pub(super) fn graphics_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
                 app.cmd_labeled("gf-outline", Cmd::GraphicsOutline, true, cx),
                 app.cmd_labeled("gf-effects", Cmd::GraphicsEffects, true, cx),
             ]),
-            Some(app.launcher("gf-styles-launcher", t("Format Graphic", "Format graphique"), cx, |this, window, cx| {
-                Cmd::FormatPicture.run(this, window, cx)
-            })),
+            Some(app.launcher(
+                "gf-styles-launcher",
+                t("Format Graphic", "Format graphique"),
+                cx,
+                |this, window, cx| Cmd::FormatPicture.run(this, window, cx),
+            )),
         )
         .into_any_element(),
         tabs::accessibility_group(app, cx).into_any_element(),
         tabs::arrange_group(app, cx).into_any_element(),
-        tabs::size_group(app, false, window, cx).border_r_0().into_any_element(),
+        tabs::size_group(app, false, window, cx)
+            .border_r_0()
+            .into_any_element(),
     ]
 }
 
 /// Files that are pictures, by their extension: what a drop on the cells
 /// brings in.
 pub(super) fn is_picture_file(extension: &str) -> bool {
-    ["png", "jpg", "jpeg", "jpe", "gif", "bmp", "tif", "tiff", "webp", "svg"].contains(&extension.to_ascii_lowercase().as_str())
+    [
+        "png", "jpg", "jpeg", "jpe", "gif", "bmp", "tif", "tiff", "webp", "svg",
+    ]
+    .contains(&extension.to_ascii_lowercase().as_str())
 }
 
 /// The bytes of a file as a workbook keeps them (see
 /// `picture::importable`): an SVG document is kept as it is.
 pub(super) fn importable(bytes: Vec<u8>) -> Option<Vec<u8>> {
-    if is_svg(&bytes) { Some(bytes) } else { picture::importable(bytes) }
+    if is_svg(&bytes) {
+        Some(bytes)
+    } else {
+        picture::importable(bytes)
+    }
 }
 
 #[cfg(test)]
@@ -523,15 +624,34 @@ mod tests {
         }
         for icon in &icons {
             assert!(icon.category < categories.len(), "{}", icon.english);
-            assert_eq!(svg_size(icon.svg().as_bytes()), Some((96.0, 96.0)), "{}", icon.english);
+            assert_eq!(
+                svg_size(icon.svg().as_bytes()),
+                Some((96.0, 96.0)),
+                "{}",
+                icon.english
+            );
         }
-        let names = |found: Vec<usize>| found.into_iter().map(|index| icons[index].english).collect::<Vec<_>>();
+        let names = |found: Vec<usize>| {
+            found
+                .into_iter()
+                .map(|index| icons[index].english)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(names(matching(&icons, None, "heart")), vec!["Heart"]);
-        assert_eq!(names(matching(&icons, None, "  CHART  ")), vec!["Bar chart", "Pie chart"]);
-        assert_eq!(names(matching(&icons, None, "chart pie")), vec!["Pie chart"]);
+        assert_eq!(
+            names(matching(&icons, None, "  CHART  ")),
+            vec!["Bar chart", "Pie chart"]
+        );
+        assert_eq!(
+            names(matching(&icons, None, "chart pie")),
+            vec!["Pie chart"]
+        );
         assert!(matching(&icons, None, "zzz").is_empty());
         // A category narrows the search; nothing typed shows all of it.
-        let arrows = categories.iter().position(|name| *name == "Arrows").unwrap();
+        let arrows = categories
+            .iter()
+            .position(|name| *name == "Arrows")
+            .unwrap();
         assert_eq!(matching(&icons, Some(arrows), "").len(), 3);
         assert!(matching(&icons, Some(arrows), "heart").is_empty());
         assert_eq!(matching(&icons, None, "").len(), icons.len());

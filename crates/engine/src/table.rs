@@ -270,7 +270,9 @@ impl Table {
     /// Index of the column named `name`, compared without case.
     pub fn column_index(&self, name: &str) -> Option<usize> {
         let wanted = name.to_lowercase();
-        self.columns.iter().position(|c| c.name.to_lowercase() == wanted)
+        self.columns
+            .iter()
+            .position(|c| c.name.to_lowercase() == wanted)
     }
 
     pub fn contains(&self, row: u32, col: u32) -> bool {
@@ -358,7 +360,8 @@ impl Table {
 /// 3 = dark 2, 4 to 9 = accents 1 to 6. The same theme as the colour
 /// pickers and the chart palette.
 pub const OFFICE_THEME: [u32; 10] = [
-    0xFFFFFF, 0x000000, 0xE8E8E8, 0x0E2841, 0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93, 0x4EA72E,
+    0xFFFFFF, 0x000000, 0xE8E8E8, 0x0E2841, 0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93,
+    0x4EA72E,
 ];
 
 pub use crate::theme::tint;
@@ -435,7 +438,10 @@ impl ElementStyle {
         if let Some(color) = self.fill {
             out.fill = Some(Some(color));
         }
-        let side = |edge: bool, outer: Option<Border>, inner: Option<Border>, slot: &mut Option<Border>| {
+        let side = |edge: bool,
+                    outer: Option<Border>,
+                    inner: Option<Border>,
+                    slot: &mut Option<Border>| {
             if let Some(border) = if edge { outer } else { inner } {
                 *slot = Some(border);
             }
@@ -491,7 +497,8 @@ impl TableStyle {
         let (first, last) = (col == 0, col == last_col);
         let mut out = StylePatch::default();
         // Later elements win, in the order files define.
-        self.whole_table.lay(&mut out, row == 0, row == last_row, first, last);
+        self.whole_table
+            .lay(&mut out, row == 0, row == last_row, first, last);
         if data && look.banded_cols {
             let stripe = if col % 2 == 0 {
                 &self.first_column_stripe
@@ -511,10 +518,12 @@ impl TableStyle {
             stripe.lay(&mut out, true, true, first, last);
         }
         if look.last_col && last {
-            self.last_column.lay(&mut out, row == 0, row == last_row, true, true);
+            self.last_column
+                .lay(&mut out, row == 0, row == last_row, true, true);
         }
         if look.first_col && first {
-            self.first_column.lay(&mut out, row == 0, row == last_row, true, true);
+            self.first_column
+                .lay(&mut out, row == 0, row == last_row, true, true);
         }
         if header {
             self.header_row.lay(&mut out, true, true, first, last);
@@ -542,7 +551,9 @@ pub fn table_styles_in(theme: &Theme) -> Arc<Vec<TableStyle>> {
     static LAST: Mutex<Option<([u32; 12], Arc<Vec<TableStyle>>)>> = Mutex::new(None);
     static OFFICE: OnceLock<Arc<Vec<TableStyle>>> = OnceLock::new();
     if theme.is_office() {
-        return OFFICE.get_or_init(|| Arc::new(builtin_table_styles().to_vec())).clone();
+        return OFFICE
+            .get_or_init(|| Arc::new(builtin_table_styles().to_vec()))
+            .clone();
     }
     let key = theme.colors.part_order();
     let mut last = LAST.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -621,7 +632,10 @@ fn build_styles(theme: &Theme) -> Vec<TableStyle> {
     for k in 0..7 {
         let a = main(k);
         let text = (k > 0).then(|| color(3 + k, -0.25));
-        let colored = |e: ElementStyle| ElementStyle { font_color: text, ..e };
+        let colored = |e: ElementStyle| ElementStyle {
+            font_color: text,
+            ..e
+        };
         styles.push(TableStyle {
             whole_table: colored(ElementStyle {
                 top: thin(a),
@@ -632,7 +646,10 @@ fn build_styles(theme: &Theme) -> Vec<TableStyle> {
                 bottom: thin(a),
                 ..bold
             }),
-            total_row: colored(ElementStyle { top: thin(a), ..bold }),
+            total_row: colored(ElementStyle {
+                top: thin(a),
+                ..bold
+            }),
             first_column: colored(bold),
             last_column: colored(bold),
             first_row_stripe: ElementStyle::filled(pale(k)),
@@ -643,12 +660,21 @@ fn build_styles(theme: &Theme) -> Vec<TableStyle> {
     // Light 8-14: solid header, outline, a rule between rows.
     for k in 0..7 {
         let a = main(k);
-        let rule = ElementStyle { top: thin(a), ..plain };
-        let bar = ElementStyle { left: thin(a), ..plain };
+        let rule = ElementStyle {
+            top: thin(a),
+            ..plain
+        };
+        let bar = ElementStyle {
+            left: thin(a),
+            ..plain
+        };
         styles.push(TableStyle {
             whole_table: plain.outlined(thin(a)),
             header_row: ElementStyle::heading(white, a),
-            total_row: ElementStyle { top: double(a), ..bold },
+            total_row: ElementStyle {
+                top: double(a),
+                ..bold
+            },
             first_column: bold,
             last_column: bold,
             first_row_stripe: rule,
@@ -667,7 +693,10 @@ fn build_styles(theme: &Theme) -> Vec<TableStyle> {
                 bottom: medium(a),
                 ..bold
             },
-            total_row: ElementStyle { top: double(a), ..bold },
+            total_row: ElementStyle {
+                top: double(a),
+                ..bold
+            },
             first_column: bold,
             last_column: bold,
             first_row_stripe: ElementStyle::filled(pale(k)),
@@ -685,7 +714,10 @@ fn build_styles(theme: &Theme) -> Vec<TableStyle> {
                 ..plain.outlined(edge)
             },
             header_row: ElementStyle::heading(white, a),
-            total_row: ElementStyle { top: double(a), ..bold },
+            total_row: ElementStyle {
+                top: double(a),
+                ..bold
+            },
             first_column: bold,
             last_column: bold,
             first_row_stripe: ElementStyle::filled(pale(k)),
@@ -803,7 +835,11 @@ fn build_styles(theme: &Theme) -> Vec<TableStyle> {
         let (body, band, head) = if j == 0 {
             (color(0, -0.15), color(0, -0.35), black)
         } else {
-            (color(2 + 2 * j, 0.8), color(2 + 2 * j, 0.6), color(3 + 2 * j, 0.0))
+            (
+                color(2 + 2 * j, 0.8),
+                color(2 + 2 * j, 0.6),
+                color(3 + 2 * j, 0.0),
+            )
         };
         styles.push(TableStyle {
             whole_table: ElementStyle::filled(body),
@@ -845,7 +881,12 @@ pub fn style_patch_at(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option
         }
         _ => 0,
     };
-    let patch = style.patch(&table.look(), row - table.range.r0, col - table.range.c0, band);
+    let patch = style.patch(
+        &table.look(),
+        row - table.range.r0,
+        col - table.range.c0,
+        band,
+    );
     (!patch.is_empty()).then_some(patch)
 }
 
@@ -886,7 +927,13 @@ impl Cache {
                 return known.rows.clone();
             }
         }
-        let rows: Arc<Vec<u32>> = Arc::new(sheet.hidden_rows.union(&sheet.filtered_rows).copied().collect());
+        let rows: Arc<Vec<u32>> = Arc::new(
+            sheet
+                .hidden_rows
+                .union(&sheet.filtered_rows)
+                .copied()
+                .collect(),
+        );
         if let Ok(mut map) = self.hidden.write() {
             map.insert(
                 index,
@@ -911,10 +958,9 @@ fn tears(shift: &CellShift, sheet: &Sheet, own: Option<u32>) -> bool {
         .tables
         .iter()
         .any(|t| Some(t.id) != own && t.range.intersects(&area))
-        || sheet
-            .merges
-            .iter()
-            .any(|m| m.intersects(&area) && !(area.contains(m.r0, m.c0) && area.contains(m.r1, m.c1)))
+        || sheet.merges.iter().any(|m| {
+            m.intersects(&area) && !(area.contains(m.r0, m.c0) && area.contains(m.r1, m.c1))
+        })
 }
 
 /// True when shifting cells is not allowed: it would tear a table, a
@@ -961,8 +1007,13 @@ fn shift_cells(wb: &mut Workbook, sheet: usize, shift: CellShift) {
             if !(area.contains(m.r0, m.c0) && area.contains(m.r1, m.c1)) {
                 return Some(m);
             }
-            let (lo, hi) = if shift.down { (m.r0, m.r1) } else { (m.c0, m.c1) };
-            let (lo, hi) = shift_interval(lo, hi, shift.insert, shift.at, shift.count, shift.limit())?;
+            let (lo, hi) = if shift.down {
+                (m.r0, m.r1)
+            } else {
+                (m.c0, m.c1)
+            };
+            let (lo, hi) =
+                shift_interval(lo, hi, shift.insert, shift.at, shift.count, shift.limit())?;
             let m = if shift.down {
                 Rect::new(lo, m.c0, hi, m.c1)
             } else {
@@ -1019,8 +1070,13 @@ fn dress(wb: &mut Workbook, sheet: usize, blank: Rect, model: Option<Rect>) {
 /// Excel's rules for table names.
 fn valid_table_name(name: &str) -> bool {
     let mut chars = name.chars();
-    let starts = chars.next().is_some_and(|c| c.is_alphabetic() || c == '_' || c == '\\');
-    if !starts || !chars.all(|c| c.is_alphanumeric() || c == '_' || c == '.') || name.chars().count() > 255 {
+    let starts = chars
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_' || c == '\\');
+    if !starts
+        || !chars.all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+        || name.chars().count() > 255
+    {
         return false;
     }
     // Neither an A1 nor an R1C1 reference ("R", "C", "R2C3", "RC").
@@ -1093,7 +1149,10 @@ fn totals_expr(code: u32, table: &str, column: &str) -> Expr {
         rows: TableRows::Unspecified,
         cols: TableCols::One(Arc::from(column)),
     });
-    Expr::Func(Arc::from("SUBTOTAL"), vec![Expr::Number(code as f64), column])
+    Expr::Func(
+        Arc::from("SUBTOTAL"),
+        vec![Expr::Number(code as f64), column],
+    )
 }
 
 /// The formula a column's cells share, as it reads in the first data row:
@@ -1147,7 +1206,10 @@ fn row_free(sheet: &Sheet, row: u32, c0: u32, c1: u32, own: u32) -> bool {
     let cells = Rect::new(row, c0, row, c1);
     row < MAX_ROWS
         && (c0..=c1).all(|c| sheet.is_blank(row, c))
-        && !sheet.tables.iter().any(|t| t.id != own && t.range.intersects(&cells))
+        && !sheet
+            .tables
+            .iter()
+            .any(|t| t.id != own && t.range.intersects(&cells))
         && !sheet.merges.iter().any(|m| m.intersects(&cells))
 }
 
@@ -1182,7 +1244,11 @@ impl Workbook {
 
     /// The table a cell belongs to.
     pub fn table_at(&self, sheet: usize, row: u32, col: u32) -> Option<&Table> {
-        self.sheets.get(sheet)?.tables.iter().find(|t| t.contains(row, col))
+        self.sheets
+            .get(sheet)?
+            .tables
+            .iter()
+            .find(|t| t.contains(row, col))
     }
 
     /// The table a formula typed in a cell belongs to, for its references
@@ -1193,14 +1259,17 @@ impl Workbook {
     pub fn table_for_entry(&self, sheet: usize, row: u32, col: u32) -> Option<&Table> {
         let sh = self.sheets.get(sheet)?;
         let free = |cells: Rect, own: u32| {
-            !sh.tables.iter().any(|t| t.id != own && t.range.intersects(&cells))
+            !sh.tables
+                .iter()
+                .any(|t| t.id != own && t.range.intersects(&cells))
                 && !sh.merges.iter().any(|m| m.intersects(&cells))
         };
         self.table_at(sheet, row, col).or_else(|| {
             sh.tables.iter().find(|t| {
                 let range = t.range;
                 let last = range.r1 - t.totals_row as u32;
-                let under = !t.totals_row && row == range.r1 + 1 && range.c0 <= col && col <= range.c1;
+                let under =
+                    !t.totals_row && row == range.r1 + 1 && range.c0 <= col && col <= range.c1;
                 let beside = col == range.c1 + 1 && range.r0 <= row && row <= last;
                 (under && free(Rect::new(row, range.c0, row, range.c1), t.id))
                     || (beside && free(Rect::new(range.r0, col, last, col), t.id))
@@ -1222,7 +1291,11 @@ impl Workbook {
     }
 
     fn table_mut(&mut self, sheet: usize, id: u32) -> Option<&mut Table> {
-        self.sheets.get_mut(sheet)?.tables.iter_mut().find(|t| t.id == id)
+        self.sheets
+            .get_mut(sheet)?
+            .tables
+            .iter_mut()
+            .find(|t| t.id == id)
     }
 
     /// The table, column and area (header, data, totals) of a cell: what
@@ -1248,7 +1321,12 @@ impl Workbook {
     /// when the formula is on another sheet): `Table1[Sales]`,
     /// `Table1[[#Headers],[Sales]]`, `[@Sales]`... `None` when `rect` is
     /// not a whole part of a table, where a plain reference is written.
-    pub fn structured_reference(&self, sheet: usize, rect: Rect, from: Option<(u32, u32)>) -> Option<String> {
+    pub fn structured_reference(
+        &self,
+        sheet: usize,
+        rect: Rect,
+        from: Option<(u32, u32)>,
+    ) -> Option<String> {
         let table = self
             .table_at(sheet, rect.r0, rect.c0)
             .filter(|t| t.contains(rect.r1, rect.c1))?;
@@ -1347,17 +1425,29 @@ impl Workbook {
     /// renamed, numbers and dates become text); without, the data moves
     /// down one row to make room for "Column1", "Column2"... A filter of
     /// the sheet on these cells becomes the table's.
-    pub fn add_table(&mut self, sheet: usize, range: Rect, has_headers: bool) -> Result<u32, TableError> {
+    pub fn add_table(
+        &mut self,
+        sheet: usize,
+        range: Rect,
+        has_headers: bool,
+    ) -> Result<u32, TableError> {
         let sh = self.sheets.get(sheet).ok_or(TableError::NotFound)?;
         let range = self.clamp_to_used(sheet, range);
         // A table has a header row and at least one data row.
-        let extra = if has_headers { (range.r0 == range.r1) as u32 } else { 1 };
+        let extra = if has_headers {
+            (range.r0 == range.r1) as u32
+        } else {
+            1
+        };
         if range.r1 + extra >= MAX_ROWS {
             return Err(TableError::InvalidRange);
         }
         let full = Rect::new(range.r0, range.c0, range.r1 + extra, range.c1);
         check_free(sh, &full, None)?;
-        let replaces_filter = sh.auto_filter.as_ref().is_some_and(|f| f.range.intersects(&full));
+        let replaces_filter = sh
+            .auto_filter
+            .as_ref()
+            .is_some_and(|f| f.range.intersects(&full));
         let room = CellShift {
             down: true,
             lo: range.c0,
@@ -1368,7 +1458,9 @@ impl Workbook {
         };
         // The sheet's filter is in the way only when it is not the one
         // the table takes over.
-        if !has_headers && (tears(&room, sh, None) || (!replaces_filter && blocked(&room, sh, None))) {
+        if !has_headers
+            && (tears(&room, sh, None) || (!replaces_filter && blocked(&room, sh, None)))
+        {
             return Err(TableError::Blocked);
         }
         self.snapshot();
@@ -1378,7 +1470,12 @@ impl Workbook {
         if !has_headers {
             shift_cells(self, sheet, room);
             // The row made for the headers has no rule of the data.
-            dress(self, sheet, Rect::new(range.r0, range.c0, range.r0, range.c1), None);
+            dress(
+                self,
+                sheet,
+                Rect::new(range.r0, range.c0, range.r0, range.c1),
+                None,
+            );
         }
         let headers = (full.c0..=full.c1)
             .map(|c| {
@@ -1426,7 +1523,9 @@ impl Workbook {
             return Err(TableError::InvalidRange);
         }
         check_free(sh, &range, None)?;
-        table.columns.resize_with(range.cols() as usize, TableColumn::default);
+        table
+            .columns
+            .resize_with(range.cols() as usize, TableColumn::default);
         let names = unique_names(
             table.columns.iter().map(|c| c.name.clone()).collect(),
             self.locale.column_prefix,
@@ -1477,7 +1576,10 @@ impl Workbook {
         let Some(range) = self.table(sheet, id).map(|t| t.range) else {
             return false;
         };
-        let name = self.table(sheet, id).map(|t| t.name.clone()).unwrap_or_default();
+        let name = self
+            .table(sheet, id)
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
         self.snapshot();
         self.sheets[sheet].tables.retain(|t| t.id != id);
         self.table_refs_to_errors(&[name]);
@@ -1496,9 +1598,13 @@ impl Workbook {
         let gone = |name: &str| tables.iter().any(|t| same_name(t, name));
         self.rewrite_formulas(&|wb, _, e| {
             Some(e.map(&mut |x| match x {
-                Expr::Table(t) if t.table.as_deref().is_some_and(gone) => Expr::Error(ErrorKind::Ref),
+                Expr::Table(t) if t.table.as_deref().is_some_and(gone) => {
+                    Expr::Error(ErrorKind::Ref)
+                }
                 // The bare name of a table stands for its data.
-                Expr::Name(n) if gone(&n) && wb.defined_name(&n).is_none() => Expr::Error(ErrorKind::Ref),
+                Expr::Name(n) if gone(&n) && wb.defined_name(&n).is_none() => {
+                    Expr::Error(ErrorKind::Ref)
+                }
                 other => other,
             }))
         })
@@ -1571,7 +1677,10 @@ impl Workbook {
             }
         }
         // Structured references become the plain ranges they stood for.
-        let name = self.table(sheet, id).map(|t| t.name.clone()).unwrap_or_default();
+        let name = self
+            .table(sheet, id)
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
         self.table_refs_to_ranges(&name);
         self.sheets[sheet].tables.retain(|t| t.id != id);
         self.refilter(sheet);
@@ -1593,7 +1702,13 @@ impl Workbook {
     }
 
     /// Tick or untick a check box of the Table Design tab.
-    pub fn set_table_option(&mut self, sheet: usize, id: u32, option: TableOption, on: bool) -> Result<(), TableError> {
+    pub fn set_table_option(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        option: TableOption,
+        on: bool,
+    ) -> Result<(), TableError> {
         let table = self.table(sheet, id).ok_or(TableError::NotFound)?;
         if table.option(option) == on {
             return Ok(());
@@ -1601,7 +1716,9 @@ impl Workbook {
         match option {
             TableOption::HeaderRow => return self.set_header_row(sheet, id, on),
             TableOption::TotalsRow => return self.set_totals_row(sheet, id, on),
-            TableOption::FilterButton if on && !table.header_row => return Err(TableError::NoHeaderRow),
+            TableOption::FilterButton if on && !table.header_row => {
+                return Err(TableError::NoHeaderRow);
+            }
             _ => {}
         }
         self.snapshot();
@@ -1696,10 +1813,12 @@ impl Workbook {
             // Remember the formulas typed in the row for the next time.
             let customs: Vec<(usize, Arc<Expr>)> = (0..table.columns.len())
                 .filter(|i| matches!(table.columns[*i].totals, TotalsFunction::Custom(_)))
-                .filter_map(|i| match &self.cell(sheet, range.r1, range.c0 + i as u32)?.content {
-                    Content::Formula(e) => Some((i, e.clone())),
-                    _ => None,
-                })
+                .filter_map(
+                    |i| match &self.cell(sheet, range.r1, range.c0 + i as u32)?.content {
+                        Content::Formula(e) => Some((i, e.clone())),
+                        _ => None,
+                    },
+                )
                 .collect();
             self.snapshot();
             self.clear(
@@ -1725,8 +1844,12 @@ impl Workbook {
             .all(|c| c.totals == TotalsFunction::None && c.totals_label.is_none());
         let last = table.columns.len() - 1;
         let numeric = table.column_range(last).is_some_and(|column| {
-            (column.r0..=column.r1)
-                .all(|r| matches!(self.value_at(sheet, r, column.c0), Value::Number(_) | Value::Empty))
+            (column.r0..=column.r1).all(|r| {
+                matches!(
+                    self.value_at(sheet, r, column.c0),
+                    Value::Number(_) | Value::Empty
+                )
+            })
         });
         let label = self.locale.total_label;
         let row = range.r1 + 1;
@@ -1797,12 +1920,16 @@ impl Workbook {
             };
             let content = match &column.totals {
                 TotalsFunction::None => label(),
-                TotalsFunction::Custom(formula) => match self.cell(sheet, row, col).map(|c| &c.content) {
-                    Some(Content::Formula(_)) => continue,
-                    _ => Content::Formula(formula.clone()),
-                },
+                TotalsFunction::Custom(formula) => {
+                    match self.cell(sheet, row, col).map(|c| &c.content) {
+                        Some(Content::Formula(_)) => continue,
+                        _ => Content::Formula(formula.clone()),
+                    }
+                }
                 function => match function.subtotal_code() {
-                    Some(code) => Content::Formula(Arc::new(totals_expr(code, &table.name, &column.name))),
+                    Some(code) => {
+                        Content::Formula(Arc::new(totals_expr(code, &table.name, &column.name)))
+                    }
                     None => label(),
                 },
             };
@@ -1818,8 +1945,17 @@ impl Workbook {
     /// Choose what the totals row computes under a column (the list in its
     /// cells: None, Average, Count...). For a formula of one's own, see
     /// `set_totals_formula`.
-    pub fn set_totals_function(&mut self, sheet: usize, id: u32, column: usize, function: TotalsFunction) -> bool {
-        if !self.table(sheet, id).is_some_and(|t| column < t.columns.len()) {
+    pub fn set_totals_function(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        column: usize,
+        function: TotalsFunction,
+    ) -> bool {
+        if !self
+            .table(sheet, id)
+            .is_some_and(|t| column < t.columns.len())
+        {
             return false;
         }
         self.snapshot();
@@ -1837,8 +1973,17 @@ impl Workbook {
     }
 
     /// Put text under a column in the totals row (`None` leaves it empty).
-    pub fn set_totals_label(&mut self, sheet: usize, id: u32, column: usize, label: Option<&str>) -> bool {
-        if !self.table(sheet, id).is_some_and(|t| column < t.columns.len()) {
+    pub fn set_totals_label(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        column: usize,
+        label: Option<&str>,
+    ) -> bool {
+        if !self
+            .table(sheet, id)
+            .is_some_and(|t| column < t.columns.len())
+        {
             return false;
         }
         self.snapshot();
@@ -1852,14 +1997,24 @@ impl Workbook {
 
     /// Put a formula of one's own under a column in the totals row
     /// ("More Functions..."), written in the workbook's language.
-    pub fn set_totals_formula(&mut self, sheet: usize, id: u32, column: usize, text: &str) -> Result<bool, ParseError> {
-        if !self.table(sheet, id).is_some_and(|t| column < t.columns.len()) {
+    pub fn set_totals_formula(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        column: usize,
+        text: &str,
+    ) -> Result<bool, ParseError> {
+        if !self
+            .table(sheet, id)
+            .is_some_and(|t| column < t.columns.len())
+        {
             return Ok(false);
         }
         let Some(name) = self.table(sheet, id).map(|t| t.name.clone()) else {
             return Ok(false);
         };
-        let typed = crate::parser::parse_formula(text.strip_prefix('=').unwrap_or(text), self.locale)?;
+        let typed =
+            crate::parser::parse_formula(text.strip_prefix('=').unwrap_or(text), self.locale)?;
         // Like every stored formula, it names the table it reads.
         let formula = Arc::new(typed.with_table_qualified(&name));
         self.snapshot();
@@ -1888,7 +2043,11 @@ impl Workbook {
         }
         match &settings.totals {
             TotalsFunction::Custom(formula) => Some((**formula).clone()),
-            function => Some(totals_expr(function.subtotal_code()?, &table.name, &settings.name)),
+            function => Some(totals_expr(
+                function.subtotal_code()?,
+                &table.name,
+                &settings.name,
+            )),
         }
     }
 
@@ -1930,7 +2089,11 @@ impl Workbook {
         let old = table.range;
         if table.totals_row && range.r1 != old.r1 {
             // The totals are written again under the new last row.
-            self.clear(sheet, Rect::new(old.r1, old.c0, old.r1, old.c1), ClearMode::Contents);
+            self.clear(
+                sheet,
+                Rect::new(old.r1, old.c0, old.r1, old.c1),
+                ClearMode::Contents,
+            );
         }
         let Some(table) = self.table(sheet, id) else {
             return;
@@ -1961,7 +2124,10 @@ impl Workbook {
             if col < range.c0 || col > range.c1 {
                 left.push(column.name.clone());
             } else if columns[(col - range.c0) as usize].name != column.name {
-                renames.push((column.name.clone(), columns[(col - range.c0) as usize].name.clone()));
+                renames.push((
+                    column.name.clone(),
+                    columns[(col - range.c0) as usize].name.clone(),
+                ));
             }
         }
         let (criteria, last) = (criteria_of(table), table.filter_range().r1);
@@ -2001,7 +2167,13 @@ impl Workbook {
     /// Insert `count` table rows above sheet row `at` (a data row, or the
     /// row right under the last one to add at the end). Only the cells of
     /// the table's columns move down; calculated columns fill the new rows.
-    pub fn table_insert_rows(&mut self, sheet: usize, id: u32, at: u32, count: u32) -> Result<(), TableError> {
+    pub fn table_insert_rows(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        at: u32,
+        count: u32,
+    ) -> Result<(), TableError> {
         let table = self.table(sheet, id).ok_or(TableError::NotFound)?;
         let range = table.range;
         let first = range.r0 + table.header_row as u32;
@@ -2049,7 +2221,12 @@ impl Workbook {
                     self.set_style_id(sheet, row, col, style);
                 }
                 if let Some(formula) = &formula {
-                    self.set_formula(sheet, row, col, formula.shifted(row as i64 - first as i64, 0));
+                    self.set_formula(
+                        sheet,
+                        row,
+                        col,
+                        formula.shifted(row as i64 - first as i64, 0),
+                    );
                 }
             }
         }
@@ -2060,7 +2237,13 @@ impl Workbook {
     /// Delete `count` table rows from sheet row `at`; the cells below move
     /// up in the table's columns only. A table keeps one data row: when
     /// they all go, the first is emptied instead.
-    pub fn table_delete_rows(&mut self, sheet: usize, id: u32, at: u32, count: u32) -> Result<(), TableError> {
+    pub fn table_delete_rows(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        at: u32,
+        count: u32,
+    ) -> Result<(), TableError> {
         let table = self.table(sheet, id).ok_or(TableError::NotFound)?;
         let range = table.range;
         let data = table.data_range().ok_or(TableError::InvalidRange)?;
@@ -2068,7 +2251,11 @@ impl Workbook {
             return Err(TableError::InvalidRange);
         }
         let all = count == data.rows();
-        let (at, count) = if all { (at + 1, count - 1) } else { (at, count) };
+        let (at, count) = if all {
+            (at + 1, count - 1)
+        } else {
+            (at, count)
+        };
         let shift = CellShift {
             down: true,
             lo: range.c0,
@@ -2104,7 +2291,13 @@ impl Workbook {
     /// Insert `count` table columns to the left of sheet column `at` (a
     /// column of the table, or the one right after it to add at the end).
     /// Only the cells of the table's rows move right.
-    pub fn table_insert_cols(&mut self, sheet: usize, id: u32, at: u32, count: u32) -> Result<(), TableError> {
+    pub fn table_insert_cols(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        at: u32,
+        count: u32,
+    ) -> Result<(), TableError> {
         let table = self.table(sheet, id).ok_or(TableError::NotFound)?;
         let range = table.range;
         if count == 0 || at < range.c0 || at > range.c1 + 1 || range.c1 + count >= MAX_COLS {
@@ -2129,7 +2322,10 @@ impl Workbook {
             table
                 .columns
                 .splice(index..index, (0..count).map(|_| TableColumn::default()));
-            let names = unique_names(table.columns.iter().map(|c| c.name.clone()).collect(), prefix);
+            let names = unique_names(
+                table.columns.iter().map(|c| c.name.clone()).collect(),
+                prefix,
+            );
             for (column, name) in table.columns.iter_mut().zip(names) {
                 column.name = name;
             }
@@ -2164,7 +2360,13 @@ impl Workbook {
     /// Delete `count` table columns from sheet column `at`; the cells to
     /// the right move left in the table's rows only. Deleting every column
     /// deletes the table.
-    pub fn table_delete_cols(&mut self, sheet: usize, id: u32, at: u32, count: u32) -> Result<(), TableError> {
+    pub fn table_delete_cols(
+        &mut self,
+        sheet: usize,
+        id: u32,
+        at: u32,
+        count: u32,
+    ) -> Result<(), TableError> {
         let table = self.table(sheet, id).ok_or(TableError::NotFound)?;
         let range = table.range;
         if count == 0 || at < range.c0 || at + count - 1 > range.c1 {
@@ -2224,7 +2426,13 @@ impl Workbook {
     /// areas, notes and rules follow. Refused when the move would tear a
     /// table, a merged area or the filter of the sheet. Takes the undo
     /// snapshot; the caller commits.
-    pub fn shift_cells(&mut self, sheet: usize, rect: Rect, down: bool, insert: bool) -> Result<(), TableError> {
+    pub fn shift_cells(
+        &mut self,
+        sheet: usize,
+        rect: Rect,
+        down: bool,
+        insert: bool,
+    ) -> Result<(), TableError> {
         let sh = self.sheets.get(sheet).ok_or(TableError::NotFound)?;
         let shift = if down {
             CellShift {
@@ -2270,7 +2478,10 @@ impl Workbook {
         let edited = self.clamp_to_used(sheet, edited);
         let ids: Vec<u32> = sh.tables.iter().map(|t| t.id).collect();
         for id in ids {
-            if let Some(range) = self.grown_range(sheet, id, edited).filter(|_| self.table_auto.expand) {
+            if let Some(range) = self
+                .grown_range(sheet, id, edited)
+                .filter(|_| self.table_auto.expand)
+            {
                 self.grow_table(sheet, id, range);
                 out.expanded = Some(id);
             }
@@ -2293,11 +2504,14 @@ impl Workbook {
         let table = self.table(sheet, id)?;
         let mut range = table.range;
         let filled = |cells: Rect| {
-            let entered = cells
-                .intersection(&edited)
-                .is_some_and(|hit| (hit.r0..=hit.r1).any(|r| (hit.c0..=hit.c1).any(|c| !sh.is_blank(r, c))));
+            let entered = cells.intersection(&edited).is_some_and(|hit| {
+                (hit.r0..=hit.r1).any(|r| (hit.c0..=hit.c1).any(|c| !sh.is_blank(r, c)))
+            });
             entered
-                && !sh.tables.iter().any(|t| t.id != id && t.range.intersects(&cells))
+                && !sh
+                    .tables
+                    .iter()
+                    .any(|t| t.id != id && t.range.intersects(&cells))
                 && !sh.merges.iter().any(|m| m.intersects(&cells))
         };
         // Rows under the table, unless its totals row is in the way.
@@ -2309,7 +2523,9 @@ impl Workbook {
         }
         // Columns beside the header and data rows.
         let last = range.r1 - table.totals_row as u32;
-        while range.c1 + 1 < MAX_COLS && filled(Rect::new(range.r0, range.c1 + 1, last, range.c1 + 1)) {
+        while range.c1 + 1 < MAX_COLS
+            && filled(Rect::new(range.r0, range.c1 + 1, last, range.c1 + 1))
+        {
             range.c1 += 1;
         }
         (range != table.range).then_some(range)
@@ -2351,7 +2567,12 @@ impl Workbook {
                     self.set_style_id(sheet, row, col, style);
                 }
                 if let Some(formula) = formula.as_ref().filter(|_| blank) {
-                    self.set_formula(sheet, row, col, formula.shifted(row as i64 - first as i64, 0));
+                    self.set_formula(
+                        sheet,
+                        row,
+                        col,
+                        formula.shifted(row as i64 - first as i64, 0),
+                    );
                 }
             }
         }
@@ -2370,7 +2591,9 @@ impl Workbook {
         let prefix = self.locale.column_prefix;
         let mut names: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
         let edited = (hit.c0 - table.range.c0) as usize..=(hit.c1 - table.range.c0) as usize;
-        let texts: Vec<String> = (hit.c0..=hit.c1).map(|col| self.header_text(sheet, hit.r0, col)).collect();
+        let texts: Vec<String> = (hit.c0..=hit.c1)
+            .map(|col| self.header_text(sheet, hit.r0, col))
+            .collect();
         // The other columns keep their names. Headers entered together (a
         // paste) are judged together: the names they replace are free,
         // and a default name does not take one of those just entered.
@@ -2381,7 +2604,12 @@ impl Workbook {
             .map(|(_, n)| n.to_lowercase())
             .collect();
         let mut reserved = taken.clone();
-        reserved.extend(texts.iter().filter(|t| !t.trim().is_empty()).map(|t| t.to_lowercase()));
+        reserved.extend(
+            texts
+                .iter()
+                .filter(|t| !t.trim().is_empty())
+                .map(|t| t.to_lowercase()),
+        );
         for (i, text) in edited.zip(texts) {
             let name = if text.trim().is_empty() {
                 numbered(prefix, i + 1, &reserved)
@@ -2435,7 +2663,9 @@ impl Workbook {
                 Some(Content::Formula(e)) => {
                     // The column itself, as `[Column]` or as its cells.
                     let whole_column = |over: &Expr| match over {
-                        Expr::Ref(r) => r.sheet.is_none() && Some(r.rect()) == table.column_range(i),
+                        Expr::Ref(r) => {
+                            r.sheet.is_none() && Some(r.rect()) == table.column_range(i)
+                        }
                         Expr::Table(t) => {
                             t.is_to(&table.name, true)
                                 && matches!(t.rows, TableRows::Unspecified | TableRows::Data)
@@ -2452,9 +2682,15 @@ impl Workbook {
                         },
                         _ => None,
                     };
-                    (listed.unwrap_or_else(|| TotalsFunction::Custom(e.clone())), None)
+                    (
+                        listed.unwrap_or_else(|| TotalsFunction::Custom(e.clone())),
+                        None,
+                    )
                 }
-                Some(Content::Value(_)) => (TotalsFunction::None, Some(self.display_text(sheet, hit.r0, col).text)),
+                Some(Content::Value(_)) => (
+                    TotalsFunction::None,
+                    Some(self.display_text(sheet, hit.r0, col).text),
+                ),
                 _ => (TotalsFunction::None, None),
             };
             let column = &table.columns[i];
@@ -2493,12 +2729,18 @@ impl Workbook {
         };
         let formula = formula.shifted(column.r0 as i64 - row as i64, 0);
         let others_blank = (column.r0..=column.r1).all(|r| r == row || sh.is_blank(r, col));
-        let others_differ = column_formula(sh, column, Some(row)).is_some_and(|other| other != formula);
+        let others_differ =
+            column_formula(sh, column, Some(row)).is_some_and(|other| other != formula);
         if !others_blank && !others_differ {
             return None;
         }
         for r in (column.r0..=column.r1).filter(|r| *r != row) {
-            self.set_formula(sheet, r, col, formula.shifted(r as i64 - column.r0 as i64, 0));
+            self.set_formula(
+                sheet,
+                r,
+                col,
+                formula.shifted(r as i64 - column.r0 as i64, 0),
+            );
         }
         Some(index)
     }
@@ -2596,11 +2838,16 @@ pub(crate) fn before_structural_edits(wb: &mut Workbook, sheet: usize, edits: &[
     let mut tables = Vec::new();
     let mut columns = Vec::new();
     for table in &sh.tables {
-        let after = edits.iter().try_fold(table.clone(), |t, edit| adjusted(t, *edit));
+        let after = edits
+            .iter()
+            .try_fold(table.clone(), |t, edit| adjusted(t, *edit));
         match after {
             None => tables.push(table.name.clone()),
             Some(after) => {
-                let gone = table.columns.iter().filter(|c| after.column_index(&c.name).is_none());
+                let gone = table
+                    .columns
+                    .iter()
+                    .filter(|c| after.column_index(&c.name).is_none());
                 columns.extend(gone.map(|c| (table.name.clone(), c.name.clone())));
             }
         }
@@ -2625,7 +2872,10 @@ pub(crate) fn after_structural_edit(wb: &mut Workbook, sheet: usize) {
             .table_mut(sheet, id)
             .filter(|t| t.columns.iter().any(|c| c.name.is_empty()))
         {
-            let names = unique_names(table.columns.iter().map(|c| c.name.clone()).collect(), prefix);
+            let names = unique_names(
+                table.columns.iter().map(|c| c.name.clone()).collect(),
+                prefix,
+            );
             for (column, name) in table.columns.iter_mut().zip(names) {
                 column.name = name;
             }
@@ -2663,10 +2913,18 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
             .find(|name| !wb.name_taken(name, None) && !taken.contains(&name.to_lowercase()))
             .unwrap_or_default();
         taken.insert(name.to_lowercase());
-        renames.push((std::mem::replace(&mut table.name, name.clone()), Arc::from(name)));
+        renames.push((
+            std::mem::replace(&mut table.name, name.clone()),
+            Arc::from(name),
+        ));
     }
     // All the tables at once: a new name may be the old name of another.
-    let renamed = |name: &str| renames.iter().find(|(old, _)| same_name(old, name)).map(|(_, new)| new.clone());
+    let renamed = |name: &str| {
+        renames
+            .iter()
+            .find(|(old, _)| same_name(old, name))
+            .map(|(_, new)| new.clone())
+    };
     let follow = |e: &Expr| -> Expr {
         e.map(&mut |x| match x {
             Expr::Table(mut t) => {
@@ -2791,35 +3049,71 @@ mod tests {
     }
 
     fn names(w: &Workbook, id: u32) -> Vec<String> {
-        w.table(0, id).unwrap().columns.iter().map(|c| c.name.clone()).collect()
+        w.table(0, id)
+            .unwrap()
+            .columns
+            .iter()
+            .map(|c| c.name.clone())
+            .collect()
     }
 
     #[test]
     fn cells_shift_to_make_room_and_close_up() {
-        let mut w = wb(&[("A1", "a"), ("A2", "b"), ("B1", "x"), ("B2", "y"), ("D1", "=A2")]);
+        let mut w = wb(&[
+            ("A1", "a"),
+            ("A2", "b"),
+            ("B1", "x"),
+            ("B2", "y"),
+            ("D1", "=A2"),
+        ]);
         // Insert > Cells > Shift cells down on A1: only column A moves.
         w.shift_cells(0, rect("A1"), true, true).unwrap();
         w.commit("insert");
-        assert_eq!((crate::tests::val(&w, "A1"), crate::tests::val(&w, "A2"), crate::tests::val(&w, "A3"), crate::tests::val(&w, "B2")), (Value::Empty, Value::text("a"), Value::text("b"), Value::text("y")));
+        assert_eq!(
+            (
+                crate::tests::val(&w, "A1"),
+                crate::tests::val(&w, "A2"),
+                crate::tests::val(&w, "A3"),
+                crate::tests::val(&w, "B2")
+            ),
+            (
+                Value::Empty,
+                Value::text("a"),
+                Value::text("b"),
+                Value::text("y")
+            )
+        );
         assert_eq!(w.formula_text(0, 0, 3).as_deref(), Some("=A3"));
         // Delete > Cells > Shift cells left on A2:A3: row 2 and 3 close up.
         w.shift_cells(0, rect("A2:A3"), false, false).unwrap();
         w.commit("delete");
-        assert_eq!((crate::tests::val(&w, "A2"), crate::tests::val(&w, "A3")), (Value::text("y"), Value::Empty));
+        assert_eq!(
+            (crate::tests::val(&w, "A2"), crate::tests::val(&w, "A3")),
+            (Value::text("y"), Value::Empty)
+        );
         w.undo();
         w.undo();
-        assert_eq!((crate::tests::val(&w, "A1"), crate::tests::val(&w, "A2")), (Value::text("a"), Value::text("b")));
+        assert_eq!(
+            (crate::tests::val(&w, "A1"), crate::tests::val(&w, "A2")),
+            (Value::text("a"), Value::text("b"))
+        );
         // A table in the way refuses.
         w.add_table(0, rect("A1:B2"), false).unwrap();
         w.commit("table");
-        assert_eq!(w.shift_cells(0, rect("A2"), true, true), Err(TableError::Blocked));
+        assert_eq!(
+            w.shift_cells(0, rect("A2"), true, true),
+            Err(TableError::Blocked)
+        );
     }
 
     #[test]
     fn creating_with_headers() {
         let (mut w, id) = sales();
         let table = w.table(0, id).unwrap();
-        assert_eq!((table.name.as_str(), table.range), ("Table1", rect("A1:C4")));
+        assert_eq!(
+            (table.name.as_str(), table.range),
+            ("Table1", rect("A1:C4"))
+        );
         assert!(table.header_row && !table.totals_row && table.banded_rows && !table.banded_cols);
         assert_eq!(table.style.as_deref(), Some(DEFAULT_TABLE_STYLE));
         assert_eq!(table.auto_filter.as_ref().unwrap().range, rect("A1:C4"));
@@ -2830,10 +3124,19 @@ mod tests {
         assert_eq!(w.table_by_name("TABLE1").unwrap().1.id, id);
         assert_eq!(w.table_by_id(id).unwrap().0, 0);
         assert_eq!(w.filter_buttons(0).len(), 3);
-        assert_eq!(w.suggest_table_range(0, Rect::cell(2, 1)), (rect("A1:C4"), true));
+        assert_eq!(
+            w.suggest_table_range(0, Rect::cell(2, 1)),
+            (rect("A1:C4"), true)
+        );
 
         // Headers become text; blank and repeated ones are renamed.
-        let mut other = wb(&[("A1", "Item"), ("B1", "2024"), ("D1", "item"), ("A2", "x"), ("D2", "3")]);
+        let mut other = wb(&[
+            ("A1", "Item"),
+            ("B1", "2024"),
+            ("D1", "item"),
+            ("A2", "x"),
+            ("D2", "3"),
+        ]);
         let id2 = other.add_table(0, rect("A1:D2"), true).unwrap();
         assert_eq!(names(&other, id2), ["Item", "2024", "Column3", "item2"]);
         assert_eq!(other.value_at(0, 0, 1), Value::text("2024"));
@@ -2841,10 +3144,16 @@ mod tests {
         assert_eq!(text(&other, "D1"), "item2");
 
         // Tables may not share cells with tables or merged cells.
-        assert_eq!(w.add_table(0, rect("C4:D6"), true), Err(TableError::Overlap));
+        assert_eq!(
+            w.add_table(0, rect("C4:D6"), true),
+            Err(TableError::Overlap)
+        );
         w.set_cell_text(0, 9, 0, "a").unwrap();
         w.merge(0, rect("A10:B10"));
-        assert_eq!(w.add_table(0, rect("A10:B12"), true), Err(TableError::MergedCells));
+        assert_eq!(
+            w.add_table(0, rect("A10:B12"), true),
+            Err(TableError::MergedCells)
+        );
         // Nor can their cells be merged, or carry the sheet's filter.
         w.merge(0, rect("A2:B2"));
         assert_eq!(w.sheets[0].merges, [rect("A10:B10")]);
@@ -2901,7 +3210,10 @@ mod tests {
         assert_eq!(w.insert_table(0, free), Ok(40));
         let table = w.table(0, 40).unwrap();
         // Without a header row there is no filter.
-        assert_eq!((table.name.as_str(), table.auto_filter.is_some()), ("Stock", false));
+        assert_eq!(
+            (table.name.as_str(), table.auto_filter.is_some()),
+            ("Stock", false)
+        );
         assert_eq!(w.next_table_name(), "Table3");
 
         assert_eq!(w.insert_table(0, loaded.clone()), Err(TableError::Overlap));
@@ -2931,7 +3243,10 @@ mod tests {
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:B3"));
         assert_eq!(names(&w, id), ["Column1", "Column2"]);
         assert_eq!([text(&w, "A1"), text(&w, "B1")], ["Column1", "Column2"]);
-        assert_eq!([text(&w, "A2"), text(&w, "B3"), text(&w, "A4")], ["1", "4", "under"]);
+        assert_eq!(
+            [text(&w, "A2"), text(&w, "B3"), text(&w, "A4")],
+            ["1", "4", "under"]
+        );
         assert_eq!(text(&w, "C1"), "beside");
         assert_eq!(formula(&w, "D5"), "=SUM(A2:A3)");
         assert_eq!(text(&w, "D5"), "4");
@@ -2941,7 +3256,10 @@ mod tests {
         // A table below in the same columns cannot be pushed down.
         let mut w = wb(&[("A1", "1"), ("A5", "h"), ("A6", "2")]);
         w.add_table(0, rect("A5:A6"), true).unwrap();
-        assert_eq!(w.add_table(0, rect("A1:A2"), false), Err(TableError::Blocked));
+        assert_eq!(
+            w.add_table(0, rect("A1:A2"), false),
+            Err(TableError::Blocked)
+        );
         assert!(w.add_table(0, rect("A1:A2"), true).is_ok());
     }
 
@@ -2958,7 +3276,8 @@ mod tests {
             w.set_cell_text(0, 0, 0, "1").unwrap();
             w.set_cell_text(0, 0, 1, "2").unwrap();
             let id = w.add_table(0, rect("A1:B1"), false).unwrap();
-            w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+            w.set_table_option(0, id, TableOption::TotalsRow, true)
+                .unwrap();
             w.commit("table");
             assert_eq!(w.table(0, id).unwrap().name, table);
             assert_eq!(names(&w, id)[0], column);
@@ -2980,7 +3299,11 @@ mod tests {
         for bad in [
             "", "1abc", "my table", "A1", "XFD12", "R1C1", "r", "C", "RC", "a-b", "a!",
         ] {
-            assert_eq!(w.rename_table(0, id, bad), Err(TableError::InvalidName), "{bad}");
+            assert_eq!(
+                w.rename_table(0, id, bad),
+                Err(TableError::InvalidName),
+                "{bad}"
+            );
         }
         assert_eq!(w.rename_table(0, id, "table2"), Err(TableError::NameTaken));
         assert_eq!(w.rename_table(0, id, "BUDGET"), Err(TableError::NameTaken));
@@ -2993,20 +3316,29 @@ mod tests {
     #[test]
     fn options_and_header_row() {
         let (mut w, id) = sales();
-        for option in [TableOption::BandedCols, TableOption::FirstCol, TableOption::LastCol] {
+        for option in [
+            TableOption::BandedCols,
+            TableOption::FirstCol,
+            TableOption::LastCol,
+        ] {
             assert!(!w.table(0, id).unwrap().option(option));
             w.set_table_option(0, id, option, true).unwrap();
             assert!(w.table(0, id).unwrap().option(option));
         }
-        w.set_table_option(0, id, TableOption::BandedRows, false).unwrap();
+        w.set_table_option(0, id, TableOption::BandedRows, false)
+            .unwrap();
         assert!(!w.table(0, id).unwrap().banded_rows);
         assert!(w.set_table_style(0, id, Some("TableStyleLight9")));
-        assert_eq!(w.table(0, id).unwrap().style.as_deref(), Some("TableStyleLight9"));
+        assert_eq!(
+            w.table(0, id).unwrap().style.as_deref(),
+            Some("TableStyleLight9")
+        );
         assert!(w.set_table_style(0, id, None));
         w.commit("look");
 
         // Hiding the header row empties its cells; the names stay.
-        w.set_table_option(0, id, TableOption::HeaderRow, false).unwrap();
+        w.set_table_option(0, id, TableOption::HeaderRow, false)
+            .unwrap();
         w.commit("no header");
         let table = w.table(0, id).unwrap();
         assert_eq!((table.range, table.header_row), (rect("A2:C4"), false));
@@ -3019,21 +3351,29 @@ mod tests {
             Err(TableError::NoHeaderRow)
         );
         // Showing it again uses the free row above...
-        w.set_table_option(0, id, TableOption::HeaderRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::HeaderRow, true)
+            .unwrap();
         w.commit("header");
         let table = w.table(0, id).unwrap();
         assert_eq!((table.range, table.header_row), (rect("A1:C4"), true));
         assert!(table.auto_filter.is_some());
         assert_eq!(text(&w, "C1"), "Sales");
         // ...or moves the table down when that row is taken.
-        w.set_table_option(0, id, TableOption::HeaderRow, false).unwrap();
+        w.set_table_option(0, id, TableOption::HeaderRow, false)
+            .unwrap();
         w.set_cell_text(0, 0, 1, "busy").unwrap();
         w.set_cell_text(0, 5, 0, "under").unwrap();
-        w.set_table_option(0, id, TableOption::HeaderRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::HeaderRow, true)
+            .unwrap();
         w.commit("header");
         assert_eq!(w.table(0, id).unwrap().range, rect("A2:C5"));
         assert_eq!(
-            [text(&w, "B1"), text(&w, "B2"), text(&w, "A3"), text(&w, "A7")],
+            [
+                text(&w, "B1"),
+                text(&w, "B2"),
+                text(&w, "A3"),
+                text(&w, "A7")
+            ],
             ["busy", "Region", "Pen", "under"]
         );
         assert!(w.undo());
@@ -3045,7 +3385,8 @@ mod tests {
         let (mut w, id) = sales();
         w.set_cell_text(0, 4, 0, "note").unwrap();
         w.set_cell_text(0, 0, 5, "=SUM(C2:C4)").unwrap();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.commit("totals");
         // "Total" and the sum of the last column; what was under the table
         // moved down.
@@ -3054,7 +3395,12 @@ mod tests {
         assert_eq!(table.auto_filter.as_ref().unwrap().range, rect("A1:C4"));
         assert_eq!(table.totals_range(), Some(rect("A5:C5")));
         assert_eq!(
-            [text(&w, "A5"), text(&w, "B5"), text(&w, "C5"), text(&w, "A6")],
+            [
+                text(&w, "A5"),
+                text(&w, "B5"),
+                text(&w, "C5"),
+                text(&w, "A6")
+            ],
             ["Total", "", "60", "note"]
         );
         // As Excel writes it; it names the table in the cell (and in files).
@@ -3069,10 +3415,23 @@ mod tests {
         // Totals only count the rows the table's filter shows.
         w.set_filter_criteria(0, FilterScope::Table(id), 1, only(&["North"]));
         w.commit("filter");
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2]
+        );
         assert_eq!([text(&w, "C5"), text(&w, "F1")], ["40", "60"]);
-        assert_eq!(w.filter_record_count(0, FilterScope::Table(id)), Some((2, 3)));
-        assert_eq!(w.sheets[0].row_height(4), crate::workbook::DEFAULT_ROW_HEIGHT);
+        assert_eq!(
+            w.filter_record_count(0, FilterScope::Table(id)),
+            Some((2, 3))
+        );
+        assert_eq!(
+            w.sheets[0].row_height(4),
+            crate::workbook::DEFAULT_ROW_HEIGHT
+        );
 
         // Every function of the list.
         for (function, code, shown) in [
@@ -3086,7 +3445,10 @@ mod tests {
             (TotalsFunction::Sum, 109, "40"),
         ] {
             assert_eq!(function.subtotal_code(), Some(code));
-            assert_eq!(TotalsFunction::from_subtotal_code(code), Some(function.clone()));
+            assert_eq!(
+                TotalsFunction::from_subtotal_code(code),
+                Some(function.clone())
+            );
             assert_eq!(
                 TotalsFunction::from_ooxml_name(function.ooxml_name()),
                 Some(function.clone())
@@ -3103,29 +3465,43 @@ mod tests {
         // A label, a formula of one's own, nothing.
         assert!(w.set_totals_label(0, id, 1, Some("all regions")));
         assert_eq!(text(&w, "B5"), "all regions");
-        assert_eq!(w.set_totals_formula(0, id, 1, "=COUNTIF(B2:B4,\"North\")"), Ok(true));
+        assert_eq!(
+            w.set_totals_formula(0, id, 1, "=COUNTIF(B2:B4,\"North\")"),
+            Ok(true)
+        );
         w.commit("custom");
         assert_eq!(text(&w, "B5"), "2");
         assert!(matches!(
             w.table(0, id).unwrap().columns[1].totals,
             TotalsFunction::Custom(_)
         ));
-        assert_eq!(w.table(0, id).unwrap().columns[1].totals.ooxml_name(), "custom");
+        assert_eq!(
+            w.table(0, id).unwrap().columns[1].totals.ooxml_name(),
+            "custom"
+        );
         assert!(w.set_totals_formula(0, id, 1, "=SUM(").is_err());
         assert!(w.set_totals_function(0, id, 2, TotalsFunction::None));
         assert_eq!(text(&w, "C5"), "");
         assert!(w.set_totals_function(0, id, 2, TotalsFunction::Max));
 
         // Hidden and shown again, the row comes back as it was.
-        w.set_table_option(0, id, TableOption::TotalsRow, false).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, false)
+            .unwrap();
         w.commit("no totals");
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:C4"));
-        assert_eq!([text(&w, "A5"), text(&w, "B5"), text(&w, "C5")], ["", "", ""]);
+        assert_eq!(
+            [text(&w, "A5"), text(&w, "B5"), text(&w, "C5")],
+            ["", "", ""]
+        );
         let written = w.totals_formula(0, id, 1).unwrap();
         assert_eq!(written.to_text(Locale::en()), "COUNTIF(B2:B4,\"North\")");
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.commit("totals");
-        assert_eq!([text(&w, "A5"), text(&w, "B5"), text(&w, "C5")], ["Total", "2", "30"]);
+        assert_eq!(
+            [text(&w, "A5"), text(&w, "B5"), text(&w, "C5")],
+            ["Total", "2", "30"]
+        );
         assert_eq!(formula(&w, "B5"), "=COUNTIF(B2:B4,\"North\")");
         assert_eq!(
             w.totals_formula(0, id, 2).unwrap().to_text(Locale::en()),
@@ -3147,12 +3523,16 @@ mod tests {
         assert_eq!(table.columns[0].totals_label, None);
         w.clear(0, rect("A5"), ClearMode::Contents);
         w.tables_after_edit(0, rect("A5"));
-        assert_eq!(w.table(0, id).unwrap().columns[0].totals, TotalsFunction::None);
+        assert_eq!(
+            w.table(0, id).unwrap().columns[0].totals,
+            TotalsFunction::None
+        );
 
         // A text column is counted, not summed, the first time.
         let mut w = wb(&[("A1", "k"), ("B1", "v"), ("A2", "a"), ("B2", "b")]);
         let id = w.add_table(0, rect("A1:B2"), true).unwrap();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.commit("totals");
         assert_eq!(formula(&w, "B3"), "=SUBTOTAL(103,[v])");
         assert_eq!(text(&w, "B3"), "1");
@@ -3225,20 +3605,35 @@ mod tests {
         assert_eq!(light7.header_row.bottom, line(BorderStyle::Thin, accent(6)));
         let light10 = table_style("TableStyleLight10").unwrap();
         assert_eq!(light10.header_row.fill, Some(accent(2)));
-        assert_eq!(light10.second_row_stripe.top, line(BorderStyle::Thin, accent(2)));
+        assert_eq!(
+            light10.second_row_stripe.top,
+            line(BorderStyle::Thin, accent(2))
+        );
         assert_eq!(light10.first_row_stripe.fill, None);
         let light16 = table_style("TableStyleLight16").unwrap();
-        assert_eq!(light16.whole_table.vertical, line(BorderStyle::Thin, accent(1)));
-        assert_eq!(light16.header_row.bottom, line(BorderStyle::Medium, accent(1)));
+        assert_eq!(
+            light16.whole_table.vertical,
+            line(BorderStyle::Thin, accent(1))
+        );
+        assert_eq!(
+            light16.header_row.bottom,
+            line(BorderStyle::Medium, accent(1))
+        );
 
         let medium9 = table_style("TableStyleMedium9").unwrap();
         assert_eq!(medium9.whole_table.fill, Some(shade(accent(1), 0.8)));
         assert_eq!(medium9.first_row_stripe.fill, Some(shade(accent(1), 0.6)));
         assert_eq!(medium9.header_row.bottom, line(BorderStyle::Thick, white));
-        assert_eq!(medium9.first_column, ElementStyle::heading(white, accent(1)));
+        assert_eq!(
+            medium9.first_column,
+            ElementStyle::heading(white, accent(1))
+        );
         let medium15 = table_style("TableStyleMedium15").unwrap();
         assert_eq!(medium15.whole_table.left, line(BorderStyle::Thin, black));
-        assert_eq!(table_style("TableStyleMedium16").unwrap().whole_table.left, None);
+        assert_eq!(
+            table_style("TableStyleMedium16").unwrap().whole_table.left,
+            None
+        );
         assert_eq!(medium15.first_row_stripe.fill, Some(themed(0, -0.15)));
         let medium28 = table_style("TableStyleMedium28").unwrap();
         assert_eq!(
@@ -3277,15 +3672,27 @@ mod tests {
         assert_eq!(head.font_color, Some(Some(themed(0, 0.0))));
         assert_eq!(head.bold, Some(true));
         assert_eq!(
-            (head.border_top, head.border_left, head.border_bottom, head.border_right),
+            (
+                head.border_top,
+                head.border_left,
+                head.border_bottom,
+                head.border_right
+            ),
             (thin, thin, thin, None)
         );
         // Data rows: every other one banded.
-        let fills: Vec<_> = (1..=3).map(|r| style_patch_at(&w, 0, r, 1).unwrap().fill).collect();
+        let fills: Vec<_> = (1..=3)
+            .map(|r| style_patch_at(&w, 0, r, 1).unwrap().fill)
+            .collect();
         assert_eq!(fills, [Some(Some(band)), None, Some(Some(band))]);
         let cell = style_patch_at(&w, 0, 3, 2).unwrap();
         assert_eq!(
-            (cell.bold, cell.border_bottom, cell.border_right, cell.border_left),
+            (
+                cell.bold,
+                cell.border_bottom,
+                cell.border_right,
+                cell.border_left
+            ),
             (None, thin, thin, None)
         );
         assert_eq!(style_patch_at(&w, 0, 4, 0), None);
@@ -3310,14 +3717,20 @@ mod tests {
         w.set_rows_hidden(0, 1, 1, false);
 
         // Options: first and last column, banded columns, totals.
-        w.set_table_option(0, id, TableOption::FirstCol, true).unwrap();
-        w.set_table_option(0, id, TableOption::BandedRows, false).unwrap();
-        w.set_table_option(0, id, TableOption::BandedCols, true).unwrap();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::FirstCol, true)
+            .unwrap();
+        w.set_table_option(0, id, TableOption::BandedRows, false)
+            .unwrap();
+        w.set_table_option(0, id, TableOption::BandedCols, true)
+            .unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.commit("options");
         assert_eq!(style_patch_at(&w, 0, 2, 0).unwrap().bold, Some(true));
         assert_eq!(style_patch_at(&w, 0, 2, 1).unwrap().bold, None);
-        let fills: Vec<_> = (0..3).map(|c| style_patch_at(&w, 0, 2, c).unwrap().fill).collect();
+        let fills: Vec<_> = (0..3)
+            .map(|c| style_patch_at(&w, 0, 2, c).unwrap().fill)
+            .collect();
         assert_eq!(fills, [Some(Some(band)), None, Some(Some(band))]);
         let total = style_patch_at(&w, 0, 4, 2).unwrap();
         assert_eq!(total.bold, Some(true));
@@ -3351,7 +3764,10 @@ mod tests {
         w.commit("resize");
         let table = w.table(0, id).unwrap();
         assert_eq!(table.range, rect("A1:E6"));
-        assert_eq!(names(&w, id), ["Product", "Region", "Sales", "Column4", "Extra"]);
+        assert_eq!(
+            names(&w, id),
+            ["Product", "Region", "Sales", "Column4", "Extra"]
+        );
         assert_eq!(text(&w, "D1"), "Column4");
         assert_eq!(table.auto_filter.as_ref().unwrap().range, rect("A1:E6"));
         // Smaller, from the left: criteria follow their columns.
@@ -3370,22 +3786,45 @@ mod tests {
             [0]
         );
         assert_eq!(text(&w, "A1"), "Product");
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2]
+        );
 
-        assert_eq!(w.resize_table(0, id, rect("C2:D5")), Err(TableError::InvalidResize));
-        assert_eq!(w.resize_table(0, id, rect("F1:G5")), Err(TableError::InvalidResize));
-        assert_eq!(w.resize_table(0, id, rect("C1:D1")), Err(TableError::InvalidRange));
+        assert_eq!(
+            w.resize_table(0, id, rect("C2:D5")),
+            Err(TableError::InvalidResize)
+        );
+        assert_eq!(
+            w.resize_table(0, id, rect("F1:G5")),
+            Err(TableError::InvalidResize)
+        );
+        assert_eq!(
+            w.resize_table(0, id, rect("C1:D1")),
+            Err(TableError::InvalidRange)
+        );
         w.set_cell_text(0, 0, 6, "h").unwrap();
         w.add_table(0, rect("G1:G3"), true).unwrap();
-        assert_eq!(w.resize_table(0, id, rect("C1:G3")), Err(TableError::Overlap));
+        assert_eq!(
+            w.resize_table(0, id, rect("C1:G3")),
+            Err(TableError::Overlap)
+        );
 
         // With a totals row, the totals move to the new last row.
         let (mut w, id) = sales();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.set_cell_text(0, 5, 2, "5").unwrap();
         assert_eq!(w.resize_table(0, id, rect("A1:C7")), Ok(()));
         w.commit("resize");
-        assert_eq!([text(&w, "A5"), text(&w, "A7"), text(&w, "C7")], ["", "Total", "65"]);
+        assert_eq!(
+            [text(&w, "A5"), text(&w, "A7"), text(&w, "C7")],
+            ["", "Total", "65"]
+        );
         assert_eq!(formula(&w, "C7"), "=SUBTOTAL(109,[Sales])");
     }
 
@@ -3439,7 +3878,9 @@ mod tests {
         assert_eq!([formula(&w, "D2"), formula(&w, "D4")], ["=C2*2", "=C4*2"]);
         assert_eq!(text(&w, "D4"), "60");
         assert_eq!(
-            w.calculated_column_formula(0, id, 3).unwrap().to_text(Locale::en()),
+            w.calculated_column_formula(0, id, 3)
+                .unwrap()
+                .to_text(Locale::en()),
             "C2*2"
         );
         assert_eq!(w.calculated_column_formula(0, id, 2), None);
@@ -3455,11 +3896,17 @@ mod tests {
         assert_eq!(formula(&w, "D5"), "=C5*2");
         // Editing one cell of a calculated column changes the column.
         w.set_cell_text(0, 3, 3, "=C4*3").unwrap();
-        assert_eq!(w.tables_after_edit(0, Rect::cell(3, 3)).filled, Some((id, 3)));
+        assert_eq!(
+            w.tables_after_edit(0, Rect::cell(3, 3)).filled,
+            Some((id, 3))
+        );
         assert_eq!([formula(&w, "D2"), formula(&w, "D5")], ["=C2*3", "=C5*3"]);
         // A constant among them is left alone, and so are the others then.
         w.set_cell_text(0, 1, 3, "7").unwrap();
-        assert_eq!(w.tables_after_edit(0, Rect::cell(1, 3)), TableEdit::default());
+        assert_eq!(
+            w.tables_after_edit(0, Rect::cell(1, 3)),
+            TableEdit::default()
+        );
         w.set_cell_text(0, 2, 3, "=C3*4").unwrap();
         assert_eq!(w.tables_after_edit(0, Rect::cell(2, 3)).filled, None);
         assert_eq!(formula(&w, "D5"), "=C5*3");
@@ -3475,10 +3922,17 @@ mod tests {
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:E7"));
         // Not next to the table, or under its totals row: nothing happens.
         w.set_cell_text(0, 9, 0, "far").unwrap();
-        assert_eq!(w.tables_after_edit(0, Rect::cell(9, 0)), TableEdit::default());
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        assert_eq!(
+            w.tables_after_edit(0, Rect::cell(9, 0)),
+            TableEdit::default()
+        );
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.set_cell_text(0, 8, 0, "under totals").unwrap();
-        assert_eq!(w.tables_after_edit(0, Rect::cell(8, 0)), TableEdit::default());
+        assert_eq!(
+            w.tables_after_edit(0, Rect::cell(8, 0)),
+            TableEdit::default()
+        );
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:E8"));
     }
 
@@ -3514,13 +3968,17 @@ mod tests {
         assert_eq!([text(&w, "A1"), text(&w, "B1")], ["Column1", "Column2"]);
         // Editing data cells renames nothing.
         w.set_cell_text(0, 1, 0, "Pencil").unwrap();
-        assert_eq!(w.tables_after_edit(0, Rect::cell(1, 0)), TableEdit::default());
+        assert_eq!(
+            w.tables_after_edit(0, Rect::cell(1, 0)),
+            TableEdit::default()
+        );
     }
 
     #[test]
     fn table_rows() {
         let (mut w, id) = sales();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         for (cell, input) in [
             ("E3", "beside"),
             ("A6", "under"),
@@ -3553,7 +4011,10 @@ mod tests {
             ["Pen", "", "Ink", "Total", "under"]
         );
         assert_eq!(text(&w, "E3"), "beside");
-        assert_eq!([formula(&w, "F1"), formula(&w, "F2")], ["=C4", "=SUM(C2:C5)"]);
+        assert_eq!(
+            [formula(&w, "F1"), formula(&w, "F2")],
+            ["=C4", "=SUM(C2:C5)"]
+        );
         assert_eq!(formula(&w, "C6"), "=SUBTOTAL(109,[Sales])");
         assert_eq!(text(&w, "C6"), "60");
         // The new row has the calculated column and the look of its
@@ -3567,8 +4028,14 @@ mod tests {
             [text(&w, "A8"), formula(&w, "C8"), formula(&w, "D7")],
             ["Total", "=SUBTOTAL(109,[Sales])", "=C7+1"]
         );
-        assert_eq!(w.table_insert_rows(0, id, 0, 1), Err(TableError::InvalidRange));
-        assert_eq!(w.table_insert_rows(0, id, 8, 1), Err(TableError::InvalidRange));
+        assert_eq!(
+            w.table_insert_rows(0, id, 0, 1),
+            Err(TableError::InvalidRange)
+        );
+        assert_eq!(
+            w.table_insert_rows(0, id, 8, 1),
+            Err(TableError::InvalidRange)
+        );
 
         // Deleting them again.
         assert_eq!(w.table_delete_rows(0, id, 5, 2), Ok(()));
@@ -3576,14 +4043,22 @@ mod tests {
         w.commit("delete");
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:D5"));
         assert_eq!(
-            [text(&w, "A3"), text(&w, "A5"), text(&w, "A6"), text(&w, "E3")],
+            [
+                text(&w, "A3"),
+                text(&w, "A5"),
+                text(&w, "A6"),
+                text(&w, "E3")
+            ],
             ["Ink", "Total", "under", "beside"]
         );
         assert_eq!(
             [formula(&w, "F1"), formula(&w, "F2"), formula(&w, "C5")],
             ["=C3", "=SUM(C2:C4)", "=SUBTOTAL(109,[Sales])"]
         );
-        assert_eq!(w.table_delete_rows(0, id, 4, 1), Err(TableError::InvalidRange));
+        assert_eq!(
+            w.table_delete_rows(0, id, 4, 1),
+            Err(TableError::InvalidRange)
+        );
         // A reference to a deleted table cell is lost.
         assert_eq!(w.table_delete_rows(0, id, 2, 1), Ok(()));
         assert_eq!(formula(&w, "F1"), "=#REF!");
@@ -3592,7 +4067,12 @@ mod tests {
         w.commit("delete all");
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:D3"));
         assert_eq!(
-            [text(&w, "A2"), text(&w, "C2"), text(&w, "A3"), text(&w, "C3")],
+            [
+                text(&w, "A2"),
+                text(&w, "C2"),
+                text(&w, "A3"),
+                text(&w, "C3")
+            ],
             ["", "", "Total", "0"]
         );
 
@@ -3602,15 +4082,24 @@ mod tests {
         w.add_table(0, rect("B8:B9"), true).unwrap();
         assert_eq!(w.table_insert_rows(0, id, 2, 1), Err(TableError::Blocked));
         assert_eq!(w.table_delete_rows(0, id, 2, 1), Err(TableError::Blocked));
-        assert_eq!(w.set_table_option(0, id, TableOption::TotalsRow, true), Ok(()));
+        assert_eq!(
+            w.set_table_option(0, id, TableOption::TotalsRow, true),
+            Ok(())
+        );
         assert_eq!(w.table_insert_cols(0, id, 1, 1), Ok(()));
     }
 
     #[test]
     fn table_columns() {
         let (mut w, id) = sales();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
-        for (cell, input) in [("E3", "beside"), ("E9", "apart"), ("G1", "=SUM(C2:C4)"), ("G2", "=B2")] {
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
+        for (cell, input) in [
+            ("E3", "beside"),
+            ("E9", "apart"),
+            ("G1", "=SUM(C2:C4)"),
+            ("G2", "=B2"),
+        ] {
             let r = rect(cell);
             w.set_cell_text(0, r.r0, r.c0, input).unwrap();
         }
@@ -3620,7 +4109,10 @@ mod tests {
         assert_eq!(w.table_insert_cols(0, id, 1, 2), Ok(()));
         w.commit("insert");
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:E5"));
-        assert_eq!(names(&w, id), ["Product", "Column2", "Column3", "Region", "Sales"]);
+        assert_eq!(
+            names(&w, id),
+            ["Product", "Column2", "Column3", "Region", "Sales"]
+        );
         assert_eq!(
             [
                 text(&w, "B1"),
@@ -3640,7 +4132,10 @@ mod tests {
         // At the end.
         assert_eq!(w.table_insert_cols(0, id, 5, 1), Ok(()));
         assert_eq!(names(&w, id)[5], "Column6");
-        assert_eq!(w.table_insert_cols(0, id, 7, 1), Err(TableError::InvalidRange));
+        assert_eq!(
+            w.table_insert_cols(0, id, 7, 1),
+            Err(TableError::InvalidRange)
+        );
 
         assert_eq!(w.table_delete_cols(0, id, 5, 1), Ok(()));
         assert_eq!(w.table_delete_cols(0, id, 1, 2), Ok(()));
@@ -3656,8 +4151,18 @@ mod tests {
         assert_eq!(w.sheets[0].filtered_rows.len(), 2);
         assert_eq!(w.table_delete_cols(0, id, 2, 1), Ok(()));
         assert!(w.sheets[0].filtered_rows.is_empty());
-        assert!(!w.table(0, id).unwrap().auto_filter.as_ref().unwrap().is_filtered());
-        assert_eq!(w.table_delete_cols(0, id, 1, 2), Err(TableError::InvalidRange));
+        assert!(
+            !w.table(0, id)
+                .unwrap()
+                .auto_filter
+                .as_ref()
+                .unwrap()
+                .is_filtered()
+        );
+        assert_eq!(
+            w.table_delete_cols(0, id, 1, 2),
+            Err(TableError::InvalidRange)
+        );
         // Deleting every column deletes the table.
         assert_eq!(w.table_delete_cols(0, id, 0, 2), Ok(()));
         assert!(w.sheets[0].tables.is_empty());
@@ -3667,7 +4172,8 @@ mod tests {
     #[test]
     fn rows_and_columns_of_the_sheet() {
         let (mut w, id) = sales();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.set_filter_criteria(0, FilterScope::Table(id), 2, only(&["10", "30"]));
         w.commit("setup");
 
@@ -3681,7 +4187,14 @@ mod tests {
         // The new first data row is part of the total.
         assert_eq!(formula(&w, "C8"), "=SUBTOTAL(109,[Sales])");
         assert_eq!(text(&w, "C8"), "40");
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [5]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [5]
+        );
         w.delete_rows(0, 3, 1);
         w.delete_rows(0, 0, 2);
         w.commit("delete");
@@ -3783,21 +4296,42 @@ mod tests {
         w.set_filter_criteria(0, scope, 1, only(&["North"]));
         w.set_filter_criteria(0, FilterScope::Sheet, 0, only(&["b", "c"]));
         w.commit("filter");
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [1, 2]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [1, 2]
+        );
         let drop = w.filter_dropdown(0, scope, 0).unwrap();
         assert_eq!(drop.header, "Product");
         assert_eq!(
-            drop.items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(),
+            drop.items
+                .iter()
+                .map(|i| i.text.as_str())
+                .collect::<Vec<_>>(),
             ["Pad", "Pen"]
         );
         w.clear_filters(0, FilterScope::Sheet);
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2]
+        );
 
         // Sorting from a header button moves the table's rows only.
         w.clear_filters(0, scope);
-        w.sort_by_filter(0, scope, 2, crate::ops::SortOn::Values, true).unwrap();
+        w.sort_by_filter(0, scope, 2, crate::ops::SortOn::Values, true)
+            .unwrap();
         w.commit("sort");
-        assert_eq!([text(&w, "A2"), text(&w, "A4"), text(&w, "F2")], ["Pad", "Pen", "a"]);
+        assert_eq!(
+            [text(&w, "A2"), text(&w, "A4"), text(&w, "F2")],
+            ["Pad", "Pen", "a"]
+        );
         assert_eq!(w.filter_button_at(0, 0, 2).unwrap().sort, Some(true));
 
         // The Filter button of the ribbon, inside the table, hides and
@@ -3820,7 +4354,12 @@ mod tests {
         let list = w.add_table(0, rect("F1:F4"), true).unwrap();
         assert!(w.sheets[0].auto_filter.is_none());
         assert_eq!(
-            w.table(0, list).unwrap().auto_filter.as_ref().unwrap().range,
+            w.table(0, list)
+                .unwrap()
+                .auto_filter
+                .as_ref()
+                .unwrap()
+                .range,
             rect("F1:F4")
         );
     }
@@ -3829,7 +4368,13 @@ mod tests {
     fn rows_of_a_filtered_table() {
         let (mut w, id) = sales();
         let scope = FilterScope::Table(id);
-        let hidden = |w: &Workbook| w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>();
+        let hidden = |w: &Workbook| {
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>()
+        };
         w.set_filter_criteria(0, scope, 1, only(&["North"]));
         w.commit("filter");
         assert_eq!(hidden(&w), [2]);
@@ -3859,13 +4404,21 @@ mod tests {
         // Rows that leave the table on a resize are shown again.
         assert_eq!(w.resize_table(0, id, rect("A1:C3")), Ok(()));
         assert!(hidden(&w).is_empty());
-        assert!(w.table(0, id).unwrap().auto_filter.as_ref().unwrap().is_filtered());
+        assert!(
+            w.table(0, id)
+                .unwrap()
+                .auto_filter
+                .as_ref()
+                .unwrap()
+                .is_filtered()
+        );
     }
 
     #[test]
     fn duplicates_in_a_table() {
         let (mut w, id) = sales();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.set_cell_text(0, 3, 0, "pen").unwrap();
         w.set_cell_text(0, 5, 0, "under").unwrap();
         w.commit("setup");
@@ -3876,7 +4429,12 @@ mod tests {
         // under it.
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:C4"));
         assert_eq!(
-            [text(&w, "A3"), text(&w, "A4"), text(&w, "C4"), text(&w, "A5")],
+            [
+                text(&w, "A3"),
+                text(&w, "A4"),
+                text(&w, "C4"),
+                text(&w, "A5")
+            ],
             ["Ink", "Total", "30", "under"]
         );
         assert_eq!(formula(&w, "C4"), "=SUBTOTAL(109,[Sales])");
@@ -3891,13 +4449,17 @@ mod tests {
         let out = w.remove_duplicates(0, rect("A1:C4"), &[0], true).unwrap();
         assert_eq!((out.removed, out.remaining), (1, 2));
         assert_eq!(w.table(0, id).unwrap().range, rect("A1:C4"));
-        assert_eq!([text(&w, "A3"), text(&w, "A4"), text(&w, "A6")], ["Ink", "", "h"]);
+        assert_eq!(
+            [text(&w, "A3"), text(&w, "A4"), text(&w, "A6")],
+            ["Ink", "", "h"]
+        );
     }
 
     #[test]
     fn converting_and_deleting() {
         let (mut w, id) = sales();
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         w.set_filter_criteria(0, FilterScope::Table(id), 1, only(&["North"]));
         w.update_style(0, rect("B2"), &|s| s.fill = Some(Color(0xFF0000)));
         w.commit("setup");
@@ -3937,7 +4499,8 @@ mod tests {
         let (mut w, id) = sales();
         let at = |w: &Workbook, range: &str, from: Option<&str>| {
             let from = from.map(|f| (rect(f).r0, rect(f).c0));
-            w.structured_reference(0, rect(range), from).unwrap_or_default()
+            w.structured_reference(0, rect(range), from)
+                .unwrap_or_default()
         };
         assert_eq!(at(&w, "C2:C4", None), "Table1[Sales]");
         assert_eq!(at(&w, "A2:C4", None), "Table1");
@@ -3958,7 +4521,8 @@ mod tests {
         assert_eq!(at(&w, "C2:D4", None), "");
         assert_eq!(at(&w, "E5", None), "");
 
-        w.set_table_option(0, id, TableOption::TotalsRow, true).unwrap();
+        w.set_table_option(0, id, TableOption::TotalsRow, true)
+            .unwrap();
         assert_eq!(at(&w, "C5", None), "Table1[[#Totals],[Sales]]");
         assert_eq!(at(&w, "A5:C5", None), "Table1[#Totals]");
         // Names with spaces or special characters.

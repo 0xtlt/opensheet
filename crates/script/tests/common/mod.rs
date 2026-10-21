@@ -94,7 +94,9 @@ pub fn text(wb: &Workbook, name: &str) -> String {
 
 /// `main` around statements; `sheet` is the active worksheet.
 pub fn script(body: &str) -> String {
-    format!("function main(workbook: ExcelScript.Workbook) {{ const sheet = workbook.getActiveWorksheet();\n{body}\n}}\n")
+    format!(
+        "function main(workbook: ExcelScript.Workbook) {{ const sheet = workbook.getActiveWorksheet();\n{body}\n}}\n"
+    )
 }
 
 pub fn run_with(wb: &mut Workbook, source: &str, context: &Context) -> Outcome {
@@ -103,8 +105,18 @@ pub fn run_with(wb: &mut Workbook, source: &str, context: &Context) -> Outcome {
 }
 
 fn explain(source: &str, error: &ScriptError) -> String {
-    let line = error.line.and_then(|l| source.lines().nth(l as usize - 1)).unwrap_or_default();
-    format!("{:?} at {:?}:{:?}: {}\n    {}", error.kind, error.line, error.column, error.message, line.trim())
+    let line = error
+        .line
+        .and_then(|l| source.lines().nth(l as usize - 1))
+        .unwrap_or_default();
+    format!(
+        "{:?} at {:?}:{:?}: {}\n    {}",
+        error.kind,
+        error.line,
+        error.column,
+        error.message,
+        line.trim()
+    )
 }
 
 /// Run a script that must reach its end, as the application does: the
@@ -113,7 +125,11 @@ pub fn ok_with(wb: &mut Workbook, source: &str, context: &Context) -> Outcome {
     let before = state(wb);
     let outcome = run_with(wb, source, context);
     if let Some(error) = &outcome.error {
-        panic!("the script failed: {}\nlogs: {:?}", explain(source, error), outcome.logs);
+        panic!(
+            "the script failed: {}\nlogs: {:?}",
+            explain(source, error),
+            outcome.logs
+        );
     }
     if wb.commit("Script") {
         let after = state(wb);
@@ -139,10 +155,19 @@ pub fn ok_body(wb: &mut Workbook, body: &str) -> Outcome {
 pub fn fails_with(wb: &mut Workbook, source: &str, context: &Context) -> (ScriptError, Outcome) {
     let before = state(wb);
     let outcome = run_with(wb, source, context);
-    let error = outcome.error.clone().unwrap_or_else(|| panic!("the script should have failed; logs: {:?}", outcome.logs));
-    assert!(state(wb) == before, "a failed script leaves the workbook as it was");
+    let error = outcome
+        .error
+        .clone()
+        .unwrap_or_else(|| panic!("the script should have failed; logs: {:?}", outcome.logs));
+    assert!(
+        state(wb) == before,
+        "a failed script leaves the workbook as it was"
+    );
     wb.rollback();
-    assert!(state(wb) == before, "the caller's rollback changes nothing more");
+    assert!(
+        state(wb) == before,
+        "the caller's rollback changes nothing more"
+    );
     assert!(!wb.commit("nothing"), "nothing is left to commit");
     (error, outcome)
 }

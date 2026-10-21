@@ -9,8 +9,8 @@
 
 use crate::app::ExcelApp;
 use gpui::{
-    App, AppContext, Bounds, Context, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, point, px,
-    size,
+    App, AppContext, Bounds, Context, TitlebarOptions, Window, WindowBounds, WindowHandle,
+    WindowOptions, point, px, size,
 };
 use std::path::{Path, PathBuf};
 
@@ -60,7 +60,8 @@ pub fn open_window(
             // What the folding ribbon kept of this window goes with it.
             let id = window.window_handle().window_id();
             cx.new(|cx| {
-                cx.on_release(move |_, _| crate::ribbon_fold::forget(id)).detach();
+                cx.on_release(move |_, _| crate::ribbon_fold::forget(id))
+                    .detach();
                 let mut app = ExcelApp::new(window, cx);
                 setup(&mut app, window, cx);
                 app
@@ -94,7 +95,11 @@ fn percent_decode(text: &str) -> Vec<u8> {
     let mut i = 0;
     while i < bytes.len() {
         let hex = |b: u8| (b as char).to_digit(16);
-        match (bytes[i], bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex)) {
+        match (
+            bytes[i],
+            bytes.get(i + 1).copied().and_then(hex),
+            bytes.get(i + 2).copied().and_then(hex),
+        ) {
             (b'%', Some(high), Some(low)) => {
                 out.push((high * 16 + low) as u8);
                 i += 3;
@@ -179,7 +184,11 @@ fn canonical(path: &Path) -> PathBuf {
 pub fn open_paths(paths: Vec<PathBuf>, cx: &mut App) {
     for path in paths {
         let path = canonical(&path);
-        let handles: Vec<WindowHandle<ExcelApp>> = cx.windows().into_iter().filter_map(|w| w.downcast()).collect();
+        let handles: Vec<WindowHandle<ExcelApp>> = cx
+            .windows()
+            .into_iter()
+            .filter_map(|w| w.downcast())
+            .collect();
         let active = cx.active_window().map(|w| w.window_id());
         let slots: Vec<Slot> = handles
             .iter()
@@ -194,7 +203,9 @@ pub fn open_paths(paths: Vec<PathBuf>, cx: &mut App) {
             .collect();
         match placement(&path, &slots) {
             Placement::Activate(index) => {
-                handles[index].update(cx, |_, window, _| window.activate_window()).ok();
+                handles[index]
+                    .update(cx, |_, window, _| window.activate_window())
+                    .ok();
             }
             Placement::Replace(index) => {
                 handles[index]
@@ -206,7 +217,9 @@ pub fn open_paths(paths: Vec<PathBuf>, cx: &mut App) {
             }
             Placement::NewWindow => {
                 if let Some(handle) = open_window(cx, move |app, _, cx| app.load_path(path, cx)) {
-                    handle.update(cx, |_, window, _| window.activate_window()).ok();
+                    handle
+                        .update(cx, |_, window, _| window.activate_window())
+                        .ok();
                 }
             }
         }
@@ -221,19 +234,35 @@ mod tests {
 
     #[test]
     fn file_urls_become_paths() {
-        assert_eq!(path_of_url("file:///Users/a/Book.xlsx"), Some(PathBuf::from("/Users/a/Book.xlsx")));
+        assert_eq!(
+            path_of_url("file:///Users/a/Book.xlsx"),
+            Some(PathBuf::from("/Users/a/Book.xlsx"))
+        );
         assert_eq!(
             path_of_url("file:///Users/a/My%20Book%20%C3%A9t%C3%A9.xlsx"),
             Some(PathBuf::from("/Users/a/My Book été.xlsx"))
         );
-        assert_eq!(path_of_url("file://localhost/tmp/a%23b.csv"), Some(PathBuf::from("/tmp/a#b.csv")));
-        assert_eq!(path_of_url("file:///tmp/100%.csv"), Some(PathBuf::from("/tmp/100%.csv")));
-        assert_eq!(path_of_url("file:///tmp/a.csv?x=1"), Some(PathBuf::from("/tmp/a.csv")));
+        assert_eq!(
+            path_of_url("file://localhost/tmp/a%23b.csv"),
+            Some(PathBuf::from("/tmp/a#b.csv"))
+        );
+        assert_eq!(
+            path_of_url("file:///tmp/100%.csv"),
+            Some(PathBuf::from("/tmp/100%.csv"))
+        );
+        assert_eq!(
+            path_of_url("file:///tmp/a.csv?x=1"),
+            Some(PathBuf::from("/tmp/a.csv"))
+        );
         assert_eq!(path_of_url("file://server/share/a.csv"), None);
         assert_eq!(path_of_url("https://example.com/a.csv"), None);
         assert_eq!(path_of_url("opensheet://open"), None);
         assert_eq!(
-            paths_of_urls(&["file:///a.csv".into(), "mailto:x@example.com".into(), "file:///b.xlsx".into()]),
+            paths_of_urls(&[
+                "file:///a.csv".into(),
+                "mailto:x@example.com".into(),
+                "file:///b.xlsx".into()
+            ]),
             [PathBuf::from("/a.csv"), PathBuf::from("/b.xlsx")]
         );
     }
@@ -252,23 +281,43 @@ mod tests {
         // No window yet (the app launched by the file).
         assert_eq!(placement(file, &[]), Placement::NewWindow);
         // Book1 as it came.
-        assert_eq!(placement(file, &[slot(None, true, true)]), Placement::Replace(0));
+        assert_eq!(
+            placement(file, &[slot(None, true, true)]),
+            Placement::Replace(0)
+        );
         // Book1 with something typed, or another file.
-        assert_eq!(placement(file, &[slot(None, false, true)]), Placement::NewWindow);
-        assert_eq!(placement(file, &[slot(Some("/d/b.xlsx"), false, true)]), Placement::NewWindow);
+        assert_eq!(
+            placement(file, &[slot(None, false, true)]),
+            Placement::NewWindow
+        );
+        assert_eq!(
+            placement(file, &[slot(Some("/d/b.xlsx"), false, true)]),
+            Placement::NewWindow
+        );
         // Already open: its window comes to the front, wherever it is.
-        let open = [slot(None, true, true), slot(Some("/d/a.xlsx"), false, false)];
+        let open = [
+            slot(None, true, true),
+            slot(Some("/d/a.xlsx"), false, false),
+        ];
         assert_eq!(placement(file, &open), Placement::Activate(1));
         // Of two untouched books, the one in front.
-        let two = [slot(None, true, false), slot(Some("/d/b.xlsx"), false, false), slot(None, true, true)];
+        let two = [
+            slot(None, true, false),
+            slot(Some("/d/b.xlsx"), false, false),
+            slot(None, true, true),
+        ];
         assert_eq!(placement(file, &two), Placement::Replace(2));
-        let behind = [slot(Some("/d/b.xlsx"), false, true), slot(None, true, false)];
+        let behind = [
+            slot(Some("/d/b.xlsx"), false, true),
+            slot(None, true, false),
+        ];
         assert_eq!(placement(file, &behind), Placement::Replace(1));
     }
 
     /// A folder of its own for the files of a test.
     fn folder(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("opensheet-windows-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("opensheet-windows-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -322,8 +371,12 @@ mod tests {
         assert_eq!(active_title(cx).as_deref(), Some("Alpha"));
 
         // Each window keeps its own workbook and takes its own commands.
-        let windows: Vec<WindowHandle<ExcelApp>> =
-            cx.update(|cx| cx.windows().into_iter().filter_map(|w| w.downcast()).collect());
+        let windows: Vec<WindowHandle<ExcelApp>> = cx.update(|cx| {
+            cx.windows()
+                .into_iter()
+                .filter_map(|w| w.downcast())
+                .collect()
+        });
         let alpha = windows
             .iter()
             .copied()
@@ -336,15 +389,23 @@ mod tests {
         assert_eq!(cell(alpha, cx), Value::Number(1.0));
         assert_eq!(cell(beta, cx), Value::Text("x".into()));
         cx.update(|cx| {
-            beta.update(cx, |_, window, cx| window.dispatch_action(Box::new(crate::app::ZoomIn), cx)).unwrap();
+            beta.update(cx, |_, window, cx| {
+                window.dispatch_action(Box::new(crate::app::ZoomIn), cx)
+            })
+            .unwrap();
         });
         cx.run_until_parked();
-        let zoom = |w: WindowHandle<ExcelApp>, cx: &mut TestAppContext| cx.update(|cx| w.read(cx).unwrap().zoom);
+        let zoom = |w: WindowHandle<ExcelApp>, cx: &mut TestAppContext| {
+            cx.update(|cx| w.read(cx).unwrap().zoom)
+        };
         assert!(zoom(beta, cx) > 1.0);
         assert_eq!(zoom(alpha, cx), 1.0);
 
         // Closing one leaves the other as it was.
-        cx.update(|cx| beta.update(cx, |_, window, _| window.remove_window()).unwrap());
+        cx.update(|cx| {
+            beta.update(cx, |_, window, _| window.remove_window())
+                .unwrap()
+        });
         cx.run_until_parked();
         assert_eq!(titles(cx), ["Alpha"]);
         assert_eq!(cell(alpha, cx), Value::Number(1.0));
@@ -390,7 +451,11 @@ mod tests {
             (alpha, beta)
         });
         cx.run_until_parked();
-        cx.update(|cx| alpha.update(cx, |app, window, cx| app.request_quit(window, cx)).unwrap());
+        cx.update(|cx| {
+            alpha
+                .update(cx, |app, window, cx| app.request_quit(window, cx))
+                .unwrap()
+        });
         cx.run_until_parked();
         let (question, _) = cx.pending_prompt().expect("a question for Alpha");
         assert!(question.contains("Alpha"), "{question}");

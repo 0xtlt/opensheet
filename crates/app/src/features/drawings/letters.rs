@@ -17,7 +17,9 @@ use crate::grid::{FontResolver, pt_to_px};
 use opensheet_engine::drawing::{Shape, TEXT_MARGIN, TextAlign, TextAnchor};
 use opensheet_engine::style::{Color, Underline};
 use opensheet_engine::textwarp::{LinePlace, WarpAlign, WarpLine};
-use opensheet_engine::wordart::{GradientKind, TextEffects, TextGradient, TextReflection, TextShadow};
+use opensheet_engine::wordart::{
+    GradientKind, TextEffects, TextGradient, TextReflection, TextShadow,
+};
 use opensheet_print::{Canvas, Face, FontDb, LineJoin, OutlineStep, Paint, Path, RectF, Stroke};
 use std::fmt::Write as _;
 use std::sync::Arc;
@@ -97,14 +99,27 @@ impl Letters {
     /// The text of a shape as paths, in its frame `width` by `height`
     /// pixels at a zoom of `zoom`. `None` when the text is empty or one
     /// of its fonts has no outlines to give.
-    pub fn of(shape: &Shape, width: f64, height: f64, zoom: f64, fonts: &FontResolver) -> Option<Letters> {
+    pub fn of(
+        shape: &Shape,
+        width: f64,
+        height: f64,
+        zoom: f64,
+        fonts: &FontResolver,
+    ) -> Option<Letters> {
         let resolve = |name: &Arc<str>| fonts.resolve(name).to_string();
         Letters::with_fonts(shape, width, height, zoom, &resolve, FontDb::system())
     }
 
     /// `of` with the fonts given: `family` names the family a font of the
     /// workbook is drawn with on this machine.
-    pub fn with_fonts(shape: &Shape, width: f64, height: f64, zoom: f64, family: &dyn Fn(&Arc<str>) -> String, db: &FontDb) -> Option<Letters> {
+    pub fn with_fonts(
+        shape: &Shape,
+        width: f64,
+        height: f64,
+        zoom: f64,
+        family: &dyn Fn(&Arc<str>) -> String,
+        db: &FontDb,
+    ) -> Option<Letters> {
         if shape.text.trim().is_empty() {
             return None;
         }
@@ -187,7 +202,12 @@ impl Letters {
             TextAlign::Center => WarpAlign::Centre,
             TextAlign::Right => WarpAlign::Right,
         };
-        let mut bounds = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let mut bounds = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
         if let Some(warp) = &shape.warp {
             // Warped: the guide curves fill the text rectangle, and the
             // lines are dealt out to them.
@@ -205,8 +225,13 @@ impl Letters {
             // box of its font: the letters reach both curves and both ends
             // (seen by opening the same file in Excel). Letters set on a
             // path keep the measures of their font.
-            let stretched = places.iter().all(|place| matches!(place, LinePlace::Between { .. }));
-            let inked: Vec<Option<Ink>> = lines.iter().map(|line| if stretched { ink(line) } else { None }).collect();
+            let stretched = places
+                .iter()
+                .all(|place| matches!(place, LinePlace::Between { .. }));
+            let inked: Vec<Option<Ink>> = lines
+                .iter()
+                .map(|line| if stretched { ink(line) } else { None })
+                .collect();
             let measured: Vec<WarpLine> = measured
                 .iter()
                 .zip(&inked)
@@ -222,7 +247,9 @@ impl Letters {
             if stretched {
                 places = geometry.place(&measured, align);
             }
-            for (((line, measure), place), ink) in lines.iter().zip(&measured).zip(&places).zip(&inked) {
+            for (((line, measure), place), ink) in
+                lines.iter().zip(&measured).zip(&places).zip(&inked)
+            {
                 let bends = matches!(place, LinePlace::Between { .. });
                 let left = ink.as_ref().map_or(0.0, |ink| ink.left);
                 let map = |x: f64, y: f64, centre: f64| {
@@ -231,14 +258,29 @@ impl Letters {
                 };
                 trace(line, &mut pieces, bends, &map);
             }
-            for point in pieces.iter().flat_map(|piece| piece.contours.iter().flatten()) {
-                bounds = (bounds.0.min(point.0), bounds.1.min(point.1), bounds.2.max(point.0), bounds.3.max(point.1));
+            for point in pieces
+                .iter()
+                .flat_map(|piece| piece.contours.iter().flatten())
+            {
+                bounds = (
+                    bounds.0.min(point.0),
+                    bounds.1.min(point.1),
+                    bounds.2.max(point.0),
+                    bounds.3.max(point.1),
+                );
             }
         } else {
             // Level: lines broken at the width of the rectangle, stacked
             // and held at the top, the middle or the bottom of it.
-            let lines = if shape.wrap { wrapped(lines, room_x) } else { lines };
-            let heights: Vec<f64> = lines.iter().map(|line| (line.size * 1.2).round().max(1.0)).collect();
+            let lines = if shape.wrap {
+                wrapped(lines, room_x)
+            } else {
+                lines
+            };
+            let heights: Vec<f64> = lines
+                .iter()
+                .map(|line| (line.size * 1.2).round().max(1.0))
+                .collect();
             let total: f64 = heights.iter().sum();
             let mut y = frame.1
                 + match shape.anchor {
@@ -255,15 +297,26 @@ impl Letters {
                     };
                 // The baseline where GPUI puts it in a line of this height.
                 let baseline = y + (line_height - line.ascent - line.descent) / 2.0 + line.ascent;
-                trace(line, &mut pieces, false, &|px, py, _| (x + px, baseline + py));
-                bounds = (bounds.0.min(x), bounds.1.min(y), bounds.2.max(x + line.width), bounds.3.max(y + line_height));
+                trace(line, &mut pieces, false, &|px, py, _| {
+                    (x + px, baseline + py)
+                });
+                bounds = (
+                    bounds.0.min(x),
+                    bounds.1.min(y),
+                    bounds.2.max(x + line.width),
+                    bounds.3.max(y + line_height),
+                );
                 y += line_height;
             }
         }
         if !bounds.0.is_finite() || !bounds.2.is_finite() {
             return None;
         }
-        Some(Letters { pieces, bounds, per_point })
+        Some(Letters {
+            pieces,
+            bounds,
+            per_point,
+        })
     }
 
     /// How far around its bounds the text may reach: outlines, shadows,
@@ -274,7 +327,10 @@ impl Letters {
             .iter()
             .map(|piece| {
                 let outline = piece.effects.outline.map_or(0.0, |line| line.width as f64);
-                let shadow = piece.effects.shadow.map_or(0.0, |shadow| (shadow.distance + 2.0 * shadow.blur) as f64);
+                let shadow = piece
+                    .effects
+                    .shadow
+                    .map_or(0.0, |shadow| (shadow.distance + 2.0 * shadow.blur) as f64);
                 (outline + shadow) * self.per_point + piece.thicken
             })
             .fold(0.0, f64::max);
@@ -285,9 +341,19 @@ impl Letters {
     /// reflection mirrors the ink, not the box of the lines: opened in
     /// Excel, the mirror image of a word starts right under its letters.
     fn ink_span(&self) -> (f64, f64) {
-        let ys = self.pieces.iter().flat_map(|piece| piece.contours.iter().flatten()).map(|point| point.1);
-        let (top, bottom) = ys.fold((f64::INFINITY, f64::NEG_INFINITY), |(top, bottom), y| (top.min(y), bottom.max(y)));
-        if top.is_finite() && bottom > top { (top, bottom) } else { (self.bounds.1, self.bounds.3) }
+        let ys = self
+            .pieces
+            .iter()
+            .flat_map(|piece| piece.contours.iter().flatten())
+            .map(|point| point.1);
+        let (top, bottom) = ys.fold((f64::INFINITY, f64::NEG_INFINITY), |(top, bottom), y| {
+            (top.min(y), bottom.max(y))
+        });
+        if top.is_finite() && bottom > top {
+            (top, bottom)
+        } else {
+            (self.bounds.1, self.bounds.3)
+        }
     }
 
     /// The reflection of the text, if any piece has one: how far under
@@ -297,7 +363,9 @@ impl Letters {
         self.pieces
             .iter()
             .filter_map(|piece| piece.effects.reflection)
-            .map(|reflection| reflection.distance as f64 * self.per_point + reflection.reach as f64 * height)
+            .map(|reflection| {
+                reflection.distance as f64 * self.per_point + reflection.reach as f64 * height
+            })
             .fold(0.0, f64::max)
     }
 
@@ -321,10 +389,26 @@ impl Letters {
                 (pivot.0 + dx * cos - dy * sin, pivot.1 + dx * sin + dy * cos)
             });
             (
-                corners.iter().map(|c| c.0).fold(f64::INFINITY, f64::min).floor(),
-                corners.iter().map(|c| c.1).fold(f64::INFINITY, f64::min).floor(),
-                corners.iter().map(|c| c.0).fold(f64::NEG_INFINITY, f64::max).ceil(),
-                corners.iter().map(|c| c.1).fold(f64::NEG_INFINITY, f64::max).ceil(),
+                corners
+                    .iter()
+                    .map(|c| c.0)
+                    .fold(f64::INFINITY, f64::min)
+                    .floor(),
+                corners
+                    .iter()
+                    .map(|c| c.1)
+                    .fold(f64::INFINITY, f64::min)
+                    .floor(),
+                corners
+                    .iter()
+                    .map(|c| c.0)
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    .ceil(),
+                corners
+                    .iter()
+                    .map(|c| c.1)
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    .ceil(),
             )
         } else {
             (x0.floor(), y0.floor(), x1.ceil(), y1.ceil())
@@ -344,13 +428,25 @@ impl Letters {
         let mut gradients: Vec<TextGradient> = Vec::new();
         let mut reflections: Vec<TextReflection> = Vec::new();
         for piece in &self.pieces {
-            if let Some(shadow) = piece.effects.shadow.filter(|shadow| !shadows.contains(shadow)) {
+            if let Some(shadow) = piece
+                .effects
+                .shadow
+                .filter(|shadow| !shadows.contains(shadow))
+            {
                 shadows.push(shadow);
             }
-            if let Some(gradient) = piece.effects.gradient.filter(|gradient| !gradients.contains(gradient)) {
+            if let Some(gradient) = piece
+                .effects
+                .gradient
+                .filter(|gradient| !gradients.contains(gradient))
+            {
                 gradients.push(gradient);
             }
-            if let Some(reflection) = piece.effects.reflection.filter(|reflection| !reflections.contains(reflection)) {
+            if let Some(reflection) = piece
+                .effects
+                .reflection
+                .filter(|reflection| !reflections.contains(reflection))
+            {
                 reflections.push(reflection);
             }
         }
@@ -386,7 +482,12 @@ impl Letters {
                 }
             }
             for stop in gradient.stops() {
-                let _ = write!(out, r#"<stop offset="{:.4}" stop-color="{}"/>"#, stop.at, hex(stop.color));
+                let _ = write!(
+                    out,
+                    r#"<stop offset="{:.4}" stop-color="{}"/>"#,
+                    stop.at,
+                    hex(stop.color)
+                );
             }
             out.push_str(match gradient.kind {
                 GradientKind::Linear(_) => "</linearGradient>",
@@ -417,23 +518,43 @@ impl Letters {
             );
             let spread = reflection.blur as f64 * self.per_point / 2.0;
             if spread > 0.0 {
-                let _ = write!(out, r#"<filter id="r{i}"><feGaussianBlur stdDeviation="{spread:.2}"/></filter>"#);
+                let _ = write!(
+                    out,
+                    r#"<filter id="r{i}"><feGaussianBlur stdDeviation="{spread:.2}"/></filter>"#
+                );
             }
         }
         out.push_str("</defs>");
-        let _ = write!(out, r#"<g transform="translate({:.2} {:.2})">"#, -left, -top);
+        let _ = write!(
+            out,
+            r#"<g transform="translate({:.2} {:.2})">"#,
+            -left, -top
+        );
         if turned {
-            let _ = write!(out, r#"<g transform="rotate({turn:.2} {:.2} {:.2})">"#, pivot.0, pivot.1);
+            let _ = write!(
+                out,
+                r#"<g transform="rotate({turn:.2} {:.2} {:.2})">"#,
+                pivot.0, pivot.1
+            );
         }
         // Shadows lie under everything, reflections under the letters.
         for (i, shadow) in shadows.iter().enumerate() {
             let (dx, dy) = shadow.shift();
-            let _ = write!(out, r#"<g transform="translate({:.2} {:.2})""#, dx as f64 * self.per_point, dy as f64 * self.per_point);
+            let _ = write!(
+                out,
+                r#"<g transform="translate({:.2} {:.2})""#,
+                dx as f64 * self.per_point,
+                dy as f64 * self.per_point
+            );
             if shadow.blur > 0.0 {
                 let _ = write!(out, r#" filter="url(#s{i})""#);
             }
             out.push('>');
-            for piece in self.pieces.iter().filter(|piece| piece.effects.shadow.as_ref() == Some(shadow)) {
+            for piece in self
+                .pieces
+                .iter()
+                .filter(|piece| piece.effects.shadow.as_ref() == Some(shadow))
+            {
                 self.path(piece, Some(shadow), &gradients, &mut out);
             }
             out.push_str("</g>");
@@ -445,8 +566,16 @@ impl Letters {
             if reflection.blur > 0.0 {
                 let _ = write!(out, r#" filter="url(#r{i})""#);
             }
-            let _ = write!(out, r#"><g transform="translate(0 {:.2}) scale(1 -1)">"#, 2.0 * mirror);
-            for piece in self.pieces.iter().filter(|piece| piece.effects.reflection.as_ref() == Some(reflection)) {
+            let _ = write!(
+                out,
+                r#"><g transform="translate(0 {:.2}) scale(1 -1)">"#,
+                2.0 * mirror
+            );
+            for piece in self
+                .pieces
+                .iter()
+                .filter(|piece| piece.effects.reflection.as_ref() == Some(reflection))
+            {
                 self.path(piece, None, &gradients, &mut out);
             }
             out.push_str("</g></g>");
@@ -463,19 +592,34 @@ impl Letters {
 
     /// One piece as a path element: in its own look, or as the shadow it
     /// casts.
-    fn path(&self, piece: &Piece, shadow: Option<&TextShadow>, gradients: &[TextGradient], out: &mut String) {
+    fn path(
+        &self,
+        piece: &Piece,
+        shadow: Option<&TextShadow>,
+        gradients: &[TextGradient],
+        out: &mut String,
+    ) {
         if piece.contours.is_empty() {
             return;
         }
         out.push_str(r#"<path d=""#);
         for contour in &piece.contours {
             for (i, point) in contour.iter().enumerate() {
-                let _ = write!(out, "{}{:.2} {:.2}", if i == 0 { "M" } else { "L" }, point.0, point.1);
+                let _ = write!(
+                    out,
+                    "{}{:.2} {:.2}",
+                    if i == 0 { "M" } else { "L" },
+                    point.0,
+                    point.1
+                );
             }
             out.push('Z');
         }
         out.push('"');
-        let outline = piece.effects.outline.map(|line| (line.color, (line.width as f64 * self.per_point).max(0.5)));
+        let outline = piece
+            .effects
+            .outline
+            .map(|line| (line.color, (line.width as f64 * self.per_point).max(0.5)));
         match shadow {
             Some(shadow) => {
                 let (ink, opacity) = (hex(shadow.color), shadow.opacity.clamp(0.0, 1.0));
@@ -485,11 +629,18 @@ impl Letters {
                     let _ = write!(out, r#" fill="{ink}" fill-opacity="{opacity}""#);
                 }
                 if let Some((_, width)) = outline {
-                    let _ = write!(out, r#" stroke="{ink}" stroke-opacity="{opacity}" stroke-width="{width:.2}" stroke-linejoin="round""#);
+                    let _ = write!(
+                        out,
+                        r#" stroke="{ink}" stroke-opacity="{opacity}" stroke-width="{width:.2}" stroke-linejoin="round""#
+                    );
                 }
             }
             None => {
-                let paint = match piece.effects.gradient.and_then(|gradient| gradients.iter().position(|known| *known == gradient)) {
+                let paint = match piece
+                    .effects
+                    .gradient
+                    .and_then(|gradient| gradients.iter().position(|known| *known == gradient))
+                {
                     Some(index) => format!("url(#g{index})"),
                     None => hex(piece.color),
                 };
@@ -499,9 +650,17 @@ impl Letters {
                     let _ = write!(out, r#" fill="{paint}""#);
                 }
                 if let Some((color, width)) = outline {
-                    let _ = write!(out, r#" stroke="{}" stroke-width="{width:.2}" stroke-linejoin="round""#, hex(color));
+                    let _ = write!(
+                        out,
+                        r#" stroke="{}" stroke-width="{width:.2}" stroke-linejoin="round""#,
+                        hex(color)
+                    );
                 } else if piece.thicken > 0.0 && !piece.effects.hollow {
-                    let _ = write!(out, r#" stroke="{paint}" stroke-width="{:.2}" stroke-linejoin="round""#, piece.thicken);
+                    let _ = write!(
+                        out,
+                        r#" stroke="{paint}" stroke-width="{:.2}" stroke-linejoin="round""#,
+                        piece.thicken
+                    );
                 }
             }
         }
@@ -536,7 +695,11 @@ impl Letters {
         for contour in &piece.contours {
             for (i, point) in contour.iter().enumerate() {
                 let (x, y) = through(*point);
-                path = if i == 0 { path.move_to(x, y) } else { path.line_to(x, y) };
+                path = if i == 0 {
+                    path.move_to(x, y)
+                } else {
+                    path.line_to(x, y)
+                };
             }
             path = path.close();
         }
@@ -549,7 +712,10 @@ impl Letters {
     /// bands: it is printed in the colour of its middle.
     fn page_fill(&self, piece: &Piece, opacity: f32, canvas: &mut Canvas) {
         let plain = |color: Color, canvas: &mut Canvas| {
-            canvas.fill_path(Letters::page_path(piece, &|p| p), Paint::translucent(color, opacity));
+            canvas.fill_path(
+                Letters::page_path(piece, &|p| p),
+                Paint::translucent(color, opacity),
+            );
         };
         match piece.effects.gradient {
             None => plain(piece.color, canvas),
@@ -566,19 +732,32 @@ impl Letters {
                         (dx * cos + dy * sin, -dx * sin + dy * cos)
                     };
                     let path = Letters::page_path(piece, &level);
-                    let reach = (self.bounds.2 - self.bounds.0).hypot(self.bounds.3 - self.bounds.1) + self.pad();
+                    let reach = (self.bounds.2 - self.bounds.0)
+                        .hypot(self.bounds.3 - self.bounds.1)
+                        + self.pad();
                     canvas.save();
                     canvas.transform([cos, sin, -sin, cos, from.0, from.1]);
                     for band in 0..BANDS {
-                        let (start, end) = (band as f64 / BANDS as f64, (band + 1) as f64 / BANDS as f64);
+                        let (start, end) =
+                            (band as f64 / BANDS as f64, (band + 1) as f64 / BANDS as f64);
                         // The first and the last band go on to the edge
                         // of the letters; neighbours overlap a hair, so
                         // that no gap shows between them.
                         let x0 = if band == 0 { -reach } else { start * length };
-                        let x1 = if band + 1 == BANDS { length + reach } else { end * length + 0.25 };
+                        let x1 = if band + 1 == BANDS {
+                            length + reach
+                        } else {
+                            end * length + 0.25
+                        };
                         canvas.save();
                         canvas.clip_rect(RectF::new(x0, -reach, x1 - x0, 2.0 * reach));
-                        canvas.fill_path(path.clone(), Paint::translucent(gradient.color_at(((start + end) / 2.0) as f32), opacity));
+                        canvas.fill_path(
+                            path.clone(),
+                            Paint::translucent(
+                                gradient.color_at(((start + end) / 2.0) as f32),
+                                opacity,
+                            ),
+                        );
                         canvas.restore();
                     }
                     canvas.restore();
@@ -590,20 +769,38 @@ impl Letters {
     /// Draw the text on a page: shadows (not blurred), reflections,
     /// then the letters with their outlines.
     pub fn print(&self, canvas: &mut Canvas) {
-        let outline = |piece: &Piece| piece.effects.outline.map(|line| (line.color, (line.width as f64 * self.per_point).max(0.5)));
-        let round = |color: Color, opacity: f32, width: f64| Stroke::solid(Paint::translucent(color, opacity), width).join(LineJoin::Round);
+        let outline = |piece: &Piece| {
+            piece
+                .effects
+                .outline
+                .map(|line| (line.color, (line.width as f64 * self.per_point).max(0.5)))
+        };
+        let round = |color: Color, opacity: f32, width: f64| {
+            Stroke::solid(Paint::translucent(color, opacity), width).join(LineJoin::Round)
+        };
         for piece in &self.pieces {
             let Some(shadow) = piece.effects.shadow else {
                 continue;
             };
             let (dx, dy) = shadow.shift();
-            let moved = |p: P| (p.0 + dx as f64 * self.per_point, p.1 + dy as f64 * self.per_point);
+            let moved = |p: P| {
+                (
+                    p.0 + dx as f64 * self.per_point,
+                    p.1 + dy as f64 * self.per_point,
+                )
+            };
             let opacity = shadow.opacity.clamp(0.0, 1.0);
             if !piece.effects.hollow {
-                canvas.fill_path(Letters::page_path(piece, &moved), Paint::translucent(shadow.color, opacity));
+                canvas.fill_path(
+                    Letters::page_path(piece, &moved),
+                    Paint::translucent(shadow.color, opacity),
+                );
             }
             if let Some((_, width)) = outline(piece) {
-                canvas.stroke_path(Letters::page_path(piece, &moved), round(shadow.color, opacity, width));
+                canvas.stroke_path(
+                    Letters::page_path(piece, &moved),
+                    round(shadow.color, opacity, width),
+                );
             }
         }
         let (x0, _, x1, _) = self.bounds;
@@ -621,15 +818,24 @@ impl Letters {
             let bands = BANDS / 2;
             for band in 0..bands {
                 let (start, end) = (band as f64 / bands as f64, (band + 1) as f64 / bands as f64);
-                let opacity = reflection.opacity.clamp(0.0, 1.0) * (1.0 - ((start + end) / 2.0) as f32);
+                let opacity =
+                    reflection.opacity.clamp(0.0, 1.0) * (1.0 - ((start + end) / 2.0) as f32);
                 canvas.save();
-                canvas.clip_rect(RectF::new(x0 - pad, bottom + gap + start * reach, x1 - x0 + 2.0 * pad, (end - start) * reach));
+                canvas.clip_rect(RectF::new(
+                    x0 - pad,
+                    bottom + gap + start * reach,
+                    x1 - x0 + 2.0 * pad,
+                    (end - start) * reach,
+                ));
                 canvas.transform([1.0, 0.0, 0.0, -1.0, 0.0, 2.0 * bottom + gap]);
                 if !piece.effects.hollow {
                     self.page_fill(piece, opacity, canvas);
                 }
                 if let Some((color, width)) = outline(piece) {
-                    canvas.stroke_path(Letters::page_path(piece, &|p| p), round(color, opacity, width));
+                    canvas.stroke_path(
+                        Letters::page_path(piece, &|p| p),
+                        round(color, opacity, width),
+                    );
                 }
                 canvas.restore();
             }
@@ -640,8 +846,14 @@ impl Letters {
             }
             if let Some((color, width)) = outline(piece) {
                 canvas.stroke_path(Letters::page_path(piece, &|p| p), round(color, 1.0, width));
-            } else if piece.thicken > 0.0 && !piece.effects.hollow && piece.effects.gradient.is_none() {
-                canvas.stroke_path(Letters::page_path(piece, &|p| p), round(piece.color, 1.0, piece.thicken));
+            } else if piece.thicken > 0.0
+                && !piece.effects.hollow
+                && piece.effects.gradient.is_none()
+            {
+                canvas.stroke_path(
+                    Letters::page_path(piece, &|p| p),
+                    round(piece.color, 1.0, piece.thicken),
+                );
             }
         }
     }
@@ -659,8 +871,12 @@ pub fn gradient_line(kind: GradientKind, bounds: (f64, f64, f64, f64)) -> (P, P)
         GradientKind::Linear(angle) => {
             let (sin, cos) = (angle as f64).to_radians().sin_cos();
             // As far along the direction as the corners of the box reach.
-            let reach = ((bounds.2 - bounds.0) / 2.0 * cos).abs() + ((bounds.3 - bounds.1) / 2.0 * sin).abs();
-            ((centre.0 - cos * reach, centre.1 - sin * reach), (centre.0 + cos * reach, centre.1 + sin * reach))
+            let reach = ((bounds.2 - bounds.0) / 2.0 * cos).abs()
+                + ((bounds.3 - bounds.1) / 2.0 * sin).abs();
+            (
+                (centre.0 - cos * reach, centre.1 - sin * reach),
+                (centre.0 + cos * reach, centre.1 + sin * reach),
+            )
         }
         GradientKind::FromCentre => (centre, (bounds.2, bounds.3)),
     }
@@ -674,7 +890,14 @@ fn wrapped(lines: Vec<Line>, room: f64) -> Vec<Line> {
             out.push(line);
             continue;
         }
-        let Line { glyphs, bars, ascent, descent, size, .. } = line;
+        let Line {
+            glyphs,
+            bars,
+            ascent,
+            descent,
+            size,
+            ..
+        } = line;
         // Where each row starts: after the last blank that still fits.
         let mut starts = vec![0usize];
         let mut row_start = 0.0;
@@ -685,7 +908,9 @@ fn wrapped(lines: Vec<Line>, room: f64) -> Vec<Line> {
             if !blank && glyph.x + glyph.advance - row_start > room && i > begun {
                 // Break after the last blank of the row, or right here
                 // in a word longer than the row.
-                let at = last_blank.filter(|blank| *blank + 1 > begun).map_or(i, |blank| blank + 1);
+                let at = last_blank
+                    .filter(|blank| *blank + 1 > begun)
+                    .map_or(i, |blank| blank + 1);
                 starts.push(at);
                 row_start = glyphs[at].x;
                 last_blank = None;
@@ -711,13 +936,21 @@ fn wrapped(lines: Vec<Line>, room: f64) -> Vec<Line> {
                 part.glyphs.push(glyph);
             }
             // Blanks that end a row take no room.
-            while part.glyphs.last().is_some_and(|glyph| glyph.steps.is_empty()) && part.glyphs.len() > 1 {
+            while part
+                .glyphs
+                .last()
+                .is_some_and(|glyph| glyph.steps.is_empty())
+                && part.glyphs.len() > 1
+            {
                 let dropped = part.glyphs.pop();
                 part.width -= dropped.map_or(0.0, |glyph| glyph.advance);
             }
             let shift = shift.unwrap_or(0.0);
             for bar in &bars {
-                let (from, to) = ((bar.from - shift).max(0.0), (bar.to - shift).min(part.width));
+                let (from, to) = (
+                    (bar.from - shift).max(0.0),
+                    (bar.to - shift).min(part.width),
+                );
                 if from < to {
                     part.bars.push(Bar { from, to, ..*bar });
                 }
@@ -745,9 +978,19 @@ struct Ink {
 /// The ink of a line, from the outlines of its letters. `None` for a
 /// line without ink (empty, or spaces only) or too thin to stretch.
 fn ink(line: &Line) -> Option<Ink> {
-    let mut bounds = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let mut bounds = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
     let mut reach = |point: P| {
-        bounds = (bounds.0.min(point.0), bounds.1.min(point.1), bounds.2.max(point.0), bounds.3.max(point.1));
+        bounds = (
+            bounds.0.min(point.0),
+            bounds.1.min(point.1),
+            bounds.2.max(point.0),
+            bounds.3.max(point.1),
+        );
     };
     for glyph in &line.glyphs {
         // As in `trace`: from the font to the line, y downwards.
@@ -809,10 +1052,18 @@ fn trace(line: &Line, pieces: &mut [Piece], bends: bool, map: &dyn Fn(f64, f64, 
         let mut contour: Contour = Vec::new();
         let mut pen = (0.0, 0.0);
         let line_to = |contour: &mut Contour, pen: &mut P, to: P| {
-            let count = if bends { ((to.0 - pen.0).hypot(to.1 - pen.1) / step).ceil().max(1.0) as usize } else { 1 };
+            let count = if bends {
+                ((to.0 - pen.0).hypot(to.1 - pen.1) / step).ceil().max(1.0) as usize
+            } else {
+                1
+            };
             for i in 1..=count {
                 let t = i as f64 / count as f64;
-                contour.push(map(pen.0 + (to.0 - pen.0) * t, pen.1 + (to.1 - pen.1) * t, centre));
+                contour.push(map(
+                    pen.0 + (to.0 - pen.0) * t,
+                    pen.1 + (to.1 - pen.1) * t,
+                    centre,
+                ));
             }
             *pen = to;
         };
@@ -820,7 +1071,9 @@ fn trace(line: &Line, pieces: &mut [Piece], bends: bool, map: &dyn Fn(f64, f64, 
             match *outline {
                 OutlineStep::Move(x, y) => {
                     if contour.len() > 2 {
-                        pieces[glyph.piece].contours.push(std::mem::take(&mut contour));
+                        pieces[glyph.piece]
+                            .contours
+                            .push(std::mem::take(&mut contour));
                     }
                     contour.clear();
                     pen = local(x, y);
@@ -829,7 +1082,8 @@ fn trace(line: &Line, pieces: &mut [Piece], bends: bool, map: &dyn Fn(f64, f64, 
                 OutlineStep::Line(x, y) => line_to(&mut contour, &mut pen, local(x, y)),
                 OutlineStep::Quad(cx, cy, x, y) => {
                     let (control, end) = (local(cx, cy), local(x, y));
-                    let length = (control.0 - pen.0).hypot(control.1 - pen.1) + (end.0 - control.0).hypot(end.1 - control.1);
+                    let length = (control.0 - pen.0).hypot(control.1 - pen.1)
+                        + (end.0 - control.0).hypot(end.1 - control.1);
                     let count = (length / (step / 2.0)).ceil().clamp(2.0, 24.0) as usize;
                     for i in 1..=count {
                         let t = i as f64 / count as f64;
@@ -844,7 +1098,9 @@ fn trace(line: &Line, pieces: &mut [Piece], bends: bool, map: &dyn Fn(f64, f64, 
                 }
                 OutlineStep::Close => {
                     if contour.len() > 2 {
-                        pieces[glyph.piece].contours.push(std::mem::take(&mut contour));
+                        pieces[glyph.piece]
+                            .contours
+                            .push(std::mem::take(&mut contour));
                     }
                     contour.clear();
                 }
@@ -856,7 +1112,13 @@ fn trace(line: &Line, pieces: &mut [Piece], bends: bool, map: &dyn Fn(f64, f64, 
     }
     for bar in &line.bars {
         // A bar bends with the line: it follows the letters above it.
-        let count = if bends { ((bar.to - bar.from) / (line.size.max(1.0) * PIECE)).ceil().max(1.0) as usize } else { 1 };
+        let count = if bends {
+            ((bar.to - bar.from) / (line.size.max(1.0) * PIECE))
+                .ceil()
+                .max(1.0) as usize
+        } else {
+            1
+        };
         let (top, bottom) = (bar.y - bar.thickness / 2.0, bar.y + bar.thickness / 2.0);
         let x = |i: usize| bar.from + (bar.to - bar.from) * i as f64 / count as f64;
         let mut contour: Contour = (0..=count).map(|i| map(x(i), top, x(i))).collect();
@@ -875,7 +1137,14 @@ mod tests {
     /// The letters of a shape with the fonts of this machine, each family
     /// drawn by itself.
     fn letters(shape: &Shape, width: f64, height: f64) -> Option<Letters> {
-        Letters::with_fonts(shape, width, height, 1.0, &|name| name.to_string(), FontDb::system())
+        Letters::with_fonts(
+            shape,
+            width,
+            height,
+            1.0,
+            &|name| name.to_string(),
+            FontDb::system(),
+        )
     }
 
     fn art(text: &str) -> Shape {
@@ -886,7 +1155,12 @@ mod tests {
     }
 
     fn extent(letters: &Letters) -> (f64, f64, f64, f64) {
-        let points = || letters.pieces.iter().flat_map(|piece| piece.contours.iter().flatten());
+        let points = || {
+            letters
+                .pieces
+                .iter()
+                .flat_map(|piece| piece.contours.iter().flatten())
+        };
         (
             points().map(|p| p.0).fold(f64::INFINITY, f64::min),
             points().map(|p| p.1).fold(f64::INFINITY, f64::min),
@@ -908,18 +1182,38 @@ mod tests {
         assert_eq!(level.pieces[0].contours.len(), 5);
         let (x0, y0, x1, y1) = extent(&level);
         // It starts at the left margin and stays in the first line.
-        assert!(x0 >= TEXT_MARGIN.0 as f64 && x0 < TEXT_MARGIN.0 as f64 + 12.0, "{x0}");
-        assert!(y0 > TEXT_MARGIN.1 as f64 && y1 < TEXT_MARGIN.1 as f64 + 48.0 * 1.2 + 1.0, "{y0} {y1}");
+        assert!(
+            x0 >= TEXT_MARGIN.0 as f64 && x0 < TEXT_MARGIN.0 as f64 + 12.0,
+            "{x0}"
+        );
+        assert!(
+            y0 > TEXT_MARGIN.1 as f64 && y1 < TEXT_MARGIN.1 as f64 + 48.0 * 1.2 + 1.0,
+            "{y0} {y1}"
+        );
         assert!(x1 - x0 > 50.0 && x1 - x0 < 110.0);
         // The box of the text is one line of 1.2 times the size.
         assert_eq!(level.bounds.3 - level.bounds.1, 58.0);
         // Right-aligned, it ends at the right margin.
         shape.align = TextAlign::Right;
         let right = extent(&letters(&shape, 300.0, 100.0).unwrap());
-        assert!((right.2 - (300.0 - TEXT_MARGIN.0 as f64)).abs() < 12.0, "{}", right.2);
+        assert!(
+            (right.2 - (300.0 - TEXT_MARGIN.0 as f64)).abs() < 12.0,
+            "{}",
+            right.2
+        );
         // Blank text, or a font without outlines, gives nothing.
         assert!(letters(&art("  "), 300.0, 100.0).is_none());
-        assert!(Letters::with_fonts(&art("Hop"), 300.0, 100.0, 1.0, &|name| name.to_string(), &FontDb::standard_only()).is_none());
+        assert!(
+            Letters::with_fonts(
+                &art("Hop"),
+                300.0,
+                100.0,
+                1.0,
+                &|name| name.to_string(),
+                &FontDb::standard_only()
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -947,13 +1241,22 @@ mod tests {
                 .map(|p| p.1)
                 .fold(f64::INFINITY, f64::min)
         };
-        assert!(top_near(200.0) + 20.0 < top_near(30.0), "{} {}", top_near(200.0), top_near(30.0));
+        assert!(
+            top_near(200.0) + 20.0 < top_near(30.0),
+            "{} {}",
+            top_near(200.0),
+            top_near(30.0)
+        );
         // Straight strokes are cut small enough to bend: no piece of a
         // path is longer than a fraction of the letters.
         let longest = triangle.pieces[0]
             .contours
             .iter()
-            .flat_map(|contour| contour.windows(2).map(|pair| (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1)))
+            .flat_map(|contour| {
+                contour
+                    .windows(2)
+                    .map(|pair| (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1))
+            })
             .fold(0.0, f64::max);
         assert!(longest < 30.0, "{longest}");
         // Arch: the letters stand on the upper half of an ellipse, their
@@ -962,9 +1265,23 @@ mod tests {
         let arch = letters(&shape, 400.0, 400.0).unwrap();
         let (cx, cy) = (200.0, 200.0);
         let radius = (400.0 - 2.0 * TEXT_MARGIN.0 as f64) / 2.0;
-        let nearest = arch.pieces[0].contours.iter().flatten().map(|p| (p.0 - cx).hypot(p.1 - cy)).fold(f64::INFINITY, f64::min);
-        assert!(nearest > radius - 16.0 && nearest < radius + 4.0, "{nearest} {radius}");
-        assert!(arch.pieces[0].contours.iter().flatten().all(|p| p.1 < cy + 8.0));
+        let nearest = arch.pieces[0]
+            .contours
+            .iter()
+            .flatten()
+            .map(|p| (p.0 - cx).hypot(p.1 - cy))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            nearest > radius - 16.0 && nearest < radius + 4.0,
+            "{nearest} {radius}"
+        );
+        assert!(
+            arch.pieces[0]
+                .contours
+                .iter()
+                .flatten()
+                .all(|p| p.1 < cy + 8.0)
+        );
     }
 
     /// Every preset drawn in a frame, with its guide curves, as one
@@ -985,7 +1302,16 @@ mod tests {
                 places => places,
             };
             if lines > 1 {
-                shape.text = (0..lines).map(|line| if line == 0 { preset.name().to_string() } else { format!("line {}", line + 1) }).collect::<Vec<_>>().join("\n");
+                shape.text = (0..lines)
+                    .map(|line| {
+                        if line == 0 {
+                            preset.name().to_string()
+                        } else {
+                            format!("line {}", line + 1)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
             }
             let (w, h) = (260.0, 130.0);
             let Some(shown) = letters(&shape, w, h) else {
@@ -995,19 +1321,62 @@ mod tests {
             // finite and near the frame.
             let (x0, y0, x1, y1) = extent(&shown);
             assert!(x0.is_finite() && y1.is_finite(), "{preset:?}");
-            assert!(x0 > -w && x1 < 2.0 * w && y0 > -2.0 * h && y1 < 3.0 * h, "{preset:?}: {x0} {y0} {x1} {y1}");
-            assert!(shown.pieces[0].contours.len() >= preset.name().chars().filter(|ch| !ch.is_whitespace()).count(), "{preset:?}");
+            assert!(
+                x0 > -w && x1 < 2.0 * w && y0 > -2.0 * h && y1 < 3.0 * h,
+                "{preset:?}: {x0} {y0} {x1} {y1}"
+            );
+            assert!(
+                shown.pieces[0].contours.len()
+                    >= preset
+                        .name()
+                        .chars()
+                        .filter(|ch| !ch.is_whitespace())
+                        .count(),
+                "{preset:?}"
+            );
             let (document, at) = shown.svg(0.0, (w / 2.0, h / 2.0), 1.0);
-            let (ox, oy) = (20.0 + cell_w * (i % columns) as f64, 20.0 + cell_h * (i / columns) as f64);
-            let _ = write!(sheet, r##"<rect x="{ox}" y="{oy}" width="{w}" height="{h}" fill="none" stroke="#BBBBBB"/>"##);
-            let geometry = warp.geometry(w - 2.0 * TEXT_MARGIN.0 as f64, h - 2.0 * TEXT_MARGIN.1 as f64);
+            let (ox, oy) = (
+                20.0 + cell_w * (i % columns) as f64,
+                20.0 + cell_h * (i / columns) as f64,
+            );
+            let _ = write!(
+                sheet,
+                r##"<rect x="{ox}" y="{oy}" width="{w}" height="{h}" fill="none" stroke="#BBBBBB"/>"##
+            );
+            let geometry = warp.geometry(
+                w - 2.0 * TEXT_MARGIN.0 as f64,
+                h - 2.0 * TEXT_MARGIN.1 as f64,
+            );
             for curve in &geometry.curves {
-                let points: Vec<String> = curve.points.iter().map(|p| format!("{:.1},{:.1}", ox + TEXT_MARGIN.0 as f64 + p.0, oy + TEXT_MARGIN.1 as f64 + p.1)).collect();
-                let _ = write!(sheet, r##"<polyline points="{}" fill="none" stroke="#E0A0A0" stroke-width="0.6"/>"##, points.join(" "));
+                let points: Vec<String> = curve
+                    .points
+                    .iter()
+                    .map(|p| {
+                        format!(
+                            "{:.1},{:.1}",
+                            ox + TEXT_MARGIN.0 as f64 + p.0,
+                            oy + TEXT_MARGIN.1 as f64 + p.1
+                        )
+                    })
+                    .collect();
+                let _ = write!(
+                    sheet,
+                    r##"<polyline points="{}" fill="none" stroke="#E0A0A0" stroke-width="0.6"/>"##,
+                    points.join(" ")
+                );
             }
-            let inner = document.replacen("<svg ", &format!(r#"<svg x="{:.1}" y="{:.1}" "#, ox + at.0, oy + at.1), 1);
+            let inner = document.replacen(
+                "<svg ",
+                &format!(r#"<svg x="{:.1}" y="{:.1}" "#, ox + at.0, oy + at.1),
+                1,
+            );
             sheet.push_str(&inner);
-            let _ = write!(sheet, r##"<text x="{ox}" y="{:.1}" font-family="Helvetica" font-size="10" fill="#666666">{}</text>"##, oy + h + 12.0, preset.ooxml_name());
+            let _ = write!(
+                sheet,
+                r##"<text x="{ox}" y="{:.1}" font-family="Helvetica" font-size="10" fill="#666666">{}</text>"##,
+                oy + h + 12.0,
+                preset.ooxml_name()
+            );
         }
         if let Some(dir) = dir {
             // Two images of five rows each: small enough to look at.
@@ -1018,7 +1387,8 @@ mod tests {
                     cell_h * 5.0 * half as f64
                 );
                 let name = format!("opensheet-warp-gallery-{}.svg", half + 1);
-                std::fs::write(std::path::Path::new(&dir).join(name), document).expect("the sample is written");
+                std::fs::write(std::path::Path::new(&dir).join(name), document)
+                    .expect("the sample is written");
             }
         }
     }
@@ -1036,7 +1406,10 @@ mod tests {
         assert_eq!(mixed.pieces.len(), 2);
         let box_of = |piece: &Piece| {
             let ys = || piece.contours.iter().flatten().map(|p| p.1);
-            (ys().fold(f64::INFINITY, f64::min), ys().fold(f64::NEG_INFINITY, f64::max))
+            (
+                ys().fold(f64::INFINITY, f64::min),
+                ys().fold(f64::NEG_INFINITY, f64::max),
+            )
         };
         let (small, large) = (box_of(&mixed.pieces[0]), box_of(&mixed.pieces[1]));
         // Both stand on the same line; the large one is three times as tall.
@@ -1056,7 +1429,10 @@ mod tests {
         };
         let narrow = letters(&shape, 160.0, 200.0).unwrap();
         // The same letters, on more lines.
-        assert_eq!(wide.pieces[0].contours.len(), narrow.pieces[0].contours.len());
+        assert_eq!(
+            wide.pieces[0].contours.len(),
+            narrow.pieces[0].contours.len()
+        );
         assert!(narrow.bounds.3 - narrow.bounds.1 >= 2.0 * (wide.bounds.3 - wide.bounds.1));
         let (x0, _, x1, _) = extent(&narrow);
         assert!(x0 >= 0.0 && x1 <= 160.0, "{x0} {x1}");
@@ -1069,19 +1445,29 @@ mod tests {
     #[test]
     fn the_image_draws_gradients_shadows_and_reflections() {
         let mut shape = art("Shine");
-        shape.effects.gradient = Some(TextGradient::between(Color(0xFFC000), Color(0xC00000), GradientKind::Linear(90.0)));
+        shape.effects.gradient = Some(TextGradient::between(
+            Color(0xFFC000),
+            Color(0xC00000),
+            GradientKind::Linear(90.0),
+        ));
         shape.effects.reflection = Some(TextReflection::PRESETS[1]);
         let Some(shown) = letters(&shape, 300.0, 100.0) else {
             return;
         };
         let (document, (left, top, width, height)) = shown.svg(0.0, (150.0, 50.0), 2.0);
         // The gradient runs down the box of the text.
-        assert!(document.contains(r##"<linearGradient id="g0" gradientUnits="userSpaceOnUse""##), "{document}");
+        assert!(
+            document.contains(r##"<linearGradient id="g0" gradientUnits="userSpaceOnUse""##),
+            "{document}"
+        );
         assert!(document.contains(r##"<stop offset="0.0000" stop-color="#FFC000"/><stop offset="1.0000" stop-color="#C00000"/>"##));
         assert_eq!(document.matches(r#"fill="url(#g0)""#).count(), 2);
         // The shadow of the style lies under the reflection, which lies
         // under the letters.
-        let (shadow, mirror) = (document.find(r#"filter="url(#s0)""#).unwrap(), document.find(r#"<g mask="url(#m0)""#).unwrap());
+        let (shadow, mirror) = (
+            document.find(r#"filter="url(#s0)""#).unwrap(),
+            document.find(r#"<g mask="url(#m0)""#).unwrap(),
+        );
         assert!(shadow < mirror && document.contains("scale(1 -1)"));
         // The image has room for the reflection under the text.
         assert!(left < shown.bounds.0 && top < shown.bounds.1 && left + width > shown.bounds.2);
@@ -1091,10 +1477,19 @@ mod tests {
         assert!(turned.contains(r#"<g transform="rotate(90.00 150.00 50.00)">"#));
         assert!(h > w);
         // From the centre: a radial paint.
-        shape.effects.gradient = Some(TextGradient::between(Color(0xFFFFFF), Color(0x0070C0), GradientKind::FromCentre));
-        let (document, _) = letters(&shape, 300.0, 100.0).unwrap().svg(0.0, (150.0, 50.0), 1.0);
+        shape.effects.gradient = Some(TextGradient::between(
+            Color(0xFFFFFF),
+            Color(0x0070C0),
+            GradientKind::FromCentre,
+        ));
+        let (document, _) = letters(&shape, 300.0, 100.0)
+            .unwrap()
+            .svg(0.0, (150.0, 50.0), 1.0);
         assert!(document.contains("<radialGradient id=\"g0\""));
-        assert_eq!(gradient_line(GradientKind::Linear(0.0), (0.0, 0.0, 100.0, 40.0)), ((0.0, 20.0), (100.0, 20.0)));
+        assert_eq!(
+            gradient_line(GradientKind::Linear(0.0), (0.0, 0.0, 100.0, 40.0)),
+            ((0.0, 20.0), (100.0, 20.0))
+        );
         let down = gradient_line(GradientKind::Linear(90.0), (0.0, 0.0, 100.0, 40.0));
         assert!((down.0.1 - 0.0).abs() < 1e-9 && (down.1.1 - 40.0).abs() < 1e-9);
     }

@@ -101,12 +101,19 @@ pub enum NavKey {
 pub enum InputEvent {
     /// The text changed through typing, pasting or deleting.
     Changed,
-    Enter { shift: bool },
-    Tab { shift: bool },
+    Enter {
+        shift: bool,
+    },
+    Tab {
+        shift: bool,
+    },
     Escape,
     /// An arrow key the field does not consume itself (always Up / Down;
     /// Left / Right too while `navigate_mode` is on).
-    Navigate { key: NavKey, shift: bool },
+    Navigate {
+        key: NavKey,
+        shift: bool,
+    },
     Focused,
     Blurred,
     /// The caret was placed with the mouse.
@@ -289,7 +296,13 @@ impl TextInput {
 
     /// Byte index of the character boundary closest to a horizontal offset
     /// from the start of the text, for text shaped with `font` at `size`.
-    pub fn index_for_offset(text: &str, x: Pixels, font: gpui::Font, size: Pixels, window: &Window) -> usize {
+    pub fn index_for_offset(
+        text: &str,
+        x: Pixels,
+        font: gpui::Font,
+        size: Pixels,
+        window: &Window,
+    ) -> usize {
         if text.is_empty() {
             return 0;
         }
@@ -422,7 +435,12 @@ impl TextInput {
         self.select_to(self.next_word(self.cursor_offset()), cx);
     }
 
-    fn delete_word_left(&mut self, _: &DeleteWordLeft, window: &mut Window, cx: &mut Context<Self>) {
+    fn delete_word_left(
+        &mut self,
+        _: &DeleteWordLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.selected_range.is_empty() {
             self.select_to(self.previous_word(self.cursor_offset()), cx);
         }
@@ -483,7 +501,12 @@ impl TextInput {
         }
     }
 
-    fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let was_focused = self.focus_handle.is_focused(window);
         self.is_selecting = true;
         // Clicking inside the text ends "Enter" mode: arrows now move the caret.
@@ -518,13 +541,20 @@ impl TextInput {
         }
     }
 
-    fn show_character_palette(&mut self, _: &ShowCharacterPalette, window: &mut Window, _: &mut Context<Self>) {
+    fn show_character_palette(
+        &mut self,
+        _: &ShowCharacterPalette,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
         window.show_character_palette();
     }
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            let text = text.trim_end_matches(['\n', '\r']).replace(['\n', '\r'], " ");
+            let text = text
+                .trim_end_matches(['\n', '\r'])
+                .replace(['\n', '\r'], " ");
             self.replace_text_in_range(None, &text, window, cx);
         }
     }
@@ -563,7 +593,8 @@ impl TextInput {
         if self.content.is_empty() {
             return 0;
         }
-        let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref()) else {
+        let (Some(bounds), Some(line)) = (self.last_bounds.as_ref(), self.last_layout.as_ref())
+        else {
             return 0;
         };
         self.from_shown(line.closest_index_for_x(position.x - bounds.left() + self.scroll_x))
@@ -585,7 +616,10 @@ impl TextInput {
             return offset;
         }
         let chars = offset / MASK.len_utf8();
-        self.content.char_indices().nth(chars).map_or(self.content.len(), |(at, _)| at)
+        self.content
+            .char_indices()
+            .nth(chars)
+            .map_or(self.content.len(), |(at, _)| at)
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -699,8 +733,14 @@ impl EntityInputHandler for TextInput {
         })
     }
 
-    fn marked_text_range(&self, _window: &mut Window, _cx: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked_range.as_ref().map(|range| self.range_to_utf16(range))
+    fn marked_text_range(
+        &self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<Range<usize>> {
+        self.marked_range
+            .as_ref()
+            .map(|range| self.range_to_utf16(range))
     }
 
     fn unmark_text(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
@@ -787,7 +827,8 @@ impl EntityInputHandler for TextInput {
     ) -> Option<usize> {
         let line_point = self.last_bounds?.localize(&point)?;
         let last_layout = self.last_layout.as_ref()?;
-        let utf8_index = self.from_shown(last_layout.index_for_x(point.x - line_point.x + self.scroll_x)?);
+        let utf8_index =
+            self.from_shown(last_layout.index_for_x(point.x - line_point.x + self.scroll_x)?);
         Some(self.offset_to_utf16(utf8_index))
     }
 }
@@ -847,11 +888,14 @@ impl Element for TextElement {
     ) -> Self::PrepaintState {
         let input = self.input.read(cx);
         let content: SharedString = if input.masked {
-            MASK.to_string().repeat(input.content.chars().count()).into()
+            MASK.to_string()
+                .repeat(input.content.chars().count())
+                .into()
         } else {
             input.content.replace('\n', " ").into()
         };
-        let selected_range = input.to_shown(input.selected_range.start)..input.to_shown(input.selected_range.end);
+        let selected_range =
+            input.to_shown(input.selected_range.start)..input.to_shown(input.selected_range.end);
         let cursor = input.to_shown(input.cursor_offset());
         let style = window.text_style();
 
@@ -887,17 +931,26 @@ impl Element for TextElement {
             cuts.dedup();
             for w in cuts.windows(2) {
                 let (s, e) = (w[0], w[1]);
-                if e <= s || !display_text.is_char_boundary(s) || !display_text.is_char_boundary(e) {
+                if e <= s || !display_text.is_char_boundary(s) || !display_text.is_char_boundary(e)
+                {
                     continue;
                 }
                 let mut run = TextRun {
                     len: e - s,
                     ..base.clone()
                 };
-                if let Some((_, color)) = input.highlights.iter().find(|(r, _)| r.start <= s && e <= r.end) {
+                if let Some((_, color)) = input
+                    .highlights
+                    .iter()
+                    .find(|(r, _)| r.start <= s && e <= r.end)
+                {
                     run.color = *color;
                 }
-                if input.marked_range.as_ref().is_some_and(|m| m.start <= s && e <= m.end) {
+                if input
+                    .marked_range
+                    .as_ref()
+                    .is_some_and(|m| m.start <= s && e <= m.end)
+                {
                     run.underline = Some(UnderlineStyle {
                         color: Some(run.color),
                         thickness: px(1.0),
@@ -913,7 +966,9 @@ impl Element for TextElement {
         }
 
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let line = window.text_system().shape_line(display_text, font_size, &runs, None);
+        let line = window
+            .text_system()
+            .shape_line(display_text, font_size, &runs, None);
 
         // Keep the caret in view.
         let cursor_pos = line.x_for_index(cursor.min(line.len));

@@ -24,7 +24,9 @@ use crate::drawing::DrawingKind;
 use crate::drawing::Shape;
 use crate::filter::Criteria;
 use crate::metrics::FontMetrics;
-use crate::style::{Border, Borders, Color, Font, Style, StylePatch, ThemeColor, ThemeFont, ThemeSlot};
+use crate::style::{
+    Border, Borders, Color, Font, Style, StylePatch, ThemeColor, ThemeFont, ThemeSlot,
+};
 use crate::workbook::{Sheet, Workbook};
 use builtin::{BuiltinColors, BuiltinFonts, BuiltinTheme};
 use std::sync::Arc;
@@ -46,7 +48,10 @@ impl ThemeColors {
         let mut rgb = colors;
         rgb.swap(0, 1);
         rgb.swap(2, 3);
-        ThemeColors { name: name.into(), rgb }
+        ThemeColors {
+            name: name.into(),
+            rgb,
+        }
     }
 
     /// The colours in the order of a theme part.
@@ -187,7 +192,8 @@ impl Theme {
 
     /// The colour sets of the Colors menu, in its order.
     pub fn builtin_colors() -> Vec<ThemeColors> {
-        let first = ThemeColors::from_part_order(builtin::THEMES[0].scheme, builtin::THEMES[0].colors);
+        let first =
+            ThemeColors::from_part_order(builtin::THEMES[0].scheme, builtin::THEMES[0].colors);
         std::iter::once(first)
             .chain(builtin::COLOR_SETS.iter().map(ThemeColors::from))
             .collect()
@@ -240,7 +246,12 @@ impl Theme {
     }
 
     fn resolve_borders(&self, borders: &mut Borders) {
-        for side in [&mut borders.left, &mut borders.right, &mut borders.top, &mut borders.bottom] {
+        for side in [
+            &mut borders.left,
+            &mut borders.right,
+            &mut borders.top,
+            &mut borders.bottom,
+        ] {
             self.resolve_border(side);
         }
     }
@@ -399,7 +410,11 @@ fn tint_rgb(rgb: u32, amount: f64) -> u32 {
     if amount == 0.0 || !amount.is_finite() {
         return rgb;
     }
-    let (r, g, b) = (((rgb >> 16) & 0xFF) as i32, ((rgb >> 8) & 0xFF) as i32, (rgb & 0xFF) as i32);
+    let (r, g, b) = (
+        ((rgb >> 16) & 0xFF) as i32,
+        ((rgb >> 8) & 0xFF) as i32,
+        (rgb & 0xFF) as i32,
+    );
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
     let sum = max + min;
@@ -457,7 +472,9 @@ fn tint_rgb(rgb: u32, amount: f64) -> u32 {
             m1
         }
     };
-    (byte(channel(hue + HLS_MAX / 3)) << 16) | (byte(channel(hue)) << 8) | byte(channel(hue - HLS_MAX / 3))
+    (byte(channel(hue + HLS_MAX / 3)) << 16)
+        | (byte(channel(hue)) << 8)
+        | byte(channel(hue - HLS_MAX / 3))
 }
 
 // ---- the theme of a workbook ------------------------------------------------
@@ -551,7 +568,11 @@ fn retheme_sheet(theme: &Theme, sheet: &mut Sheet) {
             Rule::DataBar(bar) => {
                 bar.fill = theme.resolve(bar.fill);
                 bar.axis_color = theme.resolve(bar.axis_color);
-                for color in [&mut bar.border, &mut bar.negative_fill, &mut bar.negative_border] {
+                for color in [
+                    &mut bar.border,
+                    &mut bar.negative_fill,
+                    &mut bar.negative_border,
+                ] {
                     theme.resolve_opt(color);
                 }
             }
@@ -559,7 +580,10 @@ fn retheme_sheet(theme: &Theme, sheet: &mut Sheet) {
         }
     }
     // A filter by colour written with a colour of the theme (files do).
-    let table_filters = sheet.tables.iter_mut().filter_map(|table| table.auto_filter.as_mut());
+    let table_filters = sheet
+        .tables
+        .iter_mut()
+        .filter_map(|table| table.auto_filter.as_mut());
     for filter in sheet.auto_filter.iter_mut().chain(table_filters) {
         for criteria in filter.columns.values_mut() {
             if let Criteria::Color(by) = criteria {
@@ -615,8 +639,17 @@ fn retheme_chart(theme: &Theme, chart: &mut Chart) {
         theme.resolve_opt(&mut text.color);
     }
     let axes = &mut chart.axes;
-    for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
-        for line in [&mut axis.line, &mut axis.major_gridline, &mut axis.minor_gridline] {
+    for axis in [
+        &mut axes.category,
+        &mut axes.value,
+        &mut axes.secondary_category,
+        &mut axes.secondary_value,
+    ] {
+        for line in [
+            &mut axis.line,
+            &mut axis.major_gridline,
+            &mut axis.minor_gridline,
+        ] {
             theme.resolve_opt(&mut line.color);
         }
     }

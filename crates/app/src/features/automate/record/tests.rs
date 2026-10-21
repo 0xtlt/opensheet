@@ -8,8 +8,8 @@ use super::super::run::{OutputKind, Runs};
 use super::super::{Cmd, pane as the_pane};
 use super::differences;
 use crate::app::ExcelApp;
-use opensheet_engine::ops::PasteMode;
 use gpui::{Context, Entity, Modifiers, TestAppContext, VisualTestContext, Window, point, px};
+use opensheet_engine::ops::PasteMode;
 use opensheet_engine::refs::parse_cell_name;
 use opensheet_engine::{Rect, Workbook};
 
@@ -32,7 +32,11 @@ fn rect(name: &str) -> Rect {
 
 /// One action of the user: a command of the window, after which the
 /// window says it changed.
-pub(super) fn act(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, command: impl FnOnce(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>)) {
+pub(super) fn act(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    command: impl FnOnce(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>),
+) {
     app.update_in(cx, command);
     cx.run_until_parked();
 }
@@ -61,7 +65,9 @@ pub(super) fn seed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, rows: &[&
     act(app, cx, |app, _, cx| {
         for (row, cells) in rows.iter().enumerate() {
             for (col, text) in cells.iter().enumerate() {
-                app.wb.set_cell_text(app.sheet, row as u32, col as u32, text).expect("a value");
+                app.wb
+                    .set_cell_text(app.sheet, row as u32, col as u32, text)
+                    .expect("a value");
             }
         }
         app.commit("seed", cx);
@@ -73,13 +79,26 @@ fn pane(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<CodeEditor
 }
 
 pub(super) fn start(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) {
-    act(app, cx, |app, window, cx| app.run_command(Cmd::RecordActions, window, cx));
-    assert_eq!(pane(app, cx).update(cx, |pane, _| pane.page.clone()), Page::Recording);
+    act(app, cx, |app, window, cx| {
+        app.run_command(Cmd::RecordActions, window, cx)
+    });
+    assert_eq!(
+        pane(app, cx).update(cx, |pane, _| pane.page.clone()),
+        Page::Recording
+    );
 }
 
 /// What the pane lists: each action with whether it was recorded.
 pub(super) fn listed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<(String, bool)> {
-    pane(app, cx).update(cx, |pane, _| pane.recorder.as_ref().expect("recording").actions.iter().map(|action| (action.label.clone(), action.recorded)).collect())
+    pane(app, cx).update(cx, |pane, _| {
+        pane.recorder
+            .as_ref()
+            .expect("recording")
+            .actions
+            .iter()
+            .map(|action| (action.label.clone(), action.recorded))
+            .collect()
+    })
 }
 
 /// Stop recording; the script the recorder wrote, as the editor shows it.
@@ -94,13 +113,20 @@ pub(super) fn stop(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> String
 /// Record what `actions` does, then prove the script: everything is
 /// undone, the script runs, and the workbook must be the one the actions
 /// gave. Every action must have been recorded. Returns the script.
-pub(super) fn replayed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, actions: impl FnOnce(&Entity<ExcelApp>, &mut VisualTestContext)) -> String {
+pub(super) fn replayed(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    actions: impl FnOnce(&Entity<ExcelApp>, &mut VisualTestContext),
+) -> String {
     let depth = app.update(cx, |app, _| app.wb.history_depth().0);
     start(app, cx);
     actions(app, cx);
     let actions = listed(app, cx);
     let script = stop(app, cx);
-    assert!(actions.iter().all(|(_, recorded)| *recorded), "not recorded: {actions:?}\n{script}");
+    assert!(
+        actions.iter().all(|(_, recorded)| *recorded),
+        "not recorded: {actions:?}\n{script}"
+    );
     assert!(!actions.is_empty(), "nothing was recorded");
     let wanted: Workbook = app.update(cx, |app, _| app.wb.fork());
     // Back to where the recording started, on the sheet it started on.
@@ -115,7 +141,15 @@ pub(super) fn replayed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, actio
     cx.update(|window, cx| pane.update(cx, |pane, cx| pane.run(window, cx)));
     cx.run_until_parked();
     let errors: Vec<String> = app.update(cx, |app, _| {
-        app.ext::<Runs>().map(|runs| runs.output.iter().filter(|line| line.kind == OutputKind::Error).map(|line| line.text.clone()).collect()).unwrap_or_default()
+        app.ext::<Runs>()
+            .map(|runs| {
+                runs.output
+                    .iter()
+                    .filter(|line| line.kind == OutputKind::Error)
+                    .map(|line| line.text.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     });
     assert!(errors.is_empty(), "{errors:?}\n{script}");
     let left = app.update(cx, |app, _| differences(&app.wb, &wanted));
@@ -126,10 +160,26 @@ pub(super) fn replayed(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, actio
 /// The statements of a script, without the comments and what every
 /// script starts with.
 pub(super) fn statements(script: &str) -> Vec<&str> {
-    script.lines().map(str::trim).filter(|line| !line.is_empty() && !line.starts_with("//") && !line.starts_with("function") && !line.starts_with("let selectedSheet") && *line != "}").collect()
+    script
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && !line.starts_with("//")
+                && !line.starts_with("function")
+                && !line.starts_with("let selectedSheet")
+                && *line != "}"
+        })
+        .collect()
 }
 
-const SALES: &[&[&str]] = &[&["Region", "Units", "Price"], &["North", "12", "3.5"], &["South", "7", "4"], &["East", "30", "2.25"], &["West", "18", "5"]];
+const SALES: &[&[&str]] = &[
+    &["Region", "Units", "Price"],
+    &["North", "12", "3.5"],
+    &["South", "7", "4"],
+    &["East", "30", "2.25"],
+    &["West", "18", "5"],
+];
 
 // ----------------------------------------------------------------- typing
 
@@ -156,7 +206,10 @@ fn typing_values_and_formulas(cx: &mut TestAppContext) {
             "selectedSheet.getRange(\"B3\").setFormula(\"=SUM(B1:B2)*2\");",
         ]
     );
-    assert!(script.contains("selectedSheet.getRange(\"C2\").setValue(\"'007\");"), "{script}");
+    assert!(
+        script.contains("selectedSheet.getRange(\"C2\").setValue(\"'007\");"),
+        "{script}"
+    );
     assert!(script.starts_with("function main(workbook: ExcelScript.Workbook) {\n\tlet selectedSheet = workbook.getActiveWorksheet();\n\t// Set range A1 on selectedSheet\n"), "{script}");
 }
 
@@ -171,11 +224,17 @@ fn clearing_contents_formats_and_all(cx: &mut TestAppContext) {
     });
     let script = replayed(&app, cx, |app, cx| {
         select(app, cx, "B2:B3");
-        act(app, cx, |app, _, cx| app.clear(opensheet_engine::workbook::ClearMode::Contents, cx));
+        act(app, cx, |app, _, cx| {
+            app.clear(opensheet_engine::workbook::ClearMode::Contents, cx)
+        });
         select(app, cx, "A1:B1");
-        act(app, cx, |app, _, cx| app.clear(opensheet_engine::workbook::ClearMode::Formats, cx));
+        act(app, cx, |app, _, cx| {
+            app.clear(opensheet_engine::workbook::ClearMode::Formats, cx)
+        });
         select(app, cx, "C1:C2");
-        act(app, cx, |app, _, cx| app.clear(opensheet_engine::workbook::ClearMode::All, cx));
+        act(app, cx, |app, _, cx| {
+            app.clear(opensheet_engine::workbook::ClearMode::All, cx)
+        });
     });
     assert_eq!(
         statements(&script),
@@ -257,8 +316,12 @@ fn formats_of_the_home_tab(cx: &mut TestAppContext) {
         act(app, cx, |app, _, cx| app.toggle_bold(cx));
         act(app, cx, |app, _, cx| app.toggle_italic(cx));
         act(app, cx, |app, _, cx| app.toggle_underline(cx));
-        act(app, cx, |app, _, cx| app.set_fill(Some(Color(0xFFC000)), cx));
-        act(app, cx, |app, _, cx| app.set_font_color(Some(Color(0xC00000)), cx));
+        act(app, cx, |app, _, cx| {
+            app.set_fill(Some(Color(0xFFC000)), cx)
+        });
+        act(app, cx, |app, _, cx| {
+            app.set_font_color(Some(Color(0xC00000)), cx)
+        });
         act(app, cx, |app, _, cx| app.set_h_align(HAlign::Center, cx));
         select(app, cx, "A2:A5");
         act(app, cx, |app, _, cx| app.toggle_strike(cx));
@@ -306,13 +369,23 @@ fn borders_and_merged_cells(cx: &mut TestAppContext) {
     seed(&app, cx, SALES);
     let script = replayed(&app, cx, |app, cx| {
         select(app, cx, "A1:C5");
-        act(app, cx, |app, _, cx| app.apply_border(BorderPreset::All, cx));
-        act(app, cx, |app, _, cx| app.apply_border(BorderPreset::ThickOutside, cx));
+        act(app, cx, |app, _, cx| {
+            app.apply_border(BorderPreset::All, cx)
+        });
+        act(app, cx, |app, _, cx| {
+            app.apply_border(BorderPreset::ThickOutside, cx)
+        });
         select(app, cx, "A1:C1");
-        act(app, cx, |app, _, cx| app.apply_border(BorderPreset::BottomDouble, cx));
+        act(app, cx, |app, _, cx| {
+            app.apply_border(BorderPreset::BottomDouble, cx)
+        });
         select(app, cx, "E2:F3");
-        act(app, cx, |app, _, cx| app.apply_border(BorderPreset::Outside, cx));
-        act(app, cx, |app, _, cx| app.apply_border(BorderPreset::None, cx));
+        act(app, cx, |app, _, cx| {
+            app.apply_border(BorderPreset::Outside, cx)
+        });
+        act(app, cx, |app, _, cx| {
+            app.apply_border(BorderPreset::None, cx)
+        });
         select(app, cx, "E5:G5");
         act(app, cx, |app, _, cx| app.toggle_merge(true, cx));
         select(app, cx, "E7:F8");
@@ -322,11 +395,23 @@ fn borders_and_merged_cells(cx: &mut TestAppContext) {
     // All Borders is written as Excel's recorder writes it: the four
     // edges and the lines inside.
     let all: Vec<&str> = statements(&script).into_iter().take(12).collect();
-    assert_eq!(all[0], "selectedSheet.getRange(\"A1:C5\").getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.continuous);");
-    assert_eq!(all[1], "selectedSheet.getRange(\"A1:C5\").getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setWeight(ExcelScript.BorderWeight.thin);");
+    assert_eq!(
+        all[0],
+        "selectedSheet.getRange(\"A1:C5\").getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.continuous);"
+    );
+    assert_eq!(
+        all[1],
+        "selectedSheet.getRange(\"A1:C5\").getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setWeight(ExcelScript.BorderWeight.thin);"
+    );
     assert!(all[10].contains("insideHorizontal"), "{script}");
-    assert!(script.contains("selectedSheet.getRange(\"E5:G5\").merge(false);"), "{script}");
-    assert!(script.contains("selectedSheet.getRange(\"E7:F8\").unmerge();"), "{script}");
+    assert!(
+        script.contains("selectedSheet.getRange(\"E5:G5\").merge(false);"),
+        "{script}"
+    );
+    assert!(
+        script.contains("selectedSheet.getRange(\"E7:F8\").unmerge();"),
+        "{script}"
+    );
 }
 
 #[gpui::test]
@@ -347,8 +432,14 @@ fn the_format_cells_dialog(cx: &mut TestAppContext) {
                 style.shrink_to_fit = true;
                 style.locked = false;
                 style.hidden = true;
-                style.borders.left = Border { style: BorderStyle::Dashed, color: Some(opensheet_engine::Color(0x0000FF)) };
-                style.borders.bottom = Border { style: BorderStyle::Medium, color: None };
+                style.borders.left = Border {
+                    style: BorderStyle::Dashed,
+                    color: Some(opensheet_engine::Color(0x0000FF)),
+                };
+                style.borders.bottom = Border {
+                    style: BorderStyle::Medium,
+                    color: None,
+                };
             })
         });
     });
@@ -372,7 +463,11 @@ fn the_format_cells_dialog(cx: &mut TestAppContext) {
 // ------------------------------------------------------------------ sizes
 
 /// A point of the window from one of the grid.
-fn grid_point(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, at: impl FnOnce(&crate::grid::GridLayout) -> (f32, f32)) -> gpui::Point<gpui::Pixels> {
+fn grid_point(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    at: impl FnOnce(&crate::grid::GridLayout) -> (f32, f32),
+) -> gpui::Point<gpui::Pixels> {
     app.update(cx, |app, _| {
         let layout = app.current_layout().expect("the grid is drawn");
         let (x, y) = at(&layout);
@@ -380,7 +475,11 @@ fn grid_point(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, at: impl FnOnc
     })
 }
 
-fn drag(cx: &mut VisualTestContext, from: gpui::Point<gpui::Pixels>, to: gpui::Point<gpui::Pixels>) {
+fn drag(
+    cx: &mut VisualTestContext,
+    from: gpui::Point<gpui::Pixels>,
+    to: gpui::Point<gpui::Pixels>,
+) {
     cx.simulate_mouse_move(from, None, Modifiers::none());
     cx.simulate_mouse_down(from, gpui::MouseButton::Left, Modifiers::none());
     let middle = point((from.x + to.x) / 2.0, (from.y + to.y) / 2.0);
@@ -396,10 +495,20 @@ fn column_widths_row_heights_and_autofit(cx: &mut TestAppContext) {
     seed(&app, cx, &[&["A rather long heading", "x"], &["1", "2"]]);
     let script = replayed(&app, cx, |app, cx| {
         // The right edge of the heading of column B, dragged 40 px.
-        let from = grid_point(app, cx, |layout| (layout.col_x(1) + layout.col_w(1) - 1.0, layout.header_h / 2.0));
+        let from = grid_point(app, cx, |layout| {
+            (
+                layout.col_x(1) + layout.col_w(1) - 1.0,
+                layout.header_h / 2.0,
+            )
+        });
         drag(cx, from, point(from.x + px(40.), from.y));
         // The bottom edge of the heading of row 2, dragged 12 px.
-        let from = grid_point(app, cx, |layout| (layout.header_w / 2.0, layout.row_y(1) + layout.row_h(1) - 1.0));
+        let from = grid_point(app, cx, |layout| {
+            (
+                layout.header_w / 2.0,
+                layout.row_y(1) + layout.row_h(1) - 1.0,
+            )
+        });
         drag(cx, from, point(from.x, from.y + px(12.)));
         act(app, cx, |app, window, cx| app.autofit_col(0, window, cx));
         select(app, cx, "D3:E4");
@@ -408,12 +517,30 @@ fn column_widths_row_heights_and_autofit(cx: &mut TestAppContext) {
         act(app, cx, |app, _, cx| app.hide_rows(false, cx));
     });
     let lines = statements(&script);
-    assert_eq!(lines[0], "selectedSheet.getRange(\"B:B\").getFormat().setColumnWidth(78);", "{script}");
-    assert_eq!(lines[1], "selectedSheet.getRange(\"2:2\").getFormat().setRowHeight(24);", "{script}");
-    assert_eq!(lines[2], "selectedSheet.getRange(\"A:A\").getFormat().autofitColumns();", "{script}");
-    assert_eq!(lines[3], "selectedSheet.getRange(\"D:E\").setColumnHidden(true);", "{script}");
-    assert_eq!(lines[4], "selectedSheet.getRange(\"3:4\").setRowHidden(true);", "{script}");
-    assert_eq!(lines[5], "selectedSheet.getRange(\"3:4\").setRowHidden(false);", "{script}");
+    assert_eq!(
+        lines[0], "selectedSheet.getRange(\"B:B\").getFormat().setColumnWidth(78);",
+        "{script}"
+    );
+    assert_eq!(
+        lines[1], "selectedSheet.getRange(\"2:2\").getFormat().setRowHeight(24);",
+        "{script}"
+    );
+    assert_eq!(
+        lines[2], "selectedSheet.getRange(\"A:A\").getFormat().autofitColumns();",
+        "{script}"
+    );
+    assert_eq!(
+        lines[3], "selectedSheet.getRange(\"D:E\").setColumnHidden(true);",
+        "{script}"
+    );
+    assert_eq!(
+        lines[4], "selectedSheet.getRange(\"3:4\").setRowHidden(true);",
+        "{script}"
+    );
+    assert_eq!(
+        lines[5], "selectedSheet.getRange(\"3:4\").setRowHidden(false);",
+        "{script}"
+    );
 }
 
 // ------------------------------------------------------------------ cells
@@ -427,22 +554,30 @@ fn cells_inserted_and_deleted(cx: &mut TestAppContext) {
     let script = replayed(&app, cx, |app, cx| {
         select(app, cx, "B2:B3");
         act(app, cx, |app, _, cx| {
-            app.wb.shift_cells(0, rect("B2:B3"), true, true).expect("a shift");
+            app.wb
+                .shift_cells(0, rect("B2:B3"), true, true)
+                .expect("a shift");
             app.commit("Insert Cells", cx);
         });
         select(app, cx, "A4:B4");
         act(app, cx, |app, _, cx| {
-            app.wb.shift_cells(0, rect("A4:B4"), false, true).expect("a shift");
+            app.wb
+                .shift_cells(0, rect("A4:B4"), false, true)
+                .expect("a shift");
             app.commit("Insert Cells", cx);
         });
         select(app, cx, "C1");
         act(app, cx, |app, _, cx| {
-            app.wb.shift_cells(0, rect("C1"), true, false).expect("a shift");
+            app.wb
+                .shift_cells(0, rect("C1"), true, false)
+                .expect("a shift");
             app.commit("Delete Cells", cx);
         });
         select(app, cx, "A2");
         act(app, cx, |app, _, cx| {
-            app.wb.shift_cells(0, rect("A2"), false, false).expect("a shift");
+            app.wb
+                .shift_cells(0, rect("A2"), false, false)
+                .expect("a shift");
             app.commit("Delete Cells", cx);
         });
     });
@@ -461,7 +596,11 @@ fn cells_inserted_and_deleted(cx: &mut TestAppContext) {
 fn fill_down_fill_right_and_the_fill_handle(cx: &mut TestAppContext) {
     use opensheet_engine::ops::Direction;
     let (app, cx) = open(cx);
-    seed(&app, cx, &[&["1", "10", "=A1+B1"], &["2", "", ""], &["", "", ""]]);
+    seed(
+        &app,
+        cx,
+        &[&["1", "10", "=A1+B1"], &["2", "", ""], &["", "", ""]],
+    );
     let script = replayed(&app, cx, |app, cx| {
         // ⌘D over C1:C3, ⌘R over A5:C5 after a value in A5.
         select(app, cx, "C1:C3");
@@ -482,7 +621,10 @@ fn fill_down_fill_right_and_the_fill_handle(cx: &mut TestAppContext) {
         });
         drag(cx, from, to);
     });
-    assert_eq!(app.update(cx, |app, _| app.wb.value_at(0, 5, 0)), opensheet_engine::Value::Number(6.0));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.value_at(0, 5, 0)),
+        opensheet_engine::Value::Number(6.0)
+    );
     assert_eq!(
         statements(&script),
         [
@@ -504,9 +646,13 @@ fn sorting(cx: &mut TestAppContext) {
     seed(&app, cx, SALES);
     let script = replayed(&app, cx, |app, cx| {
         select(app, cx, "B3");
-        act(app, cx, |app, window, cx| app.run_command(filters::Cmd::SortAscending, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(filters::Cmd::SortAscending, window, cx)
+        });
         select(app, cx, "A2");
-        act(app, cx, |app, window, cx| app.run_command(filters::Cmd::SortDescending, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(filters::Cmd::SortDescending, window, cx)
+        });
         // Two levels, as the Sort dialog sorts: no one statement is
         // guessed, the cells are written where they went.
         select(app, cx, "A1:C5");
@@ -522,41 +668,88 @@ fn sorting(cx: &mut TestAppContext) {
         });
     });
     let lines = statements(&script);
-    assert_eq!(lines[0], "selectedSheet.getRange(\"A1:C5\").getSort().apply([{ key: 1, ascending: true }], false, true);", "{script}");
-    assert_eq!(lines[1], "selectedSheet.getRange(\"A1:C5\").getSort().apply([{ key: 0, ascending: false }], false, true);", "{script}");
+    assert_eq!(
+        lines[0],
+        "selectedSheet.getRange(\"A1:C5\").getSort().apply([{ key: 1, ascending: true }], false, true);",
+        "{script}"
+    );
+    assert_eq!(
+        lines[1],
+        "selectedSheet.getRange(\"A1:C5\").getSort().apply([{ key: 0, ascending: false }], false, true);",
+        "{script}"
+    );
 }
 
 #[gpui::test]
 fn the_autofilter_and_its_criteria(cx: &mut TestAppContext) {
     use crate::features::filters;
-    use opensheet_engine::filter::{Condition, Criteria, CustomFilter, CustomOp, DynamicFilter, FilterScope, Top10, ValueFilter};
+    use opensheet_engine::filter::{
+        Condition, Criteria, CustomFilter, CustomOp, DynamicFilter, FilterScope, Top10, ValueFilter,
+    };
     let (app, cx) = open(cx);
     seed(&app, cx, SALES);
-    let criteria = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, column: u32, criteria: Option<Criteria>| {
+    let criteria = |app: &Entity<ExcelApp>,
+                    cx: &mut VisualTestContext,
+                    column: u32,
+                    criteria: Option<Criteria>| {
         act(app, cx, |app, _, cx| {
-            assert!(app.wb.set_filter_criteria(0, FilterScope::Sheet, column, criteria));
+            assert!(
+                app.wb
+                    .set_filter_criteria(0, FilterScope::Sheet, column, criteria)
+            );
             app.commit("Filter", cx);
         });
     };
     let script = replayed(&app, cx, |app, cx| {
         select(app, cx, "B2");
-        act(app, cx, |app, window, cx| app.run_command(filters::Cmd::Toggle, window, cx));
-        criteria(app, cx, 0, Some(Criteria::Values(ValueFilter { values: vec!["North".to_string(), "East".to_string()], blanks: true, dates: Vec::new() })));
+        act(app, cx, |app, window, cx| {
+            app.run_command(filters::Cmd::Toggle, window, cx)
+        });
+        criteria(
+            app,
+            cx,
+            0,
+            Some(Criteria::Values(ValueFilter {
+                values: vec!["North".to_string(), "East".to_string()],
+                blanks: true,
+                dates: Vec::new(),
+            })),
+        );
         criteria(
             app,
             cx,
             1,
             Some(Criteria::Custom(CustomFilter {
-                first: Condition { op: CustomOp::GreaterOrEqual, value: "10".to_string() },
-                second: Some(Condition { op: CustomOp::Less, value: "30".to_string() }),
+                first: Condition {
+                    op: CustomOp::GreaterOrEqual,
+                    value: "10".to_string(),
+                },
+                second: Some(Condition {
+                    op: CustomOp::Less,
+                    value: "30".to_string(),
+                }),
                 and: true,
             })),
         );
         criteria(app, cx, 0, None);
-        criteria(app, cx, 1, Some(Criteria::Top10(Top10::new(true, false, 2.0))));
-        criteria(app, cx, 2, Some(Criteria::Dynamic(DynamicFilter::AboveAverage)));
-        act(app, cx, |app, window, cx| app.run_command(filters::Cmd::Clear, window, cx));
-        act(app, cx, |app, window, cx| app.run_command(filters::Cmd::Toggle, window, cx));
+        criteria(
+            app,
+            cx,
+            1,
+            Some(Criteria::Top10(Top10::new(true, false, 2.0))),
+        );
+        criteria(
+            app,
+            cx,
+            2,
+            Some(Criteria::Dynamic(DynamicFilter::AboveAverage)),
+        );
+        act(app, cx, |app, window, cx| {
+            app.run_command(filters::Cmd::Clear, window, cx)
+        });
+        act(app, cx, |app, window, cx| {
+            app.run_command(filters::Cmd::Toggle, window, cx)
+        });
     });
     assert_eq!(
         statements(&script),
@@ -596,7 +789,9 @@ fn a_table_and_its_options(cx: &mut TestAppContext) {
     let script = replayed(&app, cx, |app, cx| {
         // Insert ▸ Table and OK of its dialog.
         select(app, cx, "B2");
-        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::Insert, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(tables::Cmd::Insert, window, cx)
+        });
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
         assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].tables.len()), 1);
@@ -611,24 +806,52 @@ fn a_table_and_its_options(cx: &mut TestAppContext) {
             app.wb.rename_table(0, id, "Sales").expect("a name");
             app.commit("Rename Table", cx);
         });
-        for option in [tables::Cmd::TotalRow, tables::Cmd::BandedRows, tables::Cmd::BandedColumns, tables::Cmd::FirstColumn, tables::Cmd::LastColumn, tables::Cmd::FilterButton, tables::Cmd::FilterButton] {
-            act(app, cx, move |app, window, cx| app.run_command(option, window, cx));
+        for option in [
+            tables::Cmd::TotalRow,
+            tables::Cmd::BandedRows,
+            tables::Cmd::BandedColumns,
+            tables::Cmd::FirstColumn,
+            tables::Cmd::LastColumn,
+            tables::Cmd::FilterButton,
+            tables::Cmd::FilterButton,
+        ] {
+            act(app, cx, move |app, window, cx| {
+                app.run_command(option, window, cx)
+            });
         }
         // A filter and a sort from the buttons of the table.
         act(app, cx, |app, _, cx| {
             let id = table(app);
-            assert!(app.wb.set_filter_criteria(0, FilterScope::Table(id), 0, Some(Criteria::Values(ValueFilter { values: vec!["North".to_string(), "West".to_string()], ..Default::default() }))));
+            assert!(app.wb.set_filter_criteria(
+                0,
+                FilterScope::Table(id),
+                0,
+                Some(Criteria::Values(ValueFilter {
+                    values: vec!["North".to_string(), "West".to_string()],
+                    ..Default::default()
+                }))
+            ));
             app.commit("Filter", cx);
         });
-        act(app, cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::Clear, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(crate::features::filters::Cmd::Clear, window, cx)
+        });
         select(app, cx, "B3");
-        act(app, cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::SortDescending, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(crate::features::filters::Cmd::SortDescending, window, cx)
+        });
         // A value typed under the table: the table takes the row in.
-        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::TotalRow, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(tables::Cmd::TotalRow, window, cx)
+        });
         enter(app, cx, "A6", "Centre");
         select(app, cx, "B3");
-        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::HeaderRow, window, cx));
-        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::HeaderRow, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(tables::Cmd::HeaderRow, window, cx)
+        });
+        act(app, cx, |app, window, cx| {
+            app.run_command(tables::Cmd::HeaderRow, window, cx)
+        });
     });
     for line in [
         "workbook.addTable(selectedSheet.getRange(\"A1:C5\"), true);",
@@ -651,7 +874,10 @@ fn a_table_and_its_options(cx: &mut TestAppContext) {
     ] {
         assert!(statements(&script).contains(&line), "{line}\n{script}");
     }
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].tables[0].range), rect("A1:C6"));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[0].tables[0].range),
+        rect("A1:C6")
+    );
 }
 
 #[gpui::test]
@@ -666,13 +892,21 @@ fn a_table_without_headers_and_back_to_a_range(cx: &mut TestAppContext) {
             app.commit("Create Table", cx);
         });
         select(app, cx, "A2");
-        act(app, cx, |app, window, cx| app.run_command(tables::Cmd::ConvertToRange, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.run_command(tables::Cmd::ConvertToRange, window, cx)
+        });
         press_alert_button(cx, 0);
         assert!(app.update(cx, |app, _| app.wb.sheets[0].tables.is_empty()));
     });
     let lines = statements(&script);
-    assert_eq!(lines[0], "workbook.addTable(selectedSheet.getRange(\"A1:B3\"), false);", "{script}");
-    assert!(lines.contains(&"workbook.getTable(\"Table1\").convertToRange();"), "{script}");
+    assert_eq!(
+        lines[0], "workbook.addTable(selectedSheet.getRange(\"A1:B3\"), false);",
+        "{script}"
+    );
+    assert!(
+        lines.contains(&"workbook.getTable(\"Table1\").convertToRange();"),
+        "{script}"
+    );
 }
 
 // ------------------------------------------------------------------ names
@@ -682,22 +916,29 @@ fn names_defined_changed_and_deleted(cx: &mut TestAppContext) {
     use opensheet_engine::names::NameScope;
     let (app, cx) = open(cx);
     seed(&app, cx, SALES);
-    let formula = |app: &ExcelApp, text: &str| app.wb.parse_name_formula(text, 0, 0, 0).expect("a formula");
+    let formula =
+        |app: &ExcelApp, text: &str| app.wb.parse_name_formula(text, 0, 0, 0).expect("a formula");
     let script = replayed(&app, cx, |app, cx| {
         act(app, cx, |app, _, cx| {
             let expr = formula(app, "=Sheet1!$B$2:$B$5");
-            app.wb.add_name(NameScope::Workbook, "Units", expr, "what was sold").expect("a name");
+            app.wb
+                .add_name(NameScope::Workbook, "Units", expr, "what was sold")
+                .expect("a name");
             app.commit("Define Name", cx);
         });
         act(app, cx, |app, _, cx| {
             let expr = formula(app, "=0.2");
-            app.wb.add_name(NameScope::Sheet(0), "Rate", expr, "").expect("a name");
+            app.wb
+                .add_name(NameScope::Sheet(0), "Rate", expr, "")
+                .expect("a name");
             app.commit("Define Name", cx);
         });
         enter(app, cx, "E1", "=SUM(Units)*Rate");
         act(app, cx, |app, _, cx| {
             let expr = formula(app, "=Sheet1!$B$2:$B$4");
-            app.wb.edit_name(NameScope::Workbook, "Units", "Units", expr, "three regions").expect("a name");
+            app.wb
+                .edit_name(NameScope::Workbook, "Units", "Units", expr, "three regions")
+                .expect("a name");
             app.commit("Edit Name", cx);
         });
         act(app, cx, |app, _, cx| {
@@ -729,13 +970,24 @@ fn sheets_added_renamed_moved_coloured_and_deleted(cx: &mut TestAppContext) {
         act(app, cx, |app, _, cx| app.add_sheet(cx));
         enter(app, cx, "A1", "on the new sheet");
         // The name typed on the tab.
-        act(app, cx, |app, window, cx| app.begin_rename_sheet(1, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.begin_rename_sheet(1, window, cx)
+        });
         cx.simulate_keystrokes("cmd-a");
         cx.simulate_input("Notes");
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
-        assert_eq!(app.update(cx, |app, _| app.wb.sheets[1].name.clone()), "Notes");
-        act(app, cx, |app, _, cx| app.pick_color(ColorTarget::Tab, Some(opensheet_engine::Color(0x00B050)), cx));
+        assert_eq!(
+            app.update(cx, |app, _| app.wb.sheets[1].name.clone()),
+            "Notes"
+        );
+        act(app, cx, |app, _, cx| {
+            app.pick_color(
+                ColorTarget::Tab,
+                Some(opensheet_engine::Color(0x00B050)),
+                cx,
+            )
+        });
         act(app, cx, |app, _, cx| app.add_sheet(cx));
         // Move Left of the menu of the tab.
         act(app, cx, |app, _, cx| {
@@ -754,7 +1006,15 @@ fn sheets_added_renamed_moved_coloured_and_deleted(cx: &mut TestAppContext) {
         act(app, cx, |app, _, cx| app.duplicate_sheet(1, cx));
         act(app, cx, |app, _, cx| app.delete_sheet(0, cx));
     });
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets.iter().map(|sheet| sheet.name.clone()).collect::<Vec<_>>()), ["Data", "Data (2)", "Notes"]);
+    assert_eq!(
+        app.update(cx, |app, _| app
+            .wb
+            .sheets
+            .iter()
+            .map(|sheet| sheet.name.clone())
+            .collect::<Vec<_>>()),
+        ["Data", "Data (2)", "Notes"]
+    );
     assert_eq!(
         statements(&script),
         [
@@ -811,15 +1071,20 @@ fn a_chart_inserted_titled_and_placed(cx: &mut TestAppContext) {
     let chart = |app: &ExcelApp| app.wb.sheets[0].charts[0].id;
     let script = replayed(&app, cx, |app, cx| {
         select(app, cx, "A1:B5");
-        act(app, cx, |app, window, cx| app.insert_chart(ChartKind::Column, window, cx));
+        act(app, cx, |app, window, cx| {
+            app.insert_chart(ChartKind::Column, window, cx)
+        });
         act(app, cx, |app, _, cx| {
             let id = chart(app);
-            app.wb.update_chart(0, id, |chart| chart.title = ChartTitle::Text("Units by region".to_string()));
+            app.wb.update_chart(0, id, |chart| {
+                chart.title = ChartTitle::Text("Units by region".to_string())
+            });
             app.commit("Chart Title", cx);
         });
         act(app, cx, |app, _, cx| {
             let id = chart(app);
-            app.wb.update_chart(0, id, |chart| chart.set_kind(ChartKind::Line));
+            app.wb
+                .update_chart(0, id, |chart| chart.set_kind(ChartKind::Line));
             app.commit("Change Chart Type", cx);
         });
         // Dragged and resized.
@@ -834,10 +1099,27 @@ fn a_chart_inserted_titled_and_placed(cx: &mut TestAppContext) {
         });
     });
     let lines = statements(&script);
-    assert_eq!(lines[0], "selectedSheet.addChart(ExcelScript.ChartType.columnClustered, selectedSheet.getRange(\"A1:B5\"));", "{script}");
-    assert!(lines.contains(&"selectedSheet.getChart(\"Chart 1\").getTitle().setText(\"Units by region\");"), "{script}");
-    assert!(lines.contains(&"selectedSheet.getChart(\"Chart 1\").setChartType(ExcelScript.ChartType.line);"), "{script}");
-    assert!(lines.contains(&"selectedSheet.getChart(\"Chart 1\").setWidth(270);"), "{script}");
+    assert_eq!(
+        lines[0],
+        "selectedSheet.addChart(ExcelScript.ChartType.columnClustered, selectedSheet.getRange(\"A1:B5\"));",
+        "{script}"
+    );
+    assert!(
+        lines.contains(
+            &"selectedSheet.getChart(\"Chart 1\").getTitle().setText(\"Units by region\");"
+        ),
+        "{script}"
+    );
+    assert!(
+        lines.contains(
+            &"selectedSheet.getChart(\"Chart 1\").setChartType(ExcelScript.ChartType.line);"
+        ),
+        "{script}"
+    );
+    assert!(
+        lines.contains(&"selectedSheet.getChart(\"Chart 1\").setWidth(270);"),
+        "{script}"
+    );
 }
 
 // -------------------------------------------------------------- the list
@@ -853,13 +1135,28 @@ fn what_cannot_be_written_is_listed_as_not_recorded(cx: &mut TestAppContext) {
     // of the user only.
     act(&app, cx, |app, _, cx| {
         app.wb.snapshot();
-        app.wb.sheets[0].comments.insert((1, 1), Comment::Note(Note::new("Thomas", "check this")));
+        app.wb.sheets[0]
+            .comments
+            .insert((1, 1), Comment::Note(Note::new("Thomas", "check this")));
         app.commit("New Note", cx);
     });
     enter(&app, cx, "E2", "after");
-    assert_eq!(listed(&app, cx), [("Typing".to_string(), true), ("New Note".to_string(), false), ("Typing".to_string(), true)]);
+    assert_eq!(
+        listed(&app, cx),
+        [
+            ("Typing".to_string(), true),
+            ("New Note".to_string(), false),
+            ("Typing".to_string(), true)
+        ]
+    );
     let script = stop(&app, cx);
-    assert_eq!(statements(&script), ["selectedSheet.getRange(\"E1\").setValue(\"before\");", "selectedSheet.getRange(\"E2\").setValue(\"after\");"]);
+    assert_eq!(
+        statements(&script),
+        [
+            "selectedSheet.getRange(\"E1\").setValue(\"before\");",
+            "selectedSheet.getRange(\"E2\").setValue(\"after\");"
+        ]
+    );
 }
 
 #[gpui::test]
@@ -885,7 +1182,10 @@ fn an_action_undone_leaves_the_list_and_one_redone_comes_back(cx: &mut TestAppCo
     act(&app, cx, |app, _, cx| app.undo(cx));
     assert_eq!(listed(&app, cx), [("Undo".to_string(), true)]);
     let script = stop(&app, cx);
-    assert_eq!(statements(&script), ["selectedSheet.getRange(\"A1:C5\").clear(ExcelScript.ClearApplyTo.contents);"]);
+    assert_eq!(
+        statements(&script),
+        ["selectedSheet.getRange(\"A1:C5\").clear(ExcelScript.ClearApplyTo.contents);"]
+    );
 }
 
 #[gpui::test]
@@ -906,7 +1206,9 @@ fn a_range_filled_with_one_entry(cx: &mut TestAppContext) {
         select(app, cx, "D1:D3");
         act(app, cx, |app, _, cx| {
             for row in 0..3 {
-                app.wb.set_cell_text(0, row, 3, &format!("=LEN(A{})+$B$1", row + 1)).expect("a formula");
+                app.wb
+                    .set_cell_text(0, row, 3, &format!("=LEN(A{})+$B$1", row + 1))
+                    .expect("a formula");
             }
             app.commit("Typing", cx);
         });
@@ -958,7 +1260,10 @@ fn work_on_another_sheet_names_the_sheet(cx: &mut TestAppContext) {
 // --------------------------------------------------------------- the pane
 
 fn click(cx: &mut VisualTestContext, name: &'static str) {
-    let position = cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is not drawn")).center();
+    let position = cx
+        .debug_bounds(name)
+        .unwrap_or_else(|| panic!("{name} is not drawn"))
+        .center();
     cx.simulate_click(position, Modifiers::none());
     settle(cx);
 }
@@ -970,7 +1275,14 @@ fn the_pane_lists_the_actions_and_stop_saves_the_script(cx: &mut TestAppContext)
     // Record Actions on the Automate tab.
     app.update(cx, |app, cx| super::super::show_tab(app, cx));
     settle(cx);
-    let button = app.update(cx, |app, _| app.anchors.borrow().get("au-record").map(|bounds| bounds.center())).expect("Record Actions is on the ribbon");
+    let button = app
+        .update(cx, |app, _| {
+            app.anchors
+                .borrow()
+                .get("au-record")
+                .map(|bounds| bounds.center())
+        })
+        .expect("Record Actions is on the ribbon");
     cx.simulate_click(button, Modifiers::none());
     settle(cx);
     assert!(cx.debug_bounds("ce-recording").is_some());
@@ -986,23 +1298,44 @@ fn the_pane_lists_the_actions_and_stop_saves_the_script(cx: &mut TestAppContext)
 
     // Copy as code: the statements of one action, with their comment.
     click(cx, "ce-rec-copy-1");
-    let copied = cx.read_from_clipboard().and_then(|item| item.text()).unwrap_or_default();
-    assert_eq!(copied, "// Set font bold to true for range A1 on selectedSheet\nselectedSheet.getRange(\"A1\").getFormat().getFont().setBold(true);\n");
+    let copied = cx
+        .read_from_clipboard()
+        .and_then(|item| item.text())
+        .unwrap_or_default();
+    assert_eq!(
+        copied,
+        "// Set font bold to true for range A1 on selectedSheet\nselectedSheet.getRange(\"A1\").getFormat().getFont().setBold(true);\n"
+    );
 
     // New Script while recording does not leave the list.
-    act(&app, cx, |app, window, cx| app.run_command(Cmd::NewScript, window, cx));
-    assert_eq!(pane(&app, cx).update(cx, |pane, _| pane.page.clone()), Page::Recording);
+    act(&app, cx, |app, window, cx| {
+        app.run_command(Cmd::NewScript, window, cx)
+    });
+    assert_eq!(
+        pane(&app, cx).update(cx, |pane, _| pane.page.clone()),
+        Page::Recording
+    );
 
     // Stop: the script is saved under a name of its own and opened.
     click(cx, "ce-rec-stop");
     let pane = pane(&app, cx);
-    assert_eq!(pane.update(cx, |pane, _| (pane.page.clone(), pane.open.clone(), pane.recorder.is_none())), (Page::Editor, Some("Script".to_string()), true));
+    assert_eq!(
+        pane.update(cx, |pane, _| (
+            pane.page.clone(),
+            pane.open.clone(),
+            pane.recorder.is_none()
+        )),
+        (Page::Editor, Some("Script".to_string()), true)
+    );
     let saved = scripts::load("Script").expect("the script was saved");
     assert_eq!(
         saved.body,
         "function main(workbook: ExcelScript.Workbook) {\n\tlet selectedSheet = workbook.getActiveWorksheet();\n\t// Set range A1 on selectedSheet\n\tselectedSheet.getRange(\"A1\").setValue(12);\n\t// Set font bold to true for range A1 on selectedSheet\n\tselectedSheet.getRange(\"A1\").getFormat().getFont().setBold(true);\n}\n"
     );
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).text().to_string()), saved.body);
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).text().to_string()),
+        saved.body
+    );
     // What is done after Stop is no longer recorded, and nothing is wrong
     // with the script.
     enter(&app, cx, "B1", "later");
@@ -1018,7 +1351,12 @@ fn timing_on_a_large_sheet(cx: &mut TestAppContext) {
     act(&app, cx, |app, _, cx| {
         for row in 0..20_000u32 {
             for col in 0..5u32 {
-                app.wb.set_value(0, row, col, opensheet_engine::Value::Number((row * 7 + col) as f64));
+                app.wb.set_value(
+                    0,
+                    row,
+                    col,
+                    opensheet_engine::Value::Number((row * 7 + col) as f64),
+                );
             }
         }
         app.commit("seed", cx);
@@ -1041,7 +1379,9 @@ fn timing_on_a_large_sheet(cx: &mut TestAppContext) {
             }
             _ => {
                 select(&app, cx, "B3");
-                act(&app, cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::SortDescending, window, cx));
+                act(&app, cx, |app, window, cx| {
+                    app.run_command(crate::features::filters::Cmd::SortDescending, window, cx)
+                });
             }
         }
         println!("{what}: {:?}", clock.elapsed());
@@ -1088,19 +1428,39 @@ fn data_validation(cx: &mut TestAppContext) {
             operator,
             ..Validation::default()
         };
-        rule.set_operands(first, second, Locale::en()).expect("a rule");
+        rule.set_operands(first, second, Locale::en())
+            .expect("a rule");
         rule
     };
-    let set = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str, rule: Validation| {
-        let range = rect(range);
-        act(app, cx, move |app, _, cx| {
-            assert!(app.wb.set_validation(0, &[range], (range.r0, range.c0), rule));
-            app.commit("Data Validation", cx);
-        });
-    };
+    let set =
+        |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str, rule: Validation| {
+            let range = rect(range);
+            act(app, cx, move |app, _, cx| {
+                assert!(
+                    app.wb
+                        .set_validation(0, &[range], (range.r0, range.c0), rule)
+                );
+                app.commit("Data Validation", cx);
+            });
+        };
     let script = replayed(&app, cx, |app, cx| {
-        set(app, cx, "B2:B5", rule(ValidationKind::Whole, Operator::Between, "1", "100"));
-        set(app, cx, "A2:A5", rule(ValidationKind::List, Operator::Between, "North,South,East,West", ""));
+        set(
+            app,
+            cx,
+            "B2:B5",
+            rule(ValidationKind::Whole, Operator::Between, "1", "100"),
+        );
+        set(
+            app,
+            cx,
+            "A2:A5",
+            rule(
+                ValidationKind::List,
+                Operator::Between,
+                "North,South,East,West",
+                "",
+            ),
+        );
         let mut warned = rule(ValidationKind::Decimal, Operator::GreaterThan, "=B2/10", "");
         warned.allow_blank = false;
         warned.input_title = "Price".to_string();
@@ -1109,9 +1469,19 @@ fn data_validation(cx: &mut TestAppContext) {
         warned.error_title = "Too low".to_string();
         warned.error_message = "Check the price.".to_string();
         set(app, cx, "C2:C5", warned);
-        set(app, cx, "E1:E3", rule(ValidationKind::Custom, Operator::Between, "=LEN(E1)<5", ""));
+        set(
+            app,
+            cx,
+            "E1:E3",
+            rule(ValidationKind::Custom, Operator::Between, "=LEN(E1)<5", ""),
+        );
         // The rule of B2:B5 replaced, that of A2:A5 removed.
-        set(app, cx, "B2:B5", rule(ValidationKind::TextLength, Operator::LessOrEqual, "3", ""));
+        set(
+            app,
+            cx,
+            "B2:B5",
+            rule(ValidationKind::TextLength, Operator::LessOrEqual, "3", ""),
+        );
         act(app, cx, |app, _, cx| {
             assert!(app.wb.clear_validation(0, &[rect("A2:A5")]));
             app.commit("Data Validation", cx);
@@ -1137,7 +1507,8 @@ fn data_validation(cx: &mut TestAppContext) {
 fn notes_added_changed_shown_and_deleted(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     seed(&app, cx, SALES);
-    let author = crate::features::preferences::user_name().unwrap_or_else(|| opensheet_script::Context::default().user_name);
+    let author = crate::features::preferences::user_name()
+        .unwrap_or_else(|| opensheet_script::Context::default().user_name);
     let script = replayed(&app, cx, |app, cx| {
         let name = author.clone();
         act(app, cx, move |app, _, cx| {
@@ -1186,7 +1557,15 @@ fn a_sheet_protected_and_unprotected(cx: &mut TestAppContext) {
     start(&app, cx);
     enter(&app, cx, "E1", "before");
     act(&app, cx, |app, _, cx| {
-        assert!(app.wb.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectUnlockedCells, Permission::FormatCells, Permission::Sort]), ""));
+        assert!(app.wb.protect_sheet(
+            0,
+            SheetProtection::allowing(&[
+                Permission::SelectUnlockedCells,
+                Permission::FormatCells,
+                Permission::Sort
+            ]),
+            ""
+        ));
         app.refresh(cx);
     });
     act(&app, cx, |app, _, cx| {
@@ -1204,11 +1583,21 @@ fn a_sheet_protected_and_unprotected(cx: &mut TestAppContext) {
         app.switch_sheet(1, window, cx);
     });
     act(&app, cx, |app, _, cx| {
-        assert!(app.wb.protect_sheet(1, SheetProtection::default(), "secret"));
+        assert!(
+            app.wb
+                .protect_sheet(1, SheetProtection::default(), "secret")
+        );
         app.refresh(cx);
     });
     let actions = listed(&app, cx);
-    assert_eq!(actions.iter().map(|(_, recorded)| *recorded).collect::<Vec<_>>(), [true, true, true, true, true, true, false], "{actions:?}");
+    assert_eq!(
+        actions
+            .iter()
+            .map(|(_, recorded)| *recorded)
+            .collect::<Vec<_>>(),
+        [true, true, true, true, true, true, false],
+        "{actions:?}"
+    );
     let script = stop(&app, cx);
     assert_eq!(
         statements(&script),
@@ -1239,10 +1628,17 @@ fn conditional_formats_added_and_cleared(cx: &mut TestAppContext) {
     seed(&app, cx, SALES);
     // What Highlight Cells Rules and New Rule add, and Clear Rules from
     // Selected Cells.
-    let add = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, range: &str, rule: Rule, format: StylePatch| {
+    let add = |app: &Entity<ExcelApp>,
+               cx: &mut VisualTestContext,
+               range: &str,
+               rule: Rule,
+               format: StylePatch| {
         let range = rect(range);
         act(app, cx, move |app, _, cx| {
-            assert!(app.wb.add_cond_format(0, CondFormat::new(vec![range], rule).with_format(format)));
+            assert!(
+                app.wb
+                    .add_cond_format(0, CondFormat::new(vec![range], rule).with_format(format))
+            );
             app.commit("Conditional Formatting", cx);
         });
     };
@@ -1253,10 +1649,41 @@ fn conditional_formats_added_and_cleared(cx: &mut TestAppContext) {
     };
     let script = replayed(&app, cx, |app, cx| {
         select(app, cx, "B2:B5");
-        add(app, cx, "B2:B5", Rule::cell_is(CellOp::Greater, Expr::Number(15.0), None), light_red.clone());
-        add(app, cx, "C2:C5", Rule::cell_is(CellOp::Between, Expr::Number(2.0), Some(Expr::Number(4.0))), StylePatch { bold: Some(true), ..StylePatch::default() });
-        let formula = opensheet_engine::condfmt::parse_operand("=$B2>$C2*3", opensheet_engine::Locale::en(), (1, 0), (1, 0)).expect("a formula");
-        add(app, cx, "A2:A5", Rule::Formula(formula), StylePatch { italic: Some(true), fill: Some(Some(Color(0xFFEB9C))), ..StylePatch::default() });
+        add(
+            app,
+            cx,
+            "B2:B5",
+            Rule::cell_is(CellOp::Greater, Expr::Number(15.0), None),
+            light_red.clone(),
+        );
+        add(
+            app,
+            cx,
+            "C2:C5",
+            Rule::cell_is(CellOp::Between, Expr::Number(2.0), Some(Expr::Number(4.0))),
+            StylePatch {
+                bold: Some(true),
+                ..StylePatch::default()
+            },
+        );
+        let formula = opensheet_engine::condfmt::parse_operand(
+            "=$B2>$C2*3",
+            opensheet_engine::Locale::en(),
+            (1, 0),
+            (1, 0),
+        )
+        .expect("a formula");
+        add(
+            app,
+            cx,
+            "A2:A5",
+            Rule::Formula(formula),
+            StylePatch {
+                italic: Some(true),
+                fill: Some(Some(Color(0xFFEB9C))),
+                ..StylePatch::default()
+            },
+        );
         select(app, cx, "B2:B5");
         act(app, cx, |app, _, cx| {
             assert!(app.wb.clear_cond_formats(0, &[rect("B2:B5")]));

@@ -41,7 +41,12 @@ fn select(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: Cell) {
 }
 
 /// A point of the window given in the cell's own pixels.
-fn in_cell(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: Cell, at: (f32, f32)) -> Point<Pixels> {
+fn in_cell(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    cell: Cell,
+    at: (f32, f32),
+) -> Point<Pixels> {
     app.update(cx, |app, _| {
         let layout = app.current_layout().expect("the grid was drawn");
         let (x0, y0, _, _) = layout.rect_px(Rect::cell(cell.0, cell.1));
@@ -54,12 +59,26 @@ fn centre(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: Cell) -> Poi
 }
 
 /// Where the box of a note shows, in window coordinates (x0, y0, x1, y1).
-fn box_of(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: Cell) -> Option<(f32, f32, f32, f32)> {
+fn box_of(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    cell: Cell,
+) -> Option<(f32, f32, f32, f32)> {
     app.update(cx, |app, _| {
         let layout = app.current_layout()?;
-        let shown = boxes(app, &layout).into_iter().find(|shown| shown.cell == cell)?;
-        let (a, b) = (layout.to_window(shown.rect.0, shown.rect.1), layout.to_window(shown.rect.2, shown.rect.3));
-        Some((f32::from(a.x), f32::from(a.y), f32::from(b.x), f32::from(b.y)))
+        let shown = boxes(app, &layout)
+            .into_iter()
+            .find(|shown| shown.cell == cell)?;
+        let (a, b) = (
+            layout.to_window(shown.rect.0, shown.rect.1),
+            layout.to_window(shown.rect.2, shown.rect.3),
+        );
+        Some((
+            f32::from(a.x),
+            f32::from(a.y),
+            f32::from(b.x),
+            f32::from(b.y),
+        ))
     })
 }
 
@@ -85,15 +104,29 @@ fn wait(cx: &mut VisualTestContext, time: Duration) {
 }
 
 fn note(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: Cell) -> Option<Note> {
-    app.update(cx, |app, _| app.wb.comment_at(app.sheet, cell.0, cell.1).and_then(Comment::as_note).cloned())
+    app.update(cx, |app, _| {
+        app.wb
+            .comment_at(app.sheet, cell.0, cell.1)
+            .and_then(Comment::as_note)
+            .cloned()
+    })
 }
 
 fn note_text(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: Cell) -> Option<String> {
     note(app, cx, cell).map(|note| note.text())
 }
 
-fn thread(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, cell: Cell) -> Option<comment::Thread> {
-    app.update(cx, |app, _| app.wb.comment_at(app.sheet, cell.0, cell.1).and_then(Comment::as_thread).cloned())
+fn thread(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    cell: Cell,
+) -> Option<comment::Thread> {
+    app.update(cx, |app, _| {
+        app.wb
+            .comment_at(app.sheet, cell.0, cell.1)
+            .and_then(Comment::as_thread)
+            .cloned()
+    })
 }
 
 /// What the feature remembers, looked at.
@@ -107,7 +140,9 @@ fn editing(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Cell> {
 
 /// The cell of the floating card, and whether it stays when the pointer leaves.
 fn card(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<(Cell, bool)> {
-    ui(app, cx, |ui| ui.card.as_ref().map(|card| (card.cell, card.pinned)))
+    ui(app, cx, |ui| {
+        ui.card.as_ref().map(|card| (card.cell, card.pinned))
+    })
 }
 
 fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<String> {
@@ -143,7 +178,12 @@ fn a_new_note_is_typed_in_place(cx: &mut TestAppContext) {
     // Typing goes to the cell again.
     cx.simulate_input("7");
     cx.simulate_keystrokes("enter");
-    app.update(cx, |app, _| assert_eq!(app.wb.sheets[0].value_at(2, 1), opensheet_engine::Value::Number(7.0)));
+    app.update(cx, |app, _| {
+        assert_eq!(
+            app.wb.sheets[0].value_at(2, 1),
+            opensheet_engine::Value::Number(7.0)
+        )
+    });
     // One undo step for the cell, one for the note.
     cx.simulate_keystrokes("cmd-z cmd-z");
     assert_eq!(note_text(&app, cx, (2, 1)), None);
@@ -165,7 +205,10 @@ fn a_click_outside_finishes_the_note(cx: &mut TestAppContext) {
     let elsewhere = centre(&app, cx, (8, 0));
     click(cx, elsewhere);
     assert_eq!(editing(&app, cx), None);
-    assert_eq!(note_text(&app, cx, (1, 1)).as_deref(), Some("Ada:\nFirst line"));
+    assert_eq!(
+        note_text(&app, cx, (1, 1)).as_deref(),
+        Some("Ada:\nFirst line")
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Edit Note"));
     // The click went to the cell it landed on.
     app.update(cx, |app, _| assert_eq!(app.active(), (8, 0)));
@@ -189,7 +232,10 @@ fn moving_in_the_text_of_a_note(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-down");
     cx.simulate_input("Z");
     cx.simulate_keystrokes("escape");
-    assert_eq!(note_text(&app, cx, (0, 0)).as_deref(), Some("Ada:\nYabcX\ndefZ"));
+    assert_eq!(
+        note_text(&app, cx, (0, 0)).as_deref(),
+        Some("Ada:\nYabcX\ndefZ")
+    );
     cx.simulate_keystrokes("shift-f2 cmd-shift-up");
     cx.simulate_input("All new");
     cx.simulate_keystrokes("escape");
@@ -222,7 +268,11 @@ fn the_note_commands(cx: &mut TestAppContext) {
     assert_eq!(note_text(&app, cx, (1, 1)), None);
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Delete Note"));
     app.update(cx, |app, _| {
-        assert!(!Cmd::EditNote.enabled(app) && !Cmd::DeleteNote.enabled(app) && !Cmd::ShowHideNote.enabled(app));
+        assert!(
+            !Cmd::EditNote.enabled(app)
+                && !Cmd::DeleteNote.enabled(app)
+                && !Cmd::ShowHideNote.enabled(app)
+        );
         assert!(Cmd::NewNote.enabled(app) && Cmd::ConvertToComments.enabled(app));
     });
     // Review ▸ Delete takes the notes of the whole selection.
@@ -230,7 +280,9 @@ fn the_note_commands(cx: &mut TestAppContext) {
     app.update(cx, |app, _| assert!(Cmd::Delete.enabled(app)));
     run(&app, cx, Cmd::Delete);
     assert_eq!(note_text(&app, cx, (4, 2)), None);
-    app.update(cx, |app, _| assert!(!Cmd::Delete.enabled(app) && !Cmd::ConvertToComments.enabled(app)));
+    app.update(cx, |app, _| {
+        assert!(!Cmd::Delete.enabled(app) && !Cmd::ConvertToComments.enabled(app))
+    });
 }
 
 #[gpui::test]
@@ -304,7 +356,10 @@ fn a_shown_note_is_edited_moved_and_resized_with_the_mouse(cx: &mut TestAppConte
     drag(cx, (x1 + 2.0, y1 + 2.0), (x1 + 42.0, y1 + 12.0));
     let sized = app.update(cx, |app, _| app.wb.sheets[0].note_frame(2, 1).unwrap());
     assert_eq!((sized.x, sized.y), (moved.x, moved.y));
-    assert_eq!((sized.width - moved.width, sized.height - moved.height), (40.0, 10.0));
+    assert_eq!(
+        (sized.width - moved.width, sized.height - moved.height),
+        (40.0, 10.0)
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Size Object"));
     // The arrows nudge the selected box, Delete removes the note.
     redraw(cx);
@@ -330,26 +385,44 @@ fn next_and_previous_note_walk_the_workbook(cx: &mut TestAppContext) {
         wb.add_comment(0, 3, 0, &bob(), 45_000.0, "a thread between them");
         wb.set_note(1, 0, 4, "Ada", "second");
     });
-    app.update(cx, |app, _| assert!(Cmd::NextNote.enabled(app) && Cmd::Next.enabled(app)));
+    app.update(cx, |app, _| {
+        assert!(Cmd::NextNote.enabled(app) && Cmd::Next.enabled(app))
+    });
     run(&app, cx, Cmd::NextNote);
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (0, (2, 1))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (0, (2, 1)))
+    });
     // The note that was reached shows, without the pointer.
     assert!(box_of(&app, cx, (2, 1)).is_some());
     run(&app, cx, Cmd::NextNote);
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (1, (0, 4))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (1, (0, 4)))
+    });
     assert!(box_of(&app, cx, (0, 4)).is_some());
     // Past the last note Excel asks before starting again; Cancel stays.
     run(&app, cx, Cmd::NextNote);
     app.update(cx, |app, _| assert!(app.modal_open()));
     cx.simulate_keystrokes("escape");
-    app.update(cx, |app, _| assert_eq!((app.modal_open(), app.sheet, app.active()), (false, 1, (0, 4))));
+    app.update(cx, |app, _| {
+        assert_eq!(
+            (app.modal_open(), app.sheet, app.active()),
+            (false, 1, (0, 4))
+        )
+    });
     run(&app, cx, Cmd::NextNote);
     cx.simulate_keystrokes("enter");
-    app.update(cx, |app, _| assert_eq!((app.modal_open(), app.sheet, app.active()), (false, 0, (2, 1))));
+    app.update(cx, |app, _| {
+        assert_eq!(
+            (app.modal_open(), app.sheet, app.active()),
+            (false, 0, (2, 1))
+        )
+    });
     // Backwards from the first one, to the last.
     run(&app, cx, Cmd::PreviousNote);
     cx.simulate_keystrokes("enter");
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (1, (0, 4))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (1, (0, 4)))
+    });
     // The box goes when the selection moves on.
     select(&app, cx, (5, 5));
     assert_eq!(box_of(&app, cx, (0, 4)), None);
@@ -369,7 +442,10 @@ fn notes_are_converted_after_a_question(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::ConvertToComments);
     cx.simulate_keystrokes("enter");
     let first = thread(&app, cx, (1, 1)).expect("a thread").first;
-    assert_eq!((first.author.name.as_str(), first.text.as_str()), ("Ada", "One"));
+    assert_eq!(
+        (first.author.name.as_str(), first.text.as_str()),
+        ("Ada", "One")
+    );
     assert_eq!(thread(&app, cx, (4, 2)).unwrap().first.text, "Two");
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Convert to Comments"));
     cx.simulate_keystrokes("cmd-z");
@@ -394,7 +470,13 @@ fn boxes_are_drawn_at_any_zoom_and_with_frozen_panes(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     edit(&app, cx, |wb| {
         for row in 0..40 {
-            wb.set_note(0, row, row % 7, "Ada", "Ada:\nA note long enough to wrap over two or three lines.");
+            wb.set_note(
+                0,
+                row,
+                row % 7,
+                "Ada",
+                "Ada:\nA note long enough to wrap over two or three lines.",
+            );
             wb.add_comment(0, row, 8, &bob(), 45_000.0, "thread");
         }
         wb.set_all_notes_visible(0, true);
@@ -417,7 +499,10 @@ fn boxes_are_drawn_at_any_zoom_and_with_frozen_panes(cx: &mut TestAppContext) {
     app.update(cx, |app, _| {
         let layout = app.current_layout().unwrap();
         let limit = layout.header_w + layout.frozen_w;
-        let scrolled: Vec<_> = boxes(app, &layout).into_iter().filter(|shown| shown.cell.1 >= 1).collect();
+        let scrolled: Vec<_> = boxes(app, &layout)
+            .into_iter()
+            .filter(|shown| shown.cell.1 >= 1)
+            .collect();
         assert!(!scrolled.is_empty() && scrolled.iter().all(|shown| shown.clip.0 == limit));
     });
 }
@@ -466,7 +551,12 @@ fn a_comment_is_written_posted_and_answered(cx: &mut TestAppContext) {
     // Typing goes to the cell again.
     cx.simulate_input("5");
     cx.simulate_keystrokes("enter");
-    app.update(cx, |app, _| assert_eq!(app.wb.sheets[0].value_at(3, 1), opensheet_engine::Value::Number(5.0)));
+    app.update(cx, |app, _| {
+        assert_eq!(
+            app.wb.sheets[0].value_at(3, 1),
+            opensheet_engine::Value::Number(5.0)
+        )
+    });
 }
 
 #[gpui::test]
@@ -568,14 +658,21 @@ fn threads_are_edited_resolved_and_deleted(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::Reply);
     let view = ui(&app, cx, |ui| ui.card.as_ref().unwrap().view.clone());
     // Rewriting a reply in its card: ⌘Return saves, Escape gives up.
-    view.update_in(cx, |card, window, cx| card.start_edit(Some(0), &Post::new(&bob(), 45_000.0, "Not yet"), window, cx));
+    view.update_in(cx, |card, window, cx| {
+        card.start_edit(Some(0), &Post::new(&bob(), 45_000.0, "Not yet"), window, cx)
+    });
     redraw(cx);
     cx.simulate_keystrokes("cmd-a");
     cx.simulate_input("Done now");
     cx.simulate_keystrokes("cmd-enter");
-    assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies[0].text, "Done now");
+    assert_eq!(
+        thread(&app, cx, (2, 2)).unwrap().replies[0].text,
+        "Done now"
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Edit Comment"));
-    view.update_in(cx, |card, window, cx| card.start_edit(None, &Post::new(&bob(), 45_000.0, "Checked?"), window, cx));
+    view.update_in(cx, |card, window, cx| {
+        card.start_edit(None, &Post::new(&bob(), 45_000.0, "Checked?"), window, cx)
+    });
     redraw(cx);
     cx.simulate_input(" really");
     cx.simulate_keystrokes("escape");
@@ -591,9 +688,13 @@ fn threads_are_edited_resolved_and_deleted(cx: &mut TestAppContext) {
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Resolve thread"));
     redraw(cx);
     // A resolved thread takes no reply until it is reopened.
-    app.update(cx, |app, cx| assert!(!post(app, 0, (2, 2), "Too late", Vec::new(), cx)));
+    app.update(cx, |app, cx| {
+        assert!(!post(app, 0, (2, 2), "Too late", Vec::new(), cx))
+    });
     app.update(cx, |app, cx| resolve(app, 0, (2, 2), false, cx));
-    app.update(cx, |app, cx| assert!(post(app, 0, (2, 2), "In time", Vec::new(), cx)));
+    app.update(cx, |app, cx| {
+        assert!(post(app, 0, (2, 2), "In time", Vec::new(), cx))
+    });
     assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies.len(), 2);
     // Deleting the thread takes its card with it.
     app.update(cx, |app, cx| delete_thread(app, 0, (2, 2), cx));
@@ -602,7 +703,9 @@ fn threads_are_edited_resolved_and_deleted(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(thread(&app, cx, (2, 2)).unwrap().replies.len(), 2);
     // Review ▸ Delete does the same for the active cell.
-    app.update(cx, |app, _| assert!(Cmd::DeleteComment.enabled(app) && !Cmd::NewNote.enabled(app)));
+    app.update(cx, |app, _| {
+        assert!(Cmd::DeleteComment.enabled(app) && !Cmd::NewNote.enabled(app))
+    });
     run(&app, cx, Cmd::DeleteComment);
     assert_eq!(thread(&app, cx, (2, 2)), None);
 }
@@ -623,10 +726,15 @@ fn words_not_posted_are_not_lost(cx: &mut TestAppContext) {
     app.update(cx, |app, _| assert!(app.modal_open()));
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    app.update(cx, |app, _| assert_eq!((app.modal_open(), app.active()), (false, (1, 1))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.modal_open(), app.active()), (false, (1, 1)))
+    });
     cx.simulate_input(", finished");
     cx.simulate_keystrokes("cmd-enter");
-    assert_eq!(thread(&app, cx, (1, 1)).unwrap().first.text, "Half a thought, finished");
+    assert_eq!(
+        thread(&app, cx, (1, 1)).unwrap().first.text,
+        "Half a thought, finished"
+    );
     // ...or drop it and write the new one.
     cx.simulate_keystrokes("cmd-shift-m");
     cx.simulate_input("Reply never sent");
@@ -637,7 +745,10 @@ fn words_not_posted_are_not_lost(cx: &mut TestAppContext) {
     assert_eq!(card(&app, cx), Some(((9, 3), true)));
     cx.simulate_input("The other one");
     cx.simulate_keystrokes("cmd-enter");
-    assert_eq!(thread(&app, cx, (9, 3)).unwrap().first.text, "The other one");
+    assert_eq!(
+        thread(&app, cx, (9, 3)).unwrap().first.text,
+        "The other one"
+    );
     assert!(thread(&app, cx, (1, 1)).unwrap().replies.is_empty());
 }
 
@@ -651,23 +762,33 @@ fn next_and_previous_comment_open_the_card(cx: &mut TestAppContext) {
         wb.add_comment(1, 5, 1, &bob(), 45_000.0, "two");
     });
     run(&app, cx, Cmd::Next);
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (0, (2, 2))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (0, (2, 2)))
+    });
     assert_eq!(card(&app, cx), Some(((2, 2), true)));
     run(&app, cx, Cmd::Next);
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (1, (5, 1))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (1, (5, 1)))
+    });
     assert_eq!(card(&app, cx), Some(((5, 1), true)));
     // At the end of the workbook: the question, then the first one again.
     run(&app, cx, Cmd::Next);
     app.update(cx, |app, _| assert!(app.modal_open()));
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (0, (2, 2))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (0, (2, 2)))
+    });
     run(&app, cx, Cmd::Previous);
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (1, (5, 1))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (1, (5, 1)))
+    });
     run(&app, cx, Cmd::Previous);
-    app.update(cx, |app, _| assert_eq!((app.sheet, app.active()), (0, (2, 2))));
+    app.update(cx, |app, _| {
+        assert_eq!((app.sheet, app.active()), (0, (2, 2)))
+    });
 }
 
 // --------------------------------------------------------------------- pane
@@ -682,7 +803,9 @@ fn the_comments_pane_lists_and_writes_threads(cx: &mut TestAppContext) {
     });
     app.update(cx, |app, _| assert!(!Cmd::ShowPane.checked(app)));
     run(&app, cx, Cmd::ShowPane);
-    app.update(cx, |app, _| assert!(app.pane_open(PANE) && Cmd::ShowPane.checked(app)));
+    app.update(cx, |app, _| {
+        assert!(app.pane_open(PANE) && Cmd::ShowPane.checked(app))
+    });
     let pane = ui(&app, cx, |ui| ui.pane.clone().expect("the pane"));
     let listed = |cx: &mut VisualTestContext| pane.update(cx, |pane, cx| pane.cells(cx));
     assert_eq!(listed(cx), [(2, 2), (6, 4)]);
@@ -691,7 +814,9 @@ fn the_comments_pane_lists_and_writes_threads(cx: &mut TestAppContext) {
     click(cx, on_comment);
     assert_eq!(card(&app, cx), None);
     // A click on a card of the pane goes to its cell.
-    let first = cx.debug_bounds("pane-card-0").expect("the first card is drawn");
+    let first = cx
+        .debug_bounds("pane-card-0")
+        .expect("the first card is drawn");
     click(cx, point(first.left() + px(40.), first.top() + px(16.)));
     app.update(cx, |app, _| assert_eq!(app.active(), (2, 2)));
     // New Comment writes in the pane, at the place of its cell.
@@ -702,13 +827,19 @@ fn the_comments_pane_lists_and_writes_threads(cx: &mut TestAppContext) {
     assert_eq!(card(&app, cx), None);
     cx.simulate_input("From the pane");
     cx.simulate_keystrokes("cmd-enter");
-    assert_eq!(thread(&app, cx, (4, 1)).unwrap().first.text, "From the pane");
+    assert_eq!(
+        thread(&app, cx, (4, 1)).unwrap().first.text,
+        "From the pane"
+    );
     // A reply from the pane, to the thread of the active cell.
     select(&app, cx, (6, 4));
     run(&app, cx, Cmd::Reply);
     cx.simulate_input("Answered here");
     cx.simulate_keystrokes("cmd-enter");
-    assert_eq!(thread(&app, cx, (6, 4)).unwrap().replies[0].text, "Answered here");
+    assert_eq!(
+        thread(&app, cx, (6, 4)).unwrap().replies[0].text,
+        "Answered here"
+    );
     // A comment given up leaves the list; a deleted thread too.
     select(&app, cx, (9, 0));
     cx.simulate_keystrokes("cmd-shift-m");
@@ -746,7 +877,10 @@ fn cut_cells_take_their_comments_along(cx: &mut TestAppContext) {
     redraw(cx);
     assert_eq!(note_text(&app, cx, (4, 2)).as_deref(), Some("on c"));
     assert_eq!(thread(&app, cx, (5, 2)).unwrap().first.text, "on a");
-    assert_eq!((note(&app, cx, (1, 0)), thread(&app, cx, (2, 0))), (None, None));
+    assert_eq!(
+        (note(&app, cx, (1, 0)), thread(&app, cx, (2, 0))),
+        (None, None)
+    );
     // Inserting a row above pushes them down.
     app.update(cx, |app, cx| {
         app.select_cell(0, 0, cx);
@@ -761,26 +895,36 @@ fn cut_cells_take_their_comments_along(cx: &mut TestAppContext) {
 
 /// The centre of something a view named for the tests.
 fn middle(cx: &mut VisualTestContext, name: &'static str) -> Point<Pixels> {
-    cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is not drawn")).center()
+    cx.debug_bounds(name)
+        .unwrap_or_else(|| panic!("{name} is not drawn"))
+        .center()
 }
 
 /// The labels of the menu that is open, separators left out.
 fn menu(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<String> {
-    app.update(cx, |app, _| match app.popup.as_ref().map(|popup| &popup.kind) {
-        Some(crate::app::PopupKind::Menu(entries)) => {
-            entries.iter().filter(|entry| !entry.separator).map(|entry| entry.label.to_string()).collect()
+    app.update(cx, |app, _| {
+        match app.popup.as_ref().map(|popup| &popup.kind) {
+            Some(crate::app::PopupKind::Menu(entries)) => entries
+                .iter()
+                .filter(|entry| !entry.separator)
+                .map(|entry| entry.label.to_string())
+                .collect(),
+            _ => Vec::new(),
         }
-        _ => Vec::new(),
     })
 }
 
 /// Choose an entry of the open menu by its label.
 fn choose(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, label: &str) {
     app.update_in(cx, |app, window, cx| {
-        let Some(crate::app::PopupKind::Menu(entries)) = app.popup.take().map(|popup| popup.kind) else {
+        let Some(crate::app::PopupKind::Menu(entries)) = app.popup.take().map(|popup| popup.kind)
+        else {
             panic!("no menu is open");
         };
-        let entry = entries.iter().find(|entry| entry.label.as_ref() == label).expect("the entry");
+        let entry = entries
+            .iter()
+            .find(|entry| entry.label.as_ref() == label)
+            .expect("the entry");
         assert!(!entry.disabled, "{label} is greyed");
         (entry.action.clone().expect("an action"))(app, window, cx);
     });
@@ -819,7 +963,10 @@ fn the_card_is_used_with_the_mouse(cx: &mut TestAppContext) {
     // The "…" of the first comment: edit it, delete or resolve the thread.
     let more = middle(cx, "post-menu-0@C3");
     click(cx, more);
-    assert_eq!(menu(&app, cx), ["Edit comment", "Delete thread", "Resolve thread"]);
+    assert_eq!(
+        menu(&app, cx),
+        ["Edit comment", "Delete thread", "Resolve thread"]
+    );
     choose(&app, cx, "Edit comment");
     cx.simulate_input("!");
     redraw(cx);
@@ -832,7 +979,10 @@ fn the_card_is_used_with_the_mouse(cx: &mut TestAppContext) {
     assert_eq!(menu(&app, cx), ["Edit comment", "Delete comment"]);
     choose(&app, cx, "Delete comment");
     let left = thread(&app, cx, (2, 2)).unwrap();
-    assert_eq!((left.replies.len(), left.replies[0].text.as_str()), (1, "On it"));
+    assert_eq!(
+        (left.replies.len(), left.replies[0].text.as_str()),
+        (1, "On it")
+    );
     // Resolve: no reply box, no "…", but Reopen.
     let more = middle(cx, "post-menu-0@C3");
     click(cx, more);
@@ -866,13 +1016,23 @@ fn the_menu_of_a_cell_follows_what_it_carries(cx: &mut TestAppContext) {
     let has = |labels: &[String], label: &str| labels.iter().any(|entry| entry == label);
     let bare = menu_of((6, 1), cx);
     assert!(has(&bare, "New Comment") && has(&bare, "New Note"));
-    assert!(!has(&bare, "Edit Note") && !has(&bare, "Delete Note") && !has(&bare, "Delete Comment"));
+    assert!(
+        !has(&bare, "Edit Note") && !has(&bare, "Delete Note") && !has(&bare, "Delete Comment")
+    );
     let noted = menu_of((1, 1), cx);
-    assert!(has(&noted, "Edit Note") && has(&noted, "Delete Note") && has(&noted, "Show/Hide Note"));
-    assert!(has(&noted, "New Comment") && !has(&noted, "New Note") && !has(&noted, "Delete Comment"));
+    assert!(
+        has(&noted, "Edit Note") && has(&noted, "Delete Note") && has(&noted, "Show/Hide Note")
+    );
+    assert!(
+        has(&noted, "New Comment") && !has(&noted, "New Note") && !has(&noted, "Delete Comment")
+    );
     let commented = menu_of((3, 1), cx);
     assert!(has(&commented, "Reply to Comment") && has(&commented, "Delete Comment"));
-    assert!(!has(&commented, "New Note") && !has(&commented, "New Comment") && !has(&commented, "Edit Note"));
+    assert!(
+        !has(&commented, "New Note")
+            && !has(&commented, "New Comment")
+            && !has(&commented, "Edit Note")
+    );
     // The entries act on the cell that was pressed.
     choose(&app, cx, "Delete Comment");
     assert_eq!(thread(&app, cx, (3, 1)), None);
@@ -884,13 +1044,19 @@ fn the_menu_of_a_cell_follows_what_it_carries(cx: &mut TestAppContext) {
     assert_eq!(editing(&app, cx), Some((1, 1)));
     cx.simulate_input(" edited");
     cx.simulate_keystrokes("escape");
-    assert_eq!(note_text(&app, cx, (1, 1)).as_deref(), Some("Ada:\nA note edited"));
+    assert_eq!(
+        note_text(&app, cx, (1, 1)).as_deref(),
+        Some("Ada:\nA note edited")
+    );
     menu_of((6, 1), cx);
     choose(&app, cx, "New Note");
     assert_eq!(editing(&app, cx), Some((6, 1)));
     cx.simulate_input("From the menu");
     cx.simulate_keystrokes("escape");
-    assert_eq!(note_text(&app, cx, (6, 1)), Some(format!("{}:\nFrom the menu", user_name())));
+    assert_eq!(
+        note_text(&app, cx, (6, 1)),
+        Some(format!("{}:\nFrom the menu", user_name()))
+    );
 }
 
 #[gpui::test]
@@ -908,7 +1074,14 @@ fn the_notes_menu_of_the_review_tab(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::NotesMenu);
     assert_eq!(
         menu(&app, cx),
-        ["New Note", "Previous Note", "Next Note", "Show/Hide Note", "Show All Notes", "Convert to Comments"]
+        [
+            "New Note",
+            "Previous Note",
+            "Next Note",
+            "Show/Hide Note",
+            "Show All Notes",
+            "Convert to Comments"
+        ]
     );
     choose(&app, cx, "New Note");
     assert_eq!(editing(&app, cx), Some((0, 0)));
@@ -926,8 +1099,14 @@ fn the_notes_menu_of_the_review_tab(cx: &mut TestAppContext) {
     // Home ▸ Clear ▸ Clear Comments and Notes empties the selection of them.
     app.update(cx, |app, cx| app.select_rect(Rect::new(0, 0, 5, 5), cx));
     run(&app, cx, Cmd::Clear);
-    assert_eq!((note(&app, cx, (0, 0)), note(&app, cx, (1, 1))), (None, None));
-    assert_eq!(undo_label(&app, cx).as_deref(), Some("Clear Comments and Notes"));
+    assert_eq!(
+        (note(&app, cx, (0, 0)), note(&app, cx, (1, 1))),
+        (None, None)
+    );
+    assert_eq!(
+        undo_label(&app, cx).as_deref(),
+        Some("Clear Comments and Notes")
+    );
 }
 
 #[gpui::test]
@@ -945,7 +1124,10 @@ fn the_pane_is_used_with_the_mouse(cx: &mut TestAppContext) {
     redraw(cx);
     let post = middle(cx, "new-field-accept@A6");
     click(cx, post);
-    assert_eq!(thread(&app, cx, (5, 0)).unwrap().first.text, "Started in the pane");
+    assert_eq!(
+        thread(&app, cx, (5, 0)).unwrap().first.text,
+        "Started in the pane"
+    );
     // The reply box of a card of the pane.
     let first = cx.debug_bounds("pane-card-0").expect("the first card");
     let field = middle(cx, "reply-field@C3");
@@ -986,10 +1168,20 @@ fn the_views_of_page_layout_keep_boxes_beside_their_cells(cx: &mut TestAppContex
         });
         let shown = app.update(cx, |app, _| {
             let layout = app.current_layout().unwrap();
-            boxes(app, &layout).into_iter().find(|shown| shown.cell == (3, 2)).expect("the box").rect
+            boxes(app, &layout)
+                .into_iter()
+                .find(|shown| shown.cell == (3, 2))
+                .expect("the box")
+                .rect
         });
-        assert!((shown.0 - (cell.2 + 15.0 * zoom)).abs() <= 1.0, "{mode:?}: {shown:?} beside {cell:?}");
-        assert!((shown.1 - (cell.1 - 10.0 * zoom)).abs() <= 1.0, "{mode:?}: {shown:?} beside {cell:?}");
+        assert!(
+            (shown.0 - (cell.2 + 15.0 * zoom)).abs() <= 1.0,
+            "{mode:?}: {shown:?} beside {cell:?}"
+        );
+        assert!(
+            (shown.1 - (cell.1 - 10.0 * zoom)).abs() <= 1.0,
+            "{mode:?}: {shown:?} beside {cell:?}"
+        );
         // The card of a comment opens there too.
         let on_comment = centre(&app, cx, (5, 1));
         click(cx, on_comment);
@@ -1063,7 +1255,9 @@ fn odd_cases(cx: &mut TestAppContext) {
     assert_eq!(ui(&app, cx, |ui| ui.note_sel), None);
     let active = app.update(cx, |app, _| app.active());
     cx.simulate_keystrokes("down");
-    app.update(cx, |app, _| assert_eq!(app.active(), (active.0 + 1, active.1)));
+    app.update(cx, |app, _| {
+        assert_eq!(app.active(), (active.0 + 1, active.1))
+    });
 }
 
 #[gpui::test]
@@ -1082,9 +1276,16 @@ fn a_protected_sheet_refuses_changes_to_notes_and_comments(cx: &mut TestAppConte
     redraw(cx);
     // Each attempt is answered by Excel's message, and changes nothing.
     let refused = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext, what: &str| {
-        app.update(cx, |app, _| assert!(app.modal_open(), "{what} was not refused"));
+        app.update(cx, |app, _| {
+            assert!(app.modal_open(), "{what} was not refused")
+        });
         cx.simulate_keystrokes("enter");
-        app.update(cx, |app, _| assert!(!app.modal_open() && !app.wb.can_undo(), "{what} changed the workbook"));
+        app.update(cx, |app, _| {
+            assert!(
+                !app.modal_open() && !app.wb.can_undo(),
+                "{what} changed the workbook"
+            )
+        });
         redraw(cx);
     };
     select(&app, cx, (8, 3));
@@ -1107,12 +1308,17 @@ fn a_protected_sheet_refuses_changes_to_notes_and_comments(cx: &mut TestAppConte
     let frame = app.update(cx, |app, _| app.wb.sheets[0].note_frame(2, 1));
     drag(cx, (x0 + 40.0, y0), (x0 + 90.0, y0 + 30.0));
     refused(&app, cx, "moving a note");
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].note_frame(2, 1)), frame);
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[0].note_frame(2, 1)),
+        frame
+    );
     // A thread can be read (its card opens), not answered.
     let on_comment = centre(&app, cx, (5, 1));
     click(cx, on_comment);
     assert_eq!(card(&app, cx), Some(((5, 1), true)));
-    app.update(cx, |app, cx| assert!(!post(app, 0, (5, 1), "No", Vec::new(), cx)));
+    app.update(cx, |app, cx| {
+        assert!(!post(app, 0, (5, 1), "No", Vec::new(), cx))
+    });
     refused(&app, cx, "a reply");
     app.update(cx, |app, cx| resolve(app, 0, (5, 1), true, cx));
     refused(&app, cx, "Resolve thread");
@@ -1120,10 +1326,13 @@ fn a_protected_sheet_refuses_changes_to_notes_and_comments(cx: &mut TestAppConte
     // With "Edit objects" allowed, they all work again.
     app.update(cx, |app, cx| {
         app.wb.unprotect_sheet(0, "").unwrap();
-        app.wb.protect_sheet(0, SheetProtection::allowing(&[Permission::EditObjects]), "");
+        app.wb
+            .protect_sheet(0, SheetProtection::allowing(&[Permission::EditObjects]), "");
         cx.notify();
     });
-    app.update(cx, |app, cx| assert!(post(app, 0, (5, 1), "Yes", Vec::new(), cx)));
+    app.update(cx, |app, cx| {
+        assert!(post(app, 0, (5, 1), "Yes", Vec::new(), cx))
+    });
     assert_eq!(thread(&app, cx, (5, 1)).unwrap().replies.len(), 1);
 }
 
@@ -1154,7 +1363,10 @@ fn the_pointer_finds_notes_under_frozen_panes_and_near_the_edges(cx: &mut TestAp
     assert!(frozen.0 > f32::from(corner.x) && frozen.1 >= f32::from(corner.y));
     // The scrolled one shows beside its cell, at the zoom of the sheet.
     let scrolled = rests_on((30, 3), cx).expect("the note of the scrolled cell shows");
-    assert_eq!((scrolled.2 - scrolled.0, scrolled.3 - scrolled.1), (216.0, 119.0));
+    assert_eq!(
+        (scrolled.2 - scrolled.0, scrolled.3 - scrolled.1),
+        (216.0, 119.0)
+    );
     assert_eq!(box_of(&app, cx, (0, 0)), None);
 
     // A cell against the right edge of the grid: its box opens on the
@@ -1162,14 +1374,28 @@ fn the_pointer_finds_notes_under_frozen_panes_and_near_the_edges(cx: &mut TestAp
     let (last_col, grid) = app.update(cx, |app, _| {
         let layout = app.current_layout().unwrap();
         let col = layout.col_at(layout.width() - 20.0);
-        let (a, b) = (layout.to_window(layout.header_w, layout.header_h), layout.to_window(layout.width(), layout.height()));
-        (col, (f32::from(a.x), f32::from(a.y), f32::from(b.x), f32::from(b.y)))
+        let (a, b) = (
+            layout.to_window(layout.header_w, layout.header_h),
+            layout.to_window(layout.width(), layout.height()),
+        );
+        (
+            col,
+            (
+                f32::from(a.x),
+                f32::from(a.y),
+                f32::from(b.x),
+                f32::from(b.y),
+            ),
+        )
     });
     edit(&app, cx, |wb| {
         wb.set_note(0, 31, last_col, "Ada", "Ada:\nAt the edge");
     });
     let edge = rests_on((31, last_col), cx).expect("the note at the edge shows");
-    assert!(edge.0 >= grid.0 && edge.1 >= grid.1 && edge.2 <= grid.2 && edge.3 <= grid.3, "{edge:?} in {grid:?}");
+    assert!(
+        edge.0 >= grid.0 && edge.1 >= grid.1 && edge.2 <= grid.2 && edge.3 <= grid.3,
+        "{edge:?} in {grid:?}"
+    );
     let cell = in_cell(&app, cx, (31, last_col), (0.0, 0.0));
     assert!(edge.2 < f32::from(cell.x), "left of its cell");
 }
@@ -1177,14 +1403,29 @@ fn the_pointer_finds_notes_under_frozen_panes_and_near_the_edges(cx: &mut TestAp
 // ---------------------------------------------------------- what is painted
 
 /// What the feature paints on a layer of the grid, and the zones it makes.
-fn painted(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, layer: PaintLayer) -> (Vec<crate::grid::Draw>, Vec<Zone>) {
+fn painted(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    layer: PaintLayer,
+) -> (Vec<crate::grid::Draw>, Vec<Zone>) {
     app.update_in(cx, |app, window, _| {
         let layout = app.current_layout().expect("the grid was drawn");
         let text_system = window.text_system().clone();
         let everything = (0.0, 0.0, layout.width(), layout.height());
-        let mut painter = Painter::new(app, &layout, &text_system, layer, Rect::new(0, 0, 40, 15), everything, 1.0);
+        let mut painter = Painter::new(
+            app,
+            &layout,
+            &text_system,
+            layer,
+            Rect::new(0, 0, 40, 15),
+            everything,
+            1.0,
+        );
         Comments.paint(&mut painter);
-        (std::mem::take(&mut painter.items), std::mem::take(&mut painter.zones))
+        (
+            std::mem::take(&mut painter.items),
+            std::mem::take(&mut painter.zones),
+        )
     })
 }
 
@@ -1212,8 +1453,14 @@ fn marks_and_boxes_are_painted_where_excel_puts_them(cx: &mut TestAppContext) {
         })
         .collect();
     assert_eq!(colours, [c(NOTE_MARK), c(NOTE_MARK), c(COMMENT_MARK)]);
-    let spots: Vec<Spot> = zones.iter().map(|zone| *zone.payload::<Spot>().unwrap()).collect();
-    assert_eq!(spots, [Spot::Cell(4, 2), Spot::Cell(7, 0), Spot::Cell(9, 1)]);
+    let spots: Vec<Spot> = zones
+        .iter()
+        .map(|zone| *zone.payload::<Spot>().unwrap())
+        .collect();
+    assert_eq!(
+        spots,
+        [Spot::Cell(4, 2), Spot::Cell(7, 0), Spot::Cell(9, 1)]
+    );
     let (layout, cell) = app.update(cx, |app, _| {
         let layout = app.current_layout().unwrap();
         let cell = layout.rect_px(Rect::cell(4, 2));
@@ -1232,16 +1479,36 @@ fn marks_and_boxes_are_painted_where_excel_puts_them(cx: &mut TestAppContext) {
         })
         .collect();
     // The pale yellow paper fills the box...
-    let paper: Vec<_> = quads.iter().filter(|quad| quad.background == solid(notes::PAPER)).collect();
+    let paper: Vec<_> = quads
+        .iter()
+        .filter(|quad| quad.background == solid(notes::PAPER))
+        .collect();
     assert_eq!(paper.len(), 1);
-    assert_eq!(paper[0].bounds, layout.bounds_px(rect.0, rect.1, rect.2, rect.3));
+    assert_eq!(
+        paper[0].bounds,
+        layout.bounds_px(rect.0, rect.1, rect.2, rect.3)
+    );
     // ...inside a black line, with a shadow two pixels wide at its right
     // and under it.
-    let black: Vec<_> = quads.iter().filter(|quad| quad.background == solid(0x000000)).map(|quad| quad.bounds).collect();
+    let black: Vec<_> = quads
+        .iter()
+        .filter(|quad| quad.background == solid(0x000000))
+        .map(|quad| quad.bounds)
+        .collect();
     assert_eq!(black.len(), 6);
-    assert_eq!(black[0], layout.bounds_px(rect.2, rect.1 + 2.0, rect.2 + 2.0, rect.3 + 2.0));
-    assert_eq!(black[1], layout.bounds_px(rect.0 + 2.0, rect.3, rect.2, rect.3 + 2.0));
-    assert!(black[2..].iter().all(|edge| edge.size.width == px(1.) || edge.size.height == px(1.)));
+    assert_eq!(
+        black[0],
+        layout.bounds_px(rect.2, rect.1 + 2.0, rect.2 + 2.0, rect.3 + 2.0)
+    );
+    assert_eq!(
+        black[1],
+        layout.bounds_px(rect.0 + 2.0, rect.3, rect.2, rect.3 + 2.0)
+    );
+    assert!(
+        black[2..]
+            .iter()
+            .all(|edge| edge.size.width == px(1.) || edge.size.height == px(1.))
+    );
     // The line to the cell and its arrow head are drawn first, in black.
     assert!(matches!(&items[0], Draw::Path(_, colour) if *colour == c(0x000000)));
     assert!(matches!(&items[1], Draw::Path(_, colour) if *colour == c(0x000000)));
@@ -1250,24 +1517,47 @@ fn marks_and_boxes_are_painted_where_excel_puts_them(cx: &mut TestAppContext) {
     let text: Vec<_> = items
         .iter()
         .filter_map(|draw| match draw {
-            Draw::Wrapped { lines, origin, .. } => Some((lines.iter().map(|line| line.text.to_string()).collect::<Vec<_>>(), *origin)),
+            Draw::Wrapped { lines, origin, .. } => Some((
+                lines
+                    .iter()
+                    .map(|line| line.text.to_string())
+                    .collect::<Vec<_>>(),
+                *origin,
+            )),
             _ => None,
         })
         .collect();
     assert_eq!(text.len(), 1);
     assert_eq!(text[0].0, ["Ada:", "Shown"]);
-    assert_eq!(text[0].1, layout.to_window(rect.0 + notes::INSET.0, rect.1 + notes::INSET.1));
+    assert_eq!(
+        text[0].1,
+        layout.to_window(rect.0 + notes::INSET.0, rect.1 + notes::INSET.1)
+    );
     // The box takes the mouse: its inside, and the four sides of its border.
-    let spots: Vec<Spot> = zones.iter().map(|zone| *zone.payload::<Spot>().unwrap()).collect();
+    let spots: Vec<Spot> = zones
+        .iter()
+        .map(|zone| *zone.payload::<Spot>().unwrap())
+        .collect();
     assert_eq!(spots[0], Spot::Body(4, 2));
     assert_eq!(spots[1..], [Spot::Grip(4, 2, Grip::Move); 4]);
 
     // Selected, it shows a band and eight handles, each a zone.
     app.update_in(cx, |app, window, cx| select_box(app, (4, 2), window, cx));
     let (items, zones) = painted(&app, cx, PaintLayer::Top);
-    let white = items.iter().filter(|draw| matches!(draw, Draw::Quad(quad) if quad.background == solid(0xFFFFFF))).count();
+    let white = items
+        .iter()
+        .filter(|draw| matches!(draw, Draw::Quad(quad) if quad.background == solid(0xFFFFFF)))
+        .count();
     assert_eq!(white, 4);
-    let handles = zones.iter().filter(|zone| matches!(zone.payload::<Spot>(), Some(Spot::Grip(_, _, Grip::Handle(_))))).count();
+    let handles = zones
+        .iter()
+        .filter(|zone| {
+            matches!(
+                zone.payload::<Spot>(),
+                Some(Spot::Grip(_, _, Grip::Handle(_)))
+            )
+        })
+        .count();
     assert_eq!(handles, 8);
 }
 
@@ -1285,18 +1575,28 @@ fn a_press_on_the_ribbon_finishes_the_note_too(cx: &mut TestAppContext) {
     });
     click(cx, above);
     assert_eq!(editing(&app, cx), None);
-    assert_eq!(note_text(&app, cx, (3, 1)), Some(format!("{}:\nTyped", user_name())));
+    assert_eq!(
+        note_text(&app, cx, (3, 1)),
+        Some(format!("{}:\nTyped", user_name()))
+    );
     // The keyboard is back on the grid.
     cx.simulate_input("9");
     cx.simulate_keystrokes("enter");
-    app.update(cx, |app, _| assert_eq!(app.wb.sheets[0].value_at(3, 1), opensheet_engine::Value::Number(9.0)));
+    app.update(cx, |app, _| {
+        assert_eq!(
+            app.wb.sheets[0].value_at(3, 1),
+            opensheet_engine::Value::Number(9.0)
+        )
+    });
 }
 
 // ----------------------------------------------------------------- mentions
 
 /// The floating card.
 fn card_view(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<CommentCard> {
-    ui(app, cx, |ui| ui.card.as_ref().expect("a card is open").view.clone())
+    ui(app, cx, |ui| {
+        ui.card.as_ref().expect("a card is open").view.clone()
+    })
 }
 
 /// The names in the list of people open under the box, and the selected line.
@@ -1310,7 +1610,10 @@ fn draft(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> String {
 
 /// Who a post names, with the words that name them.
 fn named(post: &Post) -> Vec<(String, Person)> {
-    post.pieces().into_iter().filter_map(|(text, person)| Some((text.to_string(), person?.clone()))).collect()
+    post.pieces()
+        .into_iter()
+        .filter_map(|(text, person)| Some((text.to_string(), person?.clone())))
+        .collect()
 }
 
 #[gpui::test]
@@ -1329,12 +1632,21 @@ fn an_at_sign_opens_the_list_of_people(cx: &mut TestAppContext) {
     cx.simulate_input("@");
     let (people, selected) = suggested(&app, cx).expect("the list is open");
     assert_eq!(&people[..2], ["Bob Martin", "Zed Quux"]);
-    assert_eq!((people.last().map(String::as_str), selected), (Some(user_name()), 0));
+    assert_eq!(
+        (people.last().map(String::as_str), selected),
+        (Some(user_name()), 0)
+    );
     redraw(cx);
-    assert!(cx.debug_bounds("mentions@D5").is_some(), "the list is drawn under the box");
+    assert!(
+        cx.debug_bounds("mentions@D5").is_some(),
+        "the list is drawn under the box"
+    );
     // Typing narrows it; the arrows walk it, round its ends.
     cx.simulate_input("q");
-    assert_eq!(suggested(&app, cx).unwrap().0.first().map(String::as_str), Some("Zed Quux"));
+    assert_eq!(
+        suggested(&app, cx).unwrap().0.first().map(String::as_str),
+        Some("Zed Quux")
+    );
     // The line that was selected stays selected when the list grows back.
     cx.simulate_keystrokes("backspace");
     assert_eq!(suggested(&app, cx).unwrap(), (people.clone(), 1));
@@ -1354,7 +1666,10 @@ fn an_at_sign_opens_the_list_of_people(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-enter");
     let posted = thread(&app, cx, (4, 3)).expect("a thread");
     assert_eq!(posted.first.text, "Ask @Zed Quux to look\ntoday");
-    assert_eq!(named(&posted.first), [("@Zed Quux".to_string(), zed.clone())]);
+    assert_eq!(
+        named(&posted.first),
+        [("@Zed Quux".to_string(), zed.clone())]
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("New Comment"));
     // One step back and the comment is gone, mention and all.
     cx.simulate_keystrokes("escape");
@@ -1394,14 +1709,20 @@ fn a_mention_is_one_piece(cx: &mut TestAppContext) {
     assert_eq!(draft(&app, cx), "Hi @Bob Marin");
     cx.simulate_keystrokes("cmd-enter");
     let reply = &thread(&app, cx, (2, 2)).unwrap().replies[0];
-    assert_eq!((reply.text.as_str(), reply.mentions.len()), ("Hi @Bob Marin", 0));
+    assert_eq!(
+        (reply.text.as_str(), reply.mentions.len()),
+        ("Hi @Bob Marin", 0)
+    );
     // Escape closes the list and nothing else; the next one empties the box.
     redraw(cx);
     cx.simulate_keystrokes("cmd-shift-m");
     cx.simulate_input("See @");
     assert!(suggested(&app, cx).is_some());
     cx.simulate_keystrokes("escape");
-    assert_eq!((suggested(&app, cx), draft(&app, cx).as_str()), (None, "See @"));
+    assert_eq!(
+        (suggested(&app, cx), draft(&app, cx).as_str()),
+        (None, "See @")
+    );
     // The list comes back with the next letter of the name.
     cx.simulate_input("b");
     assert_eq!(suggested(&app, cx).unwrap().0, ["Bob Martin"]);
@@ -1420,7 +1741,10 @@ fn an_address_names_someone_new(cx: &mut TestAppContext) {
     cx.simulate_input("@sam@example");
     assert_eq!(suggested(&app, cx), None);
     cx.simulate_input(".com");
-    assert_eq!(suggested(&app, cx), Some((vec!["sam@example.com".to_string()], 0)));
+    assert_eq!(
+        suggested(&app, cx),
+        Some((vec!["sam@example.com".to_string()], 0))
+    );
     redraw(cx);
     // A click on the line names the person, and the box keeps the keyboard.
     let line = middle(cx, "mention-0@B2");
@@ -1431,7 +1755,10 @@ fn an_address_names_someone_new(cx: &mut TestAppContext) {
     let posted = thread(&app, cx, (1, 1)).expect("a thread");
     let sam = Person::mentioned("sam@example.com", "sam@example.com");
     assert_eq!(posted.first.text, "@sam@example.com hello");
-    assert_eq!(named(&posted.first), [("@sam@example.com".to_string(), sam.clone())]);
+    assert_eq!(
+        named(&posted.first),
+        [("@sam@example.com".to_string(), sam.clone())]
+    );
     assert_eq!(sam.provider_id, "PeoplePicker");
     // Once named, the person is known to the workbook and offered by name.
     redraw(cx);
@@ -1459,7 +1786,12 @@ fn mentions_survive_an_edit_and_show_in_the_pane(cx: &mut TestAppContext) {
             start: 0,
             len: 8,
         };
-        wb.add_comment_post(0, 2, 2, Post::new(&bob(), 45_000.0, text).with_mentions(vec![mention]));
+        wb.add_comment_post(
+            0,
+            2,
+            2,
+            Post::new(&bob(), 45_000.0, text).with_mentions(vec![mention]),
+        );
     });
     // The card shows the name in the colour of mentions.
     assert_eq!(
@@ -1490,7 +1822,10 @@ fn mentions_survive_an_edit_and_show_in_the_pane(cx: &mut TestAppContext) {
     let first = thread(&app, cx, (2, 2)).unwrap().first;
     assert_eq!(
         named(&first),
-        [("@Ann Lee".to_string(), ann.clone()), ("@Bob Martin".to_string(), bob())]
+        [
+            ("@Ann Lee".to_string(), ann.clone()),
+            ("@Bob Martin".to_string(), bob())
+        ]
     );
     // Backspace at the end of the rewritten text takes the last mention.
     redraw(cx);
@@ -1509,7 +1844,10 @@ fn mentions_survive_an_edit_and_show_in_the_pane(cx: &mut TestAppContext) {
     run(&app, cx, Cmd::Reply);
     cx.simulate_input("@ann");
     redraw(cx);
-    assert!(cx.debug_bounds("mentions@C3").is_some(), "the pane shows the list");
+    assert!(
+        cx.debug_bounds("mentions@C3").is_some(),
+        "the pane shows the list"
+    );
     cx.simulate_keystrokes("enter");
     cx.simulate_input(" yes");
     cx.simulate_keystrokes("cmd-enter");
@@ -1536,7 +1874,9 @@ fn a_protected_sheet_takes_no_mention(cx: &mut TestAppContext) {
         cx.notify();
     });
     cx.simulate_keystrokes("cmd-enter");
-    app.update(cx, |app, _| assert!(app.modal_open(), "the reply was not refused"));
+    app.update(cx, |app, _| {
+        assert!(app.modal_open(), "the reply was not refused")
+    });
     cx.simulate_keystrokes("enter");
     assert!(thread(&app, cx, (2, 2)).unwrap().replies.is_empty());
 }

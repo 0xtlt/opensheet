@@ -56,7 +56,10 @@ pub(crate) struct Recorded {
 impl Recorded {
     /// The action as it reads in a script: its comments and statements.
     pub fn code(&self) -> String {
-        self.steps.iter().map(|step| code::text_of(step, "")).collect()
+        self.steps
+            .iter()
+            .map(|step| code::text_of(step, ""))
+            .collect()
     }
 }
 
@@ -79,7 +82,10 @@ impl Before {
             sheet: app.sheet,
             selection: selection.current(),
             active: selection.active,
-            clip: app.clip.as_ref().map(|state| (state.clip.sheet, state.clip.rect, state.cut)),
+            clip: app
+                .clip
+                .as_ref()
+                .map(|state| (state.clip.sheet, state.clip.rect, state.cut)),
         }
     }
 }
@@ -91,7 +97,14 @@ type Mark = (u64, usize, usize, u64);
 
 fn mark(wb: &Workbook) -> Mark {
     let (undo, redo) = wb.history_depth();
-    let protected = wb.sheets.iter().take(64).enumerate().fold(0u64, |bits, (index, sheet)| bits | (sheet.protection.is_some() as u64) << index);
+    let protected = wb
+        .sheets
+        .iter()
+        .take(64)
+        .enumerate()
+        .fold(0u64, |bits, (index, sheet)| {
+            bits | (sheet.protection.is_some() as u64) << index
+        });
     (wb.generation, undo, redo, protected)
 }
 
@@ -155,7 +168,13 @@ impl Recorder {
                 // was undone there is an action like another.
                 self.baseline = self.origin.fork();
                 self.floor = now.1;
-                self.record(crate::i18n::t("Undo", "Annuler").to_string(), after, None, now.1, refit) || self.actions.len() != before
+                self.record(
+                    crate::i18n::t("Undo", "Annuler").to_string(),
+                    after,
+                    None,
+                    now.1,
+                    refit,
+                ) || self.actions.len() != before
             }
         } else {
             // A history that is full forgets its oldest step to take a
@@ -187,7 +206,14 @@ impl Recorder {
     /// Write the action that led from the baseline to `after`. `now` is
     /// what the window shows after it, for an action the user made
     /// there: where the selection was says nothing of a step taken back.
-    fn record(&mut self, label: String, after: Workbook, now: Option<Before>, depth: usize, refit: diff::Refit) -> bool {
+    fn record(
+        &mut self,
+        label: String,
+        after: Workbook,
+        now: Option<Before>,
+        depth: usize,
+        refit: diff::Refit,
+    ) -> bool {
         if compare::distance(&self.baseline, &after) == 0 {
             self.baseline = after;
             return false;
@@ -199,7 +225,9 @@ impl Recorder {
         let mut steps = Vec::new();
         let mut left = compare::distance(&work, after);
         let mut best: Option<Workbook> = None;
-        let guesses = now.map(|now| candidates::of(&work, after, &self.before, &now, &self.scope)).unwrap_or_default();
+        let guesses = now
+            .map(|now| candidates::of(&work, after, &self.before, &now, &self.scope))
+            .unwrap_or_default();
         for candidate in guesses {
             let mut trial = work.fork();
             if diff::run(&mut trial, &self.scope, &candidate, refit).is_err() {
@@ -229,7 +257,11 @@ impl Recorder {
                 // `selectedSheet` cannot follow a sheet through an action
                 // that is not in the script.
                 scope = self.scope.clone();
-                if scope.start.as_deref().is_some_and(|name| !after.sheets.iter().any(|sheet| sheet.name == name)) {
+                if scope
+                    .start
+                    .as_deref()
+                    .is_some_and(|name| !after.sheets.iter().any(|sheet| sheet.name == name))
+                {
                     scope.start = None;
                 }
                 false
@@ -248,7 +280,11 @@ impl Recorder {
 
     /// The script of what was recorded so far.
     pub fn script(&self) -> String {
-        let steps: Vec<Step> = self.actions.iter().flat_map(|action| action.steps.iter().cloned()).collect();
+        let steps: Vec<Step> = self
+            .actions
+            .iter()
+            .flat_map(|action| action.steps.iter().cloned())
+            .collect();
         code::script(&steps)
     }
 }

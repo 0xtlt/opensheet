@@ -35,7 +35,10 @@ impl Workbook {
         let Some(sh) = self.sheets.get_mut(sheet) else {
             return;
         };
-        let replaced = sh.cells.get(&(row, col)).is_some_and(|c| matches!(c.content, Content::Formula(_)));
+        let replaced = sh
+            .cells
+            .get(&(row, col))
+            .is_some_and(|c| matches!(c.content, Content::Formula(_)));
         match cell {
             Some(cell) => {
                 sh.cells.insert((row, col), cell);
@@ -50,8 +53,19 @@ impl Workbook {
     /// Give a cell a trial value, keeping its formatting.
     fn poke_value(&mut self, at: CellPos, value: Value) {
         let style = self.style_id_at(at.0, at.1, at.2);
-        let content = if value.is_empty() { Content::Empty } else { Content::Value(value.clone()) };
-        self.poke(at, Some(Cell { content, value, style }));
+        let content = if value.is_empty() {
+            Content::Empty
+        } else {
+            Content::Value(value.clone())
+        };
+        self.poke(
+            at,
+            Some(Cell {
+                content,
+                value,
+                style,
+            }),
+        );
     }
 
     fn cell_at(&self, at: CellPos) -> Option<&Cell> {
@@ -93,8 +107,16 @@ impl Workbook {
     /// give `target`. The best value found is left in the cell as an
     /// uncommitted change: `commit` keeps it (OK in the status dialog),
     /// [`Workbook::goal_seek_restore`] puts the old one back (Cancel).
-    pub fn goal_seek(&mut self, set: CellPos, target: f64, changing: CellPos) -> Result<GoalSeek, GoalSeekError> {
-        if !self.cell_at(set).is_some_and(|cell| matches!(cell.content, Content::Formula(_))) {
+    pub fn goal_seek(
+        &mut self,
+        set: CellPos,
+        target: f64,
+        changing: CellPos,
+    ) -> Result<GoalSeek, GoalSeekError> {
+        if !self
+            .cell_at(set)
+            .is_some_and(|cell| matches!(cell.content, Content::Formula(_)))
+        {
             return Err(GoalSeekError::NotFormula);
         }
         let original = self.cell_at(changing).cloned();
@@ -124,7 +146,11 @@ impl Workbook {
         };
         let (mut x0, mut f0) = (start, miss(self, start));
         consider(x0, f0, &mut best);
-        let step = if start == 0.0 { 0.01 } else { start.abs() * 0.01 };
+        let step = if start == 0.0 {
+            0.01
+        } else {
+            start.abs() * 0.01
+        };
         let mut x1 = start + step;
         let mut steps = 1;
         // The secant method, as long as both ends give numbers; once the
@@ -149,7 +175,9 @@ impl Workbook {
                 // against a stuck end.
                 let (mut lo, mut flo, mut hi, mut fhi) = (x0, a, x1, b);
                 let mut side = 0i8;
-                while steps < GOAL_SEEK_STEPS * 2 && (hi - lo).abs() > f64::EPSILON * lo.abs().max(hi.abs()).max(1.0) {
+                while steps < GOAL_SEEK_STEPS * 2
+                    && (hi - lo).abs() > f64::EPSILON * lo.abs().max(hi.abs()).max(1.0)
+                {
                     let mut x = (lo * fhi - hi * flo) / (fhi - flo);
                     if !x.is_finite() || (x - lo) * (x - hi) > 0.0 {
                         x = (lo + hi) / 2.0;
@@ -178,7 +206,11 @@ impl Workbook {
                 break;
             }
             let slope = (b - a) / (x1 - x0);
-            let mut next = if slope == 0.0 || !slope.is_finite() { x1 + (x1 - x0) * 2.0 } else { x1 - b / slope };
+            let mut next = if slope == 0.0 || !slope.is_finite() {
+                x1 + (x1 - x0) * 2.0
+            } else {
+                x1 - b / slope
+            };
             // A flat stretch must not throw the search out of sight.
             let reach = (x1 - x0).abs().max(x1.abs()).max(1.0) * 100.0;
             if !next.is_finite() || (next - x1).abs() > reach {
@@ -266,7 +298,12 @@ pub struct SummaryLabels {
 }
 
 impl Workbook {
-    fn check_scenario(&self, sheet: usize, scenario: &Scenario, replacing: Option<usize>) -> Result<(), ScenarioError> {
+    fn check_scenario(
+        &self,
+        sheet: usize,
+        scenario: &Scenario,
+        replacing: Option<usize>,
+    ) -> Result<(), ScenarioError> {
         let name = scenario.name.trim();
         if name.is_empty() {
             return Err(ScenarioError::NoName);
@@ -275,7 +312,9 @@ impl Workbook {
             .scenarios
             .iter()
             .enumerate()
-            .any(|(i, other)| Some(i) != replacing && other.name.to_lowercase() == name.to_lowercase());
+            .any(|(i, other)| {
+                Some(i) != replacing && other.name.to_lowercase() == name.to_lowercase()
+            });
         if taken {
             return Err(ScenarioError::Duplicate);
         }
@@ -298,8 +337,17 @@ impl Workbook {
     }
 
     /// Replace the scenario at `index`. The caller commits.
-    pub fn scenario_edit(&mut self, sheet: usize, index: usize, scenario: Scenario) -> Result<(), ScenarioError> {
-        if !self.sheets.get(sheet).is_some_and(|sh| index < sh.scenarios.len()) {
+    pub fn scenario_edit(
+        &mut self,
+        sheet: usize,
+        index: usize,
+        scenario: Scenario,
+    ) -> Result<(), ScenarioError> {
+        if !self
+            .sheets
+            .get(sheet)
+            .is_some_and(|sh| index < sh.scenarios.len())
+        {
             return Err(ScenarioError::Missing);
         }
         self.check_scenario(sheet, &scenario, Some(index))?;
@@ -310,7 +358,11 @@ impl Workbook {
 
     /// Delete the scenario at `index`. The caller commits.
     pub fn scenario_delete(&mut self, sheet: usize, index: usize) -> bool {
-        if !self.sheets.get(sheet).is_some_and(|sh| index < sh.scenarios.len()) {
+        if !self
+            .sheets
+            .get(sheet)
+            .is_some_and(|sh| index < sh.scenarios.len())
+        {
             return false;
         }
         self.snapshot();
@@ -325,14 +377,29 @@ impl Workbook {
         for cell in &scenario.cells {
             self.enter_scenario_value(sheet, cell);
         }
-        Some(scenario.cells.iter().map(|cell| Rect::cell(cell.row, cell.col)).collect())
+        Some(
+            scenario
+                .cells
+                .iter()
+                .map(|cell| Rect::cell(cell.row, cell.col))
+                .collect(),
+        )
     }
 
     fn enter_scenario_value(&mut self, sheet: usize, cell: &ScenarioCell) {
         // A scenario holds constants: what reads as a formula stays text.
         let constant = !cell.value.starts_with('=');
-        if !constant || self.set_cell_text(sheet, cell.row, cell.col, &cell.value).is_err() {
-            self.set_content(sheet, cell.row, cell.col, Content::Value(Value::text(&cell.value)));
+        if !constant
+            || self
+                .set_cell_text(sheet, cell.row, cell.col, &cell.value)
+                .is_err()
+        {
+            self.set_content(
+                sheet,
+                cell.row,
+                cell.col,
+                Content::Value(Value::text(&cell.value)),
+            );
         }
     }
 
@@ -340,7 +407,12 @@ impl Workbook {
     /// for the current values and for each scenario what the changing
     /// cells hold and what the result cells give. Returns the index of
     /// the new sheet (`sheet` is then one further). The caller commits.
-    pub fn scenario_summary(&mut self, sheet: usize, results: &[(u32, u32)], labels: &SummaryLabels) -> Option<usize> {
+    pub fn scenario_summary(
+        &mut self,
+        sheet: usize,
+        results: &[(u32, u32)],
+        labels: &SummaryLabels,
+    ) -> Option<usize> {
         let scenarios = self.sheets.get(sheet)?.scenarios.clone();
         if scenarios.is_empty() {
             return None;
@@ -355,7 +427,12 @@ impl Workbook {
         let read = |wb: &Workbook, cells: &[(u32, u32)]| -> Vec<(Value, Arc<str>)> {
             cells
                 .iter()
-                .map(|(row, col)| (wb.value_at(sheet, *row, *col), wb.style_at(sheet, *row, *col).num_fmt.clone()))
+                .map(|(row, col)| {
+                    (
+                        wb.value_at(sheet, *row, *col),
+                        wb.style_at(sheet, *row, *col).num_fmt.clone(),
+                    )
+                })
                 .collect()
         };
         // One column per state of the sheet: now, then under each
@@ -400,9 +477,14 @@ impl Workbook {
             text(self, 2, 4 + i as u32, &scenario.name);
         }
         heading(self, 2, 1, last_col);
-        self.update_style(report, Rect::new(2, 3, 2, last_col), &|s| s.h_align = crate::style::HAlign::Right);
+        self.update_style(report, Rect::new(2, 3, 2, last_col), &|s| {
+            s.h_align = crate::style::HAlign::Right
+        });
         let mut row = 3;
-        let sections = [(&labels.changing_cells, &changing, true), (&labels.result_cells, &results.to_vec(), false)];
+        let sections = [
+            (&labels.changing_cells, &changing, true),
+            (&labels.result_cells, &results.to_vec(), false),
+        ];
         // The rows of each section, for the outline.
         let mut groups: Vec<(u32, u32)> = Vec::new();
         for (title, cells, is_changing) in sections {
@@ -410,7 +492,9 @@ impl Workbook {
                 continue;
             }
             text(self, row, 1, title);
-            self.update_style(report, Rect::new(row, 1, row, last_col), &|s| s.font.bold = true);
+            self.update_style(report, Rect::new(row, 1, row, last_col), &|s| {
+                s.font.bold = true
+            });
             row += 1;
             groups.push((row, row + cells.len() as u32 - 1));
             for (i, (r, c)) in cells.iter().enumerate() {
@@ -418,13 +502,26 @@ impl Workbook {
                 let letters = name.trim_end_matches(|ch: char| ch.is_ascii_digit());
                 text(self, row, 2, &format!("${letters}${}", r + 1));
                 for (j, column) in columns.iter().enumerate() {
-                    let (value, format) = if is_changing { &column.0[i] } else { &column.1[i] };
+                    let (value, format) = if is_changing {
+                        &column.0[i]
+                    } else {
+                        &column.1[i]
+                    };
                     let col = 3 + j as u32;
-                    let content = if value.is_empty() { Content::Empty } else { Content::Value(value.clone()) };
+                    let content = if value.is_empty() {
+                        Content::Empty
+                    } else {
+                        Content::Value(value.clone())
+                    };
                     self.set_content(report, row, col, content);
                     let format = format.clone();
                     // What a scenario changes stands out in grey.
-                    let changed = is_changing && j > 0 && scenarios[j - 1].cells.iter().any(|cell| (cell.row, cell.col) == (*r, *c));
+                    let changed = is_changing
+                        && j > 0
+                        && scenarios[j - 1]
+                            .cells
+                            .iter()
+                            .any(|cell| (cell.row, cell.col) == (*r, *c));
                     self.update_style(report, Rect::cell(row, col), &move |s| {
                         s.num_fmt = format.clone();
                         if changed {
@@ -443,7 +540,8 @@ impl Workbook {
         // fold under its heading.
         self.sheets[report].outline.summary_below = false;
         for (first, last) in groups {
-            self.outline_group(report, crate::outline::Axis::Rows, first, last).ok()?;
+            self.outline_group(report, crate::outline::Axis::Rows, first, last)
+                .ok()?;
         }
         Some(report)
     }
@@ -490,41 +588,62 @@ impl DataTable {
 
     /// `=TABLE(row,col)` as Excel shows it, with the separator of a locale.
     pub fn formula_text(&self, arg_sep: char) -> String {
-        let name = |cell: Option<(u32, u32)>| cell.map(|(row, col)| cell_name(row, col)).unwrap_or_default();
-        format!("=TABLE({}{arg_sep}{})", name(self.row_input), name(self.col_input))
+        let name = |cell: Option<(u32, u32)>| {
+            cell.map(|(row, col)| cell_name(row, col))
+                .unwrap_or_default()
+        };
+        format!(
+            "=TABLE({}{arg_sep}{})",
+            name(self.row_input),
+            name(self.col_input)
+        )
     }
 }
 
 impl Workbook {
     /// The data table whose results include a cell.
     pub fn data_table_at(&self, sheet: usize, row: u32, col: u32) -> Option<&DataTable> {
-        self.sheets.get(sheet)?.data_tables.iter().find(|table| table.range.contains(row, col))
+        self.sheets
+            .get(sheet)?
+            .data_tables
+            .iter()
+            .find(|table| table.range.contains(row, col))
     }
 
     /// What the formula bar shows for a result cell of a data table:
     /// `{=TABLE(A1,B1)}`.
     pub fn data_table_text(&self, sheet: usize, row: u32, col: u32) -> Option<String> {
-        self.data_table_at(sheet, row, col).map(|table| format!("{{{}}}", table.formula_text(self.locale.arg_sep)))
+        self.data_table_at(sheet, row, col)
+            .map(|table| format!("{{{}}}", table.formula_text(self.locale.arg_sep)))
     }
 
     /// True when changing the cells of `rect` would change part of a data
     /// table without replacing all of it ("Cannot change part of a data
     /// table").
     pub fn splits_data_table(&self, sheet: usize, rect: Rect) -> bool {
-        self.sheets
-            .get(sheet)
-            .is_some_and(|sh| sh.data_tables.iter().any(|table| table.range.intersects(&rect) && rect.intersection(&table.range) != Some(table.range)))
+        self.sheets.get(sheet).is_some_and(|sh| {
+            sh.data_tables.iter().any(|table| {
+                table.range.intersects(&rect)
+                    && rect.intersection(&table.range) != Some(table.range)
+            })
+        })
     }
 
     /// Forget the data tables whose results lie entirely in `rect` (they
     /// were cleared or overwritten as a whole). The caller commits.
     pub fn remove_data_tables_in(&mut self, sheet: usize, rect: Rect) -> bool {
         let inside = |table: &DataTable| rect.intersection(&table.range) == Some(table.range);
-        if !self.sheets.get(sheet).is_some_and(|sh| sh.data_tables.iter().any(inside)) {
+        if !self
+            .sheets
+            .get(sheet)
+            .is_some_and(|sh| sh.data_tables.iter().any(inside))
+        {
             return false;
         }
         self.snapshot();
-        self.sheets[sheet].data_tables.retain(|table| !inside(table));
+        self.sheets[sheet]
+            .data_tables
+            .retain(|table| !inside(table));
         true
     }
 
@@ -547,12 +666,20 @@ impl Workbook {
         if row_input.is_none() && col_input.is_none() {
             return Err(DataTableError::NoInput);
         }
-        if [row_input, col_input].into_iter().flatten().any(|(row, col)| range.contains(row, col)) {
+        if [row_input, col_input]
+            .into_iter()
+            .flatten()
+            .any(|(row, col)| range.contains(row, col))
+        {
             return Err(DataTableError::InputInside);
         }
         let results = Rect::new(range.r0 + 1, range.c0 + 1, range.r1, range.c1);
         // An identical table is simply calculated again.
-        if sh.data_tables.iter().any(|table| table.range.intersects(&results) && table.range != results) {
+        if sh
+            .data_tables
+            .iter()
+            .any(|table| table.range.intersects(&results) && table.range != results)
+        {
             return Err(DataTableError::Overlap);
         }
         self.snapshot();
@@ -580,9 +707,16 @@ impl Workbook {
             .flat_map(|(sheet, sh)| sh.data_tables.iter().map(move |table| (sheet, *table)))
             .collect();
         for (sheet, table) in tables {
-            let inputs: Vec<(u32, u32)> = [table.row_input, table.col_input].into_iter().flatten().collect();
-            let saved: Vec<Option<Cell>> = inputs.iter().map(|(row, col)| self.cell(sheet, *row, *col).cloned()).collect();
-            let mut results = Vec::with_capacity(table.range.rows() as usize * table.range.cols() as usize);
+            let inputs: Vec<(u32, u32)> = [table.row_input, table.col_input]
+                .into_iter()
+                .flatten()
+                .collect();
+            let saved: Vec<Option<Cell>> = inputs
+                .iter()
+                .map(|(row, col)| self.cell(sheet, *row, *col).cloned())
+                .collect();
+            let mut results =
+                Vec::with_capacity(table.range.rows() as usize * table.range.cols() as usize);
             for row in table.range.r0..=table.range.r1 {
                 for col in table.range.c0..=table.range.c1 {
                     if let Some((r, c)) = table.row_input {
@@ -605,7 +739,9 @@ impl Workbook {
             for row in table.range.r0..=table.range.r1 {
                 for col in table.range.c0..=table.range.c1 {
                     let value = results.next().unwrap_or_default();
-                    if self.value_at(sheet, row, col) != value || self.cell(sheet, row, col).is_none() {
+                    if self.value_at(sheet, row, col) != value
+                        || self.cell(sheet, row, col).is_none()
+                    {
                         self.poke_value((sheet, row, col), value);
                     }
                 }
@@ -617,7 +753,9 @@ impl Workbook {
     /// What `changed` does about data tables: they follow every change
     /// under automatic calculation only.
     pub(crate) fn data_tables_after_change(&mut self) {
-        if self.calc_mode() == CalcMode::Automatic && self.sheets.iter().any(|sh| !sh.data_tables.is_empty()) {
+        if self.calc_mode() == CalcMode::Automatic
+            && self.sheets.iter().any(|sh| !sh.data_tables.is_empty())
+        {
             self.calculate_data_tables();
         }
     }
@@ -646,24 +784,34 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
         return;
     }
     for scenario in &mut sheet.scenarios {
-        scenario.cells.retain_mut(|cell| match moved_cell((cell.row, cell.col), edit) {
-            Some((row, col)) => {
-                (cell.row, cell.col) = (row, col);
-                true
-            }
-            None => false,
-        });
+        scenario
+            .cells
+            .retain_mut(|cell| match moved_cell((cell.row, cell.col), edit) {
+                Some((row, col)) => {
+                    (cell.row, cell.col) = (row, col);
+                    true
+                }
+                None => false,
+            });
     }
-    sheet.scenarios.retain(|scenario| !scenario.cells.is_empty());
+    sheet
+        .scenarios
+        .retain(|scenario| !scenario.cells.is_empty());
     sheet.data_tables.retain_mut(|table| {
         // The row and the column of trial values move with the results:
         // a table cut off from them, or from an input cell, is no table.
-        let whole = Rect::new(table.range.r0 - 1, table.range.c0 - 1, table.range.r1, table.range.c1);
+        let whole = Rect::new(
+            table.range.r0 - 1,
+            table.range.c0 - 1,
+            table.range.r1,
+            table.range.c1,
+        );
         let mut moved = AutoFilter::new(whole);
         if !moved.adjust(edit) || moved.range.rows() < 2 || moved.range.cols() < 2 {
             return false;
         }
-        let inputs = [table.row_input, table.col_input].map(|input| input.map(|cell| moved_cell(cell, edit)));
+        let inputs = [table.row_input, table.col_input]
+            .map(|input| input.map(|cell| moved_cell(cell, edit)));
         if inputs.iter().any(|input| *input == Some(None)) {
             return false;
         }
@@ -715,7 +863,12 @@ mod tests {
     #[test]
     fn goal_seek_loan_payment() {
         // Which rate gives a payment of 900 on 100 000 over 180 months?
-        let mut w = wb(&[("A1", "0.05"), ("A2", "180"), ("A3", "100000"), ("A4", "=PMT(A1/12,A2,-A3)")]);
+        let mut w = wb(&[
+            ("A1", "0.05"),
+            ("A2", "180"),
+            ("A3", "100000"),
+            ("A4", "=PMT(A1/12,A2,-A3)"),
+        ]);
         let found = w.goal_seek((0, 3, 0), 900.0, (0, 0, 0)).unwrap();
         assert!(found.found, "{found:?}");
         assert!(close(&found.current, 900.0));
@@ -754,9 +907,18 @@ mod tests {
         let found = w.goal_seek((0, 0, 3), 5.0, (0, 0, 0)).unwrap();
         assert!(!found.found);
         w.goal_seek_restore();
-        assert_eq!(w.goal_seek((0, 0, 0), 5.0, (0, 0, 0)), Err(GoalSeekError::NotFormula));
-        assert_eq!(w.goal_seek((0, 0, 1), 5.0, (0, 0, 2)), Err(GoalSeekError::NotValue));
-        assert_eq!(w.goal_seek((0, 0, 1), 5.0, (0, 0, 3)), Err(GoalSeekError::NotValue));
+        assert_eq!(
+            w.goal_seek((0, 0, 0), 5.0, (0, 0, 0)),
+            Err(GoalSeekError::NotFormula)
+        );
+        assert_eq!(
+            w.goal_seek((0, 0, 1), 5.0, (0, 0, 2)),
+            Err(GoalSeekError::NotValue)
+        );
+        assert_eq!(
+            w.goal_seek((0, 0, 1), 5.0, (0, 0, 3)),
+            Err(GoalSeekError::NotValue)
+        );
     }
 
     // ---- scenarios ------------------------------------------------------
@@ -781,8 +943,10 @@ mod tests {
 
     fn budget() -> Workbook {
         let mut w = wb(&[("A1", "100"), ("A2", "0.1"), ("A3", "=A1*(1+A2)")]);
-        w.scenario_add(0, scenario("Low", &[("A1", "50"), ("A2", "5%")])).unwrap();
-        w.scenario_add(0, scenario("High", &[("A1", "200")])).unwrap();
+        w.scenario_add(0, scenario("Low", &[("A1", "50"), ("A2", "5%")]))
+            .unwrap();
+        w.scenario_add(0, scenario("High", &[("A1", "200")]))
+            .unwrap();
         w.commit("Add Scenario");
         w
     }
@@ -790,12 +954,27 @@ mod tests {
     #[test]
     fn scenarios_are_added_edited_deleted_and_shown() {
         let mut w = budget();
-        assert_eq!(w.scenario_add(0, scenario("low", &[("A1", "1")])), Err(ScenarioError::Duplicate));
-        assert_eq!(w.scenario_add(0, scenario(" ", &[("A1", "1")])), Err(ScenarioError::NoName));
-        assert_eq!(w.scenario_add(0, scenario("None", &[])), Err(ScenarioError::NoCells));
+        assert_eq!(
+            w.scenario_add(0, scenario("low", &[("A1", "1")])),
+            Err(ScenarioError::Duplicate)
+        );
+        assert_eq!(
+            w.scenario_add(0, scenario(" ", &[("A1", "1")])),
+            Err(ScenarioError::NoName)
+        );
+        assert_eq!(
+            w.scenario_add(0, scenario("None", &[])),
+            Err(ScenarioError::NoCells)
+        );
         let many: Vec<(String, &str)> = (0..33).map(|i| (cell_name(i, 5), "1")).collect();
-        let many: Vec<(&str, &str)> = many.iter().map(|(cell, value)| (cell.as_str(), *value)).collect();
-        assert_eq!(w.scenario_add(0, scenario("Many", &many)), Err(ScenarioError::TooManyCells));
+        let many: Vec<(&str, &str)> = many
+            .iter()
+            .map(|(cell, value)| (cell.as_str(), *value))
+            .collect();
+        assert_eq!(
+            w.scenario_add(0, scenario("Many", &many)),
+            Err(ScenarioError::TooManyCells)
+        );
         // Show enters the values as typing would, in one step.
         let changed = w.scenario_show(0, 0).unwrap();
         w.commit("Show Scenario");
@@ -805,9 +984,16 @@ mod tests {
         w.undo();
         assert_eq!(val(&w, "A3"), n(110.00000000000001));
         // Editing keeps the name free for itself; deleting is undone.
-        w.scenario_edit(0, 1, scenario("High", &[("A1", "300")])).unwrap();
-        assert_eq!(w.scenario_edit(0, 1, scenario("Low", &[("A1", "300")])), Err(ScenarioError::Duplicate));
-        assert_eq!(w.scenario_edit(0, 5, scenario("X", &[("A1", "1")])), Err(ScenarioError::Missing));
+        w.scenario_edit(0, 1, scenario("High", &[("A1", "300")]))
+            .unwrap();
+        assert_eq!(
+            w.scenario_edit(0, 1, scenario("Low", &[("A1", "300")])),
+            Err(ScenarioError::Duplicate)
+        );
+        assert_eq!(
+            w.scenario_edit(0, 5, scenario("X", &[("A1", "1")])),
+            Err(ScenarioError::Missing)
+        );
         w.commit("Edit Scenario");
         assert!(w.scenario_delete(0, 0));
         w.commit("Delete Scenario");
@@ -842,7 +1028,10 @@ mod tests {
         assert_eq!(at("F3"), Value::text("High"));
         assert_eq!(at("B4"), Value::text("Changing Cells:"));
         assert_eq!(at("C5"), Value::text("$A$1"));
-        assert_eq!([at("D5"), at("E5"), at("F5")], [n(100.0), n(50.0), n(200.0)]);
+        assert_eq!(
+            [at("D5"), at("E5"), at("F5")],
+            [n(100.0), n(50.0), n(200.0)]
+        );
         // A cell a scenario leaves alone keeps its current value.
         assert_eq!([at("D6"), at("E6"), at("F6")], [n(0.1), n(0.05), n(0.1)]);
         assert_eq!(at("B7"), Value::text("Result Cells:"));
@@ -853,7 +1042,12 @@ mod tests {
         // The cells of each section fold under its heading.
         let outline = &w.sheets[0].outline;
         assert!(!outline.summary_below);
-        assert_eq!((3..9).map(|row| outline.rows.level(row)).collect::<Vec<_>>(), [0, 1, 1, 0, 1, 0]);
+        assert_eq!(
+            (3..9)
+                .map(|row| outline.rows.level(row))
+                .collect::<Vec<_>>(),
+            [0, 1, 1, 0, 1, 0]
+        );
         // The sheet itself is as it was, and a second report gets another name.
         assert_eq!(w.value_at(1, 0, 0), n(100.0));
         assert_eq!(w.value_at(1, 2, 0), n(110.00000000000001));
@@ -902,7 +1096,10 @@ mod tests {
             ("D9", "6"),
         ]);
         let range = Rect::parse("D1:G4").unwrap();
-        assert_eq!(w.data_table_create(0, range, Some((0, 1)), Some((1, 1))), Ok(Rect::parse("E2:G4").unwrap()));
+        assert_eq!(
+            w.data_table_create(0, range, Some((0, 1)), Some((1, 1))),
+            Ok(Rect::parse("E2:G4").unwrap())
+        );
         w.commit("Data Table");
         let range = Rect::parse("D7:E9").unwrap();
         w.data_table_create(0, range, None, Some((1, 1))).unwrap();
@@ -921,7 +1118,10 @@ mod tests {
         // The input cells are what they were.
         assert_eq!(val(&w, "B1"), n(10.0));
         assert_eq!(val(&w, "B3"), n(30.0));
-        assert_eq!(w.data_table_text(0, 1, 4).as_deref(), Some("{=TABLE(B1,B2)}"));
+        assert_eq!(
+            w.data_table_text(0, 1, 4).as_deref(),
+            Some("{=TABLE(B1,B2)}")
+        );
         assert_eq!(w.data_table_text(0, 7, 4).as_deref(), Some("{=TABLE(,B2)}"));
         assert_eq!(w.data_table_text(0, 0, 4), None);
     }
@@ -943,11 +1143,17 @@ mod tests {
         // A formula reading the table follows it.
         w.set_cell_text(0, 11, 0, "=SUM(E2:G4)").unwrap();
         w.commit("edit");
-        assert_eq!(val(&w, "A12"), n(10.0 + 25.0 + 30.0 + 20.0 + 50.0 + 60.0 + 30.0 + 75.0 + 90.0));
+        assert_eq!(
+            val(&w, "A12"),
+            n(10.0 + 25.0 + 30.0 + 20.0 + 50.0 + 60.0 + 30.0 + 75.0 + 90.0)
+        );
         w.set_cell_text(0, 3, 3, "4").unwrap();
         w.commit("edit");
         assert_eq!(val(&w, "G4"), n(120.0));
-        assert_eq!(val(&w, "A12"), n(10.0 + 25.0 + 30.0 + 20.0 + 50.0 + 60.0 + 40.0 + 100.0 + 120.0));
+        assert_eq!(
+            val(&w, "A12"),
+            n(10.0 + 25.0 + 30.0 + 20.0 + 50.0 + 60.0 + 40.0 + 100.0 + 120.0)
+        );
     }
 
     #[test]
@@ -975,7 +1181,8 @@ mod tests {
     fn row_input_alone_and_text_results() {
         let mut w = wb(&[("B1", "2"), ("A4", "=B1&\"!\""), ("B3", "x"), ("C3", "y")]);
         // Trial values across, the formula at the head of the row.
-        w.data_table_create(0, Rect::parse("A3:C4").unwrap(), Some((0, 1)), None).unwrap();
+        w.data_table_create(0, Rect::parse("A3:C4").unwrap(), Some((0, 1)), None)
+            .unwrap();
         w.commit("Data Table");
         assert_eq!(val(&w, "B4"), Value::text("x!"));
         assert_eq!(val(&w, "C4"), Value::text("y!"));
@@ -993,10 +1200,22 @@ mod tests {
         assert!(!w.splits_data_table(0, Rect::parse("A1:Z50").unwrap()));
         assert!(!w.splits_data_table(0, Rect::parse("A1:C3").unwrap()));
         let range = Rect::parse("D1:G4").unwrap();
-        assert_eq!(w.data_table_create(0, Rect::parse("D1:D4").unwrap(), None, Some((1, 1))), Err(DataTableError::BadSelection));
-        assert_eq!(w.data_table_create(0, range, None, None), Err(DataTableError::NoInput));
-        assert_eq!(w.data_table_create(0, range, Some((1, 4)), None), Err(DataTableError::InputInside));
-        assert_eq!(w.data_table_create(0, Rect::parse("E2:H6").unwrap(), Some((0, 1)), None), Err(DataTableError::Overlap));
+        assert_eq!(
+            w.data_table_create(0, Rect::parse("D1:D4").unwrap(), None, Some((1, 1))),
+            Err(DataTableError::BadSelection)
+        );
+        assert_eq!(
+            w.data_table_create(0, range, None, None),
+            Err(DataTableError::NoInput)
+        );
+        assert_eq!(
+            w.data_table_create(0, range, Some((1, 4)), None),
+            Err(DataTableError::InputInside)
+        );
+        assert_eq!(
+            w.data_table_create(0, Rect::parse("E2:H6").unwrap(), Some((0, 1)), None),
+            Err(DataTableError::Overlap)
+        );
         // Clearing the whole table forgets it; undo brings it back.
         w.clear(0, whole, crate::workbook::ClearMode::Contents);
         assert!(w.remove_data_tables_in(0, whole));
@@ -1023,7 +1242,10 @@ mod tests {
         w.commit("Insert");
         let table = w.sheets[0].data_tables[0];
         assert_eq!(table.range, Rect::parse("G3:I5").unwrap());
-        assert_eq!((table.row_input, table.col_input), (Some((1, 3)), Some((2, 3))));
+        assert_eq!(
+            (table.row_input, table.col_input),
+            (Some((1, 3)), Some((2, 3)))
+        );
         assert_eq!(w.value_at(0, 3, 7), n(40.0));
         // Still live after the move.
         w.set_cell_text(0, 1, 7, "25").unwrap();

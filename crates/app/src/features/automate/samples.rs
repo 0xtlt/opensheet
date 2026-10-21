@@ -18,9 +18,15 @@ impl Sample {
             "header" => t("Format a Header Row", "Mettre en forme une ligne d'en-tête"),
             "total" => t("Add a Total Row", "Ajouter une ligne de total"),
             "table" => t("Create and Sort a Table", "Créer et trier un tableau"),
-            "unhide" => t("Unhide All Rows and Columns", "Afficher toutes les lignes et colonnes"),
+            "unhide" => t(
+                "Unhide All Rows and Columns",
+                "Afficher toutes les lignes et colonnes",
+            ),
             "summary" => t("Build a Summary Sheet", "Créer une feuille de synthèse"),
-            _ => t("Color Cells Above Average", "Colorer les cellules au-dessus de la moyenne"),
+            _ => t(
+                "Color Cells Above Average",
+                "Colorer les cellules au-dessus de la moyenne",
+            ),
         }
     }
 
@@ -63,12 +69,30 @@ impl Sample {
 }
 
 pub(crate) const SAMPLES: [Sample; 6] = [
-    Sample { id: "header", body: HEADER },
-    Sample { id: "total", body: TOTAL },
-    Sample { id: "table", body: TABLE },
-    Sample { id: "unhide", body: UNHIDE },
-    Sample { id: "summary", body: SUMMARY },
-    Sample { id: "average", body: AVERAGE },
+    Sample {
+        id: "header",
+        body: HEADER,
+    },
+    Sample {
+        id: "total",
+        body: TOTAL,
+    },
+    Sample {
+        id: "table",
+        body: TABLE,
+    },
+    Sample {
+        id: "unhide",
+        body: UNHIDE,
+    },
+    Sample {
+        id: "summary",
+        body: SUMMARY,
+    },
+    Sample {
+        id: "average",
+        body: AVERAGE,
+    },
 ];
 
 const HEADER: &str = r##"function main(workbook: ExcelScript.Workbook) {

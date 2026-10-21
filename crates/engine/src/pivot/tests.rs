@@ -86,7 +86,11 @@ fn shown(wb: &Workbook, id: u32) -> String {
 /// Compare a report with the expected one, written one row per line.
 #[track_caller]
 fn assert_report(wb: &Workbook, id: u32, expected: &str) {
-    let expected: Vec<&str> = expected.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let expected: Vec<&str> = expected
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(shown(wb, id), expected.join("\n"));
 }
 
@@ -183,12 +187,18 @@ fn the_source_must_be_a_list() {
         sheet: "Nowhere".to_string(),
         range: Rect::new(0, 0, 1, 0),
     };
-    assert_eq!(wb.pivot_create(gone, dest, false), Err(PivotError::InvalidSource));
+    assert_eq!(
+        wb.pivot_create(gone, dest, false),
+        Err(PivotError::InvalidSource)
+    );
     assert_eq!(
         wb.pivot_create(PivotSource::Name("Table9".into()), dest, false),
         Err(PivotError::InvalidSource)
     );
-    assert!(wb.pivot_create(range(Rect::new(0, 0, 1, 0)), dest, false).is_ok());
+    assert!(
+        wb.pivot_create(range(Rect::new(0, 0, 1, 0)), dest, false)
+            .is_ok()
+    );
     // A whole-column source stops at the data.
     let whole = PivotSource::parse("A:A", 0, &wb).unwrap();
     let id = wb
@@ -360,7 +370,10 @@ fn deleting_the_source_sheet_leaves_nothing_to_refresh_from() {
     // Undo brings the sheet and the source back together.
     wb.undo();
     wb.undo();
-    assert!(matches!(wb.pivot(id).unwrap().1.source, PivotSource::Range { .. }));
+    assert!(matches!(
+        wb.pivot(id).unwrap().1.source,
+        PivotSource::Range { .. }
+    ));
     assert_eq!(wb.pivot_refresh(id, false), Ok(()));
 }
 
@@ -407,7 +420,10 @@ fn labels_with_a_button_leave_room_for_it() {
         let (r, c) = parse_cell_name(name).unwrap();
         wb.style_at(1, r, c).indent
     };
-    assert_eq!(wb.pivot_cell(1, 3, 0).unwrap().button, Some(PivotButton::Collapse));
+    assert_eq!(
+        wb.pivot_cell(1, 3, 0).unwrap().button,
+        Some(PivotButton::Collapse)
+    );
     assert_eq!(indent(&wb, "A4"), 1);
     assert_eq!(wb.pivot_cell(1, 4, 1).unwrap().button, None);
     assert_eq!(indent(&wb, "B5"), 0);
@@ -430,7 +446,10 @@ fn labels_with_a_button_leave_room_for_it() {
         p.add_field(SALES_F, Area::Values, None, Locale::en());
     });
     let cell = wb.pivot_cell(1, 3, 1).unwrap();
-    assert_eq!((cell.part, cell.button), (PivotPart::ColumnLabel, Some(PivotButton::Collapse)));
+    assert_eq!(
+        (cell.part, cell.button),
+        (PivotPart::ColumnLabel, Some(PivotButton::Collapse))
+    );
     assert_eq!(indent(&wb, "B4"), 1);
     assert_eq!(wb.pivot_cell(1, 4, 1).unwrap().part, PivotPart::ColumnLabel);
     assert_eq!(indent(&wb, "B5"), 0);
@@ -583,7 +602,10 @@ fn blank_lines_and_grand_totals() {
          |
          Grand Total|690",
     );
-    assert_eq!(wb.pivot_cell(1, 6, 0).unwrap().row_kind, Some(ReportLineKind::Blank));
+    assert_eq!(
+        wb.pivot_cell(1, 6, 0).unwrap().row_kind,
+        Some(ReportLineKind::Blank)
+    );
     let (mut wb, id) = region_by_year(Locale::en());
     update(&mut wb, id, |p| p.options.row_grand_totals = false);
     assert_report(
@@ -645,7 +667,10 @@ fn several_values_go_to_the_columns_and_can_move_to_the_rows() {
     );
     // Removing a value field removes "Σ Values" with it.
     update(&mut wb, id, |p| p.remove_data_field(1));
-    assert_eq!(wb.pivot(id).unwrap().1.row_fields, [AxisField::Field(REGION)]);
+    assert_eq!(
+        wb.pivot(id).unwrap().1.row_fields,
+        [AxisField::Field(REGION)]
+    );
     assert_report(
         &wb,
         id,
@@ -659,7 +684,9 @@ fn several_values_go_to_the_columns_and_can_move_to_the_rows() {
 #[test]
 fn several_values_under_a_column_field() {
     let (mut wb, id) = region_by_year(Locale::en());
-    update(&mut wb, id, |p| p.add_field(UNITS, Area::Values, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(UNITS, Area::Values, None, Locale::en())
+    });
     assert_report(
         &wb,
         id,
@@ -671,7 +698,9 @@ fn several_values_under_a_column_field() {
          Grand Total|450|35|240|21|690|56",
     );
     let (mut wb, id) = region_by_year(Locale::fr());
-    update(&mut wb, id, |p| p.add_field(UNITS, Area::Values, None, Locale::fr()));
+    update(&mut wb, id, |p| {
+        p.add_field(UNITS, Area::Values, None, Locale::fr())
+    });
     assert_eq!(
         cells(&wb, 1, Rect::new(3, 5, 3, 6)),
         "Total Somme de Sales|Total Somme de Units"
@@ -681,14 +710,18 @@ fn several_values_under_a_column_field() {
 #[test]
 fn only_columns_or_only_values() {
     let (mut wb, id) = sales(Locale::en());
-    update(&mut wb, id, |p| p.add_field(SALES_F, Area::Values, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(SALES_F, Area::Values, None, Locale::en())
+    });
     assert_report(
         &wb,
         id,
         "Sum of Sales
          690",
     );
-    update(&mut wb, id, |p| p.add_field(YEAR, Area::Columns, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(YEAR, Area::Columns, None, Locale::en())
+    });
     assert_report(
         &wb,
         id,
@@ -756,12 +789,24 @@ fn every_summary_function() {
     let div0 = Value::Error(ErrorKind::Div0);
     // North holds no number: it sums to 0 and has no average.
     assert_eq!(summary(Aggregation::Sum), [n(6.0), n(9.0), n(0.0), n(15.0)]);
-    assert_eq!(summary(Aggregation::Count), [n(2.0), n(2.0), n(1.0), n(5.0)]);
-    assert_eq!(summary(Aggregation::CountNums), [n(2.0), n(2.0), n(0.0), n(4.0)]);
-    assert_eq!(summary(Aggregation::Average), [n(3.0), n(4.5), div0.clone(), n(3.75)]);
+    assert_eq!(
+        summary(Aggregation::Count),
+        [n(2.0), n(2.0), n(1.0), n(5.0)]
+    );
+    assert_eq!(
+        summary(Aggregation::CountNums),
+        [n(2.0), n(2.0), n(0.0), n(4.0)]
+    );
+    assert_eq!(
+        summary(Aggregation::Average),
+        [n(3.0), n(4.5), div0.clone(), n(3.75)]
+    );
     assert_eq!(summary(Aggregation::Max), [n(4.0), n(5.0), n(0.0), n(5.0)]);
     assert_eq!(summary(Aggregation::Min), [n(2.0), n(4.0), n(0.0), n(2.0)]);
-    assert_eq!(summary(Aggregation::Product), [n(8.0), n(20.0), n(0.0), n(160.0)]);
+    assert_eq!(
+        summary(Aggregation::Product),
+        [n(8.0), n(20.0), n(0.0), n(160.0)]
+    );
     // 2, 4, 4, 5: mean 3.75, squared deviations 4.75.
     let [east, west, north, all] = summary(Aggregation::Var);
     assert_close(east, 2.0);
@@ -825,7 +870,10 @@ fn value_fields_are_named_after_their_function() {
             "Varp of N"
         ]
     );
-    let fr: Vec<String> = Aggregation::ALL.iter().map(|f| name(*f, Locale::fr())).collect();
+    let fr: Vec<String> = Aggregation::ALL
+        .iter()
+        .map(|f| name(*f, Locale::fr()))
+        .collect();
     assert_eq!(
         fr,
         [
@@ -894,7 +942,9 @@ fn show_values_as_percentages_of_totals() {
     assert_close(at(&wb, id, "D7"), 1.0);
     // In French the percentages are written the French way.
     let (mut wb, id) = region_by_year(Locale::fr());
-    update(&mut wb, id, |p| p.data_fields[0].show_as = ShowAs::PercentOfTotal);
+    update(&mut wb, id, |p| {
+        p.data_fields[0].show_as = ShowAs::PercentOfTotal
+    });
     assert_eq!(cells(&wb, 1, Rect::new(4, 1, 4, 3)), "36,23%|17,39%|53,62%");
 }
 
@@ -1012,7 +1062,9 @@ fn show_values_as_running_totals_and_ranks() {
 #[test]
 fn show_values_as_percentages_of_parents() {
     let (mut wb, id) = region_product(Locale::en());
-    update(&mut wb, id, |p| p.data_fields[0].show_as = ShowAs::PercentOfParentRow);
+    update(&mut wb, id, |p| {
+        p.data_fields[0].show_as = ShowAs::PercentOfParentRow
+    });
     assert_report(
         &wb,
         id,
@@ -1053,18 +1105,28 @@ fn show_values_as_percentages_of_parents() {
     // A calculation whose base field leaves the report is switched off.
     let (mut wb, id) = shown_as(ShowAs::RunningTotal { field: YEAR });
     update(&mut wb, id, |p| p.remove_field(YEAR));
-    assert_eq!(wb.pivot(id).unwrap().1.data_fields[0].show_as, ShowAs::Normal);
+    assert_eq!(
+        wb.pivot(id).unwrap().1.data_fields[0].show_as,
+        ShowAs::Normal
+    );
 }
 
 #[test]
 fn number_formats_of_values_and_labels() {
     let (mut wb, id) = region_by_year(Locale::en());
-    update(&mut wb, id, |p| p.data_fields[0].num_fmt = Some(Arc::from("#,##0.00")));
+    update(&mut wb, id, |p| {
+        p.data_fields[0].num_fmt = Some(Arc::from("#,##0.00"))
+    });
     assert_eq!(cells(&wb, 1, Rect::new(6, 1, 6, 3)), "450.00|240.00|690.00");
     // The labels and the captions stay as they are.
-    assert_eq!(cells(&wb, 1, Rect::new(3, 0, 3, 3)), "Row Labels|2023|2024|Grand Total");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(3, 0, 3, 3)),
+        "Row Labels|2023|2024|Grand Total"
+    );
     let (mut wb, id) = region_by_year(Locale::fr());
-    update(&mut wb, id, |p| p.data_fields[0].num_fmt = Some(Arc::from("#,##0.00")));
+    update(&mut wb, id, |p| {
+        p.data_fields[0].num_fmt = Some(Arc::from("#,##0.00"))
+    });
     assert_eq!(cells(&wb, 1, Rect::new(6, 1, 6, 3)), "450,00|240,00|690,00");
 }
 
@@ -1084,8 +1146,13 @@ fn empty_cells_and_errors_can_be_replaced() {
         p.add_field(2, Area::Values, None, Locale::en());
     });
     // An error in the source: the field is counted by default.
-    assert_eq!(wb.pivot(id).unwrap().1.data_fields[0].function, Aggregation::Count);
-    update(&mut wb, id, |p| p.set_function(0, Aggregation::Sum, Locale::en()));
+    assert_eq!(
+        wb.pivot(id).unwrap().1.data_fields[0].function,
+        Aggregation::Count
+    );
+    update(&mut wb, id, |p| {
+        p.set_function(0, Aggregation::Sum, Locale::en())
+    });
     assert_report(
         &wb,
         id,
@@ -1169,7 +1236,10 @@ fn filter_fields_sit_above_the_report() {
     );
     // Several items: none of them hidden means all.
     update(&mut wb, id, |p| p.set_visible_items(YEAR, &[y2024]));
-    assert_eq!(cells(&wb, 1, Rect::new(0, 0, 0, 1)), "Year|(Multiple Items)");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(0, 0, 0, 1)),
+        "Year|(Multiple Items)"
+    );
     assert_eq!(at(&wb, id, "B6"), Value::Number(240.0));
     // A second filter needs a row more: the report moves down.
     update(&mut wb, id, |p| {
@@ -1189,10 +1259,16 @@ fn filter_fields_sit_above_the_report() {
         p.options.page_over_then_down = true;
         p.options.page_wrap = 2;
     });
-    assert_eq!(cells(&wb, 1, Rect::new(0, 0, 1, 4)), "||||\nYear|(All)||Product|(All)");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(0, 0, 1, 4)),
+        "||||\nYear|(All)||Product|(All)"
+    );
     assert!(wb.pivot_cell(1, 0, 0).is_none());
     let cell = wb.pivot_cell(1, 1, 4).unwrap();
-    assert_eq!((cell.part, cell.field), (PivotPart::FilterValue, Some(PRODUCT)));
+    assert_eq!(
+        (cell.part, cell.field),
+        (PivotPart::FilterValue, Some(PRODUCT))
+    );
     assert_eq!(cell.button, Some(PivotButton::Filter { filtered: false }));
     assert_eq!(wb.pivot_cell(1, 1, 3).unwrap().part, PivotPart::FilterLabel);
     assert_eq!(wb.pivot_cell(1, 1, 2).unwrap().part, PivotPart::Blank);
@@ -1204,7 +1280,10 @@ fn filter_fields_sit_above_the_report() {
     });
     assert_eq!(cells(&wb, 1, Rect::new(0, 0, 0, 1)), "Year|(Tous)");
     update(&mut wb, id, |p| p.set_item_hidden(YEAR, y2023, true));
-    assert_eq!(cells(&wb, 1, Rect::new(0, 0, 0, 1)), "Year|(Plusieurs éléments)");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(0, 0, 0, 1)),
+        "Year|(Plusieurs éléments)"
+    );
 }
 
 #[test]
@@ -1239,13 +1318,22 @@ fn label_filters() {
     update(&mut wb, id, |p| {
         p.set_label_filter(YEAR, Some(LabelFilter::GreaterOrEqual("2024".into())))
     });
-    assert_eq!(cells(&wb, 1, Rect::new(3, 0, 3, 2)), "Row Labels|2024|Grand Total");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(3, 0, 3, 2)),
+        "Row Labels|2024|Grand Total"
+    );
     update(&mut wb, id, |p| {
         p.set_label_filter(YEAR, Some(LabelFilter::LessOrEqual("2023".into())))
     });
-    assert_eq!(cells(&wb, 1, Rect::new(3, 0, 3, 2)), "Row Labels|2023|Grand Total");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(3, 0, 3, 2)),
+        "Row Labels|2023|Grand Total"
+    );
     update(&mut wb, id, |p| p.set_label_filter(YEAR, None));
-    assert_eq!(cells(&wb, 1, Rect::new(3, 0, 3, 3)), "Row Labels|2023|2024|Grand Total");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(3, 0, 3, 3)),
+        "Row Labels|2023|2024|Grand Total"
+    );
 }
 
 #[test]
@@ -1253,7 +1341,10 @@ fn value_filters_and_top_10() {
     let (mut wb, id) = region_product(Locale::en());
     // Products are judged within their region: East Apples 220, East
     // Pears 150, West Apples 200, West Pears 120.
-    let test = |test: ValueFilter| FilterKind::Value { data_field: 0, test };
+    let test = |test: ValueFilter| FilterKind::Value {
+        data_field: 0,
+        test,
+    };
     update(&mut wb, id, |p| {
         p.set_value_filter(PRODUCT, Some(test(ValueFilter::GreaterThan(150.0))))
     });
@@ -1348,24 +1439,46 @@ fn sorting_by_label_by_value_and_by_hand() {
             .collect::<Vec<_>>()
             .join(" ")
     };
-    assert_eq!(order(&wb), "East Apples Pears West Apples Pears Grand Total");
-    update(&mut wb, id, |p| p.sort_field(REGION, SortOrder::Descending, None));
-    assert_eq!(order(&wb), "West Apples Pears East Apples Pears Grand Total");
+    assert_eq!(
+        order(&wb),
+        "East Apples Pears West Apples Pears Grand Total"
+    );
+    update(&mut wb, id, |p| {
+        p.sort_field(REGION, SortOrder::Descending, None)
+    });
+    assert_eq!(
+        order(&wb),
+        "West Apples Pears East Apples Pears Grand Total"
+    );
     // By value, within each region: East has Pears 150 < Apples 220, West
     // has Pears 120 < Apples 200.
-    update(&mut wb, id, |p| p.sort_field(PRODUCT, SortOrder::Ascending, Some(0)));
-    assert_eq!(order(&wb), "West Pears Apples East Pears Apples Grand Total");
+    update(&mut wb, id, |p| {
+        p.sort_field(PRODUCT, SortOrder::Ascending, Some(0))
+    });
+    assert_eq!(
+        order(&wb),
+        "West Pears Apples East Pears Apples Grand Total"
+    );
     // Regions by value, smallest first: West 320, East 370.
     update(&mut wb, id, |p| {
         p.sort_field(REGION, SortOrder::Ascending, Some(0));
         p.sort_field(PRODUCT, SortOrder::Descending, Some(0));
     });
-    assert_eq!(order(&wb), "West Apples Pears East Apples Pears Grand Total");
+    assert_eq!(
+        order(&wb),
+        "West Apples Pears East Apples Pears Grand Total"
+    );
     // By hand: Pears dragged before Apples.
     let pears = p_item(PRODUCT, "Pears");
     update(&mut wb, id, |p| p.move_item(PRODUCT, pears, 0));
-    assert_eq!(wb.pivot(id).unwrap().1.fields[PRODUCT].sort.order, SortOrder::Manual);
-    assert_eq!(order(&wb), "West Pears Apples East Pears Apples Grand Total");
+    assert_eq!(
+        wb.pivot(id).unwrap().1.fields[PRODUCT].sort.order,
+        SortOrder::Manual
+    );
+    assert_eq!(
+        order(&wb),
+        "West Pears Apples East Pears Apples Grand Total"
+    );
 }
 
 #[test]
@@ -1399,7 +1512,9 @@ fn text_sorts_without_case_and_numbers_come_first() {
          Grand Total|7",
     );
     let (mut wb, id) = pivot_on(rows, Locale::fr());
-    update(&mut wb, id, |p| p.add_field(0, Area::Rows, None, Locale::fr()));
+    update(&mut wb, id, |p| {
+        p.add_field(0, Area::Rows, None, Locale::fr())
+    });
     assert_eq!(cells(&wb, 1, Rect::new(7, 0, 8, 0)), "VRAI\n(vide)");
 }
 
@@ -1505,14 +1620,22 @@ fn a_date_field_is_grouped_when_it_enters_the_rows() {
     // Dates go to the rows when their box is checked.
     assert_eq!(wb.pivot(id).unwrap().1.default_area(0), Area::Rows);
     wb.pivot_add_field(id, 0, Area::Rows, None, false).unwrap();
-    wb.pivot_update(id, false, |p| p.add_field(1, Area::Values, None, Locale::en()))
-        .unwrap();
+    wb.pivot_update(id, false, |p| {
+        p.add_field(1, Area::Values, None, Locale::en())
+    })
+    .unwrap();
     wb.commit("pivot");
     let p = wb.pivot(id).unwrap().1;
     let names: Vec<&str> = p.cache.fields.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(
         names,
-        ["Date", "Amount", "Years (Date)", "Quarters (Date)", "Months (Date)"]
+        [
+            "Date",
+            "Amount",
+            "Years (Date)",
+            "Quarters (Date)",
+            "Months (Date)"
+        ]
     );
     assert_eq!(
         p.row_fields,
@@ -1596,7 +1719,13 @@ fn date_groups_in_french() {
     })
     .unwrap();
     let p = wb.pivot(id).unwrap().1;
-    let names: Vec<&str> = p.cache.fields.iter().skip(2).map(|f| f.name.as_str()).collect();
+    let names: Vec<&str> = p
+        .cache
+        .fields
+        .iter()
+        .skip(2)
+        .map(|f| f.name.as_str())
+        .collect();
     assert_eq!(names, ["Années (Date)", "Trimestres (Date)", "Mois (Date)"]);
     assert_report(
         &wb,
@@ -1635,8 +1764,16 @@ fn grouping_dates_by_hand() {
          Sum of Amount|50|20|30|50|150",
     );
     // Regrouping replaces the months by years and quarters, in place.
-    wb.pivot_group_dates(id, 2, &[GroupBy::Quarters, GroupBy::Years], None, None, 1, false)
-        .unwrap();
+    wb.pivot_group_dates(
+        id,
+        2,
+        &[GroupBy::Quarters, GroupBy::Years],
+        None,
+        None,
+        1,
+        false,
+    )
+    .unwrap();
     wb.commit("group");
     let p = wb.pivot(id).unwrap().1;
     let names: Vec<&str> = p.cache.fields.iter().map(|f| f.name.as_str()).collect();
@@ -1693,7 +1830,10 @@ fn grouping_dates_by_hand() {
         "1/15/2023|2/20/2023|5/5/2023|1/10/2024|11/25/2024|Grand Total"
     );
     // Text cannot be grouped by date.
-    assert_eq!(wb.pivot_ungroup(id, 0, None, false), Err(PivotError::CannotUngroup));
+    assert_eq!(
+        wb.pivot_ungroup(id, 0, None, false),
+        Err(PivotError::CannotUngroup)
+    );
     let (mut wb, id) = sales(Locale::en());
     assert_eq!(
         wb.pivot_group_dates(id, REGION, &[GroupBy::Months], None, None, 1, false),
@@ -1750,11 +1890,25 @@ fn days_hours_and_minutes() {
          :45|4
          Grand Total|7",
     );
-    let rows: &[[&str; 2]] = &[["Quand", "N"], ["15/01/2023 09:30", "1"], ["15/01/2023 14:05", "2"]];
+    let rows: &[[&str; 2]] = &[
+        ["Quand", "N"],
+        ["15/01/2023 09:30", "1"],
+        ["15/01/2023 14:05", "2"],
+    ];
     let (mut wb, id) = pivot_on(rows, Locale::fr());
-    update(&mut wb, id, |p| p.add_field(0, Area::Rows, None, Locale::fr()));
-    wb.pivot_group_dates(id, 0, &[GroupBy::Days, GroupBy::Hours], None, None, 1, false)
-        .unwrap();
+    update(&mut wb, id, |p| {
+        p.add_field(0, Area::Rows, None, Locale::fr())
+    });
+    wb.pivot_group_dates(
+        id,
+        0,
+        &[GroupBy::Days, GroupBy::Hours],
+        None,
+        None,
+        1,
+        false,
+    )
+    .unwrap();
     assert_report(
         &wb,
         id,
@@ -1797,7 +1951,8 @@ fn grouping_numbers_by_interval() {
     );
     assert_eq!(wb.pivot(id).unwrap().1.cache.fields.len(), 2);
     // Automatic bounds: from the smallest value.
-    wb.pivot_group_numbers(id, 0, None, None, 20.0, false).unwrap();
+    wb.pivot_group_numbers(id, 0, None, None, 20.0, false)
+        .unwrap();
     wb.commit("group");
     assert_report(
         &wb,
@@ -1809,7 +1964,10 @@ fn grouping_numbers_by_interval() {
     );
     wb.pivot_ungroup(id, 0, None, false).unwrap();
     wb.commit("ungroup");
-    assert_eq!(cells(&wb, 1, Rect::new(3, 0, 8, 0)), "3\n12\n18\n25\n41\nGrand Total");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(3, 0, 8, 0)),
+        "3\n12\n18\n25\n41\nGrand Total"
+    );
     assert_eq!(
         wb.pivot_group_numbers(id, 0, None, None, 0.0, false),
         Err(PivotError::CannotGroup)
@@ -1817,7 +1975,9 @@ fn grouping_numbers_by_interval() {
     // Numbers with decimals: "0-10", "10-20".
     let rows: &[[&str; 2]] = &[["Price", "N"], ["2,5", "1"], ["12", "1"]];
     let (mut wb, id) = pivot_on(rows, Locale::fr());
-    update(&mut wb, id, |p| p.add_field(0, Area::Rows, None, Locale::fr()));
+    update(&mut wb, id, |p| {
+        p.add_field(0, Area::Rows, None, Locale::fr())
+    });
     wb.pivot_group_numbers(id, 0, Some(0.0), Some(19.0), 10.0, false)
         .unwrap();
     assert_eq!(cells(&wb, 1, Rect::new(3, 0, 4, 0)), "0-10\n10-20");
@@ -1849,7 +2009,10 @@ fn grouping_selected_items() {
     // A new field holds the groups; it sits above the cities.
     let p = wb.pivot(id).unwrap().1;
     assert_eq!(p.cache.fields[parent].name, "City2");
-    assert_eq!(p.row_fields, [AxisField::Field(parent), AxisField::Field(0)]);
+    assert_eq!(
+        p.row_fields,
+        [AxisField::Field(parent), AxisField::Field(0)]
+    );
     assert_report(
         &wb,
         id,
@@ -1865,7 +2028,10 @@ fn grouping_selected_items() {
     );
     // A second group joins the same field.
     let (rome, turin) = (item(&wb, 0, "Rome"), item(&wb, 0, "Turin"));
-    assert_eq!(wb.pivot_group_items(id, 0, &[rome, turin], false), Ok(parent));
+    assert_eq!(
+        wb.pivot_group_items(id, 0, &[rome, turin], false),
+        Ok(parent)
+    );
     wb.commit("group");
     assert_report(
         &wb,
@@ -1888,7 +2054,10 @@ fn grouping_selected_items() {
     let group1 = item(&wb, parent, "Group1");
     wb.pivot_ungroup(id, parent, Some(group1), false).unwrap();
     wb.commit("ungroup");
-    assert_eq!(cells(&wb, 1, Rect::new(3, 0, 7, 0)), "Lyon\nLyon\nParis\nParis\nGroup2");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(3, 0, 7, 0)),
+        "Lyon\nLyon\nParis\nParis\nGroup2"
+    );
     let group2 = item(&wb, parent, "Group2");
     wb.pivot_ungroup(id, parent, Some(group2), false).unwrap();
     wb.commit("ungroup");
@@ -1901,7 +2070,9 @@ fn grouping_selected_items() {
     );
     // In French the groups are called "Groupe1".
     let (mut wb, id) = pivot_on(rows, Locale::fr());
-    update(&mut wb, id, |p| p.add_field(0, Area::Rows, None, Locale::fr()));
+    update(&mut wb, id, |p| {
+        p.add_field(0, Area::Rows, None, Locale::fr())
+    });
     wb.pivot_group_items(id, 0, &[lyon, paris], false).unwrap();
     assert_eq!(cells(&wb, 1, Rect::new(3, 0, 3, 0)), "Groupe1");
 }
@@ -2017,8 +2188,13 @@ fn pivots_on_one_source_share_their_cache() {
     // Grouping is shared too: the second PivotTable gets the field.
     let east = p_item(REGION, "East");
     let west = p_item(REGION, "West");
-    let parent = wb.pivot_group_items(first, REGION, &[east, west], false).unwrap();
-    assert_eq!(wb.pivot(second).unwrap().1.cache.fields[parent].name, "Region2");
+    let parent = wb
+        .pivot_group_items(first, REGION, &[east, west], false)
+        .unwrap();
+    assert_eq!(
+        wb.pivot(second).unwrap().1.cache.fields[parent].name,
+        "Region2"
+    );
     assert_eq!(wb.pivot(second).unwrap().1.fields.len(), 6);
 }
 
@@ -2076,7 +2252,9 @@ fn a_table_or_a_name_can_be_the_source() {
 #[test]
 fn a_report_does_not_overwrite_without_asking() {
     let (mut wb, id) = sales(Locale::en());
-    update(&mut wb, id, |p| p.add_field(REGION, Area::Rows, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en())
+    });
     // A note right below the report, where the products would go.
     wb.set_cell_text(1, 6, 0, "note").unwrap();
     wb.commit("note");
@@ -2088,7 +2266,10 @@ fn a_report_does_not_overwrite_without_asking() {
     );
     // Nothing changed, and nothing is left to undo.
     assert_eq!(shown(&wb, id), before);
-    assert_eq!(wb.pivot(id).unwrap().1.row_fields, [AxisField::Field(REGION)]);
+    assert_eq!(
+        wb.pivot(id).unwrap().1.row_fields,
+        [AxisField::Field(REGION)]
+    );
     assert!(!wb.commit("nothing"));
     // The user agrees.
     wb.pivot_update(id, true, grow).unwrap();
@@ -2103,7 +2284,9 @@ fn a_report_does_not_overwrite_without_asking() {
 #[test]
 fn a_report_never_overlaps_another_pivot_a_table_or_merged_cells() {
     let (mut wb, first) = sales(Locale::en());
-    update(&mut wb, first, |p| p.add_field(REGION, Area::Rows, None, Locale::en()));
+    update(&mut wb, first, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en())
+    });
     let source = wb.pivot(first).unwrap().1.source.clone();
     // Inside the first one.
     let inside = PivotDestination::Existing {
@@ -2139,11 +2322,17 @@ fn a_report_never_overlaps_another_pivot_a_table_or_merged_cells() {
         range: Rect::new(2, 3, 3, 3),
         ..Default::default()
     });
-    assert_eq!(wb.pivot_update(first, true, grow), Err(PivotError::OverlapsTable));
+    assert_eq!(
+        wb.pivot_update(first, true, grow),
+        Err(PivotError::OverlapsTable)
+    );
     wb.sheets[1].tables.clear();
     wb.merge(1, Rect::new(4, 2, 4, 5));
     wb.commit("merge");
-    assert_eq!(wb.pivot_update(first, true, grow), Err(PivotError::OverlapsMerged));
+    assert_eq!(
+        wb.pivot_update(first, true, grow),
+        Err(PivotError::OverlapsMerged)
+    );
     wb.unmerge(1, Rect::new(4, 2, 4, 5));
     assert_eq!(wb.pivot_update(first, false, grow), Ok(()));
     // A report cannot run off the sheet.
@@ -2190,7 +2379,10 @@ fn rename_move_clear_and_delete() {
             false,
         )
         .unwrap();
-    assert_eq!(wb.pivot_rename(other, " pivottable1 "), Err(PivotError::InvalidName));
+    assert_eq!(
+        wb.pivot_rename(other, " pivottable1 "),
+        Err(PivotError::InvalidName)
+    );
     assert_eq!(wb.pivot_rename(other, ""), Err(PivotError::InvalidName));
     assert_eq!(wb.pivot_rename(other, "By region"), Ok(()));
     assert_eq!(wb.pivot(other).unwrap().1.name, "By region");
@@ -2209,11 +2401,19 @@ fn rename_move_clear_and_delete() {
     )
     .unwrap();
     wb.commit("move");
-    assert_eq!(wb.pivot(id).unwrap().1.location, Some(Rect::new(9, 5, 13, 8)));
+    assert_eq!(
+        wb.pivot(id).unwrap().1.location,
+        Some(Rect::new(9, 5, 13, 8))
+    );
     assert_eq!(shown(&wb, id), report);
-    assert_eq!(cells(&wb, 1, Rect::new(2, 0, 6, 3)), "|||\n|||\n|||\n|||\n|||");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(2, 0, 6, 3)),
+        "|||\n|||\n|||\n|||\n|||"
+    );
     // With a filter, the destination is the corner of the filter.
-    update(&mut wb, id, |p| p.add_field(PRODUCT, Area::Filters, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(PRODUCT, Area::Filters, None, Locale::en())
+    });
     wb.pivot_move(
         id,
         PivotDestination::Existing {
@@ -2249,7 +2449,9 @@ fn rename_move_clear_and_delete() {
     let p = wb.pivot(id).unwrap().1;
     assert!(p.report.placeholder && p.page_location.is_none());
     assert!(wb.sheets[0].cells.is_empty());
-    update(&mut wb, id, |p| p.add_field(REGION, Area::Rows, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en())
+    });
     wb.pivot_delete(id).unwrap();
     wb.commit("delete");
     assert!(wb.pivot(id).is_none());
@@ -2265,9 +2467,15 @@ fn rows_columns_and_sheets_move_under_a_pivot() {
     wb.insert_rows(1, 0, 2);
     wb.insert_cols(1, 0, 1);
     wb.commit("insert");
-    assert_eq!(wb.pivot(id).unwrap().1.location, Some(Rect::new(4, 1, 8, 4)));
+    assert_eq!(
+        wb.pivot(id).unwrap().1.location,
+        Some(Rect::new(4, 1, 8, 4))
+    );
     assert_eq!(shown(&wb, id), report);
-    assert_eq!(wb.pivot_cell(1, 5, 1).unwrap().part, PivotPart::RowHeaderCaption);
+    assert_eq!(
+        wb.pivot_cell(1, 5, 1).unwrap().part,
+        PivotPart::RowHeaderCaption
+    );
     assert!(wb.pivot_cell(1, 3, 0).is_none());
     // The source follows its rows and columns, and its sheet's name.
     wb.insert_rows(0, 0, 3);
@@ -2300,7 +2508,10 @@ fn rows_columns_and_sheets_move_under_a_pivot() {
     wb.commit("copy");
     let twin = &wb.sheets[copy].pivots[0];
     assert_ne!(twin.id, id);
-    assert_eq!((twin.location, &twin.source), (Some(Rect::new(4, 1, 8, 4)), &source));
+    assert_eq!(
+        (twin.location, &twin.source),
+        (Some(Rect::new(4, 1, 8, 4)), &source)
+    );
     assert_eq!(cells(&wb, copy, twin.location.unwrap()), report);
     // Deleting the rows of the report deletes the PivotTable; deleting
     // the source leaves a PivotTable that cannot be refreshed.
@@ -2311,7 +2522,10 @@ fn rows_columns_and_sheets_move_under_a_pivot() {
     let twin = wb.sheets[copy].pivots[0].id;
     assert_eq!(wb.pivot(twin).unwrap().1.source, PivotSource::Invalid);
     assert_eq!(wb.pivot(twin).unwrap().1.source.to_text(), "#REF!");
-    assert_eq!(wb.pivot_refresh(twin, false), Err(PivotError::InvalidSource));
+    assert_eq!(
+        wb.pivot_refresh(twin, false),
+        Err(PivotError::InvalidSource)
+    );
     assert_eq!(cells(&wb, copy, Rect::new(4, 1, 8, 4)), report);
 }
 
@@ -2368,7 +2582,10 @@ fn every_cell_knows_its_part() {
     assert!(total.row_items.is_empty() && total.col_items.is_empty());
     assert_eq!(
         (total.row_kind, total.col_kind),
-        (Some(ReportLineKind::GrandTotal), Some(ReportLineKind::GrandTotal))
+        (
+            Some(ReportLineKind::GrandTotal),
+            Some(ReportLineKind::GrandTotal)
+        )
     );
     // Labels name their field and item; with nothing below, no button.
     let label = cell_at(&wb, "A5");
@@ -2440,7 +2657,10 @@ fn headers_of_outline_and_tabular_forms() {
     let p = wb.pivot(id).unwrap().1;
     let kinds: Vec<ReportLineKind> = p.report.lines(true, p).iter().map(|l| l.kind).collect();
     use ReportLineKind::*;
-    assert_eq!(kinds, [Item, Item, Subtotal, Item, Item, Subtotal, GrandTotal]);
+    assert_eq!(
+        kinds,
+        [Item, Item, Subtotal, Item, Item, Subtotal, GrandTotal]
+    );
     assert_eq!(
         p.report.lines(true, p)[1].items,
         [(REGION, p_item(REGION, "East")), (PRODUCT, pears)]
@@ -2536,7 +2756,10 @@ fn moving_entries_between_the_areas() {
     update(&mut wb, id, |p| {
         // Year from the columns to the rows, before Region.
         assert!(p.move_entry(Area::Columns, 0, Area::Rows, 0, en));
-        assert_eq!(p.row_fields, [AxisField::Field(YEAR), AxisField::Field(REGION)]);
+        assert_eq!(
+            p.row_fields,
+            [AxisField::Field(YEAR), AxisField::Field(REGION)]
+        );
         assert_eq!(p.axis_of(YEAR), Some(Area::Rows));
         // Region to the filters; Year to the values (counted? no: summed,
         // years are numbers).
@@ -2560,7 +2783,10 @@ fn moving_entries_between_the_areas() {
         p.add_field(YEAR, Area::Columns, None, en);
         assert!(p.row_fields.is_empty());
         p.add_field(YEAR, Area::Values, None, en);
-        assert_eq!((p.axis_of(YEAR), p.data_fields.len()), (Some(Area::Columns), 2));
+        assert_eq!(
+            (p.axis_of(YEAR), p.data_fields.len()),
+            (Some(Area::Columns), 2)
+        );
     });
     // Sorting by a value field follows that field through the list.
     let (mut wb, id) = region_by_year(en);
@@ -2620,7 +2846,10 @@ fn the_default_style_is_light_16() {
     let s = look(&wb, "B4");
     assert_eq!((s.fill, s.font.bold), (None, true));
     let s = look(&wb, "B5");
-    assert_eq!((s.fill, s.font.bold, s.borders.is_none()), (None, false, true));
+    assert_eq!(
+        (s.fill, s.font.bold, s.borders.is_none()),
+        (None, false, true)
+    );
     let s = look(&wb, "A10");
     assert_eq!(
         (s.fill, s.font.bold, s.borders.top.color),
@@ -2648,7 +2877,10 @@ fn the_default_style_is_light_16() {
         }
     });
     let s = look(&wb, "A3");
-    assert_eq!((s.fill, s.font.color), (Some(Color(0x156082)), Some(Color::WHITE)));
+    assert_eq!(
+        (s.fill, s.font.color),
+        (Some(Color(0x156082)), Some(Color::WHITE))
+    );
     assert_eq!(look(&wb, "B5").fill, Some(pale));
     update(&mut wb, id, |p| p.style.name = "PivotStyleDark3".into());
     assert_eq!(look(&wb, "A3").fill, Some(Color::BLACK));
@@ -2670,7 +2902,10 @@ fn getpivotdata() {
     let missing = Value::Error(ErrorKind::Ref);
     assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3)"), n(690.0));
     assert_eq!(get("GETPIVOTDATA(\"Sum of Sales\",$A$3)"), n(690.0));
-    assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"East\")"), n(370.0));
+    assert_eq!(
+        get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"East\")"),
+        n(370.0)
+    );
     assert_eq!(
         get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"east\",\"Year\",2023)"),
         n(250.0)
@@ -2679,15 +2914,24 @@ fn getpivotdata() {
         get("GETPIVOTDATA(\"Sales\",$A$3,\"Year\",2024,\"Region\",\"West\")"),
         n(120.0)
     );
-    assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3,\"Year\",\"2024\")"), n(240.0));
+    assert_eq!(
+        get("GETPIVOTDATA(\"Sales\",$A$3,\"Year\",\"2024\")"),
+        n(240.0)
+    );
     // Any cell of the PivotTable will do, and so does a range.
     assert_eq!(get("GETPIVOTDATA(\"Sales\",C6:D7,\"Year\",2023)"), n(450.0));
     assert_eq!(get("GETPIVOTDATA(\"Sales\",A3,\"Year\",2023)*2"), n(900.0));
     // What the report does not show is #REF!.
     assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$1)"), missing);
     assert_eq!(get("GETPIVOTDATA(\"Units\",$A$3)"), missing);
-    assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"North\")"), missing);
-    assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3,\"Product\",\"Apples\")"), missing);
+    assert_eq!(
+        get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"North\")"),
+        missing
+    );
+    assert_eq!(
+        get("GETPIVOTDATA(\"Sales\",$A$3,\"Product\",\"Apples\")"),
+        missing
+    );
     assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3,\"Nothing\",1)"), missing);
     assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\")"), missing);
     assert_eq!(
@@ -2699,7 +2943,8 @@ fn getpivotdata() {
     let west = p_item(REGION, "West");
     wb.set_cell_text(1, 0, 9, "=GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"West\")")
         .unwrap();
-    wb.set_cell_text(1, 0, 10, "=GETPIVOTDATA(\"Sales\",$A$3)").unwrap();
+    wb.set_cell_text(1, 0, 10, "=GETPIVOTDATA(\"Sales\",$A$3)")
+        .unwrap();
     wb.commit("formulas");
     assert_eq!(cells(&wb, 1, Rect::new(0, 9, 0, 10)), "320|690");
     update(&mut wb, id, |p| p.set_item_hidden(REGION, west, true));
@@ -2734,7 +2979,10 @@ fn getpivotdata_with_subtotals_filters_and_several_values() {
     );
     assert_eq!(get(&mut wb, "GETPIVOTDATA(\"Sales\",$A$3)"), n(690.0));
     // The filter shows every year: no single one can be asked for.
-    assert_eq!(get(&mut wb, "GETPIVOTDATA(\"Sales\",$A$3,\"Year\",2023)"), missing);
+    assert_eq!(
+        get(&mut wb, "GETPIVOTDATA(\"Sales\",$A$3,\"Year\",2023)"),
+        missing
+    );
     update(&mut wb, id, |p| {
         p.set_page_item(YEAR, Some(y2023));
         p.set_subtotals(false, true);
@@ -2748,7 +2996,10 @@ fn getpivotdata_with_subtotals_filters_and_several_values() {
         n(150.0)
     );
     // Subtotals are off: the total of a region is not in the report.
-    assert_eq!(get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"East\")"), missing);
+    assert_eq!(
+        get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"East\")"),
+        missing
+    );
     // West sold no pears in 2023: the item is not there.
     assert_eq!(
         get("GETPIVOTDATA(\"Sales\",$A$3,\"Region\",\"West\",\"Product\",\"Pears\")"),
@@ -2780,7 +3031,12 @@ fn getpivotdata_in_the_other_languages() {
         wb.set_cell_text(1, 0, 8, formula).unwrap();
         wb.commit("formula");
         assert_eq!(wb.value_at(1, 0, 8), Value::Number(250.0), "{}", locale.id);
-        assert_eq!(wb.formula_text(1, 0, 8).as_deref(), Some(formula), "{}", locale.id);
+        assert_eq!(
+            wb.formula_text(1, 0, 8).as_deref(),
+            Some(formula),
+            "{}",
+            locale.id
+        );
     }
     // Dates can be given as dates or as the report writes them.
     let (mut wb, id) = pivot_on(DATED, Locale::en());
@@ -2788,14 +3044,32 @@ fn getpivotdata_in_the_other_languages() {
         p.add_field(0, Area::Rows, None, Locale::en());
         p.add_field(1, Area::Values, None, Locale::en());
     });
-    wb.set_cell_text(1, 0, 8, "=GETPIVOTDATA(\"Amount\",A3,\"Date\",DATE(2023,5,5))")
-        .unwrap();
-    wb.set_cell_text(1, 0, 9, "=GETPIVOTDATA(\"Amount\",A3,\"Date\",\"1/10/2024\")")
-        .unwrap();
+    wb.set_cell_text(
+        1,
+        0,
+        8,
+        "=GETPIVOTDATA(\"Amount\",A3,\"Date\",DATE(2023,5,5))",
+    )
+    .unwrap();
+    wb.set_cell_text(
+        1,
+        0,
+        9,
+        "=GETPIVOTDATA(\"Amount\",A3,\"Date\",\"1/10/2024\")",
+    )
+    .unwrap();
     wb.commit("formulas");
     assert_eq!(cells(&wb, 1, Rect::new(0, 8, 0, 9)), "30|40");
-    wb.pivot_group_dates(id, 0, &[GroupBy::Years, GroupBy::Months], None, None, 1, false)
-        .unwrap();
+    wb.pivot_group_dates(
+        id,
+        0,
+        &[GroupBy::Years, GroupBy::Months],
+        None,
+        None,
+        1,
+        false,
+    )
+    .unwrap();
     wb.set_cell_text(
         1,
         0,
@@ -2803,8 +3077,13 @@ fn getpivotdata_in_the_other_languages() {
         "=GETPIVOTDATA(\"Amount\",A3,\"Years (Date)\",2024,\"Months (Date)\",\"Nov\")",
     )
     .unwrap();
-    wb.set_cell_text(1, 0, 9, "=GETPIVOTDATA(\"Amount\",A3,\"Years (Date)\",2023)")
-        .unwrap();
+    wb.set_cell_text(
+        1,
+        0,
+        9,
+        "=GETPIVOTDATA(\"Amount\",A3,\"Years (Date)\",2023)",
+    )
+    .unwrap();
     wb.commit("formulas");
     assert_eq!(cells(&wb, 1, Rect::new(0, 8, 0, 9)), "50|60");
 }
@@ -2828,7 +3107,10 @@ fn show_details_lists_the_records_behind_a_value() {
     assert_eq!(wb.pivot(id).unwrap().0, 2);
     let (sheet, range) = wb.pivot_show_details(2, 6, 3).unwrap();
     assert_eq!(range, Rect::new(0, 0, 6, 4));
-    assert_eq!(cells(&wb, sheet, Rect::new(6, 0, 6, 4)), "West|Pears|2024|70|7");
+    assert_eq!(
+        cells(&wb, sheet, Rect::new(6, 0, 6, 4)),
+        "West|Pears|2024|70|7"
+    );
     assert_eq!(wb.pivot_show_details(3, 4, 0), Err(PivotError::NotAValue));
     assert_eq!(wb.pivot_show_details(3, 40, 0), Err(PivotError::NotAValue));
     // Filtered records stay out, and dates keep their format.
@@ -2840,7 +3122,10 @@ fn show_details_lists_the_records_behind_a_value() {
     });
     assert_eq!(cells(&wb, 1, Rect::new(2, 0, 3, 0)), "Sum of Amount\n50");
     let (sheet, range) = wb.pivot_show_details(1, 3, 0).unwrap();
-    assert_eq!(cells(&wb, sheet, range), "Date|Amount\n1/15/2023|10\n1/10/2024|40");
+    assert_eq!(
+        cells(&wb, sheet, range),
+        "Date|Amount\n1/15/2023|10\n1/10/2024|40"
+    );
 }
 
 #[test]
@@ -2851,7 +3136,10 @@ fn show_report_filter_pages() {
         p.add_field(SALES_F, Area::Values, None, Locale::en());
         p.add_field(YEAR, Area::Filters, None, Locale::en());
     });
-    assert_eq!(wb.pivot_filter_pages(id, REGION), Err(PivotError::NoSuchField));
+    assert_eq!(
+        wb.pivot_filter_pages(id, REGION),
+        Err(PivotError::NoSuchField)
+    );
     let pages = wb.pivot_filter_pages(id, YEAR).unwrap();
     wb.commit("pages");
     // One sheet per year, before the PivotTable's own.
@@ -2868,7 +3156,10 @@ fn show_report_filter_pages() {
     );
     let ids: Vec<u32> = wb.pivots().map(|(_, p)| p.id).collect();
     assert_eq!(ids.len(), 3);
-    assert!(ids.iter().all(|i| ids.iter().filter(|j| *j == i).count() == 1));
+    assert!(
+        ids.iter()
+            .all(|i| ids.iter().filter(|j| *j == i).count() == 1)
+    );
     // The original still shows every year.
     assert_eq!(cells(&wb, 3, Rect::new(0, 0, 0, 1)), "Year|(All)");
 }
@@ -2945,7 +3236,10 @@ fn custom_captions() {
     assert_eq!(wb.pivot(id).unwrap().1.field_index("area"), Some(REGION));
     assert_eq!(wb.pivot(id).unwrap().1.field_index("region"), Some(REGION));
     update(&mut wb, id, |p| p.set_report_layout(FieldLayout::Compact));
-    assert_eq!(cells(&wb, 1, Rect::new(2, 0, 3, 1)), "Turnover|Years\nAreas|2023");
+    assert_eq!(
+        cells(&wb, 1, Rect::new(2, 0, 3, 1)),
+        "Turnover|Years\nAreas|2023"
+    );
     // GETPIVOTDATA knows the items by their captions too.
     wb.set_cell_text(
         1,
@@ -2964,7 +3258,10 @@ fn a_hundred_thousand_records() {
     // value fields over 100 000 records.
     const ROWS: u32 = 100_000;
     let mut wb = Workbook::new(Locale::en());
-    for (c, name) in ["Region", "Product", "Year", "Sales", "Units"].iter().enumerate() {
+    for (c, name) in ["Region", "Product", "Year", "Sales", "Units"]
+        .iter()
+        .enumerate()
+    {
         wb.set_value(0, 0, c as u32, Value::text(name));
     }
     let mut sales = 0.0;
@@ -3006,10 +3303,16 @@ fn a_hundred_thousand_records() {
     assert_eq!(p.report.size(), (3 + 5 + 200 + 1, 1 + 20 + 2));
     let total = p.location.unwrap();
     assert_eq!(wb.value_at(1, total.r1, total.c1 - 1), Value::Number(sales));
-    assert_eq!(wb.value_at(1, total.r1, total.c1), Value::Number(ROWS as f64));
+    assert_eq!(
+        wb.value_at(1, total.r1, total.c1),
+        Value::Number(ROWS as f64)
+    );
     // Each region has a fifth of the records, each product of a region a
     // fortieth of those.
-    assert_eq!(wb.value_at(1, total.r0 + 3, total.c1), Value::Number(20_000.0));
+    assert_eq!(
+        wb.value_at(1, total.r0 + 3, total.c1),
+        Value::Number(20_000.0)
+    );
     assert_eq!(wb.value_at(1, total.r0 + 4, total.c1), Value::Number(500.0));
     // Refreshing must stay well under a second where it matters: in an
     // optimised build (see also `examples/pivot_bench.rs`).
@@ -3022,7 +3325,9 @@ fn a_hundred_thousand_records() {
 fn filters_and_sorts_work_on_the_columns_too() {
     let (mut wb, id) = region_by_year(Locale::en());
     // Years by their totals, smallest first: 2024 (240), 2023 (450).
-    update(&mut wb, id, |p| p.sort_field(YEAR, SortOrder::Ascending, Some(0)));
+    update(&mut wb, id, |p| {
+        p.sort_field(YEAR, SortOrder::Ascending, Some(0))
+    });
     assert_eq!(
         cells(&wb, 1, Rect::new(3, 1, 4, 3)),
         "2024|2023|Grand Total\n120|250|370"
@@ -3030,7 +3335,13 @@ fn filters_and_sorts_work_on_the_columns_too() {
     // Only the years over 300.
     update(&mut wb, id, |p| {
         let test = ValueFilter::GreaterThan(300.0);
-        p.set_value_filter(YEAR, Some(FilterKind::Value { data_field: 0, test }));
+        p.set_value_filter(
+            YEAR,
+            Some(FilterKind::Value {
+                data_field: 0,
+                test,
+            }),
+        );
     });
     assert_report(
         &wb,
@@ -3120,7 +3431,10 @@ fn deleting_sheets() {
     // The sheet of the PivotTable takes it along.
     wb.delete_sheet(1);
     assert!(wb.pivot(id).is_none());
-    assert_eq!(wb.pivot_update(id, false, |_| {}), Err(PivotError::NoSuchPivot));
+    assert_eq!(
+        wb.pivot_update(id, false, |_| {}),
+        Err(PivotError::NoSuchPivot)
+    );
 }
 
 #[test]
@@ -3158,7 +3472,8 @@ fn a_cache_built_by_hand() {
             },
             // The file's own labels, in another language.
             items: [
-                "<", "janv", "févr", "mars", "avr", "mai", "juin", "juil", "août", "sept", "oct", "nov", "déc", ">",
+                "<", "janv", "févr", "mars", "avr", "mai", "juin", "juil", "août", "sept", "oct",
+                "nov", "déc", ">",
             ]
             .iter()
             .map(Value::text)
@@ -3172,7 +3487,13 @@ fn a_cache_built_by_hand() {
     assert!(cache.is_valid());
     assert_eq!(cache.fields[2].group.as_ref().unwrap().map, [1, 3]);
     let mut wb = Workbook::new(Locale::en());
-    let mut p = PivotTable::new(7, "Loaded".to_string(), PivotSource::Invalid, Arc::new(cache), (1, 1));
+    let mut p = PivotTable::new(
+        7,
+        "Loaded".to_string(),
+        PivotSource::Invalid,
+        Arc::new(cache),
+        (1, 1),
+    );
     p.row_fields = vec![AxisField::Field(2)];
     p.data_fields = vec![DataField {
         field: 1,
@@ -3209,7 +3530,8 @@ fn random_commands_keep_the_pivot_sound() {
 
 fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
     let en = Locale::en();
-    wb.set_cell_text(1, 0, 30, "=GETPIVOTDATA(\"Sales\",$A$3)").unwrap();
+    wb.set_cell_text(1, 0, 30, "=GETPIVOTDATA(\"Sales\",$A$3)")
+        .unwrap();
     wb.commit("formula");
     let mut next = |n: usize| {
         seed ^= seed << 13;
@@ -3218,8 +3540,16 @@ fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
         (seed % n.max(1) as u64) as usize
     };
     let areas = [Area::Filters, Area::Columns, Area::Rows, Area::Values];
-    let layouts = [FieldLayout::Compact, FieldLayout::Outline, FieldLayout::Tabular];
-    let orders = [SortOrder::Manual, SortOrder::Ascending, SortOrder::Descending];
+    let layouts = [
+        FieldLayout::Compact,
+        FieldLayout::Outline,
+        FieldLayout::Tabular,
+    ];
+    let orders = [
+        SortOrder::Manual,
+        SortOrder::Ascending,
+        SortOrder::Descending,
+    ];
     for step in 0..2000 {
         let p = wb.pivot(id).unwrap().1;
         let nf = p.fields.len();
@@ -3230,7 +3560,9 @@ fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
         let flag = next(2) == 0;
         let command = next(24);
         let result = match command {
-            0 => wb.pivot_group_items(id, f, &[item, next(4) as u32], true).map(|_| ()),
+            0 => wb
+                .pivot_group_items(id, f, &[item, next(4) as u32], true)
+                .map(|_| ()),
             1 => wb.pivot_ungroup(id, f, flag.then_some(item), true),
             2 => wb.pivot_group_numbers(id, f, None, None, 1.0 + next(100) as f64, true),
             3 => wb.pivot_add_field(id, f, areas[a], flag.then_some(b), true),
@@ -3245,7 +3577,10 @@ fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
                 11 => p.set_report_layout(layouts[d]),
                 12 => p.fields[f].layout = layouts[d],
                 13 => p.set_subtotals(flag, a < 2),
-                14 => p.fields[f].subtotals = Subtotals::Custom(vec![Aggregation::ALL[next(11)], Aggregation::Count]),
+                14 => {
+                    p.fields[f].subtotals =
+                        Subtotals::Custom(vec![Aggregation::ALL[next(11)], Aggregation::Count])
+                }
                 15 => {
                     p.set_repeat_labels(flag);
                     p.fields[g].blank_line = a == 0;
@@ -3269,7 +3604,10 @@ fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
                         ShowAs::PercentOfTotal,
                         ShowAs::PercentOfColumn,
                         ShowAs::PercentOfRow,
-                        ShowAs::PercentOf { field: f, item: base },
+                        ShowAs::PercentOf {
+                            field: f,
+                            item: base,
+                        },
                         ShowAs::PercentOfParentRow,
                         ShowAs::PercentOfParentColumn,
                         ShowAs::PercentOfParent { field: f },
@@ -3293,7 +3631,10 @@ fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
                     let test = ValueFilter::GreaterThan(next(300) as f64);
                     let kind = match a {
                         0 => None,
-                        1 => Some(FilterKind::Value { data_field: b, test }),
+                        1 => Some(FilterKind::Value {
+                            data_field: b,
+                            test,
+                        }),
                         _ => Some(FilterKind::Top10 {
                             data_field: b,
                             top: flag,
@@ -3310,7 +3651,10 @@ fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
         // A refused command (nothing to group, a report too wide for the
         // sheet) leaves everything as it was.
         if result.is_err() {
-            assert!(!wb.commit("nothing"), "step {step}: {result:?} left a change behind");
+            assert!(
+                !wb.commit("nothing"),
+                "step {step}: {result:?} left a change behind"
+            );
             continue;
         }
         wb.commit("step");
@@ -3329,7 +3673,10 @@ fn random_commands((mut wb, id): (Workbook, u32), mut seed: u64) {
             }
         }
         // Nothing of the PivotTable lies outside what it says it occupies.
-        let stray = wb.sheets[si].cells.keys().find(|(r, c)| !p.contains(*r, *c) && *c < 30);
+        let stray = wb.sheets[si]
+            .cells
+            .keys()
+            .find(|(r, c)| !p.contains(*r, *c) && *c < 30);
         assert_eq!(stray, None, "step {step}");
         if step % 100 == 0 {
             wb.undo();
@@ -3369,7 +3716,11 @@ fn groups_of_groups() {
     assert_eq!(p.cache.fields[city3].name, "City3");
     assert_eq!(
         p.row_fields,
-        [AxisField::Field(city3), AxisField::Field(city2), AxisField::Field(0)]
+        [
+            AxisField::Field(city3),
+            AxisField::Field(city2),
+            AxisField::Field(0)
+        ]
     );
     assert_report(
         &wb,
@@ -3420,9 +3771,13 @@ fn groups_of_groups() {
 #[test]
 fn a_calculated_field_applies_to_the_sums() {
     let (mut wb, id) = sales(Locale::en());
-    update(&mut wb, id, |p| p.add_field(REGION, Area::Rows, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en())
+    });
     // Sales per unit: 370 / 27 in the East, not the sum of the six ratios.
-    let field = wb.pivot_set_calculated_field(id, "Price", "=Sales/Units", false).unwrap();
+    let field = wb
+        .pivot_set_calculated_field(id, "Price", "=Sales/Units", false)
+        .unwrap();
     wb.commit("field");
     assert_eq!(field, 5);
     let (_, p) = wb.pivot(id).unwrap();
@@ -3433,9 +3788,12 @@ fn a_calculated_field_applies_to_the_sums() {
     assert_close(at(&wb, id, "B5"), 320.0 / 29.0);
     assert_close(at(&wb, id, "B6"), 690.0 / 56.0);
     // Modify, with a function and a field computed from another one.
-    wb.pivot_set_calculated_field(id, "price", "=ROUND(Sales/Units;0)", false).unwrap_err();
-    wb.pivot_set_calculated_field(id, "price", "=ROUND(Sales/Units,0)", false).unwrap();
-    wb.pivot_set_calculated_field(id, "Double price", "=Price*2", false).unwrap();
+    wb.pivot_set_calculated_field(id, "price", "=ROUND(Sales/Units;0)", false)
+        .unwrap_err();
+    wb.pivot_set_calculated_field(id, "price", "=ROUND(Sales/Units,0)", false)
+        .unwrap();
+    wb.pivot_set_calculated_field(id, "Double price", "=Price*2", false)
+        .unwrap();
     wb.commit("more");
     assert_close(at(&wb, id, "B4"), 14.0);
     assert_close(at(&wb, id, "C4"), 28.0);
@@ -3443,24 +3801,48 @@ fn a_calculated_field_applies_to_the_sums() {
     assert_eq!(p.cache.fields[6].formula.as_deref(), Some("Price*2"));
     assert_eq!(
         p.calculated_fields(Locale::fr()),
-        [(5, "Price".to_string(), "ARRONDI(Sales/Units;0)".to_string()), (6, "Double price".to_string(), "Price*2".to_string())]
+        [
+            (5, "Price".to_string(), "ARRONDI(Sales/Units;0)".to_string()),
+            (6, "Double price".to_string(), "Price*2".to_string())
+        ]
     );
     // What Excel refuses.
-    assert_eq!(wb.pivot_set_calculated_field(id, "Sales", "=1", false), Err(PivotError::FormulaNameTaken));
-    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=A1*2", false), Err(PivotError::FormulaReference));
-    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=Nothing+1", false), Err(PivotError::FormulaReference));
-    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=RAND()", false), Err(PivotError::FormulaFunction));
-    assert_eq!(wb.pivot_set_calculated_field(id, "X", "=Sales+", false), Err(PivotError::BadFormula));
-    assert_eq!(wb.pivot_set_calculated_field(id, "Price", "='Double price'/2", false), Err(PivotError::FormulaCircular));
+    assert_eq!(
+        wb.pivot_set_calculated_field(id, "Sales", "=1", false),
+        Err(PivotError::FormulaNameTaken)
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_field(id, "X", "=A1*2", false),
+        Err(PivotError::FormulaReference)
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_field(id, "X", "=Nothing+1", false),
+        Err(PivotError::FormulaReference)
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_field(id, "X", "=RAND()", false),
+        Err(PivotError::FormulaFunction)
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_field(id, "X", "=Sales+", false),
+        Err(PivotError::BadFormula)
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_field(id, "Price", "='Double price'/2", false),
+        Err(PivotError::FormulaCircular)
+    );
     // A calculated field is a value field only, and survives a refresh.
-    update(&mut wb, id, |p| p.add_field(5, Area::Rows, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(5, Area::Rows, None, Locale::en())
+    });
     assert_eq!(wb.pivot(id).unwrap().1.row_fields.len(), 1);
     wb.set_cell_text(0, 1, 4, "20").unwrap();
     wb.pivot_refresh(id, false).unwrap();
     wb.commit("refresh");
     assert_close(at(&wb, id, "B4"), 10.0);
     // Division by nothing shows as in a cell.
-    wb.pivot_set_calculated_field(id, "Price", "=Sales/(Units-Units)", false).unwrap();
+    wb.pivot_set_calculated_field(id, "Price", "=Sales/(Units-Units)", false)
+        .unwrap();
     assert_eq!(at(&wb, id, "B4"), Value::Error(ErrorKind::Div0));
     // Deleting takes it out of the values; undo brings it all back.
     wb.pivot_delete_calculated_field(id, 6, false).unwrap();
@@ -3474,12 +3856,21 @@ fn a_calculated_field_applies_to_the_sums() {
 
 #[test]
 fn names_in_formulas_are_quoted_when_they_must() {
-    let rows = [["Unit price", "Q1", "Sold"], ["2", "5", "10"], ["3", "7", "20"]];
+    let rows = [
+        ["Unit price", "Q1", "Sold"],
+        ["2", "5", "10"],
+        ["3", "7", "20"],
+    ];
     let (mut wb, id) = pivot_on(&rows, Locale::en());
-    let field = wb.pivot_set_calculated_field(id, "Turnover", "='unit price'*Sold+q1", false).unwrap();
+    let field = wb
+        .pivot_set_calculated_field(id, "Turnover", "='unit price'*Sold+q1", false)
+        .unwrap();
     wb.commit("field");
     let (_, p) = wb.pivot(id).unwrap();
-    assert_eq!(p.cache.fields[field].formula.as_deref(), Some("'Unit price'*Sold+'Q1'"));
+    assert_eq!(
+        p.cache.fields[field].formula.as_deref(),
+        Some("'Unit price'*Sold+'Q1'")
+    );
     // (2 + 3) * 30 + 12, on the only row of a report without row fields.
     assert_close(at(&wb, id, "A4"), 162.0);
 }
@@ -3493,7 +3884,9 @@ fn a_calculated_item_computes_from_the_items_of_its_field() {
         p.add_field(SALES_F, Area::Values, None, Locale::en());
     });
     // A new item goes after the others, as in Excel.
-    let item = wb.pivot_set_calculated_item(id, REGION, "Gap", "=East-West", false).unwrap();
+    let item = wb
+        .pivot_set_calculated_item(id, REGION, "Gap", "=East-West", false)
+        .unwrap();
     wb.commit("item");
     assert_eq!(item, 2);
     assert!(wb.pivot(id).unwrap().1.cache.is_calc_item(REGION, 2));
@@ -3509,44 +3902,82 @@ fn a_calculated_item_computes_from_the_items_of_its_field() {
     );
     // A second item computed from the first; the later one in solve order
     // gives the value where two formulas meet.
-    wb.pivot_set_calculated_item(id, REGION, "Twice", "=Gap*2", false).unwrap();
-    wb.pivot_set_calculated_item(id, YEAR, "Both", "='2023'+'2024'", false).unwrap();
+    wb.pivot_set_calculated_item(id, REGION, "Twice", "=Gap*2", false)
+        .unwrap();
+    wb.pivot_set_calculated_item(id, YEAR, "Both", "='2023'+'2024'", false)
+        .unwrap();
     wb.commit("more");
     let (_, p) = wb.pivot(id).unwrap();
-    assert_eq!(p.solve_order(Locale::en()), ["Gap = East-West", "Twice = Gap*2", "Both = '2023'+'2024'"]);
+    assert_eq!(
+        p.solve_order(Locale::en()),
+        ["Gap = East-West", "Twice = Gap*2", "Both = '2023'+'2024'"]
+    );
     assert_eq!(p.calculated_items(REGION, Locale::en()).len(), 2);
     // Row "Twice", column "Both": (2023 + 2024) of Twice = 100.
-    assert_eq!(shown(&wb, id).lines().nth(5).unwrap(), "Twice|100|0|100|200");
-    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "East", "=1", false), Err(PivotError::FormulaNameTaken));
-    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "Gap", "=Gap+1", false), Err(PivotError::FormulaCircular));
-    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "N", "=Apples+1", false), Err(PivotError::FormulaReference));
+    assert_eq!(
+        shown(&wb, id).lines().nth(5).unwrap(),
+        "Twice|100|0|100|200"
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_item(id, REGION, "East", "=1", false),
+        Err(PivotError::FormulaNameTaken)
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_item(id, REGION, "Gap", "=Gap+1", false),
+        Err(PivotError::FormulaCircular)
+    );
+    assert_eq!(
+        wb.pivot_set_calculated_item(id, REGION, "N", "=Apples+1", false),
+        Err(PivotError::FormulaReference)
+    );
     // Excel's restrictions.
-    update(&mut wb, id, |p| p.set_function(0, Aggregation::Average, Locale::en()));
-    assert_eq!(wb.pivot_set_calculated_item(id, REGION, "N", "=East", false), Err(PivotError::ItemsWithAverages));
-    update(&mut wb, id, |p| p.set_function(0, Aggregation::Sum, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.set_function(0, Aggregation::Average, Locale::en())
+    });
+    assert_eq!(
+        wb.pivot_set_calculated_item(id, REGION, "N", "=East", false),
+        Err(PivotError::ItemsWithAverages)
+    );
+    update(&mut wb, id, |p| {
+        p.set_function(0, Aggregation::Sum, Locale::en())
+    });
     // Unticked, a calculated item leaves the report and its totals.
     update(&mut wb, id, |p| {
         p.set_item_hidden(REGION, 3, true);
         p.set_item_hidden(YEAR, 2, true);
     });
-    assert_eq!(shown(&wb, id).lines().last().unwrap(), "Grand Total|500|240|740");
+    assert_eq!(
+        shown(&wb, id).lines().last().unwrap(),
+        "Grand Total|500|240|740"
+    );
     // Deleting an item, and refreshing, keep the others.
-    wb.pivot_delete_calculated_item(id, REGION, 3, false).unwrap();
+    wb.pivot_delete_calculated_item(id, REGION, 3, false)
+        .unwrap();
     wb.pivot_refresh(id, false).unwrap();
     wb.commit("delete");
     let (_, p) = wb.pivot(id).unwrap();
-    assert_eq!(p.solve_order(Locale::en()), ["Gap = East-West", "Both = '2023'+'2024'"]);
+    assert_eq!(
+        p.solve_order(Locale::en()),
+        ["Gap = East-West", "Both = '2023'+'2024'"]
+    );
     assert_eq!(p.cache.items(REGION).len(), 3);
     wb.pivot_set_solve_order(id, &[1, 0], false).unwrap();
-    assert_eq!(wb.pivot(id).unwrap().1.solve_order(Locale::en())[0], "Both = '2023'+'2024'");
+    assert_eq!(
+        wb.pivot(id).unwrap().1.solve_order(Locale::en())[0],
+        "Both = '2023'+'2024'"
+    );
 }
 
 #[test]
 fn list_formulas_writes_a_sheet() {
     let (mut wb, id) = sales(Locale::en());
-    update(&mut wb, id, |p| p.add_field(REGION, Area::Rows, None, Locale::en()));
-    wb.pivot_set_calculated_field(id, "Price", "=Sales/Units", false).unwrap();
-    wb.pivot_set_calculated_item(id, REGION, "All of it", "=East+West", false).unwrap();
+    update(&mut wb, id, |p| {
+        p.add_field(REGION, Area::Rows, None, Locale::en())
+    });
+    wb.pivot_set_calculated_field(id, "Price", "=Sales/Units", false)
+        .unwrap();
+    wb.pivot_set_calculated_item(id, REGION, "All of it", "=East+West", false)
+        .unwrap();
     let labels = ListLabels {
         calculated_field: "Calculated Field".into(),
         calculated_item: "Calculated Item".into(),
@@ -3575,33 +4006,67 @@ fn a_pivot_chart_follows_its_report() {
         p.add_field(REGION, Area::Rows, None, Locale::en());
         p.add_field(SALES_F, Area::Values, None, Locale::en());
     });
-    assert_eq!(wb.add_pivot_chart(1, id, ChartKind::Scatter), Err(PivotError::ChartKind));
-    assert_eq!(wb.add_pivot_chart(1, id, ChartKind::Bubble), Err(PivotError::ChartKind));
+    assert_eq!(
+        wb.add_pivot_chart(1, id, ChartKind::Scatter),
+        Err(PivotError::ChartKind)
+    );
+    assert_eq!(
+        wb.add_pivot_chart(1, id, ChartKind::Bubble),
+        Err(PivotError::ChartKind)
+    );
     let chart = wb.add_pivot_chart(1, id, ChartKind::Column).unwrap();
     wb.commit("chart");
     let sheet = wb.sheets[1].name.clone();
     let shown = |wb: &Workbook| {
         let c = wb.chart(1, chart).unwrap();
         let data = wb.chart_data(1, c);
-        (data.categories.clone(), data.series.iter().map(|s| (s.name.clone(), s.values.clone())).collect::<Vec<_>>())
+        (
+            data.categories.clone(),
+            data.series
+                .iter()
+                .map(|s| (s.name.clone(), s.values.clone()))
+                .collect::<Vec<_>>(),
+        )
     };
     // One series, named "Total" as Excel names it, the totals left out.
     assert_eq!(
         shown(&wb),
-        (vec!["East".to_string(), "West".to_string()], vec![("Total".to_string(), vec![Some(370.0), Some(320.0)])])
+        (
+            vec!["East".to_string(), "West".to_string()],
+            vec![("Total".to_string(), vec![Some(370.0), Some(320.0)])]
+        )
     );
-    assert_eq!(wb.chart(1, chart).unwrap().series[0].values.to_text(), format!("{sheet}!$B$4:$B$5"));
-    assert_eq!(wb.pivot_of_chart(chart).map(|(si, p, link)| (si, p.id, link.buttons())), Some((1, id, true)));
+    assert_eq!(
+        wb.chart(1, chart).unwrap().series[0].values.to_text(),
+        format!("{sheet}!$B$4:$B$5")
+    );
+    assert_eq!(
+        wb.pivot_of_chart(chart)
+            .map(|(si, p, link)| (si, p.id, link.buttons())),
+        Some((1, id, true))
+    );
 
     // A column field: one series per year, named by the cells above.
     wb.update_chart(1, chart, |c| c.series[0].color = Some(Color(0x123456)));
-    update(&mut wb, id, |p| p.add_field(YEAR, Area::Columns, None, Locale::en()));
+    update(&mut wb, id, |p| {
+        p.add_field(YEAR, Area::Columns, None, Locale::en())
+    });
     let (categories, series) = shown(&wb);
     assert_eq!(categories, ["East", "West"]);
-    assert_eq!(series, [("2023".to_string(), vec![Some(250.0), Some(200.0)]), ("2024".to_string(), vec![Some(120.0), Some(120.0)])]);
+    assert_eq!(
+        series,
+        [
+            ("2023".to_string(), vec![Some(250.0), Some(200.0)]),
+            ("2024".to_string(), vec![Some(120.0), Some(120.0)])
+        ]
+    );
     let c = wb.chart(1, chart).unwrap();
     assert!(matches!(c.series[1].name, SeriesName::Cell(_)));
-    assert_eq!(c.series[0].color, Some(Color(0x123456)), "the first series keeps its colour");
+    assert_eq!(
+        c.series[0].color,
+        Some(Color(0x123456)),
+        "the first series keeps its colour"
+    );
     // A filter on the report is a filter on the chart; undo restores both.
     update(&mut wb, id, |p| p.set_item_hidden(REGION, 0, true));
     assert_eq!(shown(&wb).0, ["West"]);
@@ -3610,7 +4075,11 @@ fn a_pivot_chart_follows_its_report() {
     let fields = wb.pivot(id).unwrap().1.chart_fields();
     assert_eq!(
         (fields.axis, fields.legend, fields.values),
-        (vec![(REGION, "Region".to_string())], vec![(YEAR, "Year".to_string())], vec![(0, "Sum of Sales".to_string())])
+        (
+            vec![(REGION, "Region".to_string())],
+            vec![(YEAR, "Year".to_string())],
+            vec![(0, "Sum of Sales".to_string())]
+        )
     );
     // Once the chart is deleted the PivotTable forgets it.
     assert!(wb.set_pivot_chart_buttons(chart, false));
@@ -3618,7 +4087,9 @@ fn a_pivot_chart_follows_its_report() {
     // One kind of buttons comes back alone.
     assert!(wb.set_pivot_chart_button_kind(chart, ChartButtonKind::Axis, true));
     let link = wb.pivot_of_chart(chart).unwrap().2;
-    assert!(link.buttons() && link.shows(ChartButtonKind::Axis) && !link.shows(ChartButtonKind::Value));
+    assert!(
+        link.buttons() && link.shows(ChartButtonKind::Axis) && !link.shows(ChartButtonKind::Value)
+    );
     assert!(wb.remove_chart(1, chart));
     wb.pivot_refresh(id, false).unwrap();
     wb.commit("refresh");
@@ -3645,26 +4116,49 @@ fn a_pivot_chart_with_two_row_fields_plots_the_items_on_two_levels() {
     assert_eq!(data.outer_levels.len(), 1);
     assert_eq!(data.outer_levels[0].len(), data.categories.len());
     assert_eq!(data.outer_levels[0][0], "East");
-    let regions: Vec<&String> = data.outer_levels[0].iter().filter(|text| !text.is_empty()).collect();
+    let regions: Vec<&String> = data.outer_levels[0]
+        .iter()
+        .filter(|text| !text.is_empty())
+        .collect();
     assert_eq!(regions, ["East", "West"]);
-    assert!(!data.categories.iter().any(|label| label == "East" || label == "West"), "{:?}", data.categories);
+    assert!(
+        !data
+            .categories
+            .iter()
+            .any(|label| label == "East" || label == "West"),
+        "{:?}",
+        data.categories
+    );
     // Every point is the value of its product in its region.
     let total: f64 = data.series[0].values.iter().flatten().sum();
-    let all: f64 = SALES[1..].iter().map(|row| row[SALES_F].parse::<f64>().unwrap()).sum();
+    let all: f64 = SALES[1..]
+        .iter()
+        .map(|row| row[SALES_F].parse::<f64>().unwrap())
+        .sum();
     assert_eq!(total, all);
     assert_eq!(data.series[0].values.len(), data.categories.len());
     let groups = data.level_groups(0, data.categories.len());
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].0, 0);
     assert_eq!(groups[1].1, data.categories.len() - 1);
-    assert_eq!(data.category_name(0), format!("East {}", data.categories[0]));
+    assert_eq!(
+        data.category_name(0),
+        format!("East {}", data.categories[0])
+    );
     // Tabular form: the same points.
     update(&mut wb, id, |p| p.set_report_layout(FieldLayout::Tabular));
     let tabular = wb.chart_data(1, wb.chart(1, chart).unwrap());
-    assert_eq!((tabular.categories, tabular.outer_levels), (data.categories.clone(), data.outer_levels.clone()));
+    assert_eq!(
+        (tabular.categories, tabular.outer_levels),
+        (data.categories.clone(), data.outer_levels.clone())
+    );
     assert_eq!(tabular.series[0].values, data.series[0].values);
     // One row field: the cells say everything.
     update(&mut wb, id, |p| p.remove_field(PRODUCT));
     assert!(wb.pivot_chart_points(chart).is_none());
-    assert!(wb.chart_data(1, wb.chart(1, chart).unwrap()).outer_levels.is_empty());
+    assert!(
+        wb.chart_data(1, wb.chart(1, chart).unwrap())
+            .outer_levels
+            .is_empty()
+    );
 }

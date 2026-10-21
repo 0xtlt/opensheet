@@ -95,23 +95,35 @@ impl<'a> Components<'a> {
         let fill = match style.fill {
             None => 0,
             Some(color) => {
-                let pos = self.fills.iter().position(|c| *c == color).unwrap_or_else(|| {
-                    self.fills.push(color);
-                    self.fills.len() - 1
-                });
+                let pos = self
+                    .fills
+                    .iter()
+                    .position(|c| *c == color)
+                    .unwrap_or_else(|| {
+                        self.fills.push(color);
+                        self.fills.len() - 1
+                    });
                 pos as u32 + 2
             }
         };
-        let border = self.borders.iter().position(|b| *b == style.borders).unwrap_or_else(|| {
-            self.borders.push(style.borders);
-            self.borders.len() - 1
-        }) as u32;
+        let border = self
+            .borders
+            .iter()
+            .position(|b| *b == style.borders)
+            .unwrap_or_else(|| {
+                self.borders.push(style.borders);
+                self.borders.len() - 1
+            }) as u32;
         let num_fmt = builtin_id(&style.num_fmt, locale).unwrap_or_else(|| {
             let code: &str = &style.num_fmt;
-            let pos = self.formats.iter().position(|c| *c == code).unwrap_or_else(|| {
-                self.formats.push(code);
-                self.formats.len() - 1
-            });
+            let pos = self
+                .formats
+                .iter()
+                .position(|c| *c == code)
+                .unwrap_or_else(|| {
+                    self.formats.push(code);
+                    self.formats.len() - 1
+                });
             FIRST_CUSTOM_ID + pos as u32
         });
         [num_fmt, font, fill, border]
@@ -120,7 +132,13 @@ impl<'a> Components<'a> {
 
 /// Append one `<xf>`: a cell format naming its cell style (`xf_id`), or
 /// the format of a cell style with the parts it includes (`includes`).
-fn push_xf(xfs: &mut String, style: &Style, ids: [u32; 4], xf_id: Option<u32>, includes: Option<StyleParts>) {
+fn push_xf(
+    xfs: &mut String,
+    style: &Style,
+    ids: [u32; 4],
+    xf_id: Option<u32>,
+    includes: Option<StyleParts>,
+) {
     let [num_fmt, font, fill, border] = ids;
     w!(
         xfs,
@@ -338,7 +356,13 @@ impl StyleBook {
         let mut style_xfs = String::new();
         for style in &named {
             let ids = tables.ids(&style.style, wb.locale);
-            push_xf(&mut style_xfs, &style.style, ids, None, Some(style.includes));
+            push_xf(
+                &mut style_xfs,
+                &style.style,
+                ids,
+                None,
+                Some(style.includes),
+            );
         }
 
         let mut xf_of = vec![0u32; used.len()];
@@ -349,9 +373,21 @@ impl StyleBook {
             let ids = tables.ids(style, wb.locale);
             xf_of[i] = xf_count;
             xf_count += 1;
-            push_xf(&mut xfs, style, ids, Some(super::cell_style::xf_id(&named, style)), None);
+            push_xf(
+                &mut xfs,
+                style,
+                ids,
+                Some(super::cell_style::xf_id(&named, style)),
+                None,
+            );
         }
-        let Components { fonts, fills, borders, formats, .. } = tables;
+        let Components {
+            fonts,
+            fills,
+            borders,
+            formats,
+            ..
+        } = tables;
 
         let mut head = String::from(XML_DECL);
         w!(head, "<styleSheet xmlns=\"{NS_MAIN}\">");
@@ -380,7 +416,11 @@ impl StyleBook {
             x.push_str("<diagonal/></border>");
         }
         x.push_str("</borders>");
-        w!(x, "<cellStyleXfs count=\"{}\">{style_xfs}</cellStyleXfs>", named.len());
+        w!(
+            x,
+            "<cellStyleXfs count=\"{}\">{style_xfs}</cellStyleXfs>",
+            named.len()
+        );
         w!(x, "<cellXfs count=\"{xf_count}\">{xfs}</cellXfs>");
         super::cell_style::write(&mut x, &named);
         let tail = concat!(
@@ -842,22 +882,24 @@ impl SheetWriter<'_> {
                             );
                         }
                         // The first result of a data table carries its formula.
-                        Content::Value(value) => match super::datatools::table_formula(sheet, row, col) {
-                            Some(table) => {
-                                x.push_str("<c r=\"");
-                                push_cell_ref(x, row, col);
-                                x.push('"');
-                                if xf != 0 {
-                                    w!(x, " s=\"{xf}\"");
+                        Content::Value(value) => {
+                            match super::datatools::table_formula(sheet, row, col) {
+                                Some(table) => {
+                                    x.push_str("<c r=\"");
+                                    push_cell_ref(x, row, col);
+                                    x.push('"');
+                                    if xf != 0 {
+                                        w!(x, " s=\"{xf}\"");
+                                    }
+                                    x.push_str(value_type(value));
+                                    x.push('>');
+                                    x.push_str(&table);
+                                    push_v(x, value);
+                                    x.push_str("</c>");
                                 }
-                                x.push_str(value_type(value));
-                                x.push('>');
-                                x.push_str(&table);
-                                push_v(x, value);
-                                x.push_str("</c>");
+                                None => self.push_constant(x, row, col, xf, value),
                             }
-                            None => self.push_constant(x, row, col, xf, value),
-                        },
+                        }
                         // A formatted but empty cell may sit under a spill.
                         Content::Empty => {
                             self.push_constant(x, row, col, xf, spill.unwrap_or(&Value::Empty))
@@ -902,10 +944,19 @@ impl SheetWriter<'_> {
         // filterMode: rows are hidden by an Advanced Filter.
         let filter_mode = sheet.advanced_filter.is_some();
         let outline = super::outline::needs_sheet_pr(sheet);
-        if sheet.tab_color.is_some() || page::needs_sheet_pr(&sheet.page) || filter_mode || outline || sheet.code_name.is_some() {
+        if sheet.tab_color.is_some()
+            || page::needs_sheet_pr(&sheet.page)
+            || filter_mode
+            || outline
+            || sheet.code_name.is_some()
+        {
             x.push_str("<sheetPr");
             super::vba::push_code_name(&mut x, sheet.code_name.as_deref());
-            x.push_str(if filter_mode { " filterMode=\"1\">" } else { ">" });
+            x.push_str(if filter_mode {
+                " filterMode=\"1\">"
+            } else {
+                ">"
+            });
             if let Some(color) = sheet.tab_color {
                 push_rgb(&mut x, "tabColor", color);
             }

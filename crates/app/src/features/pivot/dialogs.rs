@@ -11,12 +11,13 @@ use crate::shell::Modal;
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{
-    self, Button, Checkbox, GroupBox, ListBox, NumberField, RadioGroup, Select, TabStrip, TextField, dialog, label,
-    labeled,
+    self, Button, Checkbox, GroupBox, ListBox, NumberField, RadioGroup, Select, TabStrip,
+    TextField, dialog, label, labeled,
 };
 use gpui::{AnyElement, Context, Entity, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::pivot::{
-    Aggregation, BaseItem, FieldLayout, GroupBy, GroupKind, PivotError, PivotTable, Subtotals, data_field_name,
+    Aggregation, BaseItem, FieldLayout, GroupBy, GroupKind, PivotError, PivotTable, Subtotals,
+    data_field_name,
 };
 use opensheet_engine::{Locale, Value};
 use std::sync::Arc;
@@ -36,7 +37,11 @@ pub(super) fn open_settings(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx
 
 /// The row of buttons of a settings dialog: something on the left, OK and
 /// Cancel on the right.
-fn footer(modal: &Modal, left: impl IntoElement, ok: impl Fn(&(), &mut Window, &mut gpui::App) + 'static) -> impl IntoElement {
+fn footer(
+    modal: &Modal,
+    left: impl IntoElement,
+    ok: impl Fn(&(), &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
     let modal = modal.clone();
     div()
         .w_full()
@@ -45,8 +50,15 @@ fn footer(modal: &Modal, left: impl IntoElement, ok: impl Fn(&(), &mut Window, &
         .gap(px(8.))
         .child(left)
         .child(div().flex_1())
-        .child(Button::new("dialog-ok", t("OK", "OK")).primary().on_click(ok))
-        .child(Button::new("dialog-cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx)))
+        .child(
+            Button::new("dialog-ok", t("OK", "OK"))
+                .primary()
+                .on_click(ok),
+        )
+        .child(
+            Button::new("dialog-cancel", t("Cancel", "Annuler"))
+                .on_click(move |_, window, cx| modal.close(window, cx)),
+        )
 }
 
 /// "Source Name" and "Custom Name", the head of both settings dialogs.
@@ -62,27 +74,48 @@ fn names(source: &str, name: &Entity<TextInput>) -> impl IntoElement {
                 .child(label(t("Source Name:", "Nom de la source :")))
                 .child(div().truncate().child(source.to_string())),
         )
-        .child(labeled(t("Custom Name:", "Nom personnalisé :"), TextField::new(name)))
+        .child(labeled(
+            t("Custom Name:", "Nom personnalisé :"),
+            TextField::new(name),
+        ))
 }
 
 // ------------------------------------------------------ value field settings
 
 /// Open Value Field Settings on a tab (0: Summarize Values By, 1: Show
 /// Values As).
-pub(super) fn open_value_settings(app: &mut ExcelApp, id: u32, data: usize, tab: usize, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_value_settings(
+    app: &mut ExcelApp,
+    id: u32,
+    data: usize,
+    tab: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if let Some(mut opening) = value_opening(app, id, data) {
         opening.tab = tab;
-        app.open_modal(window, cx, move |modal, _, cx| ValueSettings::new(modal, opening, cx));
+        app.open_modal(window, cx, move |modal, _, cx| {
+            ValueSettings::new(modal, opening, cx)
+        });
     }
 }
 
 /// Open Value Field Settings on "Show Values As" with a calculation
 /// chosen, for the user to pick its base field (and item).
-pub(super) fn open_show_values_as(app: &mut ExcelApp, id: u32, data: usize, kind: ShowKind, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_show_values_as(
+    app: &mut ExcelApp,
+    id: u32,
+    data: usize,
+    kind: ShowKind,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if let Some(mut opening) = value_opening(app, id, data) {
         opening.tab = 1;
         opening.choose(kind);
-        app.open_modal(window, cx, move |modal, _, cx| ValueSettings::new(modal, opening, cx));
+        app.open_modal(window, cx, move |modal, _, cx| {
+            ValueSettings::new(modal, opening, cx)
+        });
     }
 }
 
@@ -181,7 +214,8 @@ struct ValueSettings {
 
 impl ValueSettings {
     fn new(modal: Modal, open: ValueOpening, cx: &mut Context<Self>) -> Self {
-        let generated = open.name.to_lowercase() == data_field_name(open.function, &open.caption, open.locale).to_lowercase();
+        let generated = open.name.to_lowercase()
+            == data_field_name(open.function, &open.caption, open.locale).to_lowercase();
         let name = widgets::input(cx, open.name.clone());
         cx.subscribe(&name, |this, _, ev: &InputEvent, _| {
             if *ev == InputEvent::Changed {
@@ -212,7 +246,11 @@ impl ValueSettings {
     }
 
     fn number_format(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let code = self.open.num_fmt.clone().unwrap_or_else(|| Arc::from("General"));
+        let code = self
+            .open
+            .num_fmt
+            .clone()
+            .unwrap_or_else(|| Arc::from("General"));
         let sample = self.open.sample.clone();
         let this = cx.weak_entity();
         self.modal.update_app(cx, |app, cx| {
@@ -262,8 +300,13 @@ impl ValueSettings {
 
     fn summarize_tab(&self, cx: &mut Context<Self>) -> AnyElement {
         let locale = self.open.locale;
-        let functions: Vec<SharedString> = Aggregation::ALL.iter().map(|f| f.label(locale).into()).collect();
-        let selected = Aggregation::ALL.iter().position(|f| *f == self.open.function);
+        let functions: Vec<SharedString> = Aggregation::ALL
+            .iter()
+            .map(|f| f.label(locale).into())
+            .collect();
+        let selected = Aggregation::ALL
+            .iter()
+            .position(|f| *f == self.open.function);
         div()
             .flex()
             .flex_col()
@@ -286,7 +329,10 @@ impl ValueSettings {
 
     fn show_tab(&self, cx: &mut Context<Self>) -> AnyElement {
         let open = &self.open;
-        let kinds: Vec<SharedString> = ShowKind::ALL.iter().map(|kind| kind.label().into()).collect();
+        let kinds: Vec<SharedString> = ShowKind::ALL
+            .iter()
+            .map(|kind| kind.label().into())
+            .collect();
         let selected = ShowKind::ALL.iter().position(|kind| *kind == open.kind);
         // The two lists are empty while the calculation has no use for them.
         let fields: Vec<SharedString> = if open.kind.needs_field() {
@@ -299,20 +345,27 @@ impl ValueSettings {
         if let (true, Some(base)) = (open.kind.needs_item(), base) {
             items.push((BaseItem::Previous, t("(previous)", "(précédent)").into()));
             items.push((BaseItem::Next, t("(next)", "(suivant)").into()));
-            items.extend(base.items.iter().map(|(x, text)| (BaseItem::Item(*x), text.clone())));
+            items.extend(
+                base.items
+                    .iter()
+                    .map(|(x, text)| (BaseItem::Item(*x), text.clone())),
+            );
         }
         let item_labels: Vec<SharedString> = items.iter().map(|(_, text)| text.clone()).collect();
-        let item_selected = open.item.and_then(|item| items.iter().position(|(i, _)| *i == item));
+        let item_selected = open
+            .item
+            .and_then(|item| items.iter().position(|(i, _)| *i == item));
         div()
             .flex()
             .flex_col()
             .gap(px(6.))
-            .child(label(t("Show values as", "Afficher les valeurs")).font_weight(gpui::FontWeight::SEMIBOLD))
             .child(
-                Select::new("kind", kinds, selected)
-                    .width(396.0)
-                    .on_change(cx.listener(|this, ix: &usize, _, cx| this.pick_kind(ShowKind::ALL[*ix], cx))),
+                label(t("Show values as", "Afficher les valeurs"))
+                    .font_weight(gpui::FontWeight::SEMIBOLD),
             )
+            .child(Select::new("kind", kinds, selected).width(396.0).on_change(
+                cx.listener(|this, ix: &usize, _, cx| this.pick_kind(ShowKind::ALL[*ix], cx)),
+            ))
             .child(
                 div()
                     .flex()
@@ -326,15 +379,21 @@ impl ValueSettings {
                             .child(label(t("Base field:", "Champ de base :")))
                             .child(
                                 div().flex().child(
-                                    ListBox::new("base-field", fields, open.base.filter(|_| open.kind.needs_field()))
-                                        .height(widgets::ROW_H * 5.0)
-                                        .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                                    ListBox::new(
+                                        "base-field",
+                                        fields,
+                                        open.base.filter(|_| open.kind.needs_field()),
+                                    )
+                                    .height(widgets::ROW_H * 5.0)
+                                    .on_change(cx.listener(
+                                        |this, ix: &usize, _, cx| {
                                             this.open.base = Some(*ix);
                                             if this.open.kind.needs_item() {
                                                 this.open.item = Some(BaseItem::Previous);
                                             }
                                             cx.notify();
-                                        })),
+                                        },
+                                    )),
                                 ),
                             ),
                     )
@@ -367,28 +426,45 @@ impl Render for ValueSettings {
             t("Summarize Values By", "Synthèse des valeurs par").into(),
             t("Show Values As", "Afficher les valeurs").into(),
         ];
-        let body = if self.open.tab == 1 { self.show_tab(cx) } else { self.summarize_tab(cx) };
-        dialog(&self.modal, t("Value Field Settings", "Paramètres des champs de valeurs"))
-            .width(420.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(names(&self.open.source, &self.name))
-            .child(TabStrip::new("tabs", tabs, self.open.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
-                this.open.tab = *ix;
-                cx.notify();
-            })))
-            .child(div().h(px(196.)).child(body))
-            .footer(footer(
-                &self.modal,
-                Button::new("number-format", t("Number Format", "Format de nombre"))
-                    .on_click(cx.listener(|this, _, window, cx| this.number_format(window, cx))),
-                cx.listener(Self::ok),
-            ))
+        let body = if self.open.tab == 1 {
+            self.show_tab(cx)
+        } else {
+            self.summarize_tab(cx)
+        };
+        dialog(
+            &self.modal,
+            t("Value Field Settings", "Paramètres des champs de valeurs"),
+        )
+        .width(420.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(names(&self.open.source, &self.name))
+        .child(
+            TabStrip::new("tabs", tabs, self.open.tab).on_change(cx.listener(
+                |this, ix: &usize, _, cx| {
+                    this.open.tab = *ix;
+                    cx.notify();
+                },
+            )),
+        )
+        .child(div().h(px(196.)).child(body))
+        .footer(footer(
+            &self.modal,
+            Button::new("number-format", t("Number Format", "Format de nombre"))
+                .on_click(cx.listener(|this, _, window, cx| this.number_format(window, cx))),
+            cx.listener(Self::ok),
+        ))
     }
 }
 
 // ------------------------------------------------------------ field settings
 
-pub(super) fn open_field_settings(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_field_settings(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let locale = app.wb.locale;
     let Some((_, pivot)) = app.wb.pivot(id) else {
         return;
@@ -469,14 +545,24 @@ impl FieldSettings {
         let subtotals = match open.subtotals {
             0 => Subtotals::Automatic,
             1 => Subtotals::None,
-            _ => Subtotals::Custom(open.functions.iter().map(|ix| Aggregation::ALL[*ix]).collect()),
+            _ => Subtotals::Custom(
+                open.functions
+                    .iter()
+                    .map(|ix| Aggregation::ALL[*ix])
+                    .collect(),
+            ),
         };
         let layout = match (open.tabular, open.compact) {
             (true, _) => FieldLayout::Tabular,
             (false, true) => FieldLayout::Compact,
             (false, false) => FieldLayout::Outline,
         };
-        let (subtotal_top, repeat, blank_line, show_all) = (open.subtotal_top, open.repeat, open.blank_line, open.show_all);
+        let (subtotal_top, repeat, blank_line, show_all) = (
+            open.subtotal_top,
+            open.repeat,
+            open.blank_line,
+            open.show_all,
+        );
         let modal = self.modal.clone();
         self.modal.update_app(cx, |app, cx| {
             if let (Some(name), Some((_, pivot))) = (&renamed, app.wb.pivot(id)) {
@@ -485,19 +571,27 @@ impl FieldSettings {
                     return;
                 }
             }
-            update_in_dialog(app, &modal, id, t("Field Settings", "Paramètres de champ"), window, cx, move |p| {
-                if let Some(name) = &renamed {
-                    p.set_field_caption(field, name);
-                }
-                if let Some(f) = p.fields.get_mut(field) {
-                    f.subtotals = subtotals.clone();
-                    f.layout = layout;
-                    f.subtotal_top = subtotal_top;
-                    f.repeat_labels = repeat;
-                    f.blank_line = blank_line;
-                    f.show_all = show_all;
-                }
-            });
+            update_in_dialog(
+                app,
+                &modal,
+                id,
+                t("Field Settings", "Paramètres de champ"),
+                window,
+                cx,
+                move |p| {
+                    if let Some(name) = &renamed {
+                        p.set_field_caption(field, name);
+                    }
+                    if let Some(f) = p.fields.get_mut(field) {
+                        f.subtotals = subtotals.clone();
+                        f.layout = layout;
+                        f.subtotal_top = subtotal_top;
+                        f.repeat_labels = repeat;
+                        f.blank_line = blank_line;
+                        f.show_all = show_all;
+                    }
+                },
+            );
         });
     }
 
@@ -509,7 +603,10 @@ impl FieldSettings {
             t_ctx("subtotals", "Custom", "Personnalisé").into(),
         ];
         // The list of functions only answers while "Custom" is chosen.
-        let functions: Vec<SharedString> = Aggregation::ALL.iter().map(|f| f.label(locale).into()).collect();
+        let functions: Vec<SharedString> = Aggregation::ALL
+            .iter()
+            .map(|f| f.label(locale).into())
+            .collect();
         let custom = self.open.subtotals == 2;
         div()
             .flex()
@@ -517,55 +614,85 @@ impl FieldSettings {
             .gap(px(8.))
             .child(
                 GroupBox::new(t("Subtotals", "Sous-totaux"))
-                    .child(RadioGroup::new("subtotals", choices, Some(self.open.subtotals)).on_change(cx.listener(
-                        |this, ix: &usize, _, cx| {
-                            this.open.subtotals = *ix;
-                            cx.notify();
-                        },
-                    )))
                     .child(
-                        label(t("Select one or more functions:", "Sélectionnez une ou plusieurs fonctions :"))
-                            .when(!custom, |d| d.text_color(c(theme::TEXT_DISABLED))),
+                        RadioGroup::new("subtotals", choices, Some(self.open.subtotals)).on_change(
+                            cx.listener(|this, ix: &usize, _, cx| {
+                                this.open.subtotals = *ix;
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        label(t(
+                            "Select one or more functions:",
+                            "Sélectionnez une ou plusieurs fonctions :",
+                        ))
+                        .when(!custom, |d| d.text_color(c(theme::TEXT_DISABLED))),
                     )
                     .child(
                         div().flex().child(
-                            ListBox::multi("functions", functions, if custom { self.open.functions.clone() } else { Vec::new() })
-                                .width(220.0)
-                                .height(widgets::ROW_H * 5.0)
-                                .on_change_multi(cx.listener(|this, rows: &Vec<usize>, _, cx| {
+                            ListBox::multi(
+                                "functions",
+                                functions,
+                                if custom {
+                                    self.open.functions.clone()
+                                } else {
+                                    Vec::new()
+                                },
+                            )
+                            .width(220.0)
+                            .height(widgets::ROW_H * 5.0)
+                            .on_change_multi(cx.listener(
+                                |this, rows: &Vec<usize>, _, cx| {
                                     // Picking a function is choosing custom subtotals.
                                     this.open.subtotals = 2;
                                     this.open.functions = rows.clone();
                                     cx.notify();
-                                })),
+                                },
+                            )),
                         ),
                     ),
             )
-            .child(GroupBox::new(t_ctx("pivot-field", "Filter", "Filtre")).child(
-                Checkbox::new(
-                    "new-items",
-                    t("Include new items in manual filter", "Inclure les nouveaux éléments dans le filtre manuel"),
-                    false,
-                )
-                .disabled(true),
-            ))
+            .child(
+                GroupBox::new(t_ctx("pivot-field", "Filter", "Filtre")).child(
+                    Checkbox::new(
+                        "new-items",
+                        t(
+                            "Include new items in manual filter",
+                            "Inclure les nouveaux éléments dans le filtre manuel",
+                        ),
+                        false,
+                    )
+                    .disabled(true),
+                ),
+            )
             .into_any_element()
     }
 
     fn layout_tab(&self, cx: &mut Context<Self>) -> AnyElement {
-        let check = |id: &'static str, text: &'static str, on: bool, enabled: bool, set: fn(&mut Self, bool), cx: &mut Context<Self>| {
-            Checkbox::new(id, text, on).disabled(!enabled).on_change(cx.listener(move |this, on: &bool, _, cx| {
-                set(this, *on);
-                cx.notify();
-            }))
+        let check = |id: &'static str,
+                     text: &'static str,
+                     on: bool,
+                     enabled: bool,
+                     set: fn(&mut Self, bool),
+                     cx: &mut Context<Self>| {
+            Checkbox::new(id, text, on)
+                .disabled(!enabled)
+                .on_change(cx.listener(move |this, on: &bool, _, cx| {
+                    set(this, *on);
+                    cx.notify();
+                }))
         };
         let form = |id: &'static str, text: &'static str, tabular: bool, cx: &mut Context<Self>| {
-            RadioGroup::new(id, vec![text.into()], (self.open.tabular == tabular).then_some(0)).on_change(cx.listener(
-                move |this, _: &usize, _, cx| {
-                    this.open.tabular = tabular;
-                    cx.notify();
-                },
-            ))
+            RadioGroup::new(
+                id,
+                vec![text.into()],
+                (self.open.tabular == tabular).then_some(0),
+            )
+            .on_change(cx.listener(move |this, _: &usize, _, cx| {
+                this.open.tabular = tabular;
+                cx.notify();
+            }))
         };
         div()
             .flex()
@@ -666,15 +793,21 @@ impl Render for FieldSettings {
             t("Subtotals & Filters", "Sous-totaux et filtres").into(),
             t("Layout & Print", "Disposition et impression").into(),
         ];
-        let body = if self.tab == 1 { self.layout_tab(cx) } else { self.subtotals_tab(cx) };
+        let body = if self.tab == 1 {
+            self.layout_tab(cx)
+        } else {
+            self.subtotals_tab(cx)
+        };
         dialog(&self.modal, t("Field Settings", "Paramètres de champ"))
             .width(610.0)
             .on_ok(cx.listener(Self::ok))
             .child(names(&self.open.source, &self.name))
-            .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
-                this.tab = *ix;
-                cx.notify();
-            })))
+            .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(
+                |this, ix: &usize, _, cx| {
+                    this.tab = *ix;
+                    cx.notify();
+                },
+            )))
             .child(div().h(px(262.)).child(body))
             .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -733,7 +866,8 @@ impl OptionsDialog {
         let wrap = self.wrap.read(cx).number().unwrap_or(0.0).clamp(0.0, 255.0) as u32;
         let (show_error, error) = (self.show_error, self.error.read(cx).text().to_string());
         let (show_missing, missing) = (self.show_missing, self.missing.read(cx).text().to_string());
-        let (row_totals, col_totals, drill, headers) = (self.row_totals, self.col_totals, self.drill, self.headers);
+        let (row_totals, col_totals, drill, headers) =
+            (self.row_totals, self.col_totals, self.drill, self.headers);
         let modal = self.modal.clone();
         self.modal.update_app(cx, |app, cx| {
             let label = t("PivotTable Options", "Options du tableau croisé dynamique");
@@ -771,7 +905,14 @@ impl OptionsDialog {
         });
     }
 
-    fn check(&self, id: &'static str, text: &'static str, on: bool, set: fn(&mut Self, bool), cx: &mut Context<Self>) -> Checkbox {
+    fn check(
+        &self,
+        id: &'static str,
+        text: &'static str,
+        on: bool,
+        set: fn(&mut Self, bool),
+        cx: &mut Context<Self>,
+    ) -> Checkbox {
         Checkbox::new(id, text, on).on_change(cx.listener(move |this, on: &bool, _, cx| {
             set(this, *on);
             cx.notify();
@@ -784,9 +925,15 @@ impl OptionsDialog {
             t("Over, Then Down", "À droite, puis vers le bas").into(),
         ];
         let per = if self.over_then_down {
-            t("Report filter fields per row:", "Champs de filtre de rapport par ligne :")
+            t(
+                "Report filter fields per row:",
+                "Champs de filtre de rapport par ligne :",
+            )
         } else {
-            t("Report filter fields per column:", "Champs de filtre de rapport par colonne :")
+            t(
+                "Report filter fields per column:",
+                "Champs de filtre de rapport par colonne :",
+            )
         };
         div()
             .flex()
@@ -870,14 +1017,20 @@ impl OptionsDialog {
         GroupBox::new(t("Grand Totals", "Totaux généraux"))
             .child(self.check(
                 "row-totals",
-                t("Show grand totals for rows", "Afficher les totaux des lignes"),
+                t(
+                    "Show grand totals for rows",
+                    "Afficher les totaux des lignes",
+                ),
                 self.row_totals,
                 |this, on| this.row_totals = on,
                 cx,
             ))
             .child(self.check(
                 "col-totals",
-                t("Show grand totals for columns", "Afficher les totaux des colonnes"),
+                t(
+                    "Show grand totals for columns",
+                    "Afficher les totaux des colonnes",
+                ),
                 self.col_totals,
                 |this, on| this.col_totals = on,
                 cx,
@@ -889,7 +1042,10 @@ impl OptionsDialog {
         GroupBox::new(t("Display", "Affichage"))
             .child(self.check(
                 "drill",
-                t("Show expand/collapse buttons", "Afficher les boutons Développer/Réduire"),
+                t(
+                    "Show expand/collapse buttons",
+                    "Afficher les boutons Développer/Réduire",
+                ),
                 self.drill,
                 |this, on| this.drill = on,
                 cx,
@@ -920,19 +1076,24 @@ impl Render for OptionsDialog {
             2 => self.display_tab(cx),
             _ => self.layout_tab(cx),
         };
-        dialog(&self.modal, t("PivotTable Options", "Options du tableau croisé dynamique"))
-            .width(590.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(labeled(
-                t("PivotTable Name:", "Nom du tableau croisé dynamique :"),
-                TextField::new(&self.name).width(220.0),
-            ))
-            .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
+        dialog(
+            &self.modal,
+            t("PivotTable Options", "Options du tableau croisé dynamique"),
+        )
+        .width(590.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(labeled(
+            t("PivotTable Name:", "Nom du tableau croisé dynamique :"),
+            TextField::new(&self.name).width(220.0),
+        ))
+        .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(
+            |this, ix: &usize, _, cx| {
                 this.tab = *ix;
                 cx.notify();
-            })))
-            .child(div().h(px(232.)).child(body))
-            .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
+            },
+        )))
+        .child(div().h(px(232.)).child(body))
+        .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
@@ -965,10 +1126,16 @@ struct GroupingOpening {
 fn grouping_opening(pivot: &PivotTable, field: usize) -> Option<GroupingOpening> {
     let cache = &pivot.cache;
     let source = cache.database_field(field);
-    let numbers: Vec<f64> = cache.fields.get(source)?.shared.iter().filter_map(|v| match v {
-        Value::Number(n) => Some(*n),
-        _ => None,
-    }).collect();
+    let numbers: Vec<f64> = cache
+        .fields
+        .get(source)?
+        .shared
+        .iter()
+        .filter_map(|v| match v {
+            Value::Number(n) => Some(*n),
+            _ => None,
+        })
+        .collect();
     let min = numbers.iter().copied().fold(f64::INFINITY, f64::min);
     let max = numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     if !min.is_finite() {
@@ -981,7 +1148,11 @@ fn grouping_opening(pivot: &PivotTable, field: usize) -> Option<GroupingOpening>
         end: max,
         auto_start: true,
         auto_end: true,
-        periods: if dates { vec![GroupBy::Months] } else { Vec::new() },
+        periods: if dates {
+            vec![GroupBy::Months]
+        } else {
+            Vec::new()
+        },
         // A round step that cuts the range in about ten groups.
         interval: 10f64.powf(((max - min).max(1.0)).log10().floor()).max(1.0),
         days: 1,
@@ -990,7 +1161,10 @@ fn grouping_opening(pivot: &PivotTable, field: usize) -> Option<GroupingOpening>
     let mut groups = cache.group_children(source);
     groups.push(source);
     let mut periods = Vec::new();
-    for group in groups.into_iter().filter_map(|f| cache.fields[f].group.as_ref()) {
+    for group in groups
+        .into_iter()
+        .filter_map(|f| cache.fields[f].group.as_ref())
+    {
         if let GroupKind::Range {
             by,
             start,
@@ -1024,10 +1198,27 @@ fn grouping_opening(pivot: &PivotTable, field: usize) -> Option<GroupingOpening>
 }
 
 /// The Grouping dialog of a date or number field.
-pub(super) fn open_grouping(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_grouping(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let locale = app.wb.locale;
-    let Some(open) = app.wb.pivot(id).and_then(|(_, pivot)| grouping_opening(pivot, field)) else {
-        actions::warn(app, t("Cannot group that selection.", "Impossible de grouper cette sélection."), cx);
+    let Some(open) = app
+        .wb
+        .pivot(id)
+        .and_then(|(_, pivot)| grouping_opening(pivot, field))
+    else {
+        actions::warn(
+            app,
+            t(
+                "Cannot group that selection.",
+                "Impossible de grouper cette sélection.",
+            ),
+            cx,
+        );
         return;
     };
     let bound = move |n: f64| {
@@ -1089,17 +1280,40 @@ impl GroupingDialog {
         let (id, field, locale, dates) = (self.pivot, self.field, self.locale, self.dates);
         let read = |input: &Entity<TextInput>| {
             let text = input.read(cx).text().to_string();
-            if dates { logic::parse_date(&text, locale) } else { logic::parse_number(&text, locale) }
+            if dates {
+                logic::parse_date(&text, locale)
+            } else {
+                logic::parse_number(&text, locale)
+            }
         };
         // A bound left on "auto" follows the data.
-        let start = if self.auto_start { Ok(None) } else { read(&self.start).map(Some).ok_or(()) };
-        let end = if self.auto_end { Ok(None) } else { read(&self.end).map(Some).ok_or(()) };
-        let interval = logic::parse_number(self.interval.read(cx).text(), locale).filter(|n| *n > 0.0);
+        let start = if self.auto_start {
+            Ok(None)
+        } else {
+            read(&self.start).map(Some).ok_or(())
+        };
+        let end = if self.auto_end {
+            Ok(None)
+        } else {
+            read(&self.end).map(Some).ok_or(())
+        };
+        let interval =
+            logic::parse_number(self.interval.read(cx).text(), locale).filter(|n| *n > 0.0);
         let periods: Vec<GroupBy> = self.periods.iter().map(|ix| PERIODS[*ix]).collect();
-        let days = if self.days_only() { self.days.read(cx).number().unwrap_or(1.0).max(1.0) as u32 } else { 1 };
-        let (Ok(start), Ok(end), Some(interval)) = (start, end, interval.or(Some(1.0).filter(|_| dates))) else {
+        let days = if self.days_only() {
+            self.days.read(cx).number().unwrap_or(1.0).max(1.0) as u32
+        } else {
+            1
+        };
+        let (Ok(start), Ok(end), Some(interval)) =
+            (start, end, interval.or(Some(1.0).filter(|_| dates)))
+        else {
             self.modal.update_app(cx, |app, cx| {
-                actions::warn(app, t("Value must be a number.", "La valeur doit être un nombre."), cx)
+                actions::warn(
+                    app,
+                    t("Value must be a number.", "La valeur doit être un nombre."),
+                    cx,
+                )
             });
             return;
         };
@@ -1108,29 +1322,52 @@ impl GroupingDialog {
         }
         let modal = self.modal.clone();
         self.modal.update_app(cx, |app, cx| {
-            perform_in_dialog(app, &modal, t("Group", "Grouper"), window, cx, move |app, overwrite| {
-                if dates {
-                    app.wb.pivot_group_dates(id, field, &periods, start, end, days, overwrite)
-                } else {
-                    app.wb.pivot_group_numbers(id, field, start, end, interval, overwrite)
-                }
-            });
+            perform_in_dialog(
+                app,
+                &modal,
+                t("Group", "Grouper"),
+                window,
+                cx,
+                move |app, overwrite| {
+                    if dates {
+                        app.wb
+                            .pivot_group_dates(id, field, &periods, start, end, days, overwrite)
+                    } else {
+                        app.wb
+                            .pivot_group_numbers(id, field, start, end, interval, overwrite)
+                    }
+                },
+            );
         });
     }
 
-    fn bound(&self, id: &'static str, text: &'static str, auto: bool, input: &Entity<TextInput>, start: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn bound(
+        &self,
+        id: &'static str,
+        text: &'static str,
+        auto: bool,
+        input: &Entity<TextInput>,
+        start: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         div()
             .flex()
             .items_center()
             .gap(px(8.))
-            .child(div().w(px(110.)).child(Checkbox::new(id, text, auto).on_change(cx.listener(move |this, on: &bool, _, cx| {
-                if start {
-                    this.auto_start = *on;
-                } else {
-                    this.auto_end = *on;
-                }
-                cx.notify();
-            }))))
+            .child(
+                div()
+                    .w(px(110.))
+                    .child(Checkbox::new(id, text, auto).on_change(cx.listener(
+                        move |this, on: &bool, _, cx| {
+                            if start {
+                                this.auto_start = *on;
+                            } else {
+                                this.auto_end = *on;
+                            }
+                            cx.notify();
+                        },
+                    ))),
+            )
             .child(TextField::new(input).width(130.0))
     }
 }
@@ -1139,10 +1376,25 @@ impl Render for GroupingDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let locale = self.locale;
         let auto = GroupBox::new(t_ctx("grouping", "Auto", "Automatique"))
-            .child(self.bound("auto-start", t("Starting at:", "Début :"), self.auto_start, &self.start, true, cx))
-            .child(self.bound("auto-end", t("Ending at:", "Fin :"), self.auto_end, &self.end, false, cx));
+            .child(self.bound(
+                "auto-start",
+                t("Starting at:", "Début :"),
+                self.auto_start,
+                &self.start,
+                true,
+                cx,
+            ))
+            .child(self.bound(
+                "auto-end",
+                t("Ending at:", "Fin :"),
+                self.auto_end,
+                &self.end,
+                false,
+                cx,
+            ));
         let by: AnyElement = if self.dates {
-            let names: Vec<SharedString> = PERIODS.iter().map(|by| by.label(locale).into()).collect();
+            let names: Vec<SharedString> =
+                PERIODS.iter().map(|by| by.label(locale).into()).collect();
             let days_only = self.days_only();
             GroupBox::new(t("By", "Par"))
                 .child(
@@ -1157,8 +1409,11 @@ impl Render for GroupingDialog {
                     ),
                 )
                 .child(
-                    labeled(t("Number of days:", "Nombre de jours :"), NumberField::new("days", &self.days).width(70.0))
-                        .when(!days_only, |d| d.opacity(0.45)),
+                    labeled(
+                        t("Number of days:", "Nombre de jours :"),
+                        NumberField::new("days", &self.days).width(70.0),
+                    )
+                    .when(!days_only, |d| d.opacity(0.45)),
                 )
                 .into_any_element()
         } else {
@@ -1167,7 +1422,12 @@ impl Render for GroupingDialog {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(div().w(px(110.)).pl(px(20.)).child(label(t("By:", "Par :"))))
+                .child(
+                    div()
+                        .w(px(110.))
+                        .pl(px(20.))
+                        .child(label(t("By:", "Par :"))),
+                )
                 .child(TextField::new(&self.interval).width(130.0))
                 .into_any_element()
         };
@@ -1219,8 +1479,9 @@ impl FilterPages {
         };
         let id = self.pivot;
         self.modal.close(window, cx);
-        self.modal
-            .update_app(cx, |app, cx| actions::filter_pages(app, id, field, window, cx));
+        self.modal.update_app(cx, |app, cx| {
+            actions::filter_pages(app, id, field, window, cx)
+        });
     }
 }
 
@@ -1229,7 +1490,10 @@ impl Render for FilterPages {
         let names: Vec<SharedString> = self.fields.iter().map(|(_, name)| name.clone()).collect();
         dialog(
             &self.modal,
-            t("Show Report Filter Pages", "Afficher les pages de filtre du rapport"),
+            t(
+                "Show Report Filter Pages",
+                "Afficher les pages de filtre du rapport",
+            ),
         )
         .width(380.0)
         .on_ok(cx.listener(Self::ok))
@@ -1259,7 +1523,14 @@ impl Render for FilterPages {
 
 /// "Show Detail": a label with no field below it was double-clicked; pick
 /// the field whose items go under it.
-pub(super) fn open_show_detail(app: &mut ExcelApp, id: u32, field: usize, item: u32, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_show_detail(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    item: u32,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let Some((_, pivot)) = app.wb.pivot(id) else {
         return;
     };
@@ -1299,9 +1570,15 @@ impl ShowDetail {
         let modal = self.modal.clone();
         self.modal.update_app(cx, |app, cx| {
             let locale = app.wb.locale;
-            update_in_dialog(app, &modal, id, t("Show Detail", "Afficher le détail"), window, cx, move |p| {
-                logic::show_detail(p, field, item, detail, locale)
-            });
+            update_in_dialog(
+                app,
+                &modal,
+                id,
+                t("Show Detail", "Afficher le détail"),
+                window,
+                cx,
+                move |p| logic::show_detail(p, field, item, detail, locale),
+            );
         });
     }
 }
@@ -1358,7 +1635,9 @@ mod tests {
             sheet: wb.sheets[0].name.clone(),
             range: Rect::new(0, 0, 3, 1),
         };
-        let id = wb.pivot_create(source, PivotDestination::NewSheet { index: 1 }, false).unwrap();
+        let id = wb
+            .pivot_create(source, PivotDestination::NewSheet { index: 1 }, false)
+            .unwrap();
         wb.commit("pivot");
         (wb, id)
     }
@@ -1378,8 +1657,16 @@ mod tests {
         // Once grouped, the dialog shows the groups, from the date field
         // and from any of its periods.
         wb.pivot_add_field(id, 0, Area::Rows, None, false).unwrap();
-        wb.pivot_group_dates(id, 0, &[GroupBy::Years, GroupBy::Days], Some(44927.0), None, 7, false)
-            .unwrap();
+        wb.pivot_group_dates(
+            id,
+            0,
+            &[GroupBy::Years, GroupBy::Days],
+            Some(44927.0),
+            None,
+            7,
+            false,
+        )
+        .unwrap();
         let (_, pivot) = wb.pivot(id).unwrap();
         let years = pivot.field_index("Years (Date)").unwrap();
         for field in [0, years] {
@@ -1392,7 +1679,8 @@ mod tests {
             assert_eq!(periods, [GroupBy::Days, GroupBy::Years]);
         }
 
-        wb.pivot_group_numbers(id, 1, Some(0.0), Some(1000.0), 250.0, false).unwrap();
+        wb.pivot_group_numbers(id, 1, Some(0.0), Some(1000.0), 250.0, false)
+            .unwrap();
         let open = grouping_opening(wb.pivot(id).unwrap().1, 1).unwrap();
         assert_eq!((open.start, open.end, open.interval), (0.0, 1000.0, 250.0));
         assert!(!open.auto_start && !open.auto_end);

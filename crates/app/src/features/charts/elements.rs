@@ -7,10 +7,12 @@ use crate::app::{ExcelApp, MenuEntry};
 use crate::features::{Command, ContextMenu, MenuSection, chart_format};
 use crate::i18n::{Lang, lang, t};
 use opensheet_engine::chart::{
-    Axis, Chart, ChartData, ChartTitle, DataLabels, Family, LegendPos, Line, ShapeFormat, TextFormat, TrendKind,
-    Trendline,
+    Axis, Chart, ChartData, ChartTitle, DataLabels, Family, LegendPos, Line, ShapeFormat,
+    TextFormat, TrendKind, Trendline,
 };
-use opensheet_engine::chart_layout::{AxisId, ChartElement, LayoutOptions, TextMeasure, layout_chart_elements};
+use opensheet_engine::chart_layout::{
+    AxisId, ChartElement, LayoutOptions, TextMeasure, layout_chart_elements,
+};
 
 /// Put `args` into a pattern at `{0}`, `{1}`...
 pub(crate) fn fill(pattern: &str, args: &[&str]) -> String {
@@ -54,8 +56,16 @@ pub(crate) fn axis_name(chart: &Chart, axis: AxisId) -> String {
             t("Radar (Value) Axis", "Axe Radar (Valeur)").to_string()
         };
     }
-    let direction = if is_horizontal(chart, axis) { t("Horizontal", "Horizontal") } else { t("Vertical", "Vertical") };
-    let role = if axis.is_category() && !chart.kind.is_xy() { t("Category", "Catégorie") } else { t("Value", "Valeur") };
+    let direction = if is_horizontal(chart, axis) {
+        t("Horizontal", "Horizontal")
+    } else {
+        t("Vertical", "Vertical")
+    };
+    let role = if axis.is_category() && !chart.kind.is_xy() {
+        t("Category", "Catégorie")
+    } else {
+        t("Value", "Valeur")
+    };
     let pattern = if axis.is_secondary() {
         t("Secondary {0} ({1}) Axis", "Axe {0} secondaire ({1})")
     } else {
@@ -71,7 +81,10 @@ fn axis_in_phrase(chart: &Chart, axis: AxisId) -> String {
     match lang() {
         Lang::Fr => {
             let mut chars = name.chars();
-            chars.next().map(|first| first.to_lowercase().chain(chars).collect()).unwrap_or_default()
+            chars
+                .next()
+                .map(|first| first.to_lowercase().chain(chars).collect())
+                .unwrap_or_default()
         }
         _ => name,
     }
@@ -86,7 +99,12 @@ pub(crate) fn series_name(data: &ChartData, series: usize) -> String {
 
 /// The name of an element in the Chart Elements list.
 pub fn element_name(chart: &Chart, data: &ChartData, element: ChartElement) -> String {
-    let series = |s: u32| fill(t("Series \"{0}\"", "Série \"{0}\""), &[&series_name(data, s as usize)]);
+    let series = |s: u32| {
+        fill(
+            t("Series \"{0}\"", "Série \"{0}\""),
+            &[&series_name(data, s as usize)],
+        )
+    };
     match element {
         ChartElement::ChartArea => t("Chart Area", "Zone de graphique").to_string(),
         ChartElement::PlotArea => t("Plot Area", "Zone de traçage").to_string(),
@@ -94,25 +112,49 @@ pub fn element_name(chart: &Chart, data: &ChartData, element: ChartElement) -> S
         ChartElement::Legend => t("Legend", "Légende").to_string(),
         ChartElement::LegendEntry(_) => t("Legend Entry", "Élément de légende").to_string(),
         ChartElement::Axis(axis) => axis_name(chart, axis),
-        ChartElement::AxisTitle(axis) => fill(t("{0} Title", "Titre de l'{0}"), &[&axis_in_phrase(chart, axis)]),
-        ChartElement::MajorGridlines(axis) => {
-            fill(t("{0} Major Gridlines", "Quadrillage principal de l'{0}"), &[&axis_in_phrase(chart, axis)])
-        }
-        ChartElement::MinorGridlines(axis) => {
-            fill(t("{0} Minor Gridlines", "Quadrillage secondaire de l'{0}"), &[&axis_in_phrase(chart, axis)])
-        }
+        ChartElement::AxisTitle(axis) => fill(
+            t("{0} Title", "Titre de l'{0}"),
+            &[&axis_in_phrase(chart, axis)],
+        ),
+        ChartElement::MajorGridlines(axis) => fill(
+            t("{0} Major Gridlines", "Quadrillage principal de l'{0}"),
+            &[&axis_in_phrase(chart, axis)],
+        ),
+        ChartElement::MinorGridlines(axis) => fill(
+            t("{0} Minor Gridlines", "Quadrillage secondaire de l'{0}"),
+            &[&axis_in_phrase(chart, axis)],
+        ),
         ChartElement::Series(s) => series(s),
         ChartElement::Point(s, k) => {
-            let point = data.categories.get(k as usize).cloned().unwrap_or_else(|| (k + 1).to_string());
-            fill(t("{0} Point \"{1}\"", "{0} Point \"{1}\""), &[&series(s), &point])
+            let point = data
+                .categories
+                .get(k as usize)
+                .cloned()
+                .unwrap_or_else(|| (k + 1).to_string());
+            fill(
+                t("{0} Point \"{1}\"", "{0} Point \"{1}\""),
+                &[&series(s), &point],
+            )
         }
-        ChartElement::DataLabels(s) => fill(t("{0} Data Labels", "{0} Étiquettes de données"), &[&series(s)]),
-        ChartElement::Trendline(s, i) => {
-            fill(t("{0} Trendline {1}", "{0} Courbe de tendance {1}"), &[&series(s), &(i + 1).to_string()])
-        }
+        ChartElement::DataLabels(s) => fill(
+            t("{0} Data Labels", "{0} Étiquettes de données"),
+            &[&series(s)],
+        ),
+        ChartElement::Trendline(s, i) => fill(
+            t("{0} Trendline {1}", "{0} Courbe de tendance {1}"),
+            &[&series(s), &(i + 1).to_string()],
+        ),
         ChartElement::ErrorBars(s, i) => {
-            let horizontal = chart.series.get(s as usize).and_then(|x| x.error_bars.get(i as usize)).is_some_and(|b| b.horizontal);
-            let pattern = if horizontal { t("{0} X Error Bars", "{0} Barres d'erreur X") } else { t("{0} Y Error Bars", "{0} Barres d'erreur Y") };
+            let horizontal = chart
+                .series
+                .get(s as usize)
+                .and_then(|x| x.error_bars.get(i as usize))
+                .is_some_and(|b| b.horizontal);
+            let pattern = if horizontal {
+                t("{0} X Error Bars", "{0} Barres d'erreur X")
+            } else {
+                t("{0} Y Error Bars", "{0} Barres d'erreur Y")
+            };
             fill(pattern, &[&series(s)])
         }
         ChartElement::DataTable => t("Data Table", "Table de données").to_string(),
@@ -125,11 +167,17 @@ pub fn pane_title(element: ChartElement) -> &'static str {
         ChartElement::ChartArea => t("Format Chart Area", "Format de la zone de graphique"),
         ChartElement::PlotArea => t("Format Plot Area", "Format de zone de traçage"),
         ChartElement::Title => t("Format Chart Title", "Format du titre du graphique"),
-        ChartElement::Legend | ChartElement::LegendEntry(_) => t("Format Legend", "Format de légende"),
+        ChartElement::Legend | ChartElement::LegendEntry(_) => {
+            t("Format Legend", "Format de légende")
+        }
         ChartElement::Axis(_) => t("Format Axis", "Format de l'axe"),
         ChartElement::AxisTitle(_) => t("Format Axis Title", "Format du titre d'axe"),
-        ChartElement::MajorGridlines(_) => t("Format Major Gridlines", "Format du quadrillage principal"),
-        ChartElement::MinorGridlines(_) => t("Format Minor Gridlines", "Format du quadrillage secondaire"),
+        ChartElement::MajorGridlines(_) => {
+            t("Format Major Gridlines", "Format du quadrillage principal")
+        }
+        ChartElement::MinorGridlines(_) => {
+            t("Format Minor Gridlines", "Format du quadrillage secondaire")
+        }
         ChartElement::Series(_) => t("Format Data Series", "Format de série de données"),
         ChartElement::Point(..) => t("Format Data Point", "Format de point de données"),
         ChartElement::DataLabels(_) => t("Format Data Labels", "Format des étiquettes de données"),
@@ -147,13 +195,23 @@ pub fn exists(chart: &Chart, element: ChartElement) -> bool {
         ChartElement::Title => chart.title != ChartTitle::None,
         ChartElement::Legend | ChartElement::LegendEntry(_) => chart.legend != LegendPos::None,
         ChartElement::Axis(axis) => has_axis(chart, axis) && axis.of(&chart.axes).visible,
-        ChartElement::AxisTitle(axis) => has_axis(chart, axis) && axis.of(&chart.axes).title.is_some(),
-        ChartElement::MajorGridlines(axis) => has_axis(chart, axis) && axis.of(&chart.axes).major_gridlines,
-        ChartElement::MinorGridlines(axis) => has_axis(chart, axis) && axis.of(&chart.axes).minor_gridlines,
+        ChartElement::AxisTitle(axis) => {
+            has_axis(chart, axis) && axis.of(&chart.axes).title.is_some()
+        }
+        ChartElement::MajorGridlines(axis) => {
+            has_axis(chart, axis) && axis.of(&chart.axes).major_gridlines
+        }
+        ChartElement::MinorGridlines(axis) => {
+            has_axis(chart, axis) && axis.of(&chart.axes).minor_gridlines
+        }
         ChartElement::Series(s) | ChartElement::Point(s, _) => series(s).is_some(),
         ChartElement::DataLabels(s) => series(s).is_some_and(|x| chart.labels_for(x).is_some()),
-        ChartElement::Trendline(s, i) => series(s).is_some_and(|x| (i as usize) < x.trendlines.len()),
-        ChartElement::ErrorBars(s, i) => series(s).is_some_and(|x| (i as usize) < x.error_bars.len()),
+        ChartElement::Trendline(s, i) => {
+            series(s).is_some_and(|x| (i as usize) < x.trendlines.len())
+        }
+        ChartElement::ErrorBars(s, i) => {
+            series(s).is_some_and(|x| (i as usize) < x.error_bars.len())
+        }
         ChartElement::DataTable => chart.data_table.is_some(),
     }
 }
@@ -178,8 +236,10 @@ pub fn listed(chart: &Chart, data: &ChartData) -> Vec<ChartElement> {
         labels: Default::default(),
     };
     let drawn = layout_chart_elements(chart, data, chart.size, &options, &Rough).elements();
-    let (mut general, mut of_series): (Vec<ChartElement>, Vec<ChartElement>) =
-        drawn.into_iter().filter(|e| *e != ChartElement::ChartArea).partition(|e| e.series().is_none());
+    let (mut general, mut of_series): (Vec<ChartElement>, Vec<ChartElement>) = drawn
+        .into_iter()
+        .filter(|e| *e != ChartElement::ChartArea)
+        .partition(|e| e.series().is_none());
     general.sort_by_key(|e| element_name(chart, data, *e).to_lowercase());
     of_series.sort_by_key(|e| {
         let rank = match e {
@@ -240,7 +300,11 @@ pub fn delete(chart: &mut Chart, element: ChartElement) -> bool {
             series.labels = Some(DataLabels::none());
             series.label_offsets.clear();
             // Once no series is labelled, the chart is back to "no labels".
-            if chart.series.iter().all(|x| x.labels.as_ref().is_some_and(|l| !l.any())) {
+            if chart
+                .series
+                .iter()
+                .all(|x| x.labels.as_ref().is_some_and(|l| !l.any()))
+            {
                 chart.data_labels = false;
                 for x in &mut chart.series {
                     x.labels = None;
@@ -295,8 +359,12 @@ pub fn reset(chart: &mut Chart, element: ChartElement) {
             axis.title_text = TextFormat::default();
             axis.title_layout = None;
         }
-        ChartElement::MajorGridlines(axis) => axis.of_mut(&mut chart.axes).major_gridline = Line::default(),
-        ChartElement::MinorGridlines(axis) => axis.of_mut(&mut chart.axes).minor_gridline = Line::default(),
+        ChartElement::MajorGridlines(axis) => {
+            axis.of_mut(&mut chart.axes).major_gridline = Line::default()
+        }
+        ChartElement::MinorGridlines(axis) => {
+            axis.of_mut(&mut chart.axes).minor_gridline = Line::default()
+        }
         ChartElement::Series(s) => {
             if let Some(series) = chart.series.get_mut(s as usize) {
                 series.color = None;
@@ -337,7 +405,11 @@ pub fn reset(chart: &mut Chart, element: ChartElement) {
             }
         }
         ChartElement::Trendline(s, i) => {
-            if let Some(trend) = chart.series.get_mut(s as usize).and_then(|x| x.trendlines.get_mut(i as usize)) {
+            if let Some(trend) = chart
+                .series
+                .get_mut(s as usize)
+                .and_then(|x| x.trendlines.get_mut(i as usize))
+            {
                 trend.line = Line::default();
             }
         }
@@ -347,7 +419,10 @@ pub fn reset(chart: &mut Chart, element: ChartElement) {
 
 /// Give a series the labels of the chart to change on its own.
 pub(crate) fn own_labels(chart: &mut Chart, series: usize) -> Option<&mut DataLabels> {
-    let inherited = chart.labels_for(chart.series.get(series)?).cloned().unwrap_or_default();
+    let inherited = chart
+        .labels_for(chart.series.get(series)?)
+        .cloned()
+        .unwrap_or_default();
     let series = chart.series.get_mut(series)?;
     Some(series.labels.get_or_insert(inherited))
 }
@@ -383,7 +458,10 @@ pub(crate) fn takes_trendlines(chart: &Chart) -> bool {
 /// The series an "Add …" command applies to when no question needs
 /// asking: the one the selection belongs to, or the only one.
 pub(crate) fn target_series(chart: &Chart, element: ChartElement) -> Option<usize> {
-    element.series().filter(|s| *s < chart.series.len()).or((chart.series.len() == 1).then_some(0))
+    element
+        .series()
+        .filter(|s| *s < chart.series.len())
+        .or((chart.series.len() == 1).then_some(0))
 }
 
 /// What the context menu of an element offers, in Excel's order.
@@ -425,8 +503,15 @@ pub fn menu_items(chart: &Chart, element: ChartElement) -> Vec<MenuItem> {
     }
     match element {
         ChartElement::Series(s) | ChartElement::Point(s, _) => {
-            let labelled = chart.series.get(s as usize).is_some_and(|x| chart.labels_for(x).is_some());
-            out.push(if labelled { MenuItem::FormatLabels } else { MenuItem::AddDataLabels });
+            let labelled = chart
+                .series
+                .get(s as usize)
+                .is_some_and(|x| chart.labels_for(x).is_some());
+            out.push(if labelled {
+                MenuItem::FormatLabels
+            } else {
+                MenuItem::AddDataLabels
+            });
             if takes_trendlines(chart) {
                 out.push(MenuItem::AddTrendline);
             }
@@ -440,7 +525,9 @@ pub fn menu_items(chart: &Chart, element: ChartElement) -> Vec<MenuItem> {
                 out.push(MenuItem::AddMinorGridlines);
             }
         }
-        ChartElement::MajorGridlines(_) | ChartElement::MinorGridlines(_) => out.push(MenuItem::FormatAxis),
+        ChartElement::MajorGridlines(_) | ChartElement::MinorGridlines(_) => {
+            out.push(MenuItem::FormatAxis)
+        }
         _ => {}
     }
     out.push(MenuItem::Format);
@@ -452,7 +539,9 @@ fn format_entry_label(element: ChartElement) -> String {
     let title = pane_title(element);
     // Menus name gridlines without "major" / "minor".
     let title = match element {
-        ChartElement::MajorGridlines(_) | ChartElement::MinorGridlines(_) => t("Format Gridlines", "Format du quadrillage"),
+        ChartElement::MajorGridlines(_) | ChartElement::MinorGridlines(_) => {
+            t("Format Gridlines", "Format du quadrillage")
+        }
         _ => title,
     };
     format!("{title}…")
@@ -464,9 +553,14 @@ pub fn context_menu(app: &ExcelApp, chart: &Chart, element: ChartElement, menu: 
         let (section, entry) = match item {
             MenuItem::Delete => (
                 MenuSection::Edit,
-                MenuEntry::new(t("Delete", "Supprimer"), move |a, _, cx| super::delete_selected_element(a, cx)),
+                MenuEntry::new(t("Delete", "Supprimer"), move |a, _, cx| {
+                    super::delete_selected_element(a, cx)
+                }),
             ),
-            MenuItem::Reset => (MenuSection::Edit, MenuEntry::command(chart_format::Cmd::ResetStyle, app)),
+            MenuItem::Reset => (
+                MenuSection::Edit,
+                MenuEntry::command(chart_format::Cmd::ResetStyle, app),
+            ),
             MenuItem::EditText => (
                 MenuSection::Edit,
                 MenuEntry::new(t("Edit Text", "Modifier le texte"), move |a, window, cx| {
@@ -477,28 +571,34 @@ pub fn context_menu(app: &ExcelApp, chart: &Chart, element: ChartElement, menu: 
             ),
             MenuItem::ChangeType => {
                 let label = match element {
-                    ChartElement::Series(_) | ChartElement::Point(..) => {
-                        t("Change Series Chart Type…", "Modifier le type de graphique Série de données…")
-                    }
+                    ChartElement::Series(_) | ChartElement::Point(..) => t(
+                        "Change Series Chart Type…",
+                        "Modifier le type de graphique Série de données…",
+                    ),
                     _ => t("Change Chart Type…", "Modifier le type de graphique…"),
                 };
                 (
                     MenuSection::Data,
-                    MenuEntry::new(label, |a, window, cx| insert::open_change_type_dialog(a, window, cx)).icon(Cmd::ChangeType.icon()),
+                    MenuEntry::new(label, |a, window, cx| {
+                        insert::open_change_type_dialog(a, window, cx)
+                    })
+                    .icon(Cmd::ChangeType.icon()),
                 )
             }
             MenuItem::SelectData => (
                 MenuSection::Data,
-                MenuEntry::new(t("Select Data…", "Sélectionner des données…"), |a, window, cx| {
-                    chart_format::Cmd::SelectData.run(a, window, cx)
-                })
+                MenuEntry::new(
+                    t("Select Data…", "Sélectionner des données…"),
+                    |a, window, cx| chart_format::Cmd::SelectData.run(a, window, cx),
+                )
                 .icon(chart_format::Cmd::SelectData.icon()),
             ),
             MenuItem::MoveChart => (
                 MenuSection::Data,
-                MenuEntry::new(t("Move Chart…", "Déplacer le graphique…"), |a, window, cx| {
-                    chart_format::Cmd::MoveChart.run(a, window, cx)
-                }),
+                MenuEntry::new(
+                    t("Move Chart…", "Déplacer le graphique…"),
+                    |a, window, cx| chart_format::Cmd::MoveChart.run(a, window, cx),
+                ),
             ),
             MenuItem::Rotation => (
                 MenuSection::Data,
@@ -509,21 +609,33 @@ pub fn context_menu(app: &ExcelApp, chart: &Chart, element: ChartElement, menu: 
             ),
             MenuItem::AddDataLabels => (
                 MenuSection::Format,
-                MenuEntry::new(t("Add Data Labels", "Ajouter des étiquettes de données"), move |a, _, cx| {
-                    a.edit_chart(t("Data Labels", "Étiquettes de données"), cx, move |c| add_data_labels(c, element.series()))
-                }),
+                MenuEntry::new(
+                    t("Add Data Labels", "Ajouter des étiquettes de données"),
+                    move |a, _, cx| {
+                        a.edit_chart(t("Data Labels", "Étiquettes de données"), cx, move |c| {
+                            add_data_labels(c, element.series())
+                        })
+                    },
+                ),
             ),
             MenuItem::AddTrendline => (
                 MenuSection::Format,
-                MenuEntry::new(t("Add Trendline…", "Ajouter une courbe de tendance…"), move |a, window, cx| {
-                    let Some(series) = element.series() else { return };
-                    add_trendline(a, series, TrendKind::Linear, cx);
-                    chart_format::open_pane(a, window, cx);
-                }),
+                MenuEntry::new(
+                    t("Add Trendline…", "Ajouter une courbe de tendance…"),
+                    move |a, window, cx| {
+                        let Some(series) = element.series() else {
+                            return;
+                        };
+                        add_trendline(a, series, TrendKind::Linear, cx);
+                        chart_format::open_pane(a, window, cx);
+                    },
+                ),
             ),
             MenuItem::AddMajorGridlines | MenuItem::AddMinorGridlines => {
                 let major = item == MenuItem::AddMajorGridlines;
-                let ChartElement::Axis(axis) = element else { continue };
+                let ChartElement::Axis(axis) = element else {
+                    continue;
+                };
                 let label = if major {
                     t("Add Major Gridlines", "Ajouter un quadrillage principal")
                 } else {
@@ -534,23 +646,36 @@ pub fn context_menu(app: &ExcelApp, chart: &Chart, element: ChartElement, menu: 
                     MenuEntry::new(label, move |a, _, cx| {
                         a.edit_chart(t("Gridlines", "Quadrillage"), cx, move |c| {
                             let axis = axis.of_mut(&mut c.axes);
-                            if major { axis.major_gridlines = true } else { axis.minor_gridlines = true }
+                            if major {
+                                axis.major_gridlines = true
+                            } else {
+                                axis.minor_gridlines = true
+                            }
                         })
                     }),
                 )
             }
             MenuItem::FormatAxis => {
-                let (ChartElement::MajorGridlines(axis) | ChartElement::MinorGridlines(axis)) = element else { continue };
+                let (ChartElement::MajorGridlines(axis) | ChartElement::MinorGridlines(axis)) =
+                    element
+                else {
+                    continue;
+                };
                 (
                     MenuSection::Format,
-                    MenuEntry::new(format_entry_label(ChartElement::Axis(axis)), move |a, window, cx| {
-                        a.select_chart_element(ChartElement::Axis(axis), cx);
-                        chart_format::open_pane(a, window, cx);
-                    }),
+                    MenuEntry::new(
+                        format_entry_label(ChartElement::Axis(axis)),
+                        move |a, window, cx| {
+                            a.select_chart_element(ChartElement::Axis(axis), cx);
+                            chart_format::open_pane(a, window, cx);
+                        },
+                    ),
                 )
             }
             MenuItem::FormatLabels => {
-                let Some(series) = element.series() else { continue };
+                let Some(series) = element.series() else {
+                    continue;
+                };
                 let labels = ChartElement::DataLabels(series as u32);
                 (
                     MenuSection::Format,
@@ -562,8 +687,10 @@ pub fn context_menu(app: &ExcelApp, chart: &Chart, element: ChartElement, menu: 
             }
             MenuItem::Format => (
                 MenuSection::Format,
-                MenuEntry::new(format_entry_label(element), |a, window, cx| chart_format::open_pane(a, window, cx))
-                    .icon(chart_format::Cmd::FormatSelection.icon()),
+                MenuEntry::new(format_entry_label(element), |a, window, cx| {
+                    chart_format::open_pane(a, window, cx)
+                })
+                .icon(chart_format::Cmd::FormatSelection.icon()),
             ),
         };
         menu.add(section, entry);
@@ -571,13 +698,26 @@ pub fn context_menu(app: &ExcelApp, chart: &Chart, element: ChartElement, menu: 
 }
 
 /// Add a trendline to a series of the selected chart and select it.
-pub(crate) fn add_trendline(app: &mut ExcelApp, series: usize, kind: TrendKind, cx: &mut crate::features::Cx) {
-    let Some(count) = app.selected_chart().and_then(|c| c.series.get(series)).map(|s| s.trendlines.len()) else {
+pub(crate) fn add_trendline(
+    app: &mut ExcelApp,
+    series: usize,
+    kind: TrendKind,
+    cx: &mut crate::features::Cx,
+) {
+    let Some(count) = app
+        .selected_chart()
+        .and_then(|c| c.series.get(series))
+        .map(|s| s.trendlines.len())
+    else {
         return;
     };
-    app.edit_chart(t("Add Trendline", "Ajouter une courbe de tendance"), cx, move |c| {
-        c.series[series].trendlines.push(Trendline::new(kind));
-    });
+    app.edit_chart(
+        t("Add Trendline", "Ajouter une courbe de tendance"),
+        cx,
+        move |c| {
+            c.series[series].trendlines.push(Trendline::new(kind));
+        },
+    );
     app.select_chart_element(ChartElement::Trendline(series as u32, count as u32), cx);
 }
 
@@ -585,7 +725,9 @@ pub(crate) fn add_trendline(app: &mut ExcelApp, series: usize, kind: TrendKind, 
 mod tests {
     use super::*;
     use opensheet_engine::ast::RefExpr;
-    use opensheet_engine::chart::{ChartKind, ErrorAmount, ErrorBars, ErrorDirection, Series, SeriesData};
+    use opensheet_engine::chart::{
+        ChartKind, ErrorAmount, ErrorBars, ErrorDirection, Series, SeriesData,
+    };
     use opensheet_engine::style::Color;
 
     fn chart(kind: ChartKind, series: usize) -> (Chart, ChartData) {
@@ -616,22 +758,36 @@ mod tests {
     fn axes_are_named_by_direction_and_role() {
         crate::i18n::set_lang(Lang::En);
         let (column, _) = chart(ChartKind::Column, 1);
-        assert_eq!(axis_name(&column, AxisId::Category), "Horizontal (Category) Axis");
+        assert_eq!(
+            axis_name(&column, AxisId::Category),
+            "Horizontal (Category) Axis"
+        );
         assert_eq!(axis_name(&column, AxisId::Value), "Vertical (Value) Axis");
-        assert_eq!(axis_name(&column, AxisId::SecondaryValue), "Secondary Vertical (Value) Axis");
+        assert_eq!(
+            axis_name(&column, AxisId::SecondaryValue),
+            "Secondary Vertical (Value) Axis"
+        );
         let (bar, _) = chart(ChartKind::Bar, 1);
-        assert_eq!(axis_name(&bar, AxisId::Category), "Vertical (Category) Axis");
+        assert_eq!(
+            axis_name(&bar, AxisId::Category),
+            "Vertical (Category) Axis"
+        );
         assert_eq!(axis_name(&bar, AxisId::Value), "Horizontal (Value) Axis");
         assert_eq!(axis_of(&bar, true, false), AxisId::Value);
         let (scatter, _) = chart(ChartKind::Scatter, 1);
-        assert_eq!(axis_name(&scatter, AxisId::Category), "Horizontal (Value) Axis");
+        assert_eq!(
+            axis_name(&scatter, AxisId::Category),
+            "Horizontal (Value) Axis"
+        );
     }
 
     #[test]
     fn the_list_names_what_the_chart_shows() {
         crate::i18n::set_lang(Lang::En);
         let (mut c, data) = chart(ChartKind::Column, 2);
-        c.series[1].trendlines.push(Trendline::new(TrendKind::Linear));
+        c.series[1]
+            .trendlines
+            .push(Trendline::new(TrendKind::Linear));
         c.series[0].error_bars.push(ErrorBars {
             horizontal: false,
             direction: ErrorDirection::Both,
@@ -639,7 +795,10 @@ mod tests {
             end_cap: true,
         });
         c.data_labels = true;
-        let names: Vec<String> = listed(&c, &data).into_iter().map(|e| element_name(&c, &data, e)).collect();
+        let names: Vec<String> = listed(&c, &data)
+            .into_iter()
+            .map(|e| element_name(&c, &data, e))
+            .collect();
         assert_eq!(
             names,
             [
@@ -686,18 +845,39 @@ mod tests {
     fn context_menus_follow_the_element() {
         use MenuItem::*;
         let (mut c, _) = chart(ChartKind::Column, 2);
-        assert_eq!(menu_items(&c, ChartElement::ChartArea), [Reset, ChangeType, SelectData, MoveChart, Format]);
+        assert_eq!(
+            menu_items(&c, ChartElement::ChartArea),
+            [Reset, ChangeType, SelectData, MoveChart, Format]
+        );
         assert_eq!(
             menu_items(&c, ChartElement::Series(0)),
-            [Delete, Reset, ChangeType, SelectData, AddDataLabels, AddTrendline, Format]
+            [
+                Delete,
+                Reset,
+                ChangeType,
+                SelectData,
+                AddDataLabels,
+                AddTrendline,
+                Format
+            ]
         );
         c.data_labels = true;
         assert!(menu_items(&c, ChartElement::Point(0, 1)).contains(&FormatLabels));
         assert_eq!(
             menu_items(&c, ChartElement::Axis(AxisId::Value)),
-            [Delete, Reset, ChangeType, SelectData, AddMinorGridlines, Format]
+            [
+                Delete,
+                Reset,
+                ChangeType,
+                SelectData,
+                AddMinorGridlines,
+                Format
+            ]
         );
-        assert_eq!(menu_items(&c, ChartElement::Title), [Delete, Reset, EditText, ChangeType, SelectData, Format]);
+        assert_eq!(
+            menu_items(&c, ChartElement::Title),
+            [Delete, Reset, EditText, ChangeType, SelectData, Format]
+        );
         let (pie, _) = chart(ChartKind::Pie3D, 1);
         assert!(menu_items(&pie, ChartElement::Series(0)).contains(&Rotation));
         assert!(!menu_items(&pie, ChartElement::Series(0)).contains(&AddTrendline));

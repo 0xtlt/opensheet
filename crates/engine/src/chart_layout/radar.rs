@@ -2,7 +2,10 @@
 //! centre, each series a closed line (filled or not) around it.
 
 use super::scale::{Fit, Scale};
-use super::{AxisId, ChartElement, GRIDLINE, Ink, LABEL_POINTS, Painter, Stroke, TextAnchor, fmt_value, label_text};
+use super::{
+    AxisId, ChartElement, GRIDLINE, Ink, LABEL_POINTS, Painter, Stroke, TextAnchor, fmt_value,
+    label_text,
+};
 use crate::chart::ChartKind;
 use std::f32::consts::{FRAC_PI_2, TAU};
 
@@ -13,12 +16,23 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let (left, top, right, bottom) = area;
     let label_h = p.label_h;
     let count = data.series.len().min(chart.series.len());
-    let n = data.series.iter().take(count).map(|s| s.values.len()).max().unwrap_or(0);
+    let n = data
+        .series
+        .iter()
+        .take(count)
+        .map(|s| s.values.len())
+        .max()
+        .unwrap_or(0);
     if n == 0 {
         return;
     }
     let (mut lo, mut hi) = (0.0f64, f64::NEG_INFINITY);
-    for v in data.series.iter().take(count).flat_map(|s| s.values.iter().flatten()) {
+    for v in data
+        .series
+        .iter()
+        .take(count)
+        .flat_map(|s| s.values.iter().flatten())
+    {
         lo = lo.min(*v);
         hi = hi.max(*v);
     }
@@ -30,7 +44,11 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let value_face = p.face(&chart.axes.value.text, LABEL_POINTS);
     let names: Vec<(String, f32)> = (0..n)
         .map(|k| {
-            let text = if show_categories { data.categories.get(k).cloned().unwrap_or_default() } else { String::new() };
+            let text = if show_categories {
+                data.categories.get(k).cloned().unwrap_or_default()
+            } else {
+                String::new()
+            };
             let w = p.width_of(&text, &cat_face);
             (text, w)
         })
@@ -41,7 +59,9 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let r = if p.snug {
         ((bottom - top) / 2.0).min((right - left) / 2.0).max(8.0)
     } else {
-        ((bottom - top) / 2.0 - label_h - 6.0 * z).min((right - left) / 2.0 - widest - 8.0 * z).max(8.0)
+        ((bottom - top) / 2.0 - label_h - 6.0 * z)
+            .min((right - left) / 2.0 - widest - 8.0 * z)
+            .max(8.0)
     };
     // The first category points up; the others follow clockwise.
     let angle = |k: usize| -FRAC_PI_2 + TAU * k as f32 / n as f32;
@@ -85,8 +105,15 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
         let look = p.look(si);
         p.tag(ChartElement::Series(si as u32));
         let sd = &data.series[si];
-        let points: Vec<Option<(f32, f32)>> =
-            (0..n).map(|k| sd.values.get(k).copied().flatten().map(|v| at(k, scale.clamped(v)))).collect();
+        let points: Vec<Option<(f32, f32)>> = (0..n)
+            .map(|k| {
+                sd.values
+                    .get(k)
+                    .copied()
+                    .flatten()
+                    .map(|v| at(k, scale.clamped(v)))
+            })
+            .collect();
         let all: Vec<(f32, f32)> = points.iter().flatten().copied().collect();
         if look.kind == ChartKind::RadarFilled {
             p.polygon(&all, Some(Ink::solid(look.color)), None);
@@ -128,7 +155,14 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 let Some((x, y)) = pt else { continue };
                 let text = label_text(p, si, k, None, labels);
                 if !text.is_empty() {
-                    texts.push((si, k, text, *x + 4.0 * z, *y - p.label_face(si).h, TextAnchor::Start));
+                    texts.push((
+                        si,
+                        k,
+                        text,
+                        *x + 4.0 * z,
+                        *y - p.label_face(si).h,
+                        TextAnchor::Start,
+                    ));
                 }
             }
         }
@@ -137,12 +171,23 @@ pub(super) fn draw_radar(p: &mut Painter, area: (f32, f32, f32, f32)) {
     // Values up the first spoke, categories around the outside.
     p.tag(ChartElement::Axis(AxisId::Value));
     if chart.axes.value.visible {
-        let code = chart.axes.value.number_format.as_deref().unwrap_or(&data.value_format);
+        let code = chart
+            .axes
+            .value
+            .number_format
+            .as_deref()
+            .unwrap_or(&data.value_format);
         let divisor = chart.axes.value.display_unit.divisor();
         for v in &ticks {
             let label = fmt_value(*v / divisor, code, p.options.locale);
             let y = (cy - r * scale.clamped(*v) as f32).round();
-            p.write(&label, cx - 4.0 * z, y - value_face.h / 2.0, &value_face, TextAnchor::End);
+            p.write(
+                &label,
+                cx - 4.0 * z,
+                y - value_face.h / 2.0,
+                &value_face,
+                TextAnchor::End,
+            );
         }
     }
     p.tag(ChartElement::Axis(AxisId::Category));

@@ -13,10 +13,12 @@ use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::c;
 use crate::widgets::{self, Button, Checkbox, RefEdit, Select, TabStrip, TextField, dialog, label};
-use gpui::{AnyElement, Context, Entity, FocusHandle, FontWeight, SharedString, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, Context, Entity, FocusHandle, FontWeight, SharedString, Window, div, prelude::*, px,
+};
 use opensheet_engine::validation::{
-    AlertStyle, Field, FormulaWarning, MAX_MESSAGE_LEN, MAX_TITLE_LEN, Operator, SelectionValidation, Validation,
-    ValidationKind, operand_fields,
+    AlertStyle, Field, FormulaWarning, MAX_MESSAGE_LEN, MAX_TITLE_LEN, Operator,
+    SelectionValidation, Validation, ValidationKind, operand_fields,
 };
 use opensheet_engine::{Locale, Rect};
 
@@ -56,7 +58,9 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let found = app.wb.selection_validation(sheet, &ranges);
     let question = found.question(locale);
     let rule = match found {
-        SelectionValidation::Uniform(rule) | SelectionValidation::Partial(rule) => Some(rule.clone()),
+        SelectionValidation::Uniform(rule) | SelectionValidation::Partial(rule) => {
+            Some(rule.clone())
+        }
         SelectionValidation::None | SelectionValidation::Mixed => None,
     };
     let partial = matches!(found, SelectionValidation::Partial(_));
@@ -76,7 +80,9 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let show = |opening: Opening| {
         move |app: &mut ExcelApp, window: &mut Window, cx: &mut Cx| {
             let opening = opening.clone();
-            app.open_modal(window, cx, move |modal, _, cx| Dialog::new(modal, opening, cx));
+            app.open_modal(window, cx, move |modal, _, cx| {
+                Dialog::new(modal, opening, cx)
+            });
         }
     };
     match question {
@@ -106,9 +112,20 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 }
 
 /// Give the cells their rule, as one undo step.
-fn apply(app: &mut ExcelApp, sheet: usize, ranges: &[Rect], active: (u32, u32), rule: Validation, cx: &mut Cx) {
+fn apply(
+    app: &mut ExcelApp,
+    sheet: usize,
+    ranges: &[Rect],
+    active: (u32, u32),
+    rule: Validation,
+    cx: &mut Cx,
+) {
     // Nothing to remove and nothing to set: no step to undo.
-    let untouched = rule.is_noop() && matches!(app.wb.selection_validation(sheet, ranges), SelectionValidation::None);
+    let untouched = rule.is_noop()
+        && matches!(
+            app.wb.selection_validation(sheet, ranges),
+            SelectionValidation::None
+        );
     if !untouched && app.wb.set_validation(sheet, ranges, active, rule) {
         app.commit(t("Data Validation", "Validation des données"), cx);
     }
@@ -233,7 +250,11 @@ impl Dialog {
         let text = |field: &Entity<TextInput>| field.read(cx).text().to_string();
         let mut rule = Validation {
             kind: self.kind,
-            operator: if self.kind.has_operator() { self.operator } else { Operator::default() },
+            operator: if self.kind.has_operator() {
+                self.operator
+            } else {
+                Operator::default()
+            },
             allow_blank: self.allow_blank,
             in_cell_dropdown: self.in_cell_dropdown,
             show_input: self.show_input,
@@ -269,8 +290,9 @@ impl Dialog {
             Err(message) => {
                 self.tab = TAB_SETTINGS;
                 cx.notify();
-                self.modal
-                    .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+                self.modal.update_app(cx, |app, cx| {
+                    app.alert(Alert::new("OpenSheet", message).warning(), cx)
+                });
                 return;
             }
         };
@@ -288,8 +310,9 @@ impl Dialog {
             }
             Some(FormulaWarning::UnknownName) => {
                 let message = FormulaWarning::UnknownName.message(locale);
-                self.modal
-                    .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+                self.modal.update_app(cx, |app, cx| {
+                    app.alert(Alert::new("OpenSheet", message).warning(), cx)
+                });
             }
             // A formula that fails for now: the user decides.
             Some(warning) => {
@@ -322,7 +345,12 @@ impl Dialog {
         self.show_input = fresh.show_input;
         self.show_error = fresh.show_error;
         self.error_style = fresh.error_style;
-        for field in [&self.first, &self.second, &self.input_title, &self.error_title] {
+        for field in [
+            &self.first,
+            &self.second,
+            &self.input_title,
+            &self.error_title,
+        ] {
             field.update(cx, |field, cx| field.set_text("", cx));
         }
         for area in [&self.input_message, &self.error_message] {
@@ -333,7 +361,12 @@ impl Dialog {
 
     /// A label over a control.
     fn titled(title: &'static str, control: impl IntoElement) -> gpui::Div {
-        div().flex().flex_col().gap(px(3.)).child(label(title)).child(control)
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(3.))
+            .child(label(title))
+            .child(control)
     }
 
     /// The heading of a group of controls, and the controls under it.
@@ -347,15 +380,26 @@ impl Dialog {
 
     fn settings_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let locale = self.open.locale;
-        let kinds: Vec<SharedString> = ValidationKind::ALL.iter().map(|kind| kind.label(locale).into()).collect();
-        let operators: Vec<SharedString> = Operator::ALL.iter().map(|op| op.label(locale).into()).collect();
+        let kinds: Vec<SharedString> = ValidationKind::ALL
+            .iter()
+            .map(|kind| kind.label(locale).into())
+            .collect();
+        let operators: Vec<SharedString> = Operator::ALL
+            .iter()
+            .map(|op| op.label(locale).into())
+            .collect();
         let kind = ValidationKind::ALL.iter().position(|k| *k == self.kind);
         let operator = Operator::ALL.iter().position(|op| *op == self.operator);
         let (field1, field2) = operand_fields(self.kind, self.operator);
         let restricted = self.kind != ValidationKind::Any;
         let boxes = [(field1, &self.first), (field2, &self.second)]
             .into_iter()
-            .filter_map(|(field, input)| Some(Self::titled(field_label(field?), RefEdit::new(input, &self.modal))));
+            .filter_map(|(field, input)| {
+                Some(Self::titled(
+                    field_label(field?),
+                    RefEdit::new(input, &self.modal),
+                ))
+            });
         Self::section(t("Validation criteria", "Critères de validation"))
             .flex_1()
             .child(
@@ -474,7 +518,12 @@ impl Dialog {
                         ))
                         .child(Self::titled(
                             t("Input message:", "Message de saisie :"),
-                            div().flex().child(text_box(&self.input_message, MESSAGE_HEIGHT, window, cx)),
+                            div().flex().child(text_box(
+                                &self.input_message,
+                                MESSAGE_HEIGHT,
+                                window,
+                                cx,
+                            )),
                         )),
                 ),
             )
@@ -483,7 +532,10 @@ impl Dialog {
 
     fn error_tab(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let locale = self.open.locale;
-        let styles: Vec<SharedString> = AlertStyle::ALL.iter().map(|style| style.label(locale).into()).collect();
+        let styles: Vec<SharedString> = AlertStyle::ALL
+            .iter()
+            .map(|style| style.label(locale).into())
+            .collect();
         let style = AlertStyle::ALL.iter().position(|s| *s == self.error_style);
         // The sign the alert will show.
         let (glyph, color) = match self.error_style {
@@ -539,12 +591,12 @@ impl Dialog {
                                 .gap(px(10.))
                                 .child(Self::titled(
                                     t("Style:", "Style :"),
-                                    Select::new("style", styles, style).width(130.0).on_change(cx.listener(
-                                        |this, ix: &usize, _, cx| {
+                                    Select::new("style", styles, style).width(130.0).on_change(
+                                        cx.listener(|this, ix: &usize, _, cx| {
                                             this.error_style = AlertStyle::ALL[*ix];
                                             cx.notify();
-                                        },
-                                    )),
+                                        }),
+                                    ),
                                 ))
                                 .child(div().pl(px(4.)).child(sign)),
                         )
@@ -560,7 +612,12 @@ impl Dialog {
                                 ))
                                 .child(Self::titled(
                                     t("Error message:", "Message d’erreur :"),
-                                    div().flex().child(text_box(&self.error_message, MESSAGE_HEIGHT, window, cx)),
+                                    div().flex().child(text_box(
+                                        &self.error_message,
+                                        MESSAGE_HEIGHT,
+                                        window,
+                                        cx,
+                                    )),
                                 )),
                         ),
                 ),
@@ -588,24 +645,31 @@ impl Render for Dialog {
         dialog(&self.modal, t("Data Validation", "Validation des données"))
             .width(500.0)
             .on_ok(cx.listener(Self::ok))
-            .child(
-                TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(|this, ix: &usize, _, cx| {
+            .child(TabStrip::new("tabs", tabs, self.tab).on_change(cx.listener(
+                |this, ix: &usize, _, cx| {
                     this.tab = *ix;
                     cx.notify();
-                })),
-            )
+                },
+            )))
             .child(div().h(px(PAGE_HEIGHT)).flex().flex_col().child(body))
             .footer(
                 div()
                     .flex_1()
                     .flex()
                     .justify_between()
-                    .child(Button::new("clear-all", t("Clear All", "Effacer tout")).on_click(cx.listener(Self::clear_all)))
+                    .child(
+                        Button::new("clear-all", t("Clear All", "Effacer tout"))
+                            .on_click(cx.listener(Self::clear_all)),
+                    )
                     .child(
                         div()
                             .flex()
                             .gap(px(8.))
-                            .child(Button::new("ok", t("OK", "OK")).primary().on_click(cx.listener(Self::ok)))
+                            .child(
+                                Button::new("ok", t("OK", "OK"))
+                                    .primary()
+                                    .on_click(cx.listener(Self::ok)),
+                            )
                             .child(
                                 Button::new("cancel", t("Cancel", "Annuler"))
                                     .on_click(move |_, window, cx| modal.close(window, cx)),
@@ -638,7 +702,10 @@ mod tests {
     fn titles_hold_what_excel_holds() {
         assert_eq!(clipped("short", MAX_TITLE_LEN), None);
         let long = "é".repeat(MAX_TITLE_LEN + 3);
-        assert_eq!(clipped(&long, MAX_TITLE_LEN), Some("é".repeat(MAX_TITLE_LEN)));
+        assert_eq!(
+            clipped(&long, MAX_TITLE_LEN),
+            Some("é".repeat(MAX_TITLE_LEN))
+        );
         assert_eq!(clipped(&"x".repeat(MAX_TITLE_LEN), MAX_TITLE_LEN), None);
     }
 
@@ -651,14 +718,32 @@ mod tests {
             (first.map(field_label), second.map(field_label))
         };
         assert_eq!(labels(Any, Operator::Between), (None, None));
-        assert_eq!(labels(Whole, Operator::Between), (Some("Minimum:"), Some("Maximum:")));
-        assert_eq!(labels(Decimal, Operator::LessThan), (Some("Maximum:"), None));
+        assert_eq!(
+            labels(Whole, Operator::Between),
+            (Some("Minimum:"), Some("Maximum:"))
+        );
+        assert_eq!(
+            labels(Decimal, Operator::LessThan),
+            (Some("Maximum:"), None)
+        );
         assert_eq!(labels(List, Operator::Between), (Some("Source:"), None));
-        assert_eq!(labels(Date, Operator::NotBetween), (Some("Start date:"), Some("End date:")));
+        assert_eq!(
+            labels(Date, Operator::NotBetween),
+            (Some("Start date:"), Some("End date:"))
+        );
         assert_eq!(labels(Date, Operator::Equal), (Some("Date:"), None));
-        assert_eq!(labels(Time, Operator::GreaterOrEqual), (Some("Start time:"), None));
-        assert_eq!(labels(Time, Operator::LessOrEqual), (Some("End time:"), None));
-        assert_eq!(labels(TextLength, Operator::NotEqual), (Some("Length:"), None));
+        assert_eq!(
+            labels(Time, Operator::GreaterOrEqual),
+            (Some("Start time:"), None)
+        );
+        assert_eq!(
+            labels(Time, Operator::LessOrEqual),
+            (Some("End time:"), None)
+        );
+        assert_eq!(
+            labels(TextLength, Operator::NotEqual),
+            (Some("Length:"), None)
+        );
         assert_eq!(labels(Custom, Operator::Between), (Some("Formula:"), None));
     }
 }

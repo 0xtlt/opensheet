@@ -85,9 +85,14 @@ impl NodeFormat {
     /// One press of "Larger" (or of "Smaller").
     pub fn resize(&mut self, larger: bool) {
         let (x, y) = self.scale.unwrap_or((1.0, 1.0));
-        let by = if larger { NodeFormat::STEP } else { 1.0 / NodeFormat::STEP };
+        let by = if larger {
+            NodeFormat::STEP
+        } else {
+            1.0 / NodeFormat::STEP
+        };
         // Kept to the thousandth of a percent, as a file holds it.
-        let stepped = |factor: f32| ((factor * by).clamp(0.1, 10.0) * 100_000.0).round() / 100_000.0;
+        let stepped =
+            |factor: f32| ((factor * by).clamp(0.1, 10.0) * 100_000.0).round() / 100_000.0;
         let scale = (stepped(x), stepped(y));
         // Back where it started, the shape is the layout's again.
         let home = (scale.0 - 1.0).abs() < 0.005 && (scale.1 - 1.0).abs() < 0.005;
@@ -222,12 +227,17 @@ impl Layout {
 
     /// The identifier of Office's own definition of the layout.
     pub fn unique_id(self) -> String {
-        format!("urn:microsoft.com/office/officeart/2005/8/layout/{}", self.ooxml_name())
+        format!(
+            "urn:microsoft.com/office/officeart/2005/8/layout/{}",
+            self.ooxml_name()
+        )
     }
 
     pub fn from_unique_id(id: &str) -> Option<Layout> {
         let name = id.rsplit('/').next()?;
-        Layout::ALL.into_iter().find(|layout| layout.ooxml_name() == name)
+        Layout::ALL
+            .into_iter()
+            .find(|layout| layout.ooxml_name() == name)
     }
 
     /// The outline a new graphic starts with: empty entries.
@@ -264,7 +274,10 @@ fn mix(a: Color, b: Color, t: f32) -> Color {
         return b;
     }
     let channel = |shift: u32| {
-        let (x, y) = (((a.value() >> shift) & 0xFF) as f32, ((b.value() >> shift) & 0xFF) as f32);
+        let (x, y) = (
+            ((a.value() >> shift) & 0xFF) as f32,
+            ((b.value() >> shift) & 0xFF) as f32,
+        );
         ((x + (y - x) * t).round() as u32) << shift
     };
     Color(channel(16) | channel(8) | channel(0))
@@ -288,7 +301,10 @@ pub enum ColorScheme {
 impl Default for ColorScheme {
     /// "Colored Fill - Accent 1", what a new graphic has.
     fn default() -> ColorScheme {
-        ColorScheme::Accent { accent: 1, variant: 2 }
+        ColorScheme::Accent {
+            accent: 1,
+            variant: 2,
+        }
     }
 }
 
@@ -310,7 +326,11 @@ struct Paint {
 impl ColorScheme {
     /// Every choice, in the order of the Change Colors gallery.
     pub fn all() -> Vec<ColorScheme> {
-        let mut out = vec![ColorScheme::Dark(1), ColorScheme::Dark(3), ColorScheme::Dark(2)];
+        let mut out = vec![
+            ColorScheme::Dark(1),
+            ColorScheme::Dark(3),
+            ColorScheme::Dark(2),
+        ];
         out.extend((1..=5).map(ColorScheme::Colorful));
         for accent in 1..=6 {
             out.extend((1..=5).map(|variant| ColorScheme::Accent { accent, variant }));
@@ -323,12 +343,17 @@ impl ColorScheme {
         match self {
             ColorScheme::Dark(n) => format!("accent0_{}", n.clamp(1, 3)),
             ColorScheme::Colorful(n) => format!("colorful{}", n.clamp(1, 5)),
-            ColorScheme::Accent { accent, variant } => format!("accent{}_{}", accent.clamp(1, 6), variant.clamp(1, 5)),
+            ColorScheme::Accent { accent, variant } => {
+                format!("accent{}_{}", accent.clamp(1, 6), variant.clamp(1, 5))
+            }
         }
     }
 
     pub fn unique_id(self) -> String {
-        format!("urn:microsoft.com/office/officeart/2005/8/colors/{}", self.ooxml_name())
+        format!(
+            "urn:microsoft.com/office/officeart/2005/8/colors/{}",
+            self.ooxml_name()
+        )
     }
 
     /// The category files give the variant (`csCatId`).
@@ -342,14 +367,24 @@ impl ColorScheme {
 
     pub fn from_unique_id(id: &str) -> Option<ColorScheme> {
         let name = id.rsplit('/').next()?;
-        ColorScheme::all().into_iter().find(|scheme| scheme.ooxml_name() == name)
+        ColorScheme::all()
+            .into_iter()
+            .find(|scheme| scheme.ooxml_name() == name)
     }
 
     /// The paint of the `index`th of `count` shapes.
     fn paint(self, theme: &Theme, index: usize, count: usize) -> Paint {
-        let (dark_1, light_1, dark_2) = (theme.color(ThemeSlot::Dark1, 0.0), theme.color(ThemeSlot::Light1, 0.0), theme.color(ThemeSlot::Dark2, 0.0));
+        let (dark_1, light_1, dark_2) = (
+            theme.color(ThemeSlot::Dark1, 0.0),
+            theme.color(ThemeSlot::Light1, 0.0),
+            theme.color(ThemeSlot::Dark2, 0.0),
+        );
         let accent = |number: u8| theme.accent(number.clamp(1, 6) as usize, 0.0);
-        let along = if count > 1 { index as f32 / (count - 1) as f32 } else { 0.0 };
+        let along = if count > 1 {
+            index as f32 / (count - 1) as f32
+        } else {
+            0.0
+        };
         let outlined = |color: Color| Paint {
             fill: light_1,
             line: color,
@@ -376,8 +411,16 @@ impl ColorScheme {
                 let color = accent(a);
                 match variant {
                     1 => outlined(color),
-                    3 => filled(mix(mix(color, dark_1, 0.2), mix(color, light_1, 0.5), along)),
-                    4 => filled(mix(mix(color, dark_1, 0.2), mix(color, light_1, 0.5), 1.0 - (2.0 * along - 1.0).abs())),
+                    3 => filled(mix(
+                        mix(color, dark_1, 0.2),
+                        mix(color, light_1, 0.5),
+                        along,
+                    )),
+                    4 => filled(mix(
+                        mix(color, dark_1, 0.2),
+                        mix(color, light_1, 0.5),
+                        1.0 - (2.0 * along - 1.0).abs(),
+                    )),
                     5 => Paint {
                         opacity: 0.9 - 0.5 * along,
                         ..filled(color)
@@ -421,27 +464,39 @@ impl QuickStyle {
     }
 
     pub fn unique_id(self) -> String {
-        format!("urn:microsoft.com/office/officeart/2005/8/quickstyle/{}", self.ooxml_name())
+        format!(
+            "urn:microsoft.com/office/officeart/2005/8/quickstyle/{}",
+            self.ooxml_name()
+        )
     }
 
     pub fn from_unique_id(id: &str) -> Option<QuickStyle> {
         let name = id.rsplit('/').next()?;
-        QuickStyle::ALL.into_iter().find(|style| style.ooxml_name() == name)
+        QuickStyle::ALL
+            .into_iter()
+            .find(|style| style.ooxml_name() == name)
     }
 
     /// The fill, the outline and the colour of the text of a shape
     /// painted with `paint` in this style.
     fn look(self, paint: Paint, theme: &Theme) -> (Color, Option<Outline>, Color) {
-        let (dark_1, light_1) = (theme.color(ThemeSlot::Dark1, 0.0), theme.color(ThemeSlot::Light1, 0.0));
+        let (dark_1, light_1) = (
+            theme.color(ThemeSlot::Dark1, 0.0),
+            theme.color(ThemeSlot::Light1, 0.0),
+        );
         let line = |color: Color, width: f32| Some(Outline::solid(color, width));
         match self {
             QuickStyle::Simple => (paint.fill, line(paint.line, 1.0), paint.text),
             QuickStyle::WhiteOutline => (paint.fill, line(paint.line, 3.0), paint.text),
-            QuickStyle::SubtleEffect if paint.filled => (mix(paint.fill, light_1, 0.6), line(paint.base, 0.5), dark_1),
+            QuickStyle::SubtleEffect if paint.filled => {
+                (mix(paint.fill, light_1, 0.6), line(paint.base, 0.5), dark_1)
+            }
             QuickStyle::SubtleEffect => (paint.fill, line(paint.line, 0.5), paint.text),
             QuickStyle::ModerateEffect if paint.filled => (paint.fill, None, paint.text),
             QuickStyle::ModerateEffect => (paint.fill, line(paint.line, 1.5), paint.text),
-            QuickStyle::IntenseEffect if paint.filled => (mix(paint.fill, dark_1, 0.15), None, paint.text),
+            QuickStyle::IntenseEffect if paint.filled => {
+                (mix(paint.fill, dark_1, 0.15), None, paint.text)
+            }
             QuickStyle::IntenseEffect => (paint.fill, line(paint.line, 2.25), paint.text),
         }
     }
@@ -513,12 +568,18 @@ pub struct Origin {
 
 /// The name Excel gives a graphic, before its number.
 pub fn name(locale: &Locale) -> &'static str {
-    localized(locale, ["Diagram", "Diagramme", "Diagrama", "Diagramm", "Diagramma"])
+    localized(
+        locale,
+        ["Diagram", "Diagramme", "Diagrama", "Diagramm", "Diagramma"],
+    )
 }
 
 /// What an empty entry shows in its shape on screen.
 pub fn placeholder(locale: &Locale) -> &'static str {
-    localized(locale, ["[Text]", "[Texte]", "[Texto]", "[Text]", "[Testo]"])
+    localized(
+        locale,
+        ["[Text]", "[Texte]", "[Texto]", "[Text]", "[Testo]"],
+    )
 }
 
 /// The size of a new graphic, in pixels at 100 %: 6 by 4 inches.
@@ -617,7 +678,8 @@ impl SmartArt {
 
     /// How many shapes the graphic is laid out as (whatever its frame).
     pub fn piece_count(&self) -> usize {
-        self.pieces(&Theme::default(), DEFAULT_SIZE.0, DEFAULT_SIZE.1).len()
+        self.pieces(&Theme::default(), DEFAULT_SIZE.0, DEFAULT_SIZE.1)
+            .len()
     }
 
     /// How many objects the graphic is in a file: its frame alone while
@@ -633,7 +695,10 @@ impl SmartArt {
 
     /// The outline as the Text Pane shows it.
     pub fn outline(&self) -> Vec<Line> {
-        self.rows().into_iter().map(|(level, text, _)| (level, text)).collect()
+        self.rows()
+            .into_iter()
+            .map(|(level, text, _)| (level, text))
+            .collect()
     }
 
     fn rows(&self) -> Vec<Row> {
@@ -645,13 +710,19 @@ impl SmartArt {
     /// Replace the outline (levels are brought in order). The shapes of
     /// the new entries are as the graphic makes them.
     pub fn set_outline(&mut self, lines: &[Line]) {
-        let rows: Vec<Row> = lines.iter().map(|(level, text)| (*level, text.clone(), NodeFormat::default())).collect();
+        let rows: Vec<Row> = lines
+            .iter()
+            .map(|(level, text)| (*level, text.clone(), NodeFormat::default()))
+            .collect();
         self.nodes = tree(&rows);
     }
 
     /// What was changed by hand of the shape of the entry on a line.
     pub fn format(&self, line: usize) -> Option<NodeFormat> {
-        self.rows().into_iter().nth(line).map(|(_, _, format)| format)
+        self.rows()
+            .into_iter()
+            .nth(line)
+            .map(|(_, _, format)| format)
     }
 
     /// Change the look of the shape of the entry on a line; `false` when
@@ -887,7 +958,10 @@ impl SmartArt {
     pub fn pieces(&self, theme: &Theme, width: f32, height: f32) -> Vec<Piece> {
         let (width, height) = (width.max(1.0), height.max(1.0));
         if let Some(foreign) = &self.foreign {
-            let (sx, sy) = (width / foreign.size.0.max(1.0), height / foreign.size.1.max(1.0));
+            let (sx, sy) = (
+                width / foreign.size.0.max(1.0),
+                height / foreign.size.1.max(1.0),
+            );
             return foreign
                 .pieces
                 .iter()
@@ -920,8 +994,18 @@ impl SmartArt {
         // What the Format tab gave a shape: its outline and its size
         // before the text is fitted to it, its paint after (the size of
         // a text does not depend on its colour).
-        let formats: Vec<NodeFormat> = self.rows().into_iter().map(|(_, _, format)| format).collect();
-        let formatted = |piece: &Piece| piece.node.and_then(|line| formats.get(line)).filter(|format| !format.is_plain()).cloned();
+        let formats: Vec<NodeFormat> = self
+            .rows()
+            .into_iter()
+            .map(|(_, _, format)| format)
+            .collect();
+        let formatted = |piece: &Piece| {
+            piece
+                .node
+                .and_then(|line| formats.get(line))
+                .filter(|format| !format.is_plain())
+                .cloned()
+        };
         for piece in &mut pieces {
             if let Some(format) = formatted(piece) {
                 format.shape(piece);
@@ -994,7 +1078,11 @@ fn fits(text: &str, width: f32, height: f32, size: f32) -> bool {
             if length > per_row {
                 return false;
             }
-            let needed = if used > 0.0 { used + 1.0 + length } else { length };
+            let needed = if used > 0.0 {
+                used + 1.0 + length
+            } else {
+                length
+            };
             if needed > per_row {
                 rows += 1.0;
                 used = length;
@@ -1011,14 +1099,26 @@ fn fits(text: &str, width: f32, height: f32, size: f32) -> bool {
 /// details under them another.
 fn fit_text(pieces: &mut [Piece]) {
     for details in [false, true] {
-        let of_kind = |piece: &Piece| piece.node.is_some() && (piece.shape.fill.is_none() && piece.shape.outline.is_none()) == details;
+        let of_kind = |piece: &Piece| {
+            piece.node.is_some()
+                && (piece.shape.fill.is_none() && piece.shape.outline.is_none()) == details
+        };
         let fits_all = |points: f32| {
             let size = points * 96.0 / 72.0;
             pieces.iter().filter(|piece| of_kind(piece)).all(|piece| {
                 let [left, top, right, bottom] = piece.shape.text_rect(piece.width, piece.height);
                 // An empty entry shows a placeholder of six characters.
-                let text = if piece.shape.text.is_empty() { "[Text]" } else { &piece.shape.text };
-                fits(text, (right - left) * piece.width, (bottom - top) * piece.height, size)
+                let text = if piece.shape.text.is_empty() {
+                    "[Text]"
+                } else {
+                    &piece.shape.text
+                };
+                fits(
+                    text,
+                    (right - left) * piece.width,
+                    (bottom - top) * piece.height,
+                    size,
+                )
             })
         };
         let mut points = MAX_TEXT_PT;
@@ -1043,7 +1143,15 @@ impl Composer<'_> {
     /// The shape of an entry: the `index`th of `count` shapes of its
     /// kind, showing line `line` of the outline.
     #[allow(clippy::too_many_arguments)]
-    fn node(&mut self, preset: ShapePreset, frame: (f32, f32, f32, f32), text: String, line: usize, index: usize, count: usize) -> &mut Piece {
+    fn node(
+        &mut self,
+        preset: ShapePreset,
+        frame: (f32, f32, f32, f32),
+        text: String,
+        line: usize,
+        index: usize,
+        count: usize,
+    ) -> &mut Piece {
         let paint = self.art.colors.paint(self.theme, index, count);
         let (fill, outline, ink) = self.art.style.look(paint, self.theme);
         let mut shape = ShapeTool::Rectangle.shape();
@@ -1096,10 +1204,21 @@ impl Composer<'_> {
     }
 
     /// An arrow between two entries, pointing right before it is turned.
-    fn arrow(&mut self, centre: (f32, f32), size: (f32, f32), rotation: f32, index: usize, count: usize) {
+    fn arrow(
+        &mut self,
+        centre: (f32, f32),
+        size: (f32, f32),
+        rotation: f32,
+        index: usize,
+        count: usize,
+    ) {
         let paint = self.art.colors.paint(self.theme, index, count);
         let mut shape = ShapeTool::RightArrow.shape();
-        shape.fill = Some(mix(paint.base, self.theme.color(ThemeSlot::Light1, 0.0), 0.6));
+        shape.fill = Some(mix(
+            paint.base,
+            self.theme.color(ThemeSlot::Light1, 0.0),
+            0.6,
+        ));
         shape.outline = None;
         self.pieces.push(Piece {
             shape,
@@ -1119,7 +1238,10 @@ impl Composer<'_> {
     fn connector(&mut self, from: (f32, f32), to: (f32, f32)) {
         let paint = self.art.colors.paint(self.theme, 0, 1);
         let mut shape = ShapeTool::Line.shape();
-        shape.outline = Some(Outline::solid(mix(paint.base, self.theme.color(ThemeSlot::Dark1, 0.0), 0.4), 1.0));
+        shape.outline = Some(Outline::solid(
+            mix(paint.base, self.theme.color(ThemeSlot::Dark1, 0.0), 0.4),
+            1.0,
+        ));
         self.pieces.push(Piece {
             shape,
             x: from.0.min(to.0),
@@ -1153,7 +1275,11 @@ impl Composer<'_> {
     /// Blocks in rows: as many to a row as suits the proportions of the
     /// frame; a last row that is not full is centred.
     fn block_list(&mut self, width: f32, height: f32) {
-        let nodes: Vec<(usize, String)> = self.top().into_iter().map(|(line, node)| (line, text_with_bullets(node))).collect();
+        let nodes: Vec<(usize, String)> = self
+            .top()
+            .into_iter()
+            .map(|(line, node)| (line, text_with_bullets(node)))
+            .collect();
         let count = nodes.len();
         if count == 0 {
             return;
@@ -1166,15 +1292,25 @@ impl Composer<'_> {
             let by_height = height / (rows as f32 * aspect + (rows - 1) as f32 * gap);
             by_width.min(by_height)
         };
-        let columns = ((count as f32 * width / height * aspect).sqrt().ceil() as usize).clamp(1, count);
+        let columns =
+            ((count as f32 * width / height * aspect).sqrt().ceil() as usize).clamp(1, count);
         let w = side(columns);
         let rows = count.div_ceil(columns);
         let top = (height - (rows as f32 * aspect + (rows - 1) as f32 * gap) * w) / 2.0;
         for (i, (line, text)) in nodes.into_iter().enumerate() {
             let (row, column) = (i / columns, i % columns);
-            let in_row = if row + 1 == rows { count - row * columns } else { columns };
+            let in_row = if row + 1 == rows {
+                count - row * columns
+            } else {
+                columns
+            };
             let left = (width - (in_row as f32 + (in_row - 1) as f32 * gap) * w) / 2.0;
-            let frame = (left + column as f32 * (1.0 + gap) * w, top + row as f32 * (aspect + gap) * w, w, aspect * w);
+            let frame = (
+                left + column as f32 * (1.0 + gap) * w,
+                top + row as f32 * (aspect + gap) * w,
+                w,
+                aspect * w,
+            );
             self.node(ShapePreset::Rect, frame, text, line, i, count);
         }
     }
@@ -1203,17 +1339,32 @@ impl Composer<'_> {
         }
         // A bar is one unit high; a bullet 0.55; bars are 0.12 apart.
         let (bullet, gap) = (0.55, 0.12);
-        let units: f32 = entries.iter().map(|(_, _, lines)| 1.0 + lines.len() as f32 * bullet).sum::<f32>() + (count - 1) as f32 * gap;
+        let units: f32 = entries
+            .iter()
+            .map(|(_, _, lines)| 1.0 + lines.len() as f32 * bullet)
+            .sum::<f32>()
+            + (count - 1) as f32 * gap;
         let unit = (height / units).min(width * 0.2);
         let mut y = (height - units * unit) / 2.0;
         for (i, (line, text, lines)) in entries.into_iter().enumerate() {
-            let bar = self.node(ShapePreset::RoundRect, (0.0, y, width, unit), text, line, i, count);
+            let bar = self.node(
+                ShapePreset::RoundRect,
+                (0.0, y, width, unit),
+                text,
+                line,
+                i,
+                count,
+            );
             bar.shape.align = TextAlign::Left;
             bar.shape.anchor = TextAnchor::Middle;
             y += unit;
             if !lines.is_empty() {
                 let room = lines.len() as f32 * bullet * unit;
-                self.details((unit * 0.3, y, width - unit * 0.3, room), lines.join("\n"), line + 1);
+                self.details(
+                    (unit * 0.3, y, width - unit * 0.3, room),
+                    lines.join("\n"),
+                    line + 1,
+                );
                 y += room;
             }
             y += gap * unit;
@@ -1222,7 +1373,11 @@ impl Composer<'_> {
 
     /// Boxes in a row with an arrow between two.
     fn process(&mut self, width: f32, height: f32) {
-        let nodes: Vec<(usize, String)> = self.top().into_iter().map(|(line, node)| (line, text_with_bullets(node))).collect();
+        let nodes: Vec<(usize, String)> = self
+            .top()
+            .into_iter()
+            .map(|(line, node)| (line, text_with_bullets(node)))
+            .collect();
         let count = nodes.len();
         if count == 0 {
             return;
@@ -1234,9 +1389,22 @@ impl Composer<'_> {
         let middle = height / 2.0;
         for (i, (line, text)) in nodes.into_iter().enumerate() {
             let x = left + i as f32 * (1.0 + between) * w;
-            self.node(ShapePreset::RoundRect, (x, middle - aspect * w / 2.0, w, aspect * w), text, line, i, count);
+            self.node(
+                ShapePreset::RoundRect,
+                (x, middle - aspect * w / 2.0, w, aspect * w),
+                text,
+                line,
+                i,
+                count,
+            );
             if i + 1 < count {
-                self.arrow((x + w + between * w / 2.0, middle), (between * w * 0.53, w * 0.25), 0.0, i, count);
+                self.arrow(
+                    (x + w + between * w / 2.0, middle),
+                    (between * w * 0.53, w * 0.25),
+                    0.0,
+                    i,
+                    count,
+                );
             }
         }
     }
@@ -1252,7 +1420,11 @@ impl Composer<'_> {
                     children: node.children.clone(),
                     ..Node::default()
                 });
-                (line, node.text.clone(), details.trim_start_matches('\n').to_string())
+                (
+                    line,
+                    node.text.clone(),
+                    details.trim_start_matches('\n').to_string(),
+                )
             })
             .collect();
         let count = top.len();
@@ -1269,7 +1441,16 @@ impl Composer<'_> {
             let x = i as f32 * (1.0 - overlap) * w;
             self.node(ShapePreset::Chevron, (x, y, w, h), text, line, i, count);
             if !details.is_empty() {
-                self.details((x + h * 0.25, h + height * 0.03, w * (1.0 - overlap) - h * 0.25, height - h - height * 0.03), details, line + 1);
+                self.details(
+                    (
+                        x + h * 0.25,
+                        h + height * 0.03,
+                        w * (1.0 - overlap) - h * 0.25,
+                        height - h - height * 0.03,
+                    ),
+                    details,
+                    line + 1,
+                );
             }
         }
     }
@@ -1277,7 +1458,11 @@ impl Composer<'_> {
     /// Circles around a circle, clockwise from the top, with an arrow
     /// from each to the next.
     fn cycle(&mut self, width: f32, height: f32) {
-        let nodes: Vec<(usize, String)> = self.top().into_iter().map(|(line, node)| (line, text_with_bullets(node))).collect();
+        let nodes: Vec<(usize, String)> = self
+            .top()
+            .into_iter()
+            .map(|(line, node)| (line, text_with_bullets(node)))
+            .collect();
         let count = nodes.len();
         if count == 0 {
             return;
@@ -1286,7 +1471,14 @@ impl Composer<'_> {
         let centre = (width / 2.0, height / 2.0);
         if count == 1 {
             let d = side * 0.6;
-            self.node(ShapePreset::Ellipse, (centre.0 - d / 2.0, centre.1 - d / 2.0, d, d), nodes[0].1.clone(), nodes[0].0, 0, 1);
+            self.node(
+                ShapePreset::Ellipse,
+                (centre.0 - d / 2.0, centre.1 - d / 2.0, d, d),
+                nodes[0].1.clone(),
+                nodes[0].0,
+                0,
+                1,
+            );
             return;
         }
         // Neighbours are 1.4 diameters apart, centre to centre.
@@ -1295,12 +1487,31 @@ impl Composer<'_> {
         let radius = (side - d) / 2.0;
         for (i, (line, text)) in nodes.into_iter().enumerate() {
             let angle = i as f32 * step - std::f32::consts::FRAC_PI_2;
-            let (x, y) = (centre.0 + radius * angle.cos(), centre.1 + radius * angle.sin());
-            self.node(ShapePreset::Ellipse, (x - d / 2.0, y - d / 2.0, d, d), text, line, i, count);
+            let (x, y) = (
+                centre.0 + radius * angle.cos(),
+                centre.1 + radius * angle.sin(),
+            );
+            self.node(
+                ShapePreset::Ellipse,
+                (x - d / 2.0, y - d / 2.0, d, d),
+                text,
+                line,
+                i,
+                count,
+            );
             // Half way to the next, pointing along the circle.
             let between = angle + step / 2.0;
-            let at = (centre.0 + radius * between.cos(), centre.1 + radius * between.sin());
-            self.arrow(at, (d * 0.27, d * 0.34), between.to_degrees() + 90.0, i, count);
+            let at = (
+                centre.0 + radius * between.cos(),
+                centre.1 + radius * between.sin(),
+            );
+            self.arrow(
+                at,
+                (d * 0.27, d * 0.34),
+                between.to_degrees() + 90.0,
+                i,
+                count,
+            );
         }
     }
 
@@ -1317,7 +1528,14 @@ impl Composer<'_> {
         }
         /// Place a subtree from column `left` on; returns the columns it
         /// takes. Boxes are one column wide and a quarter apart.
-        fn place(node: &Node, line: &mut usize, left: f32, row: usize, parent: Option<usize>, out: &mut Vec<Placed>) -> f32 {
+        fn place(
+            node: &Node,
+            line: &mut usize,
+            left: f32,
+            row: usize,
+            parent: Option<usize>,
+            out: &mut Vec<Placed>,
+        ) -> f32 {
             let me = out.len();
             out.push(Placed {
                 line: *line,
@@ -1340,7 +1558,11 @@ impl Composer<'_> {
             } else {
                 // Over the middle of its children.
                 let first = out[me + 1].column;
-                let last = out.iter().rev().find(|placed| placed.parent == Some(me)).map_or(first, |placed| placed.column);
+                let last = out
+                    .iter()
+                    .rev()
+                    .find(|placed| placed.parent == Some(me))
+                    .map_or(first, |placed| placed.column);
                 (first + last) / 2.0 + (span - taken) / 2.0
             };
             span
@@ -1364,7 +1586,12 @@ impl Composer<'_> {
         let h = aspect * w;
         let left = (width - columns * w) / 2.0;
         let top = (height - h * (rows as f32 + (rows - 1) as f32 * gap)) / 2.0;
-        let centre = |placed: &Placed| (left + placed.column * w, top + placed.row as f32 * h * (1.0 + gap));
+        let centre = |placed: &Placed| {
+            (
+                left + placed.column * w,
+                top + placed.row as f32 * h * (1.0 + gap),
+            )
+        };
         // Lines first: they lie under the boxes.
         for placed in &boxes {
             let Some(parent) = placed.parent else {
@@ -1382,14 +1609,25 @@ impl Composer<'_> {
         let count = boxes.len();
         for (i, placed) in boxes.iter().enumerate() {
             let (x, y) = centre(placed);
-            self.node(ShapePreset::Rect, (x - w / 2.0, y, w, h), placed.text.clone(), placed.line, i, count);
+            self.node(
+                ShapePreset::Rect,
+                (x - w / 2.0, y, w, h),
+                placed.text.clone(),
+                placed.line,
+                i,
+                count,
+            );
         }
     }
 
     /// Circles that overlap, around the middle of the frame; two lie side
     /// by side.
     fn venn(&mut self, width: f32, height: f32) {
-        let nodes: Vec<(usize, String)> = self.top().into_iter().map(|(line, node)| (line, text_with_bullets(node))).collect();
+        let nodes: Vec<(usize, String)> = self
+            .top()
+            .into_iter()
+            .map(|(line, node)| (line, text_with_bullets(node)))
+            .collect();
         let count = nodes.len();
         if count == 0 {
             return;
@@ -1397,7 +1635,11 @@ impl Composer<'_> {
         let centre = (width / 2.0, height / 2.0);
         let step = std::f32::consts::TAU / count as f32;
         // Neighbours are 0.62 diameters apart, centre to centre.
-        let reach = if count == 1 { 0.0 } else { 0.31 / (step / 2.0).sin() };
+        let reach = if count == 1 {
+            0.0
+        } else {
+            0.31 / (step / 2.0).sin()
+        };
         let d = if count == 2 {
             height.min(width / (1.0 + 2.0 * reach))
         } else {
@@ -1410,9 +1652,19 @@ impl Composer<'_> {
             } else {
                 i as f32 * step - std::f32::consts::FRAC_PI_2
             };
-            let (x, y) = (centre.0 + reach * d * angle.cos(), centre.1 + reach * d * angle.sin());
+            let (x, y) = (
+                centre.0 + reach * d * angle.cos(),
+                centre.1 + reach * d * angle.sin(),
+            );
             let ink = self.theme.color(ThemeSlot::Dark1, 0.0);
-            let circle = self.node(ShapePreset::Ellipse, (x - d / 2.0, y - d / 2.0, d, d), text, line, i, count);
+            let circle = self.node(
+                ShapePreset::Ellipse,
+                (x - d / 2.0, y - d / 2.0, d, d),
+                text,
+                line,
+                i,
+                count,
+            );
             circle.opacity = circle.opacity.min(0.5);
             // Over one another, what is written must stay readable.
             circle.shape.font.color = Some(ink);
@@ -1421,7 +1673,11 @@ impl Composer<'_> {
 
     /// Levels of a triangle, the first on top.
     fn pyramid(&mut self, width: f32, height: f32) {
-        let nodes: Vec<(usize, String)> = self.top().into_iter().map(|(line, node)| (line, text_with_bullets(node))).collect();
+        let nodes: Vec<(usize, String)> = self
+            .top()
+            .into_iter()
+            .map(|(line, node)| (line, text_with_bullets(node)))
+            .collect();
         let count = nodes.len();
         if count == 0 {
             return;
@@ -1465,18 +1721,30 @@ mod tests {
     }
 
     fn outline(art: &SmartArt) -> String {
-        art.outline().iter().map(|(level, text)| format!("{}{text}", ">".repeat(*level))).collect::<Vec<_>>().join(" ")
+        art.outline()
+            .iter()
+            .map(|(level, text)| format!("{}{text}", ">".repeat(*level)))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     fn lettered(layout: Layout, lines: &[(usize, &str)]) -> SmartArt {
         let mut art = SmartArt::new(layout);
-        art.set_outline(&lines.iter().map(|(level, text)| (*level, text.to_string())).collect::<Vec<_>>());
+        art.set_outline(
+            &lines
+                .iter()
+                .map(|(level, text)| (*level, text.to_string()))
+                .collect::<Vec<_>>(),
+        );
         art
     }
 
     #[test]
     fn the_outline_is_a_list_of_lines() {
-        let mut art = lettered(Layout::OrgChart, &[(0, "a"), (1, "b"), (2, "c"), (1, "d"), (0, "e")]);
+        let mut art = lettered(
+            Layout::OrgChart,
+            &[(0, "a"), (1, "b"), (2, "c"), (1, "d"), (0, "e")],
+        );
         assert_eq!(outline(&art), "a >b >>c >d e");
         assert_eq!(art.nodes.len(), 2);
         assert_eq!(art.nodes[0].children[0].children[0].text, "c");
@@ -1518,7 +1786,10 @@ mod tests {
         assert_eq!(outline(&art), "a > >>b >>>c >d");
         assert_eq!(art.add_after(99), None);
         // Entries change places with their neighbours, under one parent.
-        let mut art = lettered(Layout::OrgChart, &[(0, "a"), (1, "b"), (0, "c"), (1, "d"), (1, "e")]);
+        let mut art = lettered(
+            Layout::OrgChart,
+            &[(0, "a"), (1, "b"), (0, "c"), (1, "d"), (1, "e")],
+        );
         assert_eq!(art.move_entry(2, true), Some(0));
         assert_eq!(outline(&art), "c >d >e a >b");
         assert_eq!(art.move_entry(0, false), Some(2));
@@ -1536,7 +1807,10 @@ mod tests {
     }
 
     fn overlap(a: &Piece, b: &Piece) -> bool {
-        a.x < b.x + b.width - 0.01 && b.x < a.x + a.width - 0.01 && a.y < b.y + b.height - 0.01 && b.y < a.y + a.height - 0.01
+        a.x < b.x + b.width - 0.01
+            && b.x < a.x + a.width - 0.01
+            && a.y < b.y + b.height - 0.01
+            && b.y < a.y + a.height - 0.01
     }
 
     #[test]
@@ -1544,26 +1818,44 @@ mod tests {
         for layout in Layout::ALL {
             for count in [1usize, 2, 3, 5, 8] {
                 let mut art = SmartArt::new(layout);
-                art.set_outline(&(0..count).flat_map(|i| [(0, format!("Entry {i}")), (1, "Detail".to_string())]).collect::<Vec<_>>());
+                art.set_outline(
+                    &(0..count)
+                        .flat_map(|i| [(0, format!("Entry {i}")), (1, "Detail".to_string())])
+                        .collect::<Vec<_>>(),
+                );
                 for (width, height) in [(576.0, 384.0), (200.0, 600.0), (900.0, 120.0)] {
                     let pieces = art.pieces(&theme(), width, height);
                     let shown = pieces.iter().filter(|piece| piece.node.is_some()).count();
                     assert!(shown >= count, "{layout:?} {count}: {shown} shapes");
                     for piece in &pieces {
                         assert!(
-                            piece.x >= -0.5 && piece.y >= -0.5 && piece.x + piece.width <= width + 0.5 && piece.y + piece.height <= height + 0.5,
+                            piece.x >= -0.5
+                                && piece.y >= -0.5
+                                && piece.x + piece.width <= width + 0.5
+                                && piece.y + piece.height <= height + 0.5,
                             "{layout:?} {count} in {width}x{height}: {piece:?}"
                         );
-                        assert!(piece.width.is_finite() && piece.height.is_finite() && piece.width >= 0.0 && piece.height >= 0.0);
+                        assert!(
+                            piece.width.is_finite()
+                                && piece.height.is_finite()
+                                && piece.width >= 0.0
+                                && piece.height >= 0.0
+                        );
                         let size = piece.shape.font.size_pt();
-                        assert!((MIN_TEXT_PT..=MAX_TEXT_PT).contains(&size), "{layout:?}: {size}");
+                        assert!(
+                            (MIN_TEXT_PT..=MAX_TEXT_PT).contains(&size),
+                            "{layout:?}: {size}"
+                        );
                     }
                 }
             }
             assert_eq!(Layout::from_unique_id(&layout.unique_id()), Some(layout));
             assert!(!layout.sample().is_empty());
         }
-        assert_eq!(Layout::from_unique_id("urn:microsoft.com/office/officeart/2005/8/layout/hList1"), None);
+        assert_eq!(
+            Layout::from_unique_id("urn:microsoft.com/office/officeart/2005/8/layout/hList1"),
+            None
+        );
     }
 
     #[test]
@@ -1572,15 +1864,32 @@ mod tests {
         // the second centred under the first.
         let blocks = SmartArt::new(Layout::BlockList).pieces(&theme(), 576.0, 384.0);
         assert_eq!(blocks.len(), 5);
-        assert!((blocks[0].y - blocks[2].y).abs() < 0.01 && blocks[3].y > blocks[0].y + blocks[0].height);
+        assert!(
+            (blocks[0].y - blocks[2].y).abs() < 0.01
+                && blocks[3].y > blocks[0].y + blocks[0].height
+        );
         assert!((blocks[0].height / blocks[0].width - 0.6).abs() < 1e-3);
-        assert!(blocks[3].x > blocks[0].x && blocks[4].x + blocks[4].width < blocks[2].x + blocks[2].width);
-        assert!(!blocks.iter().enumerate().any(|(i, a)| blocks[i + 1..].iter().any(|b| overlap(a, b))));
+        assert!(
+            blocks[3].x > blocks[0].x
+                && blocks[4].x + blocks[4].width < blocks[2].x + blocks[2].width
+        );
+        assert!(
+            !blocks
+                .iter()
+                .enumerate()
+                .any(|(i, a)| blocks[i + 1..].iter().any(|b| overlap(a, b)))
+        );
         // A process: three boxes, two arrows between them, in a row.
         let process = SmartArt::new(Layout::Process).pieces(&theme(), 576.0, 384.0);
-        assert_eq!(process.iter().filter(|piece| piece.node.is_none()).count(), 2);
+        assert_eq!(
+            process.iter().filter(|piece| piece.node.is_none()).count(),
+            2
+        );
         assert_eq!(process[1].shape.preset, ShapePreset::RightArrow);
-        assert!(process[0].x + process[0].width < process[1].x && process[1].x + process[1].width < process[2].x);
+        assert!(
+            process[0].x + process[0].width < process[1].x
+                && process[1].x + process[1].width < process[2].x
+        );
         // Right to left, the first box is on the right and arrows point left.
         let mut reversed = SmartArt::new(Layout::Process);
         reversed.rtl = true;
@@ -1589,25 +1898,52 @@ mod tests {
         assert!(mirrored[1].flip_h && !mirrored[0].flip_h);
         // Chevrons reach into one another.
         let chevrons = SmartArt::new(Layout::Chevron).pieces(&theme(), 600.0, 300.0);
-        assert!(chevrons.iter().all(|piece| piece.shape.preset == ShapePreset::Chevron));
-        assert!(chevrons[1].x < chevrons[0].x + chevrons[0].width && chevrons[2].x + chevrons[2].width <= 600.01);
+        assert!(
+            chevrons
+                .iter()
+                .all(|piece| piece.shape.preset == ShapePreset::Chevron)
+        );
+        assert!(
+            chevrons[1].x < chevrons[0].x + chevrons[0].width
+                && chevrons[2].x + chevrons[2].width <= 600.01
+        );
         // A cycle starts at the top and runs clockwise, an arrow after
         // each circle.
         let cycle = SmartArt::new(Layout::Cycle).pieces(&theme(), 400.0, 400.0);
         assert_eq!(cycle.len(), 10);
-        assert!((cycle[0].x + cycle[0].width / 2.0 - 200.0).abs() < 0.01 && cycle[0].y.abs() < 0.01);
+        assert!(
+            (cycle[0].x + cycle[0].width / 2.0 - 200.0).abs() < 0.01 && cycle[0].y.abs() < 0.01
+        );
         assert!(cycle[2].x > cycle[0].x && cycle[2].y > cycle[0].y);
-        assert!((cycle[1].rotation - 36.0).abs() < 0.01, "{}", cycle[1].rotation);
+        assert!(
+            (cycle[1].rotation - 36.0).abs() < 0.01,
+            "{}",
+            cycle[1].rotation
+        );
         let circles: Vec<&Piece> = cycle.iter().filter(|piece| piece.node.is_some()).collect();
-        assert!(!circles.iter().enumerate().any(|(i, a)| circles[i + 1..].iter().any(|b| overlap(a, b) && (a.x - b.x).hypot(a.y - b.y) < a.width)));
+        assert!(!circles.iter().enumerate().any(|(i, a)| {
+            circles[i + 1..]
+                .iter()
+                .any(|b| overlap(a, b) && (a.x - b.x).hypot(a.y - b.y) < a.width)
+        }));
         // An organization chart: the head over its three reports, joined
         // by lines that lie under the boxes.
         let chart = SmartArt::new(Layout::OrgChart).pieces(&theme(), 576.0, 384.0);
         let boxes: Vec<&Piece> = chart.iter().filter(|piece| piece.node.is_some()).collect();
         assert_eq!(boxes.len(), 4);
-        assert!(chart[0].node.is_none() && chart.iter().filter(|piece| piece.node.is_none()).all(|line| line.width == 0.0 || line.height == 0.0));
-        assert!((boxes[0].x + boxes[0].width / 2.0 - (boxes[2].x + boxes[2].width / 2.0)).abs() < 0.01);
-        assert!(boxes[1].y > boxes[0].y + boxes[0].height && (boxes[1].y - boxes[3].y).abs() < 0.01);
+        assert!(
+            chart[0].node.is_none()
+                && chart
+                    .iter()
+                    .filter(|piece| piece.node.is_none())
+                    .all(|line| line.width == 0.0 || line.height == 0.0)
+        );
+        assert!(
+            (boxes[0].x + boxes[0].width / 2.0 - (boxes[2].x + boxes[2].width / 2.0)).abs() < 0.01
+        );
+        assert!(
+            boxes[1].y > boxes[0].y + boxes[0].height && (boxes[1].y - boxes[3].y).abs() < 0.01
+        );
         // Venn circles overlap and let one another show.
         let venn = SmartArt::new(Layout::Venn).pieces(&theme(), 576.0, 384.0);
         assert!(overlap(&venn[0], &venn[1]) && venn.iter().all(|piece| piece.opacity <= 0.5));
@@ -1622,7 +1958,10 @@ mod tests {
         assert_eq!(list.len(), 4);
         assert!(list[1].shape.fill.is_none() && list[1].y >= list[0].y + list[0].height - 0.01);
         assert_eq!(list[1].shape.text, "• ");
-        assert_eq!((list[0].node, list[1].node, list[2].node), (Some(0), Some(1), Some(2)));
+        assert_eq!(
+            (list[0].node, list[1].node, list[2].node),
+            (Some(0), Some(1), Some(2))
+        );
     }
 
     #[test]
@@ -1634,14 +1973,31 @@ mod tests {
         let long = pieces[0].shape.font.size_pt();
         assert!(long < short, "{long} {short}");
         // One size for every entry.
-        assert!(pieces.iter().filter(|piece| piece.node.is_some()).all(|piece| piece.shape.font.size_pt() == long));
+        assert!(
+            pieces
+                .iter()
+                .filter(|piece| piece.node.is_some())
+                .all(|piece| piece.shape.font.size_pt() == long)
+        );
         // What is under an entry is listed in its shape.
-        art.set_outline(&[(0, "Plan".into()), (1, "Scope".into()), (2, "Budget".into()), (0, "Do".into())]);
+        art.set_outline(&[
+            (0, "Plan".into()),
+            (1, "Scope".into()),
+            (2, "Budget".into()),
+            (0, "Do".into()),
+        ]);
         let pieces = art.pieces(&theme(), 576.0, 384.0);
         assert_eq!(pieces[0].shape.text, "Plan\n• Scope\n  • Budget");
-        assert_eq!((pieces[0].shape.align, pieces[2].shape.align), (TextAlign::Left, TextAlign::Center));
+        assert_eq!(
+            (pieces[0].shape.align, pieces[2].shape.align),
+            (TextAlign::Left, TextAlign::Center)
+        );
         assert_eq!((pieces[0].node, pieces[2].node), (Some(0), Some(3)));
-        assert!(fits("ab cd", 100.0, 40.0, 16.0) && !fits("abcdefghijklmnop", 60.0, 400.0, 16.0) && !fits("a\nb\nc", 100.0, 40.0, 16.0));
+        assert!(
+            fits("ab cd", 100.0, 40.0, 16.0)
+                && !fits("abcdefghijklmnop", 60.0, 400.0, 16.0)
+                && !fits("a\nb\nc", 100.0, 40.0, 16.0)
+        );
     }
 
     #[test]
@@ -1657,13 +2013,35 @@ mod tests {
         }));
         assert!(!art.set_format(1, |_| {}) && !art.set_format(7, |format| format.resize(true)));
         assert!(art.has_formats());
-        let of = |pieces: &[Piece], line: usize| pieces.iter().find(|piece| piece.node == Some(line)).unwrap().clone();
+        let of = |pieces: &[Piece], line: usize| {
+            pieces
+                .iter()
+                .find(|piece| piece.node == Some(line))
+                .unwrap()
+                .clone()
+        };
         let pieces = art.pieces(&theme(), 600.0, 300.0);
         let (was, is) = (of(&plain, 1), of(&pieces, 1));
-        assert_eq!((is.shape.preset, is.shape.fill, is.shape.outline, is.shape.font.color), (ShapePreset::Ellipse, Some(Color(0xC00000)), None, Some(Color(0x00FF00))));
+        assert_eq!(
+            (
+                is.shape.preset,
+                is.shape.fill,
+                is.shape.outline,
+                is.shape.font.color
+            ),
+            (
+                ShapePreset::Ellipse,
+                Some(Color(0xC00000)),
+                None,
+                Some(Color(0x00FF00))
+            )
+        );
         // Larger: a tenth more each way, about the same middle; the
         // other shapes stay where they were.
-        assert!((is.width / was.width - 1.1).abs() < 1e-3 && (is.height / was.height - 1.1).abs() < 1e-3);
+        assert!(
+            (is.width / was.width - 1.1).abs() < 1e-3
+                && (is.height / was.height - 1.1).abs() < 1e-3
+        );
         assert!((is.x + is.width / 2.0 - was.x - was.width / 2.0).abs() < 1e-3);
         let frame = |piece: Piece| (piece.x, piece.y, piece.width, piece.height);
         assert_eq!(frame(of(&pieces, 0)), frame(of(&plain, 0)));
@@ -1691,39 +2069,95 @@ mod tests {
     fn colours_and_styles() {
         assert_eq!(ColorScheme::all().len(), 38);
         for scheme in ColorScheme::all() {
-            assert_eq!(ColorScheme::from_unique_id(&scheme.unique_id()), Some(scheme), "{scheme:?}");
+            assert_eq!(
+                ColorScheme::from_unique_id(&scheme.unique_id()),
+                Some(scheme),
+                "{scheme:?}"
+            );
         }
-        assert_eq!(ColorScheme::default().unique_id(), "urn:microsoft.com/office/officeart/2005/8/colors/accent1_2");
-        assert_eq!(QuickStyle::from_unique_id("urn:microsoft.com/office/officeart/2005/8/quickstyle/simple3"), Some(QuickStyle::SubtleEffect));
+        assert_eq!(
+            ColorScheme::default().unique_id(),
+            "urn:microsoft.com/office/officeart/2005/8/colors/accent1_2"
+        );
+        assert_eq!(
+            QuickStyle::from_unique_id(
+                "urn:microsoft.com/office/officeart/2005/8/quickstyle/simple3"
+            ),
+            Some(QuickStyle::SubtleEffect)
+        );
         let look = |colors, style| {
             let mut art = SmartArt::new(Layout::BlockList);
             (art.colors, art.style) = (colors, style);
             let pieces = art.pieces(&theme(), 576.0, 384.0);
-            pieces.iter().map(|piece| (piece.shape.fill.unwrap(), piece.shape.outline.map(|line| (line.color, line.width)), piece.shape.font.color.unwrap())).collect::<Vec<_>>()
+            pieces
+                .iter()
+                .map(|piece| {
+                    (
+                        piece.shape.fill.unwrap(),
+                        piece.shape.outline.map(|line| (line.color, line.width)),
+                        piece.shape.font.color.unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>()
         };
         // A new graphic: accent 1 with a white line and white text.
         let plain = look(ColorScheme::default(), QuickStyle::Simple);
-        assert!(plain.iter().all(|shape| *shape == (accent(1), Some((LIGHT_1(), 1.0)), LIGHT_1())));
-        let outlined = look(ColorScheme::Accent { accent: 2, variant: 1 }, QuickStyle::Simple);
+        assert!(
+            plain
+                .iter()
+                .all(|shape| *shape == (accent(1), Some((LIGHT_1(), 1.0)), LIGHT_1()))
+        );
+        let outlined = look(
+            ColorScheme::Accent {
+                accent: 2,
+                variant: 1,
+            },
+            QuickStyle::Simple,
+        );
         assert_eq!(outlined[0], (LIGHT_1(), Some((accent(2), 1.0)), DARK_1()));
         // Colourful: one accent after the other, from the second.
         let colourful = look(ColorScheme::Colorful(1), QuickStyle::Simple);
-        assert_eq!((colourful[0].0, colourful[1].0, colourful[4].0), (accent(2), accent(3), accent(6)));
+        assert_eq!(
+            (colourful[0].0, colourful[1].0, colourful[4].0),
+            (accent(2), accent(3), accent(6))
+        );
         let range = look(ColorScheme::Colorful(3), QuickStyle::Simple);
         assert_eq!((range[0].0, range[4].0), (accent(3), accent(4)));
-        let gradient = look(ColorScheme::Accent { accent: 1, variant: 3 }, QuickStyle::Simple);
+        let gradient = look(
+            ColorScheme::Accent {
+                accent: 1,
+                variant: 3,
+            },
+            QuickStyle::Simple,
+        );
         assert!(gradient[0].0 != gradient[4].0 && gradient[2].0 != gradient[0].0);
-        let looped = look(ColorScheme::Accent { accent: 1, variant: 4 }, QuickStyle::Simple);
+        let looped = look(
+            ColorScheme::Accent {
+                accent: 1,
+                variant: 4,
+            },
+            QuickStyle::Simple,
+        );
         assert_eq!(looped[0].0, looped[4].0);
         // Styles: a heavy white line, a pale fill with dark text, no line.
-        assert_eq!(look(ColorScheme::default(), QuickStyle::WhiteOutline)[0].1, Some((LIGHT_1(), 3.0)));
+        assert_eq!(
+            look(ColorScheme::default(), QuickStyle::WhiteOutline)[0].1,
+            Some((LIGHT_1(), 3.0))
+        );
         let subtle = look(ColorScheme::default(), QuickStyle::SubtleEffect)[0];
         assert_eq!((subtle.1, subtle.2), (Some((accent(1), 0.5)), DARK_1()));
-        assert_eq!(look(ColorScheme::default(), QuickStyle::ModerateEffect)[0].1, None);
+        assert_eq!(
+            look(ColorScheme::default(), QuickStyle::ModerateEffect)[0].1,
+            None
+        );
         let mut art = SmartArt::new(Layout::Venn);
-        (art.colors, art.style, art.rtl) = (ColorScheme::Colorful(2), QuickStyle::IntenseEffect, true);
+        (art.colors, art.style, art.rtl) =
+            (ColorScheme::Colorful(2), QuickStyle::IntenseEffect, true);
         art.reset();
-        assert_eq!((art.colors, art.style, art.rtl), (ColorScheme::default(), QuickStyle::Simple, true));
+        assert_eq!(
+            (art.colors, art.style, art.rtl),
+            (ColorScheme::default(), QuickStyle::Simple, true)
+        );
     }
 
     #[test]
@@ -1738,7 +2172,10 @@ mod tests {
         // Stretched with the frame, whatever the outline says.
         let shown = art.pieces(&theme(), 800.0, 100.0);
         assert_eq!(shown.len(), 1);
-        assert_eq!((shown[0].x, shown[0].width, shown[0].height), (piece.x * 2.0, piece.width * 2.0, piece.height / 2.0));
+        assert_eq!(
+            (shown[0].x, shown[0].width, shown[0].height),
+            (piece.x * 2.0, piece.width * 2.0, piece.height / 2.0)
+        );
         // Given a layout, it is drawn from its outline again.
         art.set_layout(Layout::Cycle);
         assert_eq!(art.pieces(&theme(), 400.0, 400.0).len(), 10);
