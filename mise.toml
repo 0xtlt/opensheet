@@ -1,6 +1,6 @@
 # Toolchain + tasks for OpenSheet. Run `mise install` once, then `mise run <task>`.
 [tools]
-rust = { version = "1.98.1", components = "clippy,rustfmt" }
+rust = { version = "1.99.1", components = "clippy,rustfmt" }
 
 [tasks.run]
 description = "Run OpenSheet on its sample workbook"
